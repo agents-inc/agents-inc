@@ -23,7 +23,7 @@ related:
   - reference/config/configuration.md
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
-last_validated: 2026-07-30
+last_validated: 2026-08-18
 ---
 
 # Config Scope Split Contract
@@ -38,6 +38,20 @@ last_validated: 2026-07-30
 | `scopeEligibilityKey`           | `src/cli/lib/configuration/config-generator.ts`         | Encodes `(agent, skillId)` as `"${agent}\|${skillId}"` for set-membership lookups in the stack builder.                |
 | `computeNewlyAddedSkillIds`     | `src/cli/lib/installation/local-installer.ts` (private) | Diff: skill ids active in current config but not in prior. Feeds `generateProjectConfigFromSkills.newlyAddedSkillIds`. |
 | `computeScopeEligibilityGained` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: `(agent, skill)` pairs whose scope-compatibility flipped from incompatible to compatible this session.           |
+
+### Everything `config-generator.ts` exports
+
+Five functions, exhaustively — bound to the module by `scripts/check-enumeration-drift.ts`, so a sixth export cannot land without this table naming it:
+
+| Function                            | Purpose                                                                                                    |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `scopeEligibilityKey()`             | Encodes `(agent, skillId)` as one set-membership string                                                    |
+| `isScopePairCompatible()`           | `!(skillScope === "project" && agentScope === "global")` — project skills never reach global agents        |
+| `generateProjectConfigFromSkills()` | Builds a `ProjectConfig` from the wizard's selection, rebuilding `stack` from selection plus prior entries |
+| `buildStackProperty()`              | Extracts the `stack` property from a loaded `Stack` definition                                             |
+| `splitConfigByScope()`              | Partitions a merged `ProjectConfig` into `{ global, project }`                                             |
+
+Only `generateProjectConfigFromSkills` and `buildStackProperty` are on the `configuration/index.ts` barrel; the other three are import-by-path. `SplitConfigResult` and `ProjectConfigOptions` are the module's two exported types.
 
 The delta helpers do not partition the config — they compute the sets that `shouldIncludeTriple` inside the stack builder consults. They live alongside `splitConfigByScope` in this doc because both are project-context pipeline plumbing between merger output and writer input.
 
@@ -71,7 +85,11 @@ The stack field is partitioned by the **agent** partition first, then each globa
 - **Global agent** → `splitAgentStack` inspects each `(category, assignments)` slot and `partition`s the assignments on `globalSkillIds.has(a.id)`. The global half lands under the agent in `globalStack`; the non-global half lands under the same agent in `projectStack`. Slots that end up empty on a side are omitted from that side.
 - **Project agent** → the agent's entire stack entry is copied verbatim into `projectStack`. Project agents keep ALL skill references (both project and global) since global skills are available everywhere.
 
-An agent is omitted from its partition's stack when no category slot survives (length 0 after filtering). Empty stack objects are elided from the partition entirely (`stack: undefined`).
+An agent is omitted from its partition's stack when no category slot survives (length 0 after filtering).
+
+**Both partitions always carry a `stack`, and an empty one is `{}` rather than `undefined`.** `splitConfigByScope` assigns `stack: globalStack` and `stack: projectStack` unconditionally — the spread above it carries the UNDIVIDED stack, so a partition that declined to set its own key would be handed every row the other partition earned. `{}` is how "this derivation yielded nothing" is said, the same word `buildStackForSelection` uses and for the same reason: the merger reads an ABSENT stack as no statement and keeps the stale one, where an empty one is a statement that there are no rows.
+
+Elision happens one layer later and in the writer, not the split. `generateConfigSource` (`src/cli/lib/configuration/config-writer.ts`) gates the `const stack` declaration on `stack != null && Object.keys(stack).length > 0`, so an empty stack object is omitted from the emitted file and nothing ever writes `stack: {}` on this account. The two mechanisms answer different questions — the split decides what a partition HOLDS, the writer decides what the file SAYS — and a reader who collapses them will look for `stack: undefined` in the split and not find it.
 
 `globalSkillIds` is derived from the post-partition global `skills` array — it contains ONLY active globals, so a tombstone for a global skill does not count as "global" when filtering stack entries. A global agent that referenced a now-tombstoned global skill will see that reference drop out of the global stack and reappear in the project stack (carrying the reference to the project side where the tombstone lives).
 
@@ -86,15 +104,17 @@ The second row is reachable: a `(project skill, global sub-agent)` assignment is
 
 ### Scalar / Array Fields
 
-| Field             | Global split                                                                           | Project split                             |
-| ----------------- | -------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `name`            | `"global"` (literal)                                                                   | `config.name` (preserved)                 |
-| `selectedDomains` | `config.selectedDomains` (copied)                                                      | `undefined` (project inherits at runtime) |
-| everything else   | `...config` spread (descriptions, author, source, marketplace, agentsSource, projects) | `...config` spread                        |
+| Field             | Global split                                                                                                                                                                                  | Project split                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `name`            | `GLOBAL_CONFIG_NAME` (`"global"`)                                                                                                                                                             | `config.name` (preserved)                                                          |
+| `selectedDomains` | `config.selectedDomains` — carried by the `...config` spread, then re-set by an explicit conditional key                                                                                      | `config.selectedDomains` — carried by the `...config` spread and **never cleared** |
+| everything else   | `...config` spread (`description`, `author`, `marketplace`, `marketplaceName`, `agentsSource`, `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile`, `rulesFile`, `projects`) | `...config` spread                                                                 |
+
+**`selectedDomains` reaches BOTH halves. Read the assignment list, not the function's doc comment.** The project literal is `{ ...config, name, agents, skills, stack }` — it overrides four keys and no more, so the spread's `selectedDomains` survives verbatim. The global literal adds `...(config.selectedDomains !== undefined && { selectedDomains: config.selectedDomains })`, which re-sets a key the spread already placed and is therefore a no-op in every branch. The function's own doc comment says the project half "inherits them from global at runtime, so its own key is cleared rather than duplicated"; nothing in the body clears it. Both the comment and this table said so until 2026-08-18. What the emitted file shows is the writer's decision, not the split's: `generateProjectConfigWithInlinedGlobal` recomputes the project `config.ts`'s `selectedDomains` as the deduplicated union of the global and project values (`partitionInlinedConfigEntries`), and `generateProjectConfigWithGlobalImport` emits `...(globalConfig.selectedDomains ?? [])` followed by the project's own — so the duplication is invisible downstream on both writer paths, which is why a split that carries it has never been observable in an emitted config.
 
 There is no per-split selected-agent list: `ProjectConfig` carries no flat agent-name field, and each half's selected set is derived from its own non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`.
 
-The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes. In practice the project branch of `writeScopedFromWizard` overwrites `effectiveGlobalConfig` from an `existing`-spread path, so the duplicated `projects` in `globalConfig` never reaches disk.
+The `...config` spread copies every remaining scalar/array to BOTH splits — including `projects`. The authoritative copy is in whichever split the caller writes, and on the project branch of `writeScopedFromWizard` that is decided inside `resolveEffectiveGlobalConfig`: with an existing global config on disk, both resolutions rebuild from it (`mergeGlobalConfigs` spreads `...existing`; `matchGlobalToSession` runs `mergeConfigs`, which copies `existingConfig.projects` forward when the incoming half carries none), and `registerProjectPath` then rewrites the array outright. With NO existing global config, the split IS the config written — its spread-carried `projects` would reach disk, but a project reaching that branch has no global config to have loaded a registry from, so the field is `undefined` there in practice.
 
 ## Tombstone Routing Rationale
 
@@ -114,8 +134,8 @@ Order in the `cc edit` project-context pipeline:
 1. Wizard emits `newConfig` with dual-scope pairs when scope toggles produce tombstones.
 2. `mergeConfigs(newConfig, existingProjectConfig, { authoritativeScope: "owned" })` reconciles via compound keys. `newConfig` is authoritative for every referenced name/id; under `"owned"` authority a project-owned entry that is absent from `newConfig` was deselected and is dropped (unresolvable skills exempt — see [config-merger.md](./config-merger.md)). Output: `finalConfig` carrying both active and tombstone rows where applicable.
 3. `splitConfigByScope(finalConfig)` → `{ globalSplit, projectSplit }`. Active globals and active global agents to `globalSplit`; everything else (project, tombstones) to `projectSplit`.
-4. `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. `globalSplit` carries only actives, so no tombstones reach this call (which is why `mergeGlobalConfigs` does not need tombstone-handling logic).
-5. The merger's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`.
+4. `resolveEffectiveGlobalConfig(globalSplit, existingGlobalConfig, projectDir, authority)` picks ONE of two resolutions, and only one of them is `mergeGlobalConfigs`. Without `authority === "all"` it takes `addSessionToGlobal`, whose `mergeGlobalConfigs(existingGlobalConfig, globalSplit)` is **additive** — existing wins, incoming only appends. With `authority === "all"` (a confirmed `edit --from` from a project) it takes `matchGlobalToSession`, which runs `mergeConfigs(globalSplit, existingGlobalConfig, { authoritativeScope: "all" })` instead and therefore REMOVES global entries the session left out. Either way `globalSplit` carries only actives, so no tombstone reaches this step — which is why `mergeGlobalConfigs` needs no tombstone-handling logic. See [config-merger.md](./config-merger.md) → "`resolveEffectiveGlobalConfig` — which merge a project write gets".
+5. The resolution's output `effectiveGlobalConfig` is written to `~/.claude-src/config.ts`.
 6. **`reconcileProjectSplitAgainstGlobal(projectSplit, effectiveGlobalConfig, matrix)`.** The project split is reconciled against the global config it is about to be inlined with: masks whose collision has cleared are dropped, and live global entries the project still collides with (same id at project scope, or a different project-owned skill in the same exclusive category) gain a fresh mask row. See [config-writer.md](./config-writer.md) → "Cross-Scope Reconciliation".
 7. The **reconciled** project config is written to `<projectDir>/.claude-src/config.ts` with `globalConfig: effectiveGlobalConfig` passed to the writer so the inlined-global preamble reflects the merged global state.
 

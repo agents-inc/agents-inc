@@ -1,14 +1,30 @@
 ---
 scope: reference
 area: commands
-keywords: [init, edit, compile, doctor, build, eject, list, search, uninstall, update]
+keywords:
+  [
+    init,
+    edit,
+    compile,
+    doctor,
+    build,
+    new,
+    new-marketplace,
+    eject,
+    list,
+    search,
+    share,
+    uninstall,
+    update,
+  ]
 related:
   - reference/architecture-overview.md
   - reference/features/wizard-flow.md
   - reference/features/operations-layer.md
   - reference/features/compilation-pipeline.md
   - reference/commands/edit.md
-last_validated: 2026-08-09
+  - reference/utilities.md
+last_validated: 2026-08-18
 ---
 
 # Commands Reference
@@ -17,11 +33,16 @@ last_validated: 2026-08-09
 
 All commands extend `BaseCommand` (`src/cli/base-command.ts`).
 
-**No flag is shared by all commands.** `BaseCommand` declares no `baseFlags`: `--source` / `-s` was
-the only one it ever held, and naming a source became `init`'s decision alone (owner ruling
-2026-08-09), so the flag is declared in `init`'s own `static flags` and every other command refuses
-it (`Nonexistent flag: --source`, exit 2). Every command after `init` resolves the source that
-install recorded — project config → global config → default.
+**No flag is shared by all commands.** `BaseCommand` declares no `baseFlags`: the marketplace flag
+was the only one it ever held, and naming a marketplace is `init`'s decision alone, so
+`--marketplace` / `-m` is declared in `init`'s own `static flags` and every other command refuses it
+(`Nonexistent flag`, exit 2). Every command after `init` resolves the marketplace that install
+recorded — project config → global config → default.
+
+> **`--source` / `-s` were withdrawn and have no alias.** Nothing reads either spelling: oclif
+> refuses them at parse, and `extractSourceFlag` in the init hook consults only the `--marketplace`
+> forms. The replacement is `--marketplace` / `-m` on `init`. Pre-1.0 aliases nothing, so a run that
+> types the old flag names no marketplace rather than quietly choosing one.
 
 **Operations layer:** Commands use composable operations from `src/cli/lib/operations/index.ts` as the primary interface to lower-level lib functions. Commands should not bypass operations for functionality that an operation covers. See `reference/features/operations-layer.md` for full operations documentation.
 
@@ -29,17 +50,19 @@ install recorded — project config → global config → default.
 
 A statement about one operation is written once. Every member below is `protected` on `BaseCommand`; a command that performs the operation calls the shared reporter rather than spelling its own wording, because four copies of the same sentence had already drifted into two spellings of it.
 
-| Member                                                         | Callers                                | What it guarantees                                                                                                                                                                                                                 |
-| -------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ensureConfigReadable(projectDir)`                             | `init`, `edit`                         | Refuses before anything renders when a config file exists but throws `ConfigLoadError`. Checks the project's own config AND the global one every project write inlines.                                                            |
-| `ensureSavedSkillsReadable(savedSkills, matrix, projectDir)`   | `edit`                                 | One layer below the above: refuses, still before the wizard mounts, when a saved entry the catalogue lacks names a local skill that IS installed and whose `metadata.yaml` describes no skill. See `concepts/guard-pattern.md` #11 |
-| `reportValidationErrors(validation)`                           | `init`, `edit`                         | Warns each `SelectionValidation.errors` entry. Advisory — the selection installs either way and no exit code turns on them. `init` used to compute them and drop them.                                                             |
-| `installPluginSkillsReported(skills, marketplace, projectDir)` | `init`, `edit`                         | `announcePluginInstall()` + `installPluginSkills()` + `reportPluginInstalls()`. `edit` used to run the same install in silence.                                                                                                    |
-| `announcePluginInstall()`                                      | eject→plugin migration                 | The opening half alone, for the caller whose install belongs to `executeMigration`                                                                                                                                                 |
-| `reportPluginInstalls(result)`                                 | the two above                          | Per-skill lines, then the hard error on any `failed` — before any config records a marketplace `source` for a skill with no plugin registration                                                                                    |
-| `reportPropagatedRecompile(report)`                            | `init`, `edit`, `compile`, `uninstall` | Renders the recompile a gated write already performed on every OTHER registered project. Early-returns on empty `propagated.updated`.                                                                                              |
-| `requireMarketplaceOrExit(...)`                                | `init`, `edit`                         | Resolves the marketplace or hard-exits. **No fallback to eject.**                                                                                                                                                                  |
-| `ensureTerminalSize()`                                         | every command (via `init()`)           | Blocks below `MIN_TERMINAL_SIZE`, waiting on `resize` plus a 500ms poll for terminals that resize without emitting one                                                                                                             |
+| Member                                                                 | Callers                                | What it guarantees                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ensureConfigReadable(projectDir)`                                     | `init`, `edit`                         | Refuses before anything renders when a config file exists but throws `ConfigLoadError`. Checks the project's own config AND the global one every project write inlines.                                                                                               |
+| `ensureSavedSkillsReadable(savedSkills, matrix, projectDir)`           | `edit`                                 | One layer below the above: refuses, still before the wizard mounts, when a saved entry the catalogue lacks names a local skill that IS installed and whose `metadata.yaml` describes no skill. See `concepts/guard-pattern.md` #11                                    |
+| `refuseProjectScopedContentAtHome(result, projectDir)`                 | `init --from`, `edit --from`           | Refuses a DECODED selection carrying a project-scoped skill or sub-agent when `isHomeDirectory(projectDir)`, via `sharedConfigProjectScopeAtHome`. Both `--from` producers call it at the same point — after the decode, before any skip warning and before any write |
+| `reportValidationErrors(validation)`                                   | `init`, `edit`                         | Warns each `SelectionValidation.errors` entry. Advisory — the selection installs either way and no exit code turns on them.                                                                                                                                           |
+| `installPluginSkillsReported(skills, marketplace, projectDir, matrix)` | `init`, `edit`                         | `unbackedPluginInstallError` refusal + `announcePluginInstall()` + `installPluginSkills()` + `reportPluginInstalls()`. The matrix argument is what makes the first refusal possible before the Claude CLI is asked anything                                           |
+| `announcePluginInstall()`                                              | eject→plugin migration                 | The opening half alone, for the caller whose install belongs to `executeMigration`                                                                                                                                                                                    |
+| `reportPluginInstalls(result)`                                         | the two above                          | Per-skill lines, then the hard error on any `failed` — before any config records a marketplace `origin` for a skill with no plugin registration                                                                                                                       |
+| `reportUnassignedSkills(config)`                                       | `init`, `edit`                         | Names every selected skill this save left in no sub-agent's stack, and the sub-agents the scope rule kept it away from                                                                                                                                                |
+| `reportPropagatedRecompile(report)`                                    | `init`, `edit`, `compile`, `uninstall` | Renders the recompile a gated write already performed on every OTHER registered project. Early-returns on empty `propagated.updated`.                                                                                                                                 |
+| `requireMarketplaceOrExit(...)`                                        | `init`, `edit`                         | Resolves the marketplace or hard-exits. **No fallback to eject.**                                                                                                                                                                                                     |
+| `ensureTerminalSize()`                                                 | every command (via `init()`)           | Blocks below `MIN_TERMINAL_SIZE`, waiting on `resize` plus a 500ms poll for terminals that resize without emitting one                                                                                                                                                |
 
 ### Every Ink render goes through `src/cli/components/render.ts`
 
@@ -56,7 +79,7 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 1. **Bare-`cc` dashboard.** When invoked with no command (`options.id === undefined`) in an already-initialized project, it calls `runDashboardFlow(projectDir, options.config, "standalone")` (exported from `src/cli/commands/init.tsx`) with `DashboardOrigin` `"standalone"`. If a dashboard was shown, it calls `this.exit(EXIT_CODES.SUCCESS)` -- the bare invocation never falls through to a command. A `"standalone"` Edit selection carries no `--project-setup` flag (contrast the `init`-originated dashboard, whose Edit selection does).
 2. **Source resolution.** For `init` alone (`options.id === "init"`), `extractSourceFlag(options.argv)` reads the source flag from raw argv (oclif has not parsed flags yet at hook time). `resolveSource({ caller, flag, projectDir })` then assigns `sourceConfig` onto the oclif `Config` (a boundary cast to `ConfigWithSource`; read back via `BaseCommand.sourceConfig`). `caller` is `"init"` for the init command and `"stored"` for every other, which is what decides whether `CC_SOURCE` is consulted. Wrapped in try/catch -- a config-resolution failure is swallowed so each command decides how to handle a missing `sourceConfig`.
 
-**`extractSourceFlag` precedence:** `-s <value>` wins over `--source <value>`, which wins over `--source=<value>`.
+**`extractSourceFlag` precedence:** `-m <value>` wins over `--marketplace <value>`, which wins over `--marketplace=<value>`. It reads no `--source` / `-s` spelling at all.
 
 **Key dependencies:**
 
@@ -76,12 +99,21 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 | `doctor`            | `src/cli/commands/doctor.ts`            | ts   | Validate installed content, then diagnose the installation's state             |
 | `eject`             | `src/cli/commands/eject.ts`             | ts   | Eject skills, agent partials, or templates                                     |
 | `search`            | `src/cli/commands/search.ts`            | ts   | Search the catalog of available skills (read-only)                             |
+| `share`             | `src/cli/commands/share.ts`             | ts   | Share this installation as an id anyone can install                            |
 | `uninstall`         | `src/cli/commands/uninstall.tsx`        | tsx  | Uninstall from project or global scope (always removes the config manifest)    |
 | `update`            | `src/cli/commands/update.ts`            | ts   | Refresh the marketplaces this installation uses                                |
 | `build marketplace` | `src/cli/commands/build/marketplace.ts` | ts   | Generate marketplace.json from built plugins                                   |
 | `build plugins`     | `src/cli/commands/build/plugins.ts`     | ts   | Build skill/agent plugins                                                      |
+| `new marketplace`   | `src/cli/commands/new/marketplace.ts`   | ts   | Scaffold a marketplace of your own                                             |
 
-> **Four commands were removed and none has a replacement invocation.** `import skill`, `new skill`, `new marketplace` and `new agent` no longer parse — oclif exits `127` on each (asserted as `EXIT_CODES.UNKNOWN_COMMAND` in `e2e/pages/constants.ts`; `src/cli/lib/exit-codes.ts` does not define it, because no command of ours returns it). There is no `src/cli/commands/import/` or `src/cli/commands/new/` directory, and there is no `--` flag or subcommand that stands in for them; authoring a skill, a marketplace or an agent is done in the marketplace repository. `new skill` and `new marketplace` are tracked to return (`todo/cli.md` -> CLI-453 / CLI-454); `new agent` is not. `generateMarketplace()` survived the deletion because `build marketplace` calls it — do not read its presence as the command's.
+Thirteen commands, in two topics (`build`, `new`) plus eleven at the root. `list` is reachable under
+two names — `list` and the `ls` alias — so `--help` prints fourteen rows for thirteen classes. The
+roster is `src/cli/commands/**` and nothing else: `oclif.commands.strategy` is `"pattern"` over
+`./dist/commands`, so a file under that tree IS a command and a command is nothing else.
+
+> **Three commands were removed and none has a replacement invocation.** `import skill`, `new skill` and `new agent` no longer parse — oclif exits `127` on each (asserted as `EXIT_CODES.UNKNOWN_COMMAND` in `e2e/pages/constants.ts`; `src/cli/lib/exit-codes.ts` does not define it, because no command of ours returns it). There is no `src/cli/commands/import/` directory, and there is no `--` flag or subcommand that stands in for them; authoring a skill or an agent is done in the marketplace repository. `new skill` is tracked to return in `todo/cli.md`; `new agent` is not. `generateMarketplace()` survived the deletion because `build marketplace` calls it — do not read its presence as the command's.
+>
+> **`new marketplace` is NOT one of them — it is live.** `src/cli/commands/new/marketplace.ts` exists, `agents-inc new marketplace --help` exits `0`, and `new` is a topic in the root help output. It has its own E2E arc (`e2e/commands/new-marketplace.e2e.test.ts`) and is journey 35 in `standards/e2e/user-journeys.md`. Its section is [below](#new-subcommands).
 
 ## Primary Commands (Detailed)
 
@@ -91,19 +123,19 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 
 **Flags:**
 
-| Flag          | Type   | Description                                                                    |
-| ------------- | ------ | ------------------------------------------------------------------------------ |
-| --source (-s) | string | Skills source path or URL — **the only command that declares it**              |
-| --from        | string | Install a configuration shared from agentsinc.sh by its id, without the wizard |
+| Flag               | Type   | Description                                                                    |
+| ------------------ | ------ | ------------------------------------------------------------------------------ |
+| --marketplace (-m) | string | Skills marketplace path or URL — **the only command that declares it**         |
+| --from             | string | Install a configuration shared from agentsinc.sh by its id, without the wizard |
 
-> **`init` is one spine with two producers.** `--from <id>` fetches a shared seed payload and converts it to a `WizardResultV2` (`selectionFromSharedConfig`); a bare `init` runs the wizard (`selectionFromWizard`). Everything after the producer — the empty guard and the whole install pipeline — is identical. `--from` also bypasses the dashboard diversion, because an id is an explicit instruction rather than a request to be shown around — but it does **not** install over what it finds: it is greenfield-only and refuses an existing installation with a message naming `uninstall`. Wire contract, mapping and both refusals: [features/seed-contract.md](../features/seed-contract.md).
+> **`init` is one spine with two producers.** `--from <id>` fetches a shared seed payload and converts it to a `WizardResultV2` (`selectionFromSharedConfig`); a bare `init` runs the wizard (`selectionFromWizard`). Everything after the producer — the empty guard and the whole install pipeline — is identical. `--from` also bypasses the dashboard diversion, because an id is an explicit instruction rather than a request to be shown around — but it does **not** install over what it finds: it is greenfield-only and refuses an existing installation with a message naming `uninstall`. It also refuses a payload carrying project-scoped skills or sub-agents when run at the home directory — a refusal about the LOCATION rather than about anything already installed there, so its message names a project directory as the way out and never `uninstall`. A payload may also NAME the marketplace its skills come from — `sharedConfigSourceFlags` resolves `flags.marketplace ?? payload.marketplace`, so an explicit `--marketplace` outranks it and an absent one puts the load back on the rungs it always walked. Wire contract, mapping and all three refusals: [features/seed-contract.md](../features/seed-contract.md).
 
 **Flow:**
 
 0. `BaseCommand.ensureConfigReadable(projectDir)` -- refuses when a config file exists but cannot be loaded, before any route below reads it. See "Unreadable configs are recreated, not edited" under `edit`.
 1. `showDashboardIfInitialized(projectDir)` -- **skipped entirely when `--from` is present.** delegates to `runDashboardFlow(projectDir, config, "init", log)`. `detectInstallation()` detects an existing install; if found, `showDashboard()` renders the Dashboard component with quick actions (Edit/Compile/Doctor/List), then `config.runCommand(selected, argv)` delegates. The dashboard passes its origin: an `init`-originated Edit selection carries the hidden `--project-setup` flag (`dashboardCommandArgv()`); a bare-`cc` (`"standalone"`) Edit carries none. In non-interactive (no TTY): prints `formatDashboardText()` and returns null. Returns before the wizard when a dashboard was shown.
 2. If not initialized: render `<Spinner>`, then `Promise.all([loadSourceOrFail(flags), loadGlobalConfigIfExists()])` -- **Operation: `loadSource()`** loads the skills matrix (with startup message capture); `loadGlobalConfigIfExists()` loads global config to pre-hydrate the wizard.
-3. Producer: `selectionFromSharedConfig(flags.from, flags, projectDir)` when `--from` is set, else `selectionFromWizard(flags, projectDir)` -- the latter hydrates the wizard store and renders `<Wizard>` via `runWizardSession()` (not a direct `render()` + `waitUntilExit()`). A `null` selection exits `EXIT_CODES.CANCELLED`. The `--from` producer opens with `refuseInstalledProject(projectDir)` (project-scoped detection, before the fetch) and, once the payload is decoded, `refuseBlockingGlobalInstall(result)` -- both `EXIT_CODES.ERROR`. The decode itself hard-errors on a `(project skill, resting-global sub-agent)` pair via `decodeSeedOrFail`.
+3. Producer: `selectionFromSharedConfig(flags.from, flags, projectDir)` when `--from` is set, else `selectionFromWizard(flags, projectDir)` -- the latter hydrates the wizard store and renders `<Wizard>` via `runWizardSession()` (not a direct `render()` + `waitUntilExit()`). A `null` selection exits `EXIT_CODES.CANCELLED`. The `--from` producer opens with `refuseInstalledProject(projectDir)` (project-scoped detection, before the fetch) and, once the payload is decoded, runs `refuseProjectScopedContentAtHome(result, projectDir)` then `refuseBlockingGlobalInstall(result)` -- all three `EXIT_CODES.ERROR`. The decode itself hard-errors on a `(project skill, resting-global sub-agent)` pair via `decodeSeedOrFail`.
 4. Guard: if `selection.result.skills.length === 0 && selection.result.selectedAgents.length === 0`, `this.error(selection.emptyMessage, { exit: EXIT_CODES.ERROR })`. **Both must be empty** -- a sub-agent is installable on its own, so an agent-only selection with zero skills installs successfully. The producer supplies the wording, because only it knows whether empty means "nothing chosen" or "a payload this catalog cannot install".
 5. `handleInstallation()`: `deriveInstallMode()` determines eject/plugin/mixed from active (non-excluded) skills.
 6. If plugin/mixed: `requireMarketplaceOrExit()` (BaseCommand) resolves/registers the marketplace up front, BEFORE any filesystem mutation. **No fallback to eject** -- an unresolvable marketplace hard-errors (`EXIT_CODES.ERROR`).
@@ -138,50 +170,61 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 
 ### `edit` (src/cli/commands/edit.tsx)
 
-**Purpose:** Modify installed skills via wizard re-entry with diff-based change detection. Outputs a styled change summary (chalk-colored `+`/`-`/`~` lines for added/removed/changed skills, agents, sources, scopes) and a simplified completion message (`"Done"`). Change summary uses skill display names (from matrix) and scope labels (`[G]`/`[P]`). Global-to-project scope changes render as green `+` additions.
+**Purpose:** Modify what is installed here — from the wizard, or from a configuration shared by id — and apply the difference. Outputs a styled change summary (chalk-colored `+`/`-`/`~` lines for added/removed/changed skills, agents, origins, scopes) and a simplified completion message (`"Done"`). Change summary uses skill display names (from matrix) and scope labels (`[G]`/`[P]`). Global-to-project scope changes render as green `+` additions.
 
-**Flags:** the hidden internal boolean flag `--project-setup` (`EDIT_PROJECT_SETUP_FLAG`, `hidden: true`) set only when `init`'s dashboard delegates to Edit as the project-materialisation step. See `reference/commands/edit.md`.
+**Flags:**
+
+| Flag            | Type    | Description                                                                                                                                  |
+| --------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| --ui            | boolean | `default: false`. Mint an id for this installation and open it in the browser at agentsinc.sh, instead of opening the wizard                 |
+| --from          | string  | `helpValue: "<id>"`. Apply a configuration shared from agentsinc.sh by its id, **removing whatever it leaves out**                           |
+| --project-setup | boolean | `hidden: true`. Internal (`EDIT_PROJECT_SETUP_FLAG`), set only when `init`'s dashboard delegates to Edit as the project-materialisation step |
+
+> **`--ui` and `--from` are the two directions of one round trip and cannot be combined.** Both together is refused with `SHARED_CONFIG_ONE_DIRECTION` (`EXIT_CODES.ERROR`) before either spends anything. `--from` is destructive and interactive: it confirms its removals at a terminal, and a run with no TTY is refused with `sharedConfigNeedsTerminal(id)` **before** the fetch and before the catalogue load — the message names `init --from` as the headless alternative, which installs into a clean directory and removes nothing. **`edit --from` also refuses project-scoped payload content at the home directory**, through the same `BaseCommand.refuseProjectScopedContentAtHome` `init --from` calls, at the same point of the same value: after the decode, before the skip warnings, `EXIT_CODES.ERROR`. Full method-by-method flow, the confirm's shape and the ownership rule: [`commands/edit.md`](./edit.md); the wire contract: [`features/seed-contract.md`](../features/seed-contract.md).
 
 **Flow:** (see `reference/commands/edit.md` for the full method-by-method flow)
 
 0. `BaseCommand.ensureConfigReadable(cwd)` -- refuses, before anything renders, when a config file exists but cannot be loaded. See "Unreadable configs are recreated, not edited" below.
-1. **Operation: `detectProject()`** -- detect installation + load project config
-2. **Operation: `loadSource()`** -- load matrix with startup messages
-   2b. `BaseCommand.ensureSavedSkillsReadable(config.skills, matrix, projectDir)` -- still before the wizard mounts, refuses over an installed local skill whose `metadata.yaml` describes no skill. The other unresolvable classes fall through and are removed with a class-specific reason at step 7.
-3. Discover current installed skills: `discoverAllPluginSkills()` + merge with config skills (excluded entries filtered)
-4. `runWizardSession()` renders `<Wizard>` with `initialStep="build"`, `installedSkillIds`, `installedSkillConfigs`, `installedAgentConfigs`, `isEditingFromGlobalScope`, `initialDomains`, `initialAgents`, `startupMessages`
-5. Filter excluded entries once, then `detectConfigChanges(filteredOldConfig, filteredResult, fullEntries)` -- returns `ConfigChanges`
-6. **No-change branch** (`!hasAnyChanges(changes)`): logs `"No changes made."` and returns -- UNLESS `isProjectSetup` (`flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`), in which case it still runs `writeConfigAndCompile()` to materialise the project (init dashboard flow)
-7. `logChangeSummary()` -- styled diff using display names from matrix, scope labels `[G]`/`[P]`, green `+` for G-to-P scope migrations, dual-scope `[P]` add/remove lines. Removal rows for `result.unresolvableSkillIds` carry the reason from `unresolvedSkillRemovalReasons(ids, activeOldSkills, projectDir, loadedSourceLabel(sourceResult))` -- one of four class-specific sentences, not a single wording. See [`config/config-merger.md`](../config/config-merger.md)
-8. `applyMigrations()` -- `detectMigrations()` + `executeMigration()` for eject-to-plugin and plugin-to-eject mode switches; returns migrated `Set<SkillId>`
-9. `recordGlobalSourceMigrations()` -- rewrites `source` on active-global entries this run migrated, in the global config (project-context runs only), via `config-gate::mutateGlobal({ kind: "migrate-skill-sources" })`. Since the per-skill `source` decides the reference form a compiled agent emits, this classifies T1: the gate fans the change out to every OTHER registered project and recompiles their agents, and `reportPropagatedRecompile` renders the result. Runs BEFORE step 15, whose own write then classifies as a byte-identical no-op, so nothing fans out twice.
-10. `applyScopeChanges()` -- `migrateLocalSkillScope()` for eject skills, `migratePluginSkillScopes()` for plugin skills (marketplace required)
-11. `applySourceChanges()` -- `deleteLocalSkill()` on the old scope dir for non-migration eject-source changes
-12. `applyPluginChanges()` -- **Operation: `installPluginSkills()`** for added plugins (hard-errors on failure), **Operation: `uninstallPluginSkills()`** for removed; marketplace via `requireMarketplaceOrExit()`
-13. `copyNewLocalSkills()` -- **Operation: `copyLocalSkills()`** for newly added eject-source skills
-14. `removeDeletedLocalSkills()` -- `deleteLocalSkill()` for fully-deselected eject skills
-15. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `reportPropagatedRecompile(configResult.propagation)` (the shared `BaseCommand` reporter — same wording as `init`, because it is the same function)
-16. `cleanupStaleAgentFiles()` -- remove old agent .md files after scope changes / deselection
+1. Both-flags refusal (`--ui` with `--from`), then `openInEditor(cwd)` and return when `--ui` is set: `seedPayloadForInstallation()` → `publishSeedConfig()` → print `Shared as <id>` + `sharedConfigDestinations(id)` → `openUrl(editorConfigUrl(id))` only under a TTY.
+2. `fetchSharedConfigOrFail(flags.from)` when `--from` is set — the no-TTY refusal, then `fetchSeedConfig()`.
+3. `loadContextUnderSpinner()`: **Operation: `detectProject()`** + **Operation: `loadSource()`** + `discoverAllPluginSkills()` merged with config skills (excluded entries filtered), behind a spinner cleared in a `finally`.
+4. `BaseCommand.ensureSavedSkillsReadable(config.skills, matrix, projectDir)` -- still before the wizard mounts, refuses over an installed local skill whose `metadata.yaml` describes no skill. The other unresolvable classes fall through and are removed with a class-specific reason at step 8.
+5. Producer. Wizard: `runWizardSession()` renders `<Wizard>` with `initialStep="build"`, `installedSkillIds`, `installedSkillConfigs`, `installedAgentConfigs`, `isEditingFromGlobalScope`, `initialDomains`, `initialAgents`, `startupMessages`. Shared: `registerExternalSkills()` → `seedToWizardResult()` → `refuseProjectScopedContentAtHome()` → skip warnings → `skillsAuthoredHere()` → `reconcileSharedConfig()`.
+6. Filter excluded entries once, then `detectConfigChanges(filteredOldConfig, filteredResult, fullEntries)` -- returns `ConfigChanges`
+7. Shared producer only: `confirmSharedConfigOrCancel(changes, kept)` renders `RemovalPlanConfirm` and exits `EXIT_CODES.CANCELLED` unless approved, then `writeCarriedSkills()` writes the skills the configuration brought with it. Both sit above the no-change return.
+8. **No-change branch** (`!hasAnyChanges(changes)`): logs `"No changes made."` and returns -- UNLESS `isProjectSetup` (`flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd)`), in which case it still runs `writeConfigAndCompile()` to materialise the project (init dashboard flow)
+9. `logChangeSummary()` -- styled diff using display names from matrix, scope labels `[G]`/`[P]`, green `+` for G-to-P scope migrations, dual-scope `[P]` add/remove lines. Removal rows for `result.unresolvableSkillIds` carry the reason from `unresolvedSkillRemovalReasons(ids, activeOldSkills, projectDir, loadedSourceLabel(sourceResult))` -- one of four class-specific sentences, not a single wording. See [`config/config-merger.md`](../config/config-merger.md)
+10. `applyMigrations()` -- `detectMigrations()` + `executeMigration()` for eject-to-plugin and plugin-to-eject mode switches; returns migrated `Set<SkillId>`
+11. `recordGlobalSourceMigrations()` -- rewrites `origin` on active-global entries this run migrated, in the global config (project-context runs only), via `config-gate::mutateGlobal({ kind: "migrate-skill-sources" })`. Since the per-skill `origin` decides the reference form a compiled agent emits, this classifies T1: the gate fans the change out to every OTHER registered project and recompiles their agents, and `reportPropagatedRecompile` renders the result. Runs BEFORE step 17, whose own write then classifies as a byte-identical no-op, so nothing fans out twice.
+12. `applyScopeChanges()` -- `migrateLocalSkillScope()` for eject skills, `migratePluginSkillScopes()` for plugin skills (marketplace required)
+13. `applySourceChanges()` -- `deleteLocalSkill()` on the old scope dir for non-migration eject-origin changes
+14. `applyPluginChanges()` -- **Operation: `installPluginSkills()`** for added plugins (hard-errors on failure), **Operation: `uninstallPluginSkills()`** for removed; marketplace via `requireMarketplaceOrExit()`
+15. `copyNewLocalSkills()` -- **Operation: `copyLocalSkills()`** for newly added eject-origin skills
+16. `removeDeletedLocalSkills()` -- `deleteLocalSkill()` for fully-deselected eject skills
+17. `writeConfigAndCompile()` -- **Operation: `loadAgentDefs()`**, **Operation: `writeProjectConfig()`**, `reportUnassignedSkills()`, **Operation: `discoverInstalledSkills()`**, **Operation: `compileAgentsAllScopes()`**, then `reportPropagatedRecompile(configResult.propagation)` (the shared `BaseCommand` reporter — same wording as `init`, because it is the same function)
+18. `cleanupStaleAgentFiles()` -- **Operation: `removeCompiledAgents()`** per scope directory holding a stale file, after scope changes / deselection
 
-**Global immutability.** A globally installed skill or agent cannot be deselected from a project in any flow, `init` included, so `removedSkills` / `removedAgents` never contain an active global entry when the edit runs at project scope. Domain deselection is a view filter that drops only project-owned skills. The rule is enforced in the wizard store, not in this command -- see `reference/concepts/scope-system.md`.
+**Global immutability.** A globally installed skill or agent cannot be deselected from a project in any flow, `init` included, so `removedSkills` / `removedAgents` never contain an active global entry when the edit runs at project scope. Domain deselection is a view filter that drops only project-owned skills. **Two layers hold the rule, and they protect different things:** `authoritativeScope: "owned"` in `mergeConfigs` protects the config ROW, while the removal DIFF is what drives `uninstallPluginSkills` / `deleteLocalSkill` / `removeCompiledAgents` and reaches the disk regardless. The wizard store is what keeps a global entry out of that diff for every keystroke-driven run; `edit --from` bypasses the store, so `reconcileSharedConfig` puts such entries back into the result before the diff is taken. See [`commands/edit.md`](./edit.md) and `reference/concepts/scope-system.md`.
 
-**Unreadable configs are recreated, not edited.** There are no versioned config migrations. `BaseCommand.ensureConfigReadable(projectDir)` runs as step 0 of both `edit` and `init` and hard-errors (`EXIT_CODES.ERROR`) with `configUnreadableError(...)` when a config file exists but throws `ConfigLoadError`. It checks the project's own config AND, from a project, the global one every project write inlines -- at the home root the two collapse into one check. A **missing** config passes through untouched, so `edit` still reports `No installation found` and `init` still routes to the wizard. The message carries the `ConfigLoadError` (file plus reason) and two ways forward: `uninstall` (which deliberately tolerates the same corruption) followed by `init`, or a configuration built at the editor URL (`EDITOR_URL` in `src/cli/consts.ts`) and installed with `init --from <id>`. `doctor` is deliberately not named as a way forward -- it diagnoses rather than repairs, and on an unreadable config it now names the state (`exists but could not be loaded`, in the content layer) rather than calling the file missing. Before this, `edit` reported an unreadable PROJECT config as `No installation found` (the load error was swallowed into `detectProject`'s `null`), an unreadable GLOBAL config carried the run past the wizard and surfaced only as a warned config write that never happened, and `init` printed the raw `ConfigLoadError`. Pinned by `e2e/commands/edit-corrupt-config.e2e.test.ts`.
+**Unreadable configs are recreated, not edited.** There are no versioned config migrations. `BaseCommand.ensureConfigReadable(projectDir)` runs as step 0 of both `edit` and `init` and hard-errors (`EXIT_CODES.ERROR`) with `configUnreadableError(...)` when a config file exists but throws `ConfigLoadError`. It checks the project's own config AND, from a project, the global one every project write inlines -- at the home root the two collapse into one check. A **missing** config passes through untouched, so `edit` still reports `No installation found` and `init` still routes to the wizard. The message carries the `ConfigLoadError` (file plus reason) and two ways forward: `uninstall` (which deliberately tolerates the same corruption) followed by `init`, or a configuration built at the editor URL (`EDITOR_URL` in `src/cli/consts.ts`) and installed with `init --from <id>`. `doctor` is deliberately not named as a way forward -- it diagnoses rather than repairs, and on an unreadable config it names the state (`exists but could not be loaded`, in the content layer) rather than calling the file missing. Pinned by `e2e/commands/edit-corrupt-config.e2e.test.ts`.
 
 **Exported utilities (`@internal`, for testing):**
 
-- `ConfigChanges` type -- diff between old and new config (added/removed skills, agents, source changes, scope changes, agent scope changes, plus `dualScopeSkillTransitions`/`dualScopeAgentTransitions` sets)
+- `ConfigChanges` type -- diff between old and new config (added/removed skills, agents, origin changes under the key `sourceChanges`, scope changes, agent scope changes, plus `dualScopeSkillTransitions`/`dualScopeAgentTransitions` sets)
 - `detectConfigChanges(oldConfig, wizardResult, fullEntries?)` -- computes `ConfigChanges` from old `ProjectConfig` and new `WizardResultV2`; optional `fullEntries` (tombstone-inclusive) classifies dual-scope transitions
-- `applyMigratedGlobalSources(globalSkills, migratedSources)` -- rewrites `source` on active-global entries; returns `{ skills, changed }`
-- `migratePluginSkillScopes(scopeChanges, skills, marketplace, projectDir)` -- migrates plugin skill scope registrations. Returns `PluginScopeMigrationResult`.
+- `applyMigratedGlobalSources(globalSkills, migratedSources)` -- rewrites `origin` on active-global entries; returns `{ skills, changed }`. Defined in `config-gate/index.ts` and re-exported from `edit.tsx`
+- `migratePluginSkillScopes(scopeChanges, skills, marketplace, projectDir)` -- migrates plugin skill scope registrations; `skills` is `Pick<SkillConfig, "id" | "origin">[]`. Returns `PluginScopeMigrationResult`.
 - `PluginScopeMigrationResult` type -- `{ migrated: SkillId[]; failed: Array<{ id: SkillId; error: string }> }`
 
 **Key dependencies:**
 
-- `src/cli/lib/operations/index.ts` -- `detectProject`, `loadSource`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig` (+ `ConfigWriteResult`), `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (+ `AgentDefs`)
-- `src/cli/base-command.ts` -- `requireMarketplaceOrExit` (no `ensureMarketplace` fallback), `installPluginSkillsReported`, `announcePluginInstall` (the eject→plugin migration path), `reportValidationErrors`, `reportPropagatedRecompile`, `ensureConfigReadable`
-- `src/cli/lib/installation/index.ts` -- `detectMigrations`, `executeMigration`, `isHomeDirectory`, `installBaseDir`, `resolveInstallPaths`, `writeConfigFile`
+- `src/cli/lib/operations/index.ts` -- `detectProject`, `loadSource`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig` (+ `ConfigWriteResult`), `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (+ `AgentDefs`), `removeCompiledAgents` (+ `RemoveCompiledAgentsOptions`)
+- `src/cli/base-command.ts` -- `requireMarketplaceOrExit` (no `ensureMarketplace` fallback), `installPluginSkillsReported`, `announcePluginInstall` (the eject→plugin migration path), `reportValidationErrors`, `reportUnassignedSkills`, `reportPropagatedRecompile`, `ensureConfigReadable`, `ensureSavedSkillsReadable`
+- `src/cli/lib/installation/index.ts` -- `detectMigrations`, `executeMigration`, `isHomeDirectory`, `installBaseDir`, `resolveInstallPaths`, `INSTALL_MODE_DESCRIPTIONS`
 - `src/cli/lib/plugins/index.ts` -- `discoverAllPluginSkills`, `buildMarketplacePluginRef`, `toClaudePluginScope`
 - `src/cli/lib/skills/index.ts` -- `deleteLocalSkill`, `migrateLocalSkillScope`, `unresolvedSkillRemovalReasons`
+- `src/cli/lib/seed/` -- `seedPayloadForInstallation` + `skillsAuthoredHere` (`installation-payload.ts`), `fetchSeedConfig`, `publishSeedConfig`, `registerExternalSkills` + `writeExternalSkills` (`external-skills.ts`), `seedToWizardResult`, `reconcileSharedConfig` (`seed-apply.ts`)
+- `src/cli/components/common/` -- `RemovalPlanConfirm` + `RemovalPlanSection`, `promptConfirm`, `Spinner`; `src/cli/utils/open-url.ts` -- `openUrl`
 
 ### `compile` (src/cli/commands/compile.ts)
 
@@ -197,7 +240,7 @@ The single oclif lifecycle hook, registered in `package.json` under `oclif.hooks
 
 1. `detectInstallations(cwd)` -- **Operation: `detectBothInstallations(cwd)`**, returning `{ global, project, hasBoth }`. A `ConfigLoadError` (config file present but unparseable) is caught and re-raised via `this.error(..., { exit: EXIT_CODES.ERROR })` naming the offending file, **before any write** -- a corrupt config must never let compile run config-less and resurrect every built-in agent.
 2. Error `ERROR_MESSAGES.NO_INSTALLATION` if neither installation found
-3. `resolveAndLogSource(cwd)` -- `resolveSource({ caller: "stored", projectDir: cwd })` from configuration, logs `Source: <sourceOrigin>`. `compile` takes no `--source`: it recompiles an installation that already records which marketplace its skill references answer to.
+3. `resolveAndLogSource(cwd)` -- `resolveSource({ caller: "stored", projectDir: cwd })` from configuration, logs `Source: <sourceOrigin>`. `compile` takes no `--marketplace` flag: it recompiles an installation that already records which marketplace its skill references answer to.
 4. `loadAgentDefsOrFail()` -- **Operation: `loadAgentDefs({ projectDir })`**
 5. `buildCompilePasses()` -- the single pass this invocation owns. A project installation at `cwd` returns the project pass (`projectDir = cwd`) alone: a compile inside a project is a project-scope operation and writes nothing outside that project. Otherwise -- at the home directory, or in a directory with no config of its own -- the global pass (`projectDir = os.homedir()`) is returned. The project pass carries `scopeFilter: "project"` when `hasBoth`, because the project config inlines the global entries and an unfiltered pass would write global-scoped agents into the project's own agents directory; the global pass is unfiltered.
 6. For each pass (`runCompilePass`):
@@ -245,7 +288,7 @@ The matrix for that refresh is loaded with `loadSkillsMatrixFromSource({ sourceF
 4. If no config or non-TTY: fallback to `getInstallationInfo()` + `formatInstallationDisplay()` (plain text) from `plugins/index.ts`
 5. If TTY with config: filter excluded skills/agents, `hydrateWizardStore({ installedSkillConfigs, installedAgentConfigs })`, then `render(<ListView>)` -- Ink component showing mode (`INSTALL_MODE_LABELS[installation.mode]`), source, and the `<SkillAgentSummary>` component. `ListView` calls `useApp().exit()` via a `setTimeout(..., 0)` effect to auto-exit after render; the command awaits `waitUntilExit()` then `clear()`.
 
-**No version field.** `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`) is `{ mode, name, skillCount, agentCount, configPath, agentDirs, skillsDir }` -- there is **no `version` field**. It previously held the install mode and the formatter prefixed it with `v`, so the header printed `Installation: agents-inc vplugin`. `formatInstallationDisplay` now emits the mode exactly once:
+**No version field.** `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`) is `{ mode, name, skillCount, agentCount, configPath, agentDirs, skillsDir }` -- there is **no `version` field**. `formatInstallationDisplay` emits the mode exactly once:
 
 ```
 Installation: <name>
@@ -275,32 +318,56 @@ Installation: <name>
 
 **Layer 1 -- content checks**, backed by `src/cli/lib/content-validator.ts` and printed under `Content checks`. Five rows in two tiers:
 
-`CONFIG_CHECK` (`doctor.ts`) runs **first and alone**, before the other four. It is the file every other row is read out of, so a config that exists and cannot be parsed is a finding about that file and every row underneath would be a cascade of it. It is also the only report that can carry the loader's own reason -- the layers below re-read the file per check, and their diagnostics for it used to arrive spliced between the rows.
+`CONFIG_CHECK` (`doctor.ts`) runs **first and alone**, before the other four. It is the file every other row is read out of, so a config that exists and cannot be parsed is a finding about that file and every row underneath would be a cascade of it. It is also the only report that can carry the loader's own reason -- the layers below re-read the file per check.
 
-The remaining four are `CONTENT_CHECKS`, run in parallel. Each is a `GatedContentCheck` -- a `ContentCheck` plus `readsConfig`, declaring whether it consults `config.ts` to know WHAT to validate. When the config row failed, every `readsConfig: true` row is replaced by `skippedContentResult(kind)` rather than run; the rows that walk installed content on disk still run, because they say something true whatever state the config is in.
+The remaining four are `CONTENT_CHECKS`, run in parallel. Each is a `GatedContentCheck` -- a `ContentCheck` plus two gates. `readsConfig` declares whether it consults `config.ts` to know WHAT to validate: when the config row failed, every `readsConfig: true` row is replaced by `skippedContentResult(kind)` rather than run, while the rows that walk installed content on disk still run, because they say something true whatever state the config is in. `blocks` declares which operational rows this pass's errors stand down, and is read one layer down -- see "Which operational rows a content error stands down" below.
 
-| Row       | `readsConfig`      | Walks                                                                                                                                                                                                                                                                                                                                                     |
-| --------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Config`  | — (it IS the gate) | `validateProjectConfigFile`: `countExistingConfigs` over the config dirs in play (the project's own and the global one it inlines) for the count, `findConfigLoadFailures` for the issues. An **absent** config is not a finding -- that is the legitimate state `init` exists for, and the operational layer already names it with the remedy that fits. |
-| `Sources` | `true`             | the one source this installation reads from (`resolvePrimarySourceEntry`) when it is LOCAL, plus the cwd when `isSourceRepo(cwd)` and the source does not already resolve to it (D-210: a marketplace author's own repo). A remote source becomes a `-- skipped (remote source)` note.                                                                    |
-| `Plugins` | `false`            | `getUserPluginsDir()` and, unless `isHomeDirectory(cwd)`, `getProjectPluginsDir(cwd)`                                                                                                                                                                                                                                                                     |
-| `Skills`  | `false`            | every directory under the global and project `skillsDir`, config-referenced or not                                                                                                                                                                                                                                                                        |
-| `Agents`  | `false`            | every `*.md` under the global and project `agentsDir`                                                                                                                                                                                                                                                                                                     |
+| Row            | `readsConfig`      | Walks                                                                                                                                                                                                                                                                                                                                                     |
+| -------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Config`       | — (it IS the gate) | `validateProjectConfigFile`: `countExistingConfigs` over the config dirs in play (the project's own and the global one it inlines) for the count, `findConfigLoadFailures` for the issues. An **absent** config is not a finding -- that is the legitimate state `init` exists for, and the operational layer already names it with the remedy that fits. |
+| `Marketplaces` | `true`             | the one marketplace this installation reads from (`resolvePrimarySourceEntry`) when it is LOCAL, plus the cwd when `isSourceRepo(cwd)` and the marketplace does not already resolve to it (a marketplace author's own repo). A remote one becomes a `— skipped (remote)` note.                                                                            |
+| `Plugins`      | `false`            | `getUserPluginsDir()` and, unless `isHomeDirectory(cwd)`, `getProjectPluginsDir(cwd)`                                                                                                                                                                                                                                                                     |
+| `Skills`       | `false`            | every directory under the global and project `skillsDir`, config-referenced or not                                                                                                                                                                                                                                                                        |
+| `Agents`       | `false`            | every `*.md` under the global and project `agentsDir`                                                                                                                                                                                                                                                                                                     |
 
 Each returns a `ContentValidation` (`count`, `issues`, `notes`), which `toContentResult` maps onto the same `CheckResult` shape the operational rows use -- so one formatter, one summary, one exit code covers both layers. Issue lines render as `- [ERROR|WARN] <file>: <message>`. `contentMessage` distinguishes a pass that walked nothing (`No <noun>s to validate`) from one that walked entries -- a pass that walked nothing can still report an issue, because an unreadable plugin registry is a finding about the directory rather than about a plugin inside it.
 
-**Layer 2 -- operational checks** (display order): Config Valid, Skills Resolved, Agents Compiled, No Orphans, Skills Installed, Plugins Installed, Source Reachable. `Skills Installed` is the eject-mode on-disk check (`checkSkillsInstalled`); `Plugins Installed` (`checkPluginSkillsInstalled`) verifies the plugin registry grouped by each skill's own scope.
+**Layer 2 -- operational checks** (display order): Config Valid, Skills Resolved, Agents Compiled, No Orphans, Skills Installed, Plugins Installed, Marketplace Reachable. `Skills Installed` is the eject-mode on-disk check (`checkSkillsInstalled`); `Plugins Installed` (`checkPluginSkillsInstalled`) verifies the plugin registry grouped by each skill's own scope.
 
-**No Orphans has two verdicts, chosen by `resolveOrphansCheck` off the `ConfigState`.** With a config it is `checkNoOrphans`: the compiled agent files in each scope's `agentsDir` whose roster does not name them, a **warning** -- the next `compile` prunes exactly those (`pruneStaleCompiledAgents`). With an **absent** config it is `checkUnownedInstallation`: every installed skill directory and compiled agent file is unowned by definition, so the row names them all (display paths, one per line) and it is an **error**. Nothing repairs that state unattended -- `compile` and `edit` refuse without a config, and `uninstall` matches skill directories by their own `forked-from` metadata but identifies compiled agents only through a config, so it clears the skills and leaves the agents. Its tip (`kind: "orphans-unowned"`) is the only one that says so; the Config Valid tip beside it speaks about the file, not the leftovers. The names come from `listInstalledArtifacts` (`content-validator.ts`) -- the same two walks the content layer's `Skills` and `Agents` rows counted four lines above. With nothing installed the row keeps the skip: an empty directory with no config is the state `init` exists for. A config that **loads and fails validation** still skips -- there a file's owner is unreadable rather than absent, and no installation can be called stranded on the strength of a config nobody can trust.
+**No Orphans has two verdicts, chosen by `resolveOrphansCheck` off the `ConfigState`.** With a config it is `checkNoOrphans`: the compiled agent files in each scope's `agentsDir` whose roster does not name them, a **warning** -- the next `compile` prunes exactly those (`pruneStaleCompiledAgents`). With an **absent** config it is `checkUnownedInstallation`: nothing declares what is installed, so the row names it (display paths, one per line) and it is an **error**. **It names what this CLI can prove it wrote, not everything on disk** -- a skill directory carrying `forkedFrom` and a compiled agent carrying the compiler's provenance marker. A hand-authored skill directory or agent file is named by neither list, because the row is an offer to `uninstall` and that command would refuse it. Nothing repairs the state unattended -- `compile` and `edit` refuse without a config -- but `uninstall` does not need one: it matches skill directories by their own `forked-from` metadata and compiled agents by the marker each carries, so it clears both halves of what the row named. Its tip (`kind: "orphans-unowned"`) is the only one that says so; the Config Valid tip beside it speaks about the file, not the leftovers. The names come from `listInstalledArtifacts` (`content-validator.ts`), whose two walks apply exactly the ownership question `uninstall` asks -- the same two walks the content layer's `Skills` and `Agents` rows counted four lines above, minus the entries neither can prove are this CLI's. With nothing installed the row keeps the skip: an empty directory with no config is the state `init` exists for. A config that **loads and fails validation** still skips -- there a file's owner is unreadable rather than absent, and no installation can be called stranded on the strength of a config nobody can trust.
 
-**Why the layer runs second and conditionally.** `runOperationalChecks` returns `[]` -- printing one line instead of rows -- in two cases:
+**Why the layer runs second and conditionally.** `runOperationalChecks` returns `[]` -- printing one line instead of rows -- in two cases, and in two cases only:
 
 | Condition                                                                                | Line printed                                                 |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Any content check failed                                                                 | `Skipped -- fix the content errors above first`              |
+| The `Config` content row failed (`SKIP_AFTER_CONFIG_ERROR`)                              | `Skipped -- fix the content errors above first`              |
 | No `detectProject()` result, no `.claude-src/config.ts` on disk, and `isSourceRepo(cwd)` | `Skipped -- no installation here (skills source repository)` |
 
-The first is the whole point of the ordering: an unresolved skill or an uncompiled agent standing on a broken `metadata.yaml` is that error's cascade. The second is the marketplace-author context -- one command, two contexts. The `fileExists` half of the second condition matters: a config that exists but fails to load also detects as "no project", and that is a finding, not an absence, so it still reaches the operational layer.
+The first is the one content finding that cascades into all seven rows -- every one of them is read out of `config.ts`, so none can answer when nobody can read it. The second is the marketplace-author context -- one command, two contexts. The `fileExists` half of the second condition matters: a config that exists but fails to load also detects as "no project", and that is a finding, not an absence, so it still reaches the operational layer.
+
+**Which operational rows a content error stands down.** Every OTHER content failure is scoped to the rows that read what it is about, rather than silencing the layer. `failedContentKinds` collects the failed content rows once; `contentBlockedResult(row, failed)` asks `CONTENT_CHECKS` which of them name that row in `blocks`, and returns a `skip` whose message names the blocking pass (`skipRestatingContent`) instead of the blanket sentence. A skipped row is counted in neither column of the summary, which counts `pass`/`warn`/`fail` only.
+
+| Operational row         | Reads                                                                      | Stood down by        |
+| ----------------------- | -------------------------------------------------------------------------- | -------------------- |
+| `Config Valid`          | `config.ts` via `validateProjectConfig`                                    | Config only          |
+| `Skills Resolved`       | config + stack ids, `matrix.skills`, `discoverLocalSkills`                 | Marketplaces, Skills |
+| `Agents Compiled`       | `fileExists` on each agent `.md` -- existence only, never opens it         | Config only          |
+| `No Orphans`            | agent `.md` FILE NAMES vs config; `listInstalledArtifacts` directory names | Config only          |
+| `Skills Installed`      | `fileExists` on `SKILL.md` -- existence only, never parses                 | Config only          |
+| `Plugins Installed`     | `.claude/settings.json` `enabledPlugins` + the user plugin registry        | Plugins              |
+| `Marketplace Reachable` | `loadSource()` -- reports its own outcome                                  | Config only          |
+
+There are two genuine cascades and no others. `extractLocalSkill` DROPS a skill whose `metadata.yaml` is missing or unusable, so a "not found" from `Skills Resolved` would be the `Skills` content finding re-worded; and `resolvePluginInstallPaths` swallows an unparseable registry and returns `[]`, so every plugin-mode skill would read "no enabled plugin found". Nothing depends on the `Agents` content pass -- a `.md` with broken frontmatter changes neither "does the file exist" nor "what is it called" -- so it names no rows at all. Pinned by `src/cli/lib/__tests__/commands/doctor-content.test.ts` -> "operational rows an unrelated content error must not silence".
+
+**One finding's severity turns on WHO is reading, and only one.** A slug a marketplace's relationship rules name that no skill carries (`rule-unresolved-slug` from `checkMatrixHealth`) is an **ERROR** for the marketplace's author and a **WARNING** for someone who merely consumes it. The rule that cannot act is the same defect either way; what differs is that the author can open the file and the consumer cannot, and a warning that sends a reader hunting through their own project for a typo in a file they do not own is worse than no warning at all. Every other health finding is reported at the severity the check gave it — that severity is a property of the defect alone.
+
+| Layer                                                             | What it decides                                                                                                                                                                                                     |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkMatrixHealth` (`src/cli/lib/matrix/matrix-health-check.ts`) | Emits `rule-unresolved-slug` at `error` — the AUTHOR's verdict, and the only one it can reach: a matrix says what is wrong with it and cannot say who is looking                                                    |
+| `toSourceIssue` (`src/cli/lib/source-validator.ts`)               | Downgrades that one finding to `warning` for a `MarketplaceReader` of `"consumer"`, and rewords it via `consumedMarketplaceMessage` to lead with the marketplace and say outright that there is nothing here to fix |
+| `readerFor` (`src/cli/lib/content-validator.ts`)                  | Decides which reader this is, per marketplace: `"author"` when `path.resolve(projectDir, source.url) === projectDir`, `"consumer"` otherwise                                                                        |
+
+**`readerFor` asks the question per marketplace, not per run.** "Is there a marketplace under the cwd" would say nothing about the OTHER marketplace a config may point at, and the severity turns on the per-marketplace question. The `CWD_SOURCE_NAME` entry `localSourcesToValidate` appends answers `"author"` by construction, which is the whole of why a marketplace author's own repository is judged the way they need it to be. `MarketplaceReader` is a closed union (`"author" | "consumer"`) so a misspelled branch is a compile error rather than a condition quietly never true; `MatrixHealthFinding` is closed for the same reason.
 
 **Exit code:** one aggregate. `EXIT_CODES.ERROR` when any check in either layer has status `fail`; warnings never fail the run.
 
@@ -336,18 +403,40 @@ The first is the whole point of the ordering: an unresolved skill or an uncompil
 
 **Args:**
 
-| Arg  | Required | Description                                                   |
-| ---- | -------- | ------------------------------------------------------------- |
-| type | no       | What to eject: `agent-partials`, `templates`, `skills`, `all` |
+| Arg  | Required | Description                                                                                 |
+| ---- | -------- | ------------------------------------------------------------------------------------------- |
+| type | no       | What to eject. `options: [...EJECT_TYPES]` — `agent-partials`, `templates`, `skills`, `all` |
 
 **Flags:**
 
-| Flag     | Short | Type    | Description                          |
-| -------- | ----- | ------- | ------------------------------------ |
-| --force  | -f    | boolean | Overwrite existing files             |
-| --output | -o    | string  | Output directory (default: .claude/) |
+| Flag     | Short | Type    | Description                                                      |
+| -------- | ----- | ------- | ---------------------------------------------------------------- |
+| --force  | -f    | boolean | `default: false`. Overwrite existing files                       |
+| --output | -o    | string  | Output directory. No default — absence routes to the table below |
 
-`eject` declares no `--source`. It copies out of whatever source this installation reads (`resolveSource({ caller: "stored", … })` — the project config, then the global one, then the default) and records that source in the config it may invent; accepting a per-run override would let it eject from one source while recording another. `CC_SOURCE` does not steer it either: the environment names a source at install time only.
+**Three refusals, all `EXIT_CODES.INVALID_ARGS`, all before anything is copied.**
+
+| Refusal                                                              | Where               | Message                                                                   |
+| -------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------- |
+| No `type` arg at all (the arg is `required: false`, so oclif allows) | `validateEjectType` | `Please specify what to eject: agent-partials, templates, skills, or all` |
+| A `type` the `options` list does not carry (`isEjectType` is false)  | `validateEjectType` | `Unknown eject type: <type>`                                              |
+| `--output` resolving to a path that exists **as a file**             | `resolveOutputBase` | `Output path exists as a file: <path>`                                    |
+
+**Where the bytes land, and the `--output` flag's own description is stale about it.** The flag
+declares `"Output directory (default: .claude/ in current directory)"`; `resolveOutputBase` returns
+`path.join(projectDir, CLAUDE_SRC_DIR)` — `.claude-src/`, not `.claude/` — and `eject skills`
+ignores that base entirely unless `--output` was given. Read the table, not the help text.
+
+| Eject type       | Without `--output`                                | With `--output <dir>`                        |
+| ---------------- | ------------------------------------------------- | -------------------------------------------- |
+| `agent-partials` | `<project>/.claude-src/agents/`                   | `<dir>/` itself — `directOutput`, no nesting |
+| `templates`      | `<project>/.claude-src/agents/_templates/`        | `<dir>/` itself                              |
+| `skills`         | `<project>/.claude/skills/` (`LOCAL_SKILLS_PATH`) | `<dir>/` itself                              |
+
+`--output` expands a leading `~` against `os.homedir()` before resolving, then resolves relative to
+`projectDir`. `all` runs `agent-partials`, then `templates` with `force` forced true, then `skills`.
+
+`eject` declares no `--marketplace` flag. It copies out of whatever source this installation reads (`resolveSource({ caller: "stored", … })` — the project config, then the global one, then the default) and records that source in the config it may invent; accepting a per-run override would let it eject from one source while recording another. `CC_SOURCE` does not steer it either: the environment names a source at install time only.
 
 **Key dependencies:** **Operation: `loadSource()`**. Uses `resolveSource()`, `loadProjectSourceConfig()` from configuration; `ensureBlankPair()`, `mutateGlobal()`, `writeProjectPartial()`, `lazyGateDeps()` from the config-gate; `copySkillsToLocalFlattened()` from skills.
 
@@ -362,7 +451,7 @@ The first is the whole point of the ordering: an unresolved skill or an uncompil
 
 ### `search` (src/cli/commands/search.ts)
 
-**Purpose:** Read-only catalog browse. Searches the marketplace this installation reads from, plus the local skills already on disk, by id, displayName, slug, description, or category. Prints a table via `@oclif/table` — `ID`, `Name`, `Source`, `Category`, `Description`, where `Source` is the skill's own `activeSource` name (`eject` for a skill on disk, the resolved marketplace otherwise), not a fixed label. Installing a found skill is the wizard's job (`init` / `edit`).
+**Purpose:** Read-only catalog browse. Searches the marketplace this installation reads from, plus the local skills already on disk, by id, displayName, slug, description, or category. Prints a table via `@oclif/table` whose five column headings are `ID`, `Name`, `Origin`, `Category`, `Description` — the third column's `key` is `source` and its rendered heading is `Origin`, so grep for one and read the other. `Origin` is the skill's own `activeSource` name (`eject` for a skill on disk, the resolved marketplace otherwise), not a fixed label; `activeSourceName` **throws** rather than guess when the tagging pass left a skill with no `activeSource`. `Description` is `truncateText`-ed to `MAX_DESCRIPTION_WIDTH`. Installing a found skill is the wizard's job (`init` / `edit`).
 
 **Args:**
 
@@ -373,6 +462,27 @@ The first is the whole point of the ordering: an unresolved skill or an uncompil
 **Flags:** None (`static flags = {}`) -- a zero-flag command that reads whatever source the installation is configured with.
 
 **Key dependencies:** **Operation: `loadSource()`**, and nothing else — the matrix it returns already carries the local skills merged in, so the whole catalog is one load. `printTable()` from `@oclif/table` renders it.
+
+### `share` (src/cli/commands/share.ts)
+
+**Purpose:** Turn the installation in the current directory into a configuration the agentsinc.sh store holds, and print the id it was given. The inverse of `init --from <id>`, and the only command that WRITES to the config store.
+
+**Args:** none. **Flags:** none (`static flags = {}`) — the installation in the cwd is the whole of the input.
+
+**Flow (`run`) — read, map, refuse, publish.** Everything that can fail locally fails before the POST: the store's write budget is the scarce half, and a write spent on a configuration that cannot be installed buys a dead link.
+
+1. `seedPayloadForInstallation(process.cwd())` (`src/cli/lib/seed/installation-payload.ts`) — the read, the ownership judgement, the content reading, the mapping and the empty guard, all five in one call. `{ ok: false, error }` -> `this.error(prepared.error, { exit: EXIT_CODES.ERROR })`. **`edit --ui` calls the same function**, so the two commands mint the same id from the same directory and differ only in the ending.
+2. `Sharing N skill(s) across M sub-agent(s)...` — counted off the PAYLOAD rather than the config, so what the command announces and what it posts cannot disagree.
+3. `publishSeedConfig(payload)` — `{ ok: false, error }` becomes `this.error(..., { exit: EXIT_CODES.ERROR })`.
+4. `reportShared(id)` — `Shared as <id>`, then both lines of `sharedConfigDestinations(id)`: `Install it:  npx agents-inc init --from <id>` and `Open it:     https://agentsinc.sh/?fromId=<id>`. An id nobody can act on is not a share, and exactly two things read one.
+
+**What `seedPayloadForInstallation` does, in order:** `loadProjectConfig(projectDir)` (the project's own config, or the global one it inherits, carrying **both scopes' entries with each entry's own scope on it**; `null` -> `ERROR_MESSAGES.NO_INSTALLATION`, a `ConfigLoadError` -> its own message) → `judgeSkill` per entry, dropping every ejected skill directory that carries no `forkedFrom` because it is the user's own work and no round trip owns it → `readCarriedSkills` over the ones that do, rebuilding each added skill's whole directory → `configToSeedPayload(config, content)`, whose throw becomes this module's `{ ok: false }` → the empty guard (`skills === 0 && agents === 0`, the same guard `init --from` applies on arrival).
+
+**Exit codes:** `EXIT_CODES.ERROR` for no installation, an unreadable config, an unshareable configuration, an empty selection, and any store failure. Success is `0`.
+
+**The id is the payload's own hash**, so re-sharing an unchanged installation returns the id it already had.
+
+**Key dependencies:** `seedPayloadForInstallation()` from `lib/seed/installation-payload.ts`; `publishSeedConfig()` from `lib/seed/publish-seed.ts`; `sharedConfigDestinations` from `utils/messages.ts`. It uses **no operation** — nothing is loaded, compiled or written locally. Full mapping and wire detail: [`reference/features/seed-contract.md`](../features/seed-contract.md).
 
 ### `uninstall` (src/cli/commands/uninstall.tsx)
 
@@ -397,19 +507,23 @@ The first is the whole point of the ordering: an unresolved skill or an uncompil
 
 **Removal plan.** `buildRemovalPlan(target)` is the single pure builder shared by `printRemovalPlan` (plain text) and the `UninstallConfirm` Ink component, so both emit byte-identical strings and only add their own indentation/styling. It returns two halves: the `sections` this run promises to remove, and the `kept` statements naming what it deliberately leaves behind. A section header is a promise about the items beneath it, so a section left with nothing to carry is not emitted at all (`sectionWithItems`). Sections, in order:
 
-| Section              | Emitted when                                      | Items                                                                                                                 |
-| -------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `Plugins:`           | `hasPlugins`                                      | `cliPluginNames`                                                                                                      |
-| `CLI-managed files:` | either item below survives its own condition      | `<skillsDir>/ (matching sources)` when `hasLocalSkills`; `<agentsDir>/ (CLI-compiled)` when `canRemoveCompiledAgents` |
-| `Config:`            | `hasClaudeSrcConfig \|\| hasClaudeSrcConfigTypes` | `<claudeSrcDir>/config.ts`, `<claudeSrcDir>/config-types.ts`                                                          |
+| Section              | Emitted when                                      | Items                                                                                                                        |
+| -------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Plugins:`           | `hasPlugins`                                      | `cliPluginNames`                                                                                                             |
+| `CLI-managed files:` | either item below survives its own condition      | `<skillsDir>/ (matching sources)` when `hasLocalSkills`; `<agentsDir>/ (CLI-compiled)` when `compiledAgentsEntry` yields one |
+| `Config:`            | `hasClaudeSrcConfig \|\| hasClaudeSrcConfigTypes` | `<claudeSrcDir>/config.ts`, `<claudeSrcDir>/config-types.ts`                                                                 |
 
-**The compiled-agents item is gated on the executor's own predicate.** `canRemoveCompiledAgents(target)` is `hasLocalAgents && configuredAgents.length > 0` -- exactly what `removeMatchingAgents` requires before it deletes anything. A run with no configuration it can read cannot say which agent files this CLI compiled, so it leaves every one of them; the plan therefore drops the item and prints `compiledAgentsKept(agentsDir)` (`utils/messages.ts`) as its one `kept` statement instead:
+**Two authorities identify a compiled agent, in order.** `identifiableAgents(target)` returns `target.configuredAgents` when the configuration names any, and `target.markedAgents` otherwise. The configuration is first because a marker-less file it names is still this CLI's — every install predating the provenance marker is in exactly that state. The marker is the fallback, reached when there is no configuration left to read: provably this CLI's output, whoever lost the config. With neither, `compiledAgentsEntry` yields nothing and the plan carries no agent removal at all.
+
+**The marker is the sweep's whole basis, and the split errs one way by construction.** `splitAgentsByProvenance(agentsDir)` (`src/cli/lib/agents/list-compiled-agents.ts`) reads every `*.md` in the directory and partitions it by `hasProvenanceMarker`. A file that cannot be read yields no marker and lands in `unmarked`, because "cannot prove it is ours" and "is not ours" call for the same answer. The marker itself is documented under [`reference/features/compilation-pipeline.md`](../features/compilation-pipeline.md).
+
+**Both halves are stated.** `keptStatements(target, agentRemovals)` derives the kept list FROM the removal rather than from a second reading of the target, so the two halves of one plan cannot contradict each other — an agent named in both lists would be a promise to remove a file the same plan calls kept. Unmarked agents the removal does not claim produce `unmarkedAgentsKept(agentsDir, count)` (`utils/messages.ts`):
 
 ```
-Kept compiled agents in <agentsDir>/ — identifying which of them this CLI compiled needs the configuration, and this run has none it could read.
+Kept N agents in <agentsDir>/ — no agents-inc marker, so this CLI did not compile them.
 ```
 
-Plugins already degraded this way -- `cliPluginNames` is the intersection with a config nobody can read, so it comes back empty and `Plugins:` is not emitted. The agents item did not: it keyed off `hasLocalAgents`, bare directory existence, and so promised a directory the same run then left untouched. Pinned by `e2e/commands/uninstall-corrupt-config.e2e.test.ts`. Removing those agents without a config is a separate question and is **not** what this does -- the files still stay.
+Plugins degrade the same way -- `cliPluginNames` is the intersection with a config nobody can read, so it comes back empty and `Plugins:` is not emitted. The agents item once keyed off `hasLocalAgents`, bare directory existence, and so promised a directory the same run then left untouched. Pinned by `e2e/commands/uninstall-corrupt-config.e2e.test.ts` and `e2e/commands/uninstall-marker-sweep.e2e.test.ts`.
 
 **`executeUninstall` order (scope-dependent):**
 
@@ -442,7 +556,7 @@ Could not read the project config — plugins and compiled agents it lists may b
 
 An unreadable config is then treated exactly like a **missing** one (`null`), so the run continues, removes the manifest, and exits 0. Only the _plan_ degrades -- the plugins and compiled agents the config named can no longer be identified, while file removal proceeds.
 
-Previously a `ConfigLoadError` escaped `run()` and killed the command precisely when the config was unreadable -- that is, exactly when a user most needs to uninstall; the only way out was to hand-delete `.claude-src/`. This closes the corrupt-**project**-config path alongside the corrupt-**global**-config path deregistration already handled (above). Both call sites hold the same posture; see `reference/features/configuration.md` -> `ConfigLoadError` call-site posture table.
+**Do not let a `ConfigLoadError` escape `run()` here.** An unreadable config is exactly when a user most needs to uninstall, and letting the error through kills the command at that moment — leaving hand-deleting `.claude-src/` as the only way out. The corrupt-**project**-config path and the corrupt-**global**-config path deregistration hold the same posture; see `reference/features/configuration.md` -> `ConfigLoadError` call-site posture table.
 
 **Global uninstall -- registered-project propagation.** Two halves:
 
@@ -453,13 +567,13 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 
 **Exported for testing (`@internal`):** `UninstallTarget` type, `getCliInstalledPluginKeys(config)`, `uninstallPlugins(target, projectDir, onUninstalled?)`.
 
-**Key dependencies:** `listPluginNames()`, `getProjectPluginsDir()`, `buildMarketplacePluginRef()`, `parseMarketplacePluginRef()`, `toClaudePluginScope()` from plugins. `readForkedFromMetadata()` from skills. `loadProjectConfigFromDir()` from configuration. `lazyGateDeps()`, `mutateGlobal()`, `propagateGlobalRemoval()` from the config-gate. `isHomeDirectory()`, `resolveInstallPaths()` from installation. `loadSkillsMatrixFromSource()` from loading. **Operation: `loadAgentDefs()`**. `listAgentMdFiles()` from agents. `claudePluginUninstallBestEffort()`, `isClaudeCLIAvailable()` from exec. `promptConfirm()` from `components/common/prompt-confirm.tsx`, `Confirm` from `components/common/confirm.tsx`. `registeredProjectsUpdated()`, `registeredProjectUpdateSkipped()`, `registeredProjectsUpdateFailed()` from `utils/messages.ts`.
+**Key dependencies:** `listPluginNames()`, `getProjectPluginsDir()`, `buildMarketplacePluginRef()`, `parseMarketplacePluginRef()`, `toClaudePluginScope()` from plugins. `readForkedFromMetadata()` from skills. `loadProjectConfigFromDir()` from configuration. `lazyGateDeps()`, `mutateGlobal()`, `propagateGlobalRemoval()` from the config-gate. `isHomeDirectory()`, `resolveInstallPaths()` from installation. `loadSkillsMatrixFromSource()` from loading. **Operation: `loadAgentDefs()`**. `listAgentMdFiles()` and `splitAgentsByProvenance()` from agents. `claudePluginUninstallBestEffort()`, `isClaudeCLIAvailable()` from exec. `promptConfirm()` from `components/common/prompt-confirm.tsx`, `Confirm` from `components/common/confirm.tsx`. `registeredProjectsUpdated()`, `registeredProjectUpdateSkipped()`, `registeredProjectsUpdateFailed()` from `utils/messages.ts`.
 
 ### `update` (src/cli/commands/update.ts)
 
 **Purpose:** Run Claude's own marketplace update for every marketplace this installation uses, and nothing else.
 
-**Args:** none. **Flags:** none — `static flags = {}`. A plain refresh confirms nothing and reads no skills source, so neither `--yes` nor `--source` has anything to mean.
+**Args:** none. **Flags:** none — `static flags = {}`. A plain refresh confirms nothing and reads no skills source, so neither `--yes` nor a marketplace flag has anything to mean.
 
 **Flow (`run`):**
 
@@ -484,7 +598,7 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 
 **Purpose:** Generate marketplace.json from built plugins for plugin distribution.
 
-**Flags:** no `--source` -- it reads from the local plugins directory, not a remote source.
+**Flags:** no `--marketplace` -- it reads from the local plugins directory, not a remote one.
 
 | Flag          | Short | Type    | Description                                              |
 | ------------- | ----- | ------- | -------------------------------------------------------- |
@@ -493,13 +607,38 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 | --output      | -o    | string  | Output file (default: `.claude-plugin/marketplace.json`) |
 | --verbose     | -v    | boolean | Enable verbose logging                                   |
 
-**Key dependencies:** `generateMarketplace()`, `writeMarketplace()`, `getMarketplaceStats()` from marketplace-generator.
+**Identity comes from `package.json` in the cwd, and three refusals guard the read** — all in
+`loadMarketplaceIdentity`, all `EXIT_CODES.ERROR`, all before a plugin is scanned. Each names the
+path and repeats that identity is read from `package.json`, because a marketplace author running
+this from the wrong directory is the only way to reach any of them.
+
+| Refusal                                                                  | Message shape                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| No readable `package.json` at the cwd                                    | `Missing package.json at <root>. …`                                 |
+| `JSON.parse` throws                                                      | `Failed to parse package.json at <path>: <cause>`                   |
+| `packageJsonSchema.safeParse` fails (name, version, description, author) | `package.json at <path> is missing required fields: <dotted paths>` |
+
+`parseAuthor(author)` then splits the owner name from an optional email, and `ownerEmail` is omitted
+from the identity rather than emitted empty when there is none.
+
+**Two namespace refusals, in this order.** Both live in `src/cli/lib/marketplace-generator.ts` and both exit `EXIT_CODES.ERROR`.
+
+| Guard                                    | When it runs                                         | What it refuses                                                                                                                       |
+| ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `validateMarketplaceName(name, pkgName)` | While loading identity, before any plugin is scanned | A marketplace claiming a RESERVED name — `agents-inc`, `external` or `local`                                                          |
+| `validateSkillIdNamespace(marketplace)`  | After the scan, before `marketplace.json` is written | A marketplace shipping a skill id that does not begin `<marketplace-name>-`; the message lists up to 10, each with the id it expected |
+
+**The public catalogue is exempt by PACKAGE IDENTITY, not by the name it claims.** `validateMarketplaceName` compares package.json's own `name` against `PUBLIC_CATALOGUE_PACKAGE` (`@agents-inc/skills` in `src/cli/consts.ts`) and lets only that package hold a reserved name. `validateSkillIdNamespace` then reads its exemption off `marketplace.name === DEFAULT_PUBLIC_SOURCE_NAME` — safe **only because the first guard ran and let nothing but the catalogue's own package hold that name**. The two are a pair, in that order; separating them would exempt exactly the marketplace the second guard exists to catch.
+
+`--name` is validated by `validateKebabCaseName` first (exit `EXIT_CODES.INVALID_ARGS`), then takes the reserved-name check like any other resolved name. The load-side half of the same rule — a custom marketplace whose ids collide with the catalogue's, refused at load rather than at build — is [`reference/features/source-fetch-and-cache.md`](../features/source-fetch-and-cache.md).
+
+**Key dependencies:** `generateMarketplace()`, `writeMarketplace()`, `getMarketplaceStats()`, `validateMarketplaceName()`, `validateSkillIdNamespace()` from marketplace-generator; `validateKebabCaseName()` from `lib/validate-kebab-name.ts`.
 
 ### `build plugins` (src/cli/commands/build/plugins.ts)
 
 **Purpose:** Build skills and agents into standalone plugins. Skills directory is read from the `DIRS.skills` constant; not configurable via flag.
 
-**Flags:** no `--source` -- `build plugins` reads from local `DIRS.skills`, not a remote source.
+**Flags:** no `--marketplace` -- `build plugins` reads from local `DIRS.skills`, not a remote one.
 
 | Flag         | Short | Type    | Description                                |
 | ------------ | ----- | ------- | ------------------------------------------ |
@@ -513,6 +652,50 @@ Previously a `ConfigLoadError` escaped `run()` and killed the command precisely 
 **Key dependencies:** `compileAllSkillPlugins()`, `compileSkillPlugin()`, `printCompilationSummary()` from skills. `compileAllAgentPlugins()`, `printAgentCompilationSummary()` from agents. `readPluginManifest()` from plugins. `listDirectories()`, `remove()` from `utils/fs`.
 
 > **`build stack` was removed.** Only `build marketplace` and `build plugins` exist under `src/cli/commands/build/`; stack-to-plugin compilation goes through the marketplace/plugins build pipeline.
+
+## New Subcommands
+
+`src/cli/commands/new/` holds exactly one file. `new skill` and `new agent` do **not** exist and exit
+`127`; `new marketplace` does, and the `new` topic in `--help` is its topic.
+
+### `new marketplace` (src/cli/commands/new/marketplace.ts)
+
+**Purpose:** Scaffold a directory holding everything the CLI needs to read a marketplace — a
+`package.json` carrying its identity, the three config files, and one example skill already named in
+the marketplace's own namespace. **It scaffolds only**: publishing is `build plugins` then
+`build marketplace`.
+
+**Args:**
+
+| Arg  | Required | Description                                                                                                                           |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| name | yes      | Marketplace name (kebab-case). Becomes the directory under the cwd, the `package.json` name, and the prefix every skill id must carry |
+
+**Flags:** none — the class declares no `static flags` at all, so oclif gives it `{}`. There is
+deliberately **no `--force`**: a flag that overwrites an author's own files is the destructive half
+of a silent fallback, and both ways past the occupied-directory refusal are one step.
+
+**Flow (`run`) — refuse, refuse, write, report.** Both refusals run before `writeMarketplaceScaffold`
+is called, so a refused run leaves the target directory exactly as it found it.
+
+1. `refuseUnusableName(name)` — two checks in order:
+   - `validateKebabCaseName(name, "Marketplace")` -> `EXIT_CODES.INVALID_ARGS`
+   - `validateMarketplaceName(name, name)` -> `EXIT_CODES.ERROR`. The package.json this command is
+     about to write names the marketplace after itself, so the marketplace name **is** the package
+     name — which is what keeps the public catalogue's reserved-name exemption out of reach here.
+     Both are the same rules `build marketplace` enforces, enforced at creation instead.
+2. `refuseOccupiedDirectory(dir)` — `isDirectoryEmpty(dir)` passes; anything else is
+   `EXIT_CODES.ERROR` with `occupiedDirectoryError(dir)`. An absent directory counts as empty.
+3. `writeMarketplaceScaffold(dir, name)` — a throw goes through `this.handleError` (`EXIT_CODES.ERROR`).
+4. `reportCreated()` — `Created marketplace '<name>' at <dir>`, then one indented line per written path.
+5. `reportNextSteps()` — six numbered steps: `cd <name>`, replace the placeholder `author` in
+   `package.json`, replace `<SKILLS_DIR_PATH>/<exampleSkillId(name)>/` with a skill of your own,
+   `build plugins`, `build marketplace`, `init --marketplace <dir>`.
+
+**Key dependencies:** `writeMarketplaceScaffold()`, `exampleSkillId()` from
+`lib/marketplace-scaffold.ts`; `validateMarketplaceName()` from `lib/marketplace-generator.ts`;
+`validateKebabCaseName()` from `lib/validate-kebab-name.ts`; `isDirectoryEmpty()` from `utils/fs`.
+It uses **no operation** — nothing is loaded, compiled or installed.
 
 ## Error Handling Pattern
 
@@ -532,60 +715,80 @@ For specific exit codes:
 this.error(message, { exit: EXIT_CODES.INVALID_ARGS });
 ```
 
-Exit codes defined in `src/cli/lib/exit-codes.ts`:
-
-- `SUCCESS: 0`
-- `ERROR: 1`
-- `INVALID_ARGS: 2`
-- `NETWORK_ERROR: 3`
-- `CANCELLED: 4`
+Exit codes are defined in `src/cli/lib/exit-codes.ts`. **Their names and values live in exactly one
+document — [`reference/utilities.md`](../utilities.md), which owns `lib/exit-codes.ts`.** This page
+names which code each command's refusals carry and never restates the table; a second writable copy
+of one list is the defect `standards/documentation-bible.md` § "A Count Lives in Exactly One
+Document" forbids. `EXIT_CODES` carries no `UNKNOWN_COMMAND` — oclif's `127` for an unparsed command
+comes from `@oclif/plugin-not-found`, and `e2e/pages/constants.ts` declares that one for the suite.
 
 ## User-Facing Messages
 
 All message constants centralized in `src/cli/utils/messages.ts`:
 
-Four constant objects, enumerated exhaustively:
+Six constant objects and one bare string constant, enumerated exhaustively:
 
-| Object             | Members                                                                                                                                                                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ERROR_MESSAGES`   | `UNKNOWN_ERROR`, `UNKNOWN_ERROR_SHORT`, `NO_INSTALLATION`, `NO_SKILLS_FOUND`, `VALIDATION_FAILED`, `FAILED_RESOLVE_SOURCE`, `FAILED_LOAD_AGENT_PARTIALS`, `FAILED_COMPILE_AGENTS`, `CLAUDE_CLI_NOT_FOUND`                                                                             |
-| `SUCCESS_MESSAGES` | `UNINSTALL_COMPLETE`, `INIT_SUCCESS`, `PLUGIN_COMPILE_COMPLETE`                                                                                                                                                                                                                       |
-| `STATUS_MESSAGES`  | `INSTALLING_PLUGINS`, `LOADING_SKILLS`, `LOADING_MARKETPLACE_SOURCE`, `RECOMPILING_AGENTS`, `COMPILING_AGENTS`, `DISCOVERING_SKILLS`, `RESOLVING_SOURCE`, `RESOLVING_MARKETPLACE_SOURCE`, `LOADING_AGENT_PARTIALS`, `FETCHING_REPOSITORY`, `COPYING_SKILLS`, `UPDATING_PLUGIN_SKILLS` |
-| `INFO_MESSAGES`    | `NO_CHANGES_MADE`, `RUN_COMPILE`, `NO_AGENTS_TO_RECOMPILE`, `NO_PLUGIN_INSTALLATION`, `NO_LOCAL_INSTALLATION`, `NOT_INSTALLED`, `CONFIG_TYPES_REFRESHED`, `EJECTED_SKILLS_USER_OWNED`, `NO_PLUGIN_MARKETPLACES`                                                                       |
+| Object                        | Members                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_MESSAGES`              | `UNKNOWN_ERROR`, `UNKNOWN_ERROR_SHORT`, `NO_INSTALLATION`, `NO_SKILLS_FOUND`, `VALIDATION_FAILED`, `FAILED_RESOLVE_SOURCE`, `FAILED_LOAD_AGENT_PARTIALS`, `FAILED_COMPILE_AGENTS`, `CLAUDE_CLI_NOT_FOUND`                                                                                                              |
+| `SUCCESS_MESSAGES`            | `UNINSTALL_COMPLETE`, `INIT_SUCCESS`, `PLUGIN_COMPILE_COMPLETE`                                                                                                                                                                                                                                                        |
+| `STATUS_MESSAGES`             | `INSTALLING_PLUGINS`, `LOADING_SKILLS`, `LOADING_MARKETPLACE_SOURCE`, `RECOMPILING_AGENTS`, `COMPILING_AGENTS`, `DISCOVERING_SKILLS`, `RESOLVING_SOURCE`, `RESOLVING_MARKETPLACE_SOURCE`, `LOADING_AGENT_PARTIALS`, `FETCHING_REPOSITORY`, `COPYING_SKILLS`, `UPDATING_PLUGIN_SKILLS`, `MARKETPLACE_HAS_NEWER_CONTENT` |
+| `INFO_MESSAGES`               | `NO_CHANGES_MADE`, `RUN_COMPILE`, `NO_AGENTS_TO_RECOMPILE`, `NO_PLUGIN_INSTALLATION`, `NO_LOCAL_INSTALLATION`, `NOT_INSTALLED`, `CONFIG_TYPES_REFRESHED`, `EJECTED_SKILLS_USER_OWNED`, `NO_PLUGIN_MARKETPLACES`                                                                                                        |
+| `UNINSTALL_PLAN`              | `PREVIEW_HEADING`, `PLUGINS_HEADING`, `CLI_MANAGED_FILES_HEADING`, `CONFIG_HEADING` — read by BOTH the `--yes` printer and the confirm UI, so the preview a user approves and the list a `--yes` run prints cannot drift apart                                                                                         |
+| `SHARED_CONFIG_APPLY`         | `PREVIEW_HEADING`, `SKILLS_HEADING`, `AGENTS_HEADING`, `GLOBAL_SKILLS_HEADING`, `GLOBAL_AGENTS_HEADING`, `NOTHING_REMOVED`, `CONFIRM` — the fixed text of `edit --from`'s removal plan; the two `GLOBAL_*` headings are emitted only by the project-scope plan                                                         |
+| `SHARED_CONFIG_ONE_DIRECTION` | A single string, not an object: the refusal when `edit --ui` and `edit --from` are asked for at once                                                                                                                                                                                                                   |
 
 The same module exports these **message builder functions** for messages that interpolate a count, path, name or reason. No other function is exported from it:
 
-| Function                                 | Called from            | Purpose                                                                                  |
-| ---------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
-| `pluginsInstalled(count)`                | `base-command.ts`      | Summary after a plugin install step                                                      |
-| `propagatedRecompileSummary(...)`        | `base-command.ts`      | `Recompiled agents in N registered projects, M unchanged`, with its ` (K failed)` suffix |
-| `configUnreadableError(...)`             | `base-command.ts`      | The `ensureConfigReadable` refusal, naming the file, the reason and two ways forward     |
-| `recompileSummary(...)`                  | `edit`, `compile`      | Per-run agent recompile summary                                                          |
-| `globalScopedAgentsHint(count)`          | `compile`              | Names the global-scoped agent count after a zero-agent project pass                      |
-| `configTypesRefreshFailed(reason)`       | `compile`              | Warns that `config-types.ts` unions may be stale                                         |
-| `skillMetadataUnusableDetail(entry)`     | `compile`, `edit`      | One logged `<dir> — <path>` + reason line per unusable `metadata.yaml`                   |
-| `skillMetadataUnusableError(entries)`    | `compile`              | `compile`'s refusal, naming the skills it discovered                                     |
-| `savedSkillMetadataUnusableError(...)`   | `base-command.ts`      | `ensureSavedSkillsReadable`'s pre-wizard refusal over a SAVED entry's installed skill    |
-| `marketplacesRefreshed(count)`           | `update`               | Summary after refreshing every configured marketplace                                    |
-| `marketplaceRefreshFailed(name, reason)` | `update`               | Warns one marketplace that would not refresh                                             |
-| `marketplacesRefreshFailed(names)`       | `update`               | The hard error naming every marketplace that failed                                      |
-| `registeredProjectsUpdated(count)`       | `uninstall`            | Summary after pruning registered projects                                                |
-| `registeredProjectUpdateSkipped(path)`   | `compile`, `uninstall` | Warns one unreachable registered project                                                 |
-| `registeredProjectsUpdateFailed(reason)` | `uninstall`            | Warns that no registered project could be updated                                        |
-| `sharedConfigExistingInstall(...)`       | `init`                 | The `--from` refusal on an existing project installation                                 |
-| `sharedConfigGlobalInstall(...)`         | `init`                 | The `--from` refusal on a blocking global installation                                   |
+| Function                                 | Called from                     | Purpose                                                                                                                  |
+| ---------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `pluginsInstalled(count)`                | `base-command.ts`               | Summary after a plugin install step                                                                                      |
+| `localSkillsCopied(count)`               | `edit`                          | Summary after copying eject-source skills                                                                                |
+| `skillAssignedToNoAgent(skillId)`        | `base-command.ts`               | Warns a skill that installed but reached no sub-agent's stack                                                            |
+| `scopeBlockedStackAssignment(...)`       | `base-command.ts`, `compile`    | Warns the `(skill, sub-agent)` pairs the scope filter dropped                                                            |
+| `sourceUnreachableUsingCache(source)`    | `lib/loading/source-fetcher.ts` | Warns that an unreachable marketplace is being served from cache                                                         |
+| `propagatedRecompileSummary(...)`        | `base-command.ts`               | `Recompiled agents in N registered projects, M unchanged`, with its ` (K failed)` suffix                                 |
+| `configUnreadableError(...)`             | `base-command.ts`               | The `ensureConfigReadable` refusal, naming the file, the reason and two ways forward                                     |
+| `recompileSummary(...)`                  | `edit`, `compile`               | Per-run agent recompile summary                                                                                          |
+| `globalScopedAgentsHint(count)`          | `compile`                       | Names the global-scoped agent count after a zero-agent project pass                                                      |
+| `configTypesRefreshFailed(reason)`       | `compile`                       | Warns that `config-types.ts` unions may be stale                                                                         |
+| `skillMetadataUnusableDetail(entry)`     | `compile`, `edit`               | One logged `<dir> — <path>` + reason line per unusable `metadata.yaml`                                                   |
+| `skillMetadataUnusableError(entries)`    | `compile`                       | `compile`'s refusal, naming the skills it discovered                                                                     |
+| `savedSkillMetadataUnusableError(...)`   | `base-command.ts`               | `ensureSavedSkillsReadable`'s pre-wizard refusal over a SAVED entry's installed skill                                    |
+| `marketplacesRefreshed(count)`           | `update`                        | Summary after refreshing every configured marketplace                                                                    |
+| `marketplaceRefreshFailed(name, reason)` | `update`                        | Warns one marketplace that would not refresh                                                                             |
+| `marketplacesRefreshFailed(names)`       | `update`                        | The hard error naming every marketplace that failed                                                                      |
+| `registeredProjectsUpdated(count)`       | `uninstall`                     | Summary after pruning registered projects                                                                                |
+| `registeredProjectUpdateSkipped(path)`   | `compile`, `uninstall`          | Warns one unreachable registered project                                                                                 |
+| `registeredProjectsUpdateFailed(reason)` | `uninstall`                     | Warns that no registered project could be updated                                                                        |
+| `sharedConfigExistingInstall(...)`       | `init`                          | The `--from` refusal on an existing project installation                                                                 |
+| `sharedConfigGlobalInstall(...)`         | `init`                          | The `--from` refusal on a blocking global installation                                                                   |
+| `sharedConfigProjectScopeAtHome(...)`    | `init`, `edit`                  | The `--from` refusal on project-scoped payload content at the home directory, naming every offending skill and sub-agent |
+| `sharedConfigNeedsTerminal(id)`          | `edit`                          | The `--from` refusal when there is no TTY to confirm the removals at; names `init --from` as the headless alternative    |
+| `sharedConfigDestinations(id)`           | `share`, `edit --ui`            | The two lines an id is actionable through: `init --from <id>`, and the editor URL                                        |
+| `skippedUnknownSkills(skillIds)`         | `init`, `edit`                  | Names the payload skill ids this catalog does not know, rather than counting them                                        |
+| `skippedUnknownAgents(agentNames)`       | `init`, `edit`                  | The sub-agent half, judged against `AGENT_NAMES`                                                                         |
+| `carriedSkillsWritten(skillIds)`         | `init`, `edit`                  | Names the skills a shared configuration carried inline and this run wrote to disk                                        |
+| `globallyInstalledRemoved(...)`          | `edit --from`                   | The removal plan's consequence line for global entries a project run removes, naming the projects it reaches             |
+| `authoredHereKept(skillIds)`             | `edit --from`                   | The removal plan's kept half for skills written here, which no shared configuration ever carried                         |
+| `unplaceableKept(skillIds)`              | `edit --from`                   | The removal plan's kept half for skills this configuration names and this catalogue cannot place                         |
+| `unmarkedAgentsKept(agentsDir, count)`   | `uninstall`                     | Reports the agents left in place because they carry no `agents-inc` marker                                               |
+| `localSkillsRemoval(skillsDir)`          | `uninstall`                     | One plan line naming the skills directory the uninstall will clear                                                       |
+| `compiledAgentsRemoval(agentsDir)`       | `uninstall`                     | One plan line naming the agents directory the uninstall will clear                                                       |
 
 ## Operations Layer Usage by Command
 
-| Command     | Operations Used                                                                                                                                                                                                                                                      |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`      | `loadSource`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (plugin install via `installPluginSkillsReported`, marketplace via `requireMarketplaceOrExit`)                                           |
-| `edit`      | `detectProject`, `loadSource`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (plugin install via `installPluginSkillsReported`, marketplace via `requireMarketplaceOrExit`) |
-| `compile`   | `detectBothInstallations`, `loadAgentDefs`, `compileAgents`, `discoverInstalledSkills`                                                                                                                                                                               |
-| `doctor`    | `detectProject`, `loadSource`                                                                                                                                                                                                                                        |
-| `eject`     | `loadSource`                                                                                                                                                                                                                                                         |
-| `search`    | `loadSource`                                                                                                                                                                                                                                                         |
-| `update`    | (none -- wraps `claude plugin marketplace update` via `utils/exec`, reading its marketplace list from `loadProjectConfig`)                                                                                                                                           |
-| `list`      | (none -- uses installation, configuration, plugins directly)                                                                                                                                                                                                         |
-| `uninstall` | `loadAgentDefs` (global-uninstall propagation prep; everything else via lib functions directly)                                                                                                                                                                      |
-| `build *`   | (none -- uses skill/agent compilers directly)                                                                                                                                                                                                                        |
+| Command     | Operations Used                                                                                                                                                                                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`      | `loadSource`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs` (plugin install via `installPluginSkillsReported`, marketplace via `requireMarketplaceOrExit`)                                                                   |
+| `edit`      | `detectProject`, `loadSource`, `uninstallPluginSkills`, `copyLocalSkills`, `writeProjectConfig`, `compileAgentsAllScopes`, `discoverInstalledSkills`, `loadAgentDefs`, `removeCompiledAgents` (plugin install via `installPluginSkillsReported`, marketplace via `requireMarketplaceOrExit`) |
+| `compile`   | `detectBothInstallations`, `loadAgentDefs`, `compileAgents`, `discoverInstalledSkills`                                                                                                                                                                                                       |
+| `doctor`    | `detectProject`, `loadSource`                                                                                                                                                                                                                                                                |
+| `eject`     | `loadSource`                                                                                                                                                                                                                                                                                 |
+| `search`    | `loadSource`                                                                                                                                                                                                                                                                                 |
+| `share`     | (none -- `seedPayloadForInstallation` reads and maps; nothing is loaded, compiled or written locally)                                                                                                                                                                                        |
+| `update`    | (none -- wraps `claude plugin marketplace update` via `utils/exec`, reading its marketplace list from `loadProjectConfig`)                                                                                                                                                                   |
+| `list`      | (none -- uses installation, configuration, plugins directly)                                                                                                                                                                                                                                 |
+| `uninstall` | `loadAgentDefs` (global-uninstall propagation prep; everything else via lib functions directly)                                                                                                                                                                                              |
+| `build *`   | (none -- uses skill/agent compilers directly)                                                                                                                                                                                                                                                |
+| `new *`     | (none -- `writeMarketplaceScaffold` writes the tree directly)                                                                                                                                                                                                                                |

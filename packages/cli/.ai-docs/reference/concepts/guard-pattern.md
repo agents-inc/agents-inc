@@ -122,11 +122,13 @@ Both arms additionally require `!isEditingFromGlobalScope`.
 
 **Trigger:** Pressing `S` on a focused project-scoped `eject` skill.
 
-**Guard condition:** `config.scope === "project" && config.source === EJECT_SOURCE` AND a non-excluded global eject entry exists in `installedSkillConfigs` AND no excluded tombstone for the same skill id is present in `skillConfigs`.
+**Guard condition:** `config.scope === "project" && config.origin === EJECT_SOURCE` AND a non-excluded global eject entry exists in `installedSkillConfigs` (its `origin` likewise compared against `EJECT_SOURCE`) AND no excluded tombstone for the same skill id is present in `skillConfigs`.
+
+**The field on `SkillConfig` is `origin`, not `source`.** `SkillReference.source` — the compiler-side twin threaded onto each reference by `buildCompileAgents` — is a different declaration carrying the same value, so a grep for one name misses every site that spells it the other.
 
 **Outcome:** Toast — `"Already exists as ejected skill at global scope"`.
 
-**Undo path:** When an excluded tombstone for the same skill id is present, the guard allows the toggle. The tombstone proves this is an undo of a prior G→P, not a fresh collision. See [tombstone-pattern.md](./tombstone-pattern.md) "`toggleSkillScope` / `toggleAgentScope` — `s` Is the Sole Dual-Scope Toggle". Because a live `[P][G]` pair always carries the excluded global tombstone, a reopened dual-scope eject pair reaches this check but is allowed via the undo path — `s` collapses it to `[G]` (removed the pre-emptive persisted-pair guard that used to short-circuit before this check).
+**Undo path:** When an excluded tombstone for the same skill id is present, the guard allows the toggle. The tombstone proves this is an undo of a prior G→P, not a fresh collision. See [tombstone-pattern.md](./tombstone-pattern.md) "`toggleSkillScope` / `toggleAgentScope` — `s` Is the Sole Dual-Scope Toggle". Because a live `[P][G]` pair always carries the excluded global tombstone, a reopened dual-scope eject pair reaches this check but is allowed via the undo path — `s` collapses it to `[G]`. No guard short-circuits ahead of this check.
 
 **Tombstone side effects** (on successful toggle, not part of the guard):
 
@@ -139,10 +141,16 @@ Both arms additionally require `!isEditingFromGlobalScope`.
 
 **Guard conditions (silent returns):**
 
-- `isEditingFromGlobalScope === true` — return current state, no state change.
+- `isEditingFromGlobalScope === true` — return current state, no state change. This is the first line of both actions.
 - No non-excluded config found for the target id/name — return current state.
 
 **Outcome:** Silent no-op. These catch direct action calls that bypass the hotkey layer's toast.
+
+**The first condition is also what keeps the home root global-only**, together with
+`createDefaultSkillConfig`, which mints `scope: "global"` — so an untouched pick at `$HOME` is
+already correct and the toggle that could spoil it declines to run. See
+[`scope-system.md`](./scope-system.md) § The Global Root Holds Only Global-Scoped Content for the
+other four producers of the same rule.
 
 ### 9. Ownership-Aware Skill Removal (`applySkillRemoval`)
 
@@ -206,7 +214,7 @@ Two rules in this codebase resolve the _same shape_ of conflict — one exclusiv
 
 ## Silent Guards and Race Surfaces
 
-**The Scenario B race class** (from finding `2026-04-21-e2e-build-step-keypress-missing-stable-render.md` and `2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md`): when a keypress handler dispatches an action that bails silently because store state hasn't finished committing, the user sees nothing — the keystroke is swallowed.
+**The Scenario B race class** (from finding `2026-04-21-e2e-build-step-keypress-missing-stable-render.md`): when a keypress handler dispatches an action that bails silently because store state hasn't finished committing, the user sees nothing — the keystroke is swallowed.
 
 **Fix A landed for the skill path** (`2026-07-19-async-post-mount-seed-read-by-sync-input-handler.md`, resolved): `focusedSkillId` is now seeded **synchronously** in the store by `seedFocusedSkillForActiveDomain` (called at hydrate, `setStep("build")`, and every domain transition), and CategoryGrid's fire-once post-mount seed `useEffect` was deleted. The build-step surface below is therefore no longer a live race. The **agents step** (`focusedAgentId`, still seeded by a post-mount `useEffect` in `step-agents.tsx`) is the remaining surface.
 
@@ -257,7 +265,7 @@ Two properties of the predicate are load-bearing:
 - **It keys on the `(id, scope)` SLOT, never on the id.** An id legitimately occupies slots at both scopes at once. A global install adopted at project scope renders a locked global row AND an editable project row, and `step-sources.tsx` threads that project row's scope into the call; an id-keyed gate would freeze the half the project owns.
 - **It reads the hydration SNAPSHOT, never the live entry's scope.** `installedSkillConfigs` is `null` during a first `init`, and a global-scope skill added this session is nobody's install yet. A gate testing `scope === "global"` alone would freeze the Sources step for every fresh install.
 
-**What still reaches `recordGlobalSourceMigrations`, and why it stays.** One residual path: commit an install-mode change on the PROJECT half of a `[P][G]` pair, then collapse the pair P→G with `s` in the same session. The entry is the project's own when configured and global when written, so the migration is real and the global config must record it. Its docstring's former claim that "driving a global-scope migration from a project directory is a supported flow" is void — see `.ai-docs/agent-findings/2026-07-20-project-context-edit-lacked-scope-authority-gate.md` and `2026-07-20-scope-authority-must-follow-work-performed.md`, whose "remaining half" this closes.
+**What still reaches `recordGlobalSourceMigrations`, and why it stays.** One residual path: commit an install-mode change on the PROJECT half of a `[P][G]` pair, then collapse the pair P→G with `s` in the same session. The entry is the project's own when configured and global when written, so the migration is real and the global config must record it. Its docstring's former claim that "driving a global-scope migration from a project directory is a supported flow" is void — a project-context edit may not record a global-scope migration it did not perform; authority follows the work actually performed, and only the ids a run migrated are restored. See `.ai-docs/agent-findings/2026-07-20-scope-authority-must-follow-work-performed.md`, whose "remaining half" this closes.
 
 ## Guard vs Toast Flow
 

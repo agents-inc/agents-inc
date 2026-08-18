@@ -137,7 +137,9 @@ export const DOMAINS = [
 export type Domain = (typeof DOMAINS)[number];
 ```
 
-9 members. Re-exported from `src/cli/types/matrix.ts`.
+Re-exported from `src/cli/types/matrix.ts`. Member count is owned by
+[type-system.md](../type-system.md) ("Counts") — the block above is the union verbatim, so the count
+is readable from it and is deliberately not restated.
 
 ### Category (`src/cli/types/generated/source-types.ts`)
 

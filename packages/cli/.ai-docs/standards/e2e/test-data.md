@@ -47,8 +47,10 @@ A fixture that writes a file no product path produces cannot fail for a reason t
 - **Never write an incomplete `metadata.yaml` by omission.** `renderIncompleteMetadataYaml(fields, ["category"])` is the only way to produce one, and it exists so an error-path fixture has to ask for the breakage by name.
 - **Never fake an error state with unrealistic content when a realistic setup produces the same state.** 82 of 100 `renderMetadataYaml` call sites once wrote metadata no product path produces; six specs across four files turned out to depend on that, having made a skill "unresolvable" by installing it with metadata the loader could not use.
 - **A fixture writer that already holds a field must write it.** Two writers dropped `category`, `slug` and `displayName` that their own `TestSkill` carried.
+- **A fixture's `metadata.yaml` must satisfy the same schema the product enforces, and a skill's display name is not its id.** `doctor`'s content layer validates every installed `metadata.yaml` against `skillMetadataBaseSchema`, which bounds `displayName` at 30 characters because it is painted into a wizard grid column; an id is namespaced by its marketplace and is not bounded. Passing one as the other satisfies the type and violates the schema, and the failure lands in whichever spec happens to run `doctor` or `compile` rather than in the fixture. Write `E2E_SKILL.<slug>.display` — the title the fixture source publishes for that skill, which is what the grid paints and therefore also what `focusSkill` / `selectSkill` / `getScopeBadgesForSkill` address a row by.
 
-See `.ai-docs/agent-findings/2026-08-08-parseable-but-incomplete-skill-metadata-still-splits-the-two-compile-passes.md`.
+See `.ai-docs/agent-findings/2026-08-08-parseable-but-incomplete-skill-metadata-still-splits-the-two-compile-passes.md`
+and `.ai-docs/agent-findings/2026-08-16-a-fixture-wrote-its-skill-id-as-a-display-name-and-the-namespace-broke-the-bound.md`.
 
 ## DRY for Setup
 
@@ -83,6 +85,23 @@ The E2E source is an expensive fixture (creates 10 skills, 2 agents, 1 stack, te
 Returns `{ sourceDir, tempDir }`. The `tempDir` is the parent -- clean it up in `afterAll`.
 
 **`createE2EPluginSource(options?)`** -- Extends the above by building plugins and generating `marketplace.json`. Returns `{ sourceDir, tempDir, marketplaceName, pluginsDir }`.
+
+### A fixture source IS a custom marketplace, so its skill ids are namespaced
+
+**The bare ids in the table above are what the fixture publishes MINUS its namespace.** Every one is written to disk through `e2eSkillId(bare)` = `` `${E2E_MARKETPLACE_NAME}-${bare}` ``, and the load-side collision guard refuses any custom marketplace shipping an id the public catalogue owns. A fixture with bare public-catalogue ids does not load, and the refusal is correct — the fixture, not the guard, is what is wrong.
+
+| Rule                                                                                                                            | Why                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compose every fixture skill id through `e2eSkillId` / `E2E_SKILL.<slug>.id`, never by hand                                      | The prefix must EQUAL the marketplace name `build marketplace` reads from `package.json`; two surfaces spelling it separately is how they diverge |
+| Assert on `E2E_SKILL.<slug>.id`, not on a literal                                                                               | A marketplace rename moves every id and no slug                                                                                                   |
+| Slugs, categories and display titles are **not** namespaced                                                                     | A slug names the skill inside its own source; a title is what the wizard paints                                                                   |
+| Sub-agent names are **not** namespaced                                                                                          | The rule governs skill ids alone — marketplaces do not ship sub-agents                                                                            |
+| A fixture that deliberately MODELS the public catalogue declares itself with a `package.json` naming `PUBLIC_CATALOGUE_PACKAGE` | That is the only source entitled to ship bare catalogue ids, and package identity is the only signal the guard reads                              |
+| Installed / local skills stay bare                                                                                              | A local skill overriding a catalogue id is a supported path, not a marketplace claim, and the guard does not touch it                             |
+
+The unit layer has the same obligation through the same shape: `createTestSource()` writes a source directory that `loadSkillsMatrixFromSource()` then loads for real, and publishes its ids through `inTestMarketplace()` / `testMarketplaceSkillId()` in `src/cli/lib/__tests__/fixtures/create-test-source.ts`.
+
+**The fixture marketplace name must spell neither "marketplace" nor "source",** because ids are printed in command output (`search`'s `ID` column, `Installed <skill>@<marketplace>`) and an assertion about the CLI's own prose then passes or fails on the fixture. `E2E_MARKETPLACE_NAME` is `e2e-test-fixture` and `TEST_MARKETPLACE_NAME` is `test-fixture` for exactly this reason — see [assertions.md § A negated word assertion must not run against text the harness contributed to](./assertions.md).
 
 ### The fixture's cardinality is smaller than production's, and that changes bug signatures
 

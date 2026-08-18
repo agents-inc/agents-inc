@@ -13,14 +13,18 @@ keywords:
     cli-colors,
     diff-markers,
     ConfigLoadError,
+    catalog-json,
+    generated-at-build,
+    enumeration-drift,
   ]
 related:
   - reference/architecture-overview.md
   - reference/dependency-graph.md
-  - reference/test-infrastructure.md
+  - reference/testing/infrastructure.md
   - reference/component-patterns.md
   - reference/features/configuration.md
-last_validated: 2026-08-01
+  - reference/commands/index.md
+last_validated: 2026-08-18
 ---
 
 # Utilities Reference
@@ -37,6 +41,7 @@ All utilities in `src/cli/utils/`.
 | `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers + path containment     |
 | `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
 | `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders    |
+| `open-url.ts`     | `src/cli/utils/open-url.ts`     | Hand a link to the platform's link opener   |
 | `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`               |
 | `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear screen/scrollback + size-gate helpers |
 | `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
@@ -90,10 +95,19 @@ Spawns a child process with stdio piped. Returns `{ stdout, stderr, exitCode }`.
 
 ### Exported Types
 
-| Type              | Fields                             |
-| ----------------- | ---------------------------------- |
-| `ExecResult`      | `stdout`, `stderr`, `exitCode`     |
-| `MarketplaceInfo` | `name`, `source`, `repo?`, `path?` |
+Three, exhaustive — `exec.ts` exports no other type.
+
+| Type                  | Fields                             |
+| --------------------- | ---------------------------------- |
+| `ExecResult`          | `stdout`, `stderr`, `exitCode`     |
+| `ClaudeConfigOptions` | `configDir?`                       |
+| `MarketplaceInfo`     | `name`, `source`, `repo?`, `path?` |
+
+`ClaudeConfigOptions` is what pins the `claude` binary's own state for a caller that must not read
+the developer's real `~/.claude`: every config-touching wrapper takes it, and the E2E smoke suite
+(`e2e/smoke/home-isolation.smoke.test.ts`) passes one so a spec that spawns the third-party binary
+names the config directory it spawns against. Re-exported for tests from
+`e2e/helpers/test-utils.ts` alongside `MarketplaceInfo`.
 
 ### Claude CLI Wrappers
 
@@ -122,6 +136,40 @@ Wrappers that pass a user-controlled argument to the `claude` subprocess validat
 | `validatePluginName()`        | Validates plugin name string                                          |
 | `resolvePluginCwd()`          | Returns `os.homedir()` for `"user"` scope, projectDir for `"project"` |
 
+## Opening a Link
+
+### `src/cli/utils/open-url.ts`
+
+Hands a URL to whatever the platform opens links with. **No dependency backs this** — all three
+platforms are one-line shell-outs to something the operating system already ships.
+
+| Export                                | Signature                                      | Purpose                                                                           |
+| ------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `browserOpenerCommand(platform, url)` | `(NodeJS.Platform, string) => OpenerCommand`   | The command this platform opens a link with. Pure, so it is testable per-platform |
+| `openUrl(url)`                        | `(string) => Promise<OpenUrlResult>`           | Runs that command through `execCommand`                                           |
+| type `OpenerCommand`                  | `{ command: string; args: string[] }`          | The shell-out one platform answers with                                           |
+| type `OpenUrlResult`                  | `{ ok: true } \| { ok: false; error: string }` | **Never a throw** — see below                                                     |
+
+| `process.platform` | Command    | Args                       |
+| ------------------ | ---------- | -------------------------- |
+| `darwin`           | `open`     | `[url]`                    |
+| `win32`            | `cmd`      | `["/c", "start", "", url]` |
+| anything else      | `xdg-open` | `[url]`                    |
+
+**Windows goes through `cmd` because `start` is a shell builtin rather than a program**, and the
+empty string after it is `start`'s TITLE argument: without one, `start` reads the first quoted
+argument it is given as the window title and opens nothing.
+
+**The URL travels as its own argv entry and no shell is spawned.** `execCommand` spawns without a
+shell, so the argument vector is the whole of the injection guard — there is no string for a link
+to break out of.
+
+**Failure is reported, never thrown.** A machine with no browser, no desktop session or no opener
+at all is a legitimate place to run this CLI, and the link is already printed by the time this
+runs. A non-zero exit and a spawn error each produce their own `{ ok: false, error }` sentence.
+
+**Production consumer:** `src/cli/commands/edit.tsx` (`edit --ui`).
+
 ## Frontmatter
 
 ### `extractFrontmatter()` (`src/cli/utils/frontmatter.ts`)
@@ -140,22 +188,41 @@ Extracts YAML frontmatter delimited by a leading `---` fence and a closing `---`
 
 Wraps `fs-extra` and `fast-glob`:
 
-| Function             | Signature                                     | Purpose                                           |
-| -------------------- | --------------------------------------------- | ------------------------------------------------- |
-| `readFile()`         | `(filePath: string) => Promise<string>`       | Read file as UTF-8                                |
-| `readFileSafe()`     | `(filePath, maxSizeBytes) => Promise<string>` | Read with size limit (DoS prevention)             |
-| `readFileOptional()` | `(filePath, fallback?) => Promise<string>`    | Read or return fallback                           |
-| `fileExists()`       | `(filePath: string) => Promise<boolean>`      | Check file/dir existence                          |
-| `directoryExists()`  | `(dirPath: string) => Promise<boolean>`       | Check directory existence                         |
-| `listDirectories()`  | `(dirPath: string) => Promise<string[]>`      | List subdirectories                               |
-| `glob()`             | `(pattern, cwd) => Promise<string[]>`         | Fast-glob file matching                           |
-| `writeFile()`        | `(filePath, content) => Promise<void>`        | Write file (ensures parent dir)                   |
-| `ensureDir()`        | `(dirPath: string) => Promise<void>`          | Create directory recursively                      |
-| `remove()`           | `(filePath: string) => Promise<void>`         | Remove file/directory                             |
-| `copy()`             | `(src, dest) => Promise<void>`                | Copy file/directory                               |
-| `isPathWithin()`     | `(child: string, parent: string) => boolean`  | Lexical containment check (no symlink resolution) |
+| Function             | Signature                                       | Purpose                                                                 |
+| -------------------- | ----------------------------------------------- | ----------------------------------------------------------------------- |
+| `readFile()`         | `(filePath: string) => Promise<string>`         | Read file as UTF-8                                                      |
+| `readFileSafe()`     | `(filePath, maxSizeBytes) => Promise<string>`   | Read with size limit (DoS prevention)                                   |
+| `readFileOptional()` | `(filePath, fallback?) => Promise<string>`      | Read or return fallback                                                 |
+| `fileExists()`       | `(filePath: string) => Promise<boolean>`        | Check file/dir existence                                                |
+| `directoryExists()`  | `(dirPath: string) => Promise<boolean>`         | Check directory existence                                               |
+| `listDirectories()`  | `(dirPath: string) => Promise<string[]>`        | List subdirectories                                                     |
+| `glob()`             | `(pattern, cwd, { dot? }) => Promise<string[]>` | Fast-glob file matching (`onlyFiles: true`)                             |
+| `writeFile()`        | `(filePath, content) => Promise<void>`          | Write file (ensures parent dir)                                         |
+| `ensureDir()`        | `(dirPath: string) => Promise<void>`            | Create directory recursively                                            |
+| `remove()`           | `(filePath: string) => Promise<void>`           | Remove file/directory                                                   |
+| `isDirectoryEmpty()` | `(dirPath: string) => Promise<boolean>`         | True when the directory holds nothing **or** cannot be read at all      |
+| `removeDirIfEmpty()` | `(dir: string) => Promise<boolean>`             | Removes `dir` when it exists and holds nothing; returns whether it went |
+| `copy()`             | `(src, dest) => Promise<void>`                  | Copy file/directory                                                     |
+| `isPathWithin()`     | `(child: string, parent: string) => boolean`    | Lexical containment check (no symlink resolution)                       |
 
 `isPathWithin()` is a pure/synchronous path helper (does not touch the filesystem). Callers: `src/cli/lib/skills/skill-copier.ts`, `src/cli/lib/skills/local-skill-mover.ts`.
+
+**`removeDirIfEmpty()` measures FILESYSTEM emptiness, never roster emptiness.** A scope directory
+(`.claude/skills/`, `.claude/agents/`) is an artefact of what it holds, so the removal that empties
+it takes it too — but a hand-authored agent or any other user-owned file keeps it alive, whatever a
+config says. It composes `directoryExists()` then `isDirectoryEmpty()` then `remove()`, so an absent
+directory returns `false` (nothing was removed) while an unreadable one returns `true` from
+`isDirectoryEmpty()` alone. Callers: `src/cli/commands/uninstall.tsx`,
+`src/cli/lib/skills/local-skill-mover.ts`, `src/cli/lib/operations/project/remove-compiled-agents.ts`.
+`isDirectoryEmpty()` has one caller of its own — `src/cli/commands/new/marketplace.ts`, which asks it
+of a directory it is about to write into.
+
+**`glob()` serves two uses and `dot` is what tells them apart.** A scan LOOKING FOR known filenames
+wants the default (`dot: false`) — fast-glob skips dotfiles, which is right when nothing is being
+reproduced. A read REPRODUCING a directory faithfully wants `{ dot: true }`, or a `.` file the
+write side accepts is dropped on the way back out, silently. The one caller of the second kind is
+`readSkillTree` in `src/cli/lib/seed/external-skills.ts`, which reads a carried skill's whole
+directory back onto the wire.
 
 ## Logger
 
@@ -321,35 +388,85 @@ Helpers for the `# yaml-language-server: $schema=...` header on generated YAML f
 
 ### `src/cli/utils/messages.ts`
 
-Static user-facing strings live in four constant objects; strings that interpolate a runtime value
-are exported as **functions** instead (see below).
+Static user-facing strings live in **six constant objects** plus one bare string constant; strings
+that interpolate a runtime value are exported as **functions** instead (see below). The module's own
+export list — the six objects, the bare string and every builder — is owned by
+[`commands/index.md`](./commands/index.md), which enumerates it.
 
-Each row lists every key in that object (exhaustive, in source order).
+Each row below lists every key in that object, exhaustive and in source order. All six are bound to
+source by `scripts/check-enumeration-drift.ts`, so a key added or renamed fails the `scripts/` suite
+rather than sitting here uncontested.
 
-| Object             | Count | Keys                                                                                                                                                                                                                                      |
-| ------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ERROR_MESSAGES`   | 10    | UNKNOWN_ERROR, UNKNOWN_ERROR_SHORT, NO_INSTALLATION, NO_LOCAL_SKILLS, NO_SKILLS_FOUND, VALIDATION_FAILED, FAILED_RESOLVE_SOURCE, FAILED_LOAD_AGENT_PARTIALS, FAILED_COMPILE_AGENTS, SKILL_NOT_FOUND                                       |
-| `SUCCESS_MESSAGES` | 4     | UNINSTALL_COMPLETE, INIT_SUCCESS, PLUGIN_COMPILE_COMPLETE, ALL_SKILLS_UP_TO_DATE                                                                                                                                                          |
-| `STATUS_MESSAGES`  | 11    | LOADING_SKILLS, LOADING_MARKETPLACE_SOURCE, RECOMPILING_AGENTS, COMPILING_AGENTS, DISCOVERING_SKILLS, RESOLVING_SOURCE, RESOLVING_MARKETPLACE_SOURCE, LOADING_AGENT_PARTIALS, FETCHING_REPOSITORY, COPYING_SKILLS, UPDATING_PLUGIN_SKILLS |
-| `INFO_MESSAGES`    | 7     | NO_CHANGES_MADE, RUN_COMPILE, NO_AGENTS_TO_RECOMPILE, NO_PLUGIN_INSTALLATION, NO_LOCAL_INSTALLATION, NOT_INSTALLED, CONFIG_TYPES_REFRESHED                                                                                                |
+| Object                | Keys                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_MESSAGES`      | `UNKNOWN_ERROR`, `UNKNOWN_ERROR_SHORT`, `NO_INSTALLATION`, `NO_SKILLS_FOUND`, `VALIDATION_FAILED`, `FAILED_RESOLVE_SOURCE`, `FAILED_LOAD_AGENT_PARTIALS`, `FAILED_COMPILE_AGENTS`, `CLAUDE_CLI_NOT_FOUND`                                                                                                              |
+| `SUCCESS_MESSAGES`    | `UNINSTALL_COMPLETE`, `INIT_SUCCESS`, `PLUGIN_COMPILE_COMPLETE`                                                                                                                                                                                                                                                        |
+| `STATUS_MESSAGES`     | `INSTALLING_PLUGINS`, `LOADING_SKILLS`, `LOADING_MARKETPLACE_SOURCE`, `RECOMPILING_AGENTS`, `COMPILING_AGENTS`, `DISCOVERING_SKILLS`, `RESOLVING_SOURCE`, `RESOLVING_MARKETPLACE_SOURCE`, `LOADING_AGENT_PARTIALS`, `FETCHING_REPOSITORY`, `COPYING_SKILLS`, `UPDATING_PLUGIN_SKILLS`, `MARKETPLACE_HAS_NEWER_CONTENT` |
+| `INFO_MESSAGES`       | `NO_CHANGES_MADE`, `RUN_COMPILE`, `NO_AGENTS_TO_RECOMPILE`, `NO_PLUGIN_INSTALLATION`, `NO_LOCAL_INSTALLATION`, `NOT_INSTALLED`, `CONFIG_TYPES_REFRESHED`, `EJECTED_SKILLS_USER_OWNED`, `NO_PLUGIN_MARKETPLACES`                                                                                                        |
+| `SHARED_CONFIG_APPLY` | `PREVIEW_HEADING`, `SKILLS_HEADING`, `AGENTS_HEADING`, `GLOBAL_SKILLS_HEADING`, `GLOBAL_AGENTS_HEADING`, `NOTHING_REMOVED`, `CONFIRM` — the fixed text of `edit --from`'s removal plan                                                                                                                                 |
+| `UNINSTALL_PLAN`      | `PREVIEW_HEADING`, `PLUGINS_HEADING`, `CLI_MANAGED_FILES_HEADING`, `CONFIG_HEADING` — read by BOTH uninstall renderers (`--yes` printer and confirm UI), so the preview a user approves and a `--yes` run's list cannot drift                                                                                          |
 
-All four key lists are pinned with `toStrictEqual` in `src/cli/utils/messages.test.ts`, which also
-asserts non-empty string values everywhere and a trailing `...` on every `STATUS_MESSAGES` value.
-The test does **not** cover the message-builder functions below.
+**The two `GLOBAL_*` headings on `SHARED_CONFIG_APPLY` are what a PROJECT run prints instead**, for
+entries that live at global scope. They exist only there: at the home directory every entry is
+global, so a heading saying so would label the whole list with the one fact the location already
+states. `globalRemovalSections(...)` in `src/cli/commands/edit.tsx` emits them over the half
+`splitRemovalsByScope` found active at global scope — see
+[`commands/edit.md`](./commands/edit.md).
+
+`SHARED_CONFIG_ONE_DIRECTION` is a bare exported string (not an object): the refusal printed when
+`edit --ui` and `edit --from` are asked for in one run.
+
+**Two independent gates, and neither subsumes the other.** `src/cli/utils/messages.test.ts` pins the
+first four key lists with `toStrictEqual`, and also asserts non-empty string values everywhere and a
+trailing `...` on every `STATUS_MESSAGES` value — that gate judges the SOURCE and says nothing about
+this document. `scripts/check-enumeration-drift.ts` judges this document against the source and says
+nothing about the values. The spec covers neither `SHARED_CONFIG_APPLY` nor `UNINSTALL_PLAN` nor the
+message-builder functions below; the drift registry covers all six objects and the builders. A key
+added to `SHARED_CONFIG_APPLY` and left out of this table therefore fails `vitest run scripts/` and
+nothing else — which is how the two `GLOBAL_*` headings above sat undocumented in two documents at
+once until 2026-08-18.
 
 ### Message builder functions
 
-Exported from the same file. Used where the string embeds a count, a path, or an error reason —
-so they cannot live in a `const` object.
+Exported from the same file, exhaustive and in source order. Used where the string embeds a count,
+a path, an id or an error reason — so they cannot live in a `const` object. Several return a
+multi-line string (`\n`-joined) or a `string[]`, because oclif hard-wraps a single long line.
 
-| Function                                      | Signature                               | Where it prints                                                                                                                                                                                                                                                                   |
-| --------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `globalScopedAgentsHint(count)`               | `(count: number) => string`             | `Compile` — project pass resolved zero project agents but the config declares global-scope ones. Singular/plural aware                                                                                                                                                            |
-| `configTypesRefreshFailed(reason)`            | `(reason: string) => string`            | `Compile.refreshConfigTypes` catch — compiled agents are written, only the type unions may be stale                                                                                                                                                                               |
-| `registeredProjectsUpdated(count)`            | `(count: number) => string`             | `Uninstall` — summary after a global uninstall pruned inlined global entries. Singular/plural aware                                                                                                                                                                               |
-| `registeredProjectUpdateSkipped(projectPath)` | `(projectPath: string) => string`       | `Uninstall` — one registered project was unreachable; the uninstall continues                                                                                                                                                                                                     |
-| `registeredProjectsUpdateFailed(reason)`      | `(reason: string) => string`            | `Uninstall.prepareGlobalPropagation` catch — no registered project could be updated; the uninstall still completes                                                                                                                                                                |
-| `configUnreadableError(configLoadFailure)`    | `(configLoadFailure: string) => string` | `BaseCommand.ensureConfigReadable` — `edit` / `init` met a config that exists but cannot be loaded. Takes a `ConfigLoadError` message (file + reason already in it) and adds the two ways forward: `uninstall` then `init`, or the editor at `EDITOR_URL` plus `init --from <id>` |
+| Function                                                   | Signature                                              | Where it prints                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pluginsInstalled(count)`                                  | `(number) => string`                                   | Closing line of a plugin install, wherever one runs                                                                                                                                                                                                                                    |
+| `localSkillsCopied(count)`                                 | `(number) => string`                                   | What an eject copy did. A count and NO destination — copies split between the project dir and `$HOME` by each skill's scope, so one path would misname the other half                                                                                                                  |
+| `recompileSummary(rewritten, unchanged, subject)`          | `(number, number, string) => string`                   | A recompile pass as two numbers rather than one, so a run that rewrote nothing and one that rewrote everything no longer print the same sentence. `subject` differs per caller (`compile` says "global agents", `edit` says "agents")                                                  |
+| `propagatedRecompileSummary(rewritten, unchanged, failed)` | `(number, number, number) => string`                   | The same distinction for the fan-out across every OTHER registered project                                                                                                                                                                                                             |
+| `skillAssignedToNoAgent(skillId)`                          | `(SkillId) => string`                                  | An installed, actively-selected skill no sub-agent's stack carries. The only surface that reports it — every other one calls the run clean                                                                                                                                             |
+| `scopeBlockedStackAssignment(agentNames, skillId)`         | `(AgentName[], SkillId) => string`                     | The reason behind the above when it is the scope rule. Shared by the save path (`init`/`edit`) and `compile`, so one verdict has one spelling                                                                                                                                          |
+| `globalScopedAgentsHint(count)`                            | `(number) => string`                                   | `compile` — project pass resolved zero project agents but the config declares global-scope ones. Singular/plural aware                                                                                                                                                                 |
+| `marketplacesRefreshed(count)`                             | `(number) => string`                                   | `update` summary after every marketplace its config named was refreshed                                                                                                                                                                                                                |
+| `marketplaceRefreshFailed(marketplace, reason)`            | `(string, string) => string`                           | `update` — one marketplace the Claude CLI could not refresh                                                                                                                                                                                                                            |
+| `sourceUnreachableUsingCache(source)`                      | `(string) => string`                                   | A remote source could not be reached to revalidate and the cached copy was used anyway. The load SUCCEEDS, so the line's whole job is to name what the user got                                                                                                                        |
+| `marketplacesRefreshFailed(marketplaces)`                  | `(string[]) => string`                                 | `update` fatal summary; each cause was already warned individually, this is what makes the run exit non-zero                                                                                                                                                                           |
+| `configTypesRefreshFailed(reason)`                         | `(string) => string`                                   | `Compile.refreshConfigTypes` catch — compiled agents are written, only the type unions may be stale                                                                                                                                                                                    |
+| `registeredProjectsUpdated(count)`                         | `(number) => string`                                   | `uninstall` — summary after a global uninstall pruned inlined global entries. Singular/plural aware                                                                                                                                                                                    |
+| `registeredProjectUpdateSkipped(projectPath)`              | `(string) => string`                                   | `uninstall` — one registered project was unreachable; the uninstall continues                                                                                                                                                                                                          |
+| `skillMetadataUnusableDetail(entry)`                       | `(UnusableSkillMetadata) => string`                    | The file and the reason behind the two refusals below, **logged** rather than carried in the error: oclif hard-wraps error text, and a path broken across two lines cannot be copied                                                                                                   |
+| `skillMetadataUnusableError(entries)`                      | `(UnusableSkillMetadata[]) => string`                  | `compile` met an installed skill whose `metadata.yaml` describes no skill. Refuses rather than skips, because the same file is refused by the discovery that regenerates `config-types.ts`                                                                                             |
+| `savedSkillMetadataUnusableError(entries)`                 | `(UnusableSkillMetadata[]) => string`                  | The same verdict raised by `init`/`edit`, where the cost differs: the entry would otherwise be dropped from `config.ts` and reported as a removal nobody asked for                                                                                                                     |
+| `sharedConfigDestinations(id)`                             | `(string) => string[]`                                 | The two lines a freshly minted id can be acted on by (`init --from <id>`, `editorConfigUrl(id)`). ONE definition, printed by BOTH minting commands — `share` and `edit --ui`                                                                                                           |
+| `sharedConfigExistingInstall(configPath)`                  | `(string) => string`                                   | `init --from` refusal: this directory is already installed                                                                                                                                                                                                                             |
+| `sharedConfigGlobalInstall(configPath)`                    | `(string) => string`                                   | `init --from` refusal: the project is clean but the payload writes global-scoped content into an already-installed `~/.claude`                                                                                                                                                         |
+| `sharedConfigProjectScopeAtHome(skillIds, agentNames)`     | `(readonly SkillId[], readonly AgentName[]) => string` | `init --from` and `edit --from` at `$HOME` with project-scoped entries, through the one inherited `refuseProjectScopedContentAtHome`. **Not** a greenfield refusal and says nothing about `uninstall` — the payload is installable and the LOCATION is not. Every offender named       |
+| `skippedUnknownSkills(skillIds)`                           | `(readonly string[]) => string`                        | The ids a decode could not place, NAMED rather than counted. One definition because both `init --from` and `edit --from` report it                                                                                                                                                     |
+| `skippedUnknownAgents(agentNames)`                         | `(readonly string[]) => string`                        | The sub-agent half of the above, judged against `AGENT_NAMES`                                                                                                                                                                                                                          |
+| `carriedSkillsWritten(skillIds)`                           | `(readonly string[]) => string`                        | What a shared configuration brought with it rather than named — the only place a user learns what arrived inside the configuration itself                                                                                                                                              |
+| `sharedConfigNeedsTerminal(id)`                            | `(string) => string`                                   | `edit --from` refusal with no TTY. Names `init --from` as the headless alternative, which removes nothing                                                                                                                                                                              |
+| `globallyInstalledRemoved(otherProjects)`                  | `(readonly string[]) => string`                        | `edit --from` removal plan: the consequence of removing globally installed entries from inside a project. Nothing is refused — the reach is counted AND named, because "2 other projects" cannot be weighed against anything and a path can. Printed only from a project               |
+| `authoredHereKept(skillIds)`                               | `(readonly SkillId[]) => string`                       | `edit --from` removal plan: skills the round trip does not own (`forkedFrom` absent), so no shared configuration ever carried them                                                                                                                                                     |
+| `unplaceableKept(skillIds)`                                | `(readonly SkillId[]) => string`                       | `edit --from` removal plan: skills this configuration NAMES that this catalogue cannot place. The remedy is the catalogue rather than the skill, which is what separates it from the two above                                                                                         |
+| `configUnreadableError(configLoadFailure)`                 | `(string) => string`                                   | `BaseCommand.ensureConfigReadable` — `edit`/`init` met a config that exists but cannot be loaded. Takes a `ConfigLoadError` message (file + reason already in it) and adds the ways forward: `uninstall` then `init`, the editor at `EDITOR_URL` plus `init --from <id>`, and `doctor` |
+| `registeredProjectsUpdateFailed(reason)`                   | `(string) => string`                                   | `Uninstall.prepareGlobalPropagation` catch — no registered project could be updated; the uninstall still completes                                                                                                                                                                     |
+| `unmarkedAgentsKept(agentsDir, count)`                     | `(string, number) => string`                           | Uninstall plan AND summary, from the one plan, for agent files carrying no provenance marker. Printed both before the confirm and after the removal so the two cannot disagree                                                                                                         |
+| `localSkillsRemoval(skillsDir)`                            | `(string) => string`                                   | Uninstall plan line for the local skills directory — "(matching the marketplace)", because only skills whose `forked-from` metadata names one are removed                                                                                                                              |
+| `compiledAgentsRemoval(agentsDir)`                         | `(string) => string`                                   | Uninstall plan line for the compiled agents directory, marking it the CLI's to delete                                                                                                                                                                                                  |
 
 `INFO_MESSAGES.CONFIG_TYPES_REFRESHED` is the success counterpart to `configTypesRefreshFailed()`;
 both interpolate `STANDARD_FILES.CONFIG_TYPES_TS` rather than hardcoding `config-types.ts`.
@@ -358,31 +475,48 @@ both interpolate `STANDARD_FILES.CONFIG_TYPES_TS` rather than hardcoding `config
 
 ### Paths
 
-| Constant                  | Value                        | Purpose                                                                                                                                                   |
-| ------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PROJECT_ROOT`            | CLI package root             | Base for template resolution                                                                                                                              |
-| `GLOBAL_INSTALL_ROOT`     | `os.homedir()`               | Root for global installations                                                                                                                             |
-| `CLAUDE_DIR`              | `.claude`                    | Claude config directory                                                                                                                                   |
-| `CLAUDE_SRC_DIR`          | `.claude-src`                | Source config directory                                                                                                                                   |
-| `PLUGINS_SUBDIR`          | `plugins`                    | Plugins subdirectory                                                                                                                                      |
-| `PLUGIN_MANIFEST_DIR`     | `.claude-plugin`             | Plugin manifest directory                                                                                                                                 |
-| `PLUGIN_MANIFEST_FILE`    | `plugin.json`                | Plugin manifest filename                                                                                                                                  |
-| `MARKETPLACE_JSON`        | `marketplace.json`           | Marketplace manifest filename                                                                                                                             |
-| `PLUGINS_DIST_PATH`       | `dist/plugins`               | Compiled plugin output dir (marketplace-relative)                                                                                                         |
-| `DEFAULT_PLUGIN_NAME`     | `agents-inc`                 | Default plugin name                                                                                                                                       |
-| `CACHE_DIR`               | `~/.cache/agents-inc`        | Source cache directory. Consumed by `lib/loading/source-fetcher.ts`; layout in [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) |
-| `SKILL_CATEGORIES_PATH`   | `config/skill-categories.ts` | Skill categories config file                                                                                                                              |
-| `SKILL_RULES_PATH`        | `config/skill-rules.ts`      | Skill rules config file                                                                                                                                   |
-| `STACKS_FILE_PATH`        | `config/stacks.ts`           | Stacks config file                                                                                                                                        |
-| `SOURCE_SRC_DIR`          | `src`                        | Source root dir inside a marketplace/source repo                                                                                                          |
-| `SKILLS_DIR_PATH`         | `src/skills`                 | Skills source directory (`${SOURCE_SRC_DIR}/skills`)                                                                                                      |
-| `LOCAL_SKILLS_PATH`       | `.claude/skills`             | Local skills directory                                                                                                                                    |
-| `EJECT_SOURCE`            | `eject`                      | Synthetic source name for ejected (copied) skills                                                                                                         |
-| `LOCAL_PSEUDO_CATEGORY`   | `local`                      | Pseudo-category for local skills (not a `Category`)                                                                                                       |
-| `GLOBAL_CONFIG_NAME`      | `global`                     | `name` field written into a global-scope config                                                                                                           |
-| `EDIT_PROJECT_SETUP_FLAG` | `project-setup`              | Hidden `edit` flag marking the setup half of `init`                                                                                                       |
+| Constant                   | Value                        | Purpose                                                                                                                                                             |
+| -------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROJECT_ROOT`             | CLI package root             | Base for template resolution                                                                                                                                        |
+| `GLOBAL_INSTALL_ROOT`      | `os.homedir()`               | Root for global installations                                                                                                                                       |
+| `CLAUDE_DIR`               | `.claude`                    | Claude config directory                                                                                                                                             |
+| `CLAUDE_SRC_DIR`           | `.claude-src`                | Source config directory                                                                                                                                             |
+| `PLUGINS_SUBDIR`           | `plugins`                    | Plugins subdirectory                                                                                                                                                |
+| `PLUGIN_MANIFEST_DIR`      | `.claude-plugin`             | Plugin manifest directory                                                                                                                                           |
+| `PLUGIN_MANIFEST_FILE`     | `plugin.json`                | Plugin manifest filename                                                                                                                                            |
+| `MARKETPLACE_JSON`         | `marketplace.json`           | Marketplace manifest filename                                                                                                                                       |
+| `CATALOG_JSON`             | `catalog.json`               | The catalogue a marketplace publishes **beside** its manifest — see below                                                                                           |
+| `GENERATED_AT_BUILD`       | `build`                      | The word a written-to-disk matrix stamps into `generatedAt` in place of a timestamp — see below                                                                     |
+| `PUBLIC_CATALOGUE_PACKAGE` | `@agents-inc/skills`         | The package identity that exempts the public catalogue from the reserved-name guard. Behaviour is owned by [features/plugin-system.md](./features/plugin-system.md) |
+| `PLUGINS_DIST_PATH`        | `dist/plugins`               | Compiled plugin output dir (marketplace-relative)                                                                                                                   |
+| `DEFAULT_PLUGIN_NAME`      | `agents-inc`                 | Default plugin name                                                                                                                                                 |
+| `CACHE_DIR`                | `~/.cache/agents-inc`        | Source cache directory. Consumed by `lib/loading/source-fetcher.ts`; layout in [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md)           |
+| `SKILL_CATEGORIES_PATH`    | `config/skill-categories.ts` | Skill categories config file                                                                                                                                        |
+| `SKILL_RULES_PATH`         | `config/skill-rules.ts`      | Skill rules config file                                                                                                                                             |
+| `STACKS_FILE_PATH`         | `config/stacks.ts`           | Stacks config file                                                                                                                                                  |
+| `SOURCE_SRC_DIR`           | `src`                        | Source root dir inside a marketplace/source repo                                                                                                                    |
+| `SKILLS_DIR_PATH`          | `src/skills`                 | Skills source directory (`${SOURCE_SRC_DIR}/skills`)                                                                                                                |
+| `LOCAL_SKILLS_PATH`        | `.claude/skills`             | Local skills directory                                                                                                                                              |
+| `EJECT_SOURCE`             | `eject`                      | Synthetic source name for ejected (copied) skills                                                                                                                   |
+| `LOCAL_PSEUDO_CATEGORY`    | `local`                      | Pseudo-category for local skills (not a `Category`)                                                                                                                 |
+| `GLOBAL_CONFIG_NAME`       | `global`                     | `name` field written into a global-scope config                                                                                                                     |
+| `EDIT_PROJECT_SETUP_FLAG`  | `project-setup`              | Hidden `edit` flag marking the setup half of `init`                                                                                                                 |
 
 Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MANIFEST_DIR` + `MARKETPLACE_JSON`.
+
+**`MARKETPLACE_JSON` and `CATALOG_JSON` answer different questions and are not interchangeable.**
+`marketplace.json` lists what a marketplace **installs**; `catalog.json` lists what it **offers** —
+its whole matrix as JSON, in the shape `@workspace/matrix`'s `matrixSchema` describes. The editor
+fetches the catalogue directly and parses it with that schema, so nothing between the two transforms
+it.
+
+**`GENERATED_AT_BUILD` is why a regenerated matrix is not a diff of pure noise.** A matrix built in
+memory carries an ISO timestamp in `generatedAt`; one WRITTEN to disk carries this fixed word
+instead. A recorded moment would make every regeneration a diff even when nothing about the matrix
+moved — costing the vendored `src/cli/types/generated/matrix.ts` a pull request of noise, and costing
+`catalog.json` its cache, because a file whose bytes always change can never answer a conditional
+request. Nothing reads the field back. Both emitters stamp it and they are the only two places a
+matrix becomes a file: `scripts/generate-source-types.ts` and `build marketplace`.
 
 ### Directory Constants
 
@@ -398,41 +532,47 @@ Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MAN
 
 ### Standard Files and Dirs
 
-`STANDARD_FILES` constant. All well-known filenames:
+`STANDARD_FILES` constant. All well-known filenames, keyed without the object prefix so the list is
+readable as an enumeration — bound to source by `scripts/check-enumeration-drift.ts`:
 
-| Constant                                  | Value                      |
-| ----------------------------------------- | -------------------------- |
-| `STANDARD_FILES.SKILL_MD`                 | `SKILL.md`                 |
-| `STANDARD_FILES.METADATA_YAML`            | `metadata.yaml`            |
-| `STANDARD_FILES.METADATA_JSON`            | `metadata.json`            |
-| `STANDARD_FILES.CONFIG_YAML`              | `config.yaml`              |
-| `STANDARD_FILES.SKILL_CATEGORIES_TS`      | `skill-categories.ts`      |
-| `STANDARD_FILES.SKILL_RULES_TS`           | `skill-rules.ts`           |
-| `STANDARD_FILES.AGENT_METADATA_YAML`      | `metadata.yaml`            |
-| `STANDARD_FILES.PLUGIN_JSON`              | `plugin.json`              |
-| `STANDARD_FILES.CONFIG_TS`                | `config.ts`                |
-| `STANDARD_FILES.CONFIG_TYPES_TS`          | `config-types.ts`          |
-| `STANDARD_FILES.CLAUDE_MD`                | `CLAUDE.md`                |
-| `STANDARD_FILES.README_MD`                | `README.md`                |
-| `STANDARD_FILES.REFERENCE_MD`             | `reference.md`             |
-| `STANDARD_FILES.IDENTITY_MD`              | `identity.md`              |
-| `STANDARD_FILES.PLAYBOOK_MD`              | `playbook.md`              |
-| `STANDARD_FILES.OUTPUT_MD`                | `output.md`                |
-| `STANDARD_FILES.CRITICAL_REQUIREMENTS_MD` | `critical-requirements.md` |
-| `STANDARD_FILES.CRITICAL_REMINDERS_MD`    | `critical-reminders.md`    |
-| `STANDARD_FILES.SETTINGS_JSON`            | `settings.json`            |
-| `STANDARD_FILES.SETTINGS_LOCAL_JSON`      | `settings.local.json`      |
+| Key                        | Value                      |
+| -------------------------- | -------------------------- |
+| `SKILL_MD`                 | `SKILL.md`                 |
+| `METADATA_YAML`            | `metadata.yaml`            |
+| `METADATA_JSON`            | `metadata.json`            |
+| `CONFIG_YAML`              | `config.yaml`              |
+| `SKILL_CATEGORIES_TS`      | `skill-categories.ts`      |
+| `SKILL_RULES_TS`           | `skill-rules.ts`           |
+| `AGENT_METADATA_YAML`      | `metadata.yaml`            |
+| `PLUGIN_JSON`              | `plugin.json`              |
+| `CONFIG_TS`                | `config.ts`                |
+| `CONFIG_TYPES_TS`          | `config-types.ts`          |
+| `CLAUDE_MD`                | `CLAUDE.md`                |
+| `README_MD`                | `README.md`                |
+| `REFERENCE_MD`             | `reference.md`             |
+| `IDENTITY_MD`              | `identity.md`              |
+| `PLAYBOOK_MD`              | `playbook.md`              |
+| `OUTPUT_MD`                | `output.md`                |
+| `CRITICAL_REQUIREMENTS_MD` | `critical-requirements.md` |
+| `CRITICAL_REMINDERS_MD`    | `critical-reminders.md`    |
+| `SETTINGS_JSON`            | `settings.json`            |
+| `SETTINGS_LOCAL_JSON`      | `settings.local.json`      |
+| `PACKAGE_JSON`             | `package.json`             |
 
-`STANDARD_DIRS` constant:
+`METADATA_YAML` and `AGENT_METADATA_YAML` are deliberately the same value under two keys — a skill's
+and a sub-agent's metadata file share a filename and nothing else, and one key would make a call
+site's subject unreadable.
 
-| Constant                  | Value       |
-| ------------------------- | ----------- |
-| `STANDARD_DIRS.EXAMPLES`  | `examples`  |
-| `STANDARD_DIRS.SCRIPTS`   | `scripts`   |
-| `STANDARD_DIRS.SKILLS`    | `skills`    |
-| `STANDARD_DIRS.AGENTS`    | `agents`    |
-| `STANDARD_DIRS.COMMANDS`  | `commands`  |
-| `STANDARD_DIRS.TEMPLATES` | `templates` |
+`STANDARD_DIRS` constant, same convention:
+
+| Key         | Value       |
+| ----------- | ----------- |
+| `EXAMPLES`  | `examples`  |
+| `SCRIPTS`   | `scripts`   |
+| `SKILLS`    | `skills`    |
+| `AGENTS`    | `agents`    |
+| `COMMANDS`  | `commands`  |
+| `TEMPLATES` | `templates` |
 
 ### Branding and Naming
 
@@ -449,6 +589,8 @@ Helper: `marketplaceManifestPath(dir: string): string` joins `dir` + `PLUGIN_MAN
 | `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `ALL_SKILLS_EJECTED_LABEL`   | `All skills ejected`                                               | Summary-panel `Marketplace` row when no skill has a marketplace source (distinct state from an empty set, which falls back to the public default)                                                                                                                                                                                                                                                                                                                               |
+
+Helper: `editorConfigUrl(id: string): string` -> `` `${EDITOR_URL}/?fromId=${encodeURIComponent(id)}` `` — the editor page that reopens a shared configuration. **Exported before it had a second caller, and it now has two:** `share` prints it (through `sharedConfigDestinations` in `utils/messages.ts`) and `edit --ui` hands it to `openUrl`. Two surfaces each building their own query string is how one ends up pointing at a page the other never opens.
 
 `ALL_SKILLS_EJECTED_LABEL` has exactly one production consumer: `formatSkillMarketplaces(skillConfigs: SkillConfig[])` in `src/cli/components/wizard/summary-panel.tsx`. Three distinct cases, in source order:
 
@@ -492,7 +634,9 @@ Helper: `formatSourceDisplayName(source: string): string` resolves a source name
 
 `UI_SYMBOLS`, `CLI_COLORS`, `SCROLL_VIEWPORT`, and `ASCII_LOGO` are defined in `src/cli/consts.ts`. (No `UI_LAYOUT` or `UI_MESSAGES` objects — those names are not defined.)
 
-`UI_SYMBOLS` has exactly 19 members (exhaustive, in source order): `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`, `REMOVED`, `ADDED`. (`SELECTED`/`CHECK` share one checkmark glyph via the module-private `CHECK_GLYPH`; `SKIPPED`/`DISABLED` share one en-dash glyph via `EN_DASH_GLYPH`. Both key pairs are kept so call sites express intent.)
+The members of `UI_SYMBOLS`, exhaustive and in source order: `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`, `REMOVED`, `ADDED`.
+
+Two key pairs share one glyph and are kept apart so call sites express intent: `SELECTED` and `CHECK` share a checkmark via the module-private `CHECK_GLYPH`, and `SKIPPED` and `DISABLED` share an en dash via `EN_DASH_GLYPH`. Neither glyph constant is exported.
 
 #### Shared diff markers
 
@@ -508,9 +652,9 @@ drift apart:
 The `unchanged` marker is `UI_SYMBOLS.BULLET`. The **mode-changed** marker is a bare `"~ "` string
 literal in `skill-agent-summary.tsx`'s `DIFF_PREFIX` — it is _not_ a `UI_SYMBOLS` member.
 
-`CLI_COLORS` has exactly 16 keys (exhaustive, in source order): `PRIMARY`, `SUCCESS`, `ERROR`, `WARNING`, `INFO`, `NEUTRAL`, `FOCUS`, `UNFOCUSED`, `WHITE`, `BLACK`, `DIM`, `GRAY_1`, `LABEL_BG`, `TOAST_BG`, `TOAST_FG`, `HOVER_BG`.
+The keys of `CLI_COLORS`, exhaustive and in source order: `PRIMARY`, `SUCCESS`, `ERROR`, `WARNING`, `INFO`, `NEUTRAL`, `FOCUS`, `UNFOCUSED`, `WHITE`, `BLACK`, `DIM`, `GRAY_1`, `LABEL_BG`, `TOAST_BG`, `TOAST_FG`, `HOVER_BG`.
 
-`SCROLL_VIEWPORT` keys (exhaustive — **4** keys): `SCROLL_INDICATOR_HEIGHT` (1), `CATEGORY_NAME_LINES` (2), `CATEGORY_MARGIN_LINES` (1), `MIN_VIEWPORT_ROWS` (5).
+The keys of `SCROLL_VIEWPORT`, exhaustive and in source order, with each value in parentheses: `SCROLL_INDICATOR_HEIGHT` (1), `CATEGORY_NAME_LINES` (2), `CATEGORY_MARGIN_LINES` (1), `MIN_VIEWPORT_ROWS` (5).
 
 #### Terminal-height constants (both siblings of `SCROLL_VIEWPORT`, neither a key of it)
 
@@ -587,27 +731,32 @@ reads.
 
 ## Remeda Utilities (External)
 
-Imported by 30 files under `src/cli/` : 28 production modules, one test-data
-module (`lib/__tests__/mock-data/mock-matrices.ts`) and one spec (`components/wizard/step-build.test.tsx`).
+Re-derive the importer list with `grep -rl 'from "remeda"' src/cli`; only three of the files it
+returns are not production modules — `lib/__tests__/mock-data/mock-matrices.ts` and
+`lib/__tests__/content-generators.ts` (both test support) and `components/wizard/step-build.test.tsx`
+(a spec). **No file total is written here**: it moves on any import added anywhere under `src/cli/`,
+which is a file no documentation pass is looking at, and it has already drifted once.
+
 Always `import { ... } from "remeda"`; there are zero namespace `* as R` imports. The named imports
 actually in use across `src/cli/`:
 
-| Function        | Usage                       |
-| --------------- | --------------------------- |
-| `unique()`      | Deduplicate arrays          |
-| `uniqueBy()`    | Deduplicate by key          |
-| `sortBy()`      | Sort with comparators       |
-| `indexBy()`     | Index array into object     |
-| `pipe()`        | Functional pipeline         |
-| `flatMap()`     | Flat map                    |
-| `filter()`      | Type-safe filter            |
-| `mapValues()`   | Transform record values     |
-| `difference()`  | Set difference              |
-| `groupBy()`     | Group array by key          |
-| `countBy()`     | Count occurrences           |
-| `partition()`   | Split into pass/fail arrays |
-| `zip()`         | Pair two arrays elementwise |
-| `isDeepEqual()` | Structural equality check   |
+| Function        | Usage                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| `unique()`      | Deduplicate arrays                                                                        |
+| `uniqueBy()`    | Deduplicate by key                                                                        |
+| `sortBy()`      | Sort with comparators                                                                     |
+| `indexBy()`     | Index array into object                                                                   |
+| `pipe()`        | Functional pipeline                                                                       |
+| `flatMap()`     | Flat map                                                                                  |
+| `filter()`      | Type-safe filter                                                                          |
+| `mapValues()`   | Transform record values                                                                   |
+| `difference()`  | Set difference                                                                            |
+| `groupBy()`     | Group array by key                                                                        |
+| `countBy()`     | Count occurrences                                                                         |
+| `partition()`   | Split into pass/fail arrays                                                               |
+| `zip()`         | Pair two arrays elementwise                                                               |
+| `isDeepEqual()` | Structural equality check                                                                 |
+| `omit()`        | Drop named keys from a record — test support only (`lib/__tests__/content-generators.ts`) |
 
 (`mapToObj` and `sumBy` are no longer imported anywhere in `src/cli/`.)
 

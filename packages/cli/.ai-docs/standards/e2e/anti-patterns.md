@@ -131,7 +131,7 @@ afterEach(async () => {
 
 **What:** Pressing a navigation key and then asserting on `step.getOutput()` on the assumption that "the accumulated output holds a frame where the row rendered in the form I want" — typically to reach a row that has since scrolled out of the viewport, or one that a later repaint replaced.
 
-> **Worked example replaced 2026-08-01.** This rule previously illustrated itself with the Sources grid's focus padding (`+  React ` with two spaces, so `"+ React"` was not a substring of a focused row). **That was a product defect, and it was fixed in 0.147.0** — `rowStatusMarker` in `src/cli/components/wizard/source-grid.tsx` is now always two columns wide with the marker inside the focus highlight, so focused and unfocused rows render the name in the same column. A standards doc that keeps a live defect as its motivating example teaches every future spec to route around the defect, which is how two releases of Sources-tab specs went by with the padding documented and untested. See `.ai-docs/agent-findings/2026-07-31-focused-row-padding-defect-codified-as-a-test-rule.md`. The buffer-semantics rule below is unaffected and still correct.
+> **Worked example replaced 2026-08-01.** This rule previously illustrated itself with the Sources grid's focus padding (`+  React ` with two spaces, so `"+ React"` was not a substring of a focused row). **That was a product defect, and it was fixed in 0.147.0** — `rowStatusMarker` in `src/cli/components/wizard/source-grid.tsx` is now always two columns wide with the marker inside the focus highlight, so focused and unfocused rows render the name in the same column. A standards doc that keeps a live defect as its motivating example teaches every future spec to route around the defect, which is how two releases of Sources-tab specs went by with the padding documented and untested. The focused form is now pinned by `e2e/interactive/sources-focused-row-marker-spacing.e2e.test.ts`. The buffer-semantics rule below is unaffected and still correct.
 
 **Why:** `BaseStep.getOutput()` -> `TerminalSession.getFullOutput()` reads xterm's **processed buffer** (`xterm.buffer.active`) — the current screen plus whatever genuinely scrolled off. Ink redraws in place, so when a frame fits the viewport (the common case at `TERMINAL_SIZE.TALL`) each repaint OVERWRITES the previous one and nothing enters scrollback. The earlier frame is gone. Verified empirically against the real binary: a `+ web-framework-react` marker present in `getOutput()` before a `navigateDown()` is absent after it, while `getRawOutput()` still holds it.
 
@@ -188,8 +188,6 @@ This is not hypothetical. Two dual-scope Sources specs carried a paragraph expla
 And when the underlying defect is fixed, delete the dodge paragraphs — they read as superstition otherwise.
 
 **Corollary — construct the focus, do not navigate to it.** When a spec needs a row in a particular focus state, build a fixture where that row is the only one that can hold focus (`SourceGrid` seeds with `firstFocusableRowIndex`, which skips locked and pending-removal rows) rather than pressing a key to get there. A key press manufactures a different render state and reintroduces the `getOutput()` problem above.
-
-See `.ai-docs/agent-findings/2026-07-31-focused-row-padding-defect-codified-as-a-test-rule.md`.
 
 ### Never write a colour assertion in an E2E test
 
@@ -409,6 +407,43 @@ expect(settings).toHaveProperty("permissions");
 
 Or better, use a matcher: `await expect(project).toHaveSettings({ hasKey: "permissions" })`.
 
+### Never let a gate filter its own subject
+
+**What:** a reader that selects which elements of a document, listing or output it will judge and drops the rest — `.filter(isSpecReference)`, `.filter(isRelevant)`, skipping a row whose shape it does not recognise. The rule above is the same silence one level down: there the assertion is skipped, here the SUBJECT is.
+
+```typescript
+// Bad: a name whose first segment is not a spec directory is dropped, and nothing says so
+function isSpecReference(named: string): boolean {
+  const [directory] = named.split("/");
+  return directory !== undefined && SPEC_DIRECTORIES.includes(directory);
+}
+```
+
+**Why:** the elements it dropped are indistinguishable from the elements it passed. The verdict is reported against the survivors and reads as a verdict on the whole, and nothing prints what was skipped or how many. The subject shrinks silently as the document grows.
+
+The filter above ran over `user-journeys.md`'s From-scratch column, whose whole job is to say what has been proved. Six named entries were dropped — five real specs written without the `commands/` directory they live in, and one code symbol — so a quarter of journey 13's named proof was unexamined while the page read as fully checked. The two legitimate non-specs were fine, but the filter decided that once, for every name anyone would ever add: a later entry naming a deleted spec would have gone the same way, on the same silence.
+
+**Instead:** classify totally. Every element gets a kind, including "not the sort of thing this gate judges", and the residue is asserted against an explicit list whose entries each state why they are in it.
+
+```typescript
+// Good: three kinds, and the two failure modes kept apart because they mean opposite things
+type SpecReference =
+  | { name: string; kind: "spec" } // a file answers to it — judge it as before
+  | { name: string; kind: "unlocated-spec"; livesAt: string } // a real spec, named without its directory
+  | { name: string; kind: "not-a-spec" }; // nothing answers to it — a helper or a code symbol
+
+expect(unlocatedSpecsIn(rows)).toStrictEqual([]);
+expect(nonSpecNamesIn(rows)).toStrictEqual(RECOGNISED_NON_SPEC_NAMES);
+```
+
+`unlocated-spec` and `not-a-spec` are separate kinds on purpose: the first is a page defect with a known rewrite (`livesAt` names it), the second is a legitimate exclusion that must be justified once, by name, in a constant. Collapsing them back into one bucket restores the original silence under a longer signature.
+
+A gate may exclude something; it may not decide, unrecorded, that it has. This is the "prove the subject is present" rule applied to the reader rather than the frame — a gate must be able to say what it looked at, not only what it concluded.
+
+Live example: `src/cli/lib/__tests__/helpers/journey-page.ts` (classification, with its own tests) and the two assertions in `src/cli/lib/__tests__/spec-gates.test.ts`.
+
+See `.ai-docs/agent-findings/2026-08-18-a-gate-that-filters-its-subject-cannot-report-what-it-skipped.md`.
+
 ### Never assert generic absence
 
 **What:** `expect(output).not.toContain("error")`.
@@ -449,7 +484,7 @@ expect(screen).not.toContain("─+ "); // now about a painted subject
 
 `ConfirmStep.scrollSummaryToBottom()` is closed-loop — it presses while the frame still reports content below and throws rather than returning short, because the summary's height depends on how many skills and agents the run selected.
 
-This is the same proof-of-execution rule the bible already applies to conditional code paths, extended to rendering.
+This is the same proof-of-execution rule [README.md](./README.md) § Critical Rules applies to conditional code paths, extended to rendering.
 
 ### A counter is not its content
 
@@ -705,7 +740,7 @@ The E2E sandbox defaults `HOME` to a sibling temp dir distinct from `projectDir`
 
 ## Rules Carried Forward from the Old Bible
 
-These rules from the original `e2e-testing-bible.md` remain valid:
+These rules come from the monolith this directory was split out of. `e2e-testing-bible.md` is now a pointer into here, so this is where they live:
 
 - **No task IDs anywhere except file-level JSDoc.** Never include `D-NNN` / `P-BUILD-1` / `Bug A` tokens in `describe()` names, `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. Test names describe BEHAVIOR ("renders spurious minus on G→P toggle"), assertion messages describe INVARIANTS ("config.ts must not contain version field"). IDs look authoritative but rot once the task closes. See `.ai-docs/agent-findings/2026-04-21-task-ids-in-test-names-sweep-needed.md` (151 occurrences across 30 files — pending sweep).
 - **`ensureBinaryExists()` in `beforeAll`.** Every test file must verify the CLI binary exists.

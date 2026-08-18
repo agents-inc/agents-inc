@@ -42,6 +42,11 @@ last_validated: 2026-07-30
 | Slug Map           | Bidirectional `SkillSlug <-> SkillId` mapping built during merge                                                                                                                                          |
 | Source             | Where skills come from (public marketplace, private, local)                                                                                                                                               |
 
+Each of the three `config/` files — `skill-categories.ts`, `skill-rules.ts` and `stacks.ts` — exports
+its value as the module's **default** export. `loadConfig` reads the default and nothing else, so a
+file exporting only named bindings carries no config at all as far as the loader is concerned;
+`doctor` reports such a file as `Config has no default export`.
+
 ## Current Counts
 
 | Type                | Count | Source File                                       |
@@ -59,7 +64,7 @@ Of the 102 entries, **35 are `exclusive: true`** and **6 are `required: true`**.
 `defaultCategories` and the generated `CATEGORIES` union are pinned to each other by
 `src/cli/lib/configuration/__tests__/default-categories.test.ts` (`toStrictEqual` on the sorted key
 sets, plus an `EXPECTED_CATEGORY_COUNT` of 102). A marketplace introducing a new category therefore
-fails that test until a matching `defaultCategories` entry is added — see Known Limitations #6.
+fails that test until a matching `defaultCategories` entry is added — see Known Limitations #1.
 
 ## File Structure
 
@@ -120,8 +125,8 @@ Per-function inventory for `skill-fetcher.ts`, `skill-metadata.ts`, `skill-copie
    -> Reads metadata.yaml (parseYaml then Zod-validated via matrixRawMetadataSchema
       from schemas.ts)
    -> Invalid Zod shape: warn + skip (per-file, continues)
-   -> Invalid metadata.yaml YAML syntax: parseYaml throws and aborts the whole
-      extraction pass (see Known Limitations #2)
+   -> Invalid metadata.yaml YAML syntax: warn naming the file path + skip (per-file,
+      continues) — parseYaml is try-wrapped
    -> Reads SKILL.md frontmatter (parseFrontmatter from loader.ts); skill id =
       frontmatter.name. Null frontmatter (absent or malformed): skip
    -> Missing metadata.yaml `displayName`: throws a hard error, aborting the whole
@@ -131,13 +136,14 @@ Per-function inventory for `skill-fetcher.ts`, `skill-metadata.ts`, `skill-copie
 5. Matrix Merge
    mergeMatrixWithSkills() (skill-resolution.ts)
    -> Combines categories + extracted metadata + relationship rules
-   -> Builds bidirectional slug map (SkillSlug <-> SkillId) -- primary skills only;
-      local/custom slugs are NOT added (see Known Limitations #3)
-   -> Resolves slug-based relationships to canonical SkillIds; unresolved slugs
-      are warned and dropped (see Known Limitations #4, #7)
+   -> Builds bidirectional slug map (SkillSlug <-> SkillId) via claimSlug, first
+      claim winning and every later one warned
+   -> Resolves slug-based relationships to canonical SkillIds; a `requires` rule
+      whose needs do not ALL resolve is dropped whole, and every unresolved slug
+      lands on matrix.unresolvedSlugs for checkMatrixHealth to report
    -> Auto-synthesizes missing categories (exclusive: false by default) -- fires
-      for built-ins too, masking marketplace drift (see Known Limitations #6)
-   -> Duplicate skill IDs silently overwrite (see Known Limitations #1)
+      for built-ins too, masking marketplace drift (see Known Limitations #1)
+   -> Duplicate skill ids warn naming both paths; the first one wins
    -> Returns MergedSkillsMatrix
 
 6. Install-mode tagging (optional)
@@ -199,12 +205,31 @@ Loads category/rule config files and extracts per-skill metadata from a skills d
 - `loadSkillCategories(configPath)` - Load + Zod-validate a `skill-categories.ts` file into a `CategoryMap` (throws when the file cannot be loaded or fails validation)
 - `loadSkillRules(configPath)` - Load + Zod-validate a `skill-rules.ts` file into a `SkillRulesConfig`. When the loaded module has no `relationships` key at all, the whole object is replaced with one carrying four empty lists (`conflicts`, `discourages`, `requires`, `alternatives`) — the four the type declares, none of them optional
 - `extractAllSkills(skillsDir)` - Glob `**/metadata.yaml` and build `ExtractedSkillMetadata[]` (see Data Flow step 4)
-- `loadAndMergeSkillsMatrix(categoriesPath, rulesPath, projectRoot)` - Convenience loader: loads categories + rules from the given config paths and extracts skills from `{projectRoot}/src/skills` (`DIRS.skills`) — all three in parallel — then returns a merged `MergedSkillsMatrix` via `mergeMatrixWithSkills()`. Distinct from `loadSkillsMatrixFromSource()` (source-loader.ts), which resolves a configured source, merges local skills, and runs multi-source tagging.
+- `loadAndMergeSkillsMatrix(categoriesPath, rulesPath, projectRoot)` - **Dead. Do not call it, and do not add the first caller.** It loads categories + rules from the given config paths, extracts skills from `{projectRoot}/src/skills` (`DIRS.skills`) — all three in parallel — and returns a merged `MergedSkillsMatrix` via `mergeMatrixWithSkills()`.
 
-**`loadAndMergeSkillsMatrix` has no production callers** — it is reachable only through the
-`matrix/index.ts` barrel. Unlike `loadAndMergeFromBasePath` in `source-loader.ts`, it does **not**
-merge `defaultCategories` under the loaded file's categories, so every category the config file omits
-auto-synthesizes (Known Limitations #6). Prefer `loadSkillsMatrixFromSource()` for any new path.
+**`loadAndMergeSkillsMatrix` has zero callers** — nothing in `src/`, `scripts/`, `e2e/` or the test
+suite invokes it. Its only reference outside its own definition is the re-export in
+`matrix/index.ts`, which is what keeps it visible to autocomplete and is the whole reason it is
+documented here rather than dropped: a reader will find the symbol whether or not this page names
+it, and this paragraph is the only place that says not to use it.
+
+It is documented as dead rather than deleted from the page for a second reason — it is the sole
+surviving route to a behaviour the page describes elsewhere. Unlike `loadAndMergeFromBasePath` in
+`source-loader.ts`, it does **not** merge `defaultCategories` under the loaded file's categories, so
+every category the config file omits auto-synthesizes; it is clause (b) of the reachability argument
+in Known Limitations #1, and dropping it from here would leave that limitation naming a function no
+document explains.
+
+**Reach for one of these instead, and which depends on who is asking:**
+
+| You are                                                                    | Call                                                                 | Because                                                                                                                                                                                        |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reading a marketplace ON DISK, as its author (`build`, catalogue emission) | `loadMarketplaceMatrix(marketplaceDir)` (`loading/source-loader.ts`) | Its own skills, categories and stacks, with the built-in relationship rules narrowed to the slugs it ships. No local merge, so a published catalogue never carries the author's private skills |
+| Resolving the source an INSTALL is configured against                      | `loadSkillsMatrixFromSource(options)` (`loading/source-loader.ts`)   | Resolves the configured source, merges the machine's `~/.claude/skills` and the project's own, and runs multi-source tagging                                                                   |
+
+Both are exported from `lib/loading/index.ts`. The two differ in exactly one decision — whether the
+invoking machine's local skills join the result — and that decision is right for an install and
+wrong for anything published, which is why there are two functions rather than a flag.
 
 ## Skill Resolution (`src/cli/lib/matrix/skill-resolution.ts`)
 
@@ -217,7 +242,7 @@ Contains the core merge logic that combines categories, relationship rules, and 
 
 **Internal function:**
 
-- `resolveRelationships(skillId, relationships, resolve)` - Unified resolver that resolves all four relationship types (conflicts, discourages, requires, alternatives) in a single pass for each skill. Unresolved slugs are filtered out (`warn` only) and the rule proceeds with the surviving subset -- see Known Limitations #4 and #7.
+- `resolveRelationships(skillId, relationships, resolve)` - Unified resolver that resolves all four relationship types (conflicts, discourages, requires, alternatives) in a single pass for each skill. For the symmetric kinds (conflicts, discourages, alternatives) an unresolved slug is warned and dropped from its group. For `requires` the rule is taken WHOLE or not at all: `resolveEveryNeed` returns `null` unless every `need` resolves, so a rule naming one unknown slug states nothing rather than narrowing to the survivors. Every unresolved slug also reaches `checkMatrixHealth` through `matrix.unresolvedSlugs`.
 
 ## Source Load Options (`src/cli/lib/loading/source-loader.ts`)
 
@@ -345,6 +370,82 @@ directly through the matrix provider:
 Slug-based references (from `skill-rules.ts`) are resolved to canonical IDs during
 the merge step via `slugMap.slugToId` (see `resolveToCanonicalId` in `skill-resolution.ts`).
 
+## The Skill-Id Namespace
+
+**Every custom marketplace's skill ids carry that marketplace's name as a prefix, written by the
+marketplace author.** A marketplace named `acme` ships `acme-web-frontend`, never a bare
+`web-frontend`. The public catalogue is the sole exception: its skills stay unprefixed, so
+`agents-inc` IS the namespace they occupy.
+
+**Why it exists.** A skill id is the name of the directory the skill installs into, and Claude reads
+`~/.claude` and `./.claude` together — so two marketplaces naming one id means one silently shadows
+the other. Unique ids make that unrepresentable rather than managed.
+
+**Author time, not load time.** The id in the marketplace repository IS the id everywhere; nothing
+transforms it on ingest. A load-time namespace would have to be applied independently by the CLI and
+by the editor, and two implementations of one rule is a failure class this repository has already
+paid for. It also removes the question of what the prefix derives from, since nothing derives it.
+
+**Separator `-`, and it stays filesystem-legal** — `:` and `/` are out, because the id is a directory
+name and has to work on Windows.
+
+### Reserved namespaces
+
+| Name         | Holds                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------- |
+| `agents-inc` | The public catalogue's own bare ids                                                    |
+| `external`   | Skills answering to no marketplace — added from an arbitrary repo, or created in place |
+| `local`      | Skills created in place rather than fetched                                            |
+
+`RESERVED_MARKETPLACE_NAMES` in `src/cli/lib/marketplace-generator.ts` is the one list; the two
+non-catalogue members are the module-private `EXTERNAL_SKILL_NAMESPACE` and `LOCAL_SKILL_NAMESPACE`.
+An externally-added skill takes `external-`, because a local `web-frontend` against the published
+`web-frontend` is the exact collision the rule exists to prevent. `external-` separates such skills
+from marketplaces, **not from one another** — two added skills can still resolve to the same id, and
+that is caught at add time with the id in hand rather than by deriving a longer id from the repo
+owner: these are eject-only, per-install files, so the requirement is uniqueness within one machine's
+two scopes, not global uniqueness.
+
+### Two guards, and the division between them
+
+**Build-time catches honest mistakes; load-time catches the rest.** Nothing a source ships is
+unforgeable, so the consumer's own load has to ask the question again.
+
+| Guard                                                 | Where                                                                                                 | Refuses                                                                                                  |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `validateMarketplaceName(name, packageName)`          | `src/cli/lib/marketplace-generator.ts`, called by `build marketplace`                                 | A marketplace claiming a reserved name                                                                   |
+| `validateSkillIdNamespace(marketplace)`               | same module, called after the plugin scan                                                             | A marketplace shipping an id that does not begin `<name>-`; lists up to 10, each with the id it expected |
+| `refuseCatalogueCollisions(basePath, source, skills)` | `src/cli/lib/loading/source-loader.ts`, called by `loadAndMergeFromBasePath` after `extractAllSkills` | A source whose ids intersect `CATALOGUE_SKILL_IDS` — the keys of `BUILT_IN_MATRIX.skills`                |
+
+**The SOURCE is refused, not the colliding skills.** Dropping them would hand the user a marketplace
+quietly missing the skills they chose it for, leave the catalogue's own copies standing in under
+those ids, and tell the author nothing.
+
+### The exemption is read off package identity
+
+`PUBLIC_CATALOGUE_PACKAGE` (`@agents-inc/skills`, in `src/cli/consts.ts`) is the one signal, and both
+sides key on it — never on the name a `marketplace.json` claims, because that name is the claim under
+test and a guard keyed on it would exempt exactly the source it exists to catch.
+
+- **Load side:** `isPublicCatalogue(basePath)` reads the source's `package.json` through
+  `packageIdentitySchema` (`z.object({ name: z.string() })`, the only field it reads) and compares
+  `name` to the constant. An unreadable or unparseable file yields `null`, which is not the catalogue.
+- **Build side:** `validateMarketplaceName` compares package.json's own `name` to the constant, so
+  only that package may hold a reserved name. `validateSkillIdNamespace` then exempts on
+  `marketplace.name === DEFAULT_PUBLIC_SOURCE_NAME` — **safe only because the first guard ran.** The
+  two are a pair, in that order; separating them re-opens the hole.
+
+### Consequence for catalogue-keyed tables
+
+Namespacing an id removes it from every built-in table keyed by the generated `SkillId` union, because
+the coupling is a MEMBERSHIP test rather than a parse. The classification of those tables — which can
+be re-read through a skill's taxonomy and which cannot — is
+[`standards/e2e/user-journeys.md` § Journey 26](../../standards/e2e/user-journeys.md). The live case in
+this module is `checkUnauditedSkills` (`matrix-health-check.ts`), which warns only for ids the built-in
+catalogue names: a marketplace's skills are outside the audit manifest by construction, not unaudited,
+and warning per skill would put a clean bill of health out of reach for anyone not on the public
+catalogue.
+
 ## Relationship System
 
 Defined in `config/skill-rules.ts` under `relationships` using skill slugs:
@@ -465,7 +566,7 @@ a `SKILL.md`), not the number of globbed metadata files.
 | 4–6   | `validateStacks()`, `validateAgents()`, `validateConfigFiles()` — run in parallel via `Promise.all`                                                      | errors only; each skips silently when its directory/file is absent       |
 
 Phase 3 reads the **module-level `matrix` singleton** from `matrix/matrix-provider.ts` after the
-load, so `validateSource` mutates global matrix state as a side effect (D-214 item 10).
+load, so `validateSource` mutates global matrix state as a side effect.
 
 ### Exported helpers
 
@@ -589,25 +690,31 @@ Stacks are pre-configured bundles of skills mapped to agents. Defined in `config
 - `normalizeStackRecord()` - Normalize stack values to `SkillAssignment[]` arrays
 - `normalizeAgentConfig()` - Normalize agent config entries
 
-## Known Limitations (D-214 matrix-hardening gaps)
+## Known Limitations (matrix-composition hardening)
 
-Cross-ref: `todo/cli.md` -> D-214 "Matrix composition hardening". These are current behaviors, not bugs to fix in the doc. Do not document over them -- they must stay visible until D-214 lands.
+These are current behaviours, not bugs to fix in the doc. Do not document over them — they must stay visible until they are actually closed.
 
-| #   | Limitation                                              | Where                                                                                                                | Current behavior                                                                                                                                                                                                                                            |
-| --- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Duplicate skill IDs silently overwrite                  | `mergeMatrixWithSkills` in `skill-resolution.ts`                                                                     | Second skill with same `id` replaces the first in `resolvedSkills` with no warn. Order depends on glob order. `buildSlugMap` warns on slug collision -- IDs do not.                                                                                         |
-| 2   | Invalid YAML crashes whole matrix load                  | `extractAllSkills` in `matrix-loader.ts`                                                                             | `parseYaml(metadataContent)` is not try-wrapped. One malformed `metadata.yaml` throws and aborts the entire extraction pass, so the whole matrix fails to load.                                                                                             |
-| 3   | Custom skill slugs are never added to `slugMap`         | `mergeLocalSkillsIntoMatrix` in `source-loader.ts`                                                                   | Local/custom skills are appended to `matrix.skills` but `buildSlugMap` is not re-run. `getSkillBySlug("<custom-slug>")` throws. Stacks and rules can't address them.                                                                                        |
-| 4   | Partial `requires` resolution pretends to succeed       | `resolveRelationships` in `skill-resolution.ts` (requires branch)                                                    | Unresolved slugs in `rule.needs` are filtered out; the rule proceeds with whatever remains. `needsAny: false` (AND) silently narrows to "AND of what resolved".                                                                                             |
-| 5   | ~~Extras do not participate in the relationship graph~~ | (withdrawn)                                                                                                          | **Closed by removal.** There are no extra sources to leave out of the graph: the registered-extras array and the `tagExtraSources` phase were deleted with the marketplace axis.                                                                            |
-| 6   | Auto-synth is not scoped to `custom: true`              | `mergeMatrixWithSkills` -> `synthesizeCategory` in `skill-resolution.ts`                                             | Mechanism unchanged: any skill whose category is absent from the passed `CategoryMap` gets an `order: 999`, `exclusive: false`, `required: false` placeholder with a `toTitleCase()` name, regardless of `custom`. **Reach narrowed** — see the note below. |
-| 7   | Unresolved slugs dropped before `checkMatrixHealth`     | `resolveToCanonicalId` in `skill-resolution.ts`                                                                      | `warn(...)` only. No `unresolvedSlugs[]` is returned from the merge, so `doctor` cannot surface a typo in a marketplace's `skill-rules.ts`.                                                                                                                 |
-| 8   | Duplicate-slug reverse map is half-written              | `buildSlugMap` in `skill-resolution.ts`                                                                              | When slug A is already taken, the loser's `idToSlug[loser.id]` is never written. Consumers reading `idToSlug` for the loser get `undefined`.                                                                                                                |
-| 9   | Double `initializeMatrix` write                         | `source-loader.ts` (`loadAndMergeFromBasePath` intermediate write, plus final write in `loadSkillsMatrixFromSource`) | Singleton is set twice -- once before local/extra merge, once after. Any consumer reading between the two sees a stale matrix.                                                                                                                              |
+| #   | Limitation                                 | Where                                                                                                                | Current behavior                                                                                                                                                                                                                                            |
+| --- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Auto-synth is not scoped to `custom: true` | `mergeMatrixWithSkills` -> `synthesizeCategory` in `skill-resolution.ts`                                             | Mechanism unchanged: any skill whose category is absent from the passed `CategoryMap` gets an `order: 999`, `exclusive: false`, `required: false` placeholder with a `toTitleCase()` name, regardless of `custom`. **Reach narrowed** — see the note below. |
+| 2   | Duplicate-slug reverse map is half-written | `claimSlug` in `skill-resolution.ts`                                                                                 | When a slug is already claimed by another id, the loser's `idToSlug[loser.id]` is never written. Consumers reading `idToSlug` for the loser get `undefined`. The collision itself is warned, naming both ids.                                               |
+| 3   | Double `initializeMatrix` write            | `source-loader.ts` (`loadAndMergeFromBasePath` intermediate write, plus final write in `loadSkillsMatrixFromSource`) | Singleton is set twice -- once before the local merge, once after. Any consumer reading between the two sees a stale matrix.                                                                                                                                |
 
-### Note on #6 — the reach of auto-synthesis
+**Guarantees the composition pipeline gives, each of them a trap if you assume otherwise.** These
+read like the open gaps above and are not — a caller that codes defensively around them is guarding
+against a shape this pipeline does not produce:
 
-D-214 item 8 ("scope category auto-synthesis to `custom: true` only") is **open** and the
+| Behaviour                          | Guarantee now in force                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unparseable `metadata.yaml`        | `extractAllSkills` wraps `parseYaml` and **warns naming the path**, skipping that skill alone. One bad file does not take the scan down.                                                                                                                                                                                    |
+| Duplicate skill id                 | `buildResolvedSkillMap` **warns naming both paths** and keeps the first. Silently overwriting left the loser no trace at all.                                                                                                                                                                                               |
+| Local skill slugs                  | `mergeLocalSkillsIntoMatrix` calls the exported `claimSlug` for every local skill, so `getSkillBySlug` answers for them. First claim wins; a re-statement of a claim the same id already holds is not a collision, which is what lets a local skill overriding a matrix id keep its slug.                                   |
+| Partially resolvable `requires`    | `resolveEveryNeed` returns `null` unless **every** `need` resolves, so the rule is dropped WHOLE. Keeping the survivors applied a requirement nobody wrote — under AND it narrowed the rule, under OR it removed an alternative, and either was shown to the user under the author's own `reason`.                          |
+| Unresolved rule slugs and `doctor` | `collectUnresolvedSlugs` puts them on `MergedSkillsMatrix.unresolvedSlugs`, and `checkUnresolvedRuleSlugs` reports one finding per slug. Asked of the RULES rather than counted off the resolution pass, which walks every rule once per skill — one typo would otherwise report as many findings as the source has skills. |
+
+### Note on #1 — the reach of auto-synthesis
+
+Scoping category auto-synthesis to `custom: true` only is **open** and the
 **mechanism** is unchanged: `synthesizeCategory` (`src/cli/lib/matrix/skill-resolution.ts`) still
 placeholders any category absent from the passed `CategoryMap`, regardless of `custom`. The
 **reach** is what the definitions bound:
@@ -624,8 +731,10 @@ placeholders any category absent from the passed `CategoryMap`, regardless of `c
   so a built-in category cannot fall through to synthesis on the source-load path either.
 
 Auto-synthesis is therefore reachable today only when: (a) a source ships a skill whose category is
-outside the generated union and outside its own `skill-categories.ts`; or (b) a caller uses
-`loadAndMergeSkillsMatrix()`, which merges no defaults. Regeneration against a marketplace that adds
+outside the generated union and outside its own `skill-categories.ts`; or (b) something calls
+`loadAndMergeSkillsMatrix()`, which merges no defaults — and nothing does, so (a) is the only
+route anything actually takes (see [Matrix Loader](#matrix-loader-srcclilibmatrixmatrix-loaderts)).
+Regeneration against a marketplace that adds
 a new category will synthesize it once and then fail `default-categories.test.ts` — the drift now
 surfaces as a red test rather than an `order: 999` placeholder in the wizard.
 

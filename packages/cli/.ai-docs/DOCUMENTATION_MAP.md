@@ -41,12 +41,12 @@ Descriptive: how the CLI works and where its pieces live.
 
 ### Wizard and UI
 
-| Doc                                     | Covers                                                                      |
-| --------------------------------------- | --------------------------------------------------------------------------- |
-| `reference/features/wizard-flow.md`     | Step sequence, keyboard navigation, hooks, scope diffs, feature-flag gating |
-| `reference/wizard/state-transitions.md` | Wizard state machine: transitions, action->state tables, resets, hotkeys    |
-| `reference/store-map.md`                | `WizardState` shape, every action, store consumers, hydration entry point   |
-| `reference/component-patterns.md`       | Ink component conventions, hooks, `CLI_COLORS`, `UI_SYMBOLS`, layout rules  |
+| Doc                                     | Covers                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `reference/features/wizard-flow.md`     | Step sequence, keyboard navigation, hooks, scope diffs, cancellation semantics                                      |
+| `reference/wizard/state-transitions.md` | Wizard state machine: transitions, action->state tables, resets, hotkey-to-step mapping, per-screen structural keys |
+| `reference/store-map.md`                | `WizardState` shape, every action, store consumers, hydration entry point                                           |
+| `reference/component-patterns.md`       | Ink component conventions, hooks, `CLI_COLORS`, `UI_SYMBOLS`, layout rules; owns the `hotkeys.ts` export list       |
 
 ### Concepts
 
@@ -67,27 +67,28 @@ Descriptive: how the CLI works and where its pieces live.
 
 ### Features
 
-| Doc                                            | Covers                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------ |
-| `reference/features/skills-and-matrix.md`      | Skills matrix loading, categories, resolution, install-mode tagging            |
-| `reference/skills/skill-primitives.md`         | Function inventory for `src/cli/lib/skills/`                                   |
-| `reference/features/built-in-catalogue.md`     | `defaultStacks` / `defaultRules` fallback data and when it is bypassed         |
-| `reference/features/source-fetch-and-cache.md` | giget fetch, cache key derivation, ID-targeted read path                       |
-| `reference/features/compilation-pipeline.md`   | Liquid templates, agent assembly, output validation                            |
-| `reference/features/agent-system.md`           | Agent templates, partials, `metadata.yaml`, Liquid compilation                 |
-| `reference/features/model-and-effort.md`       | The model/effort tuning axis end to end, and why it lives on the sub-agent     |
-| `reference/features/plugin-system.md`          | Plugin discovery, manifest generation, installation, marketplace               |
-| `reference/features/operations-layer.md`       | Composable operations (source, skills, project) and their typed results        |
-| `reference/features/seed-contract.md`          | The `init --from` wire contract, imported from `@workspace/matrix/seed`        |
-| `reference/features/code-generation.md`        | The three `scripts/` generators, their outputs, and the checks that guard them |
+| Doc                                            | Covers                                                                                                                |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `reference/features/skills-and-matrix.md`      | Skills matrix loading, categories, resolution, install-mode tagging                                                   |
+| `reference/skills/skill-primitives.md`         | Function inventory for `src/cli/lib/skills/`                                                                          |
+| `reference/features/built-in-catalogue.md`     | `defaultStacks` / `defaultRules` fallback data and when it is bypassed                                                |
+| `reference/features/source-fetch-and-cache.md` | giget fetch, cache key derivation, ID-targeted read path                                                              |
+| `reference/features/compilation-pipeline.md`   | Liquid templates, agent assembly, output validation                                                                   |
+| `reference/features/agent-system.md`           | Agent templates, partials, `metadata.yaml`, Liquid compilation                                                        |
+| `reference/features/model-and-effort.md`       | The model/effort tuning axis end to end, and why it lives on the sub-agent                                            |
+| `reference/features/plugin-system.md`          | Plugin discovery, manifest generation, installation, marketplace                                                      |
+| `reference/features/operations-layer.md`       | Composable operations (source, skills, project) and their typed results, including compiled-agent removal and pruning |
+| `reference/features/seed-contract.md`          | The `init --from` wire contract, imported from `@workspace/matrix/seed`                                               |
+| `reference/features/code-generation.md`        | The three `scripts/` generators, their outputs, and the checks that guard them                                        |
 
 ### Types
 
-| Doc                                   | Covers                                                          |
-| ------------------------------------- | --------------------------------------------------------------- |
-| `reference/types/core-types.md`       | Generated unions, core data structures, type guards             |
-| `reference/types/operations-types.md` | Operations-layer types and edit-command types                   |
-| `reference/types/zod-schemas.md`      | Zod schemas in `src/cli/lib/schemas.ts` (owns the schema count) |
+| Doc                                   | Covers                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `reference/types/core-types.md`       | Generated unions, core data structures, type guards                                                    |
+| `reference/types/operations-types.md` | Operations-layer types and edit-command types                                                          |
+| `reference/types/zod-schemas.md`      | Zod schemas in `src/cli/lib/schemas.ts` (owns the schema count)                                        |
+| `reference/type-system.md`            | Owns the five union member counts and the `AGENT_NAMES` roster; redirects everything else to `types/*` |
 
 ### Testing
 
@@ -99,24 +100,28 @@ Descriptive: how the CLI works and where its pieces live.
 | `reference/testing/e2e-infrastructure.md` | E2E config, page objects, matchers, fixtures, timeouts, `STEP_TEXT`              |
 | `reference/testing/harness-decisions.md`  | Harness alternatives already rejected, and the CLI behaviour a test must satisfy |
 
-### Pointers
+---
 
-Redirect stubs kept because inbound links still use the path. Each holds a redirect table and no
-content; its `last_validated` records link integrity only.
+## Pointers
 
-| Pointer                                      | Canonical body                              |
-| -------------------------------------------- | ------------------------------------------- |
-| `reference/architecture/overview.md`         | `reference/architecture-overview.md`        |
-| `reference/architecture/dependency-graph.md` | `reference/dependency-graph.md`             |
-| `reference/architecture/boundary-map.md`     | `reference/boundary-map.md`                 |
-| `reference/commands.md`                      | `reference/commands/index.md`               |
-| `reference/state-transitions.md`             | `reference/wizard/state-transitions.md`     |
-| `reference/config/configuration.md`          | `reference/features/configuration.md`       |
-| `reference/wizard/flow.md`                   | `reference/features/wizard-flow.md`         |
-| `reference/wizard/store-map.md`              | `reference/store-map.md`                    |
-| `reference/wizard/component-patterns.md`     | `reference/component-patterns.md`           |
-| `reference/type-system.md`                   | `reference/types/*` (owns the union counts) |
-| `reference/test-infrastructure.md`           | `reference/testing/*`                       |
+Redirect stubs across the whole of `.ai-docs/`, kept because inbound links still use the path. Each
+holds a redirect table and no content; its `last_validated` records link integrity only. A stub that
+starts stating a fact its destination does not own has stopped being a stub — file it with the
+bodies instead, which is why `reference/type-system.md` is listed under Types.
+
+| Pointer                                      | Canonical body                          |
+| -------------------------------------------- | --------------------------------------- |
+| `reference/architecture/overview.md`         | `reference/architecture-overview.md`    |
+| `reference/architecture/dependency-graph.md` | `reference/dependency-graph.md`         |
+| `reference/architecture/boundary-map.md`     | `reference/boundary-map.md`             |
+| `reference/commands.md`                      | `reference/commands/index.md`           |
+| `reference/state-transitions.md`             | `reference/wizard/state-transitions.md` |
+| `reference/config/configuration.md`          | `reference/features/configuration.md`   |
+| `reference/wizard/flow.md`                   | `reference/features/wizard-flow.md`     |
+| `reference/wizard/store-map.md`              | `reference/store-map.md`                |
+| `reference/wizard/component-patterns.md`     | `reference/component-patterns.md`       |
+| `reference/test-infrastructure.md`           | `reference/testing/*`                   |
+| `standards/e2e-testing-bible.md`             | `standards/e2e/`                        |
 
 **Direction is per-pair, not positional.** `commands.md` and `state-transitions.md` are root-level
 pointers whose bodies live in subdirectories. Determine direction by reading both files.
@@ -131,7 +136,6 @@ Prescriptive rules for code, tests and documentation. Owned by convention-keeper
 | ------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `standards/clean-code-standards.md`   | Code-quality rules, numbered by section                                                        |
 | `standards/documentation-bible.md`    | How `.ai-docs/` is written and maintained                                                      |
-| `standards/e2e-testing-bible.md`      | E2E philosophy and the top-level rules                                                         |
 | `standards/e2e/`                      | E2E sub-standards: structure, assertions, page objects, test data, patterns, anti-patterns     |
 | `standards/e2e/user-journeys.md`      | The journeys the suite must cover, the four assertion surfaces each owes, per-journey coverage |
 | `standards/typescript-types-bible.md` | Type-authoring rules                                                                           |
@@ -158,10 +162,12 @@ pipeline and `agent-findings/TEMPLATE.md` for the frontmatter schema.
 This section owns the source and E2E file totals; no other doc restates them. Re-derive with
 `find`, never carry forward.
 
-- **`src/cli/`:** 350 TypeScript files — 132 specs (`*.test.ts(x)`), the rest production and test
+- **`src/cli/`:** 380 TypeScript files — 151 specs (`*.test.ts(x)`), the rest production and test
   support.
-- **`e2e/`:** 234 TypeScript files — 195 specs, 39 helpers/fixtures/page objects. The 195 splits
-  192 `*.e2e.test.ts` (what `test:e2e` runs) and 3 `*.smoke.test.ts` (run explicitly).
+- **`e2e/`:** 266 TypeScript files — 223 specs, 43 helpers/fixtures/page objects. The 223 splits
+  220 `*.e2e.test.ts` (the `e2e` project, what `test:e2e` runs) and 3 `*.smoke.test.ts` (the
+  `smoke` project, run explicitly by `test:smoke`). The two `include` globs in
+  `e2e/vitest.config.ts` are the only thing that separates them.
 
 ---
 
@@ -177,18 +183,31 @@ then `prettier --write` over staged `{apps,packages}` sources, and `prepublishOn
 invokes it.
 
 Config is `eslint.config.js` (ESLint 9 flat config via `defineConfig()`), over
-`src/**/*.{ts,tsx}`, `e2e/**/*.ts` and `scripts/**/*.ts`. On top of `js.configs.recommended` +
-`tseslint.configs.recommended`, with `eslint-config-prettier` last so ESLint never reports
-formatting:
+`src/**/*.{ts,tsx}`, `e2e/**/*.ts` and `scripts/**/*.ts`. It does not compose the recommended sets
+itself — it extends `baseConfig` and `typeCheckedConfig(import.meta.dirname)` from
+`@workspace/eslint-config/base`, which between them bring `js.configs.recommended`,
+`tseslint.configs.recommended` and `tseslint.configs.recommendedTypeChecked`, with
+`eslint-config-prettier` last so ESLint never reports formatting. `typeCheckedConfig` is a function
+because `tsconfigRootDir` has to be the consuming workspace's own directory.
 
-| Layer                                                       | Scope                                                      | What it does                                                                                                                                                          |
-| ----------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `linterOptions.reportUnusedDisableDirectives: "error"`      | Repo-wide                                                  | A disable comment whose rule no longer fires fails the run                                                                                                            |
-| `@typescript-eslint/no-unused-vars`                         | All TS sources                                             | Honours the leading-underscore convention                                                                                                                             |
-| `eslint-plugin-react-hooks`                                 | `src/cli/**/*.tsx`, `components/**/*.ts`, `stores/**/*.ts` | `rules-of-hooks` + `exhaustive-deps`, both `error` — **exactly those two**, because the v7 recommended set's React-Compiler rules outlaw Ink's measure-on-a-ref idiom |
-| `no-restricted-syntax` (task IDs)                           | Test files and fixtures                                    | Bans task IDs in `describe`/`it`/`test` names and `expect` messages; file-level JSDoc is the sanctioned home                                                          |
-| `@typescript-eslint/triple-slash-reference: off`            | `**/*.d.ts`                                                | The correct idiom in a declaration file; for `@lydell/node-pty` it is the only reachable one                                                                          |
-| `no-restricted-imports` / `no-restricted-syntax` (L2 zones) | Five nested zones                                          | Config-gate enforcement: private-module bans, raw-write bans, pair-renderer bans                                                                                      |
+**Three rules the shared config adds beyond those recommended sets**, so anything it adds next
+arrives here on its own: `no-self-compare` (core ESLint, in `baseConfig`; it lives in the shared
+base rather than in this package so every workspace refuses `x === x`, and
+`src/cli/lib/__tests__/spec-gates.test.ts` lints the shared base ALONE to prove the base rather than
+this package carries it), and `@typescript-eslint/no-unnecessary-condition` plus
+`@typescript-eslint/consistent-type-assertions` (`assertionStyle: "as"`,
+`objectLiteralTypeAssertions: "never"`) in `typeCheckedConfig`. `baseConfig` also sets the
+`no-unused-vars` leading-underscore options; this package restates them because a rule's options do
+not merge across config blocks, adding only `caughtErrorsIgnorePattern`.
+
+| Layer                                                       | Scope                                                      | What it does                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `linterOptions.reportUnusedDisableDirectives: "error"`      | Repo-wide                                                  | A disable comment whose rule no longer fires fails the run                                                                                                                                                                                                                                                                                                                                                             |
+| `@typescript-eslint/no-unused-vars`                         | All TS sources                                             | Honours the leading-underscore convention                                                                                                                                                                                                                                                                                                                                                                              |
+| `eslint-plugin-react-hooks`                                 | `src/cli/**/*.tsx`, `components/**/*.ts`, `stores/**/*.ts` | `rules-of-hooks` + `exhaustive-deps`, both `error` — **exactly those two**, because the v7 recommended set's React-Compiler rules outlaw Ink's measure-on-a-ref idiom                                                                                                                                                                                                                                                  |
+| `no-restricted-syntax` (task IDs)                           | Test files and fixtures                                    | Bans task IDs in `describe`/`it`/`test` names and `expect` messages; file-level JSDoc is the sanctioned home                                                                                                                                                                                                                                                                                                           |
+| `@typescript-eslint/triple-slash-reference: off`            | `**/*.d.ts`                                                | The correct idiom in a declaration file; for `@lydell/node-pty` it is the only reachable one                                                                                                                                                                                                                                                                                                                           |
+| `no-restricted-imports` / `no-restricted-syntax` (L2 zones) | Five nested zones                                          | Config-gate enforcement: private-module bans, raw-write bans, pair-renderer bans. Every block above excludes `src/cli/lib/config-gate/**`, so that zone inherits nothing from them and restates the vacuous-comparison selectors itself. `src/cli/lib/__tests__/spec-gates.test.ts` is the mutation proof for the selector family: per zone it asserts the vacuous shape IS reported and the discriminating one is not |
 
 `reference/component-patterns.md` carries the react-hooks carve-out; `reference/boundary-map.md`
 carries the config-gate enforcement layers.

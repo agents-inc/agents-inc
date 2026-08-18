@@ -39,9 +39,7 @@ domain: web
 > **ADOPTED 2026-07-30** as rule **6.17a** in `.ai-docs/standards/clean-code-standards.md`
 > -> "6. Testing", directly between 6.17 and 6.18. For fixed-width-column
 > components, `toContain` and snapshotting are no longer interchangeable — one
-> `toMatchInlineSnapshot()` per layout branch is required. Source of the
-> underlying observation:
-> `.ai-docs/agent-findings/2026-07-30-component-tests-assert-text-presence-never-column-position.md`.
+> `toMatchInlineSnapshot()` per layout branch is required.
 
 ## Problem
 

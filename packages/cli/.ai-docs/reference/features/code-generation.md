@@ -119,15 +119,15 @@ generator stops working offline.
 `CATEGORIES` from `src/cli/types/generated/source-types.ts` — the _other_ generator's output. Those
 two arrays are `z.enum()` inputs for `metadataValidationSchema`, so they are copied verbatim into the
 emitted `metadata.schema.json` as the `slug` and `category` enums. **Regenerating schemas without
-first regenerating types republishes the previous run's vocabulary.** This is not hypothetical: it is
-the exact drift recorded in
-`agent-findings/2026-04-21-r73-atomicity-bible-drift.md`, where the shipped `metadata.schema.json`
-enums lagged `source-types.ts` badly enough to reject legitimate categories and slugs.
+first regenerating types republishes the previous run's vocabulary.** This is not hypothetical: the
+shipped `metadata.schema.json` has drifted this way before, its `slug` and `category` enums lagging
+`source-types.ts` far enough behind to reject legitimate slugs and categories outright.
 
 The dependency does **not** run the other way at runtime. `generate-source-types.ts` reaches
-`src/cli/types` only through `import type`, and its four value imports
-(`default-categories`, `default-rules`, `default-stacks`, `matrix/skill-resolution`) transitively
-reach `consts.ts` and `utils/logger.ts`, neither of which imports a generated file. So the type
+`src/cli/types` only through `import type`, and its five value imports
+(`GENERATED_AT_BUILD` from `consts.ts`, `default-categories`, `default-rules`, `default-stacks`,
+and `mergeMatrixWithSkills` from `matrix/skill-resolution`) transitively reach `consts.ts` and
+`utils/logger.ts`, neither of which imports a generated file. So the type
 generator bootstraps from an empty `src/cli/types/generated/` — but `tsc -p tsconfig.scripts.json`
 does **not**, because type-only imports still have to resolve.
 
@@ -533,8 +533,12 @@ So **regenerating `src/cli/types/generated/` has consequences beyond this packag
 
 | Covered                                                  | Not covered                                         |
 | -------------------------------------------------------- | --------------------------------------------------- |
-| `scripts/generate-source-types.test.ts` — **34 tests**   | `scripts/generate-json-schemas.ts` — **zero tests** |
-| `scripts/generate-matrix-package.test.ts` — **14 tests** |                                                     |
+| `scripts/generate-source-types.test.ts` — **35 tests**   | `scripts/generate-json-schemas.ts` — **zero tests** |
+| `scripts/generate-matrix-package.test.ts` — **20 tests** |                                                     |
+
+Re-derive both by running the file (`npx vitest run scripts/<name>.test.ts`), never by counting
+`it(` — `scripts/` as a whole is **139 tests across 7 files**, the other five being the four
+`check-shared-*` suites and `check-enumeration-drift`.
 
 The matrix-package suite runs `generate` and `check` against the **real** `packages/matrix` as well
 as against a fixture `cliRoot` in a temp directory. It pins: that importing the module writes

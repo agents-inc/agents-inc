@@ -17,20 +17,19 @@ last_validated: 2026-08-09
 
 All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.4.3"` in `package.json`) — `.passthrough()` and `.strict()` are still the idioms in use; the file does not use `z.looseObject` / `z.strictObject`.
 
-**34 exported schemas**, re-derived 2026-08-09 by counting `export const *Schema` declarations in
-source (`grep -cE "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`). **The breakdown below
-does not sum to it** — it totals 36 and predates this re-derivation; the drift is older than the
-`sourceRevalidationSchema` row added for CLI-465, which is the only membership change made here.
-Whoever next validates this doc owns re-deriving the four sub-counts and their membership together,
-in one pass; correcting the total alone is what produced this state.
+**34 exported schemas** — `grep -cE "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`. The
+four tables below partition them exactly; every exported schema appears in one, and none appears in
+two. **Re-derive the four sub-counts and their membership in the same pass as the total** — a total
+corrected alone over stale sub-tables is how this document drifts, because each table then reads as
+authoritative while hiding a member.
 
 | Table                                                                        | Count  |
 | ---------------------------------------------------------------------------- | ------ |
 | [Bridge](#bridge-schemas-union-type-validation)                              | 5      |
-| [Loader](#loader-schemas-lenient-passthrough)                                | 8      |
+| [Loader](#loader-schemas-lenient-passthrough)                                | 7      |
 | [Structural](#structural-schemas-data-shapes)                                | 15     |
 | [Strict validation](#strict-validation-schemas-strict-reject-unknown-fields) | 7      |
-| **Total (as last counted, stale)**                                           | **35** |
+| **Total**                                                                    | **34** |
 
 > **This doc's scope is `src/cli/lib/schemas.ts` only** (see the first line of this section), so the count above is narrower than "every Zod schema in the CLI". The seed wire contract is a Zod schema **outside** this doc's scope, and outside this package: it lives in `packages/matrix/src/seed.ts`, imported as `@workspace/matrix/seed` — see [features/seed-contract.md](../features/seed-contract.md). Ten of the schemas below are additionally emitted as JSON Schema by `scripts/generate-json-schemas.ts`, and the JSON-Schema-visible shape differs from the Zod shape in specific ways (`superRefine` invisible, `as z.ZodType<T>` casts invisible, plain `z.object` closing to `additionalProperties: false`) — see [features/code-generation.md](../features/code-generation.md).
 
@@ -154,6 +153,32 @@ Enumerated exhaustively — a schema absent from both this list and the four tab
 | `forkedFromSchema`                | `skillMetadataBaseSchema`                                                         |
 | `skillMetadataBaseSchema`         | `metadataValidationSchema` + `customMetadataValidationSchema`                     |
 | `stackSkillAssignmentSchema`      | `stackConfigValidationSchema`                                                     |
+
+### `forkedFrom` — two shapes, and `path` must be declared in both
+
+`forkedFrom` is the package's single answer to "did the CLI put this skill directory here?" — the
+copier stamps it into every skill directory the CLI writes, `uninstall` reads it to decide what it
+may delete, and the seed producer reads it to decide what a round trip owns. It appears in
+`schemas.ts` **twice**, deliberately not unified, because the two shapes differ:
+
+| Where                                                                     | Fields                                                           |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `forkedFromSchema` (internal) -> `skillMetadataBaseSchema`                | `skillId`, `version?`, `contentHash`, `source?`, `path?`, `date` |
+| The inline `forkedFrom` object inside `localSkillMetadataSchema` (loader) | `skillId`, `contentHash`, `date`, `source?`, `path?`             |
+
+**`path` is the discriminator for a carried skill**, and it had to be declared in BOTH. `source`
+names the repository the bytes came from; `path` names the directory inside it. A marketplace
+resolves every id it serves, so an ejected catalogue skill needs no directory recorded and has
+none — which is what makes "has a recorded directory" the property that MAKES a skill external
+rather than a flag bolted on to mean it.
+
+**Declaring it in only one is silent data loss.** Both `forkedFrom` objects are plain `z.object()`,
+so each STRIPS keys it does not declare — including inside `localSkillMetadataSchema`, whose
+`.passthrough()` applies to the outer record, not to this nested object. A `path` written to disk
+and undeclared on the read schema is dropped on load with no error, and a producer rebuilding the
+carried entry sees a skill indistinguishable from an ordinary ejected one. Consumer:
+`readCarriedSkill` in `src/cli/lib/seed/external-skills.ts` — see
+[features/seed-contract.md](../features/seed-contract.md).
 
 ### Utility Functions
 

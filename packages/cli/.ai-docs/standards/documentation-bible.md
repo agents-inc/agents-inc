@@ -44,10 +44,14 @@ section or a validation history to give the clutter somewhere to live.
    Everywhere else — a "was" column, a superseded count, a renamed symbol nobody references — cut
    it.
 
-3. **No task IDs.** `todo/repo.md` and `todo/cli.md` are the live trackers; an ID absent from both
-   is dead and carries no meaning for a reader. Name the behaviour instead of the ticket that
-   produced it. The one exception is `agent-findings/`, whose filenames and frontmatter are dated
-   evidence by design.
+3. **No task IDs, live or dead.** An ID absent from `todo/repo.md` and `todo/cli.md` is dead and
+   means nothing to a reader; a live one is no safer, because it may already be unresolvable or
+   ambiguous. `D-266` is an open row whose ID appears in no file under `src/`, `e2e/` or `scripts/`,
+   so a reader has nothing to grep for, and `D-278` was renumbered after a collision, so one ID now
+   names two rows — a JSDoc in `src/cli/lib/wizard/scope-diff.ts` still cites the dangling one. Name
+   the behaviour instead of the ticket that produced it. An ID may appear only where it is the
+   subject rather than the provenance — quoted as a specimen of this rule, or in `agent-findings/`,
+   whose filenames and frontmatter are dated evidence by design.
 
 4. **Staleness is one line of frontmatter, and nothing else.** See below.
 
@@ -158,6 +162,70 @@ number.
 Everything else names the owning doc instead of restating the number. **When a pass changes a
 count, grep `.ai-docs/` for both the old and the new value before finishing.** If a stale copy is
 outside your ownership, record the mismatch in a file you do own and report it.
+
+**The same rule governs membership, not just the total.** A list introduced by "exhaustive", "all
+N", or "no other X is exported from it" is a claim about source, re-derivable in one command — so
+re-derive it in the same pass as the count and diff in **both** directions. The two directions are
+not the same size. A list that is short sends a reader looking for a member, failing to find it, and
+writing a duplicate; a list naming a symbol the source has since lost sends them grepping for
+nothing, after which the whole file stops being trusted. Two lists can agree on a total and share no
+names at all. `scripts/check-enumeration-drift.ts` holds the registry of the enumerations already
+bound to their source, and a new exhaustive claim adds a row to it rather than a promise in prose.
+
+---
+
+## An Absence Names No Symbol
+
+The complement of the section above. That one governs a claim that names things, and a checker can
+bind it because both sides are lists of names. This one governs a claim that names nothing: "`edit
+--from` declares no home-scope location refusal" contains no symbol, so nothing about it can be
+falsified from source, and it reads as true forever after it stops being true.
+
+It did stop. `refuseProjectScopedContentAtHome` moved onto `BaseCommand` so both `--from` producers
+share it, and `edit.tsx` gained no import — it inherits a `protected` method. A grep for the symbol
+returns the same hits before the move and after. Nothing moved, so nothing could detect it, and five
+documents described the vanished gap for a day. The worst of them called the absence "a gap rather
+than a rule", which reads to the next agent as an instruction to build what already works.
+
+### Filling a gap includes grepping the docs for the gap's own vocabulary
+
+You cannot grep for what you added — the whole failure is that it added no name. Grep for the
+language of absence instead:
+
+```
+grep -rEn 'declares no|no equivalent|is absent|is a gap|does not exist|untested|no spec|vestigial' .ai-docs/
+```
+
+Add the symbol the documents said was missing, and read every hit. **This is a step in filling the
+gap, not a tidy-up afterwards** — the change is not finished while a document still tells the next
+reader that the thing you just built is not there. Filing a finding does not discharge it: one was
+filed, and the five documents stayed wrong.
+
+### Write an absence so it dates itself
+
+Prefer the form that names the check which would prove it. A reader can then re-derive the claim;
+otherwise they can only trust it.
+
+```
+GOOD: no spec exercises it — `init-from-home-scope.e2e.test.ts` is the only one that reaches it
+BAD:  it declares no such refusal
+```
+
+The bad form is a claim about the past written in the present tense. Where the absence is structural
+rather than incidental, say what would have to change for it to stop being true; an absence with a
+stated cause is falsifiable by reading the cause.
+
+### Which claims are unguarded
+
+`scripts/check-enumeration-drift.ts` binds a document's list of names to a symbol's real membership,
+and an absence sits outside it by construction. So do five shapes that DO name things: `unwrap`
+reads through `as` and parentheses but not `satisfies`; `declarationOf` walks top-level statements
+only, so no `static` class member is reachable; a section ends at the first non-table line, so a
+list split across several tables cannot be bound; `SourceEnumeration` is a file plus a symbol with
+no directory form, so the command roster is inexpressible; and `exportedNames` does not follow
+`export … from`, so a barrel enumerates nothing. Those five are code-side and tracked in
+`todo/cli.md`. What matters when writing is knowing which side of the line a claim falls on — an
+unguarded claim needs the care a guarded one does not, and an absence is never guarded.
 
 ---
 
@@ -449,20 +517,20 @@ still exist), and **minimal** (WHERE things are and WHAT they do).
 | General knowledge  | "oclif is a framework for building CLIs..."    | Document THIS project's oclif patterns only                                                 |
 | Duplicating skills | Repeating Zustand patterns from a skill        | Cross-reference the skill                                                                   |
 | Pass narration     | "Corrected 2026-08-06; previously said Ink v5" | State the current fact and nothing else                                                     |
-| Dead task IDs      | "the D-279 masking layer"                      | Name the behaviour: "the cross-scope masking layer"                                         |
+| Task IDs           | "the D-279 masking layer"                      | Name the behaviour: "the cross-scope masking layer"                                         |
 
 ### Self-Correction Triggers
 
-| Trigger                                          | Correction                                               |
-| ------------------------------------------------ | -------------------------------------------------------- |
-| Documenting without reading the code             | Stop. Read the actual source files.                      |
-| Generic description instead of a file path       | Stop. Give a specific path plus a symbol name.           |
-| Citing a source line number                      | Stop. Cite the enclosing symbol.                         |
-| Writing what this pass checked or corrected      | Stop. That is the commit message's job.                  |
-| Writing a fact as a diff from its previous value | Stop. State the fact.                                    |
-| Citing a task ID                                 | Stop. Check the trackers; if absent, name the behaviour. |
-| Moving `last_validated` after a partial pass     | Stop. Leave the date.                                    |
-| Reporting success without re-reading the file    | Stop. Read the file to confirm the write landed.         |
+| Trigger                                          | Correction                                       |
+| ------------------------------------------------ | ------------------------------------------------ |
+| Documenting without reading the code             | Stop. Read the actual source files.              |
+| Generic description instead of a file path       | Stop. Give a specific path plus a symbol name.   |
+| Citing a source line number                      | Stop. Cite the enclosing symbol.                 |
+| Writing what this pass checked or corrected      | Stop. That is the commit message's job.          |
+| Writing a fact as a diff from its previous value | Stop. State the fact.                            |
+| Citing a task ID                                 | Stop. Name the behaviour.                        |
+| Moving `last_validated` after a partial pass     | Stop. Leave the date.                            |
+| Reporting success without re-reading the file    | Stop. Read the file to confirm the write landed. |
 
 ---
 

@@ -62,14 +62,14 @@ them.
 
 **This doc deliberately does NOT own:**
 
-| Topic                                            | Owner                                                                           |
-| ------------------------------------------------ | ------------------------------------------------------------------------------- |
-| The `metadata.yaml` **field list** and schema    | `reference/features/skills-and-matrix.md` lines 326–345                         |
-| The Zod schema inventory (`.passthrough()` etc.) | `reference/types/zod-schemas.md` lines 70–95                                    |
-| Path-traversal **security framing**              | `reference/boundary-map.md` § 5.3 (lines 488–493) and its § 3.3 (lines 307–313) |
-| `local-skill-mover.ts`                           | `reference/features/skills-and-matrix.md`                                       |
-| The removal-reason sentences and their classes   | `reference/config/config-merger.md`                                             |
-| Plugin manifest / marketplace shape              | `reference/features/plugin-system.md`                                           |
+| Topic                                            | Owner                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------- |
+| The `metadata.yaml` **field list** and schema    | `reference/features/skills-and-matrix.md` § Skill Metadata |
+| The Zod schema inventory (`.passthrough()` etc.) | `reference/types/zod-schemas.md`                           |
+| Path-traversal **security framing**              | `reference/boundary-map.md` § 5.3 and § 3.3                |
+| `local-skill-mover.ts`                           | `reference/features/skills-and-matrix.md`                  |
+| The removal-reason sentences and their classes   | `reference/config/config-merger.md`                        |
+| Plugin manifest / marketplace shape              | `reference/features/plugin-system.md`                      |
 
 Do not restate a field list or a count from those docs here.
 
@@ -77,9 +77,16 @@ Do not restate a field list or a count from those docs here.
 
 **Read this table before changing anything in this directory.** Three of the exported symbols below
 have **no production caller at all** — `copySkill`, `copySkillsToPluginFromSource`, `fetchSkills` —
-and one of those three (`copySkill`) has no caller even in tests. Five more are reachable from
-production through exactly one internal caller inside their own module. All of them are re-exported
-by `skills/index.ts` regardless, so the barrel is no evidence of use.
+and one of those three (`copySkill`) has no caller even in tests. `copySkillFromSource` is reachable
+only through one internal caller inside its own module. The barrel (`skills/index.ts`) re-exports
+several of them regardless, so a barrel line is no evidence of use.
+
+**`src/cli/lib/seed/external-skills.ts` is the second consumer of this directory**, after the
+copier/installer paths. It reaches past the barrel for `validateSkillPath`, `readLocalSkillMetadata`
+and `writeMetadataYaml` — three symbols that used to be internal-only — because a shared
+configuration can CARRY a skill's bytes, and writing those bytes into a skill directory needs the
+same traversal guard, the same metadata read and the same serializer the copier uses. Do not
+re-privatise any of the three.
 
 | Export                             | File                          | Production callers                                                                                                                                            |
 | ---------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -87,12 +94,12 @@ by `skills/index.ts` regardless, so the barrel is no evidence of use.
 | `copySkillsToPluginFromSource()`   | `skill-copier.ts`             | **none** — barrel + `skill-copier.test.ts` only                                                                                                               |
 | `copySkillFromSource()`            | `skill-copier.ts`             | one, internal: `copySkillsToPluginFromSource`                                                                                                                 |
 | `copySkill()`                      | `skill-copier.ts`             | **none, not even a test.** Its only other appearance in the repo is its `skills/index.ts` barrel line                                                         |
-| `validateSkillPath()`              | `skill-copier.ts`             | internal (`resolveSkillPath`) + `skill-copier.test.ts`                                                                                                        |
+| `validateSkillPath()`              | `skill-copier.ts`             | internal (`resolveSkillPath`), and `writeExternalSkills` (`seed/external-skills.ts`) on every carried file                                                    |
 | `fetchSkills()`                    | `skill-fetcher.ts`            | **none** — barrel `skills/index.ts` + `skill-fetcher.test.ts`                                                                                                 |
 | `readForkedFromMetadata()`         | `skill-metadata.ts`           | `classifySkillDirs` (`commands/uninstall.tsx`)                                                                                                                |
-| `readLocalSkillMetadata()`         | `skill-metadata.ts`           | one, internal: `readForkedFromMetadata`. **Its JSDoc names a caller that does not exist** — see Traps                                                         |
+| `readLocalSkillMetadata()`         | `skill-metadata.ts`           | internal (`readForkedFromMetadata`), and `readCarriedSkills` (`seed/external-skills.ts`). Its JSDoc names only the uninstall command — see Traps              |
 | `injectForkedFromMetadata()`       | `skill-metadata.ts`           | `copySkillTo` (`skill-copier.ts`)                                                                                                                             |
-| `writeMetadataYaml()`              | `skill-metadata.ts`           | `injectForkedFromMetadata`, in its own file — the only caller left now that `import skill` is gone                                                            |
+| `writeMetadataYaml()`              | `skill-metadata.ts`           | `injectForkedFromMetadata`, in its own file, and `readCarriedSkills` (`seed/external-skills.ts`) when it stamps a carried skill's provenance                  |
 | `discoverLocalSkills()`            | `local-skill-loader.ts`       | `mergeDiscoveredLocalSkills` (`loading/source-loader.ts`), `checkSkillsResolved` (`commands/doctor.ts`, twice)                                                |
 | `findUnusableSavedSkillMetadata()` | `unresolved-skill-entries.ts` | `ensureSavedSkillsReadable` (`base-command.ts`), reached from `commands/edit.tsx`                                                                             |
 | `unresolvedSkillRemovalReasons()`  | `unresolved-skill-entries.ts` | `Edit.run` (`commands/edit.tsx`), for the `Changes:` block's removal rows                                                                                     |
@@ -115,11 +122,11 @@ word boundary or you will conclude the fetcher has a caller.
 
 ## `skill-copier.ts` — copying a skill onto disk
 
-**File:** `src/cli/lib/skills/skill-copier.ts` (213 lines)
+**File:** `src/cli/lib/skills/skill-copier.ts`
 
 ### Layering
 
-The two functions the rest of the corpus knows (`boundary-map.md:311`) sit on top of a private core.
+The two functions the rest of the corpus knows (`boundary-map.md` § 3.3) sit on top of a private core.
 Everything eventually reaches `copySkillTo`:
 
 ```
@@ -209,14 +216,14 @@ wiring an existing one.
 
 ## `skill-metadata.ts` — reading and writing `forkedFrom`
 
-**File:** `src/cli/lib/skills/skill-metadata.ts` (175 lines)
+**File:** `src/cli/lib/skills/skill-metadata.ts`
 
 ### Types
 
-| Type                 | Shape                                                                      |
-| -------------------- | -------------------------------------------------------------------------- |
-| `ForkedFromMetadata` | `{ skillId: SkillId; contentHash: string; date: string; source?: string }` |
-| `LocalSkillMetadata` | `{ forkedFrom?: ForkedFromMetadata; [key: string]: unknown }`              |
+| Type                 | Shape                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `ForkedFromMetadata` | `{ skillId: SkillId; contentHash: string; date: string; source?: string; path?: string }` |
+| `LocalSkillMetadata` | `{ forkedFrom?: ForkedFromMetadata; [key: string]: unknown }`                             |
 
 `LocalSkillMetadata` is the **declared** shape that `localSkillMetadataSchema` is cast to —
 `schemas.ts` imports the type and `localSkillMetadataSchema` applies
@@ -242,10 +249,23 @@ wants "was this installed by the CLI" cannot get a true answer from this API tod
 
 ### The write path
 
-`injectForkedFromMetadata(destPath, skillId, contentHash, source?)` reads the existing
+`injectForkedFromMetadata(destPath, skillId, contentHash, origin)` reads the existing
 `metadata.yaml`, strips the yaml-language-server comment (`stripYamlSchemaComment`), `safeParse`s it,
-then writes `{ ...parsed, forkedFrom: { skillId, contentHash, date: getCurrentDate(), ...(source ? { source } : {}) } }`
-back through `writeMetadataYaml` with a fresh schema comment.
+then writes `{ ...parsed, forkedFrom: { skillId, contentHash, date: getCurrentDate(), ...origin } }`
+back through `writeMetadataYaml` with a fresh schema comment. Each member of `origin` is spread
+conditionally, so an absent one materialises no key.
+
+**`origin` is a bag, not two positional strings** — its type is
+`Pick<ForkedFromMetadata, "source" | "path">` and it defaults to `{}`. The source's own comment says
+why: `source` (the repository ref) and `path` (the skill's directory inside it) mean entirely
+different things and two adjacent optional strings can be swapped silently.
+
+**`path` is recorded only where it is the whole address.** A marketplace resolves every id it serves,
+so an ejected marketplace skill is installable again from its id alone and where it lived inside the
+repository is nobody's business. A skill a shared configuration CARRIED answers to no catalogue, and
+the `(source, path)` pair is its only address — without it a producer re-sharing that installation
+can name the id and not the bytes behind it. That is why `writeExternalSkills`
+(`seed/external-skills.ts`) is the producer that fills it.
 
 Three properties a caller must know:
 
@@ -254,10 +274,9 @@ Three properties a caller must know:
 2. **A parse failure loses every other field.** A failed `localSkillMetadataSchema.safeParse` warns
    `"Malformed metadata.yaml at '<path>' — existing fields may be lost"` and then spreads `{}`, so the
    rewritten file contains `forkedFrom` and nothing else.
-3. **`forkedFrom` is replaced wholesale, not merged.** Omitting the `source` argument does not
-   preserve a previously recorded `source` — it drops it. The only caller is `copySkillTo`
-   (`skill-copier.ts`), which passes all four, so nothing in the tree currently reaches the
-   three-argument form. A new caller that omits `source` would silently erase it.
+3. **`forkedFrom` is replaced wholesale, not merged.** Omitting a member of `origin` does not
+   preserve a previously recorded one — it drops it. A caller that rewrites provenance must restate
+   every field it means to keep.
 
 `writeMetadataYaml(filePath, metadata, schemaComment = "")` is the single serializer:
 `stringifyYaml` with `lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE`, prefixed by the comment. Use it
@@ -307,7 +326,7 @@ scaffold-time snapshot of a different hash function.
 
 ## `skill-fetcher.ts` — glob-based skill copy
 
-**File:** `src/cli/lib/skills/skill-fetcher.ts` (88 lines). **No production callers** (see
+**File:** `src/cli/lib/skills/skill-fetcher.ts`. **No production callers** (see
 Reachability). Both exports are barrel API (`skills/index.ts`).
 
 | Export                                                      | Contract                                                                               |
@@ -366,7 +385,7 @@ Different layers, despite the similar names:
 
 ## `local-skill-loader.ts` — discovering `.claude/skills/`
 
-**File:** `src/cli/lib/skills/local-skill-loader.ts` (129 lines)
+**File:** `src/cli/lib/skills/local-skill-loader.ts`
 
 | Export                            | Shape / contract                                                                                     |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -378,7 +397,7 @@ Different layers, despite the similar names:
 `schemas.ts` imports it and `localRawMetadataSchema` casts itself to `z.ZodType<LocalRawMetadata>`
 after `.passthrough().superRefine(validateCategoryField)`. The schema itself — including which fields the
 `superRefine` relaxes for `custom: true` records — is documented at
-`reference/types/zod-schemas.md:80` and `:85`; do not re-describe it here. What belongs here is the
+`reference/types/zod-schemas.md`; do not re-describe it here. What belongs here is the
 consequence: **`tags?: string[]` appears in this type and in no schema field**, so it is only ever
 populated through passthrough, and `reference/features/skills-and-matrix.md` records that `tags`
 is not part of the metadata schema at all. Treat the type as a superset that must be edited in
@@ -407,9 +426,11 @@ every command — the try/catch around `parseYaml` says so in a source comment.
 Unparseable YAML is the one case that warns; a schema violation only goes to verbose. That asymmetry
 is intentional — a schema miss is usually an author's in-progress skill, a YAML syntax error is
 usually corruption — but it means a mistyped `domain` disappears silently unless `--verbose` is on.
-**Contrast this with the matrix loader:** `extractAllSkills` in `matrix/matrix-loader.ts` lets
-`parseYaml` throw and aborts the whole pass (`skills-and-matrix.md` Known Limitation #2). The local
-loader is the hardened one; do not "align" it with the matrix loader.
+**The matrix loader now matches on this axis.** `extractAllSkills` (`matrix/matrix-loader.ts`)
+wraps its `parseYaml` in a try and warns naming the path before skipping that skill alone, exactly
+as this loader does — the two agree that one corrupt directory must not abort a catalogue load. They
+still differ on level below that: a Zod failure is a `warn` in `extractAllSkills` and a `verbose`
+here. Keep both per-skill; the shared invariant is that neither takes the scan down.
 
 ### The record it produces
 
@@ -429,7 +450,7 @@ read from metadata, and both matter downstream:
 
 ## `skill-plugin-compiler.ts` — one skill, one Claude plugin
 
-**File:** `src/cli/lib/skills/skill-plugin-compiler.ts` (217 lines)
+**File:** `src/cli/lib/skills/skill-plugin-compiler.ts`
 
 | Export                                         | Contract                                                                                     |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -458,7 +479,7 @@ do not expect to find a caller that names the type.
    `pluginDir` and `skillsDir` bindings).
 3. **Version comes from content, not from a field.** `computeSkillFolderHash(skillPath)` feeds
    `determinePluginVersion`, which bumps the semver **major** when the stored
-   `.content-hash` differs. See `skills-and-matrix.md:545-552` for that contract. This is the hasher
+   `.content-hash` differs. See `skills-and-matrix.md` § Versioning for that contract. This is the hasher
    whose input is the whole folder — the correct one here, and the wrong one for `forkedFrom`.
 4. **`metadata.yaml` is optional at this layer.** `readSkillMetadata` returns `null` for a missing
    file, a Zod failure (warns) or a read error (warns), and the only thing the result is used for is
@@ -474,37 +495,95 @@ do not expect to find a caller that names the type.
 
 ---
 
+## `unresolved-skill-entries.ts` — why a saved entry the catalogue cannot resolve went
+
+**File:** `src/cli/lib/skills/unresolved-skill-entries.ts`
+
+The wizard resolves an installed roster against the loaded catalogue, and an id it cannot find is an
+id it cannot put on any screen — so the merge drops the entry and `edit` reports a removal the user
+never asked for. **These are the only removals nobody watched themselves make**, which is why they
+alone carry a reason; every other removal is a deselection.
+
+Both exports classify the same way and differ only in what they do with the verdict:
+
+| Export                                                                     | Returns                        | Read by                                                                   |
+| -------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
+| `findUnusableSavedSkillMetadata(unresolvedIds, savedSkills, projectDir)`   | `UnusableSkillMetadata[]`      | `ensureSavedSkillsReadable` (`base-command.ts`), which REFUSES the run    |
+| `unresolvedSkillRemovalReasons(ids, savedSkills, projectDir, sourceLabel)` | `ReadonlyMap<SkillId, string>` | `Edit.run` (`commands/edit.tsx`), for the `Changes:` block's removal rows |
+
+### The five fates (`SavedSkillFate`, module-private)
+
+Classification is decided at the entry's own install path — `<skillsDir>/<id>`, resolved through
+`resolveInstallPaths(projectDir, saved.scope)`, which is the single address
+`copySkillsToLocalFlattened`, `deleteLocalSkill` and `migrateLocalSkillScope` all write to.
+
+| Fate                   | Reached when                                                                                           | Sentence in `Changes:`                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `dropped-by-source`    | the entry's `origin` is not `EJECT_SOURCE` (or there is no saved entry at all) — no local copy claimed | `not present in <sourceLabel>`                                            |
+| `files-gone`           | the skill directory does not exist                                                                     | `skill files no longer exist at <dir>`                                    |
+| `not-installed-there`  | no `metadata.yaml`, or a `SKILL.md` whose `name` is some other skill                                   | `no skill named '<id>' is installed at <dir>`                             |
+| `unplaceable-category` | everything is intact — the declared category is one no domain in this source claims                    | `installed at <dir>, but its category '<c>' is not one this source knows` |
+| `unusable-metadata`    | `readSkillMetadata` says the `metadata.yaml` describes no skill                                        | **none** — `removalReason` returns `null`                                 |
+
+**`unusable-metadata` has no sentence because that run never prints one.** It is repairable, and
+`compile` already refuses the whole run over the same verdict about the same file, so
+`ensureSavedSkillsReadable` stops before the Changes block is reached. A sentence written for it
+could only ever be a wrong one. Spending a config record on a YAML typo — and blaming the
+marketplace for it — is the outcome this split exists to prevent.
+
+**The verdict is borrowed, not invented.** `readSkillMetadata` (`loading/loader.ts`) is the same
+judgment local-skill discovery, `compile` and `doctor` share about that file, and `parseFrontmatter`'s
+`name` is the same identity discovery registers a local skill under. The `switch` in `removalReason`
+carries a `never` exhaustiveness default, so a sixth fate fails to compile until it has a sentence
+or an explicit `null`.
+
+---
+
 ## Barrel surface (`src/cli/lib/skills/index.ts`)
 
-35 lines, six re-export blocks. Everything below is importable as `from "../skills"`:
+One `export { … } from` block per module, in this order. Everything below is importable as
+`from "../skills"`:
 
-| Block (re-export from)  | Re-exports                                                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skill-fetcher`         | `fetchSkills`                                                                                                                                 |
-| `skill-metadata`        | `ForkedFromMetadata`, `LocalSkillMetadata`, `readForkedFromMetadata`, `readLocalSkillMetadata`, `injectForkedFromMetadata`                    |
-| `skill-copier`          | `CopiedSkill`, `CopyProgressCallback`, `copySkill`, `copySkillFromSource`, `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened`       |
-| `skill-plugin-compiler` | `SkillPluginOptions`, `CompiledSkillPlugin`, `SkillCompilationRun`, `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary` |
-| `local-skill-loader`    | `LocalSkillDiscoveryResult`, `discoverLocalSkills`                                                                                            |
-| `local-skill-mover`     | `deleteLocalSkill`, `migrateLocalSkillScope`                                                                                                  |
+| Block (re-export from)     | Re-exports                                                                                                                                    |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skill-fetcher`            | `fetchSkills`                                                                                                                                 |
+| `skill-metadata`           | `ForkedFromMetadata`, `LocalSkillMetadata`, `readForkedFromMetadata`, `readLocalSkillMetadata`, `injectForkedFromMetadata`                    |
+| `skill-copier`             | `CopiedSkill`, `CopyProgressCallback`, `copySkill`, `copySkillFromSource`, `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened`       |
+| `skill-plugin-compiler`    | `SkillPluginOptions`, `CompiledSkillPlugin`, `SkillCompilationRun`, `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary` |
+| `local-skill-loader`       | `LocalSkillDiscoveryResult`, `discoverLocalSkills`                                                                                            |
+| `unresolved-skill-entries` | `findUnusableSavedSkillMetadata`, `unresolvedSkillRemovalReasons`                                                                             |
+| `local-skill-mover`        | `deleteLocalSkill`, `migrateLocalSkillScope`                                                                                                  |
 
-**Some exports are NOT in the barrel** and must be imported from their module directly:
-`validateSkillPath` (`skill-copier.ts`), `writeMetadataYaml` (`skill-metadata.ts`),
-and `LocalRawMetadata` (`local-skill-loader.ts`). `schemas.ts` is the pattern to copy: it imports
-the two declared-shape types by module path, deliberately, since routing through the barrel would
-pull the copier and the plugin compiler into `schemas.ts`'s import graph.
+**The checker cannot bind this table to source.** `check-enumeration-drift.ts` reads a module's own
+`export const` / `export function` declarations; a re-export (`export { … } from`) is an
+`ExportDeclaration` and is invisible to it. Verify this table by reading `index.ts`, not by a green
+`npx vitest run scripts/`.
+
+**Three exports are NOT in the barrel** and must be imported from their module directly:
+`validateSkillPath` (`skill-copier.ts`), `writeMetadataYaml` (`skill-metadata.ts`) and
+`LocalRawMetadata` (`local-skill-loader.ts`). Two of the three have a production consumer outside
+this directory today — `seed/external-skills.ts` imports both `validateSkillPath` and
+`writeMetadataYaml` by module path — so "not barrelled" does not mean "not used". `schemas.ts` is
+the pattern to copy for the types: it imports the two declared-shape types by module path
+deliberately, since routing through the barrel would pull the copier and the plugin compiler into
+`schemas.ts`'s import graph.
 
 ## Test surface
 
-`npx vitest run src/cli/lib/skills/` — **6 files, 104 tests, all passing**.
+`npx vitest run src/cli/lib/skills/`. Run it rather than reading a total off this page — a per-file
+count is wrong within a fortnight, and `npm test` builds `dist/` first, which a bare `vitest run`
+refuses to do.
 
-| File                            | Tests | Top-level describes                                                                                          |
-| ------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
-| `skill-metadata.test.ts`        | 14    | `readForkedFromMetadata`, `injectForkedFromMetadata`, `readLocalSkillMetadata`                               |
-| `skill-copier.test.ts`          | 27    | `validateSkillPath` (own top-level block), then `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened` |
-| `skill-plugin-compiler.test.ts` | 22    | `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary`                                    |
-| `local-skill-loader.test.ts`    | 20    | `discoverLocalSkills`                                                                                        |
-| `skill-fetcher.test.ts`         | 13    | `fetchSkills`                                                                                                |
-| `local-skill-mover.test.ts`     | 8     | (documented in `skills-and-matrix.md:523-530`)                                                               |
+| File                                    | Top-level describes                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `skill-metadata.test.ts`                | `readForkedFromMetadata`, `injectForkedFromMetadata`, `readLocalSkillMetadata`                               |
+| `skill-copier.test.ts`                  | `validateSkillPath` (own top-level block), then `copySkillsToPluginFromSource`, `copySkillsToLocalFlattened` |
+| `skill-plugin-compiler.test.ts`         | `compileSkillPlugin`, `compileAllSkillPlugins`, `printCompilationSummary`                                    |
+| `local-skill-loader.test.ts`            | `discoverLocalSkills`                                                                                        |
+| `skill-fetcher.test.ts`                 | `fetchSkills`                                                                                                |
+| `local-skill-mover.test.ts`             | (documented in `skills-and-matrix.md` § Local Skill Mover)                                                   |
+| `local-skill-mover-dir-cleanup.test.ts` | `deleteLocalSkill directory collapse`                                                                        |
+| `unresolved-skill-entries.test.ts`      | `findUnusableSavedSkillMetadata`, `unresolvedSkillRemovalReasons`                                            |
 
 Two mocking styles coexist here, and copying the wrong one wastes a session:
 
@@ -540,11 +619,12 @@ Never inline skill/matrix/config test data; use the factories under `lib/__tests
    localness guard in `copySkillsToPluginFromSource` and `copySkillsToLocalFlattened` is what normally
    keeps local skills out of
    that branch — an explicit non-eject `sourceSelections` entry removes it.
-4. **`readLocalSkillMetadata`'s JSDoc is wrong about its caller.** Its JSDoc in
-   `skill-metadata.ts` says it is "Used by the uninstall command to determine whether a skill was
-   installed by the CLI". Uninstall imports and calls `readForkedFromMetadata` instead, from
-   `classifySkillDirs` (`commands/uninstall.tsx`); `readLocalSkillMetadata` has no
-   caller outside this module and its own test. Believe the grep, not the comment.
+4. **`readLocalSkillMetadata`'s JSDoc names one caller and understates the surface.** It says
+   "Used by the uninstall command to determine whether a skill was installed by the CLI". Uninstall
+   reaches it only transitively — `classifySkillDirs` (`commands/uninstall.tsx`) calls
+   `readForkedFromMetadata`, which calls this. The direct caller the comment does not mention is
+   `readCarriedSkills` (`seed/external-skills.ts`), which reads the WHOLE metadata rather than just
+   `forkedFrom`. Grep for the symbol before assuming the comment bounds it.
 5. **The top-level `contentHash` in a scaffolded `metadata.yaml` is not the fork hash** and is read
    by nothing. See "The two hashers".
 6. **`LocalRawMetadata` and `LocalSkillMetadata` are hand-maintained casts over Zod schemas** in

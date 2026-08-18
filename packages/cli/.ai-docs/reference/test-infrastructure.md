@@ -7,7 +7,7 @@ related:
   - reference/testing/factories.md
   - reference/testing/mock-data.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-07-23
+last_validated: 2026-08-18
 ---
 
 # Test Infrastructure (Pointer)

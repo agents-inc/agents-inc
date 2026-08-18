@@ -47,7 +47,7 @@ last_validated: 2026-08-04
 > **Scope.** This doc holds _why the harness is shaped the way it is_ and _what the CLI does that a
 > test must work around_. It owns **no** API surface: page-object methods, constants, matchers,
 > fixtures and timeouts are all [`e2e-infrastructure.md`](./e2e-infrastructure.md)'s, and the
-> prescriptive rules are `standards/e2e-testing-bible.md`'s. Nothing here restates either.
+> prescriptive rules are `standards/e2e/`'s. Nothing here restates either.
 
 ## 1. CLI behaviour a test has to satisfy
 
@@ -90,7 +90,8 @@ lines may or may not still be matchable depending on how fast the poll ran.
 
 **Anchor on wizard-rendered text, never on pre-wizard log output.** The buffer mechanics — what
 `getOutput()` / `getScreen()` actually read, and why `getScreen()` is not viewport-only despite its
-name — belong to [`e2e-infrastructure.md`](./e2e-infrastructure.md) and bible rule 10.18. This entry
+name — belong to [`e2e-infrastructure.md`](./e2e-infrastructure.md) and `standards/e2e/anti-patterns.md`
+§ "Never assert that text is ABSENT from a screen the session once legitimately drew". This entry
 only records that the pre-wizard window is the reason the rule bites earlier than expected.
 
 ### 1.3 The ASCII logo contains no letters
@@ -207,4 +208,4 @@ themselves — a green run that silently lost ten tests. See
   matchers, fixtures, timeouts, buffer semantics
 - [`infrastructure.md`](./infrastructure.md) — Vitest projects and the unit-side configuration
 - [`monorepo-layout.md`](../monorepo-layout.md) — the repository around `packages/cli`
-- `standards/e2e-testing-bible.md` and `standards/e2e/*` — the prescriptive rules (convention-keeper's)
+- `standards/e2e/*` — the prescriptive rules. `standards/e2e-testing-bible.md` is now a pointer into that directory

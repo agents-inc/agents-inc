@@ -275,7 +275,7 @@ const agents = { "web-developer": mockAgent } as Record<AgentName, AgentDefiniti
 const agents: Partial<Record<AgentName, AgentDefinition>> = { "web-developer": mockAgent };
 ```
 
-This used to be sanctioned here as a second exception, with `{ "web-developer": mockAgent } as Record<AgentName, AgentDefinition>` given as the example. That example was the defect: 24 signatures across loading, resolution, compilation, the config gate and installation declared total agent maps that no call path fills, and `local-installer.test.ts` carried **53 casts** -- 43 of them the same `emptyAgents as Record<AgentName, AgentDefinition>` -- existing only to launder that one wrong type into every call site, including two `as unknown as` double casts a CLAUDE.md NEVER already forbids. Making the parameters `Partial` deleted all 53 with no other change and surfaced zero unhandled `undefined` in production code: every site was already guarded, which is what a false total map always looks like from underneath.
+**`{ "web-developer": mockAgent } as Record<AgentName, AgentDefinition>` is NOT an exception, however plausible it reads.** A cast of that shape re-asserts a totality the callee invented, and it does not stay in one file: 24 signatures across loading, resolution, compilation, the config gate and installation declared total agent maps that no call path fills, and `local-installer.test.ts` accumulated **53 casts** — 43 of them the same `emptyAgents as Record<AgentName, AgentDefinition>` — existing only to launder that one wrong type into every call site, two of them `as unknown as` double casts a CLAUDE.md NEVER already forbids. Widening the parameters to `Partial` deletes them all with no other change and surfaces zero unhandled `undefined`, because every site was already guarded. That is what a false total map always looks like from underneath, and it is the signal to widen the parameter rather than cast the fixture.
 
 **6.11** No TODO/task IDs in test names (`describe()`, `it()`), assertion messages, or inline test comments. File-level JSDoc only. Names rot; IDs look authoritative but become meaningless once the task is closed or renumbered.
 
@@ -326,6 +326,43 @@ The guard is `assertDistIsFresh` in **`src/cli/lib/testing/dist-staleness.ts`**,
 "A tree compiled into it" is plural and that is the point (CLI-458): `packages/matrix/src` counts as much as `packages/cli/src`, because tsup inlines `@workspace/matrix` into the bundle rather than importing it, and matrix has no build output of its own to go stale in the CLI's place. **Anything else this package ever inlines from another workspace belongs in `BUILD_INPUT_TREES` (in `dist-staleness.ts`) on the same day it is inlined** — a build input the guard cannot see is a false green it cannot stop.
 
 Grounding: deleting `src/cli/commands/import/skill.ts` in CLI-452 left `dist/commands/import/skill.js` behind, and its eleven-spec integration file passed in full against the orphan — the whole suite reported 136 files green with the command's source already gone from the tree. The trap is invisible in the direction that matters: a command spec that stays green after you delete its command reads as "nothing depended on it", when it should read as "here is the spec you missed".
+
+**6.20** A negated word assertion must not run against text the harness contributed to. Before writing `expect(x).not.toMatch(/\bword\b/i)` or `not.toContain("word")` over a message, establish which parts of that message the product COMPOSES and which parts it ECHOES back — paths, ids, refs, marketplace names, user input. A negative over echoed text is a statement about the fixture, and the fixture usually wins.
+
+```ts
+// BAD — the refusal names the temp path, and `\b` matches on both sides of a hyphen,
+// so this fails on `/tmp/cc-source-fetcher-test-XXXX/…` whatever the product's prose says
+tempDir = await createTempDir("cc-source-fetcher-test-");
+await expect(fetchFromSource(missing)).rejects.not.toThrow(/\bsources?\b/i);
+
+// GOOD — the fixture is named out of the vocabulary under test
+tempDir = await createTempDir("cc-fetcher-test-");
+```
+
+Four rules, the first two in order of preference:
+
+1. **Name the fixture out of the WHOLE vocabulary under test, not merely the forbidden half.** A rename has two halves and the harness can defeat either — naming a fixture after the SURVIVING noun satisfies the "the new word arrived" positives off the echoed value, which is the same defect with the sign flipped and harder to spot because the spec is green. Prefer a name that says what the value is to the HARNESS (`fixture`) over one that says what it is to the PRODUCT (`marketplace`, `source`): a harness word cannot be renamed out from under the spec by a product decision.
+2. **Scope the negative to the composed half** when the echoed value genuinely cannot avoid the word — anchoring is the cheapest form (`/^\s*Sources?(\s|$)/m` cannot be satisfied by an absolute path, because a path cannot start the line with the word).
+3. **Record the constraint where the name is CHOSEN**, and treat shared fixtures as the priority case. A name in `__tests__/fixtures/` or `e2e/helpers/` has many callers and none can see why it is what it is. **A fixture name is never private to the spec that chose it once any message echoes it.**
+4. **A class check must NAME the trees it read.** The defect exists wherever a negated word meets harness-contributed text — `src/` unit specs, `e2e/`, and component tests alike. A sweep of one tree settles one tree; write down which, or the conclusion reads as a statement about the repository. The e2e half is [`standards/e2e/assertions.md`](./e2e/assertions.md).
+
+**6.21** A fixture source is a custom marketplace. Any fixture written by `createTestSource()` — or any other writer whose output `loadSkillsMatrixFromSource()` reads — publishes its skill ids through `inTestMarketplace(skills)` / `testMarketplaceSkillId(bareId)` from `__tests__/fixtures/create-test-source.ts`. A bare public-catalogue id in a fixture source is refused at load, and the refusal is correct: the fixture, not the guard, is what is wrong.
+
+```ts
+// BAD — four bare public-catalogue ids; the load-side collision guard refuses the whole source
+await createTestSource({ skills: DEFAULT_TEST_SKILLS });
+
+// GOOD — republished in the fixture marketplace's own namespace
+await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
+```
+
+Two exceptions and one adjacent rule:
+
+- A fixture that deliberately MODELS the public catalogue declares itself with a `package.json` naming `PUBLIC_CATALOGUE_PACKAGE` (`@agents-inc/skills`). Package identity is the only signal the guard reads — the name in `marketplace.json` is the claim under test.
+- Installed and local skills stay bare. A local skill overriding a catalogue id is a supported path, not a marketplace claim.
+- Only the id is namespaced. Slugs, categories and display titles are not, and neither are sub-agent names.
+
+**Namespacing an id also removes it from every built-in table keyed by the generated `SkillId` union** — the coupling is a membership test, not a parse, and the miss usually has a silent fallback. Classification of those tables: [`standards/e2e/user-journeys.md` § Journey 26](./e2e/user-journeys.md).
 
 ---
 

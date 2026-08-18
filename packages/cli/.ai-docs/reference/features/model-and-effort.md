@@ -121,27 +121,48 @@ Both live in `src/cli/types/matrix.ts` and are **const-array-derived** — the a
 truth and the type is projected off it with `(typeof X)[number]`. Nothing declares the union
 members a second time in TypeScript.
 
-| Const          | Members                                           | Type          |
-| -------------- | ------------------------------------------------- | ------------- |
-| `MODEL_NAMES`  | `sonnet`, `opus`, `haiku`, **`fable`**, `inherit` | `ModelName`   |
-| `EFFORT_NAMES` | `low`, `medium`, `high`, `xhigh`, `max`           | `EffortLevel` |
+Both are stated below member by member, in source order, and **both are bound to source** by
+`scripts/check-enumeration-drift.ts` — adding or renaming a member fails `npx vitest run scripts/`
+until the matching row is written here. A one-cell comma list could not be bound: the checker's
+`code-spans` reader only matches CONSTANT-shaped backticked names and every member here is
+lower-case, so the member-per-row table is the readable form, not a presentation choice.
+
+The members of `MODEL_NAMES` (`ModelName`), exhaustive and in source order:
+
+| Member    | What it selects                                                    |
+| --------- | ------------------------------------------------------------------ |
+| `sonnet`  | A real model                                                       |
+| `opus`    | A real model                                                       |
+| `haiku`   | A real model                                                       |
+| `fable`   | A real model                                                       |
+| `inherit` | The sentinel: the main conversation's model, never a calling agent |
+
+The members of `EFFORT_NAMES` (`EffortLevel`), exhaustive and in source order:
+
+| Member   | Note                                               |
+| -------- | -------------------------------------------------- |
+| `low`    | —                                                  |
+| `medium` | —                                                  |
+| `high`   | —                                                  |
+| `xhigh`  | What a Claude Code session sends under "ultracode" |
+| `max`    | —                                                  |
+
+`ultra` is not a member — see below.
 
 The arrays are `as const`, which is what makes them usable both as a Zod `z.enum(...)` argument and
 as a runtime list to render into generated source. The derivation is the reason a member is added
 in exactly one place — and the reason adding one has the six downstream effects listed under
 [Adding a union member](#adding-a-union-member).
 
-**Array order is observable output, not presentation.** `MODEL_NAMES` is
-`["sonnet", "opus", "haiku", "fable", "inherit"]`, and that exact sequence is what
+**Array order is observable output, not presentation.** The sequence in the table above is what
 `src/schemas/agent.schema.json` publishes as its `model` enum and what `formatLiteralUnion` emits as
 the `AgentScopeConfig["model"]` union in every generated `config-types.ts`. `"fable"` was placed
 before `"inherit"` deliberately, to keep the real models contiguous and leave the `inherit` sentinel
 last. Re-ordering the array is a visible change to two generated artefacts, not a tidy-up.
 
-> **`MODEL_NAMES` has FIVE members. `fable` is one of them.** Three live reference docs still list
-> four (`sonnet | opus | haiku | inherit`) — see [Known drift in other
-> docs](#known-drift-in-other-docs). `fable` is not hypothetical: an E2E spec installs it and
-> asserts it lands in compiled frontmatter.
+> **`fable` is not hypothetical.** An E2E spec installs it and asserts it lands in compiled
+> frontmatter. It was the member every prose restatement of this union used to omit, which is the
+> reason both arrays are now bound to source rather than described.
 
 **The types barrel is `export type *` only.** `src/cli/types/index.ts` re-exports six modules and
 every line is `export type * from "./…"`, so the barrel carries **no values at all**.
@@ -399,24 +420,30 @@ partial entry loses the tuning.
 Each of these is verified absence, not an unchecked assumption. They are the fastest way to answer
 "where do I hook in?".
 
-| Surface                | State                                                                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Wizard UI              | **None.** No component or hook under `src/cli/components/` or `src/cli/hooks/` reads or writes either field             |
-| CLI flags              | **None.** No command declares a `model` or `effort` flag or arg; `effort` does not appear in `src/cli/commands/` at all |
-| Bundled agent `effort` | **Zero.** Not one bundled `metadata.yaml` declares `effort`                                                             |
-| Bundled agent `model`  | **Every one** declares it — 20 `opus`, 3 `sonnet`                                                                       |
+| Surface                | State                                                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Wizard UI              | **None.** No component or hook under `src/cli/components/` or `src/cli/hooks/` reads or writes either field                  |
+| CLI flags              | **None.** No command declares a `model` or `effort` flag or arg; `effort` does not appear in `src/cli/commands/` at all      |
+| Bundled agent `effort` | **Zero** at the time of writing. Re-derive: `grep -rl '^effort:' src/agents --include=metadata.yaml`                         |
+| Bundled agent `model`  | **Every one** declares it. The per-model distribution is owned by [`agent-system.md`](./agent-system.md) — not restated here |
 
 One of these is worth spelling out.
 
-**`effort` has no producer in the built-in vocabulary.** Since no bundled `metadata.yaml` sets it and
-no wizard control or flag sets it, the only ways a compiled agent gets an `effort` line today are a
+**`effort` has no producer in the built-in vocabulary.** No bundled `metadata.yaml` sets it and no
+wizard control or flag sets it, so the only ways a compiled agent gets an `effort` line are a
 hand-edited project `config.ts` and a shared configuration installed with `init --from`. The
-`?? definition.effort` half of the precedence rule is currently unreachable from bundled agents — it
+`?? definition.effort` half of the precedence rule is therefore unreachable from bundled agents — it
 is there for source repos that do declare it.
+
+**Every row of that table asserts an ABSENCE, and `scripts/check-enumeration-drift.ts` cannot
+falsify one** — filling any of these gaps moves no symbol name, so a row here stays green forever
+whether or not it is still true. Re-derive each by grep before relying on it: `effort` under
+`src/cli/components/` and `src/cli/hooks/`, a `model` / `effort` flag under `src/cli/commands/`,
+`^effort:` under `src/agents/`.
 
 ## Test surface
 
-All four unit files below ran green this session (135 tests).
+The unit files below are the ones that pin this axis. Run them rather than reading a total off this page — `npm test` builds `dist/` first, which a bare `vitest run` refuses to do against a stale `dist/`.
 
 | File                                                    | What it pins                                                                               |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -494,22 +521,22 @@ Walk all six.
 6. **This doc and the four listed below** — the union members are restated in prose in several
    places, which is how the `fable` drift happened.
 
-## Known drift in other docs
+## Counts and unions this file does not own
 
-Found while writing this file, verified against source, and **not fixed here** — each belongs to its
-owning document.
+Each of the following is stated in exactly one document, and this file cites rather than restates it.
+A number carried in two places gets repaired in one and left authoritative-looking in the other.
 
-| Doc                        | Claim                                                                                                           | Source says                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `types/core-types.md`      | `MODEL_NAMES = ["sonnet", "opus", "haiku", "inherit"]`                                                          | five members; `"fable"` is missing                                                          |
-| `types/core-types.md`      | _"Only `SkillSlug`, `ModelName`, and `PermissionMode` have `z.enum(...)` bridge schemas"_                       | `effortLevelSchema` is a fourth `z.enum` bridge                                             |
-| `types/core-types.md`      | `AgentScopeConfig` is `{ name, scope, excluded? }` (twice — its own section and the `ProjectConfig` field list) | also `model?` and `effort?`                                                                 |
-| `types/core-types.md`      | no `EffortLevel` section                                                                                        | `EffortLevel` is a const-array-derived union alongside `ModelName`                          |
-| `types/zod-schemas.md`     | Bridge Schemas table has 4 rows; inventory declared exhaustive; total **35**                                    | `effortLevelSchema` is absent from the table; **36** `export const *Schema` in `schemas.ts` |
-| `features/agent-system.md` | `ModelName` is `"sonnet" \| "opus" \| "haiku" \| "inherit"` (twice)                                             | five members                                                                                |
-| `boundary-map.md`          | `modelNameSchema` validates `"sonnet" \| "opus" \| "haiku" \| "inherit"`                                        | five members                                                                                |
-| `store-map.md`             | `agentConfigs` is `AgentScopeConfig[]`, _"Per-agent `{ name, scope, excluded? }`"_                              | also `model?` and `effort?`                                                                 |
+| Fact                                         | Owner                       |
+| -------------------------------------------- | --------------------------- |
+| The exported-schema total in `schemas.ts`    | `types/zod-schemas.md`      |
+| The `AgentName` union members                | `reference/type-system.md`  |
+| The per-model distribution of bundled agents | `features/agent-system.md`  |
+| The seed wire enums and their version bumps  | `features/seed-contract.md` |
 
-The `35` → `36` correction is the one to handle carefully: `types/zod-schemas.md` **owns** that count
-per the count-ownership registry, and its per-table breakdown sums to the total, so the Bridge row
-moves 4 → 5 and the total 35 → 36 together. Do not restate either number outside that file.
+**The drift this file used to record in other documents has been repaired**, so the list is gone
+rather than restated. `types/core-types.md`, `types/zod-schemas.md`, `features/agent-system.md`,
+`boundary-map.md` and `store-map.md` now each name five `MODEL_NAMES` members, carry `EffortLevel`
+and `effortLevelSchema`, and declare `AgentScopeConfig` with `model?` / `effort?`. Do not re-open a
+running list of other documents' mistakes here: a table of repaired defects reads exactly like a
+table of live ones, and no check can tell them apart. When a member is added to either array, walk
+the six steps above.

@@ -312,8 +312,14 @@ The template assembles a compiled agent prompt in this order:
    - split skills into preloaded (s.preloaded) and dynamic
    - preloadedSkillIds = preloadedSkills.map(s => s.pluginRef ?? s.id)
 4. sanitizeCompiledAgentData(data) strips Liquid delimiters from all user-controlled fields
-5. engine.renderFile("agent", sanitizedData) -> rendered markdown string
+5. renderCompiledAgent: engine.renderFile("agent", sanitizedData) -> rendered markdown,
+   then stampProvenanceMarker(rendered, await cliVersion())
 ```
+
+**Both entry points render through `renderCompiledAgent`**, so no path writes a compiled agent this
+CLI cannot later recognise as its own. The marker is an HTML comment on the first line after the
+frontmatter — deliberately not a frontmatter key, because Claude Code's tolerance of unknown keys is
+undocumented. Full contract: [`compilation-pipeline.md` § The Provenance Marker](./compilation-pipeline.md).
 
 **Batch compilation (`recompileAgents` -> `writeCompiledAgentsByScope`):**
 
@@ -348,7 +354,7 @@ Two summary builders read them, both in `src/cli/utils/messages.ts`. `recompileS
 
 **Function:** `derivePluginRef(skill)` -- file-local (not exported) in `src/cli/lib/compiler.ts`. Guards on `EJECT_SOURCE` (`"eject"`, from `consts.ts`).
 
-**Rule:** Each skill's own `source` field on its `SkillReference` decides its rendered form in the compiled agent's `skills:` frontmatter. A skill renders as `${id}:${id}` (plugin form) only when its source is an explicit non-eject marketplace identifier. `undefined` source (user-authored local skills with no `SkillConfig` entry) and `"eject"` both render as bare `id` (eject form).
+**Rule:** Each skill's own `source` field on its `SkillReference` decides its rendered form in the compiled agent's `skills:` frontmatter. (`SkillReference.source` is the compiler-side name for what `SkillConfig` calls `origin`; `buildCompileAgents` threads one onto the other.) A skill renders as `${id}:${id}` (plugin form) only when its source is an explicit non-eject marketplace identifier. `undefined` source (user-authored local skills with no `SkillConfig` entry) and `"eject"` both render as bare `id` (eject form).
 
 | `skill.source` value   | Rendered form in frontmatter |
 | ---------------------- | ---------------------------- |
@@ -356,7 +362,7 @@ Two summary builders read them, both in `src/cli/utils/messages.ts`. `recompileS
 | `"eject"`              | `${id}` (bare)               |
 | `"<marketplace-name>"` | `${id}:${id}` (plugin form)  |
 
-**Implication:** Mixed-mode agents (some skills ejected, some installed as plugin from a marketplace) render a mixed-form `skills:` array. The old uniform-`installMode` plumbing has since been removed: `RecompileAgentsOptions` no longer carries an `installMode` field, and `compileAgentForPlugin` never accepts one -- per-skill `source` is the sole authority. The legacy `compileAgent()` / `compileAllAgents()` path attaches no `pluginRef` at all (bare `id` only) and has no production callers.
+**Implication:** Mixed-mode agents (some skills ejected, some installed as plugin from a marketplace) render a mixed-form `skills:` array. The old uniform-`installMode` plumbing has since been removed: `RecompileAgentsOptions` no longer carries an `installMode` field, and `compileAgentForPlugin` never accepts one -- per-skill `source` is the sole authority. The legacy `compileAgent()` / `compileAllAgents()` path attaches no `pluginRef` at all (bare `id` only) and has no production callers — `grep -w compileAllAgents src e2e scripts` finds `compiler.ts` and `compiler.test.ts` and nothing else. That is an absence the drift checker cannot police; re-run the grep rather than trusting the line.
 
 **E2E coverage:** `e2e/lifecycle/mixed-mode-skill-ref-format.e2e.test.ts`.
 
@@ -459,7 +465,14 @@ Agents NOT in any domain mapping:
 
 - **meta:** agent-summoner, codex-keeper, convention-keeper, skill-summoner
 
-These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether they are manually selectable is governed separately by the wizard selection grid (`BUILT_IN_AGENT_GROUPS`, below) -- `agent-summoner`, `skill-summoner` and `codex-keeper` have grid rows; `convention-keeper` is absent from BOTH the grid and `DOMAIN_AGENTS`, so it is not surfaced in the built-in wizard at all.
+These agents are not auto-preselected by `preselectAgentsFromDomains()`. Whether they are manually selectable is governed separately by the wizard selection grid (`BUILT_IN_AGENT_GROUPS`, below) -- `agent-summoner`, `skill-summoner` and `codex-keeper` have grid rows; `convention-keeper` appears in neither the grid nor `DOMAIN_AGENTS`, so it is not surfaced in the built-in wizard at all.
+
+**Re-derive that gap rather than trusting this sentence.** It is an assertion of ABSENCE, and
+`scripts/check-enumeration-drift.ts` cannot falsify one — giving `convention-keeper` a grid row
+moves no symbol name, so this paragraph stays green whether or not it is still true. The check is
+two greps: `grep 'id: "' src/cli/components/wizard/step-agents.tsx` against
+`find src/agents -name metadata.yaml`, and `convention-keeper` in `DOMAIN_AGENTS`
+(`stores/wizard-store.ts`). The grid is the shorter list of the two by exactly this one agent.
 
 A stack can name any of them, and naming one installs it: domain derivation runs only on the from-scratch path, so a chosen stack's `agents` keys are the roster the install gets and `DOMAIN_AGENTS` is not consulted — `preselectAgentsFromDomains` is a no-op once a stack is chosen. The three with grid rows are how the user then adds or drops one.
 
@@ -659,9 +672,9 @@ The `changed` flag flips when the merged list differs from the existing list via
 
 **Both project-config write sites share one reconciliation step and one writer.** `reconcileProjectSplitAgainstGlobal` is called immediately before `writeProjectConfigPair` in this propagation path AND immediately before the same call in the project branch of `writeScopedFromWizard`. The second site previously handed `splitConfigByScope`'s raw output straight to the inlining writer with no reconciliation at all, so a project owning a skill at project scope while the same id was active globally ended up with two active entries. See `agent-findings/2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md`.
 
-**Why `regenerateConfigTypes` is necessary:** A global-scope install would otherwise overwrite each project's import-form types with the standalone form. See `agent-findings/2026-04-21-d228-e2e-vacuous-pass-via-home-edit.md`.
+**Why `regenerateConfigTypes` is necessary:** A global-scope install would otherwise overwrite each project's import-form types with the standalone form. `e2e/lifecycle/project-tracking-propagation.e2e.test.ts` pins both halves — the project's `config-types.ts` must still be the import-and-extend form after a `cc edit` at `$HOME`, and it must differ from the pre-edit bytes, so a propagation that never fired cannot pass the assertion vacuously.
 
-**Resolved:** the earlier gap where `mergeConfigs` dropped the `projects` field on a HOME-context edit is fixed -- `mergeConfigs()` in `src/cli/lib/configuration/config-merger.ts` now preserves it (`if (existingConfig.projects && !newConfig.projects) merged.projects = existingConfig.projects`). See `agent-findings/2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`.
+**The propagation guard depends on the merge preserving `projects`:** `mergeConfigs()` in `src/cli/lib/configuration/config-merger.ts` carries the field forward (`if (existingConfig.projects && !newConfig.projects) merged.projects = existingConfig.projects`), so a HOME-context edit still reaches `writeScopedFromWizard` with a populated `finalConfig.projects` for `if (finalConfig.projects?.length)` to fire on.
 
 ## Propagated-Project Agent Recompile
 

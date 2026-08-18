@@ -4,12 +4,12 @@ area: wizard
 keywords: [state-transitions, pointer, moved]
 related:
   - reference/wizard/state-transitions.md
-last_validated: 2026-07-30
+last_validated: 2026-08-18
 ---
 
 # State Transitions (Pointer)
 
-> **Pointer.** The content lives in [`reference/wizard/state-transitions.md`](./wizard/state-transitions.md). This path is kept because inbound links still use it — do not delete it without sweeping those references first.
+> **Pointer — not a second copy.** The content lives in [`reference/wizard/state-transitions.md`](./wizard/state-transitions.md), which is the only writable half of the pair. Note the direction: for THIS pair the body is in the subdirectory and the pointer is at the root, the opposite of the other three wizard pairs. Kept because inbound links still use it — do not delete it without sweeping those references first.
 
 ## Where the content lives now
 

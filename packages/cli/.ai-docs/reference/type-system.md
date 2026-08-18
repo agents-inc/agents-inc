@@ -1,12 +1,13 @@
 ---
 scope: reference
 area: types
-keywords: [type-system, pointer, split]
+keywords: [type-system, pointer, split, union-counts, AGENT_NAMES, enumeration-drift]
 related:
   - reference/types/core-types.md
   - reference/types/operations-types.md
   - reference/types/zod-schemas.md
-last_validated: 2026-07-30
+  - reference/features/code-generation.md
+last_validated: 2026-08-18
 ---
 
 # Type System (Pointer)
@@ -38,18 +39,48 @@ last_validated: 2026-07-30
 
 | Union       | Members | Backing declaration                      |
 | ----------- | ------- | ---------------------------------------- |
-| `SkillId`   | 237     | values of `SKILL_MAP` (also `SKILL_IDS`) |
-| `SkillSlug` | 237     | keys of `SKILL_MAP` (also `SKILL_SLUGS`) |
+| `SkillId`   | 238     | values of `SKILL_MAP` (also `SKILL_IDS`) |
+| `SkillSlug` | 238     | keys of `SKILL_MAP` (also `SKILL_SLUGS`) |
 | `Category`  | 102     | `CATEGORIES`                             |
 | `Domain`    | 9       | `DOMAINS`                                |
 | `AgentName` | 18      | `AGENT_NAMES`                            |
 
-`AGENT_NAMES` in full: `agent-summoner`, `ai-developer`, `ai-researcher`, `ai-tester`,
-`api-developer`, `api-researcher`, `api-tester`, `cli-developer`, `cli-researcher`, `cli-tester`,
-`codex-keeper`, `convention-keeper`, `pm`, `reviewer`, `skill-summoner`, `web-developer`,
-`web-researcher`, `web-tester`. There is **one** `reviewer` and **one** `pm` — no per-domain
-reviewer or PM name exists in the union, so a roster naming `web-reviewer` or `api-pm` names
-nothing.
+**Only `AGENT_NAMES` of the five is bound to source by `scripts/check-enumeration-drift.ts`**, and
+the reason is mechanical rather than a choice about which matters. `SKILL_IDS` and `SKILL_SLUGS` are
+declared `as const satisfies readonly SkillSlug[]`, and the checker reads through `as` and
+parentheses but not through `satisfies` — a `satisfies`-wrapped declaration enumerates nothing to it
+and is a hard failure by design. `CATEGORIES` (102) and `DOMAINS` (9) are plain `as const` arrays and
+so are readable, but neither is enumerated in a table anywhere in `reference/`, and the checker binds
+a source symbol to a **section that names its members** — there is nothing here for it to judge.
+`DOMAINS` is reproduced verbatim as a fenced code block in
+[`types/core-types.md`](./types/core-types.md), which neither of the checker's two readers
+(`code-spans`, `table-rows`) can parse.
+
+`AGENT_NAMES` in full — exhaustive, in source order:
+
+| Agent               | Domain axis               |
+| ------------------- | ------------------------- |
+| `agent-summoner`    | meta — authors sub-agents |
+| `ai-developer`      | ai                        |
+| `ai-researcher`     | ai                        |
+| `ai-tester`         | ai                        |
+| `api-developer`     | api                       |
+| `api-researcher`    | api                       |
+| `api-tester`        | api                       |
+| `cli-developer`     | cli                       |
+| `cli-researcher`    | cli                       |
+| `cli-tester`        | cli                       |
+| `codex-keeper`      | meta — owns `reference/`  |
+| `convention-keeper` | meta — owns `standards/`  |
+| `pm`                | cross-domain, one only    |
+| `reviewer`          | cross-domain, one only    |
+| `skill-summoner`    | meta — authors skills     |
+| `web-developer`     | web                       |
+| `web-researcher`    | web                       |
+| `web-tester`        | web                       |
+
+There is **one** `reviewer` and **one** `pm` — no per-domain reviewer or PM name exists in the union,
+so a roster naming `web-reviewer` or `api-pm` names nothing.
 
 Authoritative source: `src/cli/types/generated/source-types.ts`. Regenerate with `bun run generate:types` — pipeline, phase ordering and traps: [features/code-generation.md](./features/code-generation.md).
 

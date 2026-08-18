@@ -19,7 +19,7 @@ related:
   - reference/testing/factories.md
   - reference/testing/mock-data.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-07-30
+last_validated: 2026-08-18
 ---
 
 # Test Infrastructure
@@ -88,8 +88,7 @@ Both failure directions were live before that, and both are what the layers exis
 | False GREEN | The quieter one. A breaking source change can leave these specs passing against stale `dist/` until CI's build step surfaces it.                                                                                                                                                                                                                |
 
 Reading a commands-project failure as "my change broke this" before checking the build date is the
-first wrong turn. Source:
-`agent-findings/2026-08-06-commands-project-tests-execute-stale-dist-until-rebuild.md`.
+first wrong turn.
 
 ## Configuration
 
@@ -161,64 +160,82 @@ had — the same trade the matrix-spec caveat above describes.
 
 ```
 src/cli/lib/__tests__/
-  content-generators.ts              # Pure content renderers: renderSkillMd, renderAgentYaml, renderConfigTs
-  expected-values.ts                 # Canonical expected agent/skill lists for assertions (EXPECTED_AGENTS, EXPECTED_SKILLS)
+  config-gate-enforcement.test.ts    # The config-gate import bans, asserted against the real eslint config
+  content-generators.ts              # Pure content renderers: renderSkillMd, renderAgentYaml, renderConfigTs, ...
+  expected-values.ts                 # Canonical expected agent/skill lists (EXPECTED_AGENTS, EXPECTED_SKILLS)
   helpers.test.ts                    # Tests for helpers themselves
-  test-constants.ts                  # Keyboard constants, timing delays
+  packaging.test.ts                  # The publish surface: files block, tarball contents, entry globs
+  spec-gates.test.ts                 # Five gates over the suite itself — see "Spec Gates" below
+  test-constants.ts                  # Keyboard escape sequences, timing delays
   test-fixtures.ts                   # Canonical skill registry (SKILLS), test categories
   test-fs-utils.ts                   # createTempDir, cleanupTempDir, fileExists, directoryExists
-  factories/                         # Object creation factories (split from former helpers.ts)
+  factories/                         # Object creation factories
     index.ts                         # Barrel re-export of all factories
     agent-factories.ts               # createMockAgent, createMockAgentConfig, createMockCompiledAgentData
     category-factories.ts            # createMockCategory
-    config-factories.ts              # buildSourceConfig, buildProjectConfig, buildWizardResult, buildAgentConfigs, etc.
-    matrix-factories.ts              # createMockMatrix, createComprehensiveMatrix, createBasicMatrix, createMockMatrixConfig
-    plugin-factories.ts              # createCompileContext, createMockCompileConfig, createMockMarketplace, etc.
-    skill-factories.ts               # createMockSkill, createMockExtractedSkill, createMockSkillEntry, etc.
-    stack-factories.ts               # createMockResolvedStack, createMockStack, createMockRawStacksConfig, etc.
-  helpers/                           # Test utility functions (split from former helpers.ts)
+    config-factories.ts              # buildSourceConfig, buildProjectConfig, buildWizardResult, buildGateReport, ...
+    matrix-factories.ts              # createMockMatrix, createComprehensiveMatrix, createBasicMatrix, ...
+    plugin-factories.ts              # createCompileContext, createMockCompileConfig, createMockMarketplace, ...
+    seed-factories.ts                # buildSeedSkill, buildSeedPayload, buildSeedExternalSkill, UPSTREAM_SKILL_NAME
+    skill-factories.ts               # createMockSkill, createMockExtractedSkill, createMockSkillEntry, ...
+    skill-factories.test.ts          # Tests for the taxonomy contract those factories enforce
+    stack-factories.ts               # createMockResolvedStack, createMockStack, createMockRawStacksConfig, ...
+  helpers/                           # Test utility functions
     index.ts                         # Barrel re-export + parseTestFrontmatter
     cli-runner.ts                    # CLI_ROOT, runCliCommand
-    config-io.ts                     # readTestYaml, readTestJson, readTestTsConfig, writeTestTsConfig, writeTestPackageJson
-    config-comparison.ts             # normalizeGlobalConfig (order-insensitive config-text normalizer: strips projects line, sorts lines)
+    config-io.ts                     # readTestYaml, readTestJson, readTestTsConfig, writeTestTsConfig, writeCorruptTestConfig, writeTestPackageJson
+    config-comparison.ts             # normalizeGlobalConfig (order-insensitive config-text normalizer)
     config-source-sections.ts        # extractNamedSection, extractScopeSections (config.ts section extractors)
-    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent, writeSourceAgent, createImportSource, writeTestInstalledPluginsRegistry, writeTestPluginManifest
-    isolated-home.ts                 # setupIsolatedHome, useFakeHome (chdirs to tempDir/project, points HOME at tempDir/fakehome)
+    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent, writeSourceAgent, writeTestInstalledPluginsRegistry, writeTestPluginManifest
+    element-at.ts                    # elementAt, firstElement — tests only
+    generated-types.ts               # readGeneratedUnion: reads one alias body out of generated types source
+    isolated-home.ts                 # setupIsolatedHome, useFakeHome
+    journey-page.ts                  # The reader for standards/e2e/user-journeys.md — see "Spec Gates" below
     silence-console.ts               # silenceConsole (suppresses console output during a test body)
     test-dir-setup.ts                # createTestDirs, cleanupTestDirs, PluginTestDirs type
-    wizard-simulation.ts             # buildSkillConfig, buildSkillConfigs, simulateSkillSelections, buildWizardResultFromStore, extractSkillIdsFromAssignment
+    wizard-simulation.ts             # buildSkillConfig, buildSkillConfigs, simulateSkillSelections, FACTORY_DEFAULT_SCOPE, ...
     config-comparison.test.ts        # Tests for normalizeGlobalConfig
     config-source-sections.test.ts   # Tests for the section extractors
+    element-at.test.ts               # Tests for the indexed accessors
+    generated-types.test.ts          # Tests for the union reader
     index.test.ts                    # Tests for parseTestFrontmatter
-  assertions/                        # Test assertion helpers (split from former helpers.ts)
+    journey-page.test.ts             # Tests for the journey-page reader's three-kind classification
+  assertions/                        # Test assertion helpers
     index.ts                         # Barrel re-export of all assertions
     agent-assertions.ts              # parseCompiledAgent, expectAgentCompilation, expectValidAgentMarkdown, expectCompiledAgents
     agent-assertions.test.ts         # Tests for the agent assertion helpers
-    config-assertions.ts             # expectConfigSkills, expectConfigAgents, expectFullConfig, assertConfigIntegrity, etc.
+    config-assertions.ts             # expectConfigSkills, expectConfigAgents, expectFullConfig, assertConfigIntegrity, ...
     install-assertions.ts            # expectInstallResult
   mock-data/                         # Extracted test fixtures (shared across test files)
     mock-agents.ts                   # AGENT_DEFS, agent config maps, DEFAULT_TEST_AGENTS
     mock-categories.ts               # Category definitions with domain overrides
-    mock-matrices.ts                 # Pre-built matrix constants (EMPTY_MATRIX, SINGLE_REACT_MATRIX, etc.)
+    mock-matrices.ts                 # Pre-built matrix constants (EMPTY_MATRIX, SINGLE_REACT_MATRIX, ...)
     mock-skills.ts                   # Skill entries, TestSkill arrays, ExtractedSkillMetadata constants
-    mock-source-files.ts             # Published-source on-disk shapes (stack/metadata/categories/rules/stacks) for source-validator tests
+    mock-source-files.ts             # Published-source on-disk shapes for source-validator tests
     mock-sources.ts                  # SkillSource objects (PUBLIC_SOURCE, ACME_SOURCE, INTERNAL_SOURCE)
     mock-stacks.ts                   # Stack templates, Stack objects, TestStack arrays
   commands/                          # Command-level tests (project: "commands", retry: 1)
     build/
+      marketplace-catalog.test.ts
       marketplace.test.ts
       plugins.test.ts
+    new/
+      marketplace.test.ts
     compile.test.ts
-    doctor.test.ts
     doctor-content.test.ts
+    doctor.test.ts
+    edit-from.test.ts
+    edit-ui.test.ts
     edit.test.ts
     eject.test.ts
     help.test.ts
-    init.test.ts
     init-edit-validation-parity.test.ts
     init-from-plugin-install.test.ts
+    init-unbacked-plugin-refusal.test.ts
+    init.test.ts
     list.test.ts
     search.test.ts
+    share.test.ts
     uninstall.test.ts
     update.test.ts
   fixtures/
@@ -226,124 +243,47 @@ src/cli/lib/__tests__/
     agents/                          # Agent fixture files (_templates, web-developer, api-developer)
     commands/                        # Command fixture files (deploy.md, test.md)
     plugins/                         # Plugin fixture directories (valid-plugin, invalid-plugin-*)
-    skills/                          # Skill fixture files (web-framework-react, web-testing-vitest.md)
+    skills/                          # Skill fixture files
     stacks/                          # Stack fixture files (default/)
-  integration/
+  integration/                       # project: "integration"
     compilation-pipeline.test.ts
     consumer-stacks-matrix.integration.test.ts
-    install-mode.integration.test.ts
     install-mode-round-trip.integration.test.ts
+    install-mode.integration.test.ts
     installation.test.ts
     stack-agent-roster.integration.test.ts
     wizard-flow.integration.test.tsx
-  user-journeys/
+  user-journeys/                     # project: "integration"
     config-precedence.test.ts
     edit-recompile.test.ts
 ```
 
-Note: There is NO `test/fixtures/` directory at the project root. All fixtures are in `src/cli/lib/__tests__/fixtures/`. The `fixtures/` subdirectory does NOT contain `configs/` or `matrix/` subdirectories.
+Note: there is NO `test/fixtures/` directory at the project root. All fixtures are in
+`src/cli/lib/__tests__/fixtures/`, and that directory has no `configs/` or `matrix/` subdirectory.
 
-Script tests (included in `unit` project via `scripts/**/*.test.ts`):
+**Every other spec under `src/cli/` is co-located with the source it covers** — beside the module
+(`src/cli/lib/compiler.test.ts`), or in a `__tests__/` directory beside it
+(`src/cli/lib/configuration/__tests__/`, `src/cli/lib/config-gate/__tests__/`). Component tests sit
+beside their components under `src/cli/components/`. Derive the list with
+`fg "src/cli/**/*.test.{ts,tsx}"` rather than reading one here; a hand-listed inventory of that size
+drifts within a fortnight, and `DOCUMENTATION_MAP.md` § Coverage owns the total.
 
-```
-scripts/generate-source-types.test.ts  # Tests for the union type code generator
-```
-
-Test surface for both generators — 34 cases here, **zero** for `scripts/generate-json-schemas.ts`, and why the latter cannot currently have one: [features/code-generation.md](../features/code-generation.md).
-
-Co-located unit tests (next to source files):
-
-```
-src/cli/lib/agents/agent-fetcher.test.ts
-src/cli/lib/agents/agent-plugin-compiler.test.ts
-src/cli/lib/agents/agent-recompiler.test.ts
-src/cli/lib/compiler.test.ts
-src/cli/lib/configuration/__tests__/config-loader.test.ts
-src/cli/lib/configuration/__tests__/config-round-trip.test.ts
-src/cli/lib/configuration/__tests__/config-types-writer.test.ts
-src/cli/lib/configuration/__tests__/config-writer.test.ts
-src/cli/lib/configuration/__tests__/default-categories.test.ts
-src/cli/lib/configuration/__tests__/default-rules.test.ts
-src/cli/lib/configuration/__tests__/default-stacks.test.ts
-src/cli/lib/configuration/__tests__/define-config.test.ts
-src/cli/lib/configuration/config.test.ts
-src/cli/lib/configuration/config-generator.test.ts
-src/cli/lib/configuration/config-merger.test.ts
-src/cli/lib/configuration/project-config.test.ts
-src/cli/lib/installation/installation.test.ts
-src/cli/lib/installation/local-installer.test.ts
-src/cli/lib/installation/mode-migrator.test.ts
-src/cli/lib/loading/loader.test.ts
-src/cli/lib/loading/multi-source-loader.test.ts
-src/cli/lib/loading/source-fetcher.test.ts
-src/cli/lib/loading/source-fetcher-revalidation.test.ts
-src/cli/lib/loading/source-loader.test.ts
-src/cli/lib/marketplace-generator.test.ts
-src/cli/lib/matrix/matrix-health-check.test.ts
-src/cli/lib/matrix/matrix-loader.test.ts
-src/cli/lib/matrix/matrix-provider.test.ts
-src/cli/lib/matrix/matrix-resolver.test.ts
-src/cli/lib/matrix/skill-resolution.integration.test.ts
-src/cli/lib/matrix/skill-resolution.test.ts
-src/cli/lib/operations/project/compile-agents.test.ts
-src/cli/lib/operations/project/detect-project.test.ts
-src/cli/lib/operations/project/load-agent-defs.test.ts
-src/cli/lib/operations/project/write-project-config.test.ts
-src/cli/lib/operations/skills/copy-local-skills.test.ts
-src/cli/lib/operations/skills/install-plugin-skills.test.ts
-src/cli/lib/operations/skills/uninstall-plugin-skills.test.ts
-src/cli/lib/operations/source/ensure-marketplace.test.ts
-src/cli/lib/operations/source/load-source.test.ts
-src/cli/lib/output-validator.test.ts
-src/cli/lib/permission-checker.test.tsx
-src/cli/lib/plugins/plugin-discovery.test.ts
-src/cli/lib/plugins/plugin-finder.test.ts
-src/cli/lib/plugins/plugin-info.test.ts
-src/cli/lib/plugins/plugin-manifest.test.ts
-src/cli/lib/plugins/plugin-manifest-finder.test.ts
-src/cli/lib/plugins/plugin-settings.test.ts
-src/cli/lib/plugins/plugin-validator.test.ts
-src/cli/lib/resolver.test.ts
-src/cli/lib/schemas.test.ts
-src/cli/lib/skills/local-skill-loader.test.ts
-src/cli/lib/skills/skill-copier.test.ts
-src/cli/lib/skills/skill-fetcher.test.ts
-src/cli/lib/skills/skill-metadata.test.ts
-src/cli/lib/skills/skill-plugin-compiler.test.ts
-src/cli/lib/skills/local-skill-mover.test.ts
-src/cli/lib/source-validator.test.ts
-src/cli/lib/stacks/stacks-loader.test.ts
-src/cli/lib/versioning.test.ts
-src/cli/lib/wizard/build-step-logic.test.ts
-src/cli/stores/wizard-store.test.ts
-src/cli/stores/d227-same-scope-tombstone-duplicate.test.ts
-src/cli/utils/errors.test.ts
-src/cli/utils/exec.test.ts
-src/cli/utils/frontmatter.test.ts
-src/cli/utils/fs.test.ts
-src/cli/utils/logger.test.ts
-src/cli/utils/messages.test.ts
-src/cli/utils/typed-object.test.ts
-```
-
-Component tests:
+Script tests run in the `unit` project through its `scripts/**/*.test.ts` include:
 
 ```
-src/cli/components/common/confirm.test.tsx
-src/cli/components/hooks/use-section-scroll.test.ts
-src/cli/components/hooks/use-terminal-dimensions.test.ts
-src/cli/components/wizard/category-grid.test.tsx
-src/cli/components/wizard/checkbox-grid.test.tsx
-src/cli/components/wizard/hotkeys.test.ts
-src/cli/components/wizard/source-grid.test.tsx
-src/cli/components/wizard/step-agents.test.tsx
-src/cli/components/wizard/step-build.test.tsx
-src/cli/components/wizard/step-confirm.test.tsx
-src/cli/components/wizard/step-sources.test.tsx
-src/cli/components/wizard/step-stack.test.tsx
-src/cli/components/wizard/utils.test.ts
-src/cli/components/wizard/wizard-tabs.test.tsx
+scripts/check-enumeration-drift.test.ts    # The documentation-enumeration registry
+scripts/check-findings-frontmatter.test.ts # agent-findings frontmatter schema
+scripts/check-shared-eslint-config.test.ts # Every workspace extends the shared eslint base
+scripts/check-shared-tsconfig.test.ts      # Every workspace extends the shared tsconfig
+scripts/check-shared-vitest-config.test.ts # Every workspace extends the shared vitest config, or declares why not
+scripts/generate-matrix-package.test.ts    # The matrix package generator
+scripts/generate-source-types.test.ts      # The union type code generator
 ```
+
+`scripts/generate-json-schemas.ts` has **no** spec, and
+[features/code-generation.md](../features/code-generation.md) carries why it currently cannot have
+one. `scripts/handrun.mjs` has none either, and is not meant to: it is a hand-run entry point, not a
+gate — [e2e-infrastructure.md](./e2e-infrastructure.md) § The Hand-Run.
 
 ## Code Patterns
 
@@ -558,7 +498,15 @@ All `try/catch/finally` blocks have been removed from unit and integration test 
 - **Fire-and-forget with expected errors:** `await Command.run(args).catch(() => {})`
 - **No `try/finally` for cleanup in test bodies** -- `afterEach` is sufficient
 
-This applies to unit and integration test files across `src/cli/` and `scripts/` (~127 test files total). Two command tests retain a local `try` block for deliberate error-path handling: `commands/edit.test.ts` (captures a thrown oclif `CLIError` to assert on `oclif.exit` and message) and `commands/search.test.ts`.
+This applies to unit and integration test files across `src/cli/` and `scripts/`. Four files retain a
+local `try` block, each for a reason cleanup-in-`afterEach` does not cover:
+
+| File                                          | Why the block stays                                                                                                       |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `__tests__/commands/edit.test.ts`             | Captures a thrown oclif `CLIError` to assert on `oclif.exit` and the message                                              |
+| `__tests__/commands/search.test.ts`           | Same shape                                                                                                                |
+| `lib/loading/source-loader.test.ts`           | `try/finally` around `enableBuffering()` in two file-local helpers, so the buffer is drained whichever way the load exits |
+| `lib/skills/unresolved-skill-entries.test.ts` | Scoped `os.homedir()` spy that must be restored even when the call under test throws                                      |
 
 ### Config Section Extractors
 
@@ -568,6 +516,135 @@ Two shared helpers in `src/cli/lib/__tests__/helpers/config-source-sections.ts` 
 - `extractScopeSections(section)` -- Splits a section into `{ global, project }` parts using `// global` / `// project` comment markers
 
 Used by `src/cli/lib/configuration/__tests__/config-writer.test.ts`. A separate order-INSENSITIVE normalizer, `normalizeGlobalConfig()` in `helpers/config-comparison.ts` (strips the `"projects"` line and sorts the remaining lines), is exported via the barrel for config-text comparison.
+
+## Spec Gates (`src/cli/lib/__tests__/spec-gates.test.ts`)
+
+Five gates in the `unit` project, over the suite and its config rather than over the product. They
+exist because each answers a question nothing else in the repository asks, and every one of them was
+written after the silence it closes had already cost something.
+
+| Gate                                                       | What it asserts                                                                                                                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| every spec belongs to a configured project                 | Every `e2e/**/*.test.ts` on disk is claimed by a project's `include` in `e2e/vitest.config.ts`. `e2e/smoke/` sat outside every include for months and rotted                |
+| every configured project is opened by a package script     | Each project name appears as `--project <name>` in some `package.json` script. A project no script names runs only when the OTHER project is asked for, and never otherwise |
+| a journey's from-scratch specs are from scratch            | A row of `standards/e2e/user-journeys.md` whose every named spec opens from a fixture-written config must carry the `TO TEST` marker                                        |
+| every named spec carries the directory it lives in         | A name a run cannot be pointed at is not proof                                                                                                                              |
+| every non-spec name is one the gate has been told about    | Anything the From-scratch column names that no spec answers to must appear in `RECOGNISED_NON_SPEC_NAMES` with its reason                                                   |
+| a verdict that cannot fail is refused before it is trusted | Lints one real file per separately-ruled `no-restricted-syntax` zone against the LOADED `eslint.config.js`, for every shape in `ESCAPE_SHAPES`                              |
+| the shared base refuses a value compared against itself    | Lints under `packages/eslint-config/base.js` ALONE, which is the only way to tell a rule the base carries from one this package adds on top                                 |
+
+Both halves of the config are **loaded, never restated**: `e2eProjects()` imports
+`e2e/vitest.config.ts` and reads its `projects`, and the ESLint gates construct an `ESLint` instance
+over the real `cwd`. A second copy of an include glob or a selector here could not tell a config
+that stopped matching a file from one that never did.
+
+### `ESCAPE_SHAPES` and the zones it is run against
+
+`ESCAPE_SHAPES` pairs each way a verdict can be written so nothing it measures can make it false
+with the same verdict written so the code CAN. **The pairing is the point** — a rule condemning both
+halves would just be banning count comparisons, and every spec would learn to write around it. Four
+shapes:
+
+| Shape                              | Rule                   |
+| ---------------------------------- | ---------------------- |
+| a length compared against zero     | `no-restricted-syntax` |
+| a zero compared against a length   | `no-restricted-syntax` |
+| a set's size compared against zero | `no-restricted-syntax` |
+| a value compared against itself    | `no-self-compare`      |
+
+The selectors live in `eslint.config.js` as `VACUOUS_COMPARISONS`, over a property named
+`length`, `size` or `byteLength`. `no-self-compare` sits in `packages/eslint-config/base.js`
+instead: it is core ESLint, takes no options, and therefore merges across config blocks, so it
+reaches every workspace — where it had been stated in this package alone, leaving every other
+workspace accepting `x === x`. The selectors cannot follow it there, because
+`no-restricted-syntax` DOES take options and the last block naming it for a file owns all of them.
+
+`@typescript-eslint/no-unnecessary-condition` sees none of these: it judges a condition against its
+TYPE, and `number >= 0` is a `boolean` the type `number` leaves open. The shape is only reachable
+syntactically, which is why the rules that close it are too.
+
+`LINT_ZONES` names one REAL file per zone `eslint.config.js` configures `no-restricted-syntax`
+separately in — `e2e/assertions/four-surfaces.ts` (the whole E2E tree, including its helpers),
+`src/cli/lib/content-validator.ts` (an ordinary type-checked source, and the config-gate import-ban
+zone), and `src/cli/lib/config-gate/index.ts` (which every block above excludes, so it inherits
+nothing). The paths must EXIST: `lintText` needs a path the TypeScript project service can resolve,
+and an unresolvable one fails as a parse error rather than as a missing rule. The gate throws on a
+fixture that failed to parse rather than counting it, because a parse failure produces a `fatal`
+message with a null `ruleId` and "eslint said something" is exactly the coarse verdict this gate
+exists to refuse.
+
+### `helpers/journey-page.ts` — the journey-page reader
+
+The reader for `standards/e2e/user-journeys.md`'s journey tables, extracted from the gate it used to
+sit inside. **Classification is TOTAL**: every backticked name in a From-scratch cell comes back as
+one of three kinds, and the two ways a name can fail to be a resolvable spec are kept apart because
+they mean opposite things.
+
+| Kind             | What it means                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `spec`           | A file answers to it — judge it                                                              |
+| `unlocated-spec` | A real spec named without its directory. `livesAt` carries the rewrite. A PAGE defect        |
+| `not-a-spec`     | Nothing answers to it — a helper or a code symbol. A legitimate exclusion, justified by name |
+
+The inline predecessor dropped whatever it could not resolve, and **a page whose entries are
+skipped reads exactly like a page whose entries all passed**: six entries went unjudged on a page
+whose whole job is to say what has been proved. The reader now throws rather than classifying when a
+name inside a spec directory answers to no file, and throws rather than returning `[]` when the
+table shape has moved — a reader that returns nothing for a page it failed to understand makes every
+judgement over it hold vacuously.
+
+The spec directories are DERIVED from the spec list rather than listed, which is the second half of
+the same silence: a hand-kept list would leave every row naming a newly-added directory skipped. The
+parsing is pure and the filesystem is one function at the edge (`readSpecNames`), so the
+classification is tested against a three-element spec list rather than a fixture tree
+(`helpers/journey-page.test.ts`). Its exports are inventoried in
+[factories.md](./factories.md#helper-functions-srcclilib__tests__helpers).
+
+## Repository Checks (`scripts/*.test.ts`)
+
+Seven checks run in the `unit` project. Each is a plain module with **nothing at module scope** —
+the spec beside it is the enforcement, and the package root is a parameter so the check can be driven
+against a fixture tree.
+
+| Check                           | What it asserts                                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-enumeration-drift.ts`    | Every document claiming to enumerate a source symbol exhaustively still names what that symbol holds — see below                                                                |
+| `check-findings-frontmatter.ts` | Every `agent-findings/` file carries frontmatter a YAML parser can read, against `agent-findings/TEMPLATE.md`'s schema                                                          |
+| `check-shared-eslint-config.ts` | Every workspace extends `@workspace/eslint-config` rather than restating its rules                                                                                              |
+| `check-shared-tsconfig.ts`      | Every workspace extends `@workspace/typescript-config`, or declares it holds no TypeScript                                                                                      |
+| `check-shared-vitest-config.ts` | Every workspace extends `@workspace/vitest-config`, or states in its manifest why it does not — which `packages/cli` does, in `package.json`'s `//no-shared-vitest-config` note |
+| `generate-matrix-package.ts`    | The matrix package generator                                                                                                                                                    |
+| `generate-source-types.ts`      | The union type code generator                                                                                                                                                   |
+
+### `check-enumeration-drift.ts`
+
+A registry of `(source symbol) → (document, section)` rows, judged as **MEMBERSHIP in both
+directions** rather than as a total. Two lists can agree on a total and share no names at all, and
+the two failure directions are not the same size: a list that is SHORT sends a reader looking for a
+member, failing to find it, and writing a duplicate; a list naming a symbol the source has since
+LOST sends them grepping for nothing, after which the whole document stops being trusted.
+
+A row's source half names either one exported symbol — an object's keys, an array's strings, a
+union's literals — or a module's whole export list of one kind (`exports: "const" | "function"`).
+Its document half names a section delimited by two markers and how that section states its list:
+`code-spans` (every constant-shaped backticked name) or `table-rows` (the first cell of every row
+under the table's rule).
+
+**Every guard throws rather than skipping.** A missing source file, a missing symbol, a symbol
+holding a member the reader cannot name (a spread, a computed key), a section opener that has moved
+or appears twice, and an enumeration that parses to nothing are all hard failures — because a row
+that quietly reads an empty section reads exactly like a row that passed, which is how every check
+in this repository that has failed us failed.
+
+**What it cannot bind, and why.** The source reader names a module's OWN declarations and reads no
+`export … from`, so a BARREL cannot be registered: `factories/index.ts`, `helpers/index.ts` and
+`assertions/index.ts` re-export from siblings and enumerate nothing of their own. A document table
+whose rows come from several files cannot be registered either, because a row names one source file.
+That is what leaves [factories.md](./factories.md)'s three directory tables — the counts that
+document owns — checkable by hand only. Its single-file inventories are registered.
+
+The prescriptive half is `standards/documentation-bible.md` § "A Count Lives in Exactly One
+Document", which requires a new exhaustive claim to add a row here rather than a promise in prose.
 
 ## Test Anti-Patterns (From CLAUDE.md)
 

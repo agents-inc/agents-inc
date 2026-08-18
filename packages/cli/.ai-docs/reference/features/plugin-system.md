@@ -314,7 +314,26 @@ type Marketplace = {
 
 **File:** `src/cli/lib/marketplace-generator.ts`
 
-Generates `marketplace.json` from a source directory containing skills. Exports: `generateMarketplace()` (build the `Marketplace` object), `writeMarketplace()` (write it to disk), and `getMarketplaceStats()` (the total plus a per-`category` breakdown, which `build marketplace` prints as `Category breakdown:`). An entry carrying no `category` — a plugin authored outside this CLI — falls into an `uncategorized` bucket.
+Generates `marketplace.json` from a source directory containing skills. Exports: `generateMarketplace()` (build the `Marketplace` object), `writeMarketplace()` (write it to disk), `getMarketplaceStats()` (the total plus a per-`category` breakdown, which `build marketplace` prints as `Category breakdown:`), and the two namespace guards below. An entry carrying no `category` — a plugin authored outside this CLI — falls into an `uncategorized` bucket.
+
+### Namespace guards
+
+**A plugin's `name` in `marketplace.json` is a skill id**, so the same namespace rule that governs
+skill ids governs what this module will emit. Two exported guards enforce it, and `build marketplace`
+calls them in this order:
+
+| Guard                                        | Answers                                             | Returns                                       |
+| -------------------------------------------- | --------------------------------------------------- | --------------------------------------------- |
+| `validateMarketplaceName(name, packageName)` | Is this marketplace claiming a reserved namespace?  | The refusal text, or `null`                   |
+| `validateSkillIdNamespace(marketplace)`      | Does every plugin name begin `<marketplace-name>-`? | The refusal text listing offenders, or `null` |
+
+`RESERVED_MARKETPLACE_NAMES` is `[DEFAULT_PUBLIC_SOURCE_NAME, "external", "local"]`. The public
+catalogue is exempted by **package identity** — `packageName === PUBLIC_CATALOGUE_PACKAGE` — never by
+the name a manifest claims. `validateSkillIdNamespace` then reads its own exemption off the NAME, and
+is only safe because the first guard already gated that name on package identity. Do not reorder or
+split them. The rule itself, the reserved names and the load-side half:
+[`skills-and-matrix.md` § The Skill-Id Namespace](./skills-and-matrix.md); the command's flags and
+exit codes: [`reference/commands/index.md`](../commands/index.md).
 
 ### Marketplace Commands (via Claude CLI)
 
@@ -322,7 +341,7 @@ Executed through `src/cli/utils/exec.ts`:
 
 | Function                            | Shell Command                                                                                                                                                                                                                                              |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claudePluginInstall()`             | `claude plugin install {path} --scope {scope}`                                                                                                                                                                                                             |
+| `claudePluginInstall()`             | `claude plugin install {ref} --scope {scope}` — one call per skill, at that skill's own scope                                                                                                                                                              |
 | `claudePluginUninstall()`           | `claude plugin uninstall {name} --scope {scope}` (swallows "not installed"/"not found")                                                                                                                                                                    |
 | `claudePluginUninstallBestEffort()` | Calls `claudePluginUninstall({ref})` on the primary scope then the fallback scope, swallowing errors on each. **Sole production caller: `uninstallPlugins()` in `src/cli/commands/uninstall.tsx`** — `mode-migrator.ts` moved to a scope-precise uninstall |
 | `claudePluginMarketplaceList()`     | `claude plugin marketplace list --json`                                                                                                                                                                                                                    |
@@ -332,7 +351,29 @@ Executed through `src/cli/utils/exec.ts`:
 | `claudePluginMarketplaceUpdate()`   | `claude plugin marketplace update {name}`                                                                                                                                                                                                                  |
 | `isClaudeCLIAvailable()`            | `claude --version` (returns boolean)                                                                                                                                                                                                                       |
 
-`claudePluginInstall()` and `claudePluginUninstall()` accept a `scope: ClaudePluginScope` (`"project" | "user"`, defined in `src/cli/types/config.ts`) and a `projectDir` parameter. User-scoped operations run from `os.homedir()` via `resolvePluginCwd()` (scope `"user"` -> `os.homedir()`, else `projectDir`) so Claude CLI writes to `~/.claude/settings.json`. All inputs validated for injection prevention (`validatePluginPath()` / `validatePluginName()`) before execution.
+`claudePluginInstall()` and `claudePluginUninstall()` accept a `scope: ClaudePluginScope` (`"project" | "user"`, defined in `src/cli/types/config.ts`) and a `projectDir` parameter. User-scoped operations run from `os.homedir()` via `resolvePluginCwd()` (scope `"user"` -> `os.homedir()`, else `projectDir`) so Claude CLI writes to `~/.claude/settings.json`. All inputs validated for injection prevention (`validatePluginPath()` / `validatePluginName()`) before execution. A non-zero exit throws `Plugin installation failed: <stderr or stdout>`.
+
+### What each skill is installed with
+
+**One `claude plugin install` per skill, never a batch**, and the scope is read per skill rather than passed once for the call. `installPluginSkills` (`operations/skills/install-plugin-skills.ts`) loops `config.skills` filtered to `origin !== EJECT_SOURCE` and for each one:
+
+| Argument  | Built by                                           | Value                                                           |
+| --------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| the ref   | `buildMarketplacePluginRef(skill.id, marketplace)` | `{skillId}@{marketplace}` — a bare id matches no registry entry |
+| `--scope` | `toClaudePluginScope(skill.scope)`                 | `"global"` -> `user`; `"project"` and `undefined` -> `project`  |
+| the cwd   | `resolvePluginCwd(scope, projectDir)`              | `os.homedir()` for `user`, `projectDir` otherwise               |
+
+Passing one uniform scope for a mixed list is the defect this shape prevents: a project-context run installs a global-scoped skill at Claude **user** scope and a project-scoped one at **project** scope, in the same loop.
+
+**There is no plugin-to-eject fallback, and adding one is forbidden.** A per-skill failure is captured into `PluginInstallResult.failed` and the function itself never throws — so the CALLER carries the obligation: it must hard-error with `pluginInstallFailureError(failed.length)` at `EXIT_CODES.ERROR` **before** any config is written. Falling back to eject, or writing config anyway, leaves `config.ts` claiming `origin: "<marketplace>"` for a skill that was never installed. Uninstall failures are diagnostic-only; install failures are not.
+
+**A second refusal fires before anything is attempted.** `unbackedPluginSkillIds(skills, matrix)` names skills asking for plugin install that no marketplace carries — `isLocalSource`-style locality is read through `isLocalOnlySkill`, the same predicate the Sources grid uses to decide whether to offer the plugin cell at all. Its message is deliberately **not** `pluginInstallFailureError`: "refresh the marketplace and check the id" are impossible instructions for a skill the user wrote themselves, so `unbackedPluginInstallError(ids)` says to set it to Local or publish it instead.
+
+### `ClaudeConfigOptions` — driving a foreign Claude installation
+
+Every `claude plugin` wrapper in `exec.ts` takes an optional trailing `options?: ClaudeConfigOptions`, which is `{ configDir?: string }`. When set, `configDirEnv` puts `CLAUDE_CONFIG_DIR=<dir>` on the child process's environment; when absent it contributes nothing at all, so the call inherits its process's environment untouched.
+
+`configDir` redirects the **entire** Claude config tree — the marketplace registry, the installed-plugin registry and user settings all move with it — and `CLAUDE_CONFIG_DIR` takes precedence over `HOME` in the Claude CLI, so it overrides an exported `HOME` rather than merely competing with it. That is what lets a test drive a real `claude` binary without touching the machine running it. Nothing under `src/cli/commands/` passes it today — re-derive with `grep -rn 'configDir' src/cli`, which finds only the unrelated `loadStacks(configDir, …)` parameter; every caller that does pass it lives under `e2e/`.
 
 ## Plugin Reference Formats
 
@@ -341,7 +382,7 @@ Two distinct plugin-ref shapes exist. They are NOT interchangeable -- each is co
 | Form                      | Where                                                           | Who emits                                       | Who consumes                                                              | Purpose                                                                                                                                         |
 | ------------------------- | --------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `{skillId}@{marketplace}` | `installPluginSkills`, `uninstallPluginSkills`, `mode-migrator` | `buildMarketplacePluginRef()` (`plugin-ref.ts`) | `claude plugin install` / `claude plugin uninstall` shell commands        | Tells Claude CLI which marketplace to pull the plugin from (same qualified ref for install AND uninstall -- bare ids do not match the registry) |
-| `${id}:${id}`             | `compileAgentForPlugin` via `derivePluginRef`                   | `compiler.ts` (both functions live here)        | Rendered agent prompt (frontmatter `skills:` + body `skill:` invocations) | Tells Claude Code that a referenced skill is plugin-installed (vs ejected)                                                                      |
+| `${id}:${id}`             | `compileAgentForPlugin` via `pluginRefFor`                      | `compiler.ts` (both functions live here)        | Rendered agent prompt (frontmatter `skills:` + body `skill:` invocations) | Tells Claude Code that a referenced skill is plugin-installed (vs ejected)                                                                      |
 
 **`plugin-ref.ts` helpers** (`src/cli/lib/plugins/plugin-ref.ts`, re-exported via `plugins/index.ts`):
 
@@ -349,18 +390,20 @@ Two distinct plugin-ref shapes exist. They are NOT interchangeable -- each is co
 - `parseMarketplacePluginRef(ref)` -> skill id (returns the whole string when no `@` is present) -- inverse of the above.
 - `toClaudePluginScope(scope)` -> `ClaudePluginScope` -- maps cc `SkillScope` to Claude CLI scope (`"global"` -> `"user"`; anything else, including `undefined` -> `"project"`).
 
-`derivePluginRef(skill)` (private to `src/cli/lib/compiler.ts`) returns `undefined` when `skill.source` is `"eject"` (`EJECT_SOURCE`) or `undefined`, producing a bare id in the compiled agent output. User-authored local skills (no `SkillConfig` entry, therefore no `source`) legitimately fall through to bare id -- this is the expected path, not a silent fallback.
+`pluginRefFor(skill)` (private to `src/cli/lib/compiler.ts`) returns `{}` — no `pluginRef` key — when `skill.source` is `"eject"` (`EJECT_SOURCE`) or `undefined`, producing a bare id in the compiled agent output. User-authored local skills (no `SkillConfig` entry, therefore no `source`) legitimately fall through to bare id -- this is the expected path, not a silent fallback.
+
+**`SkillReference.source` and `SkillConfig.origin` are the same value under two names.** The config type calls the field `origin`; `buildCompileAgents` threads it onto each `SkillReference` as `source`, and the compiler reads it there. Grep for whichever name the layer you are in uses — a search for `.source` misses every config-side site and a search for `.origin` misses every compiler-side one.
 
 ### Verified benign: `sourceById` id-keyed map vs dual-scope same-id skills
 
-`buildCompileAgents` (`local-installer.ts`) builds `sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.source]))` keyed by `SkillId` alone. The config's dual-scope compound key is `(id, scope)`, so a last-write-wins map could theoretically stamp the wrong `source` onto a compiled `SkillReference` when the same id appears twice (e.g. active project-eject entry + global tombstone with a different source).
+`buildCompileAgents` (`local-installer.ts`) builds `sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.origin]))` keyed by `SkillId` alone. The config's dual-scope compound key is `(id, scope)`, so a last-write-wins map could theoretically stamp the wrong `source` onto a compiled `SkillReference` when the same id appears twice (e.g. active project-eject entry + global tombstone with a different source).
 
 **Verification (finding `2026-07-18-sourceById-collapse-unreachable-in-production.md`): the collapse is NOT reachable through any production command.** Two independent safeguards prevent it:
 
 1. **Tombstones are filtered before `buildCompileAgents` in every live path.** `init`, `edit`, and `compile` all route through the operations-layer `compileAgents` -> `recompileAgents`, which calls `filterExcludedEntries(projectConfig)` (`agent-recompiler.ts`) -- keeping only `!s.excluded` skills -- BEFORE `buildCompileAgents`. The tombstone is dropped, so `sourceById` never sees two entries for one id.
 2. **Config ordering makes last-write-wins safe even without the filter.** `generateProjectConfigWithInlinedGlobal` (`config-writer.ts`) always emits global entries first, project (active) entries second; the active project entry (serialized last) wins the map.
 
-The only callers that pass an unfiltered config straight into `buildCompileAgents` are `installEject` and `installPluginConfig` (`local-installer.ts`), and both are currently dead code (no command or operation calls them). Empirically confirmed by the E2E regression test `e2e/lifecycle/dual-scope-mixed-source-compiled-ref.e2e.test.ts`, which compiles a genuine dual-scope mixed-source config via `cc compile` and asserts the correct per-scope ref format in both directions. The format decision itself is `derivePluginRef` in `compiler.ts` (`source === undefined || "eject"` -> bare id; otherwise `id:id`).
+The only callers that pass an unfiltered config straight into `buildCompileAgents` are `installEject` and `installPluginConfig` (`local-installer.ts`), and both are currently dead code (no command or operation calls them). Empirically confirmed by the E2E regression test `e2e/lifecycle/dual-scope-mixed-source-compiled-ref.e2e.test.ts`, which compiles a genuine dual-scope mixed-source config via `cc compile` and asserts the correct per-scope ref format in both directions. The format decision itself is `pluginRefFor` in `compiler.ts` (`source === undefined || "eject"` -> bare id; otherwise `id:id`).
 
 ## Installation Modes
 
@@ -384,14 +427,18 @@ Skills copied locally via eject workflow.
 `writeScopedFromWizard()` in `src/cli/lib/config-gate/index.ts` is the single scope-splitting writer. Signature:
 
 ```typescript
-writeScopedFromWizard(args: {
+writeScopedFromWizard(args: WizardWriteArgs): Promise<GateReport>
+
+type WizardWriteArgs = {
   finalConfig: ProjectConfig;
   matrix: MergedSkillsMatrix;
   agents: Partial<Record<AgentName, AgentDefinition>>;
   projectDir: string;
   projectConfigPath: string;
   projectInstallationExists: boolean;
-}): Promise<GateReport>
+  /** How much of what it can see this session owns. Read by the PROJECT branch only. */
+  authoritativeScope?: AuthoritativeScope;
+};
 
 type GateReport = {
   /** True when either half of the global pair was actually rewritten. */
@@ -415,6 +462,8 @@ type GateReport = {
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Home root (global scope) | Classify against the config on disk -> `writeGlobalPair(finalConfig)` (both halves, write-if-changed) -> propagate to every entry in `finalConfig.projects` -> recompile those projects                                |
 | Project context          | `splitConfigByScope(finalConfig)` -> `resolveEffectiveGlobalConfig` (merge + register) -> classify -> conditional global pair write -> propagate + recompile per the tier -> **reconcile** -> `writeProjectConfigPair` |
+
+**`authoritativeScope` is read by the project branch only.** It is handed to `resolveEffectiveGlobalConfig` -> `mergeConfigs`, and decides whether the global config is made to MATCH this session (`"all"`) or merely absorb it (`"owned"`); `undefined` (init) keeps the additive default. The home branch writes the whole global config from `finalConfig` either way, so the word does not reach it. **It protects a config ROW, not the disk** — see [`concepts/scope-system.md`](../concepts/scope-system.md) § Two enforcement points, which owns that distinction.
 
 **Project-branch write gate:** the project `config.ts` is written when `projectInstallationExists` OR the reconciled project split has any skills/agents. Creating a project config holding only `import globalConfig` + `{ ...globalConfig }` is pointless, so that case is skipped with a `verbose()` note.
 
@@ -499,13 +548,13 @@ The last row keeps a corrupt config distinguishable from "no config" — collaps
 Install mode is derived at runtime from the skills array via `deriveInstallMode()`:
 
 - Empty skills array = `"eject"` mode (default)
-- All `source: "eject"` = `"eject"` mode
-- All non-eject sources = `"plugin"` mode
+- All `origin: "eject"` = `"eject"` mode
+- All non-eject origins = `"plugin"` mode
 - Mixed = `"mixed"` mode
 
-**per-skill `source` is authoritative for compilation:** Aggregate `installMode` is a UI/logging convenience, NOT the input that drives agent compilation. `compileAgentForPlugin` (`src/cli/lib/compiler.ts`) calls `derivePluginRef(skill)` for each `SkillReference` and attaches `pluginRef` only when `skill.source` is a non-eject, non-undefined marketplace name. Mixed-mode agents (plugin and eject skills under the same agent) and dual-scope skills (same id, different scope, different sources) each render correctly from per-skill `source`.
+**per-skill `source` is authoritative for compilation:** Aggregate `installMode` is a UI/logging convenience, NOT the input that drives agent compilation. `compileAgentForPlugin` (`src/cli/lib/compiler.ts`) calls `pluginRefFor(skill)` for each `SkillReference` and attaches `pluginRef` only when `skill.source` is a non-eject, non-undefined marketplace name. Mixed-mode agents (plugin and eject skills under the same agent) and dual-scope skills (same id, different scope, different sources) each render correctly from per-skill `source`.
 
-**`installMode` plumbing consolidated:** The vestigial `installMode?: InstallMode` parameter documented in finding `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` has since been removed. `compileAndWriteAgents` (now private in `local-installer.ts`) and `RecompileAgentsOptions` (`agent-recompiler.ts`) no longer carry it; the `CompileAndWriteParams` type no longer exists; and `installEject` / `installPluginConfig` no longer pass `deriveInstallMode(...)`. Aggregate `installMode` now survives only in genuine consumers: `init.tsx` computes `deriveInstallMode(activeSkills)` to drive the install plan/logging (`logInstallPlan`, choosing `copyEjectSkillsStep` vs `installPluginsStep`), and `SkillSource.installMode?` (`src/cli/types/matrix.ts`) is a per-source UI descriptor.
+**`installMode` reaches only its genuine consumers:** no compile-path wrapper carries the mode. `compileAndWriteAgents` (private in `local-installer.ts`) and `RecompileAgentsOptions` (`agent-recompiler.ts`) have no `installMode` parameter, there is no `CompileAndWriteParams` type, and neither `installEject` nor `installPluginConfig` passes `deriveInstallMode(...)`. Aggregate `installMode` lives in exactly two places: `init.tsx` computes `deriveInstallMode(activeSkills)` to drive the install plan/logging (`logInstallPlan`, choosing `copyEjectSkillsStep` vs `installPluginsStep`), and `SkillSource.installMode?` (`src/cli/types/matrix.ts`) is a per-source UI descriptor.
 
 **Function:** `getInstallationOrThrow()` in `src/cli/lib/installation/installation.ts` - Same as `detectInstallation()` but throws if no installation found.
 
@@ -569,7 +618,7 @@ Supporting helpers:
 | `maskCollidingGlobalSkills(projectOwned, globalConfig, matrix)` | For each `isActiveAt(globalEntry, "global")` skill that collides and is not `alreadyTombstoned`: `{ ...globalEntry, excluded: true }` |
 | `maskCollidingGlobalAgents(projectOwned, globalConfig)`         | Agent mirror, IDENTITY only                                                                                                           |
 
-Tombstones are **spread from the global entry**, so they carry the global install's `source`. A skill the project merely inherits (no active project-scope entry, no exclusive-category collision) is skipped — it stays a single active global entry. An id the project already tombstones is skipped, which is what makes re-running idempotent.
+Tombstones are **spread from the global entry**, so they carry the global install's `origin`. A skill the project merely inherits (no active project-scope entry, no exclusive-category collision) is skipped — it stays a single active global entry. An id the project already tombstones is skipped, which is what makes re-running idempotent.
 
 **Push-side symmetry:** because the tombstone is synthesized on the write/push side rather than at deselect time, a project that owned a skill or agent at project scope now gets its global tombstone when the same id **later** becomes active globally. Global-first and project-first installs therefore agree, and both render `[P][G]`.
 
@@ -659,7 +708,7 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **File:** `src/cli/lib/operations/skills/install-plugin-skills.ts`
 
-**Function:** `installPluginSkills(skills, marketplace, projectDir)` -- Installs non-local skills as Claude CLI plugins. Filters to `source !== EJECT_SOURCE`, builds refs via `buildMarketplacePluginRef(skill.id, marketplace)`, routes by `toClaudePluginScope(skill.scope)` (`"global"` -> `"user"` CLI scope, otherwise `"project"`). Errors from `claudePluginInstall` are captured per-skill; the function itself never throws.
+**Function:** `installPluginSkills(skills, marketplace, projectDir)` -- Installs non-local skills as Claude CLI plugins. Filters to `origin !== EJECT_SOURCE`, builds refs via `buildMarketplacePluginRef(skill.id, marketplace)`, routes by `toClaudePluginScope(skill.scope)` (`"global"` -> `"user"` CLI scope, otherwise `"project"`). Errors from `claudePluginInstall` are captured per-skill; the function itself never throws.
 
 **Type:** `PluginInstallResult` -- `{ installed: Array<{ id: SkillId; ref: string }>, failed: Array<{ id: SkillId; error: string }> }`
 
@@ -720,13 +769,15 @@ Every row returns a `ContentValidation` (`count`, `issues`, `notes`); `doctor` m
 
 **Function:** `checkPluginSkillsInstalled(config, projectDir)` in `src/cli/commands/doctor.ts` (check `kind: "plugins"`, labelled "Plugins Installed"). This is the second layer — it runs only when every content check above passed.
 
-Filters `config.skills` to `source !== EJECT_SOURCE`, groups them by `installBaseDir(projectDir, scope)`, and for each base dir reads the registry via `getVerifiedPluginInstallPaths(baseDir)` and maps each `ResolvedPlugin.pluginKey` through `parseMarketplacePluginRef()` back to a bare skill id. Any plugin-mode config skill whose id is absent from the registry is reported as `warn` ("N skills not installed as plugins"). Registry membership, not disk existence, is the source of truth for plugin-mode skills.
+Filters `config.skills` to `origin !== EJECT_SOURCE`, groups them by `installBaseDir(projectDir, scope)`, and for each base dir reads the registry via `getVerifiedPluginInstallPaths(baseDir)` and maps each `ResolvedPlugin.pluginKey` through `parseMarketplacePluginRef()` back to a bare skill id. Any plugin-mode config skill whose id is absent from the registry is reported as `warn` ("N skills not installed as plugins"). Registry membership, not disk existence, is the source of truth for plugin-mode skills.
 
 ### CLI-Installed Key Derivation (uninstall)
 
 **Function:** `getCliInstalledPluginKeys(config)` in `src/cli/commands/uninstall.tsx` (exported `@internal` for testing). Returns the `Set<string>` of registry keys this CLI installed, used by `detectUninstallTarget()` to narrow `listPluginNames()` to CLI-owned plugins (`cliPluginNames`) so uninstall never removes plugins the user installed by hand.
 
-For each `config.skills` entry it emits the primary key `buildMarketplacePluginRef(skill.id, skill.source)`, plus a marketplace variant `buildMarketplacePluginRef(skill.id, config.marketplace)` when `config.marketplace` is set and differs from both `skill.source` and `EJECT_SOURCE` (covers plugins registered under the marketplace name while config recorded a differing `source`). This derivation depends on `config.marketplace` being present: `mergeGlobalConfigs` must not drop `marketplace`/`source` from the global config written during a project-scope init, or `uninstall --yes --all` at the home root found no CLI-owned plugins, left every plugin registered, then deleted the config that recorded them.
+For each `config.skills` entry it emits the primary key `buildMarketplacePluginRef(skill.id, skill.origin)`, plus a marketplace variant `buildMarketplacePluginRef(skill.id, config.marketplaceName)` when `marketplaceName` is set and differs from both `skill.origin` and `EJECT_SOURCE` (covers plugins registered under the marketplace's own name while config recorded a differing `origin`).
+
+**The variant keys on `marketplaceName`, not `marketplace`.** They are different fields: `marketplace` is the ref the user gave (a path or `github:` URL), `marketplaceName` is the name that marketplace's own manifest claims — and it is the name the Claude CLI registry keys plugins under. Reading the ref here builds a key no registry entry can match. The derivation therefore depends on `marketplaceName` surviving the merge: `mergeGlobalConfigs` must not drop it from the global config written during a project-scope init, or `uninstall --yes --all` at the home root finds no CLI-owned plugins, leaves every plugin registered, and then deletes the config that recorded them.
 
 ## Barrel Exports
 

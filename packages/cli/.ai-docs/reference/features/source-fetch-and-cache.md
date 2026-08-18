@@ -61,13 +61,20 @@ readable directory on disk, and keep the result cached so a second load costs no
 This doc is the **only** place the cache layer is documented. Three neighbouring topics are owned
 elsewhere and are **not restated here** — cite the owner, do not copy the value:
 
-| Topic                                                                                                 | Owner                                               |
-| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `CACHE_DIR`'s value                                                                                   | `reference/utilities.md:389`                        |
-| `marketplace.json` size / depth / schema chain, `MAX_MARKETPLACE_FILE_SIZE`, `MAX_JSON_NESTING_DEPTH` | `reference/boundary-map.md:221`, `:231-232`, `:559` |
-| `SourceLoadOptions`                                                                                   | `reference/features/skills-and-matrix.md`           |
+| Topic                                                                                                 | Owner                                     |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `CACHE_DIR`'s value                                                                                   | `reference/utilities.md`                  |
+| `marketplace.json` size / depth / schema chain, `MAX_MARKETPLACE_FILE_SIZE`, `MAX_JSON_NESTING_DEPTH` | `reference/boundary-map.md`               |
+| `SourceLoadOptions`                                                                                   | `reference/features/skills-and-matrix.md` |
+| The skill-id namespace rule and the collision guard a fetched source meets AFTER extraction           | `reference/features/skills-and-matrix.md` |
 
-`reference/features/skills-and-matrix.md:100` carries the one-line inventory row for this file
+**A fetched source is not yet an accepted one.** Everything below ends when the bytes are on disk and
+`fetchFromSource` returns a path. `loadAndMergeFromBasePath` then extracts the skills and calls
+`refuseCatalogueCollisions`, which throws when a custom marketplace ships ids the public catalogue
+owns — so a fetch that succeeded and cached cleanly can still be followed by a refusal, and the cache
+entry it left is legitimate. Nothing in this layer inspects a skill id.
+
+`reference/features/skills-and-matrix.md` carries the one-line inventory row for this file
 ("Fetch/cache remote sources via giget"); this doc is what that row points at.
 
 ## Public surface
@@ -91,8 +98,14 @@ the module-private `clearGigetCache` two functions below it; the `export` exists
 path algorithm. Import it from `./source-fetcher` directly, or reconsider whether you need it —
 see "The replicated algorithm" below.
 
-Module-private in `source-fetcher.ts` (no `export`, no test reaches them directly): `getCacheDir`,
-`fetchFromLocalSource`, `clearGigetCache`, `fetchFromRemoteSource`, `createDetailedFetchError`.
+**Everything else in `source-fetcher.ts` is module-private** — the two branch functions
+(`fetchFromLocalSource`, `fetchFromRemoteSource`), the cache-path helper `getCacheDir`, the giget
+teardown `clearGigetCache`, the error translator `createDetailedFetchError`, and the whole
+revalidation cluster below it (`revalidateCachedCopy`, `classifyCachedCopy`, `fetchEtag`,
+`readFetchRecord`, `recordFetchedCopy`, `fetchRecordPath`, `parseJsonOrUndefined`, `announceRefetch`,
+`markCopyCurrentForThisRun`). Re-derive with `grep -c '^export' src/cli/lib/loading/source-fetcher.ts`
+against the exported table above rather than trusting this sentence to have kept up — the file grows
+private helpers faster than any pass reads it.
 
 ## `fetchFromSource` — the two-branch fork
 
@@ -158,10 +171,12 @@ local path**, so it never reaches giget. See Trap 4.
    — **relative sources resolve against the process CWD**, not against `projectDir` and not against
    any config location. A relative source in a config file means "relative to wherever the user ran
    the command".
-3. `directoryExists(absolutePath)` false → `throw new Error("Local source not found: '<abs>'")`.
-   It is **not** routed through `createDetailedFetchError`; that translator wraps `downloadTemplate`
-   rejections only, in `fetchFromRemoteSource`'s `catch`, so a local-source failure reaches the
-   caller with this bare message and no remediation text.
+3. `directoryExists(absolutePath)` false → throws `Local marketplace not found: '<abs>'`, followed
+   by its own remediation lines ("Nothing is at that path, and a local marketplace must be a
+   directory holding skills", then `--marketplace <DEFAULT_SOURCE>`). It is **not** routed through
+   `createDetailedFetchError`; that translator wraps `downloadTemplate` rejections only, in
+   `fetchFromRemoteSource`'s `catch`. The two error vocabularies are therefore separate — a change
+   to the remote-side remediation text does not reach this one.
 4. Returns `{ path: absolutePath, fromCache: false, source }`.
 
 There is no cache, no copy, and no write. A local source is used **in place**.
@@ -173,17 +188,18 @@ cacheDir   = getCacheDir(source)                       ← NOTE: source, not ful
 fullSource = subdir ? `${source}/${subdir}` : source
 
 if (await directoryExists(cacheDir))
-    verdict = await revalidateCachedCopy(cacheDir)     (one HEAD, memoised per run)
+    verdict = await revalidateCachedCopy(cacheDir, source)   (memoised per run)
     "current"     → return { path: cacheDir, fromCache: true, source: fullSource }
-    "unreachable" → warn(sourceUnreachableUsingCache(source))
-                  → return { path: cacheDir, fromCache: true, source: fullSource }
-    "superseded"  → log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT)   ↓
-    "unrecorded"  → (no line)                                            ↓
+    "unreachable" → return { path: cacheDir, fromCache: true, source: fullSource }
+                    (the warn was already emitted INSIDE classifyCachedCopy — see below)
+    "superseded"  → announceRefetch → log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT)  ↓
+    "unrecorded"  → announceRefetch → (no line)                                           ↓
     → await clearGigetCache(source)                    (giget's tarball/ETag cache)
     → await remove(cacheDir)                           (our extracted copy)
 await ensureDir(path.dirname(cacheDir))
 await downloadTemplate(fullSource, { dir: cacheDir, force: true, offline: false })
     → await recordFetchedCopy(cacheDir, result)        (writes <cacheDir>.etag.json)
+    → markCopyCurrentForThisRun(cacheDir)              (later loads THIS run read "current")
     → return { path: result.dir, fromCache: false, source: fullSource }
     → catch → throw createDetailedFetchError(error, source)
 ```
@@ -251,7 +267,7 @@ $CACHE_DIR/sources/<sanitizeSourceForCache(source)>/        ← ours, extracted 
 <gigetCacheRoot>/<providerName>/<templateName>/*.tar.gz     ← giget's, tarball + ETag (getGigetCacheDir)
 ```
 
-`CACHE_DIR` is owned by `reference/utilities.md:389`. `gigetCacheRoot` is `$XDG_CACHE_HOME/giget` when
+`CACHE_DIR` is owned by `reference/utilities.md`. `gigetCacheRoot` is `$XDG_CACHE_HOME/giget` when
 that variable is set, else `~/.cache/giget` (`getGigetCacheDir`'s `gigetCacheRoot`).
 
 **The `"sources"` path segment is written twice in the repo** — in `getCacheDir`
@@ -338,16 +354,29 @@ or passing `provider` / `registry` to `downloadTemplate`.
 ## Revalidation — how a load decides the cached copy is still the source
 
 Every remote load asks the source whether the copy in the cache is still what it would send. The
-question is one HEAD request against the tarball URL, and the answer is a `CacheVerdict`:
+question is at most one HEAD request against the tarball URL, and the answer is a `CacheVerdict`:
 
-| Verdict       | Reached when                                                      | What the load does                             | What the user sees                              |
-| ------------- | ----------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| `current`     | live ETag equals the recorded one, or there is nothing to compare | returns the cache, `fromCache: true`           | nothing                                         |
-| `superseded`  | live ETag differs from the recorded one                           | discards both caches, downloads, records again | `STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT` |
-| `unrecorded`  | a cache directory with no `.etag.json` beside it                  | same as `superseded`, to establish a record    | nothing                                         |
-| `unreachable` | the HEAD threw — offline, blocked, or slower than the timeout     | returns the cache, `fromCache: true`           | `sourceUnreachableUsingCache(source)` as a warn |
+| Verdict       | Reached when                                                   | Requests it makes                                            | What the load does                             | What the user sees                              |
+| ------------- | -------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------- | ----------------------------------------------- |
+| `current`     | live ETag equals the recorded one                              | **one HEAD, no GET**                                         | returns the cache, `fromCache: true`           | nothing                                         |
+| `current`     | the record carries no `etag`, or the host answered without one | one HEAD, or **none at all** (see below)                     | returns the cache, `fromCache: true`           | nothing (`verbose` only)                        |
+| `superseded`  | live ETag differs from the recorded one                        | the HEAD, then the download, then a second HEAD to re-record | discards both caches, downloads, records again | `STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT` |
+| `unrecorded`  | a cache directory with no usable `.etag.json` beside it        | none before the download; one HEAD after it                  | same as `superseded`, to establish a record    | nothing                                         |
+| `unreachable` | the HEAD threw — offline, blocked, or slower than the timeout  | one attempted HEAD                                           | returns the cache, `fromCache: true`           | `sourceUnreachableUsingCache(source)` as a warn |
 
-**Where the `unreachable` warning is read.** `warn()` writes to stderr for a plain command, but a
+**Two `current` arms make ZERO network requests**, and they are the ones a reader assuming
+"every load costs one HEAD" gets wrong. `classifyCachedCopy` returns `current` on
+`record.etag === undefined` **before** `fetchEtag` is reached, and the second and later loads of the
+same run read the memoised verdict rather than asking again. A cold-cache run pays no revalidation
+HEAD either — `directoryExists(cacheDir)` is false, so the whole classifier is skipped and the only
+HEAD is `recordFetchedCopy`'s, after the download.
+
+**The `unreachable` warning is emitted inside `classifyCachedCopy`, not at the call site.** It has
+to be: the verdict is memoised per source per run, so a warn left in `fetchFromRemoteSource` would
+repeat for every later load of the same command against a question that was only ever asked once.
+Read the line as belonging to the classification, not to the fetch.
+
+**Where the warning is read.** `warn()` writes to stderr for a plain command, but a
 load that opens a wizard buffers instead — `init` and `edit` pass `captureStartupMessages` — because
 the wizard clears the terminal on its way in. Those runs show the same line in the wizard's
 startup-message band; see [component-patterns.md](../component-patterns.md#wizardlayout-startup-message-band).
@@ -367,10 +396,18 @@ for the source. **`GIGET_AUTH` is never written into the record**; it is read fr
 per request, so the HEAD carries the same token giget's own download does and a private source does
 not report itself unreachable.
 
-**One question per source per run.** `revalidateCachedCopy` memoises the in-flight promise by cache
-directory in a module-level `Map`. A single command loads the same source more than once — the
-matrix and the marketplace label are separate `fetchFromSource` calls — and the answer cannot change
-between them.
+**One question per source per run, and one DOWNLOAD per source per run.** `revalidateCachedCopy`
+memoises the in-flight promise by cache directory in a module-level `Map` (`askedThisRun`). A single
+command loads the same source more than once — the matrix and the marketplace label are separate
+`fetchFromSource` calls — and the answer cannot change between them.
+
+**The memo is also written by the download path**, which is the half a reader misses.
+`markCopyCurrentForThisRun(cacheDir)` seats `Promise.resolve("current")` immediately after
+`recordFetchedCopy`, so a run that has just re-fetched a moved source does not re-read its own
+`superseded` verdict and download the same tarball again. Without it a moved source is downloaded
+once per LOAD rather than once per run: the first load answers `superseded` truthfully, acts on it,
+and the second load reads that same cached answer — true when given, already acted on by then.
+Deleting the call restores that behaviour silently; nothing about the first load looks wrong.
 
 **`REVALIDATION_TIMEOUT_MS` is 5000** (raised from 2500, owner 2026-08-09: being offline is rare, and
 a longer honest wait for it beats a wrong verdict on a slow link). Measured against the default
@@ -407,16 +444,20 @@ first match wins:
 | `ENOTFOUND`, `ETIMEDOUT`, or `network` | "Network error fetching: `<source>`"      | `HTTPS_PROXY`, `FORCE_NODE_FETCH` |
 | anything else (the fallback `return`)  | "Failed to fetch `<source>`: `<message>`" | —                                 |
 
-`GIGET_AUTH` is read by giget itself (giget dist `:255` `auth: process.env.GIGET_AUTH`); this module
-only names it in prose. The messages are the CLI's entire auth documentation for private
-marketplaces — an implementing agent changing them is changing user-facing docs.
+`GIGET_AUTH` is read by giget for the download, and **independently by this module for the
+revalidation HEAD** — `fetchEtag` reads `process.env.GIGET_AUTH` per request and sends it as a
+`Bearer` header. That is deliberate: a private marketplace whose HEAD went unauthenticated would
+answer 401, the HEAD would throw, and the source would report itself `unreachable` on every load
+while the download beside it succeeded. The token is never written into the fetch record. The
+messages above are the CLI's entire auth documentation for private marketplaces — an implementing
+agent changing them is changing user-facing docs.
 
 The reported `<source>` is the **un-subdir'd** `source`, while the failing fetch used `fullSource` —
 `fetchFromRemoteSource`'s `catch` passes `source`.
 
 ## `fetchMarketplace` — the fetch/cache half
 
-The validation chain is owned by `reference/boundary-map.md:559` (§6.4) and is not repeated here.
+The validation chain is owned by `reference/boundary-map.md` §6.4 and is not repeated here.
 What belongs to _this_ doc:
 
 - It routes through `fetchFromSource` with `subdir: ""` (commented "Root of repo"). `""` is falsy,
@@ -430,15 +471,15 @@ What belongs to _this_ doc:
   checked via `directoryExists(path.dirname(marketplacePath))` — a present directory with no
   `marketplace.json` falls through to `readFileSafe` and surfaces as an ENOENT instead.
 - It returns `MarketplaceFetchResult` (`src/cli/types/plugins.ts`), whose `fromCache` is forwarded
-  from `FetchResult` in the return literal as `result.fromCache ?? false`. **`FetchResult.fromCache`
-  is a required `boolean`** — the `?? false` is dead and must not be read as evidence that
-  `fromCache` can be `undefined`.
+  straight from `FetchResult` in the return literal. **`FetchResult.fromCache` is a required
+  `boolean`**, so there is nothing to default; the `?? false` that used to sit here is gone and must
+  not be re-added — it read as evidence the field could be `undefined`.
 
 ## `loader.ts` — the ID-targeted read path
 
 `loader.ts` reads `SKILL.md` frontmatter off a directory the fetcher produced. It is **not** the
-matrix path: `extractAllSkills` (`matrix-loader.ts`, documented at
-`reference/features/skills-and-matrix.md:120-134`) globs `**/metadata.yaml` across the whole source;
+matrix path: `extractAllSkills` (`matrix-loader.ts`, documented in
+`reference/features/skills-and-matrix.md` § Data Flow) globs `**/metadata.yaml` across the whole source;
 the functions below glob `**/SKILL.md` and, for `loadSkillsByIds`, resolve a caller-supplied ID list.
 `loadSkillsByIds` does not read `metadata.yaml` at all. `loadSkillsFromDir` reads it under
 `requireMetadata` and refuses the skill directory when it describes no skill — see the table below.
@@ -514,7 +555,7 @@ accordingly — `discoverLocalProjectSkills` passes `true`
 (`loader.ts`).
 
 `loadPluginSkills(pluginDir)` is a fixed-argument wrapper reading `<pluginDir>/skills`. Its role in
-plugin discovery is documented at `reference/features/plugin-system.md:131`.
+plugin discovery is documented in `reference/features/plugin-system.md` § Plugin Discovery.
 
 ## Call sites (grep-verified over `src/`, `e2e/`, `scripts/` —)
 
@@ -600,7 +641,7 @@ printed over it.
 **Trap 4 — a bare `org/repo` is a local path, not a GitHub repo.** `isLocalSource` (`config.ts`)
 returns `true` for anything without a `REMOTE_PROTOCOLS` prefix, so
 `fetchFromSource("agents-inc/skills")` resolves `./agents-inc/skills` against `process.cwd()` and
-throws "Local source not found". Sources must carry `github:` / `gh:` / `https://` explicitly;
+throws "Local marketplace not found". Sources must carry `github:` / `gh:` / `https://` explicitly;
 `DEFAULT_SOURCE` does (`config.ts`, `"github:agents-inc/skills"`).
 
 **Trap 5 — the E2E cache seed can fail silently.** See "Cache layout" above and the file header of
@@ -615,14 +656,16 @@ the id list before it.
 
 ## Test surface
 
-All four files were **run** on 2026-08-09: 104 tests, all passing.
+Four files. Run them rather than reading a total off this page: `npm test` builds `dist/` first,
+which a bare `vitest run` refuses to do against a stale build, and a per-file count is wrong within
+a fortnight.
 
-| File                                                        | Tests | Covers (by describe block)                                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/cli/lib/loading/source-fetcher.test.ts`                | 38    | `fetchFromSource with local paths` (incl. `subdir` and the not-found throw); `remote source URL validation` (`isLocalSource` classification); `sanitizeSourceForCache` determinism/collision/length/Unicode/empty; `fetchMarketplace security validation`; `getGigetCacheDir` per-provider, `XDG_CACHE_HOME`, ref, subdir, dot-sanitisation |
-| `src/cli/lib/loading/source-fetcher-revalidation.test.ts`   | 7     | the only tests that exercise the **remote** branch — `giget`, `CACHE_DIR` and the global `fetch` are all mocked. One per verdict (`current` twice: matched ETag, and a record carrying none), plus the once-per-run memo and the record written after a download                                                                            |
-| `src/cli/lib/loading/source-fetcher-unknown-fields.test.ts` | 2     | `warnUnknownFields` on `marketplace.json`, positive **and** silence guard                                                                                                                                                                                                                                                                   |
-| `src/cli/lib/loading/loader.test.ts`                        | 57    | `parseFrontmatter`, the agent loaders, `loadSkillsByIds`, `loadPluginSkills`                                                                                                                                                                                                                                                                |
+| File                                                        | Covers (by describe block)                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/loading/source-fetcher.test.ts`                | `fetchFromSource with local paths` (incl. `subdir` and the not-found throw); `remote source URL validation` (`isLocalSource` classification); `sanitizeSourceForCache` determinism/collision/length/Unicode/empty; `fetchMarketplace security validation`; `getGigetCacheDir` per-provider, `XDG_CACHE_HOME`, ref, subdir, dot-sanitisation |
+| `src/cli/lib/loading/source-fetcher-revalidation.test.ts`   | the only tests that exercise the **remote** branch — `giget`, `CACHE_DIR` and the global `fetch` are all mocked. One per verdict (`current` twice: matched ETag, and a record carrying none), plus the once-per-run memo and the record written after a download                                                                            |
+| `src/cli/lib/loading/source-fetcher-unknown-fields.test.ts` | `warnUnknownFields` on `marketplace.json`, positive **and** silence guard                                                                                                                                                                                                                                                                   |
+| `src/cli/lib/loading/loader.test.ts`                        | `parseFrontmatter`, the agent loaders, `loadSkillsByIds`, `loadPluginSkills`                                                                                                                                                                                                                                                                |
 
 **How the remote branch is made testable** (`source-fetcher-revalidation.test.ts`'s module-mock block):
 `CACHE_DIR` is
@@ -633,8 +676,12 @@ bare `downloadTemplate: vi.fn()`, and the revalidation HEAD is stubbed per test 
 codebase's assertion rules refuse a cast-shaped fake). Copy this pattern rather than inventing
 another; a static mock of `CACHE_DIR` cannot work.
 
-**What has no test at all:** `createDetailedFetchError`'s five branches — no test asserts any of the
-message texts. `clearGigetCache` is likewise untested; only its helper `getGigetCacheDir` is.
+**What no spec exercises**, re-derivable by grepping the four files above for each name:
+`createDetailedFetchError`'s five branches — no assertion names any of its message texts — and
+`clearGigetCache`, whose helper `getGigetCacheDir` is pinned while the removal it drives is not.
+Both are assertions of ABSENCE, and `scripts/check-enumeration-drift.ts` cannot falsify one: writing
+the missing spec moves no symbol name, so this paragraph stays green whether or not it is still
+true. Grep before relying on it.
 
 ## Known limitations
 

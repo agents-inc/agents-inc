@@ -49,11 +49,13 @@ last_validated: 2026-07-30
 | `default-stacks.ts`      | `src/cli/lib/configuration/default-stacks.ts`      | Default stack definitions — see [built-in-catalogue.md](./built-in-catalogue.md)                           |
 | `index.ts`               | `src/cli/lib/configuration/index.ts`               | Barrel exports                                                                                             |
 
-**Barrel surface (`index.ts`)** — value exports only, grouped by module: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty`; `mergeConfigs`, `mergeWithExistingConfig`; `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds`; **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig`; `defineConfig`, `defaultCategories`, `defaultRules`, `defaultStacks`, `loadConfig`, `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath`, `loadConfigTypesDataInBackground`.
+**Barrel surface (`index.ts`)** — value exports only, grouped by the module each re-export block names, exhaustively and in source order: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `isPublicCatalogueCheckout`, `offersBuiltInStacks`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty` (`config-generator.ts`); `mergeConfigs`, `mergeWithExistingConfig` (`config-merger.ts`); `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` (`scope-predicates.ts`); **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig` (`project-config.ts`); `defineConfig`; `defaultCategories`; `defaultRules`; `defaultStacks`; **`ConfigDefaultExportError`**, `loadConfig` (`config-loader.ts`); `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath`, `loadConfigTypesDataInBackground` (`config-types-writer.ts`).
+
+`ConfigSchemaError` is the sibling of `ConfigDefaultExportError` and is **not** on the barrel — `configuration/config.ts` imports it by path.
 
 **Deliberately NOT on the barrel:** `generateConfigSource`, `generateConfigTypesSource` and `regenerateConfigTypes`. They render (or render-and-write) a config pair half, and a barrel re-export would hand every command a supported way around the config-gate. They stay importable from their own modules by `config-gate/**` and `configuration/**`, eslint-enforced.
 
-Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`, `ResolvedBranding`, `ProjectConfigOptions`, `MergeContext`, `MergeResult`, `AuthoritativeScope`, `LoadedProjectConfig`, `ConfigTypesBackgroundData`.
+Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`, `ResolveSourceRequest`, `ResolvedBranding`, `SourceCaller`, `ProjectConfigOptions`, `MergeContext`, `MergeResult`, `AuthoritativeScope`, `LoadedProjectConfig`, `ConfigTypesBackgroundData`.
 
 `splitConfigByScope`, `scopeEligibilityKey`, `isScopePairCompatible`, `SplitConfigResult`, `activeSkillScopeMap`, `activeAgentScopeMap`, `ScopedEntry`, `generateBlankGlobalConfigSource`, `generateBlankGlobalConfigTypesSource` and `getGlobalConfigImportPath` are exported from their own modules but NOT re-exported by the barrel — import them by path.
 
@@ -61,14 +63,14 @@ Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`,
 
 ## Config File Locations
 
-| File                 | Path                            | Purpose                                 |
-| -------------------- | ------------------------------- | --------------------------------------- |
-| Project config       | `.claude-src/config.ts`         | Skills, agents, stack, source, branding |
-| Project config types | `.claude-src/config-types.ts`   | Auto-generated type unions for config   |
-| Global config        | `~/.claude-src/config.ts`       | Global-scope skills, agents, stack      |
-| Global config types  | `~/.claude-src/config-types.ts` | Auto-generated global type unions       |
+| File                 | Path                            | Purpose                                      |
+| -------------------- | ------------------------------- | -------------------------------------------- |
+| Project config       | `.claude-src/config.ts`         | Skills, agents, stack, marketplace, branding |
+| Project config types | `.claude-src/config-types.ts`   | Auto-generated type unions for config        |
+| Global config        | `~/.claude-src/config.ts`       | Global-scope skills, agents, stack           |
+| Global config types  | `~/.claude-src/config-types.ts` | Auto-generated global type unions            |
 
-Config uses a unified `ProjectConfig` type for both source-level settings (source, marketplace, branding) and installation settings (skills, agents, stack). Files are TypeScript (loaded via jiti), not YAML.
+Config uses a unified `ProjectConfig` type for both marketplace-level settings (`marketplace`, `marketplaceName`, `agentsSource`, `branding`, the five directory overrides) and installation settings (`skills`, `agents`, `stack`, `selectedDomains`). Files are TypeScript (loaded via jiti), not YAML.
 
 ## Config Load Outcomes — Three States, Not Two
 
@@ -85,6 +87,59 @@ Config uses a unified `ProjectConfig` type for both source-level settings (sourc
 | `projectConfigLoaderSchema.safeParse` fails                       | **throws `ConfigLoadError`**                     | `reason` = `formatZodErrors(result.error).join("; ")` |
 
 **`ConfigLoadError`** (exported from `project-config.ts` and re-exported by `src/cli/lib/configuration/index.ts`) carries `configPath` and `reason` as readonly fields; its message is `` `Config at '${configPath}' could not be loaded: ${reason}` ``.
+
+### The layer below: `loadConfig` and its two named errors
+
+**File:** `src/cli/lib/configuration/config-loader.ts`
+
+`loadConfig(configPath, schema?)` is the generic jiti loader both config readers sit on. It
+distinguishes five outcomes, and **two of them are named error classes that exist so a caller can
+tell "this file is broken" apart from "this file said something wrong":**
+
+| Situation                                                      | Outcome                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| File absent                                                    | `null` (+ `verbose`)                                               |
+| jiti cannot evaluate the module                                | plain `Error`, `cause` set                                         |
+| Evaluated, but exports nothing (empty file, `export {}`, `{}`) | `null` (+ `verbose`) — asked BEFORE the next row                   |
+| Evaluated, is an ES module, exports bindings but no `default`  | **`ConfigDefaultExportError`**                                     |
+| Parsed, but `schema.safeParse` fails                           | **`ConfigSchemaError`** carrying `configPath` + formatted `issues` |
+
+`declaresNoDefaultExport` keys on the `__esModule` marker jiti stamps on a transpiled ES module,
+which is the only thing separating `export const x = {}` (a namespace whose keys are named exports)
+from `module.exports = { x: {} }` (whose keys ARE the default export) — both arrive as a plain
+object with no `default` key. The empty check runs first because such a file declares no exports of
+any kind to have opinions about.
+
+The two classes fault different lines of the file, which is why they are not one. A refused SHAPE
+names a field the author can go and correct; a module that exports `export const skillRules = {...}`
+has nothing wrong with its contents at all, and validating the module NAMESPACE against the schema
+is what once told such an author a field was missing from a file they could see it in.
+
+### `loadSourceConfig` re-raises both — it does not swallow every failure
+
+`loadSourceConfig(dir, scope)` (private in `configuration/config.ts`, reached via
+`loadProjectSourceConfig` / `loadGlobalSourceConfig`) wraps `loadConfig(configPath, projectSourceConfigSchema)`
+in a `try`. Its `catch` is **selective**:
+
+```ts
+if (error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError) throw error;
+verbose(`Failed to load ${scope} config at ${configPath}: ${getErrorMessage(error)}`);
+return null;
+```
+
+Only a file that could not be EVALUATED at all still returns the `null` this loader has always
+reported. A shape the schema refused, and a module whose exports are all named, are raised.
+`resolveSource` reads the return value alone, so a swallowed refusal is indistinguishable from a
+config that is not there — it would walk past that rung to `DEFAULT_SOURCE` and install from a
+marketplace nobody named. **Do not restore a bare `catch` here**; "the loader swallows every
+failure" was true of this function and is not.
+
+`loadProjectSourceConfig` derives the scope label rather than assuming it: at the home root the file
+it reads IS the global config, and a caller asking a project question there — `doctor` deciding
+whether the cwd is a marketplace repository — must not be told a project config was found where none
+exists. `loadOwnProjectSourceConfig` (private) goes further and returns `null` outright at the home
+root, so `loadEffectiveSourceConfig` cannot label one file both `origin: "project"` and
+`origin: "global"` in the same run.
 
 ### A fourth state one layer up — the config that loads and declares nothing
 
@@ -138,16 +193,18 @@ so a genuine fault still propagates. Its warn text is `Could not read the projec
 
 Unified configuration type. Stores both source-resolution fields and installed skill/agent data.
 
+**Seventeen fields, exhaustively.** This document owns the field list; no other doc restates it.
+
 ```typescript
 type ProjectConfig = {
-  name: string;
+  name: string; // required
   description?: string;
-  agents: AgentScopeConfig[];
-  skills: SkillConfig[];
+  agents: AgentScopeConfig[]; // required
+  skills: SkillConfig[]; // required
   author?: string;
   stack?: Record<string, StackAgentConfig>;
-  source?: string;
-  marketplace?: string;
+  marketplace?: string; // the marketplace ref (path or URL) — NOT `source`
+  marketplaceName?: string; // the name that marketplace's own manifest gives it
   agentsSource?: string;
   selectedDomains?: Domain[];
   branding?: BrandingConfig;
@@ -156,9 +213,15 @@ type ProjectConfig = {
   stacksFile?: string;
   categoriesFile?: string;
   rulesFile?: string;
-  projects?: string[];
+  projects?: string[]; // global config only
 };
 ```
+
+**There is no `source` field, and there has not been one since the rename.** `projectConfigLoaderSchema` and `projectSourceConfigSchema` both sit behind `renamedFieldGuard`, whose `RENAMED_CONFIG_FIELDS = { source: "marketplace" }` makes a saved config carrying the old key a hard parse failure with the rename spelled out — not a silent fall-through. The skill-entry twin is `RENAMED_SKILL_ENTRY_FIELDS = { source: "origin" }`. Both refusals read the RAW document rather than parse output, because both loader schemas are `.passthrough()` (a stale top-level key would survive as unrecognised data) and the `skills` array is declared (a stale key on an entry would be stripped before any refinement ran) — either way the run would look under the new name, find nothing, and install from the default marketplace instead of the one the config named.
+
+**`marketplace` and `marketplaceName` are two fields, not one.** The first is the ref the install reads from; the second is what that marketplace's own manifest calls itself, which is knowable only once it has been fetched — which is why it cannot fold into the first. `uninstall` reads `marketplaceName` to build the `<id>@<marketplace name>` registry key.
+
+**Six of the seventeen are not declared by `projectConfigLoaderSchema`.** `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile` appear on the type and on `projectSourceConfigSchema` (the scalar-only loader `config.ts` uses) but not on the full loader's `projectConfigFields`. They survive a full load anyway because that object is `.passthrough()`, and they survive a re-emit because `canonicalizeFieldOrder` in `config-writer.ts` appends every key `CANONICAL_FIELD_ORDER` does not name after the ones it does. So they round-trip — as passthrough data, in arrival order, with no schema validating their shape on the full-config path.
 
 `ProjectConfig` has no `version` field — no reader consumes it, so it is not emitted or parsed. It also has no `selectedAgents` field: the selected-agent set is derived from the non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts` (both the emitted `SelectedAgentName` union and wizard hydration read it from there).
 
@@ -167,21 +230,27 @@ type ProjectConfig = {
 ```typescript
 type SkillConfig = {
   id: SkillId;
-  scope: "project" | "global";
-  source: string; // "eject" | marketplace name
+  scope: SkillScope; // "project" | "global"
+  origin: string; // "eject" (the project's own copy) | a marketplace name
   excluded?: boolean;
 };
 ```
+
+**The provenance field is `origin`, not `source`.** A config carrying `source` on a skill entry is refused by name — see `RENAMED_SKILL_ENTRY_FIELDS` above. `SkillReference.source` and `Skill.source` (`src/cli/types/skills.ts`) keep the old spelling on the COMPILE side and are fed from `SkillConfig.origin` by `buildCompileAgents`; the two names are one value at two layers, and only the config layer was renamed.
 
 ### AgentScopeConfig (`src/cli/types/config.ts`)
 
 ```typescript
 type AgentScopeConfig = {
   name: AgentName;
-  scope: "project" | "global";
+  scope: SkillScope; // "project" | "global"
+  model?: ModelName; // overrides the model in the agent's own metadata
+  effort?: EffortLevel; // overrides the reasoning effort in the agent's own metadata
   excluded?: boolean;
 };
 ```
+
+`model` and `effort` are per-agent overrides of the agent definition's own values, absent meaning "keep the metadata default". They are NOT part of the merge's compound identity key, so a key match replaces the whole entry — see [config-merger.md](../config/config-merger.md) and [model-and-effort.md](./model-and-effort.md).
 
 ### ResolvedConfig (`src/cli/lib/configuration/config.ts`)
 
@@ -247,17 +316,20 @@ This asymmetry is deliberate; do not "fix" one to match the other.
 
 Shared predicates over scoped config entries (`{ scope?, excluded? }`), consumed by the merger, generator, writer, and installer so scope/tombstone logic has a single definition.
 
-| Export                          | Purpose                                                                                                    |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `isActiveAt(entry, scope)`      | Non-excluded entry at the given scope                                                                      |
-| `isGlobalTombstone(entry)`      | `scope === "global"` + `excluded` (tombstone masking a global install)                                     |
-| `isProjectOwned(entry)`         | Project-scoped entry OR the project's own global tombstone (inherited global-active entries are not owned) |
-| `activeProjectAgentNames()`     | Names of active project-scoped agents                                                                      |
-| `activeSkillScopeMap()`         | `Map<SkillId, SkillScope>` of active (non-excluded) skills                                                 |
-| `activeAgentScopeMap()`         | `Map<AgentName, SkillScope>` of active (non-excluded) agents                                               |
-| `effectivelyExcludedSkillIds()` | Ids whose every entry is excluded (a dual-scope excluded-global + active-project pair is NOT excluded)     |
+Eight exported functions, exhaustively — bound to the module by `scripts/check-enumeration-drift.ts`:
 
-`ScopedEntry` is the shared `{ scope?: SkillScope; excluded?: boolean }` shape. `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, and `effectivelyExcludedSkillIds` are re-exported from `index.ts`.
+| Export                          | Purpose                                                                                                                                                                                                                                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isActiveAt(entry, scope)`      | Non-excluded entry at the given scope                                                                                                                                                                                                                                                   |
+| `isGlobalTombstone(entry)`      | `scope === "global"` + `excluded` (tombstone masking a global install)                                                                                                                                                                                                                  |
+| `isProjectOwned(entry)`         | Project-scoped entry OR the project's own global tombstone (inherited global-active entries are not owned)                                                                                                                                                                              |
+| `activeProjectAgentNames()`     | Names of active project-scoped agents                                                                                                                                                                                                                                                   |
+| `activeAgentNames()`            | Names of every non-excluded agent, at EITHER scope — the config's own record of who is selected, now that no flat `selectedAgents` list is persisted. Read by the emitted `SelectedAgentName` union and by wizard agent hydration, which is why it is exported ahead of a second caller |
+| `activeSkillScopeMap()`         | `Map<SkillId, SkillScope>` of active (non-excluded) skills                                                                                                                                                                                                                              |
+| `activeAgentScopeMap()`         | `Map<AgentName, SkillScope>` of active (non-excluded) agents                                                                                                                                                                                                                            |
+| `effectivelyExcludedSkillIds()` | Ids whose every entry is excluded (a dual-scope excluded-global + active-project pair is NOT excluded)                                                                                                                                                                                  |
+
+`ScopedEntry` is the shared `{ scope?: SkillScope; excluded?: boolean }` shape. Five of the eight — `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` — are re-exported from `index.ts`; `activeAgentNames`, `activeSkillScopeMap` and `activeAgentScopeMap` are import-by-path only.
 
 ## Source Resolution
 
@@ -265,22 +337,40 @@ Shared predicates over scoped config entries (`{ scope?, excluded? }`), consumed
 
 **Precedence (highest to lowest):**
 
-1. `--source` flag value (`request.flag`)
-2. `CC_SOURCE` environment variable — **`init` only**
-3. `.claude-src/config.ts` `source` field (project-level)
-4. `~/.claude-src/config.ts` `source` field (global-level)
-5. Default: `github:agents-inc/skills`
+1. `--marketplace` flag value (`request.flag`)
+2. `CC_MARKETPLACE` environment variable (`SOURCE_ENV_VAR`) — **`init` only**
+3. `.claude-src/config.ts` **`marketplace`** field (project-level)
+4. `~/.claude-src/config.ts` **`marketplace`** field (global-level)
+5. `DEFAULT_SOURCE` — `github:agents-inc/skills`, composed from `GITHUB_SOURCE.GITHUB_PREFIX`
 
-**The top two rungs belong to `init`** (owner ruling 2026-08-09). Naming a source is an install-time
-decision, so `--source` is declared by `init` alone and `CC_SOURCE` is read only when the caller
-says it is `init`. That caller identity is a parameter, not an ambient guess:
+**The flag is `--marketplace` and the variable is `CC_MARKETPLACE`.** Neither `--source` nor
+`CC_SOURCE` exists; the config field they wrote to is `marketplace`, and a saved config still
+naming it `source` is refused outright (see `RENAMED_CONFIG_FIELDS` under `ProjectConfig` above).
+The exported constant is still spelled `SOURCE_ENV_VAR` — the identifier kept the old word, its
+value did not.
+
+**The top two rungs belong to `init`** (owner ruling 2026-08-09). Naming a marketplace is an
+install-time decision, so `--marketplace` is declared by `init` alone and `CC_MARKETPLACE` is read
+only when the caller says it is `init`. That caller identity is a parameter, not an ambient guess:
 `request.caller: SourceCaller` is `"init"` or `"stored"`, and every command after the install asks
-as `"stored"` — the loader (`SourceLoadOptions.caller`, `LoadSourceOptions.caller`) defaults to it,
-so no path reaches the environment by omission.
+as `"stored"`.
 
-A `"stored"` caller may still pass `flag` when it is reading a source it already knows — `doctor`
-validating a source repository points the loader at a path. What `init` alone gets is the ambient
-environment.
+A `"stored"` caller may still pass `flag` when it is reading a marketplace it already knows —
+`doctor` validating a marketplace repository points the loader at a path. What `init` alone gets is
+the ambient environment.
+
+**The two rungs also fail differently, deliberately.** A marketplace this run NAMED goes through
+`assertNamedSourceUsable`, which THROWS on an empty or unusable value — somebody typed it, so
+falling through would install from a place they did not name. `CC_MARKETPLACE` goes through
+`readEnvSource`, where unset, empty and unusable all `warn()` and fall through to the next rung —
+the environment is ambient, so an exported value nobody meant for this run must not be able to fail
+it.
+
+**`ResolvedConfig.marketplace` is the NAME, not the ref.** Every `resolveSource` return carries
+`...(marketplaceName !== undefined && { marketplace: marketplaceName })`, read off the effective
+config's `marketplaceName`, while `source` carries the ref the rung supplied. The two keys are
+therefore not the same axis, and the result type's `marketplace` is absent whenever no config named
+one — including on the `flag` and `env` rungs.
 
 **Source validation:** `validateSourceFormat()` in `src/cli/lib/configuration/config.ts`
 
@@ -323,8 +413,8 @@ When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` un
 
 - **skills** by `scope` + `excluded` (excluded globals route to project split as tombstones)
 - **agents** by `scope` + `excluded` (excluded globals route to project as overrides)
-- **stack** by agent partition first, then global agents' entries are further split per-skill so a global agent never carries project skill ids
-- **selectedDomains** copied to global only (project inherits at runtime)
+- **stack** by agent partition first, then global agents' entries are further split per-skill so a global agent never carries project skill ids; **both** halves always carry a `stack` key, `{}` when the derivation yielded nothing
+- **selectedDomains** carried to BOTH halves by the `...config` spread — the project half is not cleared, despite the function's own doc comment. See [scope-split.md](../config/scope-split.md) → "Scalar / Array Fields"
 
 > **Full partition rules, delta pipeline, and decision tables:** see [../config/scope-split.md](../config/scope-split.md).
 
@@ -340,7 +430,7 @@ const saved =
   savedConfigs?.find((sc) => sc.id === id && !sc.excluded);
 ```
 
-Falls back to `scope: saved?.scope ?? "global"` and `source: resolveEffectiveSource(saved?.source, primarySource)`, where `primarySource = primarySourceName(skill)` from the matrix entry.
+Falls back to `scope: saved?.scope ?? "global"` and `origin: saved?.origin ?? defaultOriginFor(matrix.skills[id])`, where `defaultOriginFor` returns `EJECT_SOURCE` for a skill the matrix flags local, otherwise `primarySourceName(skill) ?? DEFAULT_PUBLIC_SOURCE_NAME`. The field is `origin`; `resolveEffectiveSource` still exists in `wizard-store.ts` but no longer serves this builder.
 
 ## Config Merging
 
@@ -351,16 +441,16 @@ Falls back to `scope: saved?.scope ?? "global"` and `source: resolveEffectiveSou
 `MergeContext = { projectDir; authoritativeScope?: "all" | "owned" }`. When `edit` command modifies skills:
 
 - Loads existing full config; when present, calls `mergeConfigs()` with the context's `authoritativeScope`
-- Preserves user customizations (author, source, marketplace, agentsSource) and the global `projects` registry
+- Preserves user customizations (`name`, `description`, `author`, `agentsSource`, `marketplaceName` unconditionally; `marketplace` fill-only) and the global `projects` registry — the per-field rules are in [config-merger.md](../config/config-merger.md)
 - Falls back to copying `author`/`agentsSource` from a legacy source stub when no full config exists (`merged: false`, no `mergeConfigs` call)
 
 **Pure merge function:** `mergeConfigs(newConfig, existingConfig, options?)` in `src/cli/lib/configuration/config-merger.ts`
 
-- **Replace-on-match**: `newConfig` is authoritative for every `name`/`id` it references; identity fields (name, description, author, marketplace, agentsSource) are carried from existing, and `source` is preserved only when `newConfig.source` is undefined
+- **Replace-on-match**: `newConfig` is authoritative for every `name`/`id` it references; five identity fields (`name`, `description`, `author`, `agentsSource`, `marketplaceName`) are carried from existing unconditionally, while `marketplace` is fill-only — preserved only when `newConfig.marketplace` is undefined, which is how `init --marketplace` repoints an existing install. There is no `source` field
 - Agents and skills are keyed by a **compound key** (`id:scope[:excluded]`), so dual-scope active/tombstone pairs coexist and scope migrations drop stale rows
 - Stack: `newConfig.stack` wins whenever defined; existing stack is kept only when `newConfig.stack` is undefined
 - `authoritativeScope` (Scenario C): a full `cc edit` drops in-authority entries that are absent from `newConfig`. A skill the wizard could not resolve from the loaded source is absent for a different reason than a deselection, but drops on the same terms — `edit` names it and says why
-- `existingConfig.projects` is preserved when `newConfig` carries none (the drop bug is fixed; see finding `2026-07-18-mergeconfigs-projects-drop-fixed-docs-stale.md`)
+- `existingConfig.projects` is preserved when `newConfig` carries none — `newConfig` never carries one, because the `projects` array is maintained exclusively by `registerProjectPath` / `deregisterProjectPath`
 
 **"Absent from `newConfig`" does not mean "deselected" for a globally installed item under `authoritativeScope: "owned"`.** A project-scope edit cannot produce that absence: the wizard guards refuse the deselect and `applySkillRemoval` leaves an inherited global-active entry byte-identical. An absent global entry therefore reflects a global-scope change or a legacy config. Full contract: [../config/config-merger.md](../config/config-merger.md).
 
@@ -403,15 +493,20 @@ The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` 
 
 **File:** `src/cli/lib/configuration/config-types-writer.ts`
 
-Generates `config-types.ts` files with typed union types narrowed to installed items.
+Generates `config-types.ts` files with typed union types narrowed to installed items. Eight
+exported functions, exhaustively — the same list [config-writer.md](../config/config-writer.md)
+carries, and both are bound to the module by `scripts/check-enumeration-drift.ts`:
 
-| Function                             | Purpose                                           |
-| ------------------------------------ | ------------------------------------------------- |
-| `generateConfigTypesSource()`        | Generate standalone config-types.ts from matrix   |
-| `generateProjectConfigTypesSource()` | Generate project config-types.ts extending global |
-| `regenerateConfigTypes()`            | Full regeneration with background matrix loading  |
-| `loadConfigTypesDataInBackground()`  | Kick off background matrix/agent loading          |
-| `getGlobalConfigTypesPath()`         | Check if global config-types.ts exists            |
+| Function                             | Purpose                                                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `getGlobalConfigTypesPath()`         | Absolute path to the global config-types.ts when it exists, else `null`                   |
+| `assembleConfigTypesSource()`        | The single emission template all three writers route through                              |
+| `loadConfigTypesDataInBackground()`  | Kick off background matrix/agent loading                                                  |
+| `regenerateConfigTypes()`            | Full regeneration; throws `GlobalPairWriteViolation` at `$HOME`                           |
+| `generateConfigTypesSource()`        | Standalone config-types.ts, narrowed to a config when passed one, else to the full matrix |
+| `deriveCategories()`                 | `SkillId[]` → the categories the matrix places them in, minus `LOCAL_PSEUDO_CATEGORY`     |
+| `deriveDomains()`                    | `Category[]` → the domains the matrix gives them                                          |
+| `generateProjectConfigTypesSource()` | Project config-types.ts extending the global one                                          |
 
 When a global installation exists, project `config-types.ts` imports from global and extends with project-only types. Types are narrowed to only installed items (not the full matrix).
 
@@ -495,7 +590,7 @@ One shared step now runs immediately before BOTH writes:
 
 Propagation itself rewrites a registered project's `config.ts` / `config-types.ts` but never its compiled `.claude/agents/*.md`. **The gate does that step, not the caller**: `config-gate/recompile.ts` runs `recompilePropagatedProjectAgents(projectDirs)` (`src/cli/lib/operations/project/recompile-project-agents.ts`, imported lazily to avoid the lib → operations cycle) over `propagated.updated`, and the result lands on `GateReport.recompile` for the command to render. The earlier contract returned the directories for the caller to recompile — which only `init` and `edit`'s wizard tail ever did, leaving `edit`'s source migration and the global `uninstall` behind.
 
-`recompileRegisteredProjectAgents(projectDir)` recompiles **project scope only** (`scopeFilter: "project"`) — the global agents were already recompiled by the triggering operation's own pass. It passes `discoverInstalledSkills(projectDir).allSkills` explicitly so global-local and project-local skills are not stripped. `recompilePropagatedProjectAgents` loops sequentially with per-project failure isolation, returning `{ recompiledCount, failedCount, warnings }`.
+`recompileRegisteredProjectAgents(projectDir)` recompiles **project scope only** (`scopeFilter: "project"`) — the global agents were already recompiled by the triggering operation's own pass. It passes `discoverInstalledSkills(projectDir).allSkills` explicitly so global-local and project-local skills are not stripped. `recompilePropagatedProjectAgents` loops sequentially with per-project failure isolation, returning `PropagatedRecompileSummary = { rewrittenCount, unchangedCount, failedCount, warnings }`. A project whose agents all came back byte-identical counts as `unchangedCount`, not as a recompile — there is no `recompiledCount` field.
 
 ## Branding / White-Labeling
 

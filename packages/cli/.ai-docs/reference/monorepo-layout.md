@@ -81,6 +81,18 @@ is exactly one lockfile, `bun.lock`, at the root.
 | `apps/www`                   | `www`                          | Astro landing page + Starlight docs site                                    |
 | `apps/server`                | `server`                       | The Cloudflare API worker behind `init --from`, and the skills index        |
 
+**The `apps/server` row names two surfaces and `packages/cli` consumes exactly one of them.** The
+seed route behind `init --from` is a CLI dependency; the **federated skill index** is not — nothing
+under `packages/cli/src/` or `packages/cli/e2e/` names it, and it has no `reference/` document of its
+own in this package. It moves independently and on its own schedule: on 2026-08-18 its KV key went
+to `skill-index:v2` because `skillIndexEntrySchema` gained a required `bytes` field, which is a
+breaking read for anything still on `v1`. **None of that reaches this package**, and a pass that
+finds the index undocumented here should leave it that way rather than importing a subject the CLI
+cannot break or be broken by. The one place the two halves touch is
+`MAX_EXTERNAL_SKILL_BYTES` in `packages/matrix/src/seed.ts` — the per-directory cap the index's
+`bytes` exists to be weighed against, and part of the wire contract the CLI _does_ read; that
+belongs to [`features/seed-contract.md`](./features/seed-contract.md).
+
 **`@workspace/api-mocks` ships three entry points on purpose**, each for a consumer that must not
 pay for the others: `.` (`src/index.ts`), `./fixtures` (`src/fixtures.ts`, deliberately free of any
 msw import so the Playwright runner — which keeps its own interception and wants only the payloads —
@@ -231,9 +243,10 @@ enabled in all seven workspaces are type-aware — typescript-eslint's `recommen
 program, so a change in a staged file can produce a report in a file the commit does not touch and
 no staged-file run can see it. Nothing else in the seven configs needs more than the file it is
 handed: the config-gate import bans are `no-restricted-imports`, which matches the literal
-specifier string and never resolves a module; the task-ID and dynamic-import bans are
-`no-restricted-syntax` selectors; the sixteen `react-hooks` rules and `react-refresh` are
-single-module analyses; and there is no import-cycle plugin anywhere in the repository. So
+specifier string and never resolves a module; the task-ID, vacuous-comparison and dynamic-import
+bans are `no-restricted-syntax` selectors; `no-self-compare` is a syntactic shape; the sixteen
+`react-hooks` rules and `react-refresh` are single-module analyses; and there is no import-cycle
+plugin anywhere in the repository. So
 `lint-staged` is the fast half — a violation in a file you staged fails there in ~4s rather than
 ~19s here, and the fixable ones are fixed and re-staged before turbo sees them — and the turbo line
 is the complete one, which turbo also caches.
@@ -599,6 +612,40 @@ config for all sixteen file classes in `packages/cli`, compared with `eslint --p
 and after, is identical but for one option the shared base carries and the hand-written set did
 not (`ignoreRestSiblings` on `no-unused-vars`, which loosens). What changed is that the next
 addition to the shared base arrives on its own.
+
+### What the shared base actually states
+
+`packages/eslint-config/base.js` exports two entry points, and which one a rule lives in is decided
+by whether it needs a TypeScript program rather than by how important it is.
+
+| Export                       | Beyond `js.configs.recommended` + typescript-eslint's set                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `baseConfig`                 | `@typescript-eslint/no-unused-vars` (options only), `no-self-compare`                          |
+| `typeCheckedConfig(rootDir)` | `@typescript-eslint/no-unnecessary-condition`, `@typescript-eslint/consistent-type-assertions` |
+
+`typeCheckedConfig` is a **function** for one reason: `tsconfigRootDir` has to be the _consuming_
+workspace's directory, and `import.meta.dirname` from inside the shared package would point every
+workspace at `packages/eslint-config`, which holds no tsconfig at all. Each call site passes its own.
+
+**`no-self-compare` moved here from `packages/cli` on 2026-08-18 and now reaches every workspace.**
+It catches `x === x` — a comparison whose subject cannot falsify it, so the code under it is never
+being asked anything. It had lived in `packages/cli` alone since a hand-run verdict was caught
+reading `after.length >= 0 && before.length >= 0`, which left the other six extending workspaces
+accepting the same class. `@typescript-eslint/no-unnecessary-condition` cannot stand in for it: that
+rule asks whether a value's TYPE settles a condition, and `x === x` is a `boolean` the type of `x`
+leaves open. The shape is syntactic, so the rule that closes it is too.
+
+**Its selector half could not follow, and that asymmetry is the thing to know before moving another
+rule up.** The related shape — a `length`, `size` or `byteLength` compared against zero in the
+direction that always holds — is expressed as `no-restricted-syntax` selectors, and
+`no-restricted-syntax` takes options. **A rule's options are not merged across flat-config blocks:
+the last block naming it for a file owns all of them.** So those selectors stay in
+`packages/cli/eslint.config.js` and are restated in every zone that declares the rule for a reason of
+its own. `no-self-compare` is core ESLint, takes no options, and so merges — which is the whole of
+why one half could move and the other could not. `src/cli/lib/__tests__/spec-gates.test.ts` is the
+mutation proof for both halves, and it lints the shared base by path
+(`packages/eslint-config/base.js`) rather than by package specifier, because the package ships plain
+`.js` with no declaration file.
 
 ## The schema base URL moved with the package
 

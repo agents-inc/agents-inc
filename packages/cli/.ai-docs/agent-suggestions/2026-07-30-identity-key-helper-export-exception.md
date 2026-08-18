@@ -48,9 +48,7 @@ domain: cli
 > used within the same file" bullet itself. The key-families guidance proposed below
 > landed later the same day as rule **8.7** in
 > `.ai-docs/standards/clean-code-standards.md` -> "8. DRY" — as prose rather than the
-> table sketched below; see `resolution_note` in the frontmatter. Source of the
-> underlying observation:
-> `.ai-docs/agent-findings/2026-07-30-shared-identity-key-helpers-conflict-with-the-no-single-file-export-rule.md`.
+> table sketched below; see `resolution_note` in the frontmatter.
 
 ## Problem
 

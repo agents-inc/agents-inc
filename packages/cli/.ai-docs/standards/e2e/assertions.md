@@ -259,7 +259,8 @@ Available constants:
 - `E2E_AGENTS.WEB` — web-scope agent names
 - `E2E_AGENTS.API` — api-scope agent names
 - `E2E_AGENTS.WEB_AND_API` — both scopes combined (computed getter)
-- `E2E_SKILL_IDS` — all 10 skill IDs from the E2E source, as a tuple
+- `E2E_SKILL_IDS` — all 10 skill IDs from the E2E source. **Derived** from the fixture's own skill set and typed `readonly string[]`, not a hand-written tuple — and each id carries the fixture marketplace's namespace, so it is not a `SkillId`
+- `E2E_MARKETPLACE_NAME` / `e2eSkillId(bare)` — the fixture marketplace's name and the builder that composes an id inside its namespace. Never spell either by hand
 - `E2E_SKILL` — per-skill `id` <-> `slug` <-> `display` map
 - `E2E_AGENT` — per-agent `name` <-> `display` map
 - `E2E_AGENT_DISPLAY` — re-export of `E2E_AGENT_TITLES` from `create-e2e-source.ts`
@@ -369,6 +370,56 @@ expect(output).toContain(STEP_TEXT.COMPILE_SUCCESS);
 
 ---
 
+## A Sentinel Must Name the Substantive Claim, Not Its Lead-in
+
+A `STEP_TEXT` member is the whole of what every spec using it holds the CLI to. Pick the fragment the **claim** lives in, never the fragment that introduces it: a preamble stays true whatever follows it, so a sentinel matching one is a sentinel that cannot fail. Three specs can assert it and none of them can see a false second half.
+
+`DOCTOR_TIP_UNOWNED_INSTALL` is the worked example. The `orphans-unowned` tip in `src/cli/commands/doctor.ts` has two halves — a lead-in that names the situation, and a remedy that makes a claim about what another command does:
+
+> Tip: Nothing declares the files above — `... init` writes a configuration that can own them again, or `... uninstall` **removes them, the compiled agents included**: each file listed carries this CLI's own provenance …
+
+The sentinel used to be `"Nothing declares the files above"`. That is true of any wording of the remedy, so the two `doctor` specs and the lifecycle spec asserting it were all green while the remedy said the opposite of what `uninstall` does — the tip claimed identifying compiled agents needs the configuration that is gone, which `identifiableAgents`' fallback to the marker-carrying files had already made untrue. The constant is now `"removes them, the compiled agents included"`, and a remedy that changes takes it red.
+
+**The test: name the wording that would have to change if the behaviour changed.** A row label, a step heading and a section title are legitimately short and legitimately invariant — they identify a screen rather than assert anything, and `DOCTOR_ROW_NO_ORPHANS` or `SCOPE_GLOBAL` are correct as they stand. The rule bites where a message makes a claim: a tip, a refusal, a reason line, a count's explanation. There, the sentinel goes in the clause a reader would dispute.
+
+**This is not mechanically checkable, and the measurement is recorded so the conclusion can be re-derived rather than retried.** Two candidate checks were measured against all 172 members:
+
+| Candidate check                                                       | Why it does not work                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Locate each sentinel's message in `src/cli/`, flag lead-in positions  | 22 of the 172 appear nowhere in `src/cli/` verbatim, because the product COMPOSES them — `UNINSTALL_AGENTS_KEPT_ONE`, `PROPAGATED_RECOMPILE_ONE` and `DOCTOR_SKILLS_VALIDATED` are assembled around counts. A check that cannot find its subject 13% of the time either declines to judge those members silently or condemns them wrongly. |
+| Flag a sentinel followed by a clause break in the message carrying it | Fires on 90 of the 150 that can be located, `DOCTOR_ROW_SKILLS_RESOLVED` ("Skills Resolved"), `DOCTOR_CONFIG_CHECK` ("Config Valid") and `SCOPE_GLOBAL` ("Global") among them. Every one of those is a label doing its job, and a check that condemns the good sentinels is worse than no check — it teaches the reader to suppress it.    |
+
+A sentinel is therefore chosen by judgement and defended by a comment at its definition in `e2e/pages/constants.ts` saying **which** half of the message it is and why. `DOCTOR_TIP_UNOWNED_INSTALL` carries that comment; copy its shape.
+
+---
+
+## Assert the Departure, Not Only the Arrival
+
+A spec that drives a transition between two states owes an assertion on what the **old** state left behind. "Nothing is left here" is a claim, and it needs evidence exactly as much as "the new thing arrived" does.
+
+The vocabulary of a passing suite is arrival-shaped — `toContain`, `toHaveConfig`, `toBeVisible`, `toHaveURL` — so the gap is invisible from inside a spec: every assertion in it holds, and the thing that should have STOPPED was never named. Four defects reached a hand-run through this one blind spot, and the sequence is the same each time: a state change is driven, the surface the old state lives on is not revisited, and the stale value survives on it.
+
+**Three surfaces hold old state after a transition, and each needs naming:**
+
+| Surface                 | The departure to assert                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| A notice or banner      | After any navigation that changes which address or scope is open, assert the notice — absent, or the exact text the new state owns |
+| The stored selection    | After any change to the catalogue a selection is expressed in, assert the selection agrees with the new catalogue                  |
+| The payload it produces | After any catalogue change, produce one payload and assert its catalogue reference and its contents name the same catalogue        |
+
+Worked examples, all four found by hand against suites that were green:
+
+- **A notice outlives its address.** The spec clicks the Configure nav item, asserts the URL and asserts the visitor's own selection is restored. It never asserts the notice, and the restore path has no clear-the-notice call — only two other paths do. "A shared configuration, not your own" stands on the visitor's own address until a full page load.
+- **A configuration outlives its address.** Same walk, for a visitor whose slot has never been written. The store's `merge` answers an absent persisted value by returning the current one, which is right at startup where current is empty and wrong on a reattach where current is somebody else's configuration. **Only the populated branch was ever driven** — an empty-slot case is a different branch through the same merge and needs its own leg.
+- **A selection outlives its catalogue.** One of the two doors that loads a marketplace prunes the selection to the new catalogue and the other does not, so the next payload names ids from two catalogues under one catalogue reference. No spec mints a payload after a catalogue change at all — every mint sits in a spec whose catalogue never moves, so the only surface the defect is visible on is never produced.
+- **A name outlives its catalogue.** The marketplace specs assert the grid, the rail and the categories all swap. Nothing asserts that the catalogue's NAME and its REPOSITORY swapped with them, and both are hardcoded to the public marketplace — so a custom marketplace gets the public one's name in a dialog and 404 source links throughout.
+
+**The rule is prose, not a checker, and deliberately.** "Drives a transition" has no syntactic signature: every mechanical proxy for it is a hand-maintained list of page-object methods, and a spec using a method nobody added to the list reads as having no transition to answer for. That silent decline is the same defect one level up. What IS mechanically detectable is the narrowest form — a spec file that changes a catalogue and never mints — and it is worth building only in the suite where those two calls have stable names.
+
+The CLI half of this rule already exists as [README.md § State-change verification](./README.md), which requires config AND filesystem to be asserted after any operation that changes either, and a before/after snapshot where the operation should change nothing. Same demand, same words: absence is a claim.
+
+---
+
 ## Assert the Surface That Retains the Value
 
 Three output surfaces exist, and they do not hold the same thing.
@@ -404,6 +455,41 @@ expect(configContent).not.toContain("web-styling-tailwind");
 expect(output).not.toContain("Failed to archive");
 expect(output).not.toContain("ENOENT");
 ```
+
+### A negated word assertion must not run against text the harness contributed to
+
+**Before writing `not.toMatch(/\bword\b/i)` over a message, establish which parts of that message the product COMPOSES and which parts it ECHOES back** — paths, ids, refs, marketplace names, query strings, user input. A negative over echoed text is a statement about the fixture, and the fixture usually wins.
+
+The failure mode is worth naming because of its shape: the spec goes red for a reason that looks exactly like a product defect, and the obvious "fix" is to stop naming the path — which silently deletes a diagnostic a sibling spec exists to protect. `\b` matches on both sides of a hyphen, a slash and a quote, so a temp-dir prefix `cc-source-fetcher-test-` and a path segment `/tmp/…/source` each satisfy `/\bsources?\b/i` on their own.
+
+**Two ways to keep the assertion honest, in order of preference, and two rules that keep them applied.**
+
+**1. Name the fixture out of the WHOLE vocabulary under test, not merely out of the forbidden half.** A temp-dir prefix, path segment, skill id or marketplace name used by a spec that forbids a word must spell neither the word being withdrawn NOR the word replacing it. A rename has two halves and the harness can defeat either: naming the fixture after the SURVIVING noun satisfies the "the new word arrived" positives off the echoed value — the same defect with the sign flipped, and harder to spot because the spec is green.
+
+Prefer a name that says what the value is to the **harness** over one that says what it is to the **product**, because a harness word cannot be renamed out from under the spec by a product decision:
+
+```diff
+- const sourceDir = path.join(tempDir, "source");       // the withdrawn noun
+- const sourceDir = path.join(tempDir, "marketplace");  // the surviving noun — same trap, sign flipped
++ const sourceDir = path.join(tempDir, "fixture");      // outside both halves
+```
+
+`createE2ESource` names its root `fixture` and `E2E_MARKETPLACE_NAME` is `e2e-test-fixture` for exactly this reason — and the marketplace name is the sharper case, because a marketplace's name is the prefix on every skill id it ships and `search` prints ids in its `ID` column.
+
+**2. Scope the negative to the composed half** when the echoed value genuinely cannot avoid the word (a real user path). Anchoring is the cheapest form:
+
+```typescript
+// An absolute path cannot start a line with the word, so this asserts the row heading alone
+expect(output).not.toMatch(/^\s*Sources?(\s|$)/m);
+```
+
+`doctor-content.e2e.test.ts` carries that shape. Copy it.
+
+**3. Record the constraint where the name is CHOSEN, and treat shared fixtures as the priority case.** A name in `e2e/helpers/` or `__tests__/fixtures/` has many callers and none of them can see why it is what it is, so the next person to tidy it has nothing to stop them. One comment at the naming site is the whole guard. **A fixture name is never private to the spec that chose it once any message echoes it.**
+
+**4. A class check must NAME the trees it read.** The defect exists wherever a negated word meets text the harness contributed — `src/` unit specs, `e2e/`, and component tests alike. A sweep of one tree settles one tree; write down which, or the conclusion reads as a statement about the repository and closes the class prematurely.
+
+---
 
 Three further constraints apply to any negative assertion about **rendered output**. Each one, independently, produces an assertion that cannot fail.
 

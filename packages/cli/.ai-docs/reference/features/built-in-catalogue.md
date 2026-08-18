@@ -437,9 +437,15 @@ executes.
 **One gap, closeable and currently passing if closed:**
 
 1. **Nothing cross-checks either file against the generated matrix.** `default-categories.test.ts`
-   has exactly that assertion (`keys` vs `CATEGORIES`); its two siblings do not. No test asserts
+   has exactly that assertion (`keys` vs `CATEGORIES`); its two siblings do not. No spec asserts
    that every `defaultStacks` skill id exists in `BUILT_IN_MATRIX.skills`, or that every rule slug
-   resolves through `BUILT_IN_MATRIX.slugMap`. Both hold, so the assertions pass on the day they are written.
+   resolves through `BUILT_IN_MATRIX.slugMap`. Both properties hold, so the assertions would pass on
+   the day they are written.
+
+   **Re-derive before relying on this.** It is an assertion of ABSENCE, which
+   `scripts/check-enumeration-drift.ts` cannot falsify — writing either spec moves no symbol name,
+   so the paragraph stays green whichever way it goes. Grep `BUILT_IN_MATRIX` in
+   `src/cli/lib/configuration/__tests__/` and read what the hits assert.
 
 ## Traps
 
@@ -474,25 +480,38 @@ edit that skips this changes nothing for default-source users while passing ever
 
 Neither a stale stack skill id nor a stale rule slug produces an error:
 
-| Staleness                                           | What happens                                                                                                                                                                                                                                  |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stack names a skill not in the matrix               | Generation: silent drop. Runtime: dropped from `skills`, kept in `allSkillIds`, one `warn` from `resolveAgentConfigToSkills` (suppressed in tests)                                                                                            |
-| Rule names an unresolvable slug                     | `resolveToCanonicalId` logs `Unresolved slug '<slug>' … — skipping` and returns `null`; `resolveSlugsOrSkip` filters it out. Only a SOURCE's rules reach it — a stale BUILT-IN slug is narrowed out before resolution and says nothing at all |
-| A `requires` rule whose `needs` all fail to resolve | The whole rule is dropped (`resolvedNeeds.length === 0` → `continue`)                                                                                                                                                                         |
+| Staleness                                        | What happens                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stack names a skill not in the matrix            | Generation: silent drop. Runtime: dropped from `skills`, kept in `allSkillIds`, one `warn` from `resolveAgentConfigToSkills` (suppressed in tests)                                                                                                                                                            |
+| Rule names an unresolvable slug                  | `resolveToCanonicalId` logs `Unresolved slug '<slug>' … — skipping` and returns `null`; `resolveSlugsOrSkip` filters it out. Only a SOURCE's rules reach it — a stale BUILT-IN slug is narrowed out before resolution and says nothing at all                                                                 |
+| A `requires` rule whose needs do not ALL resolve | The whole rule is dropped — `resolveEveryNeed` returns `null` unless every `need` resolves, and the requires branch `continue`s on `null`. **Any**, not all: one unknown slug drops the rule. Keeping the survivors would apply a requirement nobody wrote, shown to the user under the author's own `reason` |
 
 The narrowing described under [Precedence](#the-built-in-rules-are-narrowed-to-the-slugs-the-source-ships)
 takes the middle row's warning away from the built-ins on purpose, and costs nothing here: the
 warning was already not a staleness signal. It fired for every slug a small source did not ship,
 which is the normal case, so a genuinely stale built-in slug was one line among thousands that read
 exactly the same. Invariant 4 above — every built-in slug resolves against `BUILT_IN_MATRIX` — is
-the property that would catch it, and it is still checked by nothing.
+the property that would catch it, and no spec asserts it (same grep as the gap above; same reason
+the drift checker cannot police the claim).
 
-`checkMatrixHealth` does **not** close this. It runs five checks — category domains, skill
-categories, relation refs, audit-verdict contradictions, unaudited skills — and the only one that
-could bear on staleness, `checkSkillRelationRefs`, reads `conflictsWith` and `requires` on
-already-**resolved** skills, i.e. references that survived resolution by definition. It never looks
-at `suggestedStacks` at all (the field does not appear in `matrix-health-check.ts`). Slug
-resolution failures are gone before the health check runs.
+**`checkMatrixHealth` closes the rule half and not the stack half.** It runs six checks — category
+domains, skill categories, relation refs, **unresolved rule slugs**, audit-verdict contradictions,
+unaudited skills. `checkUnresolvedRuleSlugs` reports one `error`-severity finding per slug off
+`MergedSkillsMatrix.unresolvedSlugs`, which `collectUnresolvedSlugs` derives from the RULES rather
+than from the resolution pass — that pass walks every rule once per skill, so one typo would
+otherwise report as many findings as the source has skills. `checkSkillRelationRefs` is the check
+that cannot help: it reads `conflictsWith` and `requires` on already-**resolved** skills, i.e.
+references that survived resolution by definition.
+
+`suggestedStacks` is unexamined — `grep -c suggestedStacks src/cli/lib/matrix/matrix-health-check.ts`
+returns `0` — so a stack naming a skill the matrix does not carry remains a `warn` and nothing more.
+The six checks are composed in one array literal at the top of `checkMatrixHealth`; read that array
+rather than this list, which no check can bind to source.
+
+**Only a source's own rules can produce the finding.** A stale BUILT-IN slug is narrowed out before
+resolution, so it never reaches `unresolvedSlugs`. And the severity a reader sees turns on who they
+are: `error` for the marketplace's author, `warning` for someone consuming it — see
+[`reference/commands/index.md`](../commands/index.md) § `doctor`.
 
 ### Trap 4 — do not restate `preloaded` semantics here
 

@@ -5,7 +5,7 @@ keywords: [commands, pointer, migration]
 related:
   - reference/commands/index.md
   - reference/commands/edit.md
-last_validated: 2026-07-30
+last_validated: 2026-08-18
 ---
 
 # Commands Reference (Pointer)

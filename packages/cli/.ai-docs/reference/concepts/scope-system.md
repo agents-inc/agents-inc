@@ -21,8 +21,21 @@ keywords:
     lock-icon,
     isEditingFromGlobalScope,
     isInitMode,
+    isGlobalRoot,
+    refuseProjectScopedContentAtHome,
+    toggleSkillScope,
+    toggleAgentScope,
+    createDefaultSkillConfig,
+    toClaudePluginScope,
+    authoritativeScope,
+    isWithinSessionAuthority,
+    reconcileSharedConfig,
+    skillsAuthoredHere,
+    forkedFrom,
   ]
 related:
+  - reference/features/seed-contract.md
+  - reference/commands/edit.md
   - reference/architecture/overview.md
   - reference/wizard/flow.md
   - reference/wizard/state-transitions.md
@@ -76,10 +89,15 @@ type SkillScope = "project" | "global";
 type SkillConfig = {
   id: SkillId;
   scope: SkillScope;
-  source: string; // "eject" | marketplace name (e.g., "agents-inc")
+  /** Where this skill came from: "eject" (the project's own copy) or a marketplace name. */
+  origin: string;
   excluded?: boolean;
 };
 ```
+
+The field is `origin`. `edit`'s diff key for it is `ConfigChanges.sourceChanges`, and the wizard's
+per-skill picker is the Sources step — the two names describe the same field from opposite ends and
+neither is the type's.
 
 **`AgentScopeConfig`** (`src/cli/types/config.ts`):
 
@@ -93,7 +111,7 @@ type AgentScopeConfig = {
 };
 ```
 
-A shared seed payload carries **per-agent scope independently of skill scope**; `agentScopeConfig` in `lib/seed/seed-to-wizard.ts` defaults an absent scope to `"project"`. See [features/seed-contract.md](../features/seed-contract.md). The `model` / `effort` pair is documented in [features/model-and-effort.md](../features/model-and-effort.md).
+A shared seed payload carries **per-agent scope independently of skill scope**; `seedAgentScope` in `src/cli/lib/seed/seed-to-wizard.ts` resolves an absent scope to `DEFAULT_SELECTION_OPTIONS.scope` (`packages/matrix/src/read-model/selection-defaults.ts`), which is `"global"` — the shared spelling of what an untouched pick does, so a decode never disagrees with the app that built the payload. See [features/seed-contract.md](../features/seed-contract.md). The `model` / `effort` pair is documented in [features/model-and-effort.md](../features/model-and-effort.md).
 
 ## Scope Predicates
 
@@ -184,7 +202,7 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **Guard check:** If a skill/agent is found in `installedSkillConfigs`/`installedAgentConfigs` with `scope === "global"` and `!excluded`, and the wizard is NOT in global-scope edit mode (`isEditingFromGlobalScope === false`), the action returns a toast message instead of modifying state.
 
-`isEditingFromGlobalScope` is the **only** bypass. Init mode used to bypass the guards too; that arm is gone — a globally-installed item is immutable from project scope in every flow, init included.
+`isEditingFromGlobalScope` is the **only** bypass. A globally-installed item is immutable from project scope in every flow, `init` included; `isInitMode` gates no scope guard.
 
 **Key state fields:**
 
@@ -211,7 +229,7 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 ### Scope Toggle Eject Guard
 
-`toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs` (source compared against the `EJECT_SOURCE` constant). However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path). Because a live `[P][G]` pair always carries the excluded global tombstone, a reopened dual-scope eject pair reaches this eject-collision check but is allowed via the undo path — `s` collapses it to `[G]`. (removed the pre-emptive persisted-pair guard that used to short-circuit before this check.) See [concepts/guard-pattern.md](./guard-pattern.md).
+`toggleSkillScope` in `wizard-store.ts` blocks project-eject to global-eject promotion when a non-excluded global eject entry already exists in `installedSkillConfigs` (`origin` compared against the `EJECT_SOURCE` constant). However, if the current `skillConfigs` already contains an excluded tombstone for that skill ID, the guard allows the toggle (undo path). Because a live `[P][G]` pair always carries the excluded global tombstone, a reopened dual-scope eject pair reaches this eject-collision check but is allowed via the undo path — `s` collapses it to `[G]`. No guard short-circuits ahead of this check. See [concepts/guard-pattern.md](./guard-pattern.md).
 
 > **Detailed documentation:** See [concepts/tombstone-pattern.md](./tombstone-pattern.md) for full tombstone lifecycle.
 
@@ -256,20 +274,40 @@ The lock icon lives in the **Sources step**, not the build step. `source-grid.ts
 
 ## Global Immutability From Project Scope
 
-**Rule:** a globally installed skill or agent can no longer be deselected from a project in **any** flow, `init` included. A global install belongs to the global config, which every project shares, so no project may remove it. `isEditingFromGlobalScope === true` is the sole bypass.
+**Rule:** a globally installed skill or agent cannot be deselected from a project in **any** flow, `init` included. A global install belongs to the global config, which every project shares, so no project may remove it. `isEditingFromGlobalScope === true` is the sole bypass.
 
-Four paths have escaped this rule and are now closed:
+### Two enforcement points, protecting different things
 
-| Path                                     | Was                                                                           | Now                                                                                                                                               |
-| ---------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Init-mode arm on every global-item guard | `&& !state.isInitMode` bypassed the guard                                     | Arm deleted. `isInitMode` gates no scope guard at all.                                                                                            |
-| Scope move to global, then deselect      | Minted a tombstone for a skill never installed globally (probe ignored scope) | `applySkillRemoval` is ownership-scoped; it never stamps `excluded`.                                                                              |
-| Toggling an agent off                    | Tombstoned the global entry                                                   | `applyAgentToggle`'s deselect branch is a plain removal of what the project owns.                                                                 |
-| Deselecting a domain                     | Tombstoned that domain's global skills, with no guard at all                  | A **view filter**: hides the domain's skills and drops only what the project owns; global entries survive untouched — neither dropped nor masked. |
+Conflating them is how a project-scope run deletes a global install while its config file still looks correct.
 
-**Removing the init-mode arm was a production no-op, not a behaviour change.** `Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds an install, so `isInitMode === true` implies `installedSkillConfigs === null` — a real `cc init` can never see a global preselection. Deleting the arm closes the bypass at store level so no future caller can reach through it.
+| Layer                | Where                                                                                                                                         | What it protects                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| The **writer**       | `authoritativeScope: "owned"` -> `isWithinSessionAuthority(entry, scope)` -> `isProjectOwned` in `src/cli/lib/configuration/config-merger.ts` | The config ROW. An inherited global-active entry absent from the config being written is preserved rather than dropped |
+| The **removal diff** | `ConfigChanges.removedSkills` / `removedAgents`, built by `detectConfigChanges` in `src/cli/commands/edit.tsx`                                | Nothing — it is what DRIVES `uninstallPluginSkills`, `deleteLocalSkill` and `removeCompiledAgents`                     |
 
-**The domain-deselect fix is invariant hardening, not a user-visible change.** `toggleDomain` has exactly two callers — `domain-selection.tsx` (the DOMAINS step) and `stack-selection.tsx` (the init-only "start from scratch" branch). `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step, and `cc init` in a project with a global install routes to the dashboard first. **No keypress path exists** where a domain deselect can see a globally-installed entry; the guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
+**The merger's authority does not reach the disk.** An entry left in the removal set is uninstalled from the plugin registry and deleted from `~/.claude/skills/` or `~/.claude/agents/` whatever the merger later does with its row.
+
+Every keystroke-driven caller reaches the writer through the wizard store, and the store refuses to deselect a live global entry at all — so a wizard-produced `removedSkills` / `removedAgents` never carries one, and on that path the store is the whole of the protection. **`edit --from <id>` bypasses the store**: a payload states a roster directly, and the apply is destructive. `reconcileSharedConfig` (`src/cli/lib/seed/seed-apply.ts`) therefore puts back what the run may not remove **into the result, before the diff is taken**, which is the only place the diff can see it. Two reasons, separately remedied and separately disclosed in the confirm:
+
+| Reason           | Predicate                                                                  | Remedy the plan names               |
+| ---------------- | -------------------------------------------------------------------------- | ----------------------------------- |
+| Inherited global | `authority === "owned" && isActiveAt(entry, "global")`                     | `uninstall` from the home directory |
+| Authored here    | `skillsAuthoredHere` — an ejected skill directory carrying no `forkedFrom` | `edit`                              |
+
+At the home root `authority` is `"all"` and there is no inherited entry: a global-context run owns the whole config, so the scope half drops out while the authorship half still holds. See [`commands/edit.md`](../commands/edit.md).
+
+### The removal paths from the wizard
+
+Four paths reach a removal, and each is scoped to what the project owns:
+
+| Path                                | Behaviour                                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global-item guards                  | Carry no init-mode arm. `isInitMode` gates no scope guard at all.                                                                                 |
+| Scope move to global, then deselect | `applySkillRemoval` is ownership-scoped; it never stamps `excluded`.                                                                              |
+| Toggling an agent off               | `applyAgentToggle`'s deselect branch is a plain removal of what the project owns.                                                                 |
+| Deselecting a domain                | A **view filter**: hides the domain's skills and drops only what the project owns; global entries survive untouched — neither dropped nor masked. |
+
+**The store-level guarantee holds independently of whether a keypress path can reach it, and no keypress path can.** `Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds an install, so `isInitMode === true` implies `installedSkillConfigs === null` — a real `cc init` never sees a global preselection. `toggleDomain` has exactly two callers, `domain-selection.tsx` (the DOMAINS step) and `stack-selection.tsx` (the init-only "start from scratch" branch), and `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step. The guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E, precisely because it has no reachable UI surface. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
 
 **Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `npx agents-inc edit` from the home directory.
 
@@ -293,3 +331,45 @@ During installation, skills and agents are split by scope before path-dependent 
 2. `writeScopedFromWizard()` writes global and project configs separately
 3. Plugin install/uninstall operations split by scope (`filter(s => s.scope === "global")` / `filter(s => s.scope !== "global")`)
 4. Local skill copy operations split by scope via `resolveInstallPaths()`
+
+## The Global Root Holds Only Global-Scoped Content
+
+**Rule:** when the install root IS the home directory, nothing project-scoped may be written. The
+split above has nothing to split there — `resolveInstallPaths` sends both scopes to the same
+directory, and the config gate writes one config rather than two — so a `scope: "project"` entry
+does not land somewhere else. It lands in the global config carrying a label that contradicts the
+file it is in, and `toClaudePluginScope` maps that declared scope onward, registering the skill
+against `$HOME` as a project. No layer below the install boundary reads the scope again.
+
+**Every producer of an installation enforces this, at its own boundary:**
+
+| Producer               | Enforcement point                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init` wizard          | `isHomeDirectory(projectDir)` becomes `isGlobalRoot` in `init.tsx` and hydrates the session as `isEditingFromGlobalScope`                                                  |
+| `edit` wizard          | The same session flag, set from the directory `edit` runs in                                                                                                               |
+| Wizard scope toggles   | `toggleSkillScope` / `toggleAgentScope` return `state` unchanged on the first line when `isEditingFromGlobalScope` is true                                                 |
+| New wizard skill entry | `createDefaultSkillConfig` mints `scope: "global"`, so an untouched pick is already correct at the root                                                                    |
+| `init --from <id>`     | `refuseProjectScopedContentAtHome(result, projectDir)`, inherited from `BaseCommand` — a hard refusal, `EXIT_CODES.ERROR`, after the decode and before anything is written |
+| `edit --from <id>`     | The same inherited method, called with `cwd` at the same point of the same value — one implementation, so the destructive door refuses what the greenfield one refuses     |
+
+**Both `--from` producers reach the rule through the one method, and that is why it lives on
+`BaseCommand`.** It is a fact about the payload and the directory, identical whichever command
+asked, and an invariant enforced on one producer and not the other is enforced nowhere — it matters
+most on `edit --from`, which is destructive and can remove global entries on the way in. The other
+thing `isHomeDirectory(cwd)` decides on that path is separate and stays separate: the
+`authority: "all" | "owned"` word handed to `reconcileSharedConfig` (see
+[Two enforcement points](#two-enforcement-points-protecting-different-things)) and to
+`writeProjectConfig`, which is about what a run may REMOVE rather than about where it may write. The
+wizard producer of `edit` is covered by the session flag as the table's second row says.
+
+**`--from` refuses rather than coerces**, and it is the path where the difference is
+visible: the wizard's toggles are a live UI that can simply decline to move, while a payload arrives
+already stating a scope, and rewriting it to `global` would install content at a scope the sharer
+did not choose. The refusal names every offending entry, **skills and sub-agents both** — a
+sub-agent's scope is an independent decision in the payload, and `isScopePairCompatible` forbids a
+project-scoped skill from reaching a global-scoped sub-agent, so a payload whose only project-scoped
+entry is a bare sub-agent is a reachable shape that a skills-only check would let through.
+
+This is not a greenfield check: a clean `$HOME` is refused on the same terms as an installed one,
+because the subject is the location rather than what is already in it. Full refusal table, message
+builder and specs: [`reference/features/seed-contract.md`](../features/seed-contract.md).

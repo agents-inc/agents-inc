@@ -20,8 +20,8 @@ related:
   - reference/features/wizard-flow.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
-  - reference/commands.md
-last_validated: 2026-07-30
+  - reference/commands/index.md
+last_validated: 2026-08-18
 ---
 
 # Component Patterns
@@ -43,6 +43,7 @@ src/cli/components/
     confirm.tsx              # Y/N confirmation prompt (Confirm)
     confirm.test.tsx
     prompt-confirm.tsx       # Imperative confirm/value prompt helper (used by the dashboard)
+    removal-plan-confirm.tsx # Removal plan + confirm, shared by uninstall and edit --from (RemovalPlanConfirm)
     select-list.tsx          # Generic keyboard-navigable list (SelectList)
     spinner.tsx              # Loading spinner
   hooks/                     # React hooks (10 hooks, 2 co-located test files)
@@ -119,6 +120,8 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 
 ## Color Constants (CLI_COLORS in `src/cli/consts.ts`)
 
+The keys, exhaustive and in source order. `reference/utilities.md` carries the same list for the leaf-constant surface, so this is a SECOND writable copy — both are therefore bound to `src/cli/consts.ts` by `scripts/check-enumeration-drift.ts`, which is what stops one being repaired while the other is not.
+
 | Constant    | Value     | Usage                             |
 | ----------- | --------- | --------------------------------- |
 | `PRIMARY`   | "#99FFFF" | Headers, focus                    |
@@ -140,6 +143,8 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 
 ## UI Symbols (UI_SYMBOLS in `src/cli/consts.ts`)
 
+The keys, exhaustive and in source order, bound to `src/cli/consts.ts` for the same reason as the colours above. `SELECTED` and `CHECK` share one glyph, as do `SKIPPED` and `DISABLED`; the glyph constants behind those pairs are module-private and are not members.
+
 | Symbol               | Value           | Usage                                                                       |
 | -------------------- | --------------- | --------------------------------------------------------------------------- |
 | `CHECKBOX_CHECKED`   | `[x]`           | Selected checkbox                                                           |
@@ -150,8 +155,8 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 | `UNSELECTED`         | circle          | Unselected item                                                             |
 | `CURRENT`            | filled circle   | Current focus                                                               |
 | `SKIPPED`            | dash            | Skipped step                                                                |
-| `DISABLED`           | dash            | Disabled item                                                               |
 | `DISCOURAGED`        | `!`             | Warning indicator                                                           |
+| `DISABLED`           | dash            | Disabled item (same glyph as `SKIPPED`)                                     |
 | `LOCK`               | lock emoji      | Locked/read-only items                                                      |
 | `EJECT`              | eject symbol    | Local/ejected skill indicator                                               |
 | `BULLET`             | bullet dot      | List item marker in confirm/summary                                         |
@@ -159,22 +164,22 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 | `SCROLL_DOWN`        | triangle down   | Scroll indicator                                                            |
 | `CHECK`              | checkmark       | Success glyph (same glyph as `SELECTED`)                                    |
 | `CROSS`              | ✗               | Failure/cross glyph                                                         |
-| `ADDED`              | `+`             | Added-diff marker (info panel, confirm step, Sources tab)                   |
 | `REMOVED`            | `-`             | Removed/pending-removal diff marker (info panel, confirm step, Sources tab) |
+| `ADDED`              | `+`             | Added-diff marker (info panel, confirm step, Sources tab)                   |
 
 ## SelectList Component (`src/cli/components/common/select-list.tsx`)
 
-Generic keyboard-navigable list component. Consumed by `src/cli/commands/init.tsx` (the project dashboard).
+Generic keyboard-navigable list component, declared as a generic FUNCTION (`export function SelectList<T>`) rather than a `React.FC`, because `React.FC` cannot carry the type parameter. Its only importer is `src/cli/commands/init.tsx`, where the module-internal `Dashboard` component wraps it around `DASHBOARD_OPTIONS` — the four commands the project dashboard offers. Both the item type and the props type are exported alongside it.
 
 ```typescript
-type SelectListItem<T> = { value: T; label: string };
+export type SelectListItem<T> = { value: T; label: string };
 
-type SelectListProps<T> = {
+export type SelectListProps<T> = {
   items: readonly SelectListItem<T>[];
   onSelect: (value: T) => void;
-  onCancel?: () => void;
-  renderItem?: (item: SelectListItem<T>, isFocused: boolean) => React.ReactNode;
-  active?: boolean;
+  onCancel?: (() => void) | undefined;
+  renderItem?: ((item: SelectListItem<T>, isFocused: boolean) => React.ReactNode) | undefined;
+  active?: boolean | undefined;
 };
 ```
 
@@ -191,7 +196,23 @@ Imperative bridge for rendering a one-shot Ink prompt from a command's `run()` a
 | `ConfirmHandlers`                | type     | `{ onConfirm: () => void; onCancel: () => void }` — passed to the `promptConfirm` build callback.                                                                                                  |
 | `PromptValueOptions<T>`          | type     | `{ onExit: T; clearOnResolve?: boolean }` — `onExit` is the app-exit fallback value; `clearOnResolve` calls `instance.clear()` before unmount to repaint a clean terminal (used by the dashboard). |
 
-**Consumers:** `promptValue` — `src/cli/commands/init.tsx` (project dashboard, uses `clearOnResolve`). `promptConfirm` — `src/cli/commands/uninstall.tsx`.
+**Consumers:** `promptValue` — `src/cli/commands/init.tsx` (project dashboard, uses `clearOnResolve`). `promptConfirm` — `src/cli/commands/uninstall.tsx`, `src/cli/commands/edit.tsx` (`--from`).
+
+## RemovalPlanConfirm (`src/cli/components/common/removal-plan-confirm.tsx`)
+
+The removal plan a destructive command shows before it removes anything. **Shared by the two commands that delete what a user already has:** `uninstall`, which removes an installation, and `edit --from`, which makes a project match a shared configuration and takes away whatever that configuration left out. Different questions about different subjects, owed the same shape — what goes, what stays and why, and a default of no.
+
+**Exports:**
+
+| Export                    | Kind      | Shape                                                                                             |
+| ------------------------- | --------- | ------------------------------------------------------------------------------------------------- |
+| `RemovalPlanConfirm`      | component | `React.FC<RemovalPlanConfirmProps>`                                                               |
+| `RemovalPlanSection`      | type      | `{ label: string; items: string[] }` — a heading and the lines it promises beneath it             |
+| `RemovalPlanConfirmProps` | type      | `{ heading, sections: RemovalPlanSection[], statements: string[], message, onConfirm, onCancel }` |
+
+**It renders and nothing else.** WHICH lines appear is each command's own decision, built from its own plan, so the preview and the removal stay two readings of one value rather than two derivations that agree today. A heading with no items is not passed at all. `statements` is the prose slot printed under the removals: content that stays and why, and what a removal reaches beyond the directory it was asked for in — two things the list itself cannot say, sharing one slot rather than one meaning. Each caller fills it from its own plan (`uninstall` passes `plan.kept`; `edit --from` passes `plan.statements`), so the CALLER's variable name is not the prop's. `Confirm` is rendered with `defaultValue={false}` — the subject is a deletion — and both handlers call `useApp().exit()` after the caller's callback.
+
+**Consumers:** `src/cli/commands/uninstall.tsx`, `src/cli/commands/edit.tsx`. The fixed text of each plan lives in `utils/messages.ts` (`UNINSTALL_PLAN`, `SHARED_CONFIG_APPLY`), read by every renderer of that plan so a `--yes` printout and a confirm screen cannot drift.
 
 ## Grid Types
 
@@ -247,7 +268,7 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 **Compatibility labels:** `getCompatibilityLabel()` returns labels shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(discouraged)`, or the unmet-requirements reason.
 
-> The sibling export in that module, `validateBuildStep()`, returns `valid: true` on both branches and has **no production caller** — see [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
+> The sibling export in that module, `validateBuildStep()`, returns `valid: true` on both branches. Its only references outside its own module are the `src/cli/lib/wizard/index.ts` barrel that re-exports it and two spec files (`build-step-logic.test.ts`, `step-build.test.tsx`) — no component and no command calls it. Re-derive with `grep -rn validateBuildStep src/`. See [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
 
 **Cell ordering:** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order ?? 0`.
 
@@ -273,7 +294,7 @@ A `SourceRow` renders in one of four states, driven by its optional flags. The m
 
 **No `✓` anywhere in the grid.** Inert rows (`readOnly` / `disabled`) express which source is selected the same way editable rows do — weight, plus brightness on the otherwise-dimmed locked row — and reserve `UI_SYMBOLS.CHEVRON_SPACER` where an editable row draws its focus chevron, so the source labels stay aligned. Editable rows never drew a checkmark, so one on an inert row would be the only instance of the glyph in the grid; on a pending-removal row it would tick the source the row is about to lose.
 
-**Inertness is the interaction contract.** `isRowInert(row)` (`readOnly || disabled`) is consulted in three places, so an inert row can never be acted on: focus seeding and arrow navigation skip inert rows (`firstFocusableRowIndex` and the focus walk), the SPACE handler returns immediately on them, and the render drops the selection chevron and search pill. A pending-removal row therefore shows its **persisted** source purely as information — the skill that is going away cannot also have its source changed. `disabled` and `readOnly` are deliberately distinct flags: the lock means "installed globally, not yours to change here"; the removal marker means "saving will remove this".
+**Inertness is the interaction contract.** `isRowInert(row)` (`readOnly || disabled`) is consulted in three places, so an inert row can never be acted on: focus seeding and arrow navigation skip inert rows (`firstFocusableRowIndex` and the focus walk), the SPACE handler returns immediately on them, and `SourceSection` forces `effectiveFocused` to `false` so the row never draws the focus highlight and `SourceTag` never draws the focus chevron. A pending-removal row therefore shows its **persisted** source purely as information — the skill that is going away cannot also have its source changed. `disabled` and `readOnly` are deliberately distinct flags: the lock means "installed globally, not yours to change here"; the removal marker means "saving will remove this".
 
 **The diff palette is shared with the confirm step by design.** `rowStatusMarker` / `rowDiffColor` mirror `DIFF_PREFIX` / `DIFF_COLOR` in `skill-agent-summary.tsx` (both built on `UI_SYMBOLS.ADDED` / `UI_SYMBOLS.REMOVED` and `CLI_COLORS.SUCCESS` / `CLI_COLORS.ERROR`), so an added or pending-removal skill reads identically on the Sources tab and the confirm step. The marker (not the colour) carries the meaning in no-color terminals. `rowDiffColor` returns `undefined` for a row with no diff status, and the two callers supply their own default: `rowLabelColor` falls back to `CLI_COLORS.NEUTRAL` for an unfocused row, `focusedRowLabelColor` to `CLI_COLORS.WHITE` for a focused one. A diff row keeps its diff colour under focus — focus styling must never erase diff information — while an ordinary focused row deliberately does NOT reuse `NEUTRAL`, which is the low-contrast pairing against `LABEL_BG`.
 
@@ -307,33 +328,30 @@ A `SourceRow` renders in one of four states, driven by its optional flags. The m
 
 ## Hotkeys Registry (`src/cli/components/wizard/hotkeys.ts`)
 
-Centralized hotkey definitions. Each hotkey has a `key` (for matching) and `label` (for display). Used by step components, `wizard-layout.tsx`, and `wizard.tsx`.
+Centralized hotkey definitions. A character hotkey is `{ key, label }` — `key` for matching, `label` for display — so changing a binding updates the key check, the footer hint and the info panel in one place. Read by step components, `wizard-layout.tsx` and `wizard.tsx`.
 
-**Character hotkeys:**
+**Every constant the module exports, in source order.** This document owns the list; it is bound to `hotkeys.ts` by `scripts/check-enumeration-drift.ts`, so a constant added or withdrawn cannot leave the table behind. The `Read by` column is re-derivable with one grep per name.
 
-| Export                   | Key | Context                          |
-| ------------------------ | --- | -------------------------------- |
-| `HOTKEY_INFO`            | I   | Global (toggle info panel)       |
-| `HOTKEY_ACCEPT_DEFAULTS` | A   | Build step (with stack selected) |
-| `HOTKEY_SCOPE`           | S   | Build/agents step                |
-| `HOTKEY_SETTINGS`        | S   | Sources step                     |
-| `HOTKEY_TOGGLE_LABELS`   | D   | Build step                       |
-| `HOTKEY_ADD_SOURCE`      | A   | Settings step                    |
+| Export                   | Value              | Read by                                                                                                                    |
+| ------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `HOTKEY_INFO`            | key `i`, label `I` | `wizard.tsx` (open and close), `wizard-layout.tsx` (Info footer hint)                                                      |
+| `HOTKEY_ACCEPT_DEFAULTS` | key `a`, label `A` | `wizard.tsx` — build step with a stack selected. No footer hint advertises it                                              |
+| `HOTKEY_SCOPE`           | key `s`, label `S` | `wizard.tsx` (build and agents branches), `wizard-layout.tsx` (Scope footer hint)                                          |
+| `HOTKEY_TOGGLE_LABELS`   | key `d`, label `D` | `use-category-grid-input.ts`, `wizard-layout.tsx` (Labels footer hint)                                                     |
+| `KEY_SPACE`              | the literal `" "`  | `use-category-grid-input.ts`, `checkbox-grid.tsx`, `step-agents.tsx`, `source-grid.tsx` — a MATCHING constant, not a label |
+| `KEY_LABEL_ENTER`        | `ENTER`            | `wizard-layout.tsx` footer                                                                                                 |
+| `KEY_LABEL_ESC`          | `ESC`              | `wizard-layout.tsx` footer                                                                                                 |
+| `KEY_LABEL_SPACE`        | `SPACE`            | `wizard-layout.tsx` footer                                                                                                 |
+| `KEY_LABEL_DEL`          | `DEL`              | **Nothing.** Exported with no importer anywhere in `src/` or `e2e/`                                                        |
+| `KEY_LABEL_ARROWS_VERT`  | `↑/↓`              | **Nothing.** Same — exported with no importer                                                                              |
 
-**The Sources step binds no character hotkey.** `HOTKEY_SET_ALL_LOCAL` (`L`) and
-`HOTKEY_SET_ALL_PLUGIN` (`P`) were withdrawn along with the store actions behind them
-(`setAllSourcesEject` / `setAllSourcesPlugin`) and their two footer hints. They rewrote `source`
-on every active skill config with no scope authority, so from a project edit they reached the
-inherited global rows the same step renders locked and non-focusable — the bulk key could do what
-the per-row control provably cannot. `SourceGrid`'s per-row `SPACE` is the only install-mode
-surface left, and it returns immediately on an inert row. See
-[concepts/guard-pattern.md](./concepts/guard-pattern.md), "Install-Mode Scope Authority".
+Four character hotkeys, and each is bound on exactly the steps its row names. Because the table is the module's whole const export list, "is there a hotkey for X" is answered by reading it rather than by grepping for a constant that may never have existed.
 
-**Structural key labels** (display-only, for footer hints): `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS_VERT` (`↑/↓`). Also exported: `KEY_SPACE` (the literal `" "` input character used for space-key matching, not a display label).
+**The Sources step binds no character hotkey**, and the registry holds no constant for one. Bulk `l` (set all local) and `p` (set all plugin) were withdrawn along with the store actions behind them and their two footer hints: they rewrote every active skill config's `origin` with no scope authority, so from a project edit they reached the inherited global rows the same step renders locked and non-focusable — the bulk key could do what the per-row control provably cannot. `SourceGrid`'s per-row `SPACE` is the only install-mode surface left, and it returns immediately on an inert row. See [concepts/guard-pattern.md](./concepts/guard-pattern.md), "Install-Mode Scope Authority".
 
-**No other `KEY_LABEL_*` constants exist**, and **no other `HOTKEY_*` constants exist** (both re-read off `hotkeys.ts` in full — the module holds nothing beyond what the tables above and below enumerate). Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS`, `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
+**No step has an `s`-key collision to gate.** `HOTKEY_SCOPE` is the only binding on `s`, and `wizard.tsx` gates it on `build` and `agents` alone.
 
-**Helpers — the module exports exactly two:**
+**Helpers — the module exports exactly two functions, and this table is bound to that export list by `scripts/check-enumeration-drift.ts`:**
 
 | Helper                 | Signature                                             | Purpose                                                                                                                                                                                 |
 | ---------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -343,8 +361,6 @@ surface left, and it returns immediately on an inert row. See
 **Why `isInfoPanelAvailable` excludes the confirm step.** The `I` overlay REPLACES `children` in `WizardLayout` rather than sitting over them, and the confirm step already renders the very panel the overlay would show. Opening it there unmounted `StepConfirm` along with the only `Enter` handler, so `Enter` produced a byte-identical frame and nothing could complete the wizard. Note the **close** path in `wizard.tsx` is deliberately NOT gated — the `store.showInfo` branch runs before the availability check — because gating it would strand an overlay opened on a step that later became disallowed.
 
 **There is no `F` hotkey.** Incompatible-skill filtering was withdrawn along with its constant, its store action and its footer hint, so `f` reaches the build step's key handler and matches nothing.
-
-**`HOTKEY_SCOPE` and `HOTKEY_SETTINGS` share the `s` key** and are context-gated in `wizard.tsx` — scope on `build`/`agents`, settings on `sources` — so both are never active at once.
 
 ## WizardLayout startup-message band (`src/cli/components/wizard/wizard-layout.tsx`)
 
@@ -401,8 +417,8 @@ Two-column (skills | agents) summary component with scope labels (Project/Global
 - **Diff baseline:** Baseline is NOT pre-filtered. Tombstones remain first-class entries in `prevSkillKeySet` and the `removedSkills` match; a tombstone occupies the `(id, scope)` slot ("global install silenced at project scope"). Only `prevSourceMap` filters to active (`!excluded`) baseline entries — tombstones don't represent a live install source.
 - **Slot-occupancy removal match:** A baseline entry is removed ONLY if nothing (active OR tombstone) occupies that slot in current state — prevents a spurious `-` at Global on G→P toggle and a spurious `+` at Global on re-edit of the stored tombstone.
 - **Tombstone dedup (`uniqueExcludedGlobalSkills`):** Dedups current tombstone rows against inherited-global entries by `id` only — the Global section never shows two rows for the same skill.
-- **Mode change detection:** `computeScopeDiff()` builds `prevSourceMap` from active (non-excluded) baseline entries keyed via `skillSlotKey(id, scope)` and passes it to `classifyDiffRow()` (a module-internal helper), which emits `"mode-changed"` when `!isNew && prevSource != null && prevSource !== skill.source`. The comparison stays on `source` because that field IS where a skill's install mode lives — `eject`, or the one marketplace's name. The previous source is used only to make that comparison and is **not** carried on the row — `SkillDiffRow` has no `prevSource` field.
-- **One key, both surfaces (D-278):** `skillSlotKey(id, scope)` is exported from `scope-diff.ts` (and re-exported from `src/cli/lib/wizard/index.ts`) precisely so the Sources tab's own session diff keys on the same `(id, scope)` slot. Both surfaces previously derived their own key — the confirm step per slot, the Sources tab per id — and disagreed. Never re-derive the key inline.
+- **Mode change detection:** `computeScopeDiff()` builds `prevSourceMap` from active (non-excluded) baseline entries keyed via `skillSlotKey(id, scope)` and passes it to `classifyDiffRow()` (a module-internal helper), which emits `"mode-changed"` when `!isNew && prevSource != null && prevSource !== skill.origin`. The comparison is on `SkillConfig.origin` because that field IS where a skill's install mode lives — `eject`, or the one marketplace's name. Note the two names are not the same word: the CONFIG field is `origin`, while the diff ROW it produces carries it as `SkillDiffRow.source`. The previous origin is used only to make the comparison and is **not** carried on the row — `SkillDiffRow` has no `prevSource` field.
+- **One key, both surfaces:** `skillSlotKey(id, scope)` is exported from `scope-diff.ts` (and re-exported from `src/cli/lib/wizard/index.ts`) precisely so the Sources tab's own session diff keys on the same `(id, scope)` slot. **Never re-derive the key inline** — two surfaces each writing their own skill key is what makes the Sources tab and the confirm step disagree about one skill.
 - **Init mode gating:** When `isInitMode` is true, `removedGlobalSkills` / `removedGlobalAgents` are suppressed (empty arrays). This suppression is **vestigial in practice**: a project-scope deselect of a globally-installed item is refused by the store guards (init included), and a real `cc init` can never carry a global baseline anyway (`Init.run` routes to the dashboard → `edit` when one is found). It is kept as a cheap invariant so an init-mode diff can never render a removed-global row. `computeScopeDiff` is now the only remaining consumer of `isInitMode` besides this component.
 
 **Scope-badge helpers (also in `scope-diff.ts`):** `formatScopeTag(scope)` returns `[G]`/`[P]`; `deriveScopeBadges(active, excluded)` derives the primary + secondary badges from an active entry and its tombstone (used by `StepAgents`).
@@ -554,11 +570,12 @@ Long lists that exceed terminal height are handled by three scroll hooks (there 
 The two views reach that state by different routes, which matters when reading the code:
 
 - `category-grid.tsx` calls `useSectionScroll`, which **does** compute `hiddenAbove` / `hiddenBelow`, and destructures only `setSectionRef` / `scrollEnabled` / `scrollTopPx`. The discard is deliberate and is commented at the call site.
-- Domains (`checkbox-grid.tsx`), Agents (`step-agents.tsx`) and Stack (`stack-selection.tsx`) call `useRowScroll`, which **never computes** the counts — so there is nothing to discard. The absence is in the hook's interface, documented in its JSDoc.
+- Agents (`step-agents.tsx`) and Stack (`stack-selection.tsx`) call `useRowScroll`, which **never computes** the counts — so there is nothing to discard. The absence is in the hook's interface, documented in its JSDoc.
+- **Domains does not clip at all**, which is a different thing from clipping silently. `checkbox-grid.tsx` calls `useRowScroll` too, but its `availableHeight` prop defaults to `0` and `domain-selection.tsx` — its only consumer — passes none and measures nothing. `scrollEnabled` is `availableHeight > 0 && ...`, so it is permanently `false` and the list is laid out at full height: a domain list taller than the viewport bleeds over the footer rather than being cut. Giving this view an affordance is still a product change; giving it a measured height is not, and is the smaller half of the bleed described under "Known limitation" below.
 
 Do not add an affordance to these views on the strength of the counts merely being available. Adding one is a product change.
 
-**This narrows D-266, it does not close it.** That ticket bundles two things: the silent clipping above (accepted) and the genuine bleed below `MIN_VIEWPORT_ROWS`, where `scrollEnabled` goes false and the view grows past its border instead of clipping. The second half is still a defect. The `WizardLayout` size guard below mitigates the worst of it — the wizard now refuses to draw at all under `MIN_TERMINAL_SIZE.ROWS = 20` rather than shredding — but heights between 20 and the per-view `minViewportRows` floor are untouched.
+**Known limitation — the bleed below `MIN_VIEWPORT_ROWS` is still open.** The silent clipping above is accepted; the genuine defect is that below `MIN_VIEWPORT_ROWS` the shared scroll gates set `scrollEnabled` false, so the view grows past its border instead of clipping. The `WizardLayout` size guard below mitigates the worst of it — the wizard refuses to draw at all under `MIN_TERMINAL_SIZE.ROWS = 20` rather than shredding — but heights between 20 and the per-view `minViewportRows` floor are untouched.
 
 ### Terminal-size gates
 
@@ -573,7 +590,7 @@ Both read `isTerminalLargeEnough()` and print `formatTerminalTooSmallMessage()` 
 
 The React guard **replaces** `children` rather than overlaying them. An overlay does not work: Ink lays a still-mounted tree out at the small size regardless of what is drawn on top, so the squeezed content keeps bleeding underneath. Consequences worth knowing: wizard state lives in the zustand store and survives the swap, but component-local state (grid focus row/col, scroll offsets) resets, and the step's own `useInput` is unmounted while the prompt shows — so keys the step owns are inert until the terminal grows back. No machinery preserves any of that; a deliberate resize is allowed to cost it.
 
-Shared constants live in `SCROLL_VIEWPORT` in `src/cli/consts.ts`:
+Shared constants live in `SCROLL_VIEWPORT` in `src/cli/consts.ts` — all four keys, bound to source by `scripts/check-enumeration-drift.ts`:
 
 | Constant                  | Value | Purpose                                    |
 | ------------------------- | ----- | ------------------------------------------ |

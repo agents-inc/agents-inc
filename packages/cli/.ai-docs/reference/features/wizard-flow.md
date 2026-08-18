@@ -19,7 +19,7 @@ related:
   - reference/wizard/state-transitions.md
   - reference/component-patterns.md
   - reference/commands/index.md
-last_validated: 2026-07-30
+last_validated: 2026-08-18
 ---
 
 # Wizard Flow
@@ -122,7 +122,7 @@ export type HydrateOptions = {
   initialDomains?: Domain[]; // Restore saved domains from config
   initialAgents?: AgentName[]; // Restore saved agent selection
   installedSkillIds?: SkillId[]; // Skills currently installed (for edit-mode populateFromSkillIds)
-  installedSkillConfigs?: SkillConfig[]; // Saved scope/source configs
+  installedSkillConfigs?: SkillConfig[]; // Saved scope/origin configs
   installedAgentConfigs?: AgentScopeConfig[]; // Saved agent scope configs
   isEditingFromGlobalScope?: boolean; // When true, disables scope toggle (S key)
 };
@@ -137,7 +137,7 @@ Behavior by mode:
 
 ```typescript
 export type WizardResultV2 = {
-  skills: SkillConfig[]; // { id, scope, source } per skill (excluded tombstones appended)
+  skills: SkillConfig[]; // { id, scope, origin } per skill (excluded tombstones appended)
   selectedAgents: AgentName[];
   agentConfigs: AgentScopeConfig[]; // { name, scope } per agent
   selectedStackId: string | null;
@@ -172,7 +172,7 @@ export type WizardResultV2 = {
 
 Contains non-UI logic extracted from the build step for testability:
 
-- `validateBuildStep()` - Validate build step selections (required categories). **Cannot return `valid: false`, and has no production caller** — see [leaf-exports.md](../leaf-exports.md) § `BuildStepValidation`
+- `validateBuildStep()` - Validate build step selections (required categories). Both branches return `valid: true`, and its only references outside its own module are the `lib/wizard/index.ts` barrel plus two spec files — re-derive with `grep -rn validateBuildStep src/`. See [leaf-exports.md](../leaf-exports.md) § `BuildStepValidation`
 - `buildCategoriesForDomain()` - Build category row data for a domain
 
 **Grid order is deterministic.** `buildCategoriesForDomain()` orders the two axes independently: category ROWS by `cat.order ?? 0`, and each row's OPTIONS by `displayName` lowercased, both with remeda's `sortBy`. **Both sorts are load-bearing.** Without the option sort, order follows matrix and `readdir` insertion order, so the grid reshuffles between runs and between source types, and a positional walk over it meant nothing. Lowercasing keeps the comparison locale-independent. Rows whose options list is empty are dropped from the result.
@@ -183,17 +183,28 @@ Each option also carries its scope badges: the active and excluded `skillConfigs
 
 **Pure functions:** `src/cli/lib/wizard/scope-diff.ts` (functions re-exported from the `src/cli/lib/wizard/index.ts` barrel; consumers import from `../../lib/wizard/index.js`)
 
-Computes the per-scope diff rows and scope badges that the confirm-step summary and the agent step render. Tombstones are first-class baseline entries: a tombstone occupies its `(id, scope)` slot so a dual-scope `G→P` toggle does not render a spurious `-` at Global or a spurious `+` on the next edit when the stored tombstone is re-read. Source-change (`~`) tracking filters to active baseline entries because tombstones do not represent a live install source.
+Computes the per-scope diff rows and scope badges that the confirm-step summary and the agent step render. Tombstones are first-class baseline entries: a tombstone occupies its `(id, scope)` slot so a dual-scope `G→P` toggle does not render a spurious `-` at Global or a spurious `+` on the next edit when the stored tombstone is re-read. Mode-change (`~`) tracking filters to active baseline entries because a tombstone does not represent a live install. The value compared is `SkillConfig.origin`; the row type it produces spells the same value `SkillDiffRow.source`, and the two names are not interchangeable.
 
-**Exported functions:**
+**Exported functions — all five, and nothing else is exported from that module.** Bound to `src/cli/lib/wizard/scope-diff.ts` by `scripts/check-enumeration-drift.ts`, so a sixth cannot land without a row here:
 
-| Function            | Signature                                                                                                               | Purpose                                                                                                                                                                                                                     |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computeScopeDiff`  | `(input: ScopeDiffInput) => ScopeDiff`                                                                                  | Builds project/global skill + agent diff rows for the confirm-step summary                                                                                                                                                  |
-| `deriveScopeBadges` | `(activeConfig: { scope: SkillScope } \| undefined, excludedConfig: { scope: SkillScope } \| undefined) => ScopeBadges` | Derives primary + secondary scope badge from an active entry and its excluded tombstone (D-223)                                                                                                                             |
-| `formatScopeTag`    | `(scope: SkillScope) => "[G]" \| "[P]"`                                                                                 | Bracketed scope label: `[G]` for global, `[P]` for project                                                                                                                                                                  |
-| `skillSlotKey`      | `(id: SkillId, scope: SkillScope \| undefined) => string`                                                               | The `(id, scope)` SLOT key this module diffs on (D-278). Exported so every surface that computes its own session diff keys on the same slot instead of on the id alone                                                      |
-| `agentSlotKey`      | `(name: AgentName, scope: SkillScope \| undefined) => string`                                                           | The agent-side counterpart: the `(name, scope)` SLOT key. Exported pre-emptively so a second agent-diff surface routes through it from the start rather than re-deriving the key, which is how the skill side reached D-278 |
+| Function            | Signature                                                                                                               | Purpose                                                                                                                                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `computeScopeDiff`  | `(input: ScopeDiffInput) => ScopeDiff`                                                                                  | Builds project/global skill + agent diff rows for the confirm-step summary                                                                                                                                                                                   |
+| `deriveScopeBadges` | `(activeConfig: { scope: SkillScope } \| undefined, excludedConfig: { scope: SkillScope } \| undefined) => ScopeBadges` | Derives the primary + secondary scope badge from an active entry and its excluded tombstone — the `[P][G]` pair                                                                                                                                              |
+| `formatScopeTag`    | `(scope: SkillScope) => "[G]" \| "[P]"`                                                                                 | Bracketed scope label: `[G]` for global, `[P]` for project                                                                                                                                                                                                   |
+| `skillSlotKey`      | `(id: SkillId, scope: SkillScope \| undefined) => string`                                                               | The `(id, scope)` SLOT key this module diffs on. Exported so every surface that computes its own session diff keys on the same slot instead of on the id alone                                                                                               |
+| `agentSlotKey`      | `(name: AgentName, scope: SkillScope \| undefined) => string`                                                           | The agent-side counterpart: the `(name, scope)` SLOT key. Exported pre-emptively so a second agent-diff surface routes through it from the start rather than re-deriving the key on the name alone, which is how the skill side came to disagree with itself |
+
+**`DiffRowStatus` — all four members**, bound to the union in `scope-diff.ts` by `scripts/check-enumeration-drift.ts`. There is no `source-changed` member and there never was; the yellow `~` marker is `mode-changed`.
+
+| Member         | Marker (`DIFF_PREFIX`) | Colour (`DIFF_COLOR`) | Meaning                                                    |
+| -------------- | ---------------------- | --------------------- | ---------------------------------------------------------- |
+| `added`        | `UI_SYMBOLS.ADDED`     | `SUCCESS`             | The `(id, scope)` slot is absent from the baseline         |
+| `mode-changed` | `~`                    | `WARNING`             | Slot present, but its `origin` differs from the baseline's |
+| `removed`      | `UI_SYMBOLS.REMOVED`   | `ERROR`               | A baseline slot no live entry occupies                     |
+| `unchanged`    | `UI_SYMBOLS.BULLET`    | `NEUTRAL`             | Slot present, same origin                                  |
+
+`AgentDiffRow.status` is `Exclude<DiffRowStatus, "mode-changed">` — an agent has no install mode to change.
 
 **Exported types:**
 
@@ -206,7 +217,7 @@ Computes the per-scope diff rows and scope badges that the confirm-step summary 
 | `ScopeDiff`      | `{ projectSkillRows: SkillDiffRow[]; globalSkillRows: SkillDiffRow[]; projectAgentRows: AgentDiffRow[]; globalAgentRows: AgentDiffRow[]; hasContent: boolean }`                             |
 | `ScopeBadges`    | `{ scope: SkillScope \| undefined; secondaryScope: SkillScope \| undefined }`                                                                                                               |
 
-**Internal helpers** (module scope, NOT exported): `classifyDiffRow(skill, prevKeySet, prevSourceMap)` classifies an active skill entry against the baseline (`added` / `mode-changed` / `unchanged`) — it compares against the previous `source`, which is where a skill's install mode is recorded, but does not carry it onto the row; `classifyAgentDiffRow(agent, prevKeySet)` classifies an active agent (`added` / `unchanged`); `toRemovedSkillRow` / `toRemovedAgentRow` build `removed` rows from baseline entries absent in current state. `computeScopeDiff` suppresses removed-global rows when `isInitMode` is true. Both sides key through a shared helper: skills through `skillSlotKey`, agents through `agentSlotKey`. The agent helper has no second consumer yet — it exists so that one cannot arrive and build its own key, which is the precondition that produced D-278 on the skill side.
+**Internal helpers** (module scope, NOT exported): `classifyDiffRow(skill, prevKeySet, prevSourceMap)` classifies an active skill entry against the baseline (`added` / `mode-changed` / `unchanged`) — it compares against the previous `origin`, which is where a skill's install mode is recorded, but does not carry it onto the row; `classifyAgentDiffRow(agent, prevKeySet)` classifies an active agent (`added` / `unchanged`); `toRemovedSkillRow` / `toRemovedAgentRow` build `removed` rows from baseline entries absent in current state. `computeScopeDiff` suppresses removed-global rows when `isInitMode` is true. Both sides key through a shared helper: skills through `skillSlotKey`, agents through `agentSlotKey`. `agentSlotKey`'s only references in the tree are `scope-diff.ts` itself and the `lib/wizard/index.ts` barrel — re-derive with `grep -rn agentSlotKey src/`. It exists so a second agent-diff surface cannot arrive and build its own key, which is the precondition that let the two skill surfaces disagree.
 
 ### Known Limitations (`computeScopeDiff`, both OPEN)
 
@@ -221,13 +232,13 @@ Reachability: the first is far less reachable masks such configs at write time; 
 
 **Consumers:**
 
-| Export              | Consumer                                 | Use                                                                                                                                                                                     |
-| ------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computeScopeDiff`  | `skill-agent-summary.tsx`                | Per-scope skill + agent rows inside `SummaryPanel` — so the confirm step and the `I` overlay alike                                                                                      |
-| `deriveScopeBadges` | `build-step-logic.ts`, `step-agents.tsx` | SkillTag secondary badge; agent dual-scope badge                                                                                                                                        |
-| `formatScopeTag`    | `step-agents.tsx`, `commands/edit.tsx`   | Agent `[G]`/`[P]` labels; edit completion-summary labels                                                                                                                                |
-| `skillSlotKey`      | `stores/wizard-store.ts`                 | The Sources tab's own session diff (`collectInstalledSkillSlots`, `addedSlotFlag`, `collectRemovedInstalledEntries`, `isSlotAlreadyRendered`) keys on the same slot as the confirm step |
-| `agentSlotKey`      | `scope-diff.ts` only (no second surface) | `computeScopeDiff`'s agent baseline set and `classifyAgentDiffRow`. Exported ahead of a second consumer, not because one exists                                                         |
+| Export              | Consumer                                                             | Use                                                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `computeScopeDiff`  | `skill-agent-summary.tsx`                                            | Per-scope skill + agent rows inside `SummaryPanel` — so the confirm step and the `I` overlay alike                                                                                      |
+| `deriveScopeBadges` | `build-step-logic.ts`, `step-agents.tsx`                             | SkillTag secondary badge; agent dual-scope badge                                                                                                                                        |
+| `formatScopeTag`    | `step-agents.tsx`, `commands/edit.tsx`                               | Agent `[G]`/`[P]` labels; edit completion-summary labels                                                                                                                                |
+| `skillSlotKey`      | `stores/wizard-store.ts`                                             | The Sources tab's own session diff (`collectInstalledSkillSlots`, `addedSlotFlag`, `collectRemovedInstalledEntries`, `isSlotAlreadyRendered`) keys on the same slot as the confirm step |
+| `agentSlotKey`      | `scope-diff.ts` and the `lib/wizard/index.ts` barrel — no third file | `computeScopeDiff`'s agent baseline set and `classifyAgentDiffRow`. Exported ahead of a second consumer, not because one exists                                                         |
 
 ## Edit Mode Flow
 
@@ -273,7 +284,7 @@ Sources step (handled in `step-sources.tsx`):
 
 - **No character hotkeys.** `L` / `P` ("set all local" / "set all plugin") were withdrawn
   together with `setAllSourcesEject` / `setAllSourcesPlugin` and their footer hints: they rewrote
-  `source` on every active entry with no scope authority, so a project edit could bulk-switch the
+  `origin` on every active entry with no scope authority, so a project edit could bulk-switch the
   inherited global rows this step renders locked. Per-row `SPACE` on the grid is the only
   install-mode surface, and it is inert on a locked row.
 - `ENTER`: Continue to agents step
@@ -293,14 +304,7 @@ Sources step (source-grid in `source-grid.tsx`):
 - `isHotkey(input, hotkey)` - Case-insensitive character comparison.
 - `isInfoPanelAvailable(step)` - `step !== "confirm"`. Read by BOTH the `I` branch in `wizard.tsx` and the `Info` footer hint's `isVisible` in `wizard-layout.tsx`, so the wizard cannot advertise a key it ignores. The two call sites must never diverge.
 
-Common key labels exported from `hotkeys.ts`:
-
-- `KEY_LABEL_ENTER`, `KEY_LABEL_ESC`, `KEY_LABEL_SPACE`, `KEY_LABEL_DEL`, `KEY_LABEL_ARROWS_VERT` (vertical arrows `↑/↓`)
-- `KEY_SPACE` (the literal space input character, `" "`) — a matching constant, not a display label
-
-**No other `KEY_LABEL_*` constants exist.** Previously-documented `KEY_LABEL_TAB`, `KEY_LABEL_ARROWS` (horizontal), `KEY_LABEL_VIM`, and `KEY_LABEL_VIM_VERT` have been removed.
-
-**No other `HOTKEY_*` constants exist** in the registry. Previously-referenced `HOTKEY_COPY_LINK` was removed and never returned.
+**One document owns the registry's export list.** [`component-patterns.md`](../component-patterns.md), "Hotkeys Registry", names every constant `hotkeys.ts` exports — the four `HOTKEY_*` objects, `KEY_SPACE`, and the `KEY_LABEL_*` display strings — and is bound to the module by `scripts/check-enumeration-drift.ts`. Read it there. A second writable copy of the same export set cannot be kept honest, so this page states no `HOTKEY_*` or `KEY_LABEL_*` list of its own.
 
 ## Build Step Domain Order
 
@@ -316,17 +320,21 @@ Default scratch domains: `DEFAULT_SCRATCH_DOMAINS = ["web", "api", "mobile"]` in
 
 Domain descriptions are `DOMAIN_DESCRIPTIONS` from `@workspace/matrix` (consumed by `domain-selection.tsx`):
 
+In source order (`DOMAIN_DESCRIPTIONS` is declared `Record<Domain, string>` in that file, so the nine keys are the whole `Domain` union):
+
 | Domain    | Description                                            |
 | --------- | ------------------------------------------------------ |
 | `web`     | Frontend web applications                              |
 | `api`     | Backend APIs and services                              |
 | `ai`      | AI and LLM integrations                                |
-| `cli`     | Command-line tools                                     |
 | `mobile`  | Mobile applications                                    |
 | `desktop` | Desktop applications                                   |
+| `cli`     | Command-line tools                                     |
 | `infra`   | CI/CD, deployment, and infrastructure                  |
 | `meta`    | Design patterns, code review, and research methodology |
 | `shared`  | Shared utilities and methodology                       |
+
+`DOMAIN_ORDER` in the same file carries the identical nine names in the identical order, and `orderDomains()` reads it; `DOMAIN_LABELS` is a third `Record<Domain, string>` there, used by the editor's chips and not by the CLI.
 
 ## Info Panel — the `I` overlay
 
@@ -368,15 +376,15 @@ Both the build step (CategoryGrid) and agent step (StepAgents) now show dual-sco
 
 `UI_SYMBOLS.LOCK` is rendered by `SourceGrid` in `source-grid.tsx` on read-only rows (`row.readOnly`) — the sources step surfaces globally-installed skills as locked global rows. The build-step `SkillTag` (in `category-grid.tsx`) no longer renders a lock icon; in the build step, globally-installed skills are signalled by the scope badge plus the toggle guard toast ("Global skills cannot be changed from project scope"). See `classifySkillSourceRows()` and `toLockedGlobalRow()` in `wizard-store.ts` for how read-only rows are produced.
 
-## Sources Tab Session Diff (/ D-278)
+## Sources Tab Session Diff
 
 The sources step is not only a source picker — it is a second view of "what this session changes", and it must agree with the confirm step. Three behaviours make that up:
 
-- **A deselected saved skill stays visible as an inert removal row.** `collectRemovedInstalledEntries` finds every ACTIVE hydration-snapshot slot no live `skillConfigs` entry occupies; each becomes a `disabled` row via `toPendingRemovalRow`, pinned to its PERSISTED scope and source and carrying the red `-` marker. Without it the row would simply vanish and the user would lose sight of what saving removes — the case that matters most. The row is deliberately not `readOnly`, because a lock reads as "installed globally", not "about to be removed".
+- **A deselected saved skill stays visible as an inert removal row.** `collectRemovedInstalledEntries` finds every ACTIVE hydration-snapshot slot no live `skillConfigs` entry occupies; each becomes a `disabled` row via `toPendingRemovalRow`, pinned to its PERSISTED scope and origin and carrying the red `-` marker. Without it the row would simply vanish and the user would lose sight of what saving removes — the case that matters most. The row is deliberately not `readOnly`, because a lock reads as "installed globally", not "about to be removed".
 - **A skill added this session carries a green `+`.** `collectInstalledSkillSlots` + `addedSlotFlag` decide the flag per `(id, scope)` slot, and every row shape in `classifySkillSourceRows` is fed it. An added row stays fully selectable and editable — unlike `disabled`/`readOnly`, `added` is not an inertness flag.
-- **Both are keyed on the slot, exactly as the confirm step is (D-278).** Both surfaces call `skillSlotKey` from `scope-diff.ts`. The consequences: a removal shows at global scope too (the old `isEditingFromGlobalScope` gate on the removal collector is gone; the confirm step never had one); adopting a globally-installed skill at project scope shows `+` on the new project row while the global row stays a plain lock; and a collapsed dual-scope pair renders **two** rows — the surviving locked global row plus a red inert pending-removal row for the emptied project slot — which is exactly what the confirm step already reported (`-` at Project, `•` at Global). `isSlotAlreadyRendered` prevents a removal row being stacked on a slot an emitted row already renders, so an inherited global install never reads as both locked and removed.
+- **Both are keyed on the slot, exactly as the confirm step is.** Both surfaces call `skillSlotKey` from `scope-diff.ts`. The consequences: a removal shows at global scope too (the old `isEditingFromGlobalScope` gate on the removal collector is gone; the confirm step never had one); adopting a globally-installed skill at project scope shows `+` on the new project row while the global row stays a plain lock; and a collapsed dual-scope pair renders **two** rows — the surviving locked global row plus a red inert pending-removal row for the emptied project slot — which is exactly what the confirm step already reported (`-` at Project, `•` at Global). `isSlotAlreadyRendered` prevents a removal row being stacked on a slot an emitted row already renders, so an inherited global install never reads as both locked and removed.
 
-**Install-mode selection is scope-threaded.** `handleGridSelect` in `step-sources.tsx` looks up the skill's single non-inert row and passes its `scope` to `store.setInstallMode(skillId, mode, scope)`, which resolves the mode to a `source` value and rewrites only the active entry at that slot. A dual-scope skill renders only its project row as editable, so the masked global tombstone keeps its own source.
+**Install-mode selection is scope-threaded.** `handleGridSelect` in `step-sources.tsx` looks up the skill's single non-inert row and passes its `scope` to `store.setInstallMode(skillId, mode, scope)`, which resolves the mode to an `origin` value and rewrites only the active entry at that slot. A dual-scope skill renders only its project row as editable, so the masked global tombstone keeps its own source.
 
 Full mechanics: `store-map.md`, "Sources-tab session diff" and "Source-row builders". Rendering contract: `component-patterns.md`, "SourceGrid Row States".
 
@@ -386,17 +394,17 @@ Long content used to bleed outside its border at short terminal heights. Two rul
 
 - **Clipping is unconditional; only the AFFORDANCE is size-gated.** A viewport that stops clipping when it looks too small grows to content height, which makes it look big enough to keep not clipping — a stable wrong answer that paints content over the border. `source-grid.tsx` passes `minViewportRows: SOURCE_GRID_MIN_VIEWPORT_ROWS = 1` to `useSectionScroll` so the Sources step clips-and-signals rather than falling back to a bleeding flex layout; other views keep the default `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS = 5`.
 - **The overflow hint is a shared, text-only component.** `<ScrollAffordance hiddenAbove hiddenBelow />` renders one pinned line — `N more above` / `N more below` — and must be a SIBLING of the clipped viewport, never a child of it. Consumers: exactly `source-grid.tsx` and `summary-panel.tsx`.
-- **The grid steps have no affordance, deliberately.** Skills (build), Domains, Agents and Stack clip silently: a half-cut card on a grid that dense already says "there is more", and a counted hint would cost the viewport a row to repeat it. `category-grid.tsx` discards the counts `useSectionScroll` hands it; the `useRowScroll` views never compute them. This narrows **D-266** — the accepted half — but does not close it: the bleed below `MIN_VIEWPORT_ROWS`, where `scrollEnabled` goes false and the view grows past its border, is still open. See `component-patterns.md`, "No affordance on the grid steps".
+- **The grid steps have no affordance, deliberately.** Skills (build), Domains, Agents and Stack clip silently: a half-cut card on a grid that dense already says "there is more", and a counted hint would cost the viewport a row to repeat it. `category-grid.tsx` discards the counts `useSectionScroll` hands it; the `useRowScroll` views never compute them. That is the accepted half of the clipping question. **The unaccepted half is still open:** below `MIN_VIEWPORT_ROWS` the shared scroll gates set `scrollEnabled` false, so a view grows past its border instead of clipping — it bleeds. Domains is worse than the rest: `domain-selection.tsx` passes `CheckboxGrid` no `availableHeight` at all, so `scrollEnabled` is permanently false there and the list never clips at any height. See `component-patterns.md`, "No affordance on the grid steps".
 
 **A terminal that shrinks mid-session is caught too.** `BaseCommand.ensureTerminalSize()` runs once, before Ink mounts, so it blocks LAUNCHING below `MIN_TERMINAL_SIZE` (80x20) but cannot see a window resized afterwards — the build grid used to paint straight through the footer. `WizardLayout` now re-checks the dimensions `useTerminalDimensions` already tracks and REPLACES the wizard tree with the same resize prompt (an overlay does not work: Ink lays a still-mounted tree out at the small size regardless of what covers it). Both gates read `isTerminalLargeEnough` / `formatTerminalTooSmallMessage` from `src/cli/utils/terminal.ts` so their wording cannot drift. Store state survives the swap; component-local state (grid focus, scroll offsets) and the step's own `useInput` do not.
 
-**Decoration yields before content does.** The stack step is the only step that paints the ASCII banner, and its six rows were enough to starve that step's own list viewport below `MIN_VIEWPORT_ROWS` — where `useRowScroll` stops clipping — so the stack rows painted over the scratch row at 20 and through the footer at 24. `WizardLayout` now renders the banner only at or above `LOGO_MIN_TERMINAL_ROWS` (26, measured against the binary; the table is in its JSDoc). That constant is deliberately NOT part of `MIN_TERMINAL_SIZE`: the size gate decides whether a command runs at all, this decides whether one decorative element renders inside a terminal that already cleared it, and folding 26 into the gate would refuse to run in a 24-row terminal. It fixes the stack-step instance only — the bail-instead-of-clip behaviour itself is untouched and D-266 stays open.
+**Decoration yields before content does.** The stack step is the only step that paints the ASCII banner, and its six rows were enough to starve that step's own list viewport below `MIN_VIEWPORT_ROWS` — where `useRowScroll` stops clipping — so the stack rows painted over the scratch row at 20 and through the footer at 24. `WizardLayout` now renders the banner only at or above `LOGO_MIN_TERMINAL_ROWS` (26, measured against the binary; the table is in its JSDoc). That constant is deliberately NOT part of `MIN_TERMINAL_SIZE`: the size gate decides whether a command runs at all, this decides whether one decorative element renders inside a terminal that already cleared it, and folding 26 into the gate would refuse to run in a 24-row terminal. It fixes the stack-step instance only — the bail-instead-of-clip behaviour itself is untouched, and the bleed below `MIN_VIEWPORT_ROWS` remains.
 
 The Sources grid pins nothing above its viewport. It used to carry a column header captioning the marketplace columns, at the cost of a row; with two fixed cells the captions moved onto the cells themselves (`INSTALL_MODE_CELL_LABELS`), and a header would have printed `Local` and `Plugin` directly above the words `Local` and `Plugin`. See `component-patterns.md`, "Scrolling", for the measurement and overscroll model.
 
 ## Mode Change Marker (compacted)
 
-`SkillAgentSummary` in `skill-agent-summary.tsx` shows a `~` prefix (instead of `+` or bullet) when a skill's install mode has changed from the installed version. The `"mode-changed"` status is computed by `computeScopeDiff()`/`classifyDiffRow()` in `src/cli/lib/wizard/scope-diff.ts` (condition: `!isNew && prevSource != null && prevSource !== skill.source`, where `prevSource` comes from the active-baseline `prevSourceMap`). The comparison is still on `source` because that field IS where the mode is recorded — `eject` for the project's own copy, the marketplace name for a plugin — and with one marketplace there is nothing else a changed `source` could mean.
+`SkillAgentSummary` in `skill-agent-summary.tsx` shows a `~` prefix (instead of `+` or bullet) when a skill's install mode has changed from the installed version. The `"mode-changed"` status is computed by `computeScopeDiff()`/`classifyDiffRow()` in `src/cli/lib/wizard/scope-diff.ts` (condition: `!isNew && prevSource != null && prevSource !== skill.origin`, where `prevSource` comes from the active-baseline `prevSourceMap`). The comparison is on `SkillConfig.origin` because that field IS where the mode is recorded — `eject` for the project's own copy, the marketplace name for a plugin — and with one marketplace there is nothing else a changed `source` could mean.
 
 **The transition label is gone.** `SkillRow` used to append a dim `(OldSource → NewSource)` — e.g. `agents-inc → eject` — which wrapped out of its row at realistic widths. It now renders only `DIFF_PREFIX[status]` + `getSkillDisplayName(row.id)`, plus an `EjectIcon` when `row.source === EJECT_SOURCE`. The compact `~` marker the row already carried is the whole signal, and `SkillDiffRow` no longer carries a `prevSource` field. Consequently `skill-agent-summary.tsx` no longer imports `formatSourceDisplayName`; `summary-panel.tsx` still does, for its marketplace header.
 
@@ -417,7 +425,7 @@ In `stack-selection.tsx` (customize path): on stack select, the component derive
 
 In `preselectAgentsFromStack` in `wizard-store.ts`: merges `stackAgents` with `globalAgentPreselections.agents`, sorts the deduped list, builds `agentConfigs` via `buildAgentConfigForName` (default `"global"` scope), preserves excluded tombstones via `collectTombstones`, and returns both `selectedAgents` and `agentConfigs`.
 
-In `stack-selection.tsx` (scratch path): after `selectStack(null)` wipes agents, the component restores `globalAgentPreselections` (set by `hydrateWizardStore`) directly via `useWizardStore.setState()`.
+In `stack-selection.tsx` (scratch path): the component calls the store action `startFromScratch()` and then `setStep("domains")`, and nothing else. The restore happens INSIDE that action — `selectStack(null)` wipes the agents, then `startFromScratch` puts `globalAgentPreselections` back, populates from `globalPreselections` and toggles `DEFAULT_SCRATCH_DOMAINS`. `stack-selection.tsx` contains no `useWizardStore.setState()` call; the work lives in the store because `hydrateForInit` performs exactly the same preparation when the loaded source offers no stacks and this row never renders.
 
 **New store fields supporting preselection:**
 
