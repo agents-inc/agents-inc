@@ -23,6 +23,23 @@ export const baseConfig = defineConfig([
           ignoreRestSiblings: true,
         },
       ],
+
+      // A condition nothing it measures can falsify — a check in the shape of a check. `x === x`
+      // holds for every input, so the code under it is never being asked anything.
+      //
+      // Here rather than in one workspace because it is core ESLint, sits outside
+      // `js.configs.recommended`, and is not a mistake any package has a special claim on. It lived
+      // in `packages/cli` alone from the day a hand-run verdict was caught reading
+      // `after.length >= 0 && before.length >= 0`, which left every other workspace accepting the
+      // same class. `@typescript-eslint/no-unnecessary-condition` cannot stand in for it: that rule
+      // asks whether a value's TYPE settles a condition, and `x === x` is a `boolean` the type of
+      // `x` leaves open. The shape is syntactic, so the rule that closes it is too.
+      //
+      // The related shape — a count compared against zero in the direction that always holds — is
+      // `no-restricted-syntax` selectors, which take options and so cannot merge across config
+      // blocks. Those stay in `packages/cli/eslint.config.js`, restated per zone, and
+      // `spec-gates.test.ts` is the mutation proof for both halves.
+      "no-self-compare": "error",
     },
   },
 ])

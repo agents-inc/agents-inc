@@ -82,8 +82,64 @@ const CONFIG_WRITER_IMPORTS = [
 ];
 
 /**
+ * A comparison the code under it cannot falsify, which is a check in the shape of
+ * a check. A count is never negative, so `>= 0` holds for every input and `< 0`
+ * for none, in either operand order.
+ *
+ * Live on 2026-08-18: a hand-run verdict on two directory listings read
+ * `after.length >= 0 && before.length >= 0` and reported success against every
+ * input it was ever given. `@typescript-eslint/no-unnecessary-condition` is
+ * enabled and cannot see it — that rule asks whether a value's TYPE settles the
+ * condition, and `number >= 0` is a `boolean` the type `number` leaves open.
+ * There is no non-negative number type to narrow a count to, so the shape is
+ * only ever reachable syntactically.
+ *
+ * `x === x` is the same class and is `no-self-compare`'s. That one is core
+ * ESLint, takes no options, and so merges across config blocks — it moved to
+ * `packages/eslint-config/base.js` under CLI-532 and reaches every workspace.
+ * These cannot follow it: `no-restricted-syntax` takes options, the last block
+ * naming it for a file owns all of them, and so they are restated per zone.
+ *
+ * A `||` of two loose conditions is the same class again and is NOT lintable —
+ * whether either side can be false is a question about the subject, not about
+ * the syntax.
+ */
+const NEVER_NEGATIVE_COUNT = "/^(length|size|byteLength)$/";
+
+const VACUOUS_COUNT_MESSAGE =
+  "A length, a size and a byteLength are never negative, so this comparison holds for every input. Assert the count the change should produce. See .ai-docs/standards/e2e/README.md.";
+
+/**
+ * `size` and `byteLength` joined `length` on 2026-08-18, measured before they did
+ * rather than assumed — the standard the two rejected sentinel checks set. The
+ * selector reaches a property by NAME, so a domain object's own `size` field is
+ * reached alongside `Map.prototype.size`, and that is where a false positive
+ * would come from. Across every workspace there are twelve comparisons of a
+ * `.size`, `.byteLength` or `.count` against a literal and every one is
+ * discriminating (`> 0`, `=== 0`); none sits in the vacuous direction. The
+ * widening condemns nothing that exists, which is what it had to show.
+ *
+ * `count` was measured and left out: it names no builtin, so a `count` field is
+ * whatever its owner made it and a signed one is not a contradiction.
+ */
+const VACUOUS_COMPARISONS = [
+  {
+    selector: `BinaryExpression[operator=/^(>=|<)$/][left.property.name=${NEVER_NEGATIVE_COUNT}][right.value=0]`,
+    message: VACUOUS_COUNT_MESSAGE,
+  },
+  {
+    selector: `BinaryExpression[operator=/^(<=|>)$/][left.value=0][right.property.name=${NEVER_NEGATIVE_COUNT}]`,
+    message: VACUOUS_COUNT_MESSAGE,
+  },
+];
+
+/**
  * `no-restricted-imports` takes ONE options object per file and the last config
  * block wins, so a zone that relaxes one restriction must restate the others.
+ * `no-restricted-syntax` behaves identically, which is why `VACUOUS_COMPARISONS`
+ * is spread into every block that names it rather than stated once — and why the
+ * zones a block excludes need it restated. `spec-gates.test.ts` lints one real
+ * file per zone against this config and fails if any of them accepts the shape.
  */
 function restrictedImports({ paths = [], patterns = [] }) {
   return { "no-restricted-imports": ["error", { paths, patterns }] };
@@ -100,6 +156,13 @@ export default defineConfig(
     "todo/**",
     // Emitted by `npm run generate:types` — fix the generator, not the output.
     "src/cli/types/generated/**",
+    // Emitted by `scripts/handrun.mjs`, which bundles the hand-run and its whole
+    // dependency tree with esbuild. Same rule as above and a stronger case for it:
+    // the bundle is mostly vendored third-party source, so linting it reports
+    // against code no one here can edit — including its `eslint-disable` comments,
+    // which `reportUnusedDisableDirectives` judges against THIS config rather than
+    // the one they were written for. Gitignored at the repository root.
+    "e2e/helpers/*.gen.mjs",
   ]),
 
   // A disable comment whose rule no longer fires is a claim about the code
@@ -145,6 +208,13 @@ export default defineConfig(
           caughtErrorsIgnorePattern: "^_",
         },
       ],
+
+      // `no-self-compare` used to be stated here. It is the other half of the
+      // vacuous-comparison shape `VACUOUS_COMPARISONS` describes, and it now
+      // arrives with the shared base — `x === x` is not a mistake this package
+      // has a special claim on, and stating it here left every other workspace
+      // accepting the shape (CLI-532). Its selector half cannot follow: those
+      // take options, so they do not merge across blocks.
 
       // `consistent-type-assertions` and `no-unnecessary-condition` used to be stated here. They
       // are the shared base's two additions beyond the recommended set and now arrive with it —
@@ -227,6 +297,7 @@ export default defineConfig(
             "CallExpression[callee.name='expect'] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
           message: "Task IDs do not belong in assertion messages — state the invariant instead.",
         },
+        ...VACUOUS_COMPARISONS,
       ],
     },
   },
@@ -269,7 +340,7 @@ export default defineConfig(
     ignores: [...TEST_FILES, "src/cli/lib/config-gate/**"],
     rules: {
       ...restrictedImports({ patterns: [CONFIG_GATE_PRIVATE_IMPORTS] }),
-      "no-restricted-syntax": ["error", CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT],
+      "no-restricted-syntax": ["error", CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT, ...VACUOUS_COMPARISONS],
     },
   },
 
@@ -305,9 +376,17 @@ export default defineConfig(
   {
     // The gate itself: composes its own private files and the renderers. It writes
     // through utils/fs like everything else, so the raw-write ban still applies.
+    //
+    // Every block above excludes this directory, so it inherits no
+    // `no-restricted-syntax` at all and the vacuous-comparison selectors have to be
+    // restated. Deliberately WITHOUT `CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT`: reaching
+    // the gate's privates is this directory's own privilege.
     files: ["src/cli/lib/config-gate/**/*.ts"],
     ignores: TEST_FILES,
-    rules: restrictedImports({ paths: FS_WRITE_PATHS }),
+    rules: {
+      ...restrictedImports({ paths: FS_WRITE_PATHS }),
+      "no-restricted-syntax": ["error", ...VACUOUS_COMPARISONS],
+    },
   },
 
   {
