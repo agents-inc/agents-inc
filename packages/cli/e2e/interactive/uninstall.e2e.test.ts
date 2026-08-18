@@ -4,6 +4,7 @@ import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
 import { cleanupTempDir, ensureBinaryExists, directoryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * E2E tests for the `uninstall` command interactive confirmation prompt.
@@ -34,7 +35,7 @@ describe("uninstall interactive", () => {
   describe("confirmation prompt", () => {
     it("should show confirmation prompt with files to remove", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -53,7 +54,7 @@ describe("uninstall interactive", () => {
 
     it("should show the y/N prompt defaulting to cancel", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -73,7 +74,7 @@ describe("uninstall interactive", () => {
   describe("cancel with n", () => {
     it("should cancel when user types n", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -96,7 +97,7 @@ describe("uninstall interactive", () => {
 
     it("should preserve files after cancellation", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -126,7 +127,7 @@ describe("uninstall interactive", () => {
 
     it("should cancel when user presses Enter (default is cancel)", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -151,7 +152,7 @@ describe("uninstall interactive", () => {
   describe("confirm with y", () => {
     it("should proceed when user types y", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -172,7 +173,7 @@ describe("uninstall interactive", () => {
 
     it("should remove CLI-managed files after confirming", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -203,7 +204,7 @@ describe("uninstall interactive", () => {
   describe("config manifest in confirmation prompt", () => {
     it("should show config manifest removal in the confirmation prompt by default", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -224,7 +225,7 @@ describe("uninstall interactive", () => {
   describe("Ctrl+C during confirmation", () => {
     it("should exit cleanly when Ctrl+C is pressed", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,
@@ -245,7 +246,7 @@ describe("uninstall interactive", () => {
 
     it("should preserve files after Ctrl+C", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
         forkedFrom: true,

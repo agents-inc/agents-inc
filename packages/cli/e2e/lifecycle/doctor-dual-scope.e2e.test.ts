@@ -87,7 +87,7 @@ describe("doctor dual-scope diagnostics", () => {
   );
 
   it(
-    "doctor detects orphaned skill directory in dual-scope",
+    "doctor names a skill directory nothing here installed in dual-scope",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       env = await createDualScopeEnv(sourceDir, sourceTempDir);
@@ -101,12 +101,14 @@ describe("doctor dual-scope diagnostics", () => {
         env: { HOME: env.fakeHome },
       });
 
-      // The operational No Orphans check only looks at agent files, but the content
-      // layer walks every directory under .claude/skills/ regardless of config — a
-      // skill directory with no metadata.yaml is content Claude Code would load.
-      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      // The operational No Orphans check only looks at agent files, and the content layer judges
+      // the skill directories this installation owns — the ones a configuration names, and the
+      // ones carrying the marker this CLI stamps. A directory answering to neither belongs to
+      // whatever else writes into Claude Code's shared skills tree, and is named rather than failed.
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(combined).toContain("orphan-skill");
-      expect(combined).toContain(`Missing ${FILES.METADATA_YAML}`);
+      expect(combined).toContain(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR);
+      expect(combined).not.toContain(`Missing ${FILES.METADATA_YAML}`);
     },
   );
 });

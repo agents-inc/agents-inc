@@ -1,5 +1,4 @@
 import path from "path";
-import os from "os";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
@@ -13,7 +12,9 @@ import {
   claudePluginInstall,
   claudePluginMarketplaceAdd,
   cleanupFixture,
+  cleanupIsolatedClaudeHome,
   cleanupTempDir,
+  createIsolatedClaudeHome,
   createTempDir,
   directoryExists,
   ensureBinaryExists,
@@ -22,6 +23,7 @@ import {
   skillsPath,
   writeAgentFile,
   writeProjectConfig,
+  type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -43,15 +45,19 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
   let fixture: E2EPluginSource;
   let projectDir: string;
   let projectTempDir: string;
-  // Real HOME is needed so the CLI can find the plugin registry at
-  // ~/.claude/plugins/installed_plugins.json (written by claudePluginInstall).
-  const realHome = process.env.HOME || os.homedir();
+  // The run's own Claude installation. `uninstall` has to read the plugin
+  // registry `claudePluginInstall` wrote, and `<home>/.claude` is both where the
+  // config dir puts it and where the CLI's `getUserPluginsDir()` looks under the
+  // same HOME — so one temp tree serves both. This used to be the developer's
+  // real HOME, which made the registration outlive the spec.
+  let isolated: IsolatedClaudeHome;
 
   beforeAll(async () => {
     await ensureBinaryExists();
 
     // Step 1: Build plugin source (source -> build plugins -> build marketplace)
     fixture = await createE2EPluginSource();
+    isolated = await createIsolatedClaudeHome();
 
     // Step 2: Create an isolated project directory
     projectTempDir = await createTempDir();
@@ -59,11 +65,13 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     await mkdir(projectDir, { recursive: true });
 
     // Step 3: Register marketplace with Claude CLI
-    await claudePluginMarketplaceAdd(fixture.sourceDir);
+    await claudePluginMarketplaceAdd(fixture.sourceDir, { configDir: isolated.configDir });
 
     // Step 4: Install a plugin via Claude CLI
     const pluginRef = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
-    await claudePluginInstall(pluginRef, "project", projectDir);
+    await claudePluginInstall(pluginRef, "project", projectDir, {
+      configDir: isolated.configDir,
+    });
 
     // Step 5: Create config.ts referencing the installed plugin
     await writeProjectConfig(projectDir, {
@@ -72,7 +80,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
         {
           id: E2E_SKILL.react.id,
           scope: "project",
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
         },
       ],
       agents: [{ name: "web-developer", scope: "project" }],
@@ -99,6 +107,7 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
   afterAll(async () => {
     await cleanupFixture(fixture);
     if (projectTempDir) await cleanupTempDir(projectTempDir);
+    await cleanupIsolatedClaudeHome(isolated);
   });
 
   describe("pre-conditions", () => {
@@ -112,13 +121,14 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     let uninstallResult: Awaited<ReturnType<typeof CLI.run>>;
 
     beforeAll(async () => {
-      // Use real HOME so the CLI finds the plugin registry and can call
-      // `claude plugin uninstall` to deregister the plugin.
+      // The run's own HOME, so the CLI finds the registry step 4 wrote and can
+      // call `claude plugin uninstall` against the same installation. `CLI.run`
+      // derives CLAUDE_CONFIG_DIR from it, so the deregistration lands there too.
       uninstallResult = await CLI.run(
         ["uninstall", "--yes"],
         { dir: projectDir },
         {
-          env: { HOME: realHome },
+          env: { HOME: isolated.home },
         },
       );
     }, TIMEOUTS.PLUGIN_INSTALL);

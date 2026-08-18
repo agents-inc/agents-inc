@@ -17,6 +17,7 @@ import {
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * D-217 — Compiled agents must reference each skill in the format dictated
@@ -99,7 +100,7 @@ describe.skipIf(!claudeAvailable)(
           // Sanity check: post-init, react frontmatter uses pluginRef form
           // (matches the existing init-wizard-stack.e2e.test.ts assertion).
           await expect(initResult.project).toHaveAgentFrontmatter("web-developer", {
-            skills: ["web-framework-react:web-framework-react"],
+            skills: [`${E2E_SKILL.react.id}:${E2E_SKILL.react.id}`],
           });
           await initResult.destroy();
 
@@ -147,15 +148,17 @@ describe.skipIf(!claudeAvailable)(
 
           // Both skills present as separate SkillConfig entries. Compact JSON
           // shape (no inner spaces) is stable across the config-generator.
-          expect(configContent).toContain('"id":"web-framework-react"');
-          expect(configContent).toContain('"id":"web-state-zustand"');
+          expect(configContent).toContain(`"id":"${E2E_SKILL.react.id}"`);
+          expect(configContent).toContain(`"id":"${E2E_SKILL.zustand.id}"`);
 
           // react flipped to eject; the regex tolerates either scope so the
           // test does not depend on whether the install routes to project
           // or global agent dirs (matches the existing init-wizard-stack
           // test which asserts on result.project regardless of scope).
           expect(configContent).toMatch(
-            /"id":"web-framework-react","scope":"(?:project|global)","source":"eject"/,
+            new RegExp(
+              `"id":"${E2E_SKILL.react.id}","scope":"(?:project|global)","origin":"eject"`,
+            ),
           );
 
           // zustand stays plugin — verifies the toggle was scoped to react.
@@ -163,7 +166,7 @@ describe.skipIf(!claudeAvailable)(
           // plugin install and the registry use.
           expect(configContent).toMatch(
             new RegExp(
-              `"id":"web-state-zustand","scope":"(?:project|global)","source":"${pluginSource!.marketplaceName}"`,
+              `"id":"${E2E_SKILL.zustand.id}","scope":"(?:project|global)","origin":"${pluginSource!.marketplaceName}"`,
             ),
           );
 
@@ -188,7 +191,7 @@ describe.skipIf(!claudeAvailable)(
           // the body's Skill Activation Protocol table. Each preloaded
           // skill's emission is governed by its own source.
           await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
-            skills: ["web-framework-react"],
+            skills: [E2E_SKILL.react.id],
           });
 
           // The compiled agent body must NOT contain react in pluginRef
@@ -197,7 +200,7 @@ describe.skipIf(!claudeAvailable)(
           // would have rendered as `id:id` everywhere it appeared. Post-fix,
           // each skill's emission is governed by its own source.
           await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-            notContains: ["web-framework-react:web-framework-react"],
+            notContains: [`${E2E_SKILL.react.id}:${E2E_SKILL.react.id}`],
           });
 
           // Cross-check: the post-init agent (before the toggle) DID contain
@@ -219,7 +222,7 @@ describe.skipIf(!claudeAvailable)(
           // dedicated tests (e.g. init-dashboard-edit-plugin-install.e2e).
           // D-217 is strictly about the COMPILED-AGENT format-per-skill
           // contract; the install-side routing is covered separately.
-          await expect({ dir: projectDir }).toHaveSkillCopied("web-framework-react");
+          await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
         },
       );
     });

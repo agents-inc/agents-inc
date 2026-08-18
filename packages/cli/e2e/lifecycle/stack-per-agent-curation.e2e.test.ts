@@ -14,7 +14,8 @@ import {
   ensureBinaryExists,
   readTestFile,
 } from "../helpers/test-utils.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * D-220 — Agent-skill removal regression.
@@ -124,19 +125,19 @@ describe("stack per-agent curation survives edit", () => {
 
         const seededStack = {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-testing": [{ id: "web-testing-vitest" }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+            "web-testing": [{ id: E2E_SKILL.vitest.id }],
             // api-api intentionally omitted — the user hand-removed it.
           },
           "api-developer": {
-            "web-framework": [{ id: "web-framework-react" }],
-            "web-testing": [{ id: "web-testing-vitest" }],
-            "api-api": [{ id: "api-framework-hono", preloaded: true }],
+            "web-framework": [{ id: E2E_SKILL.react.id }],
+            "web-testing": [{ id: E2E_SKILL.vitest.id }],
+            "api-api": [{ id: E2E_SKILL.hono.id, preloaded: true }],
           },
-        } satisfies Partial<Record<AgentName, StackAgentConfig>>;
+        } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react", "web-testing-vitest", "api-framework-hono"],
+          skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.hono.id],
           agents: ["web-developer", "api-developer"],
           domains: ["web", "api"],
           stack: seededStack,
@@ -160,7 +161,7 @@ describe("stack per-agent curation survives edit", () => {
           ...TERMINAL_SIZE.TALL,
         });
 
-        await wizard.build.selectSkill(E2E_SKILL.zustand.id);
+        await wizard.build.selectSkill(E2E_SKILL.zustand.display);
 
         // Two-domain project: use the dynamic helper (fixed-3-Enter variant
         // would overshoot and skip the Sources step).
@@ -189,32 +190,41 @@ describe("stack per-agent curation survives edit", () => {
         // Other agent still has the skill on that category, byte-for-byte.
         // api-api is exclusive, so the preloaded entry stands alone.
         expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
-          id: "api-framework-hono",
+          id: E2E_SKILL.hono.id,
           preloaded: true,
         });
 
         // --- Scenario B: newly-added skill lands per the relevance rule ---
-        // The pair is new, so there is no saved flag to keep: the web skill
-        // reaches its own domain's developer preloaded (client state is one of
-        // the things a developer works in) and never reaches the api agent at
-        // all. web-client-state is exclusive, so the entry is the whole value.
+        // The pair is new, so there is no saved flag to keep and the shared
+        // defaults answer — in two voices, on purpose. REACH is derived from
+        // the skill's taxonomy, so the web skill is placed on its own domain's
+        // developer and never on the api agent. EAGERNESS is authored per
+        // catalogue skill id and nothing derives it, so this marketplace's
+        // namespaced id matches no row and arrives lazy by rule. A lazy entry
+        // is written as the bare id, and web-client-state is exclusive, so that
+        // bare id is the whole category value.
         expect(
           stackAfterEdit["web-developer"]?.["web-client-state"],
           "Newly-added web-state-zustand must appear on web-developer.web-client-state",
-        ).toStrictEqual({ id: "web-state-zustand", preloaded: true });
+        ).toStrictEqual(E2E_SKILL.zustand.id);
 
         expect(
           stackAfterEdit["api-developer"]?.["web-client-state"],
           "Newly-added web-state-zustand must NOT cross domains to api-developer",
         ).toBeUndefined();
 
-        // --- Scenario B (continued): existing preloaded: true survives ---
+        // --- Scenario B (continued): a saved preloaded: true survives ---
+        // The contrast that makes the lazy default above readable: eagerness has
+        // a tier above the defaults, and it is the user's saved config per
+        // `(skill, agent)`. These two entries were written eager before the
+        // edit and stay eager through it, which is why a lazy default is
+        // recoverable rather than final.
         expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
-          id: "web-framework-react",
+          id: E2E_SKILL.react.id,
           preloaded: true,
         });
         expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
-          id: "api-framework-hono",
+          id: E2E_SKILL.hono.id,
           preloaded: true,
         });
 
@@ -226,22 +236,30 @@ describe("stack per-agent curation survives edit", () => {
         // web-developer was curated to NOT have api-api. Its compiled markdown
         // must not embed the api-framework-hono skill content.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-          notContains: ["api-framework-hono"],
+          notContains: [E2E_SKILL.hono.id],
         });
 
         // api-developer keeps api-framework-hono on its stack, so its compiled
         // markdown MUST still reference the skill.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["api-framework-hono"],
+          contains: [E2E_SKILL.hono.id],
         });
 
         // The newly-added web skill lands on its own domain's compiled agent
         // and stays out of the other domain's.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-state-zustand"],
+          contains: [E2E_SKILL.zustand.id],
         });
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          notContains: ["web-state-zustand"],
+          notContains: [E2E_SKILL.zustand.id],
+        });
+
+        // Both tiers on the surface a user actually reads. The frontmatter list
+        // IS the preload list, so one exact assertion carries the whole
+        // distinction on one agent: the saved eager entry is in it, and the
+        // zustand the line above just proved reached this agent is not.
+        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+          exactSkills: [E2E_SKILL.react.id],
         });
       },
     );
@@ -270,16 +288,16 @@ describe("stack per-agent curation survives edit", () => {
 
         const seededStack = {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-tooling": [{ id: "web-testing-vitest", preloaded: true }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+            "web-tooling": [{ id: E2E_SKILL.vitest.id, preloaded: true }],
           },
           "api-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: true }],
+            "api-api": [{ id: E2E_SKILL.hono.id, preloaded: true }],
           },
-        } satisfies Partial<Record<AgentName, StackAgentConfig>>;
+        } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react", "web-testing-vitest", "api-framework-hono"],
+          skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.hono.id],
           agents: ["web-developer", "api-developer"],
           domains: ["web", "api"],
           stack: seededStack,
@@ -301,7 +319,7 @@ describe("stack per-agent curation survives edit", () => {
           ...TERMINAL_SIZE.TALL,
         });
 
-        await wizard.build.selectSkill(E2E_SKILL.zustand.id);
+        await wizard.build.selectSkill(E2E_SKILL.zustand.display);
 
         const sources = await wizard.build.passThroughAllDomainsGeneric();
         await sources.waitForReady();
@@ -323,7 +341,7 @@ describe("stack per-agent curation survives edit", () => {
         expect(
           stackAfterEdit["web-developer"]?.["web-testing"],
           "a skill that changed category keeps its per-agent placement — the key moves, the curation does not",
-        ).toStrictEqual([{ id: "web-testing-vitest", preloaded: true }]);
+        ).toStrictEqual([{ id: E2E_SKILL.vitest.id, preloaded: true }]);
 
         expect(
           stackAfterEdit["web-developer"]?.["web-tooling"],
@@ -332,11 +350,11 @@ describe("stack per-agent curation survives edit", () => {
 
         // Untouched entries stay exactly as they were.
         expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
-          id: "web-framework-react",
+          id: E2E_SKILL.react.id,
           preloaded: true,
         });
         expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
-          id: "api-framework-hono",
+          id: E2E_SKILL.hono.id,
           preloaded: true,
         });
 
@@ -346,11 +364,11 @@ describe("stack per-agent curation survives edit", () => {
         // ================================================================
 
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-testing-vitest", "web-framework-react"],
+          contains: [E2E_SKILL.vitest.id, E2E_SKILL.react.id],
         });
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["api-framework-hono"],
-          notContains: ["web-testing-vitest"],
+          contains: [E2E_SKILL.hono.id],
+          notContains: [E2E_SKILL.vitest.id],
         });
       },
     );
@@ -384,14 +402,14 @@ describe("stack per-agent curation survives edit", () => {
 
         const curatedWebDeveloperStack = {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-testing": [{ id: "web-testing-vitest" }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+            "web-testing": [{ id: E2E_SKILL.vitest.id }],
             // Intentionally no api-api category on web-developer.
           },
-        } satisfies Partial<Record<AgentName, StackAgentConfig>>;
+        } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react", "web-testing-vitest", "api-framework-hono"],
+          skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.hono.id],
           agents: ["web-developer"],
           domains: ["web", "api"],
           stack: curatedWebDeveloperStack,
@@ -454,16 +472,19 @@ describe("stack per-agent curation survives edit", () => {
         const stackAfterEdit = extractStack(configAfterEdit);
 
         // --- web-developer curation is preserved byte-identical ---
+        // The web-framework entry is also the contrast for the newly seeded
+        // agent below: it was saved eager and stays eager, because the user's
+        // saved config outranks the defaults per `(skill, agent)`.
         expect(
           stackAfterEdit["web-developer"]?.["api-api"],
           "web-developer.api-api must stay absent — user's curation is authoritative",
         ).toBeUndefined();
         expect(stackAfterEdit["web-developer"]?.["web-framework"]).toStrictEqual({
-          id: "web-framework-react",
+          id: E2E_SKILL.react.id,
           preloaded: true,
         });
         expect(stackAfterEdit["web-developer"]?.["web-testing"]).toStrictEqual([
-          "web-testing-vitest",
+          E2E_SKILL.vitest.id,
         ]);
 
         // --- api-developer (newly selected) is seeded from the relevance rule ---
@@ -471,14 +492,14 @@ describe("stack per-agent curation survives edit", () => {
           stackAfterEdit["api-developer"],
           "api-developer stack must be seeded when the agent is newly selected this session",
         ).toBeDefined();
-        // Every triple here is new, so the relevance rule decides who receives
-        // what: the api framework lands preloaded (api-api is exclusive, so
-        // the entry is the whole category value), and the two web skills never
-        // reach the api agent at all.
-        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual({
-          id: "api-framework-hono",
-          preloaded: true,
-        });
+        // Every triple here is new, so nothing saved outranks the defaults and
+        // they decide alone — reach from the skill's taxonomy, eagerness from a
+        // table authored per catalogue skill id. So the api framework reaches
+        // the api agent and the two web skills never do, while the framework
+        // itself arrives LAZY: it is this marketplace's skill, its namespaced id
+        // is in no such table, and absence there is lazy by rule. A lazy entry
+        // is the bare id, and api-api is exclusive, so it is the whole value.
+        expect(stackAfterEdit["api-developer"]?.["api-api"]).toStrictEqual(E2E_SKILL.hono.id);
         expect(
           stackAfterEdit["api-developer"]?.["web-framework"],
           "web-framework-react must NOT cross domains to the newly seeded api agent",
@@ -495,14 +516,25 @@ describe("stack per-agent curation survives edit", () => {
         // web-developer's curated removal of api-api must be reflected on disk:
         // the compiled markdown must NOT embed api-framework-hono content.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
-          notContains: ["api-framework-hono"],
+          notContains: [E2E_SKILL.hono.id],
         });
 
         // api-developer (newly added) contains its own domain's seeded skill
         // and none of the web ones.
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["api-framework-hono"],
-          notContains: ["web-framework-react", "web-testing-vitest"],
+          contains: [E2E_SKILL.hono.id],
+          notContains: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+        });
+
+        // Both tiers on the surface a user actually reads. The frontmatter list
+        // IS the preload list: the seeded agent preloads nothing, though the
+        // line above just proved hono reached it, while the curated agent's
+        // saved eager entry is still in its own.
+        await expect({ dir: projectDir }).toHaveAgentFrontmatter("api-developer", {
+          noSkills: true,
+        });
+        await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
+          exactSkills: [E2E_SKILL.react.id],
         });
       },
     );

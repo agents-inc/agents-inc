@@ -20,6 +20,7 @@ import {
   initProject,
   readSkillEntries,
 } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Dual-scope edit lifecycle E2E test -- source changes via Sources step.
@@ -111,28 +112,24 @@ describe.skipIf(!claudeAvailable)(
         expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
         // D-2: Local skill files removed (switched to plugin)
-        const localSkillPath = path.join(
-          skillsPath(projectDir),
-          "api-framework-hono",
-          FILES.SKILL_MD,
-        );
+        const localSkillPath = path.join(skillsPath(projectDir), E2E_SKILL.hono.id, FILES.SKILL_MD);
         expect(await fileExists(localSkillPath)).toBe(false);
 
         // D-3: Project config has api-framework-hono and api-developer agent
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["api-framework-hono"],
+          skillIds: [E2E_SKILL.hono.id],
           agents: ["api-developer"],
         });
         // Project-scoped api-framework-hono source must have been updated from eject to plugin
         // (excluded global entries may legitimately retain source:"eject")
-        const projectHonoEntry = (await readSkillEntries(projectDir, "api-framework-hono")).find(
+        const projectHonoEntry = (await readSkillEntries(projectDir, E2E_SKILL.hono.id)).find(
           (entry) => entry.scope === "project",
         );
         expect(
           projectHonoEntry,
           "project-scoped api-framework-hono must exist in config",
         ).toBeDefined();
-        expect(projectHonoEntry?.source).not.toBe("eject");
+        expect(projectHonoEntry?.origin).not.toBe("eject");
 
         // D-4: Compiled agents exist at correct scopes
         await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
@@ -193,28 +190,24 @@ describe.skipIf(!claudeAvailable)(
         expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
         // D-2: Local skill files deleted by migration (switched to plugin)
-        const localSkillPath = path.join(
-          skillsPath(projectDir),
-          "api-framework-hono",
-          FILES.SKILL_MD,
-        );
+        const localSkillPath = path.join(skillsPath(projectDir), E2E_SKILL.hono.id, FILES.SKILL_MD);
         expect(await fileExists(localSkillPath)).toBe(false);
 
         // D-3: Project config has api-framework-hono and api-developer agent
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["api-framework-hono"],
+          skillIds: [E2E_SKILL.hono.id],
           agents: ["api-developer"],
         });
         // Project-scoped api-framework-hono source must have been updated from eject to plugin
         // (excluded global entries may legitimately retain source:"eject")
-        const projectHonoEntry = (await readSkillEntries(projectDir, "api-framework-hono")).find(
+        const projectHonoEntry = (await readSkillEntries(projectDir, E2E_SKILL.hono.id)).find(
           (entry) => entry.scope === "project",
         );
         expect(
           projectHonoEntry,
           "project-scoped api-framework-hono must exist in config",
         ).toBeDefined();
-        expect(projectHonoEntry?.source).not.toBe("eject");
+        expect(projectHonoEntry?.origin).not.toBe("eject");
 
         // D-4: Compiled agents exist at correct scopes
         await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");

@@ -105,11 +105,11 @@ describe("compile after scope change", () => {
       const projectApiDevContent = await readTestFile(projectApiDevPath);
 
       // D-5: Project api-developer.md contains api-framework-hono
-      expect(projectApiDevContent).toContain("api-framework-hono");
+      expect(projectApiDevContent).toContain(E2E_SKILL.hono.id);
 
       // D-6: Project api-developer.md does NOT contain web-framework-react —
       // relevance-scoped assignment keeps the web skill off the api agent.
-      expect(projectApiDevContent).not.toContain("web-framework-react");
+      expect(projectApiDevContent).not.toContain(E2E_SKILL.react.id);
     },
   );
 
@@ -169,13 +169,13 @@ describe("compile after scope change", () => {
 
       // D-3: Global web-developer.md does NOT contain api-framework-hono —
       // relevance-scoped assignment keeps the api skill off the web agent.
-      expect(globalWebDevContent).not.toContain("api-framework-hono");
+      expect(globalWebDevContent).not.toContain(E2E_SKILL.hono.id);
 
       // D-4: The scope flip moves where the skill installs, not who carries
       // it: the api agent still compiles with its own domain's skill.
       const projectApiDevPath = path.join(projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
       const projectApiDevContent = await readTestFile(projectApiDevPath);
-      expect(projectApiDevContent).toContain("api-framework-hono");
+      expect(projectApiDevContent).toContain(E2E_SKILL.hono.id);
     },
   );
 

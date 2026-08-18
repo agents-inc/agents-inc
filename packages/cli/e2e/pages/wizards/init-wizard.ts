@@ -33,7 +33,7 @@ export type InitWizardOptions = {
   rows?: number;
   /** Custom environment variables (merged with defaults). */
   env?: Record<string, string | undefined>;
-  /** Launch without --source flag (uses default source / BUILT_IN_MATRIX). */
+  /** Launch without --marketplace flag (uses default source / BUILT_IN_MATRIX). */
   noSource?: boolean;
   /** Skip creating permissions file. */
   skipPermissions?: boolean;
@@ -139,7 +139,7 @@ export class InitWizard {
       await createPermissionsFile(projectDir);
     }
 
-    const args = sourceDir ? ["init", "--source", sourceDir] : ["init"];
+    const args = sourceDir ? ["init", "--marketplace", sourceDir] : ["init"];
 
     // Resolve the global HOME per strategy. "auto" resolves to undefined: HOME
     // stays unset so the TerminalSession auto-allocates (and owns cleanup of)
@@ -154,7 +154,7 @@ export class InitWizard {
     }
 
     const env: Record<string, string | undefined> = {
-      CC_SOURCE: undefined,
+      CC_MARKETPLACE: undefined,
       ...options?.env,
       ...(globalHome !== undefined ? { HOME: globalHome } : {}),
     };
@@ -382,11 +382,11 @@ export class InitWizard {
     }
 
     const env: Record<string, string | undefined> = {
-      CC_SOURCE: undefined,
+      CC_MARKETPLACE: undefined,
       ...options.env,
     };
 
-    const session = new TerminalSession(["init", "--source", sourceDir], options.projectDir, {
+    const session = new TerminalSession(["init", "--marketplace", sourceDir], options.projectDir, {
       env,
     });
 

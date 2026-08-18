@@ -88,15 +88,15 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
         projectDir,
         buildProjectConfig({
           name: "dual-scope-collapse-test",
-          source: sourceDir,
+          marketplace: sourceDir,
           skills: [
             ...buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
               scope: "project",
-              source: EJECT_SOURCE,
+              origin: EJECT_SOURCE,
             }),
             ...buildSkillConfigs([E2E_SKILL.react.id], {
               scope: "global",
-              source: DEFAULT_PUBLIC_SOURCE_NAME,
+              origin: DEFAULT_PUBLIC_SOURCE_NAME,
             }),
           ],
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
@@ -107,7 +107,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
       await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "React framework for dual-scope collapse testing",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.react.id,
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: E2E_SKILL.react.slug,
           cliDescription: "E2E test skill",
@@ -118,7 +118,7 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
       await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Vitest testing skill for dual-scope collapse testing",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.vitest.id,
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: E2E_SKILL.vitest.slug,
           cliDescription: "E2E test skill",
@@ -133,8 +133,8 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "react must be saved at both project and global scope before the edit",
       ).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: DEFAULT_PUBLIC_SOURCE_NAME },
-        { id: E2E_SKILL.react.id, scope: "project", source: EJECT_SOURCE },
+        { id: E2E_SKILL.react.id, scope: "global", origin: DEFAULT_PUBLIC_SOURCE_NAME },
+        { id: E2E_SKILL.react.id, scope: "project", origin: EJECT_SOURCE },
       ]);
 
       const configBefore = await readTestFile(configTsPath(projectDir));

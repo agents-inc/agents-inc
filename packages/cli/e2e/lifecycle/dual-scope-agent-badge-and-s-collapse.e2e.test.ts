@@ -2,6 +2,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -113,6 +114,11 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
       // Read-only check — abort without writing anything.
       wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+
+      // The persisted `[P][G]` pair the setup wrote, read at four-surface strength on both
+      // sides. Run after the abort so the probe touches a settled tree.
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 
@@ -177,6 +183,9 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
         await fileExists(globalAgentFile),
         "the global-scope compiled agent must survive the collapse",
       ).toBe(true);
+
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 });

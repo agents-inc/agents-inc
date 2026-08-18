@@ -103,7 +103,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         ["compile"],
         { dir: projectDir },
         {
-          env: { CC_SOURCE: undefined },
+          env: { CC_MARKETPLACE: undefined },
         },
       );
 
@@ -135,7 +135,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         ["uninstall", "--yes"],
         { dir: projectDir },
         {
-          env: { CC_SOURCE: undefined },
+          env: { CC_MARKETPLACE: undefined },
         },
       );
 

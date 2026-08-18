@@ -110,7 +110,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       if (!reactBefore) return;
       // The label the wizard records for the marketplace source (distinct from the
       // marketplace.json name used to build plugin refs).
-      const pluginSourceLabel = reactBefore.source;
+      const pluginSourceLabel = reactBefore.origin;
       expect(pluginSourceLabel, "react must start plugin-sourced").not.toBe(EJECT_SOURCE);
       expect(
         await directoryExists(path.join(skillsPath(fakeHome), REACT_ID)),
@@ -140,7 +140,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       // project genuinely owns, records eject and has its copied directory.
       const projectSkills = await readAllSkillEntries(projectDir);
       const honoAfter = projectSkills.find((s) => s.id === HONO_ID && s.scope === "project");
-      expect(honoAfter?.source, "project-owned hono must record the eject switch").toBe(
+      expect(honoAfter?.origin, "project-owned hono must record the eject switch").toBe(
         EJECT_SOURCE,
       );
       expect(
@@ -162,10 +162,10 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       expect(
         reactEjectedInHome ? EJECT_SOURCE : pluginSourceLabel,
         "global-scoped react: the install mode on disk under $HOME must match the source recorded in the global config.ts",
-      ).toBe(reactAfter.source);
+      ).toBe(reactAfter.origin);
 
       // The plugin registry must agree with the same recorded source.
-      if (reactAfter.source === EJECT_SOURCE) {
+      if (reactAfter.origin === EJECT_SOURCE) {
         await expect({ dir: fakeHome }).not.toHavePluginInRegistry(reactPluginRef, "user");
       } else {
         await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginRef, "user");

@@ -156,7 +156,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
         // was satisfied by the `marketplace` field `injectMarketplaceIntoConfig`
         // wrote during SETUP, whether or not any skill's `source` moved.
         const switchedEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
-        expect(switchedEntries.map((entry) => entry.source)).toStrictEqual([
+        expect(switchedEntries.map((entry) => entry.origin)).toStrictEqual([
           fixture.marketplaceName,
         ]);
 

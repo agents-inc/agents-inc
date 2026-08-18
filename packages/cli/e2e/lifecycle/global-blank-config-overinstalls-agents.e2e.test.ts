@@ -16,6 +16,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * D-264 mechanism #1 — a global config that declares skills but ZERO agents
@@ -53,10 +54,10 @@ describe("global blank-agent config on compile", () => {
     // Global install: a real skill at global scope, but an empty agents list.
     await writeProjectConfig(fakeHome, {
       name: "global-blank-agents",
-      skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
       agents: [],
     });
-    const skillDir = await createLocalSkill(fakeHome, "web-framework-react", {
+    const skillDir = await createLocalSkill(fakeHome, E2E_SKILL.react.id, {
       description: "Global local skill so the compile pass has a skill to discover",
       metadata: renderMetadataYaml({ contentHash: "hash-blank-agents" }),
     });

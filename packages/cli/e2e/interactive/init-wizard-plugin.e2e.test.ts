@@ -71,7 +71,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
         expect(output).toContain("skill plugins");
         expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
-        expect(output).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
+        expect(output).toContain(`Installed ${E2E_SKILL.react.id}@${fixture.marketplaceName}`);
         expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
         await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
@@ -91,7 +91,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const result = await wizard.completeWithDefaults();
 
         await expectPhaseSuccess(result, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: fixture.marketplaceName,
           compiledAgents: [],
         });
@@ -247,13 +247,13 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         const output = result.output;
-        expect(output).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
-        expect(output).toContain(`Installed web-testing-vitest@${fixture.marketplaceName}`);
+        expect(output).toContain(`Installed ${E2E_SKILL.react.id}@${fixture.marketplaceName}`);
+        expect(output).toContain(`Installed ${E2E_SKILL.vitest.id}@${fixture.marketplaceName}`);
         expect(output).toContain("skill plugins");
         expect(output).not.toContain("Failed to install plugin");
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react", "web-testing-vitest"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         });
         await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
         await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("api-developer");
@@ -285,11 +285,11 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
         const output = result.output;
         expect(output).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
-        expect(output).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
+        expect(output).toContain(`Installed ${E2E_SKILL.react.id}@${fixture.marketplaceName}`);
         expect(output).not.toContain("Failed to install plugin");
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
         });
         await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
       },
@@ -323,11 +323,11 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
         // The local-sourced skill should be copied locally. A default
         // (global-scope) install writes it under the global HOME.
-        await expect({ dir: wizard.globalHome }).toHaveSkillCopied("web-framework-react");
+        await expect({ dir: wizard.globalHome }).toHaveSkillCopied(E2E_SKILL.react.id);
 
         // Config should reflect the selected skills
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
         });
 
         // Agents should still be compiled

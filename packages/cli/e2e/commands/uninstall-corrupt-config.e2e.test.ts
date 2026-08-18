@@ -114,17 +114,17 @@ describe("uninstall with an unreadable config", () => {
   });
 
   /**
-   * The removal plan is a promise about what this run is about to do, and the compiled agents are
-   * the one entry it cannot keep without the config: `removeMatchingAgents` matches on-disk
-   * basenames against `config.agents`, so a config nothing can read leaves every agent file where
-   * it is. The plan must therefore say the agents are kept and why, instead of naming their
-   * directory under the removals and then not making one.
+   * The removal plan is a promise about what this run is about to do. With no readable config to
+   * name them, the agent files are identified by the provenance marker the compiler stamps into
+   * each one — and this fixture's agent was written by hand, so it carries none and stays. The
+   * plan must therefore say the agent is kept and why, instead of naming its directory under the
+   * removals and then not making one.
    *
    * The skills beside them are identified by their own `forked-from` metadata rather than by the
    * config, so they are still removed and their half of the section is still promised — which is
    * what makes this an assertion about the agents item rather than about the section wholesale.
    */
-  it("keeps the compiled agents out of the removal plan when the config cannot identify them", async () => {
+  it("keeps the compiled agents out of the removal plan when nothing identifies them", async () => {
     const project = await ProjectBuilder.editable({ forkedFrom: true });
     tempDir = path.dirname(project.dir);
     await writeAgentFile(project.dir, E2E_AGENT["web-developer"].name, { frontmatter: true });
@@ -148,7 +148,7 @@ describe("uninstall with an unreadable config", () => {
     expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
     expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
 
@@ -189,7 +189,7 @@ describe("uninstall with an unreadable config", () => {
 
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
     expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
 
@@ -214,7 +214,7 @@ describe("uninstall with an unreadable config", () => {
     await writeCorruptConfig(globalHome, SYNTAX_ERROR);
     await writeProjectConfig(otherProject, {
       name: "bystander-project",
-      skills: [{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
       agents: [{ name: "web-developer", scope: "global" }],
     });
     const otherConfigBefore = await readTestFile(configTsPath(otherProject));

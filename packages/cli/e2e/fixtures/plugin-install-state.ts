@@ -8,7 +8,8 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { DIRS, FILES } from "../pages/constants.js";
-import type { AgentName, Domain, SkillId, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName, Domain } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
 
 /**
@@ -32,9 +33,9 @@ export type PluginInstalledProjectOptions = {
   /** Built plugin output dir (`<sourceDir>/dist/plugins`); each subdir is a plugin root. */
   pluginsDir: string;
   marketplace: string;
-  skillIds: SkillId[];
+  skillIds: string[];
   agents: AgentName[];
-  stack: Partial<Record<AgentName, StackAgentConfig>>;
+  stack: Partial<Record<AgentName, FixtureStackAgentConfig>>;
   domains?: Domain[];
 };
 
@@ -42,7 +43,7 @@ const PLUGIN_VERSION = "1.0.0";
 const PLUGIN_INSTALLED_AT = "2026-01-01T00:00:00.000Z";
 const REGISTRY_VERSION = 1;
 
-function pluginKeyFor(skillId: SkillId, marketplace: string): string {
+function pluginKeyFor(skillId: string, marketplace: string): string {
   return `${skillId}@${marketplace}`;
 }
 
@@ -97,11 +98,11 @@ export async function createPluginInstalledProject(
 
   await writeProjectConfig(projectDir, {
     name: "plugin-installed-project",
-    marketplace: options.marketplace,
+    marketplaceName: options.marketplace,
     skills: options.skillIds.map((id) => ({
       id,
       scope: "project" as const,
-      source: options.marketplace,
+      origin: options.marketplace,
     })),
     agents: options.agents.map((name) => ({ name, scope: "project" as const })),
     selectedDomains: options.domains ?? ["web"],

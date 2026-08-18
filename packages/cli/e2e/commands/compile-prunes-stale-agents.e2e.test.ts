@@ -49,7 +49,7 @@ describe("compile prunes stale compiled agents", () => {
     // the compile discovers skills and does not hard-error on an empty pass.
     await writeProjectConfig(fakeHome, {
       name: "global-prune-test",
-      skills: [{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
       stack: {

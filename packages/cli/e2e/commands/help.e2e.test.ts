@@ -3,6 +3,13 @@ import { createTempDir, cleanupTempDir, ensureBinaryExists } from "../helpers/te
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
+/**
+ * Why every help screen is asserted NOT to advertise the old spelling. Pre-1.0 ships no
+ * compatibility shims, so `--source` is gone rather than aliased — help that still names it
+ * is help that teaches a flag the parser refuses.
+ */
+const WITHDRAWN_FLAG_REASON = "--source was withdrawn, not aliased, so no help screen names it";
+
 describe("help and version", () => {
   let tempDir: string;
 
@@ -34,8 +41,11 @@ describe("help and version", () => {
     expect(result.stdout).toContain("list");
     expect(
       result.stdout,
-      "the import and new command families are gone, so no topic may still advertise them",
-    ).not.toMatch(/^\s+(import|new)\s/m);
+      "the import family is gone, so no topic may still advertise it",
+    ).not.toMatch(/^\s+import\s/m);
+    expect(result.stdout, "the new topic is back, carrying marketplace alone").toMatch(
+      /^\s+new\s/m,
+    );
   });
 
   it("should display compile-specific help", async () => {
@@ -47,8 +57,9 @@ describe("help and version", () => {
     expect(result.stdout).toContain("--verbose");
     expect(
       result.stdout,
-      "a recompile reads the source its config records, so there is nothing to point it at",
-    ).not.toContain("--source");
+      "a recompile reads the marketplace its config records, so there is nothing to point it at",
+    ).not.toContain("--marketplace");
+    expect(result.stdout, WITHDRAWN_FLAG_REASON).not.toContain("--source");
   });
 
   it("should display init-specific help", async () => {
@@ -58,7 +69,8 @@ describe("help and version", () => {
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain("init");
     expect(result.stdout).toContain("USAGE");
-    expect(result.stdout).toContain("--source");
+    expect(result.stdout).toContain("--marketplace");
+    expect(result.stdout, WITHDRAWN_FLAG_REASON).not.toContain("--source");
   });
 
   it("should display doctor-specific help", async () => {
@@ -68,7 +80,8 @@ describe("help and version", () => {
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain("Diagnose");
     expect(result.stdout).not.toContain("--verbose");
-    expect(result.stdout).not.toContain("--source");
+    expect(result.stdout).not.toContain("--marketplace");
+    expect(result.stdout, WITHDRAWN_FLAG_REASON).not.toContain("--source");
   });
 
   it("should no longer resolve validate as a command", async () => {
@@ -89,10 +102,10 @@ describe("help and version", () => {
     );
   });
 
-  it("should no longer resolve any new subcommand as a command", async () => {
+  it("should resolve no new subcommand but marketplace", async () => {
     tempDir = await createTempDir();
 
-    for (const subcommand of ["skill", "agent", "marketplace"]) {
+    for (const subcommand of ["skill", "agent"]) {
       const result = await CLI.run(["new", subcommand], { dir: tempDir });
 
       expect(result.exitCode, `new ${subcommand}`).toBe(EXIT_CODES.UNKNOWN_COMMAND);
@@ -101,6 +114,24 @@ describe("help and version", () => {
         `new ${subcommand} was deleted, so it must not resolve at all`,
       ).toContain(`new ${subcommand} is not a`);
     }
+  });
+
+  it("should display new marketplace help, which names no marketplace flag", async () => {
+    tempDir = await createTempDir();
+    const result = await CLI.run(["new", "marketplace", "--help"], { dir: tempDir });
+
+    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(result.stdout).toContain("Scaffold a marketplace");
+    expect(result.stdout).toContain("USAGE");
+    expect(
+      result.stdout,
+      "the name is the subject of this command, so it is an argument rather than a flag",
+    ).not.toContain("--marketplace");
+    expect(result.stdout, WITHDRAWN_FLAG_REASON).not.toContain("--source");
+    expect(
+      result.stdout,
+      "a scaffold that overwrites an author's own files is the destructive half of a silent fallback",
+    ).not.toContain("--force");
   });
 
   // `help <cmd>` is a routing claim, not a content one. Three `it`s previously ran
@@ -130,8 +161,9 @@ describe("help and version", () => {
     expect(result.stdout).toContain("USAGE");
     expect(
       result.stdout,
-      "naming a source is init's decision, so edit offers the catalogue config.ts names",
-    ).not.toContain("--source");
+      "naming a marketplace is init's decision, so edit offers the catalogue config.ts names",
+    ).not.toContain("--marketplace");
+    expect(result.stdout, WITHDRAWN_FLAG_REASON).not.toContain("--source");
     expect(result.stdout, "every load revalidates, so there is nothing to force").not.toContain(
       "--refresh",
     );

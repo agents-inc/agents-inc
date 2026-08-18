@@ -30,7 +30,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { CLAUDE_DIR } from "../../src/cli/consts.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * A scope directory (`.claude/skills/`, `.claude/agents/`) is an artefact of what
@@ -49,10 +50,10 @@ const webDeveloperStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactSkillMetadata = renderMetadataYaml({
-  displayName: E2E_SKILL.react.id,
+  displayName: E2E_SKILL.react.display,
   category: "web-framework",
   slug: E2E_SKILL.react.slug,
   cliDescription: "E2E test skill",
@@ -107,7 +108,7 @@ describe("empty scope directories", () => {
       projectDir,
       buildProjectConfig({
         name: "project-scoped-install",
-        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", source: "eject" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
         agents: buildAgentConfigs(agents, { scope: "project" }),
         selectedDomains: ["web"],
         ...(agents.length > 0 && { stack: webDeveloperStack }),
@@ -319,7 +320,7 @@ describe("empty scope directories", () => {
         globalHome,
         buildProjectConfig({
           name: "last-skill-global",
-          skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+          skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
           selectedDomains: ["web"],
           stack: webDeveloperStack,
@@ -344,7 +345,7 @@ describe("empty scope directories", () => {
         env: { HOME: globalHome },
         ...TERMINAL_SIZE.TALL,
       });
-      await wizard.build.selectSkill(E2E_SKILL.react.id);
+      await wizard.build.selectSkill(E2E_SKILL.react.display);
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
       const agents = await sources.advance();

@@ -18,6 +18,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Plugin-mode uninstall E2E tests — edge cases.
@@ -52,20 +53,20 @@ async function createUninstallableProject(
     name: options.configName,
     skills: [
       {
-        id: "web-framework-react",
+        id: E2E_SKILL.react.id,
         scope: "project",
-        source: options.skillSource,
+        origin: options.skillSource,
       },
     ],
     agents: [{ name: "web-developer", scope: "project" }],
     selectedDomains: ["web"],
   });
 
-  const skillDir = path.join(skillsPath(projectDir), "web-framework-react");
+  const skillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
   await mkdir(skillDir, { recursive: true });
   await writeFile(
     path.join(skillDir, FILES.SKILL_MD),
-    renderSkillMd("web-framework-react", "React framework", "# React\n\nTest content."),
+    renderSkillMd(E2E_SKILL.react.id, "React framework", "# React\n\nTest content."),
   );
   await writeFile(path.join(skillDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
 

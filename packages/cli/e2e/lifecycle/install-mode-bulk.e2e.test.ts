@@ -89,9 +89,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         const initResult = await completeWithLocalSources(initWizard);
 
         await expectPhaseSuccess(initResult, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: "eject",
-          copiedSkills: ["web-framework-react"],
+          copiedSkills: [E2E_SKILL.react.id],
         });
         await initResult.destroy();
 
@@ -111,7 +111,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         const editResult = await editConfirm.confirm();
 
         await expectPhaseSuccess(editResult, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: fixture.marketplaceName,
           compiledAgents: E2E_AGENTS.WEB_AND_API,
         });
@@ -152,7 +152,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         const initResult = await initWizard.completeWithDefaults();
 
         await expectPhaseSuccess(initResult, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: fixture.marketplaceName,
           compiledAgents: E2E_AGENTS.WEB_AND_API,
         });
@@ -171,9 +171,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         const editResult = await editConfirm.confirm();
 
         await expectPhaseSuccess(editResult, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: "eject",
-          copiedSkills: ["web-framework-react"],
+          copiedSkills: [E2E_SKILL.react.id],
         });
 
         const rawOutput = editResult.rawOutput;

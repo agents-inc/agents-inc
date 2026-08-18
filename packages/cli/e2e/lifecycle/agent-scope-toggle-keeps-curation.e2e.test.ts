@@ -15,7 +15,8 @@ import {
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * A sub-agent's scope decides WHERE it lives, never WHAT it knows.
@@ -41,11 +42,11 @@ const CURATED_GLOBAL_STACK = {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
     "api-api": [{ id: E2E_SKILL.hono.id }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const GLOBAL_SKILL_CONFIGS = [
-  { id: E2E_SKILL.react.id, scope: "global" as const, source: "eject" },
-  { id: E2E_SKILL.hono.id, scope: "global" as const, source: "eject" },
+  { id: E2E_SKILL.react.id, scope: "global" as const, origin: "eject" },
+  { id: E2E_SKILL.hono.id, scope: "global" as const, origin: "eject" },
 ];
 
 describe("a sub-agent moved from global to project scope", () => {
@@ -88,13 +89,23 @@ describe("a sub-agent moved from global to project scope", () => {
     });
 
     for (const skill of [
-      { id: E2E_SKILL.react.id, category: "web-framework", slug: E2E_SKILL.react.slug },
-      { id: E2E_SKILL.hono.id, category: "api-api", slug: E2E_SKILL.hono.slug },
+      {
+        id: E2E_SKILL.react.id,
+        display: E2E_SKILL.react.display,
+        category: "web-framework",
+        slug: E2E_SKILL.react.slug,
+      },
+      {
+        id: E2E_SKILL.hono.id,
+        display: E2E_SKILL.hono.display,
+        category: "api-api",
+        slug: E2E_SKILL.hono.slug,
+      },
     ] as const) {
       await createLocalSkill(tempHome, skill.id, {
         description: `${skill.id} skill`,
         metadata: renderMetadataYaml({
-          displayName: skill.id,
+          displayName: skill.display,
           category: skill.category,
           slug: skill.slug,
           contentHash: `e2e-hash-${skill.slug}`,

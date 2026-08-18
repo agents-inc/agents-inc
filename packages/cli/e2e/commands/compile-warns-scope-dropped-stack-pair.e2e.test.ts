@@ -47,7 +47,7 @@ describe("compile over a hand-edited stack pair the scope rule forbids", () => {
     // installed and project-scoped, the sub-agent carrying it is global-scoped.
     await writeProjectConfig(projectDir, {
       name: "scope-dropped-pair",
-      skills: [{ id: E2E_SKILL.react.id, scope: "project", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -60,7 +60,7 @@ describe("compile over a hand-edited stack pair the scope rule forbids", () => {
     await createLocalSkill(projectDir, E2E_SKILL.react.id, {
       description: "React skill for the dropped-pair guard",
       metadata: renderMetadataYaml({
-        displayName: E2E_SKILL.react.id,
+        displayName: E2E_SKILL.react.display,
         category: "web-framework",
         slug: E2E_SKILL.react.slug,
         contentHash: "hash-dropped-pair",

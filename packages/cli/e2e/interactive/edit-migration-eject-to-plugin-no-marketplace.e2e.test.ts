@@ -58,7 +58,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
     async () => {
       // Eject-mode project with no `marketplace` field in config.ts.
       const project = await ProjectBuilder.editable({
-        source: localSource.sourceDir,
+        marketplace: localSource.sourceDir,
         skills: [E2E_SKILL.react.id],
         agents: [...E2E_AGENTS.WEB],
         domains: ["web"],

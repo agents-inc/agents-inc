@@ -48,7 +48,7 @@ describe("unique skill in category guard", () => {
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-testing-vitest"],
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -72,7 +72,7 @@ describe("unique skill in category guard", () => {
 
       // Config should reflect the deselection (vitest removed, only react remains)
       await expectPhaseSuccess(result, {
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         compiledAgents: ["web-developer"],
       });
@@ -86,7 +86,7 @@ describe("unique skill in category guard", () => {
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
       });

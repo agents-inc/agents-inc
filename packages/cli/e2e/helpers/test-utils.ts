@@ -12,6 +12,7 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../src/cli/consts.js";
+import { cliVersion, stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import { DEFAULT_SOURCE } from "../../src/cli/lib/configuration/config.js";
 import { sanitizeSourceForCache } from "../../src/cli/lib/loading/source-fetcher.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
@@ -37,8 +38,9 @@ import type {
   Marketplace,
   PluginManifest,
   ProjectConfig,
-  SkillId,
 } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { e2eSkillId } from "../pages/constants.js";
 import type { InitWizard } from "../pages/wizards/init-wizard.js";
 import type { WizardResult } from "../pages/wizard-result.js";
 
@@ -82,11 +84,61 @@ export const FORKED_FROM_METADATA = renderMetadataYaml({
   cliDescription: "E2E forked skill",
   usageGuidance: "Use when testing fork provenance in E2E scenarios",
   contentHash: "e2eab01",
-  forkedFrom: { skillId: "web-framework-react", contentHash: "e2eab01", date: "2026-01-01" },
+  forkedFrom: {
+    skillId: e2eSkillId("web-framework-react"),
+    contentHash: "e2eab01",
+    date: "2026-01-01",
+  },
 });
+
+/**
+ * The config shapes a fixture builds, with their skill ids widened to `string` —
+ * the seam where the fixture marketplace's namespace meets the production types.
+ * Re-exported here because every E2E fixture reaches them through this module;
+ * wizard-simulation.ts owns them, beside the factory that first has to name one.
+ */
+export type {
+  FixtureProjectConfig,
+  FixtureSkillAssignment,
+  FixtureSkillConfig,
+  FixtureStackAgentConfig,
+} from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 export async function createTempDir(): Promise<string> {
   return createTempDirBase(E2E_TEMP_PREFIX);
+}
+
+/** A fake HOME plus the Claude CLI config tree that belongs to it. */
+export type IsolatedClaudeHome = {
+  /** What a spawned CLI's `os.homedir()` resolves to. */
+  home: string;
+  /** `<home>/.claude` — pass as `CLAUDE_CONFIG_DIR` or `{ configDir }`. */
+  configDir: string;
+};
+
+/**
+ * Allocates a fake HOME and names the Claude config tree inside it.
+ *
+ * The config dir is not a second isolation mechanism beside the fake HOME — it
+ * is the directory that HOME already implies, said out loud. Two things make
+ * saying it necessary. `CLAUDE_CONFIG_DIR` BEATS `HOME` in the Claude CLI, so an
+ * exported one silently overrides every fake HOME in the suite; and a helper
+ * called in-process (a worker importing `claudePlugin*` directly) has no fake
+ * HOME to inherit at all, so its writes land in the developer's own
+ * installation. `<home>/.claude` is also exactly where our CLI reads the plugin
+ * registry from under the same HOME, so both binaries see one installation.
+ *
+ * Cleanup is `cleanupTempDir(home)`: the registry files live inside the tree, so
+ * removing it removes every registration the run made.
+ */
+export async function createIsolatedClaudeHome(): Promise<IsolatedClaudeHome> {
+  const home = await createTempDir();
+  return { home, configDir: claudeConfigDir(home) };
+}
+
+/** The Claude CLI config tree belonging to a HOME. */
+export function claudeConfigDir(home: string): string {
+  return path.join(home, CLAUDE_DIR);
 }
 
 /** Wait for the given number of milliseconds. Shared delay utility for PTY-based tests. */
@@ -128,6 +180,21 @@ export async function cleanupFixture(fixture: { tempDir: string } | undefined): 
   if (fixture !== undefined) await cleanupTempDir(fixture.tempDir);
 }
 
+/**
+ * Removes an isolated Claude home, tolerating one that was never allocated.
+ *
+ * The `cleanupFixture` reasoning, for the other resource a plugin spec allocates
+ * in `beforeAll`: `let isolated: IsolatedClaudeHome;` reads as definitely
+ * assigned, so an inline `if (isolated)` is both a lint error and no guard at
+ * all — while a `beforeAll` that throws before the assignment leaves `afterAll`
+ * masking the real setup failure with a TypeError.
+ */
+export async function cleanupIsolatedClaudeHome(
+  isolated: IsolatedClaudeHome | undefined,
+): Promise<void> {
+  if (isolated !== undefined) await cleanupTempDir(isolated.home);
+}
+
 export {
   cleanupTempDir,
   directoryExists,
@@ -143,14 +210,14 @@ export {
 };
 
 /**
- * Records `source` in an install's config.ts, the way `init --source` leaves it.
+ * Records `source` in an install's config.ts, the way `init --marketplace` leaves it.
  *
  * `baseDirs` is searched in resolution order — the project directory, then the global HOME —
  * because that is the order `resolveSource` reads them in: the first config that exists is the
  * one a later command's source comes out of, and recording behind it would change nothing.
  *
- * Naming a source is an install-time decision: `--source` is `init`'s flag alone and
- * `CC_SOURCE` is `init`'s environment, so every later command reads the source out of
+ * Naming a source is an install-time decision: `--marketplace` is `init`'s flag alone and
+ * `CC_MARKETPLACE` is `init`'s environment, so every later command reads the source out of
  * the config. A fixture that hand-writes an install therefore has to leave the source
  * where those commands look, and this is that step.
  *
@@ -162,9 +229,9 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
   for (const baseDir of baseDirs) {
     const loaded = await loadProjectConfigFromDir(baseDir);
     if (!loaded) continue;
-    if (loaded.config.source === undefined) {
+    if (loaded.config.marketplace === undefined) {
       const { name = "e2e-project", ...rest } = loaded.config;
-      await writeProjectConfig(baseDir, { ...rest, name, source });
+      await writeProjectConfig(baseDir, { ...rest, name, marketplace: source });
     }
     return;
   }
@@ -177,9 +244,9 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
 /** Write a config.ts file to the .claude-src/ directory of the given base dir. */
 export async function writeProjectConfig(
   baseDir: string,
-  config: Partial<ProjectConfig> & Pick<ProjectConfig, "name">,
+  config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
 ): Promise<void> {
-  const resolved: ProjectConfig = { skills: [], agents: [], ...config };
+  const resolved: FixtureProjectConfig = { skills: [], agents: [], ...config };
   const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(resolved));
@@ -264,6 +331,13 @@ export function stripAnsi(text: string): string {
  * auto-created directory is removed after the run. Callers that need a specific
  * HOME override via options.env.HOME; an explicit value always wins and is
  * never auto-removed.
+ *
+ * `CLAUDE_CONFIG_DIR` is derived from whichever HOME wins, and is not
+ * overridable, for the same reason `CLI.run` clears `CC_MARKETPLACE`: it is the
+ * Claude CLI's own config override, it BEATS `HOME`, and a developer's exported
+ * value would send every `claude plugin` call this command makes into their real
+ * installation. A value disagreeing with the effective HOME is the bug, not a
+ * configuration.
  */
 export async function runCLI(
   args: string[],
@@ -275,15 +349,12 @@ export async function runCLI(
   stderr: string;
   combined: string;
 }> {
-  const explicitHome = options?.env?.HOME;
-  const autoHomeDir =
-    typeof explicitHome === "string" ? undefined : await createTempDirBase(AUTO_HOME_PREFIX);
-  const home = autoHomeDir ?? explicitHome;
+  const { home, autoCreated } = await resolveRunHome(options?.env?.HOME);
   try {
     const result = await execa("node", [BIN_RUN, ...args], {
       cwd,
       reject: false,
-      env: { ...options?.env, HOME: home },
+      env: { ...options?.env, HOME: home, CLAUDE_CONFIG_DIR: claudeConfigDir(home) },
     });
     return {
       exitCode: result.exitCode ?? 1,
@@ -292,10 +363,18 @@ export async function runCLI(
       combined: stripAnsi(result.stdout + result.stderr),
     };
   } finally {
-    if (autoHomeDir) {
-      await cleanupTempDir(autoHomeDir);
+    if (autoCreated) {
+      await cleanupTempDir(home);
     }
   }
+}
+
+/** The HOME a `runCLI` uses, and whether this call is the one that must remove it. */
+async function resolveRunHome(
+  explicitHome: string | undefined,
+): Promise<{ home: string; autoCreated: boolean }> {
+  if (explicitHome !== undefined) return { home: explicitHome, autoCreated: false };
+  return { home: await createTempDirBase(AUTO_HOME_PREFIX), autoCreated: true };
 }
 
 export async function listFiles(dirPath: string): Promise<string[]> {
@@ -370,7 +449,7 @@ export async function readPluginVersions(
  */
 export async function createLocalSkill(
   projectDir: string,
-  skillId: SkillId,
+  skillId: string,
   options?: { description?: string; body?: string; metadata?: string },
 ): Promise<string> {
   const skillDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId);
@@ -400,6 +479,13 @@ type AgentFileOptions = {
   body?: string;
   /** Prefix the body with a `---\nname: <agentName>\n---\n` block. */
   frontmatter?: boolean;
+  /**
+   * Stamp the provenance marker the compiler writes into every agent it produces. Frontmatter
+   * alone is the shape of a compile, not the claim: once no configuration names the file, the
+   * marker is the only thing that says this CLI wrote it, and both `doctor`'s unowned-install
+   * row and `uninstall`'s removal plan decide on it.
+   */
+  provenance?: boolean;
 };
 
 /**
@@ -422,7 +508,10 @@ export async function writeAgentFile(
 
   const body = options?.body ?? `# ${agentName}\n`;
   const frontmatter = `---\nname: ${agentName}\ndescription: Test ${agentName} agent\n---\n`;
-  const content = options?.frontmatter ? `${frontmatter}${body}` : body;
+  const rendered = options?.frontmatter ? `${frontmatter}${body}` : body;
+  const content = options?.provenance
+    ? stampProvenanceMarker(rendered, await cliVersion())
+    : rendered;
 
   await writeFile(path.join(agentsDir, `${agentName}.md`), content);
 }
@@ -602,25 +691,29 @@ export async function completeWithLocalSources(wizard: InitWizard): Promise<Wiza
 }
 
 /**
- * Add forkedFrom metadata to the default `web-framework-react` skill
- * created by `ProjectBuilder.editable()`.
+ * Add forkedFrom metadata to one installed skill — typically the one
+ * `ProjectBuilder.editable()` wrote.
  *
  * This marks the skill as CLI-managed so `uninstall` will remove it
  * instead of skipping it as user-created.
+ *
+ * `skillId` is named by the caller rather than defaulted here: the directory it
+ * addresses is the fixture marketplace's namespaced id, and this module cannot
+ * reach the fixture's own constants without an import cycle.
  */
-export async function addForkedFromMetadata(projectDir: string): Promise<void> {
+export async function addForkedFromMetadata(projectDir: string, skillId: string): Promise<void> {
   const metadataPath = path.join(
     projectDir,
     CLAUDE_DIR,
     STANDARD_DIRS.SKILLS,
-    "web-framework-react",
+    skillId,
     STANDARD_FILES.METADATA_YAML,
   );
   await writeFile(metadataPath, FORKED_FROM_METADATA);
 }
 
 /**
- * Injects a marketplace field into an existing config.ts.
+ * Injects the marketplace NAME field into an existing config.ts.
  * Used by lifecycle tests that need to switch from local to plugin source.
  */
 export async function injectMarketplaceIntoConfig(
@@ -640,7 +733,7 @@ export async function injectMarketplaceIntoConfig(
   const insertAt = idx + marker.length;
   const patched =
     content.slice(0, insertAt) +
-    `\n  "marketplace": "${marketplaceName}",` +
+    `\n  "marketplaceName": "${marketplaceName}",` +
     content.slice(insertAt);
 
   await writeFile(configPath, patched, "utf-8");
@@ -658,7 +751,9 @@ export {
   isClaudeCLIAvailable,
   claudePluginMarketplaceAdd,
   claudePluginMarketplaceList,
+  claudePluginMarketplaceRemove,
   claudePluginInstall,
   claudePluginUninstall,
   execCommand,
 } from "../../src/cli/utils/exec.js";
+export type { ClaudeConfigOptions, MarketplaceInfo } from "../../src/cli/utils/exec.js";

@@ -13,7 +13,7 @@ import "../matchers/setup.js";
 
 /**
  * The built-in stack catalogue belongs to the default public marketplace and to
- * nothing else. A custom `--source` marketplace offers the stacks it ships or
+ * nothing else. A custom `--marketplace` marketplace offers the stacks it ships or
  * none at all — and a marketplace that ships none leaves the wizard's stack step
  * with nothing to choose between, so the wizard opens past it rather than
  * offering a catalogue the user never named.
@@ -97,7 +97,7 @@ describe("init wizard — stacks belong to the marketplace that ships them", () 
 
   describe("the default public marketplace", () => {
     it("offers the built-in stacks", async () => {
-      wizard = await InitWizard.launch({ noSource: true, env: { CC_SOURCE: undefined } });
+      wizard = await InitWizard.launch({ noSource: true, env: { CC_MARKETPLACE: undefined } });
 
       const output = wizard.stack.getOutput();
       expect(output).toContain(BUILT_IN_STACK_DISPLAY);

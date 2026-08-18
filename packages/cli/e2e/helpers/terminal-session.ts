@@ -95,6 +95,13 @@ export class TerminalSession {
       HOME: home,
       NO_COLOR: "1",
       FORCE_COLOR: "0",
+      // The harness's own variable, never the product's. `warn({ suppressInTest: true })`
+      // (src/cli/utils/logger.ts) reads it, so a spread of process.env silences
+      // user-facing warnings in every spawned binary — and a spec asserting one of those
+      // lines passes by not looking. Cleared here rather than gated in the product,
+      // because a spawned bin/run.js is a user's binary and should see a user's
+      // environment. `CLI.run` clears it for the same reason on its own side.
+      VITEST: undefined,
       // CI and GITHUB_ACTIONS pass through untouched, and that is load-bearing:
       // the CLI's own render wrapper (src/cli/components/render.ts) must trust
       // the real pseudo-terminal this harness provides over the CI variables.

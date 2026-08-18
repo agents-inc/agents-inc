@@ -16,6 +16,7 @@ import {
   ensureBinaryExists,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Full lifecycle E2E test for plugin mode: Init -> Uninstall.
@@ -71,10 +72,10 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
 
       await expectPhaseSuccess(initResult, {
         skillIds: [
-          "web-framework-react",
-          "web-testing-vitest",
-          "web-state-zustand",
-          "api-framework-hono",
+          E2E_SKILL.react.id,
+          E2E_SKILL.vitest.id,
+          E2E_SKILL.zustand.id,
+          E2E_SKILL.hono.id,
         ],
         agents: ["web-developer", "api-developer"],
         source: fixture.marketplaceName,
@@ -83,7 +84,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       const initOutput = initResult.output;
       expect(initOutput).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
       expect(initOutput).toContain(STEP_TEXT.PLUGIN_NATIVE);
-      expect(initOutput).toContain(`Installed web-framework-react@${fixture.marketplaceName}`);
+      expect(initOutput).toContain(`Installed ${E2E_SKILL.react.id}@${fixture.marketplaceName}`);
       expect(initOutput).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
       // Settings file exists with permissions
@@ -103,7 +104,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
         ["uninstall", "--yes"],
         { dir: projectDir },
         {
-          env: { CC_SOURCE: undefined },
+          env: { CC_MARKETPLACE: undefined },
         },
       );
 

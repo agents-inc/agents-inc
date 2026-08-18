@@ -12,8 +12,9 @@ import {
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
-import { EXIT_CODES, FILES } from "../pages/constants.js";
-import type { SkillId } from "../../src/cli/types/index.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * One installed skill whose metadata.yaml is syntactically broken must not
@@ -23,8 +24,8 @@ import type { SkillId } from "../../src/cli/types/index.js";
  */
 
 /** Skills installed into the fixture project. Only the second one is corrupted. */
-const HEALTHY_SKILL: SkillId = "web-framework-react";
-const BROKEN_SKILL: SkillId = "web-testing-vitest";
+const HEALTHY_SKILL: string = E2E_SKILL.react.id;
+const BROKEN_SKILL: string = E2E_SKILL.vitest.id;
 
 /** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
@@ -35,7 +36,7 @@ async function createProjectWithOneBrokenMetadata(source: string): Promise<{
   brokenMetadataPath: string;
 }> {
   const project = await ProjectBuilder.editable({
-    source,
+    marketplace: source,
     skills: [HEALTHY_SKILL, BROKEN_SKILL],
     agents: ["web-developer"],
   });
@@ -71,7 +72,7 @@ describe("installed skill with unparseable metadata.yaml", () => {
 
   it("search and doctor both succeed while every metadata.yaml is parseable", async () => {
     const project = await ProjectBuilder.editable({
-      source: source.sourceDir,
+      marketplace: source.sourceDir,
       skills: [HEALTHY_SKILL, BROKEN_SKILL],
       agents: ["web-developer"],
     });
@@ -118,13 +119,15 @@ describe("installed skill with unparseable metadata.yaml", () => {
 
     const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.projectDir });
 
-    expect(stdout, "a corrupt local skill is not a source failure").not.toContain(
-      "Failed to load source",
+    expect(stdout, "a corrupt local skill is not a marketplace failure").not.toContain(
+      STEP_TEXT.DOCTOR_MARKETPLACE_LOAD_FAILED,
     );
     expect(stdout, "the skills diagnostic must not be disabled").not.toContain(
-      "Skipped (source unreachable)",
+      STEP_TEXT.DOCTOR_SKILLS_SKIPPED_UNREACHABLE,
     );
-    expect(stdout, "the configured source validated cleanly").toContain("1 source validated");
+    expect(stdout, "the configured marketplace validated cleanly").toContain(
+      STEP_TEXT.DOCTOR_ONE_MARKETPLACE_VALIDATED,
+    );
     expect(stdout, "the offending skill must be named").toContain(BROKEN_SKILL);
     expect(stdout, "the offending file must be named").toContain(FILES.METADATA_YAML);
     expect(exitCode, "an unparseable installed metadata.yaml is a content error").toBe(

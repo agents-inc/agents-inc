@@ -186,7 +186,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: [E2E_SKILL.react.id],
-          marketplace: fixture.marketplaceName,
+          marketplaceName: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
         });
@@ -246,7 +246,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: [E2E_SKILL.react.id],
-          marketplace: fixture.marketplaceName,
+          marketplaceName: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
           omitMarketplaceField: true,

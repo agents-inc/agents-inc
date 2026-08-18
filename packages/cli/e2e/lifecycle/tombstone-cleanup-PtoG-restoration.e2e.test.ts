@@ -10,6 +10,7 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -95,7 +96,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(reactEntries[0]).toStrictEqual({
         id: E2E_SKILL.react.id,
         scope: "global",
-        source: "eject",
+        origin: "eject",
       });
 
       // No project-scope entry for react may remain.
@@ -125,9 +126,15 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
         fakeHome,
         sourceDir,
         sourceTempDir,
-        E2E_SKILL.react.id,
+        E2E_SKILL.react.display,
       );
       expect(badges).toStrictEqual(["G"]);
+
+      // The tombstone is gone from config.ts; the generated pair beside it was rewritten in the
+      // same pass and has to still narrow at both scopes, or the cleanup traded one silent
+      // inconsistency for another.
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 
@@ -177,12 +184,15 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(entriesPhase3[0]).toStrictEqual({
         id: E2E_SKILL.react.id,
         scope: "global",
-        source: "eject",
+        origin: "eject",
       });
       expect(entriesPhase3.filter((entry) => entry.excluded === true)).toStrictEqual([]);
       expect(entriesPhase3.filter((entry) => entry.scope === "project")).toStrictEqual([]);
       expect(await directoryExists(globalSkillDir)).toBe(true);
       expect(await directoryExists(projectSkillDir)).toBe(false);
+
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 
@@ -223,7 +233,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(reactEntries[0]).toStrictEqual({
         id: E2E_SKILL.react.id,
         scope: "global",
-        source: "eject",
+        origin: "eject",
       });
       expect(reactEntries.filter((entry) => entry.excluded === true)).toStrictEqual([]);
       expect(reactEntries.filter((entry) => entry.scope === "project")).toStrictEqual([]);
@@ -246,9 +256,12 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
         fakeHome,
         sourceDir,
         sourceTempDir,
-        E2E_SKILL.react.id,
+        E2E_SKILL.react.display,
       );
       expect(badges).toStrictEqual(["G"]);
+
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 });

@@ -2,7 +2,7 @@ import path from "path";
 import { writeFile } from "fs/promises";
 import { CLI } from "../fixtures/cli.js";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
+import { E2E_MARKETPLACE_PREFIX, EXIT_CODES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupFixture,
@@ -15,10 +15,27 @@ import {
   writeTestPackageJson,
   type E2ESource,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL_IDS } from "../fixtures/expected-values.js";
+import { E2E_MARKETPLACE_NAME, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /** The summary line `build plugins` prints for every skill the E2E source carries. */
 const SKILL_PLUGINS_COMPILED_LINE = `Compiled ${E2E_SKILL_IDS.length} skill plugins`;
+
+/**
+ * A name the fixture source's skills do NOT belong to. Their ids carry
+ * {@link E2E_MARKETPLACE_NAME}, so publishing under this one is exactly the mistake
+ * the namespace validator exists to catch. It keeps {@link E2E_MARKETPLACE_PREFIX}
+ * so the stale-registration sweep would still reach it if a run ever published it.
+ */
+const FOREIGN_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}other-marketplace`;
+
+/**
+ * The public catalogue's implicit namespace — reserved, and no author's to take.
+ * Taken from the constant that names the catalogue rather than spelled out, so the
+ * two cannot drift apart into a test that reserves a name nothing else uses.
+ */
+const RESERVED_MARKETPLACE_NAME = DEFAULT_PUBLIC_SOURCE_NAME;
 
 describe("build commands", () => {
   let tempDir: string;
@@ -97,7 +114,7 @@ describe("build commands", () => {
     });
 
     it("should log per-skill compilation lines only under --verbose", async () => {
-      const perSkillLinePrefix = `Compiling skill plugin: ${E2E_SKILL_IDS[0]}`;
+      const perSkillLinePrefix = `Compiling skill plugin: ${firstElement(E2E_SKILL_IDS)}`;
       // Its own output directory, so the sibling spec's assertion that the
       // default `dist/plugins` stayed empty does not depend on test order.
       const outputDir = path.join(source.sourceDir, "verbose-plugins");
@@ -229,6 +246,68 @@ describe("build commands", () => {
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.owner.name).toBe("Jane Doe");
       expect(marketplace.owner.email).toBe("jane@example.com");
+    });
+
+    it("should refuse a reserved marketplace name before scanning anything", async () => {
+      tempDir = await createTempDir();
+      await writeTestPackageJson(tempDir, { name: RESERVED_MARKETPLACE_NAME });
+      const outputPath = path.join(tempDir, "marketplace.json");
+
+      const { exitCode, output } = await CLI.run(["build", "marketplace", "--output", outputPath], {
+        dir: tempDir,
+      });
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
+      expect(collapsed).toContain(RESERVED_MARKETPLACE_NAME);
+      expect(collapsed).toContain("reserved");
+      expect(await fileExists(outputPath)).toBe(false);
+    });
+
+    describe("a repository published under a name its skills do not carry", () => {
+      let source: E2ESource;
+      let outputPath: string;
+
+      beforeAll(async () => {
+        source = await createE2ESource();
+        outputPath = path.join(source.sourceDir, "marketplace.json");
+        const built = await CLI.run(["build", "plugins"], { dir: source.sourceDir });
+        expect(built.exitCode, built.output).toBe(EXIT_CODES.SUCCESS);
+        await writeTestPackageJson(source.sourceDir, { name: FOREIGN_MARKETPLACE_NAME });
+      }, TIMEOUTS.SETUP);
+
+      afterAll(async () => {
+        await cleanupFixture(source);
+      });
+
+      it("should refuse the build, naming the offending id and the id it expected", async () => {
+        const { exitCode, output } = await CLI.run(
+          ["build", "marketplace", "--output", outputPath],
+          { dir: source.sourceDir },
+        );
+
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
+        expect(collapsed).toContain(FOREIGN_MARKETPLACE_NAME);
+        expect(collapsed).toContain(E2E_SKILL.react.id);
+        expect(collapsed).toContain(`${FOREIGN_MARKETPLACE_NAME}-${E2E_SKILL.react.id}`);
+        expect(await fileExists(outputPath)).toBe(false);
+      });
+
+      it("should build the same plugins once published under the name they carry", async () => {
+        await writeTestPackageJson(source.sourceDir, { name: E2E_MARKETPLACE_NAME });
+
+        const { exitCode } = await CLI.run(["build", "marketplace", "--output", outputPath], {
+          dir: source.sourceDir,
+        });
+
+        expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+        const marketplace = await readMarketplaceJson(outputPath);
+        expect(marketplace.name).toBe(E2E_MARKETPLACE_NAME);
+        expect(marketplace.plugins.map((plugin) => plugin.name).sort()).toStrictEqual(
+          [...E2E_SKILL_IDS].sort(),
+        );
+      });
     });
 
     it("should error naming the missing field when package.json lacks 'version'", async () => {

@@ -83,8 +83,8 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "setup must persist an active project entry plus a global tombstone",
       ).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
       ]);
 
       const projectConfigPath = configTsPath(projectDir);
@@ -149,8 +149,8 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
         "an aborted session must not rewrite config.ts",
       ).toBe(configBefore);
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
       ]);
       expect(
         await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.react.id)),

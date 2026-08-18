@@ -65,7 +65,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
     async () => {
       // BEFORE: Verify global web-developer contains web-framework-react
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-framework-react"],
+        contains: [E2E_SKILL.react.id],
       });
 
       // ACTION: Launch EditWizard, toggle web-framework-react scope to project
@@ -96,18 +96,18 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       // Global web-developer.md: STILL contains web-framework-react
       // (mergeGlobalConfigs preserves existing skills in the global config)
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-framework-react"],
+        contains: [E2E_SKILL.react.id],
       });
 
       // Skill directory exists at project scope (G->P is additive — skill copied to project)
-      const projectSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       expect(
         await directoryExists(projectSkillDir),
         "web-framework-react must exist at project scope after G->P toggle",
       ).toBe(true);
 
       // Skill directory still exists at global scope (global config preserves it)
-      const globalSkillDir = path.join(skillsPath(fakeHome), "web-framework-react");
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       expect(
         await directoryExists(globalSkillDir),
         "web-framework-react must still exist at global scope (preserved by mergeGlobalConfigs)",
@@ -115,7 +115,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
 
       // Project config has web-framework-react with project scope
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
       });
 
       await result.destroy();
@@ -128,7 +128,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["api-framework-hono"],
+        contains: [E2E_SKILL.hono.id],
       });
 
       // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
@@ -166,17 +166,17 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
       // The agent still references the skill — it is now resolved from the global install.
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["api-framework-hono"],
+        contains: [E2E_SKILL.hono.id],
       });
 
       // The global install survives; the project override is gone.
-      const globalSkillDir = path.join(skillsPath(fakeHome), "api-framework-hono");
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
       expect(
         await directoryExists(globalSkillDir),
         "api-framework-hono must remain at global scope (P→G leaves the global install intact)",
       ).toBe(true);
 
-      const projectSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       expect(
         await directoryExists(projectSkillDir),
         "api-framework-hono must be removed from project scope after the `s` collapse",
@@ -192,7 +192,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["api-framework-hono"],
+        contains: [E2E_SKILL.hono.id],
       });
 
       // ACTION: Launch EditWizard, pass through build domains, toggle api-developer agent to global

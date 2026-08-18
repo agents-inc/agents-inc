@@ -320,9 +320,9 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       const projectConfig = await loadConfigOrFail(env.projectDir);
       expect(projectConfig.skills).toStrictEqual([
         ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global" }),
-        ...buildSkillConfigs([E2E_SKILL.react.id], { source: fixture.marketplaceName }),
+        ...buildSkillConfigs([E2E_SKILL.react.id], { origin: fixture.marketplaceName }),
       ]);
-      expect(projectConfig.marketplace).toBe(fixture.marketplaceName);
+      expect(projectConfig.marketplaceName).toBe(fixture.marketplaceName);
 
       // A plugin skill is registered with the Claude CLI, never copied — so the project's skills
       // directory holds nothing, and only the ejected global one reaches HOME.
@@ -386,11 +386,11 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       expect(homeConfig.skills).toStrictEqual([
         ...buildSkillConfigs([E2E_SKILL.react.id], {
           scope: "global",
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
         }),
         ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global" }),
       ]);
-      expect(homeConfig.marketplace).toBe(fixture.marketplaceName);
+      expect(homeConfig.marketplaceName).toBe(fixture.marketplaceName);
 
       // Only the ejected skill is copied; the plugin one is registered instead.
       expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([E2E_SKILL.vitest.id]);

@@ -17,7 +17,7 @@ import {
   writeProjectConfig,
   addForkedFromMetadata,
 } from "../helpers/test-utils.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
@@ -44,6 +44,12 @@ describe("uninstall command", () => {
     expect(stdout).toContain("--yes");
     // The --all flag was removed; the config manifest is now always uninstalled
     expect(stdout).not.toContain("--all");
+    // The description qualifies WHICH skills it removes — "matched by source" is the one
+    // place this command's help names the thing an installation reads from.
+    expect(
+      stdout,
+      "the description names the marketplace its matching is against, not a source",
+    ).not.toMatch(/\bsources?\b/i);
   });
 
   it("should warn when no installation is found", async () => {
@@ -69,12 +75,12 @@ describe("uninstall command", () => {
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
 
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     // Overwrite config with source field so skills match
     await writeProjectConfig(projectDir, {
       name: "test-edit-project",
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       selectedDomains: ["web"],
     });
@@ -140,7 +146,7 @@ describe("uninstall command", () => {
       renderMetadataYaml({ author: "@user", contentHash: "user-hash" }),
     );
 
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     const { exitCode, output } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
@@ -184,7 +190,7 @@ describe("uninstall command", () => {
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
 
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 

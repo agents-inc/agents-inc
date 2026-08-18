@@ -11,7 +11,7 @@ import "../matchers/setup.js";
  * machine-independent order (alphabetical by displayName), not in matrix
  * readdir/insertion order. In the E2E source the web-framework category holds
  * two skills whose titles sort Vue before react ("Vue Composition Api" < the
- * "web-framework-react" title), so Vue must render first in the row.
+ * web-framework-react title), so Vue must render first in the row.
  */
 describe("build step — deterministic category ordering", () => {
   let source: E2ESource;

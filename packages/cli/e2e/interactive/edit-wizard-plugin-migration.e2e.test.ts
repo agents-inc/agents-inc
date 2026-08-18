@@ -47,7 +47,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
       async () => {
         const project = await ProjectBuilder.localProjectWithMarketplace({
           skills: [E2E_SKILL.react.id],
-          marketplace: fixture.marketplaceName,
+          marketplaceName: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
         });
@@ -97,7 +97,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
       async () => {
         const project = await ProjectBuilder.pluginProject({
           skills: [E2E_SKILL.react.id],
-          marketplace: fixture.marketplaceName,
+          marketplaceName: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
         });

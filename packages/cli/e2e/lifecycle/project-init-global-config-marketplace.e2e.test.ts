@@ -91,7 +91,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
         "global config must own the globally-scoped skills the project init installed",
       ).toContain(E2E_SKILL.react.id);
       expect(
-        globalConfig.skills.find((s) => s.id === E2E_SKILL.react.id)?.source,
+        globalConfig.skills.find((s) => s.id === E2E_SKILL.react.id)?.origin,
         "global skill entry must be marketplace-sourced, not eject",
       ).not.toBe(EJECT_SOURCE);
 
@@ -102,11 +102,11 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       // The invariant under test. `source` travels with `marketplace` on the
       // scope split and is dropped by the same merge, so both are pinned here.
       expect(
-        globalConfig.marketplace,
+        globalConfig.marketplaceName,
         "global config.ts must record the marketplace its plugins came from",
       ).toBe(fixture.marketplaceName);
       expect(
-        globalConfig.source,
+        globalConfig.marketplace,
         "global config.ts must record the source it was installed from",
       ).toBeDefined();
 
@@ -145,8 +145,8 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       await initResult.destroy();
 
       const globalConfig = await loadConfigOrFail(fakeHome);
-      expect(globalConfig.marketplace).toBe(fixture.marketplaceName);
-      expect(globalConfig.source).toBeDefined();
+      expect(globalConfig.marketplaceName).toBe(fixture.marketplaceName);
+      expect(globalConfig.marketplace).toBeDefined();
     },
   );
 });

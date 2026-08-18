@@ -83,7 +83,7 @@ describe("edit wizard — focused Sources row keeps one space between its marker
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
-        source: sourceDir,
+        marketplace: sourceDir,
         skills: [],
         globalSkills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: ["web-developer"],
@@ -98,8 +98,8 @@ describe("edit wizard — focused Sources row keeps one space between its marker
         await readAllSkillEntries(projectDir),
         "the project must start with global-only skill entries",
       ).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
-        { id: E2E_SKILL.vitest.id, scope: "global", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+        { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" },
       ]);
 
       const configBefore = await readTestFile(configTsPath(projectDir));

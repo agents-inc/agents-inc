@@ -69,7 +69,7 @@ describe("edit wizard — added marker when a global skill is adopted at project
       // react is saved as a GLOBAL entry (inherited, locked in a project edit); vitest is the
       // project-scoped skill that keeps the Sources grid populated with an untouched row.
       const project = await ProjectBuilder.editable({
-        source: sourceDir,
+        marketplace: sourceDir,
         skills: [E2E_SKILL.vitest.id],
         globalSkills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
@@ -83,7 +83,7 @@ describe("edit wizard — added marker when a global skill is adopted at project
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "react must be saved as a global-only entry before the edit",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }]);
 
       const configBefore = await readTestFile(configTsPath(projectDir));
       const skillDirsBefore = (await listFiles(skillsPath(projectDir))).sort();

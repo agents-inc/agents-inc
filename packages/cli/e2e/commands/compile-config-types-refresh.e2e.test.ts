@@ -14,7 +14,8 @@ import {
   writeConfigTypes,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -43,17 +44,17 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
 
     // Two skills installed on disk; only react is configured initially, so the
     // union must follow the config, not the filesystem.
-    await createLocalSkill(projectDir, "web-framework-react", {
+    await createLocalSkill(projectDir, E2E_SKILL.react.id, {
       description: "Installed skill later removed from config by hand",
       metadata: renderMetadataYaml({ contentHash: "hash-react" }),
     });
-    await createLocalSkill(projectDir, "web-testing-vitest", {
+    await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
       description: "Installed skill later added to config by hand",
       metadata: renderMetadataYaml({ contentHash: "hash-vitest" }),
     });
     await writeProjectConfig(projectDir, {
       name: "e2e-types-refresh",
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
     });
 
@@ -63,10 +64,14 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     expect(firstRun.output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
     expect(await fileExists(configTypesTsPath(projectDir))).toBe(true);
 
+    // The pass loads the matrix alone, so nothing declares this id and the union says so:
+    // the section heading records what a loaded catalogue did NOT declare.
     const firstTypes = await readTestFile(configTypesTsPath(projectDir));
-    expect(firstTypes).toContain('export type SkillId = "web-framework-react";');
+    const firstSkillId = readGeneratedUnion(firstTypes, "SkillId");
+    expect(firstSkillId, "config-types.ts must declare a SkillId alias").toBeDefined();
+    expect(firstSkillId?.trim()).toBe(`// Custom\n  | "${E2E_SKILL.react.id}"`);
     expect(firstTypes, "union must follow config.ts, not installed files").not.toContain(
-      '"web-testing-vitest"',
+      `"${E2E_SKILL.vitest.id}"`,
     );
 
     // Hand-edit: remove react, add vitest (installed) and web-mocks-msw (never
@@ -75,8 +80,8 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     await writeProjectConfig(projectDir, {
       name: "e2e-types-refresh",
       skills: [
-        { id: "web-testing-vitest", scope: "project", source: "eject" },
-        { id: "web-mocks-msw", scope: "project", source: "eject" },
+        { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
+        { id: "web-mocks-msw", scope: "project", origin: "eject" },
       ],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       stack: { "web-developer": { "web-mocking": [{ id: "web-mocks-msw" }] } },
@@ -94,8 +99,16 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // The union is rebuilt from the edited config's entries: the added skills are
     // in (including the not-installed one), the removed skill is out even though
     // its files are still on disk
-    expect(secondTypes).toContain('export type SkillId = "web-mocks-msw" | "web-testing-vitest";');
-    expect(secondTypes).not.toContain('"web-framework-react"');
+    // `formatSkillUnion` sorts the union, and the fixture marketplace's namespace
+    // puts its ids ahead of a bare one — so vitest leads and web-mocks-msw follows.
+    // They sit under different headings because the loaded catalogue declares one of
+    // them and not the other: `web-mocks-msw` is the catalogue's, the fixture id is not.
+    const secondSkillId = readGeneratedUnion(secondTypes, "SkillId");
+    expect(secondSkillId, "config-types.ts must declare a SkillId alias").toBeDefined();
+    expect(secondSkillId?.trim()).toBe(
+      `// Custom\n  | "${E2E_SKILL.vitest.id}"\n  // Marketplace\n  | "web-mocks-msw"`,
+    );
+    expect(secondTypes).not.toContain(`"${E2E_SKILL.react.id}"`);
     expect(secondTypes).toContain(`export type AgentName = "${E2E_AGENT["web-developer"].name}";`);
 
     // Compile refreshes config-types.ts only — the hand-edited config.ts must
@@ -114,7 +127,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // exist anywhere for this scope — the compile pass discovers zero skills.
     await writeProjectConfig(projectDir, {
       name: "e2e-zero-skill-refresh",
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
     });
     // Stale collapsed stub — the post-run content must differ, proving the
@@ -131,9 +144,13 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     expect(output).toContain(STEP_TEXT.COMPILE_NO_SKILLS_ERROR);
     expect(output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
 
-    // The unions follow the hand-edited config even though nothing is installed
+    // The unions follow the hand-edited config even though nothing is installed — and the
+    // skill is named under the heading for what no loaded catalogue declares, which is the
+    // truth about an id this installation cannot place.
     const types = await readTestFile(configTypesTsPath(projectDir));
-    expect(types).toContain('export type SkillId = "web-framework-react";');
+    const skillId = readGeneratedUnion(types, "SkillId");
+    expect(skillId, "config-types.ts must declare a SkillId alias").toBeDefined();
+    expect(skillId?.trim()).toBe(`// Custom\n  | "${E2E_SKILL.react.id}"`);
     expect(types).toContain(`export type AgentName = "${E2E_AGENT["web-developer"].name}";`);
     expect(types, "stale stub must be replaced").not.toContain("export type SkillId = string;");
 
@@ -155,7 +172,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     });
     await writeProjectConfig(globalHome, {
       name: "e2e-global",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
     });
 
@@ -166,7 +183,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     });
     await writeProjectConfig(projectDir, {
       name: "e2e-project",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
     });
 

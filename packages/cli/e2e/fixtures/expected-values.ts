@@ -1,5 +1,5 @@
-import { E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "../helpers/create-e2e-source.js";
-import type { AgentName, ModelName, SkillId, SkillSlug } from "../../src/cli/types/index.js";
+import { E2E_AGENT_TITLES, E2E_SKILL_TITLES, e2eSkillId } from "../helpers/create-e2e-source.js";
+import type { AgentName, ModelName, SkillSlug } from "../../src/cli/types/index.js";
 
 /**
  * Agent display titles as the wizard renders them in the agents step — the
@@ -70,19 +70,22 @@ export const WEB_DOMAIN_AGENTS = [
  */
 export const BUILT_IN_STACK_DISPLAY = "Next.js Full-Stack";
 
-// E2E source skills (from create-e2e-source.ts)
-export const E2E_SKILL_IDS = [
-  "api-framework-hono",
-  "meta-methodology-research-methodology",
-  "meta-reviewing-cli-reviewing",
-  "meta-reviewing-reviewing",
-  "web-framework-react",
-  "web-framework-vue-composition-api",
-  "web-state-pinia",
-  "web-state-zustand",
-  "web-testing-visual-regression",
-  "web-testing-vitest",
-] as const satisfies readonly SkillId[];
+/**
+ * Every skill id an E2E source writes, derived from the skill set
+ * create-e2e-source.ts writes to disk and sorted the way a directory listing is.
+ * The expected value for "the install wrote exactly these skills" — it was a
+ * hand-written second copy of that set until it became a derivation, the same
+ * treatment `E2E_STACK_AGENTS` and `E2E_STACK_SKILL_IDS` already had.
+ */
+export { E2E_SKILL_IDS } from "../helpers/create-e2e-source.js";
+
+/**
+ * The fixture marketplace's name and the builder that composes a skill id inside
+ * its namespace. A marketplace's name IS its skills' id prefix, so the writer and
+ * every assertion on a published identity read one constant.
+ */
+export { E2E_MARKETPLACE_NAME } from "../pages/constants.js";
+export { e2eSkillId } from "../helpers/create-e2e-source.js";
 
 /**
  * Per-skill identifiers for the E2E source, keyed by slug.
@@ -92,60 +95,88 @@ export const E2E_SKILL_IDS = [
  * title (what the wizard renders, so what `selectSkill` matches). This map is
  * the slug↔id join; `display` is read from create-e2e-source.ts rather than
  * re-typed, so a title change there cannot silently desync from assertions.
+ *
+ * `id` is composed by `e2eSkillId` and typed `string`, not `SkillId`: the fixture
+ * publishes under its own marketplace, so its ids live in that marketplace's
+ * namespace rather than in the public catalogue's union. Slugs and titles are NOT
+ * namespaced — a slug names the skill inside its own source, and a title is what
+ * the wizard paints.
  */
 export const E2E_SKILL = {
   react: {
-    id: "web-framework-react",
+    id: e2eSkillId("web-framework-react"),
     slug: "react",
-    display: E2E_SKILL_TITLES["web-framework-react"],
+    display: E2E_SKILL_TITLES.react,
   },
   vitest: {
-    id: "web-testing-vitest",
+    id: e2eSkillId("web-testing-vitest"),
     slug: "vitest",
-    display: E2E_SKILL_TITLES["web-testing-vitest"],
+    display: E2E_SKILL_TITLES.vitest,
   },
   zustand: {
-    id: "web-state-zustand",
+    id: e2eSkillId("web-state-zustand"),
     slug: "zustand",
-    display: E2E_SKILL_TITLES["web-state-zustand"],
+    display: E2E_SKILL_TITLES.zustand,
   },
   hono: {
-    id: "api-framework-hono",
+    id: e2eSkillId("api-framework-hono"),
     slug: "hono",
-    display: E2E_SKILL_TITLES["api-framework-hono"],
+    display: E2E_SKILL_TITLES.hono,
   },
   pinia: {
-    id: "web-state-pinia",
+    id: e2eSkillId("web-state-pinia"),
     slug: "pinia",
-    display: E2E_SKILL_TITLES["web-state-pinia"],
+    display: E2E_SKILL_TITLES.pinia,
   },
   "research-methodology": {
-    id: "meta-methodology-research-methodology",
+    id: e2eSkillId("meta-methodology-research-methodology"),
     slug: "research-methodology",
-    display: E2E_SKILL_TITLES["meta-methodology-research-methodology"],
+    display: E2E_SKILL_TITLES["research-methodology"],
   },
   reviewing: {
-    id: "meta-reviewing-reviewing",
+    id: e2eSkillId("meta-reviewing-reviewing"),
     slug: "reviewing",
-    display: E2E_SKILL_TITLES["meta-reviewing-reviewing"],
+    display: E2E_SKILL_TITLES.reviewing,
   },
   "cli-reviewing": {
-    id: "meta-reviewing-cli-reviewing",
+    id: e2eSkillId("meta-reviewing-cli-reviewing"),
     slug: "cli-reviewing",
-    display: E2E_SKILL_TITLES["meta-reviewing-cli-reviewing"],
+    display: E2E_SKILL_TITLES["cli-reviewing"],
   },
   "vue-composition-api": {
-    id: "web-framework-vue-composition-api",
+    id: e2eSkillId("web-framework-vue-composition-api"),
     slug: "vue-composition-api",
-    display: E2E_SKILL_TITLES["web-framework-vue-composition-api"],
+    display: E2E_SKILL_TITLES["vue-composition-api"],
   },
   /** The source's spare — assigned to no agent by the stack, so an edit can ADD it. */
   "visual-regression": {
-    id: "web-testing-visual-regression",
+    id: e2eSkillId("web-testing-visual-regression"),
     slug: "visual-regression",
-    display: E2E_SKILL_TITLES["web-testing-visual-regression"],
+    display: E2E_SKILL_TITLES["visual-regression"],
   },
-} as const satisfies Partial<Record<SkillSlug, { id: SkillId; slug: SkillSlug; display: string }>>;
+} as const satisfies Partial<Record<SkillSlug, { id: string; slug: SkillSlug; display: string }>>;
+
+/**
+ * A skill the user wrote in their own project rather than fetched — no marketplace
+ * carries it, so eject is the only install it can have.
+ *
+ * Its taxonomy is REAL (`web-tooling`, in the `web` domain): a custom skill is placed
+ * alongside its related skills like any other, which is what lets it reach a sub-agent.
+ * The id wears the `external-` namespace a skill answering to no marketplace takes.
+ *
+ * Every field is `string`, deliberately un-narrowed: the id belongs to no marketplace, so
+ * it is not a member of the public catalogue's `SkillId` union and must compare against
+ * one without TypeScript ruling the comparison impossible.
+ */
+export const E2E_CUSTOM_SKILL = {
+  id: "external-web-tooling-house",
+  slug: "house-tooling",
+  display: "House Tooling",
+  category: "web-tooling",
+  domain: "web",
+  /** The `origin` its config entry must carry — the project's own copy. */
+  origin: "eject",
+};
 
 /**
  * Per-agent identifiers for the E2E source, keyed by agent name.

@@ -25,7 +25,7 @@ import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
  * scope where a half-written pair does the most damage.
  *
  * `agent-partials` rather than `skills`, and the eject type is not incidental: a
- * directory with no config has no source either — `--source` and `CC_SOURCE` are
+ * directory with no config has no source either — `--marketplace` and `CC_MARKETPLACE` are
  * `init`'s alone (CLI-466), so nothing can point this run at the E2E fixture — and
  * `agent-partials` is the eject that reads no skills source at all. It writes the
  * same invented pair through the same `ensureMinimalConfig`, offline, instead of

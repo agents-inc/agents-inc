@@ -22,7 +22,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Regression: removing the last/only skill an agent's stack references must not
@@ -45,7 +46,7 @@ const singleSkillStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes the only skill an agent references", () => {
   let sourceDir: string;
@@ -86,7 +87,7 @@ describe("edit removes the only skill an agent references", () => {
 
       const config = buildProjectConfig({
         name: "global-edit-test",
-        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
         stack: singleSkillStack,
@@ -96,7 +97,7 @@ describe("edit removes the only skill an agent references", () => {
       await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework for global-scope edit testing",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.react.id,
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: E2E_SKILL.react.slug,
           cliDescription: "E2E test skill",
@@ -123,7 +124,7 @@ describe("edit removes the only skill an agent references", () => {
       // react is currently selected — pressing Space deselects it. At global
       // scope the "global skills cannot be changed from project scope" guard
       // does not apply, so the deselect goes through.
-      await wizard.build.selectSkill(E2E_SKILL.react.id);
+      await wizard.build.selectSkill(E2E_SKILL.react.display);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();

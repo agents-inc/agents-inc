@@ -8,6 +8,7 @@ import {
   cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
+  FORKED_FROM_METADATA,
   listFiles,
   recordInstallSource,
   skillsPath,
@@ -16,7 +17,7 @@ import {
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { E2E_SKILL_IDS } from "../fixtures/expected-values.js";
+import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
 import type { SkillId } from "../../src/cli/types/index.js";
@@ -26,6 +27,19 @@ const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKIL
 
 /** A skill id the E2E source does not define, so `Skills Resolved` must fail on it. */
 const UNKNOWN_SKILL_ID = "web-framework-nonexistent" as SkillId;
+
+/**
+ * A directory in the shared `.claude/skills/` tree that this CLI did not put there — no
+ * `metadata.yaml`, so nothing in it can carry the `forkedFrom` marker that would claim it.
+ */
+const FOREIGN_SKILL_DIR = "context7-mcp";
+
+/**
+ * An agent file in the shared `.claude/agents/` tree that this CLI did not compile. Its claim is
+ * the provenance marker rather than `forkedFrom`, and it carries none — which is the whole of
+ * what makes it the user's own file.
+ */
+const FOREIGN_AGENT_NAME = "my-own-reviewer";
 
 describe("doctor diagnostics", () => {
   let tempDir: string;
@@ -51,12 +65,12 @@ describe("doctor diagnostics", () => {
     it("should count the source's skills even with no project config to check them against", async () => {
       tempDir = await createTempDir();
 
-      // The source comes from the GLOBAL config: `doctor` takes no `--source` and reads no
-      // `CC_SOURCE` (both are `init`'s), so a directory with no config of its own reads the
+      // The source comes from the GLOBAL config: `doctor` takes no `--marketplace` and reads no
+      // `CC_MARKETPLACE` (both are `init`'s), so a directory with no config of its own reads the
       // one under HOME — the machine-wide install a bare directory still inherits.
       const home = path.join(tempDir, "home");
       await mkdir(home, { recursive: true });
-      await writeProjectConfig(home, { name: "global", source: source.sourceDir });
+      await writeProjectConfig(home, { name: "global", marketplace: source.sourceDir });
 
       const projectWithoutConfig = path.join(tempDir, "project-without-config");
       await mkdir(projectWithoutConfig, { recursive: true });
@@ -188,7 +202,7 @@ describe("doctor diagnostics", () => {
       const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
-      await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true, provenance: true });
 
       // A home directory of its own: with HOME at the project the two install
       // roots collapse into one, and this row's project-scope walk goes untested.
@@ -257,8 +271,8 @@ describe("doctor diagnostics", () => {
     });
   });
 
-  describe("orphaned skill dirs", () => {
-    it("should report a skill dir that no config references as invalid content", async () => {
+  describe("skill dirs this installation does not own", () => {
+    it("should name a skill dir no config references and no provenance claims, without failing", async () => {
       // Create project with one skill in config
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
@@ -278,14 +292,104 @@ describe("doctor diagnostics", () => {
 
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
 
-      // The operational checks key off config (they look for orphaned AGENT files
-      // only), but the content layer walks every directory under .claude/skills/
-      // whether or not a config names it — a skill directory with no metadata.yaml
-      // is still content Claude Code would try to load.
+      // `.claude/skills/` is Claude Code's directory, shared with everything else that installs a
+      // skill into it. A directory no configuration names and no `forkedFrom` claims is not this
+      // installation's to judge — so it is named and stepped over, not reported as the user's fault.
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain("web-testing-orphan-extra");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR);
+      expect(stdout).not.toContain(`Missing ${FILES.METADATA_YAML}`);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_SUMMARY);
+    });
+
+    it("should still report a broken skill dir this CLI's provenance claims", async () => {
+      const project = await ProjectBuilder.editable({
+        agents: ["web-developer"],
+      });
+      tempDir = path.dirname(project.dir);
+
+      // Metadata carrying `forkedFrom` and no SKILL.md beside it: this CLI wrote the directory,
+      // and what is wrong with it is the CLI's to report however the configuration has moved on.
+      const forkedDir = path.join(skillsPath(project.dir), "web-testing-orphan-extra");
+      await mkdir(forkedDir, { recursive: true });
+      await writeFile(path.join(forkedDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
+
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
+
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain("web-testing-orphan-extra");
-      expect(stdout).toContain(`Missing ${FILES.METADATA_YAML}`);
-      expect(stdout).toContain(STEP_TEXT.DOCTOR_SUMMARY);
+      expect(stdout).toContain(`Missing ${FILES.SKILL_MD}`);
+    });
+
+    /**
+     * The same judgement on the path where there is no configuration to make it with, on both
+     * kinds of file at once. `doctor` offers the unowned installation to `uninstall`, and
+     * `uninstall` removes a skill directory only when it carries `forkedFrom` and an agent file
+     * only when it carries the compiler's marker — so anything listed that answers to neither is
+     * one command recommending what the next one refuses.
+     */
+    it("offers only what uninstall would remove when the configuration is gone", async () => {
+      const project = await ProjectBuilder.editable({
+        agents: ["web-developer"],
+        forkedFrom: true,
+      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true, provenance: true });
+      await writeAgentFile(projectDir, FOREIGN_AGENT_NAME, { frontmatter: true });
+
+      // A home of its own, or the global walk reads the machine running the suite.
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+
+      const ownedSkillIds = await listFiles(skillsPath(projectDir));
+      expect(ownedSkillIds.length, "the fixture must have skills to strand").toBe(1);
+      await mkdir(path.join(skillsPath(projectDir), FOREIGN_SKILL_DIR), { recursive: true });
+
+      await rm(configTsPath(projectDir), { force: true });
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
+      // Two skill directories and two agent files are on disk, and one of each is this CLI's.
+      // The count is what proves the others were stepped over: the content layer walks both in
+      // the same report, so a `not.toContain` on either name would pass whether or not the row
+      // listed it.
+      expect(
+        stdout,
+        "the row names what `uninstall` removes — a file with no provenance is not that",
+      ).toContain("1 skill and 1 agent installed here");
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_UNOWNED_INSTALL);
+
+      // Named rather than dropped: stepping over a directory is not the same as going quiet
+      // about it, and the content layer is where that is said.
+      expect(stdout).toContain(FOREIGN_SKILL_DIR);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR);
+
+      // The other half of the agreement, asserted rather than assumed: the command `doctor`
+      // sends the reader to removes exactly the files the row named, and leaves the others.
+      const uninstall = await CLI.run(
+        ["uninstall", "--yes"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+      expect(uninstall.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        await listFiles(skillsPath(projectDir)),
+        "uninstall keeps what doctor declined to offer, and removes what it offered",
+      ).toStrictEqual([FOREIGN_SKILL_DIR]);
+      expect(
+        await listFiles(agentsPath(projectDir)),
+        "the agent half of the same agreement — the marker decides, on both screens",
+      ).toStrictEqual([`${FOREIGN_AGENT_NAME}.md`]);
     });
   });
 
@@ -300,7 +404,7 @@ describe("doctor diagnostics", () => {
       // Overwrite config to register an eject-mode skill whose disk files are missing
       await writeProjectConfig(projectDir, {
         name: "installed-skill-missing",
-        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: "web-developer", scope: "project" }],
       });
 
@@ -308,7 +412,7 @@ describe("doctor diagnostics", () => {
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
 
       // Ensure the eject skill directory is absent so checkSkillsInstalled warns
-      const ejectedSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
+      const ejectedSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       await rm(ejectedSkillDir, { recursive: true, force: true });
 
       await recordInstallSource([projectDir], source.sourceDir);

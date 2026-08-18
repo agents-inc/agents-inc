@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -41,7 +42,7 @@ const API_DEV = E2E_AGENT["api-developer"].name;
  * the old one instead of following it.
  */
 function seedPayload(skills: Record<string, unknown>, agents: Record<string, unknown> = {}) {
-  return { v: 3, matrixVersion: "1.0.0", stackId: null, skills, agents };
+  return { v: 5, matrixVersion: "1.0.0", stackId: null, skills, agents };
 }
 
 /** One skill row, at its own (project) scope — the sub-agent's scope is the subject here. */
@@ -141,5 +142,11 @@ describe("init --from <id>: sub-agent scope", () => {
     await expect({ dir: env.fakeHome }).toHaveAgentDynamicSkills(API_DEV, {
       noSkillIds: [E2E_SKILL.react.id],
     });
+
+    // Both destinations, at four-surface strength. A scope split writes a config AND a
+    // config-types.ts on each side, and each side's pair has to hold on its own: the one
+    // that ends up carrying no skills is exactly where the generated unions collapse.
+    await expectFourSurfaces(env.projectDir, { globalHome: env.fakeHome });
+    await expectFourSurfaces(env.fakeHome);
   });
 });

@@ -27,7 +27,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
-import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * A PROJECT-context edit that migrates a GLOBAL-scoped skill's install mode must
@@ -102,7 +103,7 @@ const globalStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 // Each registered project's own PROJECT-scoped agent preloads the same global
 // react, so its compiled frontmatter carries react in whichever form the global
@@ -112,12 +113,12 @@ const projectStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactMetadata = renderMetadataYaml({
   domain: "web",
   author: "@agents-inc",
-  displayName: E2E_SKILL.react.id,
+  displayName: E2E_SKILL.react.display,
   category: "web-framework",
   slug: E2E_SKILL.react.slug,
   cliDescription: "E2E test skill",
@@ -130,10 +131,10 @@ const reactMetadata = renderMetadataYaml({
  * inlined verbatim from the global config (marketplace-sourced), plus a
  * project-scoped agent whose stack references it.
  */
-function buildRegisteredProjectConfig(name: string): ProjectConfig {
+function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
-    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
+    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: MARKET }),
     agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
     selectedDomains: ["web"],
     stack: projectStack,
@@ -162,9 +163,9 @@ describe.skip("project-context source migration of a global skill propagates to 
   let preEditAgentB: string;
   let editExitCode: number;
   let editOutput: string;
-  let globalConfig: ProjectConfig;
-  let configA: ProjectConfig;
-  let configB: ProjectConfig;
+  let globalConfig: FixtureProjectConfig;
+  let configA: FixtureProjectConfig;
+  let configB: FixtureProjectConfig;
 
   beforeAll(async () => {
     await ensureBinaryExists();
@@ -192,8 +193,8 @@ describe.skip("project-context source migration of a global skill propagates to 
       fakeHome,
       buildProjectConfig({
         name: "project-context-migration-global",
-        source: sourceDir,
-        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
+        marketplace: sourceDir,
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: MARKET }),
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
         stack: globalStack,
@@ -289,7 +290,7 @@ describe.skip("project-context source migration of a global skill propagates to 
       globalConfig.skills.filter((s) => s.id === E2E_SKILL.react.id),
       "the global react entry must record the eject source the migration performed",
     ).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: EJECT_SOURCE }),
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: EJECT_SOURCE }),
     );
   });
 
@@ -298,7 +299,7 @@ describe.skip("project-context source migration of a global skill propagates to 
       configA.skills.filter((s) => s.id === E2E_SKILL.react.id),
       "project-a's inlined react entry must record the eject source",
     ).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: EJECT_SOURCE }),
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: EJECT_SOURCE }),
     );
   });
 
@@ -317,7 +318,7 @@ describe.skip("project-context source migration of a global skill propagates to 
       configB.skills.filter((s) => s.id === E2E_SKILL.react.id),
       "project-b's inlined react entry must record the eject source the global migration produced",
     ).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: EJECT_SOURCE }),
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: EJECT_SOURCE }),
     );
   });
 

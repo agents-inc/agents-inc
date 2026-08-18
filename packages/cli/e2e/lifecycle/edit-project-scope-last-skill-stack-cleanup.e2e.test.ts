@@ -23,7 +23,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Project-scope twin of edit-remove-last-skill-stack-cleanup.e2e.test.ts (which
@@ -38,7 +39,7 @@ const singleSkillStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes the only project-scoped skill an agent references", () => {
   let sourceDir: string;
@@ -86,7 +87,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
 
       const config = buildProjectConfig({
         name: "project-scope-edit-test",
-        skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
+        skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
         selectedDomains: ["web"],
         stack: singleSkillStack,
@@ -96,7 +97,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
       await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Vitest testing framework for project-scope edit testing",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.vitest.id,
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: E2E_SKILL.vitest.slug,
           cliDescription: "E2E test skill",
@@ -120,7 +121,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
 
       // vitest is currently selected — pressing Space deselects it. It is a
       // project-scoped, non-preloaded skill, so the deselect goes through.
-      await wizard.build.selectSkill(E2E_SKILL.vitest.id);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();

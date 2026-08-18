@@ -76,7 +76,10 @@ describe("global skill toggle guard from project scope", () => {
       // cursor: Ink rewrites the toast row in place, so xterm's processed
       // buffer can lose the text before the test reads it, and an unanchored
       // raw match would accept an identical toast from earlier in the session.
-      await wizard.build.selectSkillAwaiting(E2E_SKILL.react.id, STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+      await wizard.build.selectSkillAwaiting(
+        E2E_SKILL.react.display,
+        STEP_TEXT.GLOBAL_SKILLS_BLOCKED,
+      );
 
       // Pass through the rest of the wizard without changes
       const sources = await wizard.build.passThroughAllDomains();
@@ -135,7 +138,10 @@ describe("global skill toggle guard from project scope", () => {
       // where zustand is already globally selected — this must be blocked with
       // a toast, awaited on the append-only raw surface anchored to a pre-press
       // cursor (see the sibling test for why the processed buffer is unsafe).
-      await wizard.build.selectSkillAwaiting(E2E_SKILL.pinia.id, STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+      await wizard.build.selectSkillAwaiting(
+        E2E_SKILL.pinia.display,
+        STEP_TEXT.GLOBAL_SKILLS_BLOCKED,
+      );
 
       // Pass through the rest of the wizard without changes
       const sources = await wizard.build.passThroughAllDomains();

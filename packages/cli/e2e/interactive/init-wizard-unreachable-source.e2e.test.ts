@@ -28,7 +28,7 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 
 /**
  * The served tarball, in the shape `InitWizard` takes a source in: `sourceDir` is
- * passed to `--source` verbatim, so a URL belongs there exactly as a path does.
+ * passed to `--marketplace` verbatim, so a URL belongs there exactly as a path does.
  */
 function servedSource(url: string, source: E2ESource): E2ESource {
   return { sourceDir: url, tempDir: source.tempDir };

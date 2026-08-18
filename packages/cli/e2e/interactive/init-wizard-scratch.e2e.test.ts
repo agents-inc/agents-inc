@@ -101,7 +101,7 @@ describe("init wizard — scratch flow", () => {
       // Config lands under projectDir; the compiled agents and ejected skills
       // (default global scope) land under the wizard's global HOME.
       await expect(result.project).toHaveConfig({
-        skillIds: ["web-framework-react", "api-framework-hono"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.hono.id],
         agents: E2E_AGENTS.WEB_AND_API,
         source: "eject",
       });
@@ -109,18 +109,35 @@ describe("init wizard — scratch flow", () => {
         { project: { dir: wizard.globalHome }, exitCode: result.exitCode },
         {
           compiledAgents: E2E_AGENTS.WEB_AND_API,
-          copiedSkills: ["web-framework-react", "api-framework-hono"],
+          copiedSkills: [E2E_SKILL.react.id, E2E_SKILL.hono.id],
         },
       );
-      // The frontmatter list is the preload list. A scratch init asserts no
-      // load state of its own, so each pick arrives on the shared resolver's
-      // terms: a framework preloads on its own domain's agents and reaches no
-      // other domain's — react on the web agents, hono on the api ones.
+      // A scratch init asserts no load state of its own and reads no stack that
+      // could assert one for it, so every pick arrives on the shared defaults'
+      // terms — and those answer REACH and EAGERNESS from two different tables,
+      // deliberately. Reach is derived from a skill's taxonomy, so a framework
+      // lands on its own domain's agents and reaches no other domain's.
+      // Eagerness is authored per catalogue skill id and nothing derives it;
+      // this fixture publishes under its own marketplace, so its ids match no
+      // row and arrive lazy by rule. The frontmatter list IS the preload list,
+      // so a lazy skill leaves it empty.
+      //
+      // The two matchers only prove that together: an empty frontmatter alone
+      // would equally describe a skill that never reached the agent, and a body
+      // hit alone would not say how it arrives.
       await expect({ dir: wizard.globalHome }).toHaveAgentFrontmatter("web-developer", {
-        exactSkills: ["web-framework-react"],
+        noSkills: true,
+      });
+      await expect({ dir: wizard.globalHome }).toHaveAgentDynamicSkills("web-developer", {
+        skillIds: [E2E_SKILL.react.id],
+        noSkillIds: [E2E_SKILL.hono.id],
       });
       await expect({ dir: wizard.globalHome }).toHaveAgentFrontmatter("api-developer", {
-        exactSkills: ["api-framework-hono"],
+        noSkills: true,
+      });
+      await expect({ dir: wizard.globalHome }).toHaveAgentDynamicSkills("api-developer", {
+        skillIds: [E2E_SKILL.hono.id],
+        noSkillIds: [E2E_SKILL.react.id],
       });
     });
   });

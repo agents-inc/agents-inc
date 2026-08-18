@@ -142,7 +142,7 @@ describe("config-scope integrity -- source priority preservation", () => {
         entriesAfterInit,
       );
       for (const entry of skillEntries) {
-        expect(entry.source, `skill  must keep source "eject"`).toBe("eject");
+        expect(entry.origin, `skill ${entry.id} must keep origin "eject"`).toBe("eject");
       }
     },
   );
@@ -218,7 +218,10 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       // object so the surrounding stack/agent braces stay balanced — the result is a
       // structurally VALID config in which the "api" domain simply has no skills.
       const modifiedConfig = originalConfig.replace(
-        /(?:"[\w-]+"\s*:\s*)?\{[^{}]*"id"\s*:\s*"api-framework-hono"[^{}]*\},?\s*/g,
+        new RegExp(
+          `(?:"[\\w-]+"\\s*:\\s*)?\\{[^{}]*"id"\\s*:\\s*"${E2E_SKILL.hono.id}"[^{}]*\\},?\\s*`,
+          "g",
+        ),
         "",
       );
 
@@ -326,19 +329,19 @@ describe("config-scope integrity -- global config includes source field", () => 
       const globalConfigPath = configTsPath(fakeHome);
       const globalConfig = await readTestFile(globalConfigPath);
 
-      // The top-level "source" field in the export default block should reference
+      // The top-level "marketplace" field in the export default block should reference
       // the E2E source directory. The config writer formats it as:
-      //   "source": "/path/to/source",
-      expect(globalConfig, "Global config must contain a top-level source field").toContain(
-        `"source": "${sourceDir}"`,
+      //   "marketplace": "/path/to/source",
+      expect(globalConfig, "Global config must contain a top-level marketplace field").toContain(
+        `"marketplace": "${sourceDir}"`,
       );
 
       // Phase D: Verify project config also includes the source field
       const projectConfigPath = configTsPath(projectDir);
       const projectConfig = await readTestFile(projectConfigPath);
 
-      expect(projectConfig, "Project config must contain a top-level source field").toContain(
-        `"source": "${sourceDir}"`,
+      expect(projectConfig, "Project config must contain a top-level marketplace field").toContain(
+        `"marketplace": "${sourceDir}"`,
       );
     },
   );

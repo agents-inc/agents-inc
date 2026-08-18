@@ -28,7 +28,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
-import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Agent-removal propagation to registered projects.
@@ -62,7 +63,7 @@ const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 // A project-scoped agent whose stack references the SAME globally-installed
 // react that the removed global agent also references. Removing the global
@@ -71,10 +72,10 @@ const projectStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactMetadata = renderMetadataYaml({
-  displayName: E2E_SKILL.react.id,
+  displayName: E2E_SKILL.react.display,
   category: "web-framework",
   slug: E2E_SKILL.react.slug,
   cliDescription: "E2E test skill",
@@ -88,10 +89,10 @@ const reactMetadata = renderMetadataYaml({
  * project's own project-scoped api-developer. selectedAgents mirrors the
  * inlined global + project union the writer produces.
  */
-function buildRegisteredProjectConfig(name: string): ProjectConfig {
+function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
-    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
     agents: [
       ...buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       ...buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
@@ -106,7 +107,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
   let tempDir: string;
 
   let projectDir: string;
-  let projectConfig: ProjectConfig;
+  let projectConfig: FixtureProjectConfig;
   let compiledAgentMdExists: boolean;
   let projectAgentMdExists: boolean;
   let editExitCode: number;
@@ -131,7 +132,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
     // references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-agent-removal-global",
-      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,

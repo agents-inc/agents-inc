@@ -59,7 +59,7 @@ describe("eject command", () => {
   /**
    * A project directory whose HOME carries a global config naming `source`.
    *
-   * `eject` declares no `--source` and reads no `CC_SOURCE` — naming a source is `init`'s
+   * `eject` declares no `--marketplace` and reads no `CC_MARKETPLACE` — naming a source is `init`'s
    * decision — so the source it copies out of is one the machine already records. The project
    * directory itself stays config-less, which is the state these specs are about: `eject`
    * invents that config and records into it the source it read.
@@ -70,7 +70,7 @@ describe("eject command", () => {
   ): Promise<ProjectHandle> {
     const globalHome = path.join(dir, "home");
     await mkdir(globalHome, { recursive: true });
-    await writeProjectConfig(globalHome, { name: "global-install", source });
+    await writeProjectConfig(globalHome, { name: "global-install", marketplace: source });
     return { dir, globalHome };
   }
 
@@ -312,17 +312,17 @@ describe("eject command", () => {
     expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
   });
 
-  it("should refuse a --source flag — it reads the source the installation is configured with", async () => {
+  it("should refuse a --marketplace flag — it reads the source the installation is configured with", async () => {
     tempDir = await createTempDir();
 
-    const { exitCode, output } = await CLI.run(["eject", "skills", "--source", sourceDir], {
+    const { exitCode, output } = await CLI.run(["eject", "skills", "--marketplace", sourceDir], {
       dir: tempDir,
     });
 
     // Withdrawn, not ignored: silently accepting it would eject from one source while
     // recording another in config.ts (CLI-450).
     expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
-    expect(output).toContain("--source");
+    expect(output).toContain("--marketplace");
     expect(await directoryExists(skillsPath(tempDir))).toBe(false);
   });
 

@@ -4,7 +4,7 @@ import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupFixture, ensureBinaryExists } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
@@ -48,7 +48,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
       // to eject is a genuine plugin -> eject migration.
       const project = await ProjectBuilder.pluginProject({
         skills: [E2E_SKILL.react.id],
-        marketplace: "agents-inc",
+        marketplaceName: E2E_MARKETPLACE_NAME,
         agents: [...E2E_AGENTS.WEB],
         domains: ["web"],
       });

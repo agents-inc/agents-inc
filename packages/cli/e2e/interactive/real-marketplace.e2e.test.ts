@@ -21,7 +21,7 @@ import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-a
  * E2E tests using the REAL local skills repository.
  *
  * These tests verify the full end-to-end flow with actual marketplace data
- * instead of the synthetic E2E test source. They use --source pointed at the
+ * instead of the synthetic E2E test source. They use --marketplace pointed at the
  * local clone to avoid network calls while still exercising real skill content.
  *
  * Set SKILLS_SOURCE env var to override the default location. The suite is
@@ -68,22 +68,25 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     projectDir = await createTempDir();
     sharedHome = await createTempDir();
 
-    // The clone ships no config/stacks.ts, and the CLI's built-in catalogue
-    // stands in for the default public marketplace alone — so this source offers
-    // no stacks at all and the wizard opens on domain selection.
-    const launched = await InitWizard.launchOnDomainsInProject({
+    // The clone ships no config/stacks.ts, and the built-in stacks ARE this
+    // repository's stacks — it is the public catalogue, read off a path — so the
+    // wizard opens on the stack step offering them. "Start from scratch" is the
+    // row that leaves the same empty selection the domains step used to open on
+    // when this source offered no stacks at all.
+    wizard = await InitWizard.launchInProject({
       source: { sourceDir: SKILLS_SOURCE, tempDir: "" },
       projectDir,
       globalHome: sharedHome,
       loadTimeout: TIMEOUTS.INSTALL,
     });
-    wizard = launched.wizard;
+
+    const domain = await wizard.stack.selectScratch();
 
     // Web alone: both skills this suite installs are web skills, and one domain
     // keeps the roster the scratch preselection brings small enough to name.
-    await launched.domain.toggleDomain(STEP_TEXT.DOMAIN_API);
-    await launched.domain.toggleDomain(STEP_TEXT.DOMAIN_MOBILE);
-    const build = await launched.domain.advance();
+    await domain.toggleDomain(STEP_TEXT.DOMAIN_API);
+    await domain.toggleDomain(STEP_TEXT.DOMAIN_MOBILE);
+    const build = await domain.advance();
 
     await build.selectSkill(REAL_SKILL_DISPLAY.react);
     await build.selectSkill(REAL_SKILL_DISPLAY.nextjs);
@@ -113,13 +116,19 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   });
 
   describe("init with real marketplace", () => {
-    it("should never have offered a stack step for a marketplace that ships none", () => {
-      // Raw PTY output is append-only, so a stack step that painted for even one
-      // frame would still be in it. `initOutput` cannot answer this — the wizard
-      // clears the screen on exit, and Ink overwrites frames in place.
+    it("should have offered the built-in stacks for a checkout of the catalogue's own repository", () => {
+      // Raw PTY output is append-only, so the step is provable from it whichever
+      // way the answer goes. `initOutput` cannot answer this — the wizard clears
+      // the screen on exit, and Ink overwrites frames in place.
+      //
+      // The inverse of what this pinned previously: the built-in stacks are the
+      // public catalogue's stacks, that repository ships no config/stacks.ts, and
+      // package identity is what says a path holds it. Keying on the source
+      // STRING alone made a checkout of the catalogue offer none of its own
+      // stacks.
+      expect(initRawOutput).toContain(STEP_TEXT.STACK);
+      expect(initRawOutput).toContain(BUILT_IN_STACK_DISPLAY);
       expect(initRawOutput).toContain(STEP_TEXT.DOMAINS);
-      expect(initRawOutput).not.toContain(STEP_TEXT.STACK);
-      expect(initRawOutput).not.toContain(BUILT_IN_STACK_DISPLAY);
     });
 
     it("should have installed the real skills picked from the catalogue", () => {
@@ -171,7 +180,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
         ["compile"],
         { dir: projectDir, globalHome: sharedHome },
         {
-          env: { CC_SOURCE: undefined },
+          env: { CC_MARKETPLACE: undefined },
         },
       );
 

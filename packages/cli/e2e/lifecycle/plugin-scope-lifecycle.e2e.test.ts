@@ -142,13 +142,13 @@ describe.skipIf(!claudeAvailable)(
 
         // --- Agent content assertions ---
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
-          notContains: ["api-framework-hono"],
+          contains: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
+          notContains: [E2E_SKILL.hono.id],
         });
 
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["api-framework-hono", "meta-reviewing"],
-          notContains: ["web-framework-react"],
+          contains: [E2E_SKILL.hono.id, "meta-reviewing"],
+          notContains: [E2E_SKILL.react.id],
         });
 
         // ================================================================
@@ -172,12 +172,12 @@ describe.skipIf(!claudeAvailable)(
 
         // Re-verify content after recompilation
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-framework-react"],
-          notContains: ["api-framework-hono"],
+          contains: [E2E_SKILL.react.id],
+          notContains: [E2E_SKILL.hono.id],
         });
         await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-          contains: ["api-framework-hono"],
-          notContains: ["web-framework-react"],
+          contains: [E2E_SKILL.hono.id],
+          notContains: [E2E_SKILL.react.id],
         });
       },
     );

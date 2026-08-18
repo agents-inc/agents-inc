@@ -79,8 +79,8 @@ describe("project edit drops the project half of a dual-scope pair", () => {
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "setup must persist an active project entry plus a global tombstone",
       ).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
       ]);
       expect(
         await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.react.id)),
@@ -105,7 +105,7 @@ describe("project edit drops the project half of a dual-scope pair", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "dropping the project half must collapse the pair to the inherited global entry",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }]);
       expect(
         await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.react.id)),
         "dropping the project half must remove the project's copy of the skill",

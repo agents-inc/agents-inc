@@ -104,7 +104,7 @@ describe("scope toggle roundtrip", () => {
       const projectConfig = await readTestFile(configTsPath(projectDir));
       expect(projectConfig).toContain(E2E_SKILL.react.id);
       expect(projectConfig).toContain('"scope":"project"');
-      expect(projectConfig).toContain('"source":"eject"');
+      expect(projectConfig).toContain('"origin":"eject"');
 
       // Project skill directory exists
       const projectSkillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, E2E_SKILL.react.id);

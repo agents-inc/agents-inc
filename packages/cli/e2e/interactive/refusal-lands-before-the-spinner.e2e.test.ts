@@ -2,7 +2,7 @@ import { mkdir } from "fs/promises";
 import path from "path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -36,9 +36,9 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * frame. Neither spec subsumes the other.
  */
 
-/** The `source-fetcher` message for a source path that is not a directory. */
-const LOCAL_SOURCE_NOT_FOUND = "Local source not found:";
-/** A path no source can be fetched from, named so the failure is proved to be about it. */
+/** The `source-fetcher` message for a marketplace path that is not a directory. */
+const LOCAL_MARKETPLACE_NOT_FOUND = "Local marketplace not found:";
+/** A path no marketplace can be fetched from, named so the failure is proved to be about it. */
 const MISSING_SOURCE_PATH = "/tmp/not-a-real-source-path-refusal-frame";
 /** The spinner row exactly as it is painted, less its rotating glyph. */
 const SPINNER_ROW = `${STEP_TEXT.LOADING_SKILLS}...`;
@@ -63,7 +63,7 @@ describe("a refusal does not sit under a live spinner", () => {
     const emptyDir = path.join(tempDir, "empty");
     await mkdir(emptyDir, { recursive: true });
 
-    prompt = new InteractivePrompt(["edit"], emptyDir, { env: { CC_SOURCE: undefined } });
+    prompt = new InteractivePrompt(["edit"], emptyDir, { env: { CC_MARKETPLACE: undefined } });
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
@@ -77,7 +77,7 @@ describe("a refusal does not sit under a live spinner", () => {
     ).toBe(false);
   });
 
-  it("edit, whose stored source is gone, leaves the error as the last thing on screen", async () => {
+  it("edit, whose stored marketplace is gone, leaves the error as the last thing on screen", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
@@ -85,22 +85,22 @@ describe("a refusal does not sit under a live spinner", () => {
     // loadSource catch inside loadContext — the second of its three throw paths.
     await writeProjectConfig(projectDir, {
       name: "refusal-frame-project",
-      source: MISSING_SOURCE_PATH,
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      marketplace: MISSING_SOURCE_PATH,
+      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
     });
-    await createLocalSkill(projectDir, "web-framework-react", {
+    await createLocalSkill(projectDir, E2E_SKILL.react.id, {
       description: "Minimal skill for the refusal-frame guard",
       metadata: renderMetadataYaml({ contentHash: "hash-refusal-frame" }),
     });
 
-    prompt = new InteractivePrompt(["edit"], projectDir, { env: { CC_SOURCE: undefined } });
+    prompt = new InteractivePrompt(["edit"], projectDir, { env: { CC_MARKETPLACE: undefined } });
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
     expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
 
     const screen = prompt.getScreen();
-    expect(screen).toContain(LOCAL_SOURCE_NOT_FOUND);
+    expect(screen).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
     expect(screen).toContain(MISSING_SOURCE_PATH);
     expect(
       screen.trimEnd().endsWith(SPINNER_ROW),
@@ -108,22 +108,22 @@ describe("a refusal does not sit under a live spinner", () => {
     ).toBe(false);
   });
 
-  it("init, pointed at a source that does not exist, leaves the error as the last thing on screen", async () => {
+  it("init, pointed at a marketplace that does not exist, leaves the error as the last thing on screen", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
 
     // `Init.selectionFromWizard` has the identical structure: render, await the
     // load, then clear and unmount as statements AFTER the await.
-    prompt = new InteractivePrompt(["init", "--source", MISSING_SOURCE_PATH], projectDir, {
-      env: { CC_SOURCE: undefined },
+    prompt = new InteractivePrompt(["init", "--marketplace", MISSING_SOURCE_PATH], projectDir, {
+      env: { CC_MARKETPLACE: undefined },
     });
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
     expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
 
     const screen = prompt.getScreen();
-    expect(screen).toContain(LOCAL_SOURCE_NOT_FOUND);
+    expect(screen).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
     expect(screen).toContain(MISSING_SOURCE_PATH);
     expect(
       screen.trimEnd().endsWith(SPINNER_ROW),

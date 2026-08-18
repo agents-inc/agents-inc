@@ -4,6 +4,7 @@ import type { SourcesStep } from "../pages/steps/sources-step.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("init wizard — source management", () => {
   let wizard: InitWizard | undefined;
@@ -52,12 +53,12 @@ describe("init wizard — source management", () => {
         expect(output).not.toContain(STEP_TEXT.INSTALLING_PLUGINS);
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           source: "eject",
         });
         await expect({ dir: w.globalHome }).toHaveCompiledAgent("web-developer");
-        await expect({ dir: w.globalHome }).toHaveSkillCopied("web-framework-react");
+        await expect({ dir: w.globalHome }).toHaveSkillCopied(E2E_SKILL.react.id);
       },
     );
   });

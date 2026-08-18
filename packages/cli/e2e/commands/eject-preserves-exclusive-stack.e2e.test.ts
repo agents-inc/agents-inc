@@ -65,7 +65,7 @@ const EXPECTED_STACK = {
 };
 
 /** The bare, array-less form the writer emits for an exclusive category. */
-const BARE_EXCLUSIVE_ENTRY = /"web-framework":\s*"web-framework-react"/;
+const BARE_EXCLUSIVE_ENTRY = new RegExp(`"web-framework":\\s*"${E2E_SKILL.react.id}"`);
 
 describe("eject preserves a project's exclusive stack categories", () => {
   let sourceDir: string;

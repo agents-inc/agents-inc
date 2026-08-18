@@ -21,6 +21,8 @@ export const FILES = {
   PLAYBOOK_MD: "playbook.md",
   PLUGIN_JSON: "plugin.json",
   MARKETPLACE_JSON: "marketplace.json",
+  CATALOG_JSON: "catalog.json",
+  PACKAGE_JSON: "package.json",
 } as const;
 
 /** Text that identifies each wizard step. Centralized so UI changes update one place. */
@@ -36,6 +38,16 @@ export const STEP_TEXT = {
   BUILD_FOOTER: "Labels", // Build-step-only footer hint (the Labels indicator) — always rendered on first build frame. (The "Filter incompatible" hint that previously anchored this sentinel is gated off behind FEATURE_FLAGS.FILTER_INCOMPATIBLE.)
   SCOPE: "Scope", // Build/agents-step footer hotkey label — rendered only for genuine project-scope edits (hidden when isEditingFromGlobalScope is true).
   CATEGORY_FRAMEWORK: "Framework", // Category label passed as an argument, not a step sentinel like BUILD
+  // THE SOURCES STEP'S SCREEN SENTINEL — `wizard-layout.tsx`'s `STEP_DROPDOWN_LABEL.sources`,
+  // duplicated exactly. Every step page object waits on it to know the screen arrived, so a
+  // subtitle that moves without this constant does not fail an assertion: it hangs each wizard
+  // spec for the full `TIMEOUTS.WIZARD_LOAD` budget. `wizard-layout.test.tsx` carries the fast
+  // half of the pair and names the string in under a second.
+  //
+  // The wording is the step's subject — where each skill comes from — and NOT the config field
+  // the step writes, which is `SkillConfig.origin`. Heading it with that field's noun was
+  // proposed and withdrawn by the owner, so the mismatch is deliberate. Any rewording moves in
+  // exactly two places: here and `wizard-layout.tsx`.
   SOURCES: "Customize skill sources",
   AGENTS: "Select agents",
   CONFIRM: "to install",
@@ -73,6 +85,12 @@ export const STEP_TEXT = {
   COMPILE_GLOBAL_SCOPE_HINT: "global-scoped — run", // Stable fragment of the project-context compile hint
   CONFIG_TYPES_REFRESHED: "Refreshed config-types.ts", // Per-pass compile line after config-types regeneration
   SKILL_NOT_FOUND_WARNING: "is configured but was not found", // Compile warning for a config-listed skill with no installed files
+  // The stack advisory `resolveAgentConfigToSkills` prints for a stack id no loaded
+  // catalogue declares — its sibling one layer over: there the skill is missing from
+  // disk, here it is on disk and unknown to the matrix. Suppressed inside the unit
+  // suite, so it is only assertable here because neither runner hands the spawned
+  // binary its own `VITEST`.
+  STACK_SKILL_ABSENT_FROM_MATRIX: "not found in matrix",
   COMPILE_PASS_NO_SKILLS: "No skills found for", // Per-pass zero-skill line: "No skills found for global/project pass, skipping"
   // The line a load prints when revalidation found the remote source had moved on, and the
   // one it prints instead when it could not ask at all and served the cached copy anyway.
@@ -87,6 +105,9 @@ export const STEP_TEXT = {
   // Hard error when an installed skill's metadata.yaml exists but nothing usable can be
   // made of it — unparseable, or parseable and missing fields the skill is described by.
   // Mirrors CONFIG_LOAD_FAILED's phrasing for the same class of fault one layer down.
+  // Asserted through `flattenCliOutput` for the same reason the way-out line below is:
+  // it opens an oclif error box, and where the wrap falls depends on how long the
+  // skill id in the preceding line is.
   COMPILE_METADATA_UNUSABLE: "does not describe",
   // The reason line under the refusal above when the file parsed but left required fields out.
   COMPILE_METADATA_MISSING_FIELD: "missing required field",
@@ -145,12 +166,14 @@ export const STEP_TEXT = {
   // beneath it, so it belongs to the items the plan keeps rather than to the directories
   // merely existing — printed over an empty list it promises nothing.
   UNINSTALL_CLI_MANAGED_SECTION: "CLI-managed files:",
-  // What the plan says in place of the compiled-agents item, and the reason it gives.
-  // Naming which agent files this CLI compiled is a question only the configuration answers,
-  // so a run that has no configuration it can read keeps every one of them — and says it kept
-  // them instead of listing a removal it then declines to make.
-  UNINSTALL_AGENTS_KEPT: "Kept compiled agents",
-  UNINSTALL_AGENTS_KEPT_REASON: "needs the configuration",
+  // What the plan says beside the compiled-agents item, and the reason it gives. Once the
+  // configuration naming this CLI's agents is gone, the provenance marker each compiled file
+  // carries is what identifies them — so an agent file without one is the user's and stays,
+  // and the plan says so rather than listing a removal it then declines to make. Both count
+  // forms are spelled out because the count is part of the claim.
+  UNINSTALL_AGENTS_KEPT_ONE: "Kept 1 agent in",
+  UNINSTALL_AGENTS_KEPT_TWO: "Kept 2 agents in",
+  UNINSTALL_AGENTS_KEPT_REASON: "no agents-inc marker",
 
   // The two cells of the Sources grid's install-mode control. They are the cells' OWN captions —
   // there is no pinned header repeating them, because with two fixed states the caption row would
@@ -180,7 +203,9 @@ export const STEP_TEXT = {
   DOCTOR_CONTENT_SECTION: "Content checks",
   DOCTOR_OPERATIONAL_SECTION: "Operational checks",
   DOCTOR_SKIP_AFTER_CONTENT_ERRORS: "Skipped — fix the content errors above first",
-  DOCTOR_SKIP_NO_INSTALLATION: "Skipped — no installation here (skills source repository)",
+  // Duplicated verbatim from `SKIP_NO_INSTALLATION` in src/cli/commands/doctor.ts. The
+  // parenthetical names what the directory IS to a marketplace author standing in it.
+  DOCTOR_SKIP_NO_INSTALLATION: "Skipped — no installation here (marketplace repository)",
   // A row name that only the operational layer emits, so its absence proves the
   // layer was skipped rather than merely quiet.
   DOCTOR_CONFIG_CHECK: "Config Valid",
@@ -192,10 +217,14 @@ export const STEP_TEXT = {
   DOCTOR_ROW_NO_ORPHANS: "No Orphans",
   DOCTOR_ROW_SKILLS_INSTALLED: "Skills Installed",
   DOCTOR_ROW_PLUGINS_INSTALLED: "Plugins Installed",
-  DOCTOR_ROW_SOURCE_REACHABLE: "Source Reachable",
+  DOCTOR_ROW_SOURCE_REACHABLE: "Marketplace Reachable",
+  // The content layer's own row for the same subject — `CONTENT_CHECKS`'s `name` in
+  // src/cli/commands/doctor.ts. Named here because the two rows are the pair a rename has
+  // to move together: one says whether the marketplace loads, the other what is in it.
+  DOCTOR_ROW_MARKETPLACES: "Marketplaces",
   // `checkConfigValid`'s pass message and `checkSourceReachable`'s pass message
-  // plus its details line. The source label carries its colon so it cannot match
-  // narrative prose about a local source.
+  // plus its details line. The connection label carries its colon so it cannot match
+  // narrative prose about a local marketplace.
   DOCTOR_CONFIG_IS_VALID: "is valid",
   DOCTOR_SOURCE_LOCAL: "Connected to local:",
   DOCTOR_SKILLS_AVAILABLE: "skills available",
@@ -207,7 +236,8 @@ export const STEP_TEXT = {
   // header and several row details carry it.
   DOCTOR_TIP_COMPILE_AGENTS: "to generate missing agent files",
   DOCTOR_TIP_CHECK_SKILL_IDS: "Check skill IDs in config match available skills",
-  DOCTOR_TIP_RE_EJECT: "Re-eject the missing skills from the source to restore their files",
+  // Duplicated verbatim from the `TIPS` table in src/cli/commands/doctor.ts.
+  DOCTOR_TIP_RE_EJECT: "Re-eject the missing skills from the marketplace to restore their files",
   DOCTOR_SUMMARY: "Summary:",
   // The content layer's two count rows, split at the number the caller composes:
   // "<n> skills validated" / "<n> agents validated". They are what the layer
@@ -215,6 +245,19 @@ export const STEP_TEXT = {
   // something after the configuration naming that content is deleted.
   DOCTOR_SKILLS_VALIDATED: "skills validated",
   DOCTOR_AGENTS_VALIDATED: "agents validated",
+  // The Marketplaces row's own count line, composed by `contentMessage` from the check's
+  // `noun`. One installation reads from one marketplace, so the singular is the whole row —
+  // and the noun is what a rename of the check has to carry through to this sentence.
+  DOCTOR_ONE_MARKETPLACE_VALIDATED: "1 marketplace validated",
+  // The two failure lines the same row prints, from `checkSourceReachable` and from the
+  // skills row that stands down when it could not load.
+  DOCTOR_MARKETPLACE_LOAD_FAILED: "Failed to load marketplace",
+  DOCTOR_SKILLS_SKIPPED_UNREACHABLE: "Skipped (marketplace unreachable)",
+  // The half of the unresolved-slug finding only a CONSUMER is shown. The same defect is a hard
+  // error while authoring the marketplace that holds it, and an advisory to a reader who cannot
+  // open the file — so the consumer's line says outright that there is nothing here to fix.
+  // Duplicated verbatim from `consumedMarketplaceMessage` in src/cli/lib/source-validator.ts.
+  DOCTOR_FOREIGN_MARKETPLACE_DEFECT: "Nothing to fix here",
   // The content layer's config row. A config file that exists and cannot be parsed is a finding
   // about a file on disk, so it is reported here — and the operational layer, every row of which
   // would be a cascade of it, is skipped by the same rule that skips them after any content error.
@@ -235,21 +278,36 @@ export const STEP_TEXT = {
   DOCTOR_TIP_CREATE_CONFIG: "to create a configuration",
   DOCTOR_TIP_RECREATE_CONFIG: "still works on a config it cannot read",
   DOCTOR_TIP_NOTHING_CONFIGURED: "Nothing is configured yet",
+  // The skills content pass declining a directory in the shared `~/.claude/skills/` tree that
+  // nothing here installed — no configuration names its id and it carries no `forkedFrom`. A note
+  // rather than a finding: it is not this installation's file to judge, and saying so is the whole
+  // of what it owes a reader wondering why the count is lower than the listing. Duplicated
+  // verbatim from `foreignSkillNote` in src/cli/lib/content-validator.ts.
+  DOCTOR_FOREIGN_SKILL_DIR: "not installed by this CLI",
   // The No Orphans row when the configuration is absent and the installation it described is not:
-  // every installed skill directory and compiled agent file is unowned, and the row names each one
-  // instead of standing down. Its remedy is the fourth: the files outlive the config, so `init`
-  // alone — which is what the config row already advises — does not describe what to do with them.
+  // every skill directory and compiled agent file this CLI can prove it wrote is unowned, and the
+  // row names each one instead of standing down. Its remedy is the fourth: the files outlive the
+  // config, so `init` alone — which is what the config row already advises — does not describe
+  // what to do with them.
   DOCTOR_UNOWNED_INSTALL: "no configuration declares them",
-  DOCTOR_TIP_UNOWNED_INSTALL: "Nothing declares the files above",
+  // The tip's substantive CLAIM rather than its lead-in, because the lead-in is true of any
+  // wording. This is the half a spec has to hold the CLI to: the tip used to say identifying the
+  // compiled agents needed the configuration that is gone, which `identifiableAgents`' fallback
+  // to the marker-carrying files had already made untrue, and a match on "Nothing declares the
+  // files above" could not see it. Duplicated verbatim from the `orphans-unowned` tip in
+  // src/cli/commands/doctor.ts.
+  DOCTOR_TIP_UNOWNED_INSTALL: "removes them, the compiled agents included",
   // What the operational rows say once they are given a config that loads: the truth about an
   // empty one, in place of the `Skipped (config invalid)` they printed about a valid file.
   DOCTOR_SKIPPED_CONFIG_INVALID: "Skipped (config invalid)",
   DOCTOR_NO_SKILLS_CONFIGURED: "No skills configured",
   DOCTOR_NO_AGENTS_CONFIGURED: "No agents configured",
-  // The source loader's own diagnostic for the same file, emitted once per read. doctor runs
+  // The config loader's own diagnostic for the same file, emitted once per read. doctor runs
   // verbose, so these used to interleave with the rows above; the finding carries the reason now
-  // and nothing re-reads the file to print it again.
-  CONFIG_SOURCE_LOAD_NOISE: "Failed to load project source config",
+  // and nothing re-reads the file to print it again. Duplicated verbatim from `loadSourceConfig`
+  // in src/cli/lib/configuration/config.ts — the spec below asserts its ABSENCE, which is the
+  // assertion that silently stops matching if the two drift apart.
+  CONFIG_SOURCE_LOAD_NOISE: "Failed to load project config",
 
   // UI elements
   FOOTER_SELECT: "select", // Footer text used for stable render detection
@@ -303,6 +361,40 @@ export const STEP_TEXT = {
   SHARED_CONFIG_GLOBAL_INSTALL: "a global installation already exists at",
   SHARED_CONFIG_UNINSTALL_HINT: "Run 'npx agents-inc uninstall'",
   SHARED_CONFIG_UNWRITABLE_PAIR: "these assignments have nowhere to be written",
+
+  // The install-boundary refusal: the home directory IS the global scope, and a global
+  // installation holds only global-scoped content, so a payload's project-scoped entries
+  // have nowhere to be written there. The hint is the way out, and it is not `uninstall` —
+  // the payload is fine, the location is not.
+  SHARED_CONFIG_PROJECT_SCOPE_AT_HOME: "these project-scoped entries have nowhere to be written",
+  SHARED_CONFIG_PROJECT_SCOPE_HINT: "Run this from inside a project directory",
+
+  // `edit --from` — the inbound half of the round trip, and the destructive one. The project
+  // is made to MATCH the payload, so the removals are shown and confirmed first, and a run
+  // with no terminal refuses rather than confirming silently. Every sentinel below is a short
+  // unbroken fragment: oclif wraps error text at the terminal width, and the Ink plan is read
+  // off a 120-column PTY screen.
+  SHARED_CONFIG_APPLY_PREVIEW: "Applying this configuration will remove:",
+  SHARED_CONFIG_APPLY_CONFIRM: "Apply this configuration?",
+  SHARED_CONFIG_APPLY_NOTHING_REMOVED: "Nothing is removed",
+  SHARED_CONFIG_NEEDS_TERMINAL: "no terminal here to confirm it at",
+  SHARED_CONFIG_ONE_DIRECTION: "two directions of the same round trip",
+  // The plan's two "kept" disclosures — what the run may not remove, and why. The first is
+  // ownership, which `forkedFrom` decides; the second is this catalogue's own limit, for an id
+  // the configuration NAMES and the decode could not place. Both name a real remedy, which is
+  // what makes them a disclosure rather than an apology. Scope is NOT one of them: a global
+  // entry is removable, and what it gets instead is the blast-radius disclosure below.
+  SHARED_CONFIG_KEPT_AUTHORED: "written here rather than installed",
+  SHARED_CONFIG_KEPT_UNPLACEABLE: "cannot place them",
+  SHARED_CONFIG_KEPT_UNPLACEABLE_REMEDY: "then apply the configuration again",
+  // The project run's own half of the plan: a removal at global scope is shown under its own
+  // heading, and the statement beneath it counts and NAMES the other registered projects the
+  // yes changes. Absent at the home directory, where the scope was chosen and is obvious.
+  SHARED_CONFIG_GLOBAL_SKILLS_HEADING: "Skills installed globally",
+  SHARED_CONFIG_GLOBAL_AGENTS_HEADING: "Sub-agents installed globally",
+  SHARED_CONFIG_GLOBAL_REACH: "shared by every project on this machine",
+  SHARED_CONFIG_GLOBAL_REACH_PROJECTS: "Also affects",
+  SHARED_CONFIG_GLOBAL_REACH_ALONE: "No other project is registered here",
 
   // The advisory selection-validation report both `init` and `edit` print after the wizard
   // (validateRequirements / validateConflicts / validateExclusivity in matrix-resolver.ts). The
@@ -485,6 +577,54 @@ export const EXIT_CODES = {
   CANCELLED: 4,
   UNKNOWN_COMMAND: 127,
 } as const;
+
+/**
+ * Prefix every marketplace an E2E fixture publishes under must carry.
+ *
+ * `e2e/global-setup.ts` sweeps stale Claude marketplace registrations with a
+ * `startsWith` on this string, so a fixture that publishes outside it survives
+ * the run that created it. It lives here rather than in that file because the
+ * sweep and the names being swept are two surfaces that must agree.
+ */
+export const E2E_MARKETPLACE_PREFIX = "e2e-test-";
+
+/**
+ * The marketplace name `createE2EPluginSource` publishes under by default.
+ *
+ * STABLE, not timestamped: a marketplace's name is the namespace its skill ids
+ * are written in, so a name that changes per run cannot be asserted against and
+ * cannot be composed into an id. `e2eSkillId` in create-e2e-source.ts builds
+ * ids from it.
+ *
+ * Carries {@link E2E_MARKETPLACE_PREFIX} so the cleanup sweep still matches, and
+ * spells neither "source" nor "marketplace" — the name is echoed into CLI output
+ * (`Installed <skill>@<marketplace>`), where a spec asserting the absence of
+ * either noun would match the fixture instead of the product's own prose. Same
+ * reasoning as the `fixture` path segment in create-e2e-source.ts.
+ */
+export const E2E_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}fixture`;
+
+/**
+ * Composes a skill id in the fixture marketplace's namespace.
+ *
+ * A marketplace's skill ids carry that marketplace's name as their prefix, and the
+ * prefix must EQUAL the name `build marketplace` reads from package.json — so the
+ * two are one string and neither surface may spell it alone. Exported before a
+ * second caller exists for the reason CLAUDE.md carves out for `skillSlotKey`:
+ * this is the one definition every surface that builds or asserts a fixture id is
+ * meant to call, and four of them have to agree on it.
+ *
+ * It lives here rather than beside the disk writer because `test-utils.ts` has to
+ * call it too, and that file is what the disk writer imports its temp dir from —
+ * so a builder living there could only be reached through an import cycle.
+ *
+ * `bare` is the id WITHOUT the namespace. The composed id is deliberately typed
+ * `string`: a namespaced id is not a member of the generated `SkillId` union, and
+ * casting it into one would be a lie about the catalogue.
+ */
+export function e2eSkillId(bare: string): string {
+  return `${E2E_MARKETPLACE_NAME}-${bare}`;
+}
 
 /** Paths within a skills source directory, duplicated from src/cli/consts.ts. */
 export const SOURCE_PATHS = {

@@ -16,6 +16,7 @@ import {
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Re-edit / multiple edit cycle E2E tests.
@@ -105,7 +106,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // --- Phase 1 verification ---
         expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           source: "eject",
         });
@@ -114,7 +115,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           name: "web-developer",
         });
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
 
         const initArrays = await readConfigArrays(projectDir);
@@ -137,7 +138,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // --- Phase 2 verification ---
         expect(await edit1Result.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           source: "eject",
         });
@@ -146,7 +147,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           name: "web-developer",
         });
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
 
         const edit1Arrays = await readConfigArrays(projectDir);
@@ -172,7 +173,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // --- Phase 3 verification ---
         expect(await edit2Result.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           source: "eject",
         });
@@ -181,7 +182,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           name: "web-developer",
         });
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
 
         const edit2Arrays = await readConfigArrays(projectDir);
@@ -227,12 +228,12 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // ================================================================
 
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           domains: ["web"],
           stack: {
             "web-developer": {
-              "web-framework": [{ id: "web-framework-react", preloaded: true }],
+              "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
             },
           },
         });
@@ -250,7 +251,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         // Verify initial state via matcher and detailed parsing
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           source: "eject",
         });
@@ -288,7 +289,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         await expectPhaseSuccess(
           { project: { dir: projectDir }, exitCode: edit1Result.exitCode },
           {
-            skillIds: ["web-framework-react"],
+            skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
             source: "eject",
           },
@@ -297,7 +298,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           name: "web-developer",
         });
         await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
 
         const addArrays = await readConfigArrays(projectDir);
@@ -312,7 +313,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         expectNoDuplicates(addArrays.skillIds, "skills after adding");
         expectNoDuplicates(addArrays.agentNames, "agents after adding");
 
-        expect(addArrays.skillIds).toContain("web-framework-react");
+        expect(addArrays.skillIds).toContain(E2E_SKILL.react.id);
 
         const addedSkillIds = addArrays.skillIds.filter(
           (id) => !beforeArrays.skillIds.includes(id),
@@ -337,7 +338,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         await expectPhaseSuccess(
           { project: { dir: projectDir }, exitCode: edit2Result.exitCode },
           {
-            skillIds: ["web-framework-react"],
+            skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
             source: "eject",
           },
@@ -346,7 +347,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           name: "web-developer",
         });
         await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
 
         const noChangeArrays = await readConfigArrays(projectDir);
@@ -362,7 +363,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           expect(noChangeArrays.skillIds).toContain(addedId);
         }
 
-        expect(noChangeArrays.skillIds).toContain("web-framework-react");
+        expect(noChangeArrays.skillIds).toContain(E2E_SKILL.react.id);
       },
     );
   });

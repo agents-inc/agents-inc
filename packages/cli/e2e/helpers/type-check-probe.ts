@@ -21,6 +21,22 @@ import { stripVTControlCharacters } from "node:util";
  */
 
 /**
+ * Every alias `assembleConfigTypesSource` emits into a generated `config-types.ts`
+ * (`src/cli/lib/configuration/config-types-writer.ts`), and so the whole vocabulary a probe may
+ * import.
+ *
+ * A union rather than `readonly string[]` because the probe takes alias NAMES and supplies its
+ * own literal, and the two are indistinguishable at runtime while proving opposite things. A
+ * skill id handed over in an alias's place renders `import type { web-framework-react }`, which
+ * tsc rejects as a SYNTAX error — non-zero for a reason that has nothing to do with narrowing, so
+ * a caller written `exitCode !== 0` held against a `config-types.ts` degraded all the way to
+ * `SkillId = string`, which is the exact failure this probe exists to catch. Typed this way the
+ * mistake is a compile error instead.
+ */
+export type GeneratedAlias =
+  "SkillId" | "AgentName" | "SelectedAgentName" | "ProjectAgentName" | "Domain" | "Category";
+
+/**
  * A literal no generated union can legitimately contain. Deliberately not a
  * plausible slug so a fixture rename can never turn it into a real member.
  */
@@ -81,7 +97,7 @@ const CONFIG_FILENAME = "config.ts";
  * Renders a probe module that imports the given aliases from a sibling
  * `config-types` and assigns {@link BOGUS_TYPE_LITERAL} to each one.
  */
-function renderNarrowingProbe(aliases: readonly string[]): string {
+function renderNarrowingProbe(aliases: readonly GeneratedAlias[]): string {
   const importLine = `import type { ${aliases.join(", ")} } from "./config-types";`;
   const assignments = aliases.map(
     (alias) => `export const probe${alias}: ${alias} = "${BOGUS_TYPE_LITERAL}";`,
@@ -99,11 +115,13 @@ function renderNarrowingProbe(aliases: readonly string[]): string {
  *
  * @returns `exitCode` 0 when every alias accepted the bogus literal — i.e. the
  *          unions are NOT narrowing — and non-zero with `TS2322` diagnostics in
- *          `output` when they are.
+ *          `output` when they are. Judge on {@link TS_NOT_ASSIGNABLE} in `output`,
+ *          never on `exitCode` alone: tsc exits non-zero for any diagnostic at all,
+ *          and only that one says the alias rejected the literal.
  */
 export async function probeConfigTypesNarrowing(
   claudeSrcDir: string,
-  aliases: readonly string[],
+  aliases: readonly GeneratedAlias[],
 ): Promise<{ exitCode: number; output: string }> {
   const probePath = path.join(claudeSrcDir, PROBE_FILENAME);
   await writeFile(probePath, renderNarrowingProbe(aliases));

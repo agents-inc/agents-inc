@@ -106,7 +106,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         await expectPhaseSuccess(
           { project: { dir: projectDir }, exitCode: initResult.exitCode },
           {
-            skillIds: ["web-framework-react"],
+            skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
             source: "eject",
           },
@@ -120,7 +120,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           name: "web-developer",
         });
         await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
 
         // The pre-state the merge is measured against: the spare is what the edit
@@ -178,7 +178,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         await expectPhaseSuccess(
           { project: { dir: projectDir }, exitCode: editResult.exitCode },
           {
-            skillIds: ["web-framework-react"],
+            skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
             source: "eject",
           },
@@ -221,7 +221,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           name: "web-developer",
         });
         await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
         });
         await expect({ dir: projectDir }).toHaveAgentDynamicSkills("web-developer", {
           skillIds: [ADDED_SKILL.id, PRESERVED_SKILL.id],

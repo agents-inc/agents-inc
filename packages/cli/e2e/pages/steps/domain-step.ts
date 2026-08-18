@@ -6,13 +6,28 @@ import { StackStep } from "./stack-step.js";
 export class DomainStep extends BaseStep {
   /** Accept the default domain selection (Enter). Returns BuildStep. */
   async acceptDefaults(): Promise<BuildStep> {
-    await this.waitForStep(STEP_TEXT.DOMAINS);
     // Cursor-anchored Enter: "Framework" (BUILD) is the first category label
     // printed by the build step's first frame. Using waitForText on scrollback
     // is unsafe here because an earlier wizard step may have printed "Framework"
     // (e.g. the stack step's "Other Frameworks" group) — the anchored wait
     // ensures we only match the NEW render triggered by this Enter press.
-    await this.pressEnterAndWaitFor(STEP_TEXT.BUILD);
+    return this.advanceTo(STEP_TEXT.BUILD);
+  }
+
+  /**
+   * Accept the default domain selection, waiting on a build-step sentinel the
+   * CALLER names. Returns BuildStep.
+   *
+   * {@link acceptDefaults} waits for `STEP_TEXT.BUILD` — "Framework", the first
+   * category label the fixture marketplace happens to paint. That string is a
+   * property of THAT marketplace's categories, not of the wizard, so a session
+   * running against a marketplace with categories of its own has to say what its
+   * own build step prints. `STEP_TEXT.BUILD_FOOTER` is the marketplace-independent
+   * choice for such a caller.
+   */
+  async advanceTo(buildStepSentinel: string): Promise<BuildStep> {
+    await this.waitForStep(STEP_TEXT.DOMAINS);
+    await this.pressEnterAndWaitFor(buildStepSentinel);
     return new BuildStep(this.session, this.projectDir);
   }
 

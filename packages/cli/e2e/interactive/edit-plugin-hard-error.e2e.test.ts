@@ -20,6 +20,15 @@ import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../
 import "../matchers/setup.js";
 
 /**
+ * The word CLI-463 withdraws from the user-facing surface, as a whole word. The refusal
+ * under test reads "marketplace could not be resolved from '<ref>' … fix the marketplace
+ * or switch the affected skills to eject mode" — one noun for one thing, where it once
+ * spelled three. `<ref>` is a path the fixture chose and this negative runs over the whole
+ * message, so `createE2ESource` owes it a directory segment that spells neither noun.
+ */
+const WITHDRAWN_NOUN = /\bsources?\b/i;
+
+/**
  * Hard-error coverage for plugin-install intent when marketplace resolution
  * fails. Enforces the "never silently substitute eject for plugin" rule from
  * feedback_no_plugin_to_eject_fallback.md.
@@ -28,7 +37,7 @@ import "../matchers/setup.js";
  *
  * Scenarios:
  *   - `cc edit` against a project whose config lacks `marketplace` AND whose
- *     --source points at a local directory with no marketplace.json. Adding a
+ *     --marketplace points at a local directory with no marketplace.json. Adding a
  *     plugin-sourced skill MUST hard-error, not silently skip.
  *   - `cc init` against a local source with no marketplace.json. With plugin
  *     mode implied by the default `primarySource`, the old behavior copied the
@@ -84,9 +93,9 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
       async () => {
         const project = await ProjectBuilder.pluginProject({
           // The local source with no marketplace.json — the resolution failure point.
-          source: localSource.sourceDir,
+          marketplace: localSource.sourceDir,
           skills: [E2E_SKILL.react.id],
-          marketplace: fixture.marketplaceName,
+          marketplaceName: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
           domains: ["web"],
           omitMarketplaceField: true,
@@ -119,6 +128,10 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
 
         const output = result.output;
         expect(output).toContain("marketplace could not be resolved");
+        expect(
+          output,
+          "the refusal names the marketplace it could not resolve, not a source",
+        ).not.toMatch(WITHDRAWN_NOUN);
         expect(output).not.toContain("Installed");
 
         // State integrity: neither config nor settings may mutate on hard-error.
@@ -131,7 +144,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
   });
 
   /**
-   * Init scenario: user runs `cc init --source <localDir>` where <localDir>
+   * Init scenario: user runs `cc init --marketplace <localDir>` where <localDir>
    * has no marketplace.json. Default skill sources carry plugin intent
    * (primarySource / DEFAULT_PUBLIC_SOURCE_NAME). Previously the CLI silently
    * copied the plugin-intended skills as eject copies. After the fix,
@@ -177,6 +190,10 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
 
         const output = result.output;
         expect(output).toContain("marketplace could not be resolved");
+        expect(
+          output,
+          "the refusal names the marketplace it could not resolve, not a source",
+        ).not.toMatch(WITHDRAWN_NOUN);
         // The old silent fallback emitted the eject-copy line — it must be absent.
         expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
       },

@@ -90,7 +90,7 @@ async function describeMissingContent(
 export const projectMatchers = {
   /**
    * Checks that .claude-src/config.ts exists and optionally validates content.
-   * Usage: await expect(project).toHaveConfig({ skillIds: ["web-framework-react"] })
+   * Usage: await expect(project).toHaveConfig({ skillIds: [E2E_SKILL.react.id] })
    */
   async toHaveConfig(received: { dir: string }, expectations?: ConfigExpectations) {
     const configPath = path.join(received.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);

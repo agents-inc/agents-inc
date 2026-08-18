@@ -10,15 +10,27 @@ import {
   runCLI,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { flattenCliOutput } from "../fixtures/seed-config-store.js";
 
-/** The `source-fetcher` message for a source path that is not a directory. */
-const LOCAL_SOURCE_NOT_FOUND = "Local source not found:";
+/** The `source-fetcher` message for a marketplace path that is not a directory. */
+const LOCAL_SOURCE_NOT_FOUND = "Local marketplace not found:";
 /** The two paths these guards name, so the message is proved to be ABOUT them. */
 const MISSING_INIT_SOURCE_PATH = "/tmp/not-a-real-source-path-xyz";
 const MISSING_EDIT_SOURCE_PATH = "/nonexistent/path/xyz";
+
+/**
+ * The three spellings the init hook's raw-argv scan answers to. oclif has not parsed
+ * anything when that scan runs, so the flag's name is written a second time there and
+ * nothing checks the two definitions against each other — which is why all three forms
+ * are driven through the binary rather than one standing in for the others.
+ */
+const MARKETPLACE_FLAG_SPELLINGS = [
+  ["separate argument", ["--marketplace", MISSING_INIT_SOURCE_PATH]],
+  ["equals form", [`--marketplace=${MISSING_INIT_SOURCE_PATH}`]],
+  ["short form", ["-m", MISSING_INIT_SOURCE_PATH]],
+] as const satisfies readonly (readonly [string, readonly string[]])[];
 
 /**
  * Error guard E2E tests for init, compile, and edit commands.
@@ -54,7 +66,7 @@ describe("init/edit error guards", () => {
       await mkdir(projectDir, { recursive: true });
 
       const { exitCode, combined } = await runCLI(
-        ["init", "--source", MISSING_INIT_SOURCE_PATH],
+        ["init", "--marketplace", MISSING_INIT_SOURCE_PATH],
         projectDir,
         { env: { HOME: tempDir } },
       );
@@ -64,6 +76,50 @@ describe("init/edit error guards", () => {
       // here and was satisfied by any output at all, including a different error.
       expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
       expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
+    },
+  );
+
+  it.each(MARKETPLACE_FLAG_SPELLINGS)(
+    "init reaches the named marketplace through the %s",
+    { timeout: TIMEOUTS.INSTALL },
+    async (_name, argv) => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      await mkdir(projectDir, { recursive: true });
+
+      const { exitCode, combined } = await runCLI(["init", ...argv], projectDir, {
+        env: { HOME: tempDir },
+      });
+
+      // Naming the path back is the proof the scan read it: a spelling the scan does
+      // not answer to falls through to the default marketplace and this run would
+      // reach a wizard instead of a refusal about this path.
+      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
+    },
+  );
+
+  it(
+    "init refuses the withdrawn --source spelling before it reaches a marketplace",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      await mkdir(projectDir, { recursive: true });
+
+      const { exitCode, combined } = await runCLI(
+        ["init", "--source", MISSING_INIT_SOURCE_PATH],
+        projectDir,
+        { env: { HOME: tempDir } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
+      expect(
+        flattenCliOutput(combined),
+        "the parser refuses the name, so the loader is never handed the path",
+      ).toContain("Nonexistent flag: --source");
+      expect(flattenCliOutput(combined)).not.toContain(LOCAL_SOURCE_NOT_FOUND);
     },
   );
 
@@ -77,7 +133,7 @@ describe("init/edit error guards", () => {
       // Create config referencing a skill, but do NOT create .claude/skills/
       await writeProjectConfig(projectDir, {
         name: "test-missing-skills",
-        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
@@ -119,7 +175,7 @@ describe("init/edit error guards", () => {
 
   /**
    * Same guard, same load path, reached through the command that CANNOT be pointed at a
-   * source: `edit` takes no `--source`, so the path it fails on is the one its own config
+   * source: `edit` takes no `--marketplace`, so the path it fails on is the one its own config
    * records — the install whose marketplace has since been moved or deleted.
    */
   it(
@@ -132,12 +188,12 @@ describe("init/edit error guards", () => {
       // Create a minimal installation so detectProject() succeeds
       await writeProjectConfig(projectDir, {
         name: "test-edit-bad-source",
-        source: MISSING_EDIT_SOURCE_PATH,
-        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        marketplace: MISSING_EDIT_SOURCE_PATH,
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
-      await createLocalSkill(projectDir, "web-framework-react", {
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "Minimal skill for edit error test",
         metadata: renderMetadataYaml({ contentHash: "hash-edit-err" }),
       });

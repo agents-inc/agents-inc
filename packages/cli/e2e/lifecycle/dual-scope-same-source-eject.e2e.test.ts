@@ -28,7 +28,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Dual-scope, SAME source mode (both copies eject).
@@ -56,7 +57,7 @@ import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
  * both-eject cell.
  */
 
-const HONO_ID = "api-framework-hono";
+const HONO_ID = E2E_SKILL.hono.id;
 const HONO_PLUGIN_REF = `${HONO_ID}:${HONO_ID}`;
 
 // Check 5 uses a NON-framework skill (web-testing-vitest). Framework skills
@@ -65,12 +66,12 @@ const HONO_PLUGIN_REF = `${HONO_ID}:${HONO_ID}`;
 // skill — the same reason edit-global-remove-dual-scope-partial.e2e.test.ts
 // uses vitest. It is seeded preloaded:true on the project agent so its
 // compiled-agent reference form is still asserted.
-const VITEST_ID = "web-testing-vitest";
+const VITEST_ID = E2E_SKILL.vitest.id;
 const VITEST_PLUGIN_REF = `${VITEST_ID}:${VITEST_ID}`;
 
 const vitestMetadata = renderMetadataYaml({
   author: "@agents-inc",
-  displayName: VITEST_ID,
+  displayName: E2E_SKILL.vitest.display,
   category: "web-testing",
   slug: "vitest",
   cliDescription: "E2E test skill",
@@ -80,11 +81,11 @@ const vitestMetadata = renderMetadataYaml({
 
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: { "web-testing": [{ id: VITEST_ID, preloaded: false }] },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const projectStack = {
   [E2E_AGENT["api-developer"].name]: { "web-testing": [{ id: VITEST_ID, preloaded: true }] },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("dual-scope same-source (both eject)", () => {
   let sourceDir: string;
@@ -129,11 +130,11 @@ describe("dual-scope same-source (both eject)", () => {
       const active = honoEntries.find((s) => s.excluded !== true);
       const tombstone = honoEntries.find((s) => s.excluded === true);
       expect(honoEntries).toHaveLength(2);
-      expect(active).toStrictEqual({ id: HONO_ID, scope: "project", source: "eject" });
+      expect(active).toStrictEqual({ id: HONO_ID, scope: "project", origin: "eject" });
       expect(tombstone).toStrictEqual({
         id: HONO_ID,
         scope: "global",
-        source: "eject",
+        origin: "eject",
         excluded: true,
       });
 
@@ -201,7 +202,7 @@ describe("dual-scope same-source (both eject)", () => {
 
       const globalConfig = buildProjectConfig({
         name: "dual-scope-global-eject",
-        skills: buildSkillConfigs([VITEST_ID], { scope: "global", source: "eject" }),
+        skills: buildSkillConfigs([VITEST_ID], { scope: "global", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
         stack: globalStack,
@@ -216,8 +217,8 @@ describe("dual-scope same-source (both eject)", () => {
       const projectConfig = buildProjectConfig({
         name: "dual-scope-project-eject",
         skills: [
-          ...buildSkillConfigs([VITEST_ID], { scope: "global", source: "eject", excluded: true }),
-          ...buildSkillConfigs([VITEST_ID], { scope: "project", source: "eject" }),
+          ...buildSkillConfigs([VITEST_ID], { scope: "global", origin: "eject", excluded: true }),
+          ...buildSkillConfigs([VITEST_ID], { scope: "project", origin: "eject" }),
         ],
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
         selectedDomains: ["web"],
@@ -269,7 +270,7 @@ describe("dual-scope same-source (both eject)", () => {
       ).toBe(0);
 
       const projectVitest = p.skills.find((s) => s.id === VITEST_ID && s.scope === "project");
-      expect(projectVitest).toStrictEqual({ id: VITEST_ID, scope: "project", source: "eject" });
+      expect(projectVitest).toStrictEqual({ id: VITEST_ID, scope: "project", origin: "eject" });
       expect(p.stack?.[E2E_AGENT["api-developer"].name]?.["web-testing"]).toStrictEqual([
         { id: VITEST_ID, preloaded: true },
       ]);

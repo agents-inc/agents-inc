@@ -3,6 +3,7 @@ import { ensureBinaryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * E2E test proving the DEFAULT sandbox genuinely runs a project `edit` at
@@ -34,7 +35,7 @@ describe("default sandbox — project-scope edit", () => {
 
   it("shows the Scope hotkey in the build-step footer under the default sandbox HOME", async () => {
     const project = await ProjectBuilder.editable({
-      skills: ["web-framework-react"],
+      skills: [E2E_SKILL.react.id],
       agents: ["web-developer"],
       domains: ["web"],
     });

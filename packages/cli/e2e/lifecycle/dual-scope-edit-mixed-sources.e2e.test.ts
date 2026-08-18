@@ -131,7 +131,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
         projectHonoEntry,
         "project-scoped api-framework-hono must exist in config",
       ).toBeDefined();
-      expect(projectHonoEntry?.source).not.toBe("eject");
+      expect(projectHonoEntry?.origin).not.toBe("eject");
 
       await result.destroy();
     },

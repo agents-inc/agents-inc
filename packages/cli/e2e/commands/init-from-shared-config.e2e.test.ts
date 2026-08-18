@@ -15,6 +15,7 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { CLI } from "../fixtures/cli.js";
 import {
   flattenCliOutput,
   runInitFrom,
@@ -46,7 +47,7 @@ function seedPayload(
   agents: Record<string, unknown> = {},
   stackId: string | null = null,
 ) {
-  return { v: 3, matrixVersion: "1.0.0", stackId, skills, agents };
+  return { v: 5, matrixVersion: "1.0.0", stackId, skills, agents };
 }
 
 /** One skill row. Model and effort live on the sub-agent now, never here. */
@@ -124,6 +125,52 @@ describe("init --from <id>", () => {
     });
   });
 
+  it("installs from the marketplace the payload names, with no flag to say so", async () => {
+    tempDir = await createTempDir();
+    store.publish("Market01", {
+      ...seedPayload({ [E2E_SKILL.react.id]: skillEntry() }),
+      marketplace: sourceDir,
+    });
+
+    // Deliberately not `runInit`, which always passes `--marketplace`: the whole of what this
+    // pins is that the ref on the wire reaches the loader on its own. Without it the walk ends
+    // at the default public marketplace, which has never heard of this source's skills.
+    const { exitCode, output } = await CLI.run(
+      ["init", "--from", "Market01"],
+      { dir: tempDir },
+      { env: { AGENTS_INC_API_URL: store.url } },
+    );
+
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(output).toContain("Installing 1 skill(s)");
+
+    const config = await loadConfigOrFail(tempDir);
+    expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
+    // Recorded, not merely used: it is what every later command in this directory reads from.
+    expect(config.marketplace).toBe(sourceDir);
+    // The filesystem half — the skill only exists in the source the ref named, so its presence
+    // on disk is what says the ref chose the catalogue rather than the default one.
+    expect(await listFiles(skillsPath(tempDir))).toContain(E2E_SKILL.react.id);
+  });
+
+  it("lets an explicit marketplace outrank the one the payload names", async () => {
+    tempDir = await createTempDir();
+    // A ref that resolves to nothing, so the run can only succeed on the flag's.
+    store.publish("Market02", {
+      ...seedPayload({ [E2E_SKILL.react.id]: skillEntry() }),
+      marketplace: path.join(tempDir, "no-such-marketplace"),
+    });
+
+    // Naming one is an instruction about THIS install; the payload's ref is a record of where
+    // the sharer's skills came from, and an install may legitimately be pointed elsewhere.
+    const { exitCode } = await runInit("Market02");
+
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    const config = await loadConfigOrFail(tempDir);
+    expect(config.marketplace).toBe(sourceDir);
+    expect(await listFiles(skillsPath(tempDir))).toContain(E2E_SKILL.react.id);
+  });
+
   it("identifies itself as the CLI, so installs are distinguishable from share-link opens", async () => {
     tempDir = await createTempDir();
     store.publish("UAcheck1", seedPayload({ [E2E_SKILL.react.id]: skillEntry() }));
@@ -170,12 +217,14 @@ describe("init --from <id>", () => {
 
   it("refuses a payload that does not match the contract", async () => {
     tempDir = await createTempDir();
-    store.publish("BadShape", { v: 3, matrixVersion: "1.0.0", stackId: null, skills: "nope" });
+    store.publish("BadShape", { v: 5, matrixVersion: "1.0.0", stackId: null, skills: "nope" });
 
     const { exitCode, output } = await runInit("BadShape");
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(flattenCliOutput(output)).toContain("does not match the expected format");
+    expect(flattenCliOutput(output)).toContain(
+      "is not in a format this version of the CLI can install",
+    );
   });
 
   it("refuses a payload from the previous contract version rather than migrating it", async () => {
@@ -200,7 +249,13 @@ describe("init --from <id>", () => {
     const { exitCode, output } = await runInit("OldWire1");
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(flattenCliOutput(output)).toContain("does not match the expected format");
+    expect(flattenCliOutput(output)).toContain(
+      "is not in a format this version of the CLI can install",
+    );
+    // A version bump invalidates every id minted before it, so an OLDER id meeting a newer CLI is
+    // the case this refusal exists for in bulk — and the remedy for it always exists. A message
+    // that only diagnoses "a newer version" sends the reader to an upgrade that cannot help.
+    expect(flattenCliOutput(output)).toContain("re-share the configuration");
     expect(await listFiles(tempDir)).not.toContain(".claude-src");
   });
 

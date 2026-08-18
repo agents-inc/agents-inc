@@ -52,6 +52,20 @@ import { TS_NOT_ASSIGNABLE, probeConfigTypesNarrowing } from "../helpers/type-ch
  */
 const SKILL_SCOPED_ALIASES = ["SkillId", "Category"] as const;
 
+/**
+ * The probe takes the NAMES of the aliases to import and supplies its own bogus literal, so a
+ * literal handed over in their place is a compile error rather than a passing run. The two are
+ * indistinguishable at runtime and not at all in what they prove: a skill id renders
+ * `import type { web-framework-react }`, which tsc rejects as a SYNTAX error, so the exit code
+ * is non-zero for a reason that has nothing to do with narrowing — and the collapse this file
+ * exists to catch produces exactly the same non-zero exit. Pinned against the parameter itself
+ * rather than the alias union's name: widening it back to `readonly string[]` must fail here.
+ */
+const _aLiteralIsNotAnAliasName: Parameters<typeof probeConfigTypesNarrowing>[1] = [
+  // @ts-expect-error a skill id is a MEMBER of SkillId, never the name of an alias to import
+  E2E_SKILL.react.id,
+];
+
 /** Everything an eject-mode install writes into a `.claude-src/` directory. */
 const INSTALLED_CLAUDE_SRC_ENTRIES = ["config-types.ts", "config.ts"];
 
@@ -159,7 +173,7 @@ describe("generated config types keep narrowing after a project-scope install", 
       // would pass vacuously against a normally-built union.
       const projectSkills = await readAllSkillEntries(projectDir);
       expect(projectSkills, "project config.ts must record react at project scope").toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "project", source: EJECT_SOURCE },
+        { id: E2E_SKILL.react.id, scope: "project", origin: EJECT_SOURCE },
       ]);
       expect(
         await readAllSkillEntries(fakeHome),
@@ -246,7 +260,7 @@ describe("generated config types keep narrowing after a project-scope install", 
       expect(
         await readAllSkillEntries(fakeHome),
         "global config.ts must record react at global scope",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", source: EJECT_SOURCE }]);
+      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE }]);
 
       // Filesystem side.
       expect(

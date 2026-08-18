@@ -73,11 +73,11 @@ describe("eject skill directory cleanup on deselect", () => {
 
       // Setup proof: the project-scoped eject skill's directory genuinely exists on
       // disk and in config before the edit.
-      await expect({ dir: projectDir }).toHaveSkillCopied("web-testing-vitest");
+      await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.vitest.id);
       const projectConfigBefore = await readTestFile(projectConfigPath);
-      expect(projectConfigBefore).toContain("web-testing-vitest");
+      expect(projectConfigBefore).toContain(E2E_SKILL.vitest.id);
       // Sibling global eject skill is present at HOME before the edit.
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
       // Edit from within the project: deselect ONLY the project-scoped eject skill.
@@ -98,18 +98,18 @@ describe("eject skill directory cleanup on deselect", () => {
       await result.destroy();
 
       // Filesystem: the copied project directory is genuinely removed, not orphaned.
-      await expect({ dir: projectDir }).not.toHaveSkillCopied("web-testing-vitest");
+      await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.vitest.id);
       // Config: the skill is dropped from the project config's skills array (the
       // stack agent->skill mapping may still reference it, so the structural load
       // scopes the assertion to the skills array).
       expect(
         await readConfigSkillIds(projectDir),
         "skills array must not retain the deselected eject skill",
-      ).not.toContain("web-testing-vitest");
+      ).not.toContain(E2E_SKILL.vitest.id);
 
       // Boundary: a project-scope deselect must not touch the HOME directory —
       // the sibling global eject skill and the global config are untouched.
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
       const globalConfigAfter = await readTestFile(globalConfigPath);
       expect(
         normalizeGlobalConfig(globalConfigAfter),
@@ -133,13 +133,13 @@ describe("eject skill directory cleanup on deselect", () => {
 
       // Setup proof: the global-scoped eject skill's directory exists at HOME and
       // it is an active (non-tombstoned) global eject entry before the edit.
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-testing-vitest");
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.vitest.id);
       expect(
-        await readSkillEntries(fakeHome, "web-testing-vitest"),
+        await readSkillEntries(fakeHome, E2E_SKILL.vitest.id),
         "vitest must be an active global eject skill before the edit",
-      ).toStrictEqual([{ id: "web-testing-vitest", scope: "global", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" }]);
       // Sibling global eject skill present before the edit.
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
 
       // Edit from the global root (projectDir === HOME): deselect the global eject skill.
       wizard = await EditWizard.launch({
@@ -160,20 +160,20 @@ describe("eject skill directory cleanup on deselect", () => {
 
       // Filesystem: the global copy is removed from HOME (os.homedir() branch),
       // not left orphaned — this is the fix under test.
-      await expect({ dir: fakeHome }).not.toHaveSkillCopied("web-testing-vitest");
+      await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.vitest.id);
       // Config: editing FROM global scope has no project overlay, so a deselect removes the
       // skill entirely (no tombstone) — no entry (excluded or not) may remain in the
       // skills array (the stack agent->skill mapping may still reference the id).
       expect(
-        await readSkillEntries(fakeHome, "web-testing-vitest"),
+        await readSkillEntries(fakeHome, E2E_SKILL.vitest.id),
         "deselected global eject skill must be removed from the skills array, not tombstoned",
       ).toStrictEqual([]);
 
       // Boundary: removal is surgical — the sibling global eject skill's directory
       // survives and its config entry stays active (not excluded).
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
-      expect(await readSkillEntries(fakeHome, "web-framework-react")).toStrictEqual([
-        { id: "web-framework-react", scope: "global", source: "eject" },
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
+      expect(await readSkillEntries(fakeHome, E2E_SKILL.react.id)).toStrictEqual([
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
       ]);
     },
   );

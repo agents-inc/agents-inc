@@ -8,7 +8,7 @@ import {
   renderMetadataYaml,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { CLI } from "../fixtures/cli.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -85,7 +85,7 @@ describe("edit wizard — launch and display", () => {
 
     it("should show pre-selected skills in the build step", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
@@ -101,7 +101,7 @@ describe("edit wizard — launch and display", () => {
       // to the right of the header, including another category's on the same row.
       expect(await wizard.build.getExclusiveCategorySelectedCount("Framework")).toBe(1);
       // No scope-badge assertion here: this session runs against BUILT_IN_MATRIX
-      // (no --source), whose catalogue also holds "React Query" and "React
+      // (no --marketplace), whose catalogue also holds "React Query" and "React
       // Native". getScopeBadgesForSkill matches a cell by substring, so it
       // resolves "React" to whichever of those the frame painted first and
       // reads that cell's badges. The badge form is pinned by
@@ -113,7 +113,7 @@ describe("edit wizard — launch and display", () => {
   describe("multiple installed skills", () => {
     it("should handle edit with multiple installed skills", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-testing-vitest"],
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
@@ -135,10 +135,10 @@ describe("edit wizard — launch and display", () => {
     });
   });
 
-  describe("--source flag", () => {
+  describe("--marketplace flag", () => {
     it("should load skills from custom source directory", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
@@ -157,7 +157,7 @@ describe("edit wizard — launch and display", () => {
       // The E2E source includes web-framework-react — the build step should show
       // skills from the custom source
       expect(output).toContain(STEP_TEXT.BUILD);
-      // E2E source uses skill IDs as displayNames (e.g. "web-framework-react")
+      // E2E source uses skill IDs as displayNames (e.g. web-framework-react)
       expect(output).toContain("react");
     });
   });
@@ -165,18 +165,18 @@ describe("edit wizard — launch and display", () => {
   describe("newly added skill", () => {
     it("should show a new local skill alongside original skills in build step", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });
       tempDir = path.dirname(project.dir);
 
       // Create an additional local skill that was NOT in the original config.
-      await createLocalSkill(project.dir, "web-testing-vitest", {
+      await createLocalSkill(project.dir, E2E_SKILL.vitest.id, {
         description: "Next generation testing framework",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-testing-vitest",
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: "vitest",
           contentHash: "e2e-hash-vitest",
@@ -206,7 +206,7 @@ describe("edit wizard — launch and display", () => {
       expect(
         result.output,
         "naming a source is init's decision, so edit offers the catalogue config.ts names",
-      ).not.toContain("--source");
+      ).not.toContain("--marketplace");
       expect(result.output, "every load revalidates, so there is nothing to force").not.toContain(
         "--refresh",
       );
@@ -218,7 +218,7 @@ describe("edit wizard — launch and display", () => {
     it("should load wizard using global config when no project config exists", async () => {
       // Create a global installation (acts as HOME)
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: [E2E_AGENT["web-developer"].name],
         domains: ["web"],
       });

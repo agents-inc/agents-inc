@@ -19,7 +19,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Regression guard (sibling to `edit-remove-last-skill-stack-cleanup.e2e.test.ts`).
@@ -48,7 +49,7 @@ const multiSkillStack = {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
     "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes one of several skills an agent references", () => {
   let sourceDir: string;
@@ -84,7 +85,7 @@ describe("edit removes one of several skills an agent references", () => {
         name: "global-multi-edit-test",
         skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
@@ -126,7 +127,7 @@ describe("edit removes one of several skills an agent references", () => {
       });
 
       // navigate to vitest and press Space (deselect)
-      await wizard.build.selectSkill(E2E_SKILL.vitest.id);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();

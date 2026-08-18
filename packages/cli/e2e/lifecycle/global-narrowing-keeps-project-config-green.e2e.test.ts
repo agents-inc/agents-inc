@@ -191,7 +191,7 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global skill it is about to be orphaned from",
-      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", source: EJECT_SOURCE });
+      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE });
       expect((await readAllSkillEntries(fakeHome)).map((s) => s.id)).toContain(NARROWED_SKILL.id);
 
       // Control: what the CLI just wrote type-checks. Without this the assertion
@@ -222,7 +222,7 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       expect(
         await readAllSkillEntries(projectDir),
         "the untouched project config must still inline the now-removed global row",
-      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", source: EJECT_SOURCE });
+      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE });
 
       // Phase 3 — the property that matters: a file the user never edited must
       // not have become a type error.

@@ -97,11 +97,11 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
         buildProjectConfig({
           name: "byte-stable-global",
           description: "Global install",
-          skills: buildSkillConfigs([GLOBAL_SKILL.id], { scope: "global", source: EJECT_SOURCE }),
+          skills: buildSkillConfigs([GLOBAL_SKILL.id], { scope: "global", origin: EJECT_SOURCE }),
           agents: buildAgentConfigs([GLOBAL_AGENT.name], { scope: "global" }),
           selectedDomains: ["web"],
           stack: { [GLOBAL_AGENT.name]: { "web-framework": [{ id: GLOBAL_SKILL.id }] } },
-          marketplace: "byte-stable-marketplace",
+          marketplaceName: "byte-stable-marketplace",
           author: SHARED_AUTHOR,
           projects: [realpathSync(projectDir)],
         }),
@@ -123,8 +123,8 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
         buildProjectConfig({
           name: "byte-stable-project",
           skills: [
-            ...buildSkillConfigs([GLOBAL_SKILL.id], { scope: "global", source: EJECT_SOURCE }),
-            ...buildSkillConfigs([PROJECT_SKILL.id], { scope: "project", source: EJECT_SOURCE }),
+            ...buildSkillConfigs([GLOBAL_SKILL.id], { scope: "global", origin: EJECT_SOURCE }),
+            ...buildSkillConfigs([PROJECT_SKILL.id], { scope: "project", origin: EJECT_SOURCE }),
           ],
           agents: buildAgentConfigs([PROJECT_AGENT.name], { scope: "project" }),
           stack: { [PROJECT_AGENT.name]: { "web-testing": [{ id: PROJECT_SKILL.id }] } },

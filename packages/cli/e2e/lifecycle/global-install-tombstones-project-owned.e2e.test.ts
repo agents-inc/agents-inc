@@ -25,13 +25,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type {
-  AgentScopeConfig,
-  AgentName,
-  ProjectConfig,
-  SkillConfig,
-  StackAgentConfig,
-} from "../../src/cli/types/index.js";
+import type { AgentScopeConfig, AgentName, SkillConfig } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * D-268 + D-259 (same root cause): a project that owns a skill/agent at PROJECT
@@ -64,7 +59,7 @@ const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactMetadata = renderMetadataYaml({
   displayName: E2E_SKILL.react.display,
@@ -109,9 +104,9 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     // Global install: react + web-developer at GLOBAL scope. vitest is
     // deliberately absent so the Phase-2 edit ADDS it globally (a real
     // project-then-global transition). The project is pre-registered.
-    const globalConfig: ProjectConfig = buildProjectConfig({
+    const globalConfig: FixtureProjectConfig = buildProjectConfig({
       name: "tombstone-project-owned-global",
-      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,
@@ -128,11 +123,11 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     // is ALSO active at global scope (see globalConfig above), so the project's
     // own project-scoped web-developer is the agent precondition — a
     // project-owned entry sitting under a live global install with no tombstone.
-    const projectConfig: ProjectConfig = buildProjectConfig({
+    const projectConfig: FixtureProjectConfig = buildProjectConfig({
       name: "tombstone-project-owned",
       skills: [
-        ...buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
-        ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
+        ...buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
+        ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", origin: "eject" }),
       ],
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
     });
@@ -187,7 +182,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
   // Proof the transition happened: vitest is now a single active global skill.
   it("adds the selected skill at global scope in the global config", () => {
     expect(globalVitest).toStrictEqual([
-      { id: E2E_SKILL.vitest.id, scope: "global", source: "eject" },
+      { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" },
     ]);
   });
 
@@ -225,7 +220,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
   // bug does not affect.
   it("leaves a purely-inherited global skill as a single active global entry", () => {
     expect(projectReact).toStrictEqual([
-      { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+      { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
     ]);
   });
 
@@ -233,8 +228,8 @@ describe("global-scope install tombstones project-owned skills and agents", () =
   // entry instead of a tombstone, leaving vitest active at both scopes.
   it("writes a global tombstone for the project-owned skill, not a second active install", () => {
     expect(projectVitest).toStrictEqual([
-      { id: E2E_SKILL.vitest.id, scope: "global", source: "eject", excluded: true },
-      { id: E2E_SKILL.vitest.id, scope: "project", source: "eject" },
+      { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject", excluded: true },
+      { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
     ]);
   });
 

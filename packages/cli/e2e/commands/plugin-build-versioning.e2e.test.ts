@@ -12,7 +12,13 @@ import {
   renderSkillMd,
   writeTestPackageJson,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
+import {
+  E2E_MARKETPLACE_NAME,
+  EXIT_CODES,
+  FILES,
+  SOURCE_PATHS,
+  TIMEOUTS,
+} from "../pages/constants.js";
 
 /**
  * CLI-338 to CLI-344 — version bumping through the real binary.
@@ -37,7 +43,13 @@ const INITIAL_VERSION = "1.0.0";
 const BUMPED_VERSION = "2.0.0";
 const REBUMPED_VERSION = "3.0.0";
 
-const MARKETPLACE_NAME = "versioning-test-mp";
+/**
+ * The name written into package.json, and therefore the one `build marketplace`
+ * publishes under. It must be the fixture marketplace's own: the skills this source
+ * ships come from `E2E_SKILLS`, whose ids carry that name as their prefix, so any
+ * other name here describes a marketplace whose plugins are not its own.
+ */
+const MARKETPLACE_NAME = E2E_MARKETPLACE_NAME;
 
 /** The one skill this spec edits. Every other source skill is the control group. */
 const EDITED_SKILL_ID = E2E_SKILL.react.id;

@@ -6,7 +6,7 @@ import { DashboardSession } from "../pages/dashboard-session.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
@@ -71,7 +71,7 @@ describe("init wizard — existing projects", () => {
       // so detectInstallation treats it as installed and init shows the dashboard.
       await writeProjectConfig(tempDir, {
         name: "test-project",
-        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
@@ -107,7 +107,7 @@ describe("init wizard — existing projects", () => {
 
     it("should show dashboard menu instead of setup wizard", async () => {
       const dashboardDir = await createDashboardProject({
-        skills: ["web-framework-react", "web-testing-vitest"],
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: ["web-developer"],
       });
 
@@ -131,7 +131,7 @@ describe("init wizard — existing projects", () => {
 
     it("should navigate dashboard options with arrow keys", async () => {
       const dashboardDir = await createDashboardProject({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
       });
 
@@ -155,7 +155,7 @@ describe("init wizard — existing projects", () => {
 
     it("should exit cleanly when pressing Escape", async () => {
       const dashboardDir = await createDashboardProject({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
       });
 
@@ -179,7 +179,7 @@ describe("init wizard — existing projects", () => {
 
     it("should exit cleanly when pressing Ctrl+C", async () => {
       const dashboardDir = await createDashboardProject({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
       });
 
@@ -209,7 +209,7 @@ describe("init wizard — existing projects", () => {
       // project without its own config falls back to it and shows the dashboard.
       await writeProjectConfig(tempDir, {
         name: "global-test",
-        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 

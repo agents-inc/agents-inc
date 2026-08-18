@@ -97,7 +97,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
         },
       );
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-framework-react"],
+        contains: ["name: web-developer", E2E_SKILL.react.id],
       });
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
         contains: ["name: api-developer"],
@@ -147,7 +147,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
         },
       );
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["name: web-developer", "web-framework-react"],
+        contains: ["name: web-developer", E2E_SKILL.react.id],
       });
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
         contains: ["name: api-developer"],
@@ -237,7 +237,7 @@ describe.skipIf(!claudeAvailable)(
           },
         );
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["name: web-developer", "web-framework-react"],
+          contains: ["name: web-developer", E2E_SKILL.react.id],
         });
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
           contains: ["name: api-developer"],
@@ -287,7 +287,7 @@ describe.skipIf(!claudeAvailable)(
           },
         );
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["name: web-developer", "web-framework-react"],
+          contains: ["name: web-developer", E2E_SKILL.react.id],
         });
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
           contains: ["name: api-developer"],
@@ -389,7 +389,7 @@ describe.skipIf(!claudeAvailable)(
 
         // Agents compiled globally with expected content.
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["name: web-developer", "web-framework-react"],
+          contains: ["name: web-developer", E2E_SKILL.react.id],
         });
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
           contains: ["name: api-developer"],
@@ -458,7 +458,7 @@ describe.skipIf(!claudeAvailable)(
 
         // Compiled agent content preserved at the global scope.
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-          contains: ["name: web-developer", "web-framework-react"],
+          contains: ["name: web-developer", E2E_SKILL.react.id],
         });
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
           contains: ["name: api-developer"],

@@ -122,7 +122,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       ).toStrictEqual({
         id: E2E_SKILL.hono.id,
         scope: "project",
-        source: pluginFixture.marketplaceName,
+        origin: pluginFixture.marketplaceName,
       });
 
       await resultB.destroy();
@@ -157,7 +157,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       ).toStrictEqual(initialEntries);
 
       // 3. Project skills directory has skill files (re-ejected)
-      await expect({ dir: projectDir }).toHaveSkillCopied("api-framework-hono");
+      await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.hono.id);
 
       // 4. Compiled agents exist
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");

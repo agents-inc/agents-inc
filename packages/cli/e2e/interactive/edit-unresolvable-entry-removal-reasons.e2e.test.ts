@@ -24,6 +24,7 @@ import {
 } from "../pages/constants.js";
 import type { SkillId } from "../../src/cli/types/index.js";
 import "../matchers/setup.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * An entry the wizard could not resolve is removed — and the Changes block says WHY it went,
@@ -75,7 +76,7 @@ describe("edit — why an unresolvable entry went", () => {
         // An eject-sourced entry with no files written for it: the source never carried the
         // skill either, so nothing can resolve it and the merge drops the entry.
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: [DROPPED_SKILL],
           agents: ["web-developer"],
           domains: ["web"],
@@ -110,7 +111,7 @@ describe("edit — why an unresolvable entry went", () => {
         ).not.toContain(`[P] (${STEP_TEXT.REMOVED_REASON_NOT_IN_SOURCE}`);
 
         const config = await loadConfigOrFail(result.project.dir);
-        expect(config.skills.map((skill) => skill.id)).toStrictEqual(["web-framework-react"]);
+        expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
 
         await expect(result.project).toHaveCompiledAgentContent("web-developer", {
           notContains: [DROPPED_SKILL],
@@ -136,9 +137,9 @@ describe("edit — why an unresolvable entry went", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: [DROPPED_SKILL],
-          marketplace: pluginFixture.marketplaceName,
+          marketplaceName: pluginFixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -168,7 +169,7 @@ describe("edit — why an unresolvable entry went", () => {
         ).not.toContain(STEP_TEXT.REMOVED_REASON_FILES_GONE);
 
         const config = await loadConfigOrFail(result.project.dir);
-        expect(config.skills.map((skill) => skill.id)).toStrictEqual(["web-framework-react"]);
+        expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
       },
     );
   });

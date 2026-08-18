@@ -55,14 +55,14 @@ describe("search command", () => {
   /**
    * An installation in `tempDir` whose config names a fresh E2E source.
    *
-   * `search` has no flags and reads no `CC_SOURCE` — naming a source is `init`'s decision —
+   * `search` has no flags and reads no `CC_MARKETPLACE` — naming a source is `init`'s decision —
    * so the config is the only place the source it answers from can come from.
    */
   async function createSourceFixture(): Promise<void> {
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
-    await writeProjectConfig(tempDir, { name: "search-fixture", source: sourceDir });
+    await writeProjectConfig(tempDir, { name: "search-fixture", marketplace: sourceDir });
   }
 
   /** Ejects {@link LOCAL_ONLY_SKILL} into the installation, the way an eject-mode install leaves it. */

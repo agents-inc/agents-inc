@@ -16,7 +16,7 @@ import {
 import "../matchers/setup.js";
 
 /**
- * A local-directory source (`--source /path`) whose `.claude-plugin/marketplace.json`
+ * A local-directory source (`--marketplace /path`) whose `.claude-plugin/marketplace.json`
  * declares a name must have that name recorded as every plugin-installed skill's
  * `source` in config.ts — the same name the install log, `settings.json` and the
  * plugin registry already use.
@@ -73,7 +73,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
       // that simply never produced a marketplace.
       const config = await loadConfigOrFail(result.project.dir);
       expect(
-        config.marketplace,
+        config.marketplaceName,
         "config.ts must record the source's resolved marketplace name",
       ).toBe(fixture.marketplaceName);
 
@@ -86,7 +86,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
         "config.ts must persist the installed skills",
       ).toContain(E2E_SKILL.react.id);
       expect(
-        [...new Set(skillEntries.map((entry) => entry.source))],
+        [...new Set(skillEntries.map((entry) => entry.origin))],
         "every config.ts skill entry must record the source's marketplace name",
       ).toStrictEqual([fixture.marketplaceName]);
     },

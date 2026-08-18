@@ -11,12 +11,7 @@ import type { WizardResult } from "../pages/wizard-result.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import { activeAgentNames } from "../../src/cli/lib/configuration/scope-predicates.js";
 import { E2E_SKILL } from "./expected-values.js";
-import type {
-  AgentName,
-  AgentScopeConfig,
-  SkillConfig,
-  SkillId,
-} from "../../src/cli/types/index.js";
+import type { AgentName, AgentScopeConfig, SkillConfig } from "../../src/cli/types/index.js";
 
 export type DualScopeEnv = {
   fakeHome: string;
@@ -31,7 +26,7 @@ export type DualScopeEnv = {
  */
 export async function readSkillEntries(
   projectDir: string,
-  skillId: SkillId,
+  skillId: string,
 ): Promise<SkillConfig[]> {
   const loaded = await loadProjectConfigFromDir(projectDir);
   expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
@@ -67,7 +62,7 @@ export async function readAllSkillEntries(dir: string): Promise<SkillConfig[]> {
 }
 
 /** Load a scope's config.ts structurally and return the ids in its skills array. */
-export async function readConfigSkillIds(dir: string): Promise<SkillId[]> {
+export async function readConfigSkillIds(dir: string): Promise<string[]> {
   return (await readAllSkillEntries(dir)).map((sc) => sc.id);
 }
 

@@ -1,6 +1,7 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { createTempDir } from "./test-utils.js";
+import type { FixtureStackAgentConfig } from "./test-utils.js";
 import {
   DIRS,
   SKILL_RULES_PATH,
@@ -12,11 +13,10 @@ import type {
   AgentName,
   CategoryPath,
   RelationshipDefinitions,
-  SkillId,
   SkillSlug,
   Stack,
-  StackAgentConfig,
 } from "../../src/cli/types/index.js";
+import { e2eSkillId } from "../pages/constants.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { typedKeys, typedValues } from "../../src/cli/utils/typed-object.js";
 import {
@@ -46,24 +46,11 @@ import {
  */
 
 /**
- * Display title written into each E2E source skill's metadata.yaml, and
- * therefore the text the wizard renders for that skill.
- *
- * Single source of truth: assertions that match on rendered skill text should
- * key off this instead of re-typing the strings.
+ * Re-exported so every surface that builds a fixture id reaches it through the
+ * writer that puts those ids on disk. It is DEFINED in `pages/constants.ts`,
+ * beside the marketplace name it composes from — see the note there.
  */
-export const E2E_SKILL_TITLES = {
-  "web-framework-react": "web-framework-react",
-  "web-testing-vitest": "web-testing-vitest",
-  "web-state-zustand": "web-state-zustand",
-  "api-framework-hono": "api-framework-hono",
-  "meta-methodology-research-methodology": "Research Methodology",
-  "meta-reviewing-reviewing": "Reviewing",
-  "meta-reviewing-cli-reviewing": "CLI Reviewing",
-  "web-framework-vue-composition-api": "Vue Composition Api",
-  "web-state-pinia": "web-state-pinia",
-  "web-testing-visual-regression": "Visual Regression",
-} as const satisfies Partial<Record<SkillId, string>>;
+export { e2eSkillId };
 
 /**
  * Display title written into each E2E source agent's metadata.yaml, and
@@ -76,72 +63,91 @@ export const E2E_AGENT_TITLES = {
 
 type E2ESkill = {
   category: CategoryPath;
-  id: keyof typeof E2E_SKILL_TITLES;
+  /**
+   * The id the fixture publishes: its marketplace's name, then the bare id.
+   *
+   * Typed `string`, not `SkillId`: that union is the PUBLIC catalogue's, and this
+   * source is a different marketplace, so a namespaced id is not a member of it
+   * and casting one in would be a lie about the catalogue. Composed by
+   * {@link e2eSkillId} rather than spelled out — the prefix and the marketplace
+   * name are one string.
+   */
+  id: string;
   slug: SkillSlug;
   description: string;
   domain: string;
 };
 
-const E2E_SKILLS: E2ESkill[] = [
+/**
+ * The skill set every E2E source writes to disk — the SOLE definition of what a
+ * fixture ships.
+ *
+ * Everything else about these skills is read off this array: the ids
+ * (`E2E_SKILL_IDS`), the titles the wizard renders (`E2E_SKILL_TITLES` is keyed by
+ * its slugs and must cover them exactly), and the directories `writeSkills`
+ * creates. It is `as const` so those derivations keep the literal SLUGS; the ids
+ * are composed at runtime by {@link e2eSkillId} and are `string` either way.
+ */
+const E2E_SKILLS = [
   {
     category: "web-framework",
-    id: "web-framework-react",
+    id: e2eSkillId("web-framework-react"),
     slug: "react",
     description: "React framework for building user interfaces",
     domain: "web",
   },
   {
     category: "web-testing",
-    id: "web-testing-vitest",
+    id: e2eSkillId("web-testing-vitest"),
     slug: "vitest",
     description: "Next generation testing framework",
     domain: "web",
   },
   {
     category: "web-client-state",
-    id: "web-state-zustand",
+    id: e2eSkillId("web-state-zustand"),
     slug: "zustand",
     description: "Bear necessities state management",
     domain: "web",
   },
   {
     category: "api-api",
-    id: "api-framework-hono",
+    id: e2eSkillId("api-framework-hono"),
     slug: "hono",
     description: "Lightweight web framework for the edge",
     domain: "api",
   },
   {
     category: "meta-methodology",
-    id: "meta-methodology-research-methodology",
+    id: e2eSkillId("meta-methodology-research-methodology"),
     slug: "research-methodology",
     description: "Codebase investigation and research methodology",
     domain: "meta",
   },
   {
     category: "meta-reviewing",
-    id: "meta-reviewing-reviewing",
+    id: e2eSkillId("meta-reviewing-reviewing"),
     slug: "reviewing",
     description: "Code review guidance and patterns",
     domain: "meta",
   },
   {
     category: "meta-reviewing",
-    id: "meta-reviewing-cli-reviewing",
+    id: e2eSkillId("meta-reviewing-cli-reviewing"),
     slug: "cli-reviewing",
     description: "CLI code review patterns",
     domain: "meta",
   },
   {
     category: "web-framework",
-    id: "web-framework-vue-composition-api",
+    id: e2eSkillId("web-framework-vue-composition-api"),
     slug: "vue-composition-api",
     description: "Vue.js composition API framework",
     domain: "web",
   },
   {
     category: "web-client-state",
-    id: "web-state-pinia",
+    id: e2eSkillId("web-state-pinia"),
     slug: "pinia",
     description: "Vue state management",
     domain: "web",
@@ -154,33 +160,96 @@ const E2E_SKILLS: E2ESkill[] = [
   // could not reach the merge it exists to test. Selecting this one genuinely adds.
   {
     category: "web-testing",
-    id: "web-testing-visual-regression",
+    id: e2eSkillId("web-testing-visual-regression"),
     slug: "visual-regression",
     description: "Screenshot baselines and diff review",
     domain: "web",
   },
-];
+] as const satisfies readonly E2ESkill[];
+
+/** One entry of {@link E2E_SKILLS}, with its slug still literal. */
+type E2ESkillEntry = (typeof E2E_SKILLS)[number];
+
+/**
+ * The slugs {@link E2E_SKILLS} declares, as a union rather than the whole
+ * `SkillSlug` one.
+ *
+ * Slugs, not ids: a namespaced id is composed at runtime by {@link e2eSkillId}, so
+ * `E2ESkillEntry["id"]` is `string` and constrains nothing. A skill's slug is
+ * written literally and is not namespaced, so it is the only field of the set that
+ * can still key a map exhaustively.
+ */
+type E2ESkillSlug = E2ESkillEntry["slug"];
+
+/**
+ * Every skill id an E2E source writes, sorted the way a directory listing is.
+ *
+ * Read off {@link E2E_SKILLS} for the same reason as {@link E2E_STACK_SKILL_IDS}
+ * below: it was a hand-written second list, so a skill added to the source and not
+ * to the list left every "the install wrote exactly these" assertion quietly
+ * short. The order is the sorted one the listing assertions compare against.
+ */
+export const E2E_SKILL_IDS: readonly string[] = E2E_SKILLS.map((skill) => skill.id).sort();
+
+/**
+ * Display title written into each E2E source skill's metadata.yaml, and
+ * therefore the text the wizard renders for that skill.
+ *
+ * Single source of truth: assertions that match on rendered skill text should
+ * key off this instead of re-typing the strings.
+ *
+ * Keyed by {@link E2ESkillSlug}, so {@link E2E_SKILLS} decides which skills need a
+ * title and this map only decides what each one says — a missing or surplus key
+ * is a compile error. It used to be the other way round, with `E2E_SKILLS.id`
+ * typed `keyof typeof E2E_SKILL_TITLES`: the display map constrained the disk
+ * writer, so the writer could not gain, lose or rename a skill without the titles
+ * granting permission first.
+ *
+ * Keyed by SLUG rather than by id for two reasons, and the first is not a
+ * preference: an id is namespaced at runtime, so it is no longer a literal type
+ * and cannot key anything exhaustively. The second is that a marketplace rename
+ * moves every id and no slug, so a slug-keyed map is one this file never has to
+ * revisit. The VALUES stay unprefixed for the same reason they are not derived
+ * from ids at all — the build grid sorts by display name, so a title that tracked
+ * its id would relocate every cursor target the moment ids change.
+ */
+export const E2E_SKILL_TITLES = {
+  react: "web-framework-react",
+  vitest: "web-testing-vitest",
+  zustand: "web-state-zustand",
+  hono: "api-framework-hono",
+  "research-methodology": "Research Methodology",
+  reviewing: "Reviewing",
+  "cli-reviewing": "CLI Reviewing",
+  "vue-composition-api": "Vue Composition Api",
+  pinia: "web-state-pinia",
+  "visual-regression": "Visual Regression",
+} as const satisfies Record<E2ESkillSlug, string>;
 
 // Preload shape matches real CLI stacks in src/cli/lib/configuration/default-stacks.ts:
 // real `web-developer` preloads only `web-framework-react` (+ meta-framework when present);
 // real `api-developer` preloads only `api-framework-hono` (+ database when present).
 // Meta skills are never preloaded in real stacks — they appear as dynamic skills in the
 // body's Skill Activation Protocol table, never in agent frontmatter.
-const webDeveloperAgentConfig: StackAgentConfig = {
-  "web-framework": [createMockSkillAssignment("web-framework-react", true)],
-  "web-testing": [createMockSkillAssignment("web-testing-vitest")],
-  "web-client-state": [createMockSkillAssignment("web-state-zustand")],
+const webDeveloperAgentConfig: FixtureStackAgentConfig = {
+  "web-framework": [createMockSkillAssignment(e2eSkillId("web-framework-react"), true)],
+  "web-testing": [createMockSkillAssignment(e2eSkillId("web-testing-vitest"))],
+  "web-client-state": [createMockSkillAssignment(e2eSkillId("web-state-zustand"))],
   "meta-reviewing": [
-    createMockSkillAssignment("meta-reviewing-reviewing"),
-    createMockSkillAssignment("meta-reviewing-cli-reviewing"),
+    createMockSkillAssignment(e2eSkillId("meta-reviewing-reviewing")),
+    createMockSkillAssignment(e2eSkillId("meta-reviewing-cli-reviewing")),
   ],
-  "meta-methodology": [createMockSkillAssignment("meta-methodology-research-methodology")],
+  "meta-methodology": [
+    createMockSkillAssignment(e2eSkillId("meta-methodology-research-methodology")),
+  ],
 };
 
-const apiDeveloperAgentConfig: StackAgentConfig = {
-  "api-api": [createMockSkillAssignment("api-framework-hono", true)],
-  "meta-methodology": [createMockSkillAssignment("meta-methodology-research-methodology")],
-  "meta-reviewing": [createMockSkillAssignment("meta-reviewing-reviewing")],
+const apiDeveloperAgentConfig: FixtureStackAgentConfig = {
+  "api-api": [createMockSkillAssignment(e2eSkillId("api-framework-hono"), true)],
+  "meta-methodology": [
+    createMockSkillAssignment(e2eSkillId("meta-methodology-research-methodology")),
+  ],
+  "meta-reviewing": [createMockSkillAssignment(e2eSkillId("meta-reviewing-reviewing"))],
 };
 
 /**
@@ -203,7 +272,17 @@ export const E2E_STACK_NAME = "E2E Test Stack";
 export const E2E_STACK_ID = "e2e-test-stack";
 export const E2E_STACK_DESCRIPTION = "Minimal stack for E2E testing";
 
-const E2E_STACK: Stack = {
+/**
+ * `Stack` with its agents' assignments widened, for the reason {@link E2ESkill.id}
+ * gives: this marketplace's ids are not members of the public catalogue's union.
+ * The shape is otherwise production's, because it is serialized into the source's
+ * `config/stacks.ts` and read back by the CLI's own stack loader.
+ */
+type E2EStack = Omit<Stack, "agents"> & {
+  agents: Partial<Record<AgentName, FixtureStackAgentConfig>>;
+};
+
+const E2E_STACK: E2EStack = {
   id: E2E_STACK_ID,
   name: E2E_STACK_NAME,
   description: E2E_STACK_DESCRIPTION,
@@ -234,7 +313,7 @@ export const E2E_STACK_AGENTS: AgentName[] = typedKeys<AgentName>(E2E_STACK.agen
  * the stack. The one skill deliberately left out is the SPARE
  * (`web-testing-visual-regression`) — see its note in `E2E_SKILLS`.
  */
-export const E2E_STACK_SKILL_IDS: SkillId[] = [
+export const E2E_STACK_SKILL_IDS: string[] = [
   ...new Set(
     typedValues(E2E_STACK.agents)
       .flatMap((agentConfig) => typedValues(agentConfig))
@@ -287,7 +366,7 @@ type E2ESourceOptions = {
    * exactly the named skills, which is how a spec models a source moving on
    * without editing one in place.
    */
-  withoutSkills?: readonly SkillId[];
+  withoutSkills?: readonly string[];
   /**
    * Write no `config/stacks.ts` at all — a marketplace that ships no stacks.
    *
@@ -327,7 +406,12 @@ export type E2ESource = {
  */
 export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESource> {
   const tempDir = await createTempDir();
-  const sourceDir = path.join(tempDir, "source");
+  // Refusals that name this path are asserted against the CLI's own vocabulary, so the
+  // segment must spell neither noun of the marketplace/source rename: "source" made
+  // `\bsources?\b` negatives fail on the fixture instead of on the product's prose (a
+  // slash and a quote are both word boundaries), and "marketplace" would satisfy the
+  // positive half of the same rename vacuously. It is not private to this helper.
+  const sourceDir = path.join(tempDir, "fixture");
 
   const omitted = new Set<string>(options?.withoutSkills ?? []);
   await writeSkills(
@@ -346,7 +430,7 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
   return { sourceDir, tempDir };
 }
 
-async function writeSkills(sourceDir: string, skills: E2ESkill[]): Promise<void> {
+async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]): Promise<void> {
   for (const skill of skills) {
     const skillDir = path.join(sourceDir, SKILLS_DIR_PATH, skill.id);
     await mkdir(skillDir, { recursive: true });
@@ -363,7 +447,7 @@ async function writeSkills(sourceDir: string, skills: E2ESkill[]): Promise<void>
         category: skill.category,
         domain: skill.domain,
         slug: skill.slug,
-        displayName: E2E_SKILL_TITLES[skill.id],
+        displayName: E2E_SKILL_TITLES[skill.slug],
         cliDescription: skill.description,
         usageGuidance: "Use when testing E2E scenarios",
         contentHash: "a1b2c3d",

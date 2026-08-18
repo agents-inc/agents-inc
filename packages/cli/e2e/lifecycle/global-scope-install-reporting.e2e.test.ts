@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { AgentName, SkillId } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
@@ -28,7 +28,7 @@ import "../matchers/setup.js";
  */
 
 /** Stack skills selected by the E2E Test Stack, all at the default global scope. */
-const GLOBAL_STACK_SKILL_IDS: SkillId[] = [
+const GLOBAL_STACK_SKILL_IDS: string[] = [
   E2E_SKILL.react.id,
   E2E_SKILL.vitest.id,
   E2E_SKILL.zustand.id,

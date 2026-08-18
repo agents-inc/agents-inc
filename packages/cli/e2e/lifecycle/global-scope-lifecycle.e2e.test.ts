@@ -65,10 +65,13 @@ describe("global scope lifecycle -- source loader merge", () => {
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
 
+      // The Sources grid labels each row with the skill's TITLE, so that is what a
+      // "both scopes were merged" assertion reads — the namespaced id it is
+      // published under is never painted.
       const sourcesOutput = wizard.getOutput();
-      expect(sourcesOutput).toContain("web-framework-react");
-      expect(sourcesOutput).toContain("web-testing-vitest");
-      expect(sourcesOutput).toContain("api-framework-hono");
+      expect(sourcesOutput).toContain(E2E_SKILL.react.display);
+      expect(sourcesOutput).toContain(E2E_SKILL.vitest.display);
+      expect(sourcesOutput).toContain(E2E_SKILL.hono.display);
 
       await wizard.destroy();
     },
@@ -116,8 +119,8 @@ describe("global scope lifecycle -- doctor command", () => {
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).not.toContain("web-framework-react (not found)");
-    expect(stdout).not.toContain("web-testing-vitest (not found)");
+    expect(stdout).not.toContain(`${E2E_SKILL.react.id} (not found)`);
+    expect(stdout).not.toContain(`${E2E_SKILL.vitest.id} (not found)`);
     expect(stdout).toContain("skills found");
   });
 });
@@ -146,9 +149,9 @@ describe("global scope lifecycle -- uninstall with dual scope", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-      await expect({ dir: projectDir }).not.toHaveSkillCopied("api-framework-hono");
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-testing-vitest");
+      await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.hono.id);
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.vitest.id);
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
     },
   );
@@ -212,7 +215,7 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
 
       // --- Config content assertions ---
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
         agents: ["web-developer"],
       });
 
@@ -222,14 +225,14 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
         contains: ["name: web-developer"],
-        notContains: ["web-framework-react"],
+        notContains: [E2E_SKILL.react.id],
       });
 
       // --- Scope-aware copy assertions ---
-      await expect({ dir: projectDir }).toHaveSkillCopied("web-framework-react");
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-testing-vitest");
-      await expect({ dir: fakeHome }).not.toHaveSkillCopied("web-framework-react");
-      await expect({ dir: projectDir }).not.toHaveSkillCopied("web-testing-vitest");
+      await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.vitest.id);
+      await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.vitest.id);
 
       // --- Generated type surface, at both scopes ---
       // A split install writes one config.ts per scope and one config-types.ts

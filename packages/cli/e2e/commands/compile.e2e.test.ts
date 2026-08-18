@@ -21,10 +21,11 @@ import {
   MINIMAL_PROJECT_SKILL_ID,
   ProjectBuilder,
 } from "../fixtures/project-builder.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
+import { cliVersion, provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import "../matchers/setup.js";
 
 describe("compile command", () => {
@@ -241,7 +242,7 @@ describe("compile command", () => {
       expect(stdout).toContain("USAGE");
       expect(stdout).toContain("Compile agents");
       expect(stdout).toContain("--verbose");
-      expect(stdout, "compile reads the source its config records").not.toContain("--source");
+      expect(stdout, "compile reads the source its config records").not.toContain("--marketplace");
     });
   });
 
@@ -314,12 +315,13 @@ describe("compile command", () => {
           hasActivationProtocol: true,
         });
 
-        // …and the body opens with a heading immediately after the terminator,
-        // rather than the terminator being the last thing in the file.
+        // …and the body opens with the provenance marker and then a heading, rather than
+        // the terminator being the last thing in the file.
         const agentContent = await readTestFile(
           path.join(agentsPath(project.dir), `${agentName}.md`),
         );
-        expect(agentContent).toMatch(/^---\n[\s\S]+?\n---\n\n#\s+\S/);
+        expect(agentContent.startsWith("---\n")).toBe(true);
+        expect(agentContent).toContain(`\n---\n${provenanceMarker(await cliVersion())}\n\n# `);
       }
     });
 
@@ -392,7 +394,7 @@ describe("compile command", () => {
       }
     });
 
-    it("should compile from the source the installation recorded", async () => {
+    it("should compile from the marketplace the installation recorded", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
       // Declare the agents so the project is a detected installation; the local
@@ -408,11 +410,11 @@ describe("compile command", () => {
           { name: E2E_AGENT["web-developer"].name, scope: "project" },
           { name: E2E_AGENT["api-developer"].name, scope: "project" },
         ],
-        source: sourceDir,
+        marketplace: sourceDir,
       });
 
       // Create a local skill in the project
-      await createLocalSkill(projectDir, "web-state-pinia", {
+      await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
         description: "Skill for stored-source verification",
         metadata: renderMetadataYaml({ contentHash: "hash-source-stored" }),
       });
@@ -423,8 +425,8 @@ describe("compile command", () => {
       expect(output).toContain("Discovered 1 local skills");
       expect(
         output,
-        "the source came from the config the installation recorded — this run's cwd is its home root, so that config is the global one",
-      ).toContain("Source: global");
+        "the marketplace came from the config the installation recorded — this run's cwd is its home root, so that config is the global one",
+      ).toContain("Marketplace: global");
       expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
@@ -441,7 +443,7 @@ describe("compile command", () => {
       );
     });
 
-    it("should name the source global when compiling at the home root", async () => {
+    it("should name the marketplace global when compiling at the home root", async () => {
       tempDir = await createTempDir();
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
@@ -456,9 +458,9 @@ describe("compile command", () => {
           { name: E2E_AGENT["web-developer"].name, scope: "global" },
           { name: E2E_AGENT["api-developer"].name, scope: "global" },
         ],
-        source: sourceDir,
+        marketplace: sourceDir,
       });
-      await createLocalSkill(globalHome, "web-state-pinia", {
+      await createLocalSkill(globalHome, E2E_SKILL.pinia.id, {
         description: "Skill for home-root source labelling",
         metadata: renderMetadataYaml({ contentHash: "hash-home-root" }),
       });
@@ -476,8 +478,8 @@ describe("compile command", () => {
       expect(output).toContain("Discovered 1 local skills");
       expect(
         output,
-        "the source came from the global config — the home root has no project config to read",
-      ).toContain("Source: global");
+        "the marketplace came from the global config — the home root has no project config to read",
+      ).toContain("Marketplace: global");
 
       await expect({ dir: globalHome }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -497,9 +499,9 @@ describe("compile command", () => {
         name: "global-install",
         skills: [],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-        source: sourceDir,
+        marketplace: sourceDir,
       });
-      await createLocalSkill(globalHome, "web-state-pinia", {
+      await createLocalSkill(globalHome, E2E_SKILL.pinia.id, {
         description: "Skill for home-root config labelling",
         metadata: renderMetadataYaml({ contentHash: "hash-home-verbose" }),
       });
@@ -525,7 +527,7 @@ describe("compile command", () => {
       ).not.toContain(`project config from ${globalHome}`);
     });
 
-    it("should name the source project when the project is not the home root", async () => {
+    it("should name the marketplace project when the project is not the home root", async () => {
       tempDir = await createTempDir();
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
@@ -544,9 +546,9 @@ describe("compile command", () => {
           { name: E2E_AGENT["web-developer"].name, scope: "global" },
           { name: E2E_AGENT["api-developer"].name, scope: "global" },
         ],
-        source: sourceDir,
+        marketplace: sourceDir,
       });
-      await createLocalSkill(projectDir, "web-state-pinia", {
+      await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
         description: "Skill for project source labelling",
         metadata: renderMetadataYaml({ contentHash: "hash-project-root" }),
       });
@@ -563,8 +565,8 @@ describe("compile command", () => {
       );
       expect(
         output,
-        "the source came from the project's own config, whatever scope its entries carry",
-      ).toContain("Source: project");
+        "the marketplace came from the project's own config, whatever scope its entries carry",
+      ).toContain("Marketplace: project");
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -583,7 +585,7 @@ describe("compile command", () => {
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(globalHome, {
         name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "project", source: "eject" }],
+        skills: [{ id: "web-testing-cypress-e2e", scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 

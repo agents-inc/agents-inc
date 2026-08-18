@@ -165,7 +165,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         const reactBefore = await readSkillEntries(fakeHome, E2E_SKILL.react.id);
         expect(
-          reactBefore.map((entry) => entry.source),
+          reactBefore.map((entry) => entry.origin),
           "react must start plugin-sourced",
         ).toEqual([fixture.marketplaceName]);
 
@@ -191,7 +191,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         // --- Assertions ---
         await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
         expect(
-          (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.source),
+          (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.origin),
           "the global config must record the eject source the migration performed",
         ).toEqual([EJECT_SOURCE]);
         await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
@@ -256,7 +256,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         // --- Assertions ---
         await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);
         expect(
-          (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.source),
+          (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.origin),
           "the global config must record the marketplace source the migration performed",
         ).toEqual([fixture.marketplaceName]);
         await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);

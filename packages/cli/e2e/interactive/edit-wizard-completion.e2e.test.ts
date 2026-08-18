@@ -12,6 +12,7 @@ import {
 } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import "../matchers/setup.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * E2E tests for the `edit` command wizard — confirm step and completion flow.
@@ -37,7 +38,7 @@ describe("edit wizard — confirm step and completion", () => {
   describe("confirm step and completion", () => {
     it("should navigate to confirm step and show summary", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -56,11 +57,11 @@ describe("edit wizard — confirm step and completion", () => {
       // marker. A bare name match cannot tell that from a row the wizard is
       // about to add or remove — which is the only thing a summary says.
       expect(screen).toContain(STEP_TEXT.SCOPE_PROJECT);
-      expect(screen).toContain(`${UNCHANGED_MARKER} React`);
+      expect(screen).toContain(`${UNCHANGED_MARKER} ${E2E_SKILL.react.display}`);
       expect(screen).toContain(`${UNCHANGED_MARKER} Tailwind CSS`);
       expect(screen).toContain(`${UNCHANGED_MARKER} web-developer`);
-      expect(screen).not.toContain(`${ADDED_MARKER} React`);
-      expect(screen).not.toContain(`${REMOVED_MARKER} React`);
+      expect(screen).not.toContain(`${ADDED_MARKER} ${E2E_SKILL.react.display}`);
+      expect(screen).not.toContain(`${REMOVED_MARKER} ${E2E_SKILL.react.display}`);
       // The whole footer line rather than the individual key captions: a step
       // whose rows bleed over the footer leaves every word present and splices
       // the overflow between them.
@@ -75,7 +76,7 @@ describe("edit wizard — confirm step and completion", () => {
         // the wizard cannot resolve it, drops it, and that removal is the change
         // this flow completes on.
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: ["web-styling-tailwind"],
           agents: ["web-developer"],
           domains: ["web"],
@@ -97,23 +98,23 @@ describe("edit wizard — confirm step and completion", () => {
         // The unresolvable skill is gone from config.ts — the wizard could not represent it, so
         // the merge removed it and `edit` named it in the Changes block (CLI-450).
         await expectPhaseSuccess(result, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           compiledAgents: ["web-developer"],
         });
         await expect(result.project).toHaveCompiledAgentContent("web-developer", {
-          contains: ["name: web-developer", "web-framework-react"],
+          contains: ["name: web-developer", E2E_SKILL.react.id],
         });
         // Compiled agent should contain the project's skill
         await expect(result.project).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-framework-react"],
+          contains: [E2E_SKILL.react.id],
         });
       },
     );
 
     it("should preserve skill selections when navigating back and forth", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -144,7 +145,7 @@ describe("edit wizard — confirm step and completion", () => {
   describe("confirm step navigation", () => {
     it("should return to agents step when pressing ESC on confirm step", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
         agents: ["web-developer"],
         domains: ["web"],
       });

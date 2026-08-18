@@ -148,9 +148,9 @@ describe.skipIf(!claudeAvailable)(
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          source: fixture.sourceDir,
+          marketplace: fixture.sourceDir,
           skills: [E2E_SKILL.react.id],
-          marketplace: fixture.marketplaceName,
+          marketplaceName: fixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
         });

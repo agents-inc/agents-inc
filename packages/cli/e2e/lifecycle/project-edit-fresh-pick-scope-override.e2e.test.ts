@@ -3,6 +3,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
@@ -140,7 +141,7 @@ describe("fresh pick during project setup defaults to global and overrides to pr
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.vitest.id),
         "the overridden pick must be recorded at project scope only",
-      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" }]);
       expect(
         await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.vitest.id)),
         "the overridden pick's files must land under the project's skills dir",
@@ -170,6 +171,13 @@ describe("fresh pick during project setup defaults to global and overrides to pr
         await readTestFile(configTsPath(fakeHome)),
         "setting a project up must register it globally — the one global write this flow owes",
       ).toContain(realpathSync(projectDir));
+
+      // Both scopes at four-surface strength. The override moved a skill and an agent across
+      // the boundary, so the generated pair on EACH side has to still narrow — a project that
+      // took the only skill of its category leaves the global unions to be regenerated without
+      // it, and that regeneration is where a union collapses unnoticed.
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 });

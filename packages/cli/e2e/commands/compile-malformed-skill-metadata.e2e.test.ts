@@ -12,9 +12,11 @@ import {
   runCLI,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { flattenCliOutput } from "../fixtures/seed-config-store.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
-import type { SkillId } from "../../src/cli/types/index.js";
+
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * An installed skill whose `metadata.yaml` exists but cannot be read is a hard
@@ -35,8 +37,8 @@ import type { SkillId } from "../../src/cli/types/index.js";
  */
 
 /** Installed into the fixture project. Only the second one gets corrupted. */
-const HEALTHY_SKILL: SkillId = "web-framework-react";
-const BROKEN_SKILL: SkillId = "web-testing-vitest";
+const HEALTHY_SKILL: string = E2E_SKILL.react.id;
+const BROKEN_SKILL: string = E2E_SKILL.vitest.id;
 
 /** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
@@ -92,9 +94,14 @@ describe("compile with an unreadable skill metadata.yaml", () => {
     );
     expect(combined, "the offending skill must be named").toContain(BROKEN_SKILL);
     expect(combined, "the offending file must be named").toContain(fixture.brokenMetadataPath);
-    expect(combined, "the refusal must say what is wrong with the file").toContain(
-      STEP_TEXT.COMPILE_METADATA_UNUSABLE,
-    );
+    // Flattened, not shortened: oclif wraps the refusal at the terminal width and
+    // prefixes each continuation with ` ›  `, so this sentence straddles a line break.
+    // A shorter fragment would move the brittleness rather than remove it — it would
+    // also pass on a message that had been truncated.
+    expect(
+      flattenCliOutput(combined),
+      "the refusal must say what is wrong with the file",
+    ).toContain(STEP_TEXT.COMPILE_METADATA_UNUSABLE);
     expect(combined, "the parser's own reason must reach the user").toContain(PARSE_REASON_TOKEN);
     expect(combined, "a refused compile must not claim completion").not.toContain(
       STEP_TEXT.COMPILE_COMPLETE,

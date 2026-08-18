@@ -36,7 +36,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
@@ -67,10 +68,10 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * both-plugin cell.
  */
 
-const HONO_ID = "api-framework-hono";
+const HONO_ID = E2E_SKILL.hono.id;
 const HONO_PLUGIN_REF = `${HONO_ID}:${HONO_ID}`;
 
-const VITEST_ID = "web-testing-vitest";
+const VITEST_ID = E2E_SKILL.vitest.id;
 const VITEST_PLUGIN_REF = `${VITEST_ID}:${VITEST_ID}`;
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -140,17 +141,17 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       expect(honoEntries).toHaveLength(2);
       expect(active, "active project-scope hono entry must exist").toBeDefined();
       if (!active) return;
-      const pluginSourceName = active.source;
+      const pluginSourceName = active.origin;
       expect(pluginSourceName, "plugin source must not be eject").not.toBe("eject");
       expect(active).toStrictEqual({
         id: HONO_ID,
         scope: "project",
-        source: pluginSourceName,
+        origin: pluginSourceName,
       });
       expect(tombstone).toStrictEqual({
         id: HONO_ID,
         scope: "global",
-        source: pluginSourceName,
+        origin: pluginSourceName,
         excluded: true,
       });
 
@@ -207,7 +208,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
 
       const vitestMetadata = renderMetadataYaml({
         author: "@agents-inc",
-        displayName: VITEST_ID,
+        displayName: E2E_SKILL.vitest.display,
         category: "web-testing",
         slug: "vitest",
         cliDescription: "E2E test skill",
@@ -217,14 +218,14 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
 
       const globalStack = {
         [E2E_AGENT["web-developer"].name]: { "web-testing": [{ id: VITEST_ID, preloaded: false }] },
-      } satisfies Partial<Record<AgentName, StackAgentConfig>>;
+      } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
       const projectStack = {
         [E2E_AGENT["api-developer"].name]: { "web-testing": [{ id: VITEST_ID, preloaded: true }] },
-      } satisfies Partial<Record<AgentName, StackAgentConfig>>;
+      } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
       const globalConfig = buildProjectConfig({
         name: "dual-scope-global-plugin",
-        skills: buildSkillConfigs([VITEST_ID], { scope: "global", source: marketplace }),
+        skills: buildSkillConfigs([VITEST_ID], { scope: "global", origin: marketplace }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
         stack: globalStack,
@@ -241,10 +242,10 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
         skills: [
           ...buildSkillConfigs([VITEST_ID], {
             scope: "global",
-            source: marketplace,
+            origin: marketplace,
             excluded: true,
           }),
-          ...buildSkillConfigs([VITEST_ID], { scope: "project", source: marketplace }),
+          ...buildSkillConfigs([VITEST_ID], { scope: "project", origin: marketplace }),
         ],
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
         selectedDomains: ["web"],
@@ -298,7 +299,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       expect(projectVitest).toStrictEqual({
         id: VITEST_ID,
         scope: "project",
-        source: marketplace,
+        origin: marketplace,
       });
       expect(p.stack?.[E2E_AGENT["api-developer"].name]?.["web-testing"]).toStrictEqual([
         { id: VITEST_ID, preloaded: true },
@@ -346,7 +347,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
         "global config must carry an active global hono entry",
       ).toBeDefined();
       if (!globalHonoBefore) return;
-      const marketplaceSource = globalHonoBefore.source;
+      const marketplaceSource = globalHonoBefore.origin;
       expect(marketplaceSource, "global hono must start plugin-sourced").not.toBe(EJECT_SOURCE);
 
       // Project config owns the active project hono plus the masked global
@@ -364,10 +365,10 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       ).toBeDefined();
       expect(tombstoneBefore, "project config must carry the global hono tombstone").toBeDefined();
       if (!projectHonoBefore || !tombstoneBefore) return;
-      expect(projectHonoBefore.source, "project hono must start plugin-sourced").not.toBe(
+      expect(projectHonoBefore.origin, "project hono must start plugin-sourced").not.toBe(
         EJECT_SOURCE,
       );
-      expect(tombstoneBefore.source, "global tombstone must start plugin-sourced").not.toBe(
+      expect(tombstoneBefore.origin, "global tombstone must start plugin-sourced").not.toBe(
         EJECT_SOURCE,
       );
 
@@ -430,7 +431,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       );
       expect(projectHonoAfter, "active project hono must record the eject switch").toStrictEqual({
         ...projectHonoBefore,
-        source: EJECT_SOURCE,
+        origin: EJECT_SOURCE,
       });
       expect(
         tombstoneAfter,
@@ -469,7 +470,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
         "global config must carry an active global hono entry",
       ).toBeDefined();
       if (!globalHonoBefore) return;
-      expect(globalHonoBefore.source, "global hono must start plugin-sourced").not.toBe(
+      expect(globalHonoBefore.origin, "global hono must start plugin-sourced").not.toBe(
         EJECT_SOURCE,
       );
 
@@ -488,10 +489,10 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       ).toBeDefined();
       expect(tombstoneBefore, "project config must carry the global hono tombstone").toBeDefined();
       if (!projectHonoBefore || !tombstoneBefore) return;
-      expect(projectHonoBefore.source, "project hono must start plugin-sourced").not.toBe(
+      expect(projectHonoBefore.origin, "project hono must start plugin-sourced").not.toBe(
         EJECT_SOURCE,
       );
-      expect(tombstoneBefore.source, "global tombstone must start plugin-sourced").not.toBe(
+      expect(tombstoneBefore.origin, "global tombstone must start plugin-sourced").not.toBe(
         EJECT_SOURCE,
       );
 
@@ -557,7 +558,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // the intended effect of "set all sources to eject". ---
       expect(projectHonoAfter, "active project hono must record the eject switch").toStrictEqual({
         ...projectHonoBefore,
-        source: EJECT_SOURCE,
+        origin: EJECT_SOURCE,
       });
 
       // --- Guard (d): the project gains an ejected hono copy; the global scope

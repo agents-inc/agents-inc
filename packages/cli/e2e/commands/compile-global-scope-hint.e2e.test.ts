@@ -33,7 +33,7 @@ describe("compile project-context global-scope hint", () => {
   async function seedGlobalInstall(globalHome: string): Promise<void> {
     await writeProjectConfig(globalHome, {
       name: "global-test",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -59,7 +59,7 @@ describe("compile project-context global-scope hint", () => {
     // (so the project pass discovers skills and reaches the compile step).
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
     });
@@ -89,7 +89,7 @@ describe("compile project-context global-scope hint", () => {
     // Project install has a project-scoped agent that DOES compile in the project pass
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
       selectedDomains: ["web"],
       stack: {

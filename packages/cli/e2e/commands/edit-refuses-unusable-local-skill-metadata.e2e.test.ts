@@ -47,7 +47,7 @@ type Fixture = {
  * wizard resolves it from there and nothing is classified at all.
  */
 async function seedBrokenCustomSkillMetadata(source: string): Promise<Fixture> {
-  const project = await ProjectBuilder.withCustomSkill({ source });
+  const project = await ProjectBuilder.withCustomSkill({ marketplace: source });
   const metadataPath = path.join(
     skillsPath(project.dir),
     CUSTOM_PROJECT_SKILL_ID,

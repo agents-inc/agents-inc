@@ -69,11 +69,11 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       // 1. Both scopes have correct config and compiled agents
       await expectDualScopeInstallation(fakeHome, projectDir, {
         global: {
-          skillIds: ["web-framework-react", "api-framework-hono"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.hono.id],
           agents: [],
         },
         project: {
-          skillIds: ["api-framework-hono"],
+          skillIds: [E2E_SKILL.hono.id],
           agents: ["api-developer"],
         },
       });
@@ -122,11 +122,11 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       // 5. Both scopes have correct config and compiled agents after edit passthrough
       await expectDualScopeInstallation(fakeHome, projectDir, {
         global: {
-          skillIds: ["web-framework-react", "api-framework-hono"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.hono.id],
           agents: [],
         },
         project: {
-          skillIds: ["api-framework-hono"],
+          skillIds: [E2E_SKILL.hono.id],
           agents: ["api-developer"],
         },
       });
@@ -139,14 +139,14 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       // 8. api-developer agent at project scope carries its own domain's skill
       // alone — relevance-scoped assignment keeps the web skill off it.
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
-        contains: ["api-framework-hono"],
-        notContains: ["web-framework-react"],
+        contains: [E2E_SKILL.hono.id],
+        notContains: [E2E_SKILL.react.id],
       });
 
       // 8b. web-developer agent at global scope carries the web skill alone.
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: ["web-framework-react"],
-        notContains: ["api-framework-hono"],
+        contains: [E2E_SKILL.react.id],
+        notContains: [E2E_SKILL.hono.id],
       });
 
       // 9. No duplicate agent files in either scope directory

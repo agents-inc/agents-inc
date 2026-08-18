@@ -30,10 +30,10 @@ import {
 import "../matchers/setup.js";
 
 /**
- * A custom marketplace, from `--source` on the first run to every later command
+ * A custom marketplace, from `--marketplace` on the first run to every later command
  * reading it without being told again.
  *
- * `--source` is the whole private-marketplace story: an organisation points one
+ * `--marketplace` is the whole private-marketplace story: an organisation points one
  * `init` at its own repository and expects the installation to keep answering to
  * it. The suite proved the wizard OFFERS a custom source's stacks
  * (`interactive/init-wizard-stackless-source`) and that `eject` RECORDS one
@@ -182,7 +182,9 @@ describe("a custom marketplace is stored by init and resolved by every later com
 
       // Surface 3: the source is stored, so nothing later has to be told again.
       const globalConfig = await loadConfigOrFail(globalHome);
-      expect(globalConfig.source, "init must record the source it installed from").toBe(sourceDir);
+      expect(globalConfig.marketplace, "init must record the source it installed from").toBe(
+        sourceDir,
+      );
       expect(
         [...new Set(await readConfigSkillIds(result.project.dir))].sort(),
         "the installed skills must be the custom stack's, not a default's",
@@ -239,7 +241,7 @@ describe("a custom marketplace is stored by init and resolved by every later com
       // Surface 3: a stackless install stores its source exactly as a stacked one
       // does — the two differ in what was picked, not in what was remembered.
       expect(
-        (await loadConfigOrFail(globalHome)).source,
+        (await loadConfigOrFail(globalHome)).marketplace,
         "a stackless init must record the source it installed from",
       ).toBe(stacklessSourceDir);
 

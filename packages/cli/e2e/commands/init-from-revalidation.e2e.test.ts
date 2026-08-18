@@ -48,7 +48,7 @@ const EXPECTED_VALIDATION_WARNING = `${E2E_SKILL.react.display} ${STEP_TEXT.VALI
 const UNKNOWN_SKILL_ID = "web-framework-does-not-exist";
 
 function seedPayload(skills: Record<string, unknown>) {
-  return { v: 3, matrixVersion: "1.0.0", stackId: null, skills, agents: {} };
+  return { v: 5, matrixVersion: "1.0.0", stackId: null, skills, agents: {} };
 }
 
 function skillEntry() {

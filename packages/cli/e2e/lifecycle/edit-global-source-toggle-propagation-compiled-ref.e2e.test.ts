@@ -27,7 +27,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
-import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * D-256 (regression coverage for D-240): a plugin -> eject source change made at
@@ -68,7 +69,7 @@ const globalStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 // The registered project's own PROJECT-scoped agent preloads the same global
 // react, so its compiled frontmatter carries react in whichever form the global
@@ -78,12 +79,12 @@ const projectStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactMetadata = renderMetadataYaml({
   domain: "web",
   author: "@agents-inc",
-  displayName: E2E_SKILL.react.id,
+  displayName: E2E_SKILL.react.display,
   category: "web-framework",
   slug: E2E_SKILL.react.slug,
   cliDescription: "E2E test skill",
@@ -96,10 +97,10 @@ const reactMetadata = renderMetadataYaml({
  * skill is inlined verbatim from the global config (marketplace-sourced), and
  * the project owns a project-scoped agent whose stack references it.
  */
-function buildRegisteredProjectConfig(name: string): ProjectConfig {
+function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
-    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
+    skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: MARKET }),
     agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
     stack: projectStack,
   });
@@ -127,7 +128,7 @@ describe("global-scope source change propagates to registered projects", () => {
    * or not the command printed anything.
    */
   let editSummaryScreen: string;
-  let projectConfig: ProjectConfig;
+  let projectConfig: FixtureProjectConfig;
 
   beforeAll(async () => {
     await ensureBinaryExists();
@@ -149,7 +150,7 @@ describe("global-scope source change propagates to registered projects", () => {
       fakeHome,
       buildProjectConfig({
         name: "propagation-source-toggle-global",
-        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: MARKET }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: MARKET }),
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
         stack: globalStack,
@@ -253,7 +254,7 @@ describe("global-scope source change propagates to registered projects", () => {
       projectConfig.skills.filter((s) => s.id === E2E_SKILL.react.id),
       "the registered project's inlined react entry must record the eject source",
     ).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: EJECT_SOURCE }),
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: EJECT_SOURCE }),
     );
   });
 

@@ -25,6 +25,7 @@ import {
   recordInstallSource,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Doctor blind spots around skills it never verifies on disk, and remediation
@@ -55,11 +56,11 @@ describe("doctor with uninstalled plugin skills", () => {
       const installed = await createPluginInstalledProject({
         pluginsDir: pluginSource.pluginsDir,
         marketplace: pluginSource.marketplaceName,
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
           },
         },
       });
@@ -130,12 +131,12 @@ describe("doctor remediation advice for skills missing from disk", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-testing-vitest"],
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: ["web-developer"],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
-            "web-testing": [{ id: "web-testing-vitest", preloaded: true }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
+            "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: true }],
           },
         },
       });
@@ -152,9 +153,9 @@ describe("doctor remediation advice for skills missing from disk", () => {
       expect(
         await readTestFile(agentPath),
         "the agent must reference the skill before it goes missing",
-      ).toContain("web-framework-react");
+      ).toContain(E2E_SKILL.react.id);
 
-      await rm(path.join(skillsPath(project.dir), "web-framework-react"), {
+      await rm(path.join(skillsPath(project.dir), E2E_SKILL.react.id), {
         recursive: true,
         force: true,
       });
@@ -163,7 +164,7 @@ describe("doctor remediation advice for skills missing from disk", () => {
       expect(
         diagnosis.stdout,
         "doctor must flag the configured skill that is no longer on disk",
-      ).toContain("web-framework-react");
+      ).toContain(E2E_SKILL.react.id);
 
       const configBefore = await readTestFile(configTsPath(project.dir));
 
@@ -181,7 +182,7 @@ describe("doctor remediation advice for skills missing from disk", () => {
       expect(
         recompile.output,
         "compile must name the configured skill it cannot resolve; dropping it from the agent without a warning leaves the user worse off than doctor found them",
-      ).toContain("web-framework-react");
+      ).toContain(E2E_SKILL.react.id);
     },
   );
 });

@@ -20,6 +20,7 @@ import {
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Doctor blind spots that only appear once agents and skills are installed at
@@ -56,19 +57,19 @@ describe("doctor global-scope diagnostics", () => {
 
       await writeProjectConfig(fakeHome, {
         name: "global-install",
-        source: source.sourceDir,
-        skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
+        marketplace: source.sourceDir,
+        skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
         agents: [{ name: "web-developer", scope: "global" }],
         selectedDomains: ["web"],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
           },
         },
       });
-      await createLocalSkill(fakeHome, "web-framework-react", {
+      await createLocalSkill(fakeHome, E2E_SKILL.react.id, {
         metadata: renderMetadataYaml({
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           domain: "web",
@@ -87,7 +88,7 @@ describe("doctor global-scope diagnostics", () => {
         env: { HOME: fakeHome },
       });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
 
       expect(await readTestFile(configTsPath(fakeHome)), "doctor must not rewrite config.ts").toBe(
         configBefore,
@@ -117,17 +118,17 @@ describe("doctor global-scope diagnostics", () => {
 
       await writeProjectConfig(fakeHome, {
         name: "global-only-install",
-        source: source.sourceDir,
+        marketplace: source.sourceDir,
         skills: [
-          { id: "web-framework-react", scope: "global", source: "eject" },
-          { id: "web-testing-vitest", scope: "global", source: "eject" },
+          { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" },
         ],
         agents: [{ name: "web-developer", scope: "global" }],
         selectedDomains: ["web"],
       });
-      await createLocalSkill(fakeHome, "web-framework-react", {
+      await createLocalSkill(fakeHome, E2E_SKILL.react.id, {
         metadata: renderMetadataYaml({
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           domain: "web",
@@ -136,9 +137,9 @@ describe("doctor global-scope diagnostics", () => {
           contentHash: "b2c3d4e",
         }),
       });
-      await createLocalSkill(fakeHome, "web-testing-vitest", {
+      await createLocalSkill(fakeHome, E2E_SKILL.vitest.id, {
         metadata: renderMetadataYaml({
-          displayName: "web-testing-vitest",
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: "vitest",
           domain: "web",
@@ -153,7 +154,7 @@ describe("doctor global-scope diagnostics", () => {
       expect(
         config.skills.map((skill) => skill.id),
         "the install under test must declare skills for the check to be meaningful",
-      ).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
+      ).toStrictEqual([E2E_SKILL.react.id, E2E_SKILL.vitest.id]);
 
       const configBefore = await readTestFile(configTsPath(fakeHome));
       const skillsBefore = await listFiles(skillsPath(fakeHome));
@@ -162,7 +163,7 @@ describe("doctor global-scope diagnostics", () => {
         env: { HOME: fakeHome },
       });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
 
       expect(await readTestFile(configTsPath(fakeHome)), "doctor must not rewrite config.ts").toBe(
         configBefore,

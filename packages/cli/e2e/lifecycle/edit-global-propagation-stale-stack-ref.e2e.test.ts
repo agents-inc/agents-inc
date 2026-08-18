@@ -4,7 +4,7 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { finishWizard } from "../fixtures/dual-scope-helpers.js";
@@ -23,7 +23,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Propagation gap: when a global skill is removed via `cc edit` at global scope,
@@ -39,13 +40,15 @@ import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/t
  * fix does not reach.
  */
 
-const REACT = "web-framework-react";
+const REACT = E2E_SKILL.react.id;
+/** What the grid paints for that skill — its title, not its namespaced id. */
+const REACT_LABEL = E2E_SKILL.react.display;
 
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: REACT, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 // A project-scoped agent whose stack references the GLOBALLY-installed react.
 // Legitimate: global skills reach any agent per isScopeCompatible.
@@ -53,10 +56,10 @@ const projectStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: REACT, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactMetadata = renderMetadataYaml({
-  displayName: REACT,
+  displayName: REACT_LABEL,
   category: "web-framework",
   slug: "react",
   cliDescription: "E2E test skill",
@@ -64,10 +67,10 @@ const reactMetadata = renderMetadataYaml({
   contentHash: "b2c3d4e",
 });
 
-function buildRegisteredProjectConfig(name: string): ProjectConfig {
+function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
-    skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
+    skills: buildSkillConfigs([REACT], { scope: "global", origin: "eject" }),
     agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
     stack: projectStack,
   });
@@ -78,8 +81,8 @@ describe("global-scope skill removal propagates to registered projects", () => {
   let sourceTempDir: string;
   let tempDir: string;
 
-  let projectAConfig: ProjectConfig;
-  let projectBConfig: ProjectConfig;
+  let projectAConfig: FixtureProjectConfig;
+  let projectBConfig: FixtureProjectConfig;
 
   beforeAll(async () => {
     await ensureBinaryExists();
@@ -101,7 +104,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
     // stack references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-global",
-      skills: buildSkillConfigs([REACT], { scope: "global", source: "eject" }),
+      skills: buildSkillConfigs([REACT], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,
@@ -124,7 +127,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
       env: { HOME: globalHome },
       ...TERMINAL_SIZE.TALL,
     });
-    await wizard.build.selectSkill(REACT);
+    await wizard.build.selectSkill(REACT_LABEL);
     const sources = await wizard.build.passThroughAllDomainsGeneric();
     await sources.waitForReady();
     const agents = await sources.advance();

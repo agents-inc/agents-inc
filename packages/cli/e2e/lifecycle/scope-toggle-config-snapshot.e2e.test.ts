@@ -113,15 +113,15 @@ describe("scope toggle config snapshot", () => {
       // SOMEWHERE; `toStrictEqual` on the entry list says which entries exist and
       // that no fourth one joined them — the shape the rest of this file uses.
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
       ]);
       expect(await readSkillEntries(projectDir, E2E_SKILL.hono.id)).toStrictEqual([
-        { id: E2E_SKILL.hono.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.hono.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.hono.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.hono.id, scope: "project", origin: "eject" },
       ]);
       expect(await readSkillEntries(fakeHome, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
       ]);
 
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));

@@ -83,7 +83,7 @@ describe("edit wizard — pending-removal row on the Sources tab in a global-sco
           name: "global-edit-test",
           skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
             scope: "global",
-            source: "eject",
+            origin: "eject",
           }),
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
           selectedDomains: ["web"],
@@ -93,7 +93,7 @@ describe("edit wizard — pending-removal row on the Sources tab in a global-sco
       await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework for global-scope edit testing",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.react.id,
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: E2E_SKILL.react.slug,
           cliDescription: "E2E test skill",
@@ -104,7 +104,7 @@ describe("edit wizard — pending-removal row on the Sources tab in a global-sco
       await createLocalSkill(globalHome, E2E_SKILL.vitest.id, {
         description: "Vitest testing skill for global-scope edit testing",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.vitest.id,
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: E2E_SKILL.vitest.slug,
           cliDescription: "E2E test skill",

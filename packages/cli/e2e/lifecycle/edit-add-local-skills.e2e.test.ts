@@ -107,7 +107,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       expect(await fileExists(configPath)).toBe(true);
       const configAfterInit = await readTestFile(configPath);
       // All skills should be plugin (not eject)
-      expect(configAfterInit).not.toContain('"source":"eject"');
+      expect(configAfterInit).not.toContain('"origin":"eject"');
 
       // ================================================================
       // Phase 2: Edit — switch first skill to eject source
@@ -146,7 +146,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
 
       const configAfterEdit = await readTestFile(configPath);
       // The switched skill should now have source "eject"
-      expect(configAfterEdit).toContain('"source":"eject"');
+      expect(configAfterEdit).toContain('"origin":"eject"');
 
       // The eject-sourced skill should be copied to .claude/skills/. Under the
       // global-edit model HOME == projectDir, so global content lands here.

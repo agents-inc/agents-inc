@@ -80,7 +80,7 @@ describe("in-session deselect and re-select of a project-only eject skill", () =
       expect(
         vitestEntriesBefore,
         "vitest must be a project-scoped eject skill before the edit",
-      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" }]);
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.vitest.id);
       await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.vitest.id);
       const globalConfigBefore = await readTestFile(globalConfigPath);

@@ -80,7 +80,7 @@ describe("custom sub-agents", () => {
       // Update config to reference the custom agent
       await writeProjectConfig(projectDir, {
         name: "e2e-custom-agent-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", source: "eject" }],
+        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
         agents: [
           { name: "web-developer", scope: "project" },
           { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
@@ -141,7 +141,7 @@ describe("custom sub-agents", () => {
       // Config includes both built-in and custom agents
       await writeProjectConfig(projectDir, {
         name: "e2e-coexistence-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", source: "eject" }],
+        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
         agents: [
           { name: "web-developer", scope: "project" },
           { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
@@ -186,7 +186,7 @@ describe("custom sub-agents", () => {
 
       await writeProjectConfig(projectDir, {
         name: "e2e-missing-workflow-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", source: "eject" }],
+        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
         agents: [{ name: "incomplete-agent" as AgentName, scope: "project" }], // fabricated E2E test ID
       });
 
@@ -215,7 +215,7 @@ describe("custom sub-agents", () => {
 
       await writeProjectConfig(projectDir, {
         name: "e2e-empty-metadata-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", source: "eject" }],
+        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
         agents: [{ name: "broken-agent" as AgentName, scope: "project" }], // fabricated E2E test ID
       });
 

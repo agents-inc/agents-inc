@@ -11,6 +11,7 @@ import {
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
 import {
+  agentsPath,
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
@@ -22,6 +23,7 @@ import {
   readCompiledAgents,
   readTestFile,
   skillsPath,
+  writeAgentFile,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -46,6 +48,9 @@ import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
+
+/** An agent file the user wrote, carrying no provenance marker — never this CLI's to delete. */
+const HAND_WRITTEN_AGENT = "my-custom-agent";
 
 describe("uninstall removes a from-scratch install, scope by scope", () => {
   let sourceDir: string;
@@ -194,6 +199,13 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       const agentsBeforeUninstall = await readCompiledAgents(fakeHome);
       expect(Object.keys(agentsBeforeUninstall).length).toBeGreaterThan(0);
 
+      // A file the user wrote, in among the ones `init` compiled. It is the control for the
+      // sweep below: with no config to consult, "removed everything in the directory" and
+      // "removed what this CLI compiled" are the same claim until one file is neither.
+      await writeAgentFile(fakeHome, HAND_WRITTEN_AGENT, { frontmatter: true });
+      const handWrittenFile = path.join(agentsPath(fakeHome), `${HAND_WRITTEN_AGENT}.md`);
+      const handWrittenBefore = await readTestFile(handWrittenFile);
+
       // The state a user most needs to uninstall from, reached the way they reach
       // it: a real installation whose config stopped loading.
       await writeCorruptConfig(fakeHome, SYNTAX_ERROR);
@@ -215,18 +227,23 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       expect(await directoryExists(path.join(fakeHome, DIRS.CLAUDE_SRC))).toBe(false);
       await expect({ dir: fakeHome }).toHaveNoLocalSkills();
 
-      // What the degraded plan costs, pinned rather than glossed: the compiled
-      // agents are identified FROM the config (`loadUninstallConfig` in
-      // uninstall.tsx returns null on ConfigLoadError, so the plan cannot name
-      // them), and they survive. The user is left with agent files referencing
-      // skills that are gone. This is the documented degradation, not a
-      // consequence nobody chose — the sibling variants in
-      // `commands/uninstall-corrupt-config` pin the same shape from a seeded
-      // fixture; this pins it from an installation `init` actually made.
+      // And so do the compiled agents, which the config is no longer needed to name: `init`
+      // compiled every one of them, so every one carries the provenance marker, and the plan
+      // claims them on that authority instead of the config's. The degradation this used to
+      // pin — agent files left behind referencing skills that are gone — is what the marker
+      // was added to end.
+      //
+      // Both halves are asserted against the plan the user was shown as well as against disk,
+      // because the plan is the promise and the files are only the outcome: it names the
+      // compiled agents under the removals AND names the one it is leaving, with the reason.
+      expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+      expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
+      expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
       expect(
         Object.keys(await readCompiledAgents(fakeHome)).sort(),
-        "an unreadable config leaves the compiled agents behind — the plan cannot name them",
-      ).toStrictEqual(Object.keys(agentsBeforeUninstall).sort());
+        "an unreadable config no longer strands the agents this CLI compiled, and never claimed the one it did not",
+      ).toStrictEqual([`${HAND_WRITTEN_AGENT}.md`]);
+      expect(await readTestFile(handWrittenFile)).toBe(handWrittenBefore);
     },
   );
 });

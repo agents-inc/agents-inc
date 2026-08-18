@@ -23,7 +23,6 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
-import type { SkillId } from "../../src/cli/types/index.js";
 
 describe("list command", () => {
   let tempDir: string;
@@ -113,7 +112,7 @@ describe("list command", () => {
     // This test asserts the user should see which skills are installed.
     it.fails("should show all skill IDs in output", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
       });
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
@@ -121,9 +120,9 @@ describe("list command", () => {
       const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("web-framework-react");
-      expect(stdout).toContain("web-testing-vitest");
-      expect(stdout).toContain("web-state-zustand");
+      expect(stdout).toContain(E2E_SKILL.react.id);
+      expect(stdout).toContain(E2E_SKILL.vitest.id);
+      expect(stdout).toContain(E2E_SKILL.zustand.id);
     });
   });
 
@@ -134,7 +133,7 @@ describe("list command", () => {
     // no forkedFrom). Users should be able to see which skills are custom vs managed.
     it.fails("should distinguish CLI-managed and user-created skills in output", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-testing-vitest"],
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
       });
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
@@ -155,8 +154,8 @@ describe("list command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       // The output should show individual skills with some kind of type indicator
-      expect(stdout).toContain("web-framework-react");
-      expect(stdout).toContain("web-testing-vitest");
+      expect(stdout).toContain(E2E_SKILL.react.id);
+      expect(stdout).toContain(E2E_SKILL.vitest.id);
       expect(stdout).toContain("web-utilities-date-fns");
       // There should be a visible distinction between managed and custom skills
       expect(stdout).toMatch(/custom|user|local/i);
@@ -199,12 +198,12 @@ describe("list command", () => {
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(globalHome, {
         name: "global-test",
-        skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
       // Create skills directory with a skill folder so skill count > 0
-      await mkdir(path.join(skillsPath(globalHome), "web-framework-react"), { recursive: true });
+      await mkdir(path.join(skillsPath(globalHome), E2E_SKILL.react.id), { recursive: true });
 
       // Create a project directory WITHOUT config (so detectInstallation falls back to global)
       const projectDir = path.join(tempDir, "project");
@@ -342,7 +341,7 @@ async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, JSON.stringify(value, null, 2));
 }
 
-function pluginKeysFor(skillIds: SkillId[], marketplace: string): string[] {
+function pluginKeysFor(skillIds: string[], marketplace: string): string[] {
   return skillIds.map((id) => `${id}@${marketplace}`);
 }
 
@@ -361,8 +360,8 @@ function pluginKeysFor(skillIds: SkillId[], marketplace: string): string[] {
 async function createScopedPluginInstall(options: {
   pluginsDir: string;
   marketplace: string;
-  globalSkillIds: SkillId[];
-  projectSkillIds: SkillId[];
+  globalSkillIds: string[];
+  projectSkillIds: string[];
 }): Promise<{ tempDir: string; home: string; projectDir: string }> {
   const installTempDir = await createTempDir();
   const home = path.join(installTempDir, "home");
@@ -372,24 +371,24 @@ async function createScopedPluginInstall(options: {
   const globalSkills = options.globalSkillIds.map((id) => ({
     id,
     scope: "global" as const,
-    source: options.marketplace,
+    origin: options.marketplace,
   }));
   const projectSkills = options.projectSkillIds.map((id) => ({
     id,
     scope: "project" as const,
-    source: options.marketplace,
+    origin: options.marketplace,
   }));
 
   await writeProjectConfig(home, {
     name: "global-plugin-install",
-    marketplace: options.marketplace,
+    marketplaceName: options.marketplace,
     skills: globalSkills,
     agents: [{ name: E2E_AGENT["api-developer"].name, scope: "global" }],
     selectedDomains: ["web"],
   });
   await writeProjectConfig(projectDir, {
     name: "project-plugin-install",
-    marketplace: options.marketplace,
+    marketplaceName: options.marketplace,
     skills: [...globalSkills, ...projectSkills],
     agents: [
       { name: E2E_AGENT["api-developer"].name, scope: "global" },

@@ -16,6 +16,7 @@ import {
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import type { AgentName, Category } from "../../src/cli/types/index.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Preloaded flag preservation across init and edit lifecycle.
@@ -130,7 +131,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
 
         expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           source: fixture.marketplaceName,
         });
@@ -141,9 +142,9 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
           sharedHome,
           "web-developer",
           "web-framework",
-          "web-framework-react",
+          E2E_SKILL.react.id,
         );
-        await assertPreloadedInStack(sharedHome, "api-developer", "api-api", "api-framework-hono");
+        await assertPreloadedInStack(sharedHome, "api-developer", "api-api", E2E_SKILL.hono.id);
 
         // ================================================================
         // Phase B: Edit passthrough (no changes)
@@ -164,9 +165,9 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
           sharedHome,
           "web-developer",
           "web-framework",
-          "web-framework-react",
+          E2E_SKILL.react.id,
         );
-        await assertPreloadedInStack(sharedHome, "api-developer", "api-api", "api-framework-hono");
+        await assertPreloadedInStack(sharedHome, "api-developer", "api-api", E2E_SKILL.hono.id);
       },
     );
   });

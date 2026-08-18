@@ -7,6 +7,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -15,6 +16,7 @@ import {
   runEditWithFirstSkillAction,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Full in-session scope state machine for a persisted dual-scope `[P][G]` skill,
@@ -46,7 +48,9 @@ import {
  * never saved.
  */
 
-const REACT_SKILL_ID = "web-framework-react";
+const REACT_SKILL_ID = E2E_SKILL.react.id;
+/** What the grid paints for that skill — its title, not its namespaced id. */
+const REACT_SKILL_LABEL = E2E_SKILL.react.display;
 
 describe("dual-scope in-session space-collapse → s-restore → blocked-space → s-flip", () => {
   let sourceDir: string;
@@ -79,8 +83,8 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
       // Establish the persisted dual-scope pair via a real `s` toggle + save.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
       expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-        { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
-        { id: REACT_SKILL_ID, scope: "project", source: "eject" },
+        { id: REACT_SKILL_ID, scope: "global", origin: "eject", excluded: true },
+        { id: REACT_SKILL_ID, scope: "project", origin: "eject" },
       ]);
 
       const projectConfigPath = configTsPath(projectDir);
@@ -97,11 +101,14 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
       try {
         // Focus react explicitly — the grid's first-alphabetical cell is Vue, and
         // every step below acts on the focused skill (focus persists across `s`/space).
-        await wizard.build.focusSkill(REACT_SKILL_ID);
+        await wizard.build.focusSkill(REACT_SKILL_LABEL);
 
         // Baseline: persisted dual-scope row renders both badges, react is the one
         // selected framework.
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["P", "G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).toStrictEqual([
+          "P",
+          "G",
+        ]);
         expect(
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
         ).toBe(1);
@@ -110,7 +117,7 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
         // inherited global entry it was masking surfaces in its place, so the row
         // keeps rendering and stays selected.
         await wizard.build.toggleFocusedSkill();
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).toStrictEqual(["G"]);
         expect(
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "dropping the project half must leave react selected (1 of 1) — it is still active globally",
@@ -119,13 +126,13 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
         // Step 2 — `s` rebuilds the pair from that collapsed row.
         await wizard.build.toggleScopeOnFocusedSkill();
         expect(
-          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),
+          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).slice().sort(),
         ).toStrictEqual(["G", "P"]);
 
         // Step 3 — `s` collapses [P][G] to a single inherited-global [G]; react
         // stays active (and selected).
         await wizard.build.toggleScopeOnFocusedSkill();
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).toStrictEqual(["G"]);
         expect(
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "collapsed-but-still-global react must render as selected (1 of 1)",
@@ -138,7 +145,7 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
         // place, so xterm's processed buffer can lose it before the test reads it, and
         // an unanchored raw match would accept a toast emitted earlier in the session.
         await wizard.build.toggleFocusedSkillAwaiting(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).toStrictEqual(["G"]);
         expect(
           await wizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
           "blocked spacebar must leave react selected (1 of 1) — no silent tombstone",
@@ -147,17 +154,17 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
         // Step 4 — `s` restores a fresh [P][G] pair.
         await wizard.build.toggleScopeOnFocusedSkill();
         expect(
-          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),
+          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).slice().sort(),
         ).toStrictEqual(["G", "P"]);
 
         // Step 5 — `s` again flips the reconstructed pair back to plain global.
         await wizard.build.toggleScopeOnFocusedSkill();
-        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).toStrictEqual(["G"]);
 
         // Step 5b — `s` once more round-trips back to [P][G].
         await wizard.build.toggleScopeOnFocusedSkill();
         expect(
-          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_ID)).slice().sort(),
+          (await wizard.build.getScopeBadgesForSkill(REACT_SKILL_LABEL)).slice().sort(),
         ).toStrictEqual(["G", "P"]);
       } finally {
         await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
@@ -170,9 +177,15 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
         "aborted in-session edit must not rewrite config.ts",
       ).toBe(configBefore);
       expect(await readSkillEntries(projectDir, REACT_SKILL_ID)).toStrictEqual([
-        { id: REACT_SKILL_ID, scope: "global", source: "eject", excluded: true },
-        { id: REACT_SKILL_ID, scope: "project", source: "eject" },
+        { id: REACT_SKILL_ID, scope: "global", origin: "eject", excluded: true },
+        { id: REACT_SKILL_ID, scope: "project", origin: "eject" },
       ]);
+
+      // Run last, after the byte-identity assertion above: the narrowing probe writes and then
+      // removes a file inside `.claude-src`, so it must not precede a claim about that tree.
+      // The pair the setup save wrote is what the aborted session had to leave standing.
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 });

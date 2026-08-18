@@ -67,8 +67,8 @@ describe("dual-scope `s` collapse — live in-session selected state", () => {
       // Establish the persisted dual-scope pair via a real `s` toggle + save.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
       ]);
 
       // Re-open and act on the LIVE session — do NOT save.
@@ -86,7 +86,7 @@ describe("dual-scope `s` collapse — live in-session selected state", () => {
 
         // Baseline: the persisted dual-scope row renders both badges and counts
         // react as the single selected framework.
-        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.id)).toStrictEqual([
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display)).toStrictEqual([
           "P",
           "G",
         ]);
@@ -99,7 +99,9 @@ describe("dual-scope `s` collapse — live in-session selected state", () => {
         await wizard.build.toggleScopeOnFocusedSkill();
 
         // The badge collapses to a single `G` — react remains installed globally.
-        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.id)).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display)).toStrictEqual([
+          "G",
+        ]);
 
         // React is still active via global, so the exclusive Framework category
         // must still count it as selected — the badge and the selected state must

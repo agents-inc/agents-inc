@@ -15,7 +15,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
 
@@ -70,16 +70,16 @@ describe("project config does not accumulate global skills after edit", () => {
       // --- Setup global config at <tempHOME>/.claude-src/config.ts ---
       await writeProjectConfig(tempHOME, {
         name: "global",
-        skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
         selectedDomains: ["web"],
       });
 
       // Create global skill directory with SKILL.md and metadata.yaml
-      await createLocalSkill(tempHOME, "web-framework-react", {
+      await createLocalSkill(tempHOME, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           contentHash: "e2e-hash-react",
@@ -96,18 +96,18 @@ describe("project config does not accumulate global skills after edit", () => {
       await writeProjectConfig(projectDir, {
         name: "bug-b-test",
         skills: [
-          { id: "web-framework-react", scope: "global", source: "eject" },
-          { id: "web-testing-vitest", scope: "project", source: "eject" },
+          { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         selectedDomains: ["web"],
       });
 
       // Create project skill directory with SKILL.md and metadata.yaml
-      await createLocalSkill(projectDir, "web-testing-vitest", {
+      await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Vitest testing",
         metadata: renderMetadataYaml({
-          displayName: "web-testing-vitest",
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: "vitest",
           contentHash: "e2e-hash-vitest",
@@ -139,7 +139,7 @@ describe("project config does not accumulate global skills after edit", () => {
 
       // --- Assert: project config inlines global skills with scope: "global" (no spread) ---
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-testing-vitest", "web-framework-react"],
+        skillIds: [E2E_SKILL.vitest.id, E2E_SKILL.react.id],
       });
 
       // Structural checks require raw file reading
@@ -151,7 +151,7 @@ describe("project config does not accumulate global skills after edit", () => {
 
       // Key invariant: the global skill must appear exactly once in the skills array (no accumulation).
       // Structural load scopes the check to the skills array (the ID may also appear in the stack).
-      const reactEntries = await readSkillEntries(projectDir, "web-framework-react");
+      const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       expect(
         reactEntries,
         "Global skill 'web-framework-react' should appear exactly once in skills array (no accumulation)",
@@ -159,7 +159,7 @@ describe("project config does not accumulate global skills after edit", () => {
 
       // Also verify the global config still has its skill (it wasn't removed)
       await expect({ dir: tempHOME }).toHaveConfig({
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
       });
 
       // In this test, the installation is global-only (no project init was run).

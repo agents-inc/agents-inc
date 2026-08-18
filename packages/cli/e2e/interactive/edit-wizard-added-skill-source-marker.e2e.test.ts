@@ -89,7 +89,7 @@ describe("edit wizard — added-skill marker on the Sources tab", () => {
 
       // Add zustand — in the source matrix, absent from the saved project. Space selects it because
       // it starts unselected, and the empty exclusive web-client-state slot accepts it cleanly.
-      await wizard.build.selectSkill(E2E_SKILL.zustand.id);
+      await wizard.build.selectSkill(E2E_SKILL.zustand.display);
 
       // Single web domain: advance straight to the Sources tab.
       const sources = await wizard.build.advanceToSources();

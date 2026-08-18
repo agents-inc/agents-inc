@@ -19,7 +19,7 @@ import "../matchers/setup.js";
 /**
  * E2E tests for the init wizard DEFAULT SOURCE code path.
  *
- * ALL existing init E2E tests use `--source <tempDir>`, which bypasses the
+ * ALL existing init E2E tests use `--marketplace <tempDir>`, which bypasses the
  * `DEFAULT_SOURCE` / `BUILT_IN_MATRIX` code path entirely.
  */
 
@@ -33,18 +33,19 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
   let sharedHome: string | undefined;
   let sharedProjectDir: string | undefined;
 
-  const SHARED_MARKETPLACE_NAME = `e2e-test-stale-${Date.now()}`;
-
   beforeAll(async () => {
     await ensureBinaryExists();
     sharedHome = await createTempDir();
 
-    fixtureV1 = await createE2EPluginSource({
-      marketplaceName: SHARED_MARKETPLACE_NAME,
-    });
-    fixtureV2 = await createE2EPluginSource({
-      marketplaceName: SHARED_MARKETPLACE_NAME,
-    });
+    // Two DIRECTORIES publishing under ONE marketplace name — the shared default,
+    // which every fixture already uses. That pairing is what the stale-update path
+    // needs: the second init meets a name its HOME has already registered, from a
+    // path that has moved. The name used to be `e2e-test-stale-${Date.now()}`; the
+    // timestamp bought nothing, because both registrations land in `sharedHome`,
+    // which is a fresh temp dir per run, and it bought a marketplace whose name no
+    // longer matches the namespace its skill ids are written in.
+    fixtureV1 = await createE2EPluginSource();
+    fixtureV2 = await createE2EPluginSource();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
@@ -143,7 +144,7 @@ describe.skipIf(!claudeAvailable)("init wizard — default source eject mode ENO
     async () => {
       wizard = await InitWizard.launchInProject({
         noSource: true,
-        env: { CC_SOURCE: undefined },
+        env: { CC_MARKETPLACE: undefined },
       });
 
       // Use acceptStackDefaults() — selects first stack and presses "A" to
@@ -169,7 +170,7 @@ describe.skipIf(!claudeAvailable)("init wizard — default source eject mode ENO
   it("should load wizard with BUILT_IN_MATRIX when no source is provided", async () => {
     wizard = await InitWizard.launch({
       noSource: true,
-      env: { CC_SOURCE: undefined },
+      env: { CC_MARKETPLACE: undefined },
     });
 
     const screen = wizard.stack.getScreen();

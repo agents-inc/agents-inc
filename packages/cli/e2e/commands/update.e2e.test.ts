@@ -63,7 +63,7 @@ describe("update command", () => {
     expect(
       stdout,
       "the command reads its marketplaces from config, not from a source",
-    ).not.toContain("--source");
+    ).not.toContain("--marketplace");
   });
 
   it("rejects a skill argument", async () => {
@@ -96,7 +96,7 @@ describe("update command", () => {
       const projectDir = path.join(tempDir, "project");
       await writeProjectConfig(projectDir, {
         name: "eject-only",
-        skills: [{ id: E2E_SKILL.react.id, scope: "project", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [],
       });
       await writeConfigTypes(projectDir);
@@ -131,8 +131,8 @@ describe("update command", () => {
       await writeProjectConfig(projectDir, {
         name: "mixed-install",
         skills: [
-          { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
-          { id: E2E_SKILL.vitest.id, scope: "project", source: MARKETPLACE },
+          { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "project", origin: MARKETPLACE },
         ],
         agents: [],
       });
@@ -164,7 +164,7 @@ describe("update command", () => {
       const projectDir = path.join(tempDir, "project");
       await writeProjectConfig(projectDir, {
         name: "plugin-install",
-        skills: [{ id: E2E_SKILL.react.id, scope: "project", source: MARKETPLACE }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: MARKETPLACE }],
         agents: [],
       });
       await writeConfigTypes(projectDir);

@@ -7,6 +7,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { TIMEOUTS } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
@@ -61,14 +62,14 @@ async function collapseToInheritedGlobal(
   // `s` G->P: produces the persisted dual-scope pair.
   await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
   expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-    { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-    { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+    { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+    { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
   ]);
 
   // `s` again: collapse the dual-scope pair to a single inherited-global entry.
   await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
   expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-    { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+    { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
   ]);
 }
 
@@ -108,9 +109,15 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
         fakeHome,
         sourceDir,
         sourceTempDir,
-        E2E_SKILL.react.id,
+        E2E_SKILL.react.display,
       );
       expect(collapsedBadges).toStrictEqual(["G"]);
+
+      // A collapse regenerates the project pair with one fewer project-scoped skill, which is
+      // the shape a union collapses into. Both scopes, because the collapse is the project
+      // giving a skill back to the global install rather than deleting it.
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 
@@ -133,7 +140,7 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
 
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
       ]);
       const configAfterSpace = await readTestFile(projectConfigPath);
       expect(
@@ -146,7 +153,7 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
         fakeHome,
         sourceDir,
         sourceTempDir,
-        E2E_SKILL.react.id,
+        E2E_SKILL.react.display,
       );
       expect(noopBadges).toStrictEqual(["G"]);
 
@@ -156,8 +163,8 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", source: "eject" },
+        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
       ]);
 
       const restoredBadges = await readSkillBadgesViaEdit(
@@ -165,9 +172,14 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
         fakeHome,
         sourceDir,
         sourceTempDir,
-        E2E_SKILL.react.id,
+        E2E_SKILL.react.display,
       );
       expect(restoredBadges.slice().sort()).toStrictEqual(["G", "P"]);
+
+      // The restored pair is a fresh project-scope install of a skill the global scope still
+      // holds, so both sides carry it and both generated pairs have to hold.
+      await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+      await expectFourSurfaces(fakeHome);
     },
   );
 });

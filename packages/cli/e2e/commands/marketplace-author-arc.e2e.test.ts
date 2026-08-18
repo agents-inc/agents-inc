@@ -15,7 +15,13 @@ import {
   skillsPath,
   writeTestPackageJson,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, SOURCE_PATHS, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  E2E_MARKETPLACE_NAME,
+  EXIT_CODES,
+  SOURCE_PATHS,
+  STEP_TEXT,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   TS_NOT_ASSIGNABLE,
@@ -46,7 +52,13 @@ import "../matchers/setup.js";
  * journey 10's refresh branch — so it is not attempted unconditionally.
  */
 
-const MARKETPLACE_NAME = "e2e-author-arc-marketplace";
+/**
+ * The name the author publishes under. The fixture marketplace's own, because the
+ * repository this arc builds is `createE2ESource()`'s — its skill ids carry that
+ * name as their prefix, so publishing under any other one would ship plugins whose
+ * ids belong to a different marketplace.
+ */
+const MARKETPLACE_NAME = E2E_MARKETPLACE_NAME;
 
 /** The aliases an install fills in, whatever repository it read. */
 const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
@@ -149,7 +161,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
 
       // Surface 3: the built repository is what the installation records.
       expect(
-        (await loadConfigOrFail(globalHome)).source,
+        (await loadConfigOrFail(globalHome)).marketplace,
         "the install must record the built repository it read",
       ).toBe(sourceDir);
 

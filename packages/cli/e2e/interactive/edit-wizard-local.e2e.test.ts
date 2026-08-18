@@ -60,7 +60,7 @@ describe("edit wizard — eject mode", () => {
         // Create project with only web-framework-react. The E2E source also has
         // web-testing-vitest and web-state-zustand in the Web domain.
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -93,16 +93,16 @@ describe("edit wizard — eject mode", () => {
 
         // Config should now include both skills
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react", "web-testing-vitest"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
           agents: ["web-developer"],
         });
 
         // Eject mode: skill must be physically copied to .claude/skills/
-        await expect(result.project).toHaveSkillCopied("web-testing-vitest");
+        await expect(result.project).toHaveSkillCopied(E2E_SKILL.vitest.id);
 
         // Compiled agent should contain the newly added skill
         await expect(result.project).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-testing-vitest"],
+          contains: [E2E_SKILL.vitest.id],
         });
       },
     );
@@ -112,7 +112,7 @@ describe("edit wizard — eject mode", () => {
       { timeout: TIMEOUTS.PLUGIN_INSTALL },
       async () => {
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -153,7 +153,7 @@ describe("edit wizard — eject mode", () => {
       { timeout: TIMEOUTS.PLUGIN_INSTALL },
       async () => {
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -194,7 +194,7 @@ describe("edit wizard — eject mode", () => {
         // installed) and web-styling-tailwind (in neither, and with no files on
         // disk). The wizard can resolve tailwind from nothing, so it drops it.
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: ["web-styling-tailwind"],
           agents: ["web-developer"],
           domains: ["web"],
@@ -220,7 +220,7 @@ describe("edit wizard — eject mode", () => {
         expect(rawOutput).toContain("web-styling-tailwind");
 
         // Config should still reference the surviving skill.
-        await expect(result.project).toHaveConfig({ skillIds: ["web-framework-react"] });
+        await expect(result.project).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
 
         // The removed skill must NOT appear in compiled agent content
         await expect(result.project).toHaveCompiledAgentContent("web-developer", {
@@ -237,8 +237,8 @@ describe("edit wizard — eject mode", () => {
      * owned entry. That drop is the one removal the user did not ask for, so `edit`'s Changes
      * block names the skill AND why it went. Its predecessor preserved the entry while announcing
      * it as removed, leaving `config.ts`, the summary and the compiled agent giving three answers
-     * about one skill (CLI-450, closing
-     * `2026-08-08-edit-reports-an-unresolvable-skill-as-removed-while-preserving-it.md`).
+     * about one skill: an active `config.ts` entry with no `excluded` flag, a `- <skill>` line in
+     * the Changes block, and no mention of it in the recompiled agent.
      *
      * The entry here is EJECT-sourced with no files written for it, so the reason names the
      * directory its skill is missing from rather than the marketplace, which never carried it
@@ -250,7 +250,7 @@ describe("edit wizard — eject mode", () => {
       { timeout: TIMEOUTS.PLUGIN_INSTALL },
       async () => {
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: ["web-styling-tailwind"],
           agents: ["web-developer"],
           domains: ["web"],
@@ -273,7 +273,7 @@ describe("edit wizard — eject mode", () => {
 
         // The whole surviving skill list, read structurally: the unresolvable entry is gone.
         const config = await loadConfigOrFail(result.project.dir);
-        expect(config.skills.map((skill) => skill.id)).toStrictEqual(["web-framework-react"]);
+        expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
 
         await expect(result.project).toHaveCompiledAgent("web-developer");
 
@@ -295,7 +295,7 @@ describe("edit wizard — eject mode", () => {
       { timeout: TIMEOUTS.PLUGIN_INSTALL },
       async () => {
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: ["web-styling-tailwind"],
           agents: ["web-developer"],
           domains: ["web"],
@@ -322,7 +322,7 @@ describe("edit wizard — eject mode", () => {
       { timeout: TIMEOUTS.PLUGIN_INSTALL },
       async () => {
         const project = await ProjectBuilder.editable({
-          skills: ["web-framework-react"],
+          skills: [E2E_SKILL.react.id],
           unresolvableSkills: ["web-styling-tailwind"],
           agents: ["web-developer"],
           domains: ["web"],
@@ -342,7 +342,7 @@ describe("edit wizard — eject mode", () => {
         // when the user doesn't explicitly change it. No source migration is triggered,
         // so eject skill files remain intact.
         await expectPhaseSuccess(result, {
-          copiedSkills: ["web-framework-react"],
+          copiedSkills: [E2E_SKILL.react.id],
           compiledAgents: [],
         });
 

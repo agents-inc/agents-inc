@@ -3,8 +3,7 @@ import {
   claudePluginMarketplaceRemove,
 } from "../src/cli/utils/exec.js";
 import { getErrorMessage } from "../src/cli/utils/errors.js";
-
-const E2E_MARKETPLACE_PREFIX = "e2e-test-";
+import { E2E_MARKETPLACE_PREFIX } from "./pages/constants.js";
 
 export default async function setup() {
   return async () => {

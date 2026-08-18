@@ -22,7 +22,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, ProjectConfig, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * A global-scope `cc edit` at ~/ must preserve the global config's registered
@@ -41,7 +42,7 @@ const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const reactMetadata = renderMetadataYaml({
   displayName: E2E_SKILL.react.display,
@@ -83,16 +84,16 @@ describe("global edit at HOME preserves the registered projects array", () => {
       registeredProject,
       buildProjectConfig({
         name: "registered-project",
-        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
       }),
     );
 
     // Seed the global install at ~/ with react + web-developer and a registered
     // project path in `projects`.
-    const globalConfig: ProjectConfig = buildProjectConfig({
+    const globalConfig: FixtureProjectConfig = buildProjectConfig({
       name: "preserve-projects-global",
-      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", source: "eject" }),
+      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,

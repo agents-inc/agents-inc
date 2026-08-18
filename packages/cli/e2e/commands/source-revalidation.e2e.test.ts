@@ -79,7 +79,7 @@ describe("remote source revalidation", () => {
     projectDir = await createTempDir();
     // The installation names the server as its source: `search` has no flag and reads no
     // environment override — naming a source is `init`'s decision, and this stands for it.
-    await writeProjectConfig(projectDir, { name: "revalidation-fixture", source: server.url });
+    await writeProjectConfig(projectDir, { name: "revalidation-fixture", marketplace: server.url });
 
     const search = (query: string) => CLI.run(["search", query], { dir: projectDir });
 

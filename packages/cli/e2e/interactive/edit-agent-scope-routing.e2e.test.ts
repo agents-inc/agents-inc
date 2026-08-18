@@ -14,7 +14,7 @@ import {
   renderMetadataYaml,
   writeAgentFile,
 } from "../helpers/test-utils.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import "../matchers/setup.js";
@@ -67,16 +67,16 @@ describe("edit recompile routes agents to correct scope directory", () => {
       // --- Setup global config at <tempHOME>/.claude-src/config.ts ---
       await writeProjectConfig(tempHOME, {
         name: "global",
-        skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
+        skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
         selectedDomains: ["web"],
       });
 
       // Create global skill directory with SKILL.md and metadata.yaml
-      await createLocalSkill(tempHOME, "web-framework-react", {
+      await createLocalSkill(tempHOME, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           contentHash: "e2e-hash-react",
@@ -97,9 +97,9 @@ describe("edit recompile routes agents to correct scope directory", () => {
       await writeProjectConfig(projectDir, {
         name: "bug-a-test",
         skills: [
-          { id: "web-framework-react", scope: "global", source: "eject" },
-          { id: "web-testing-vitest", scope: "project", source: "eject" },
-          { id: "web-styling-tailwind", scope: "project", source: "eject" },
+          { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
+          { id: "web-styling-tailwind", scope: "project", origin: "eject" },
         ],
         agents: [
           { name: E2E_AGENT["web-developer"].name, scope: "global" },
@@ -114,13 +114,23 @@ describe("edit recompile routes agents to correct scope directory", () => {
       // installed local skill whose metadata.yaml describes it joins the matrix
       // and is offered like any other, and then nothing would change.
       for (const skill of [
-        { id: "web-framework-react", category: "web-framework", slug: "react" },
-        { id: "web-testing-vitest", category: "web-testing", slug: "vitest" },
+        {
+          id: E2E_SKILL.react.id,
+          display: E2E_SKILL.react.display,
+          category: "web-framework",
+          slug: "react",
+        },
+        {
+          id: E2E_SKILL.vitest.id,
+          display: E2E_SKILL.vitest.display,
+          category: "web-testing",
+          slug: "vitest",
+        },
       ] as const) {
         await createLocalSkill(projectDir, skill.id, {
           description: `${skill.id} skill`,
           metadata: renderMetadataYaml({
-            displayName: skill.id,
+            displayName: skill.display,
             category: skill.category,
             slug: skill.slug,
             contentHash: `e2e-hash-${skill.slug}`,

@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
+import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { DIRS, EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { cleanupTempDir, ensureBinaryExists, fileExists } from "../helpers/test-utils.js";
@@ -164,6 +165,12 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           await fileExists(projectAgentFile),
           "P→G: api-developer.md must NOT exist in project agents dir after migration",
         ).toBe(false);
+
+        // Both scopes at four-surface strength. A sub-agent moving P→G rewrites the agent
+        // unions on BOTH sides, and the side that lost its only project-scoped agent is where
+        // `ProjectAgentName` has nothing left to narrow to.
+        await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+        await expectFourSurfaces(fakeHome);
       },
     );
   });
@@ -232,7 +239,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
-        await wizard2.build.selectSkill(E2E_SKILL.zustand.id);
+        await wizard2.build.selectSkill(E2E_SKILL.zustand.display);
         const sources2 = await wizard2.build.passThroughAllDomainsGeneric();
         await sources2.waitForReady();
         const agents2 = await sources2.advance();
@@ -260,6 +267,9 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // web-developer still at global only, exactly once.
         const webDevRows = rowsAfterSecondEdit.filter((r) => r.name === "web-developer");
         expect(webDevRows).toStrictEqual([{ name: "web-developer", scope: "global" }]);
+
+        await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+        await expectFourSurfaces(fakeHome);
       },
     );
   });
@@ -366,6 +376,9 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           await fileExists(globalAgentFile),
           "G→P: api-developer.md must STILL exist in global agents dir (G→P is additive)",
         ).toBe(true);
+
+        await expectFourSurfaces(projectDir, { globalHome: fakeHome });
+        await expectFourSurfaces(fakeHome);
       },
     );
   });

@@ -19,7 +19,7 @@ import { execa } from "execa";
  * change.
  */
 export type TarballSourceServer = {
-  /** The source value naming this server — an `init --source` value or a stored config source. */
+  /** The source value naming this server — an `init --marketplace` value or a stored config source. */
   url: string;
   /** Serve `sourceDir` from now on, under a new ETag — the source moving on. */
   publish: (sourceDir: string) => Promise<void>;

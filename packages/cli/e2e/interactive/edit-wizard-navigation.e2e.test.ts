@@ -4,6 +4,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import "../matchers/setup.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * E2E tests for the `edit` command wizard — navigation, hotkeys, cancellation,
@@ -36,7 +37,7 @@ describe("edit wizard — navigation and hotkeys", () => {
 
     it("should preserve original installation after cancellation", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
       });
 
       wizard = await EditWizard.launch({ projectDir: project.dir, cols: 120, rows: 40 });
@@ -46,16 +47,16 @@ describe("edit wizard — navigation and hotkeys", () => {
       await wizard.waitForExit(TIMEOUTS.EXIT);
 
       // Config should be unchanged after cancellation
-      await expect(project).toHaveConfig({ skillIds: ["web-framework-react"] });
+      await expect(project).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
       // Original skill files should still exist
-      await expect(project).toHaveSkillCopied("web-framework-react");
+      await expect(project).toHaveSkillCopied(E2E_SKILL.react.id);
     });
   });
 
   describe("keyboard navigation", () => {
     it("should navigate to sources step with ENTER", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -106,7 +107,7 @@ describe("edit wizard — navigation and hotkeys", () => {
 
     it("should leave the build step untouched when the withdrawn F hotkey is pressed", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -121,7 +122,7 @@ describe("edit wizard — navigation and hotkeys", () => {
 
     it("should toggle focused skill scope with S key", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react", "web-styling-tailwind"],
+        skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -142,10 +143,12 @@ describe("edit wizard — navigation and hotkeys", () => {
       // The "S" badge with "Scope" label should be visible in the build step footer
       expect(buildOutput).toContain("Scope");
 
-      // Focus React (the pre-selected project skill) and press "s" to toggle its
-      // scope from "project" (default) to "global". The grid's first-alphabetical
-      // cell is Angular Standalone (unselected), not react, so focus explicitly.
-      await wizard.build.focusSkill("React");
+      // Focus the pre-selected project skill and press "s" to toggle its scope
+      // from "project" (default) to "global". The grid's first-alphabetical cell
+      // is Angular Standalone (unselected), so focus explicitly — and by the
+      // TITLE the fixture's installed copy carries, not by its id and not by the
+      // default catalogue's own "React", which is a different cell entirely.
+      await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
 
       // Navigate to the confirm step to verify the scope change is reflected.
@@ -162,7 +165,7 @@ describe("edit wizard — navigation and hotkeys", () => {
   describe("build step advancement", () => {
     it("should advance past build step even when all skills in a category are deselected", async () => {
       const project = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
       });

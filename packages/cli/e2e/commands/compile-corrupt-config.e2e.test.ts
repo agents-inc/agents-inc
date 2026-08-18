@@ -18,6 +18,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * D-273 — a corrupt `.claude-src/config.ts` (a file that exists but cannot be
@@ -37,13 +38,13 @@ import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
  * writes no agents.
  */
 
-const SKILL_ID = "web-framework-react";
+const SKILL_ID = E2E_SKILL.react.id;
 
 /** Config body with the `export default` removed — a valid-TS file that exports nothing. */
 const MISSING_EXPORT_DEFAULT = [
   `const config = {`,
   `  name: "corrupt-repro",`,
-  `  skills: [{ id: "${SKILL_ID}", scope: "global", source: "eject" }],`,
+  `  skills: [{ id: "${SKILL_ID}", scope: "global", origin: "eject" }],`,
   `  agents: [{ name: "web-developer", scope: "global" }],`,
   `};`,
   `// the \`export default config;\` line was removed to reproduce the corruption`,
@@ -59,7 +60,7 @@ const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 async function seedGlobalInstall(fakeHome: string): Promise<void> {
   await writeProjectConfig(fakeHome, {
     name: "corrupt-config-fixture",
-    skills: [{ id: SKILL_ID, scope: "global", source: "eject" }],
+    skills: [{ id: SKILL_ID, scope: "global", origin: "eject" }],
     agents: [{ name: "web-developer", scope: "global" }],
   });
   await createLocalSkill(fakeHome, SKILL_ID, {

@@ -21,7 +21,6 @@ import {
   setupProjectOnlyMixedScope,
 } from "../fixtures/dual-scope-helpers.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
-import type { SkillId } from "../../src/cli/types/index.js";
 
 /**
  * The documented hand-edit workflow — edit `.claude-src/config.ts`, then run
@@ -77,7 +76,7 @@ function claudeSrcDir(dir: string): string {
  * verbatim. Structural (load, filter, write) rather than a text edit, so the
  * removal cannot depend on the writer's formatting.
  */
-async function removeGlobalSkillByHand(globalHome: string, skillId: SkillId): Promise<void> {
+async function removeGlobalSkillByHand(globalHome: string, skillId: string): Promise<void> {
   const globalConfig = await loadConfigOrFail(globalHome);
 
   expect(
@@ -133,7 +132,7 @@ describe("compile at the home directory fans a hand-edited global config out to 
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global skill it is about to be orphaned from",
-      ).toContainEqual({ id: REMOVED_SKILL.id, scope: "global", source: EJECT_SOURCE });
+      ).toContainEqual({ id: REMOVED_SKILL.id, scope: "global", origin: EJECT_SOURCE });
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(PROJECT_AGENT.name, {
         contains: [REMOVED_SKILL.id],
       });

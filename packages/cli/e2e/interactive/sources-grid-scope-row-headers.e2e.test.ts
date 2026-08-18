@@ -77,7 +77,7 @@ describe("edit wizard — Sources grid heads its scope blocks but captions no sc
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
-        source: sourceDir,
+        marketplace: sourceDir,
         skills: [E2E_SKILL.vitest.id],
         globalSkills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
@@ -91,11 +91,11 @@ describe("edit wizard — Sources grid heads its scope blocks but captions no sc
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "react must be saved as a global-only entry before the edit",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }]);
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.vitest.id),
         "vitest must be saved as a project-only entry before the edit",
-      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", source: "eject" }]);
+      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" }]);
 
       const configBefore = await readTestFile(configTsPath(projectDir));
       const skillDirsBefore = (await listFiles(skillsPath(projectDir))).sort();

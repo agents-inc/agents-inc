@@ -13,7 +13,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -62,7 +62,7 @@ describe("dual-scope compile", () => {
     await expect({ dir: globalHome.dir }).toHaveCompiledAgentContent(
       E2E_AGENT["web-developer"].name,
       {
-        notContains: ["api-framework-hono"],
+        notContains: [E2E_SKILL.hono.id],
       },
     );
   });
@@ -85,7 +85,7 @@ describe("dual-scope compile", () => {
 
     // Project agent should NOT contain web-only skills (different domain)
     await expect({ dir: project.dir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-      notContains: ["web-framework-react"],
+      notContains: [E2E_SKILL.react.id],
     });
   });
 
@@ -99,7 +99,7 @@ describe("dual-scope compile", () => {
 
     await writeProjectConfig(globalHome, {
       name: "global-test",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -138,7 +138,7 @@ describe("dual-scope compile", () => {
 
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
       selectedDomains: ["web"],
       stack: {
@@ -183,7 +183,7 @@ describe("dual-scope compile", () => {
     // Global installation: one global skill
     await writeProjectConfig(globalHome, {
       name: "global-test",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -201,7 +201,7 @@ describe("dual-scope compile", () => {
     // Project installation: agent references the global skill but has NO local skills
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
       selectedDomains: ["web"],
       stack: {

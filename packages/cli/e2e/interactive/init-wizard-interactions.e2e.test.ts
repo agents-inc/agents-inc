@@ -79,7 +79,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
 
         // The output should NOT contain API-only skills
         const output = result.output;
-        expect(output).not.toContain(E2E_SKILL.hono.id);
+        expect(output).not.toContain(E2E_SKILL.hono.display);
       },
     );
   });

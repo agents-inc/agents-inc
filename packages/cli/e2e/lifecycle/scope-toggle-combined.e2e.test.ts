@@ -98,14 +98,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       // Phase D: Assertions
 
       // D-1: web-framework-react directory exists at project scope (G->P additive)
-      const projectSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       expect(
         await directoryExists(projectSkillDir),
         "web-framework-react directory must exist at project scope after G->P toggle",
       ).toBe(true);
 
       // D-2: web-framework-react directory STILL exists at global scope (G->P is additive)
-      const globalSkillDir = path.join(skillsPath(fakeHome), "web-framework-react");
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       expect(
         await directoryExists(globalSkillDir),
         "web-framework-react directory must still exist at global scope (G->P is additive)",
@@ -119,7 +119,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
 
       // D-5: Project config contains both web-framework-react and web-developer at project scope
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["api-framework-hono", "web-framework-react"],
+        skillIds: [E2E_SKILL.hono.id, E2E_SKILL.react.id],
         agents: ["api-developer", "web-developer"],
       });
       const projectConfig = await readTestFile(configTsPath(projectDir));
@@ -127,18 +127,18 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
 
       // D-6: Global config still has both (unchanged)
       await expect({ dir: fakeHome }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
         agents: ["web-developer"],
       });
 
       // D-7: Full dual-scope assertion with updated expectations
       await expectDualScopeInstallation(fakeHome, projectDir, {
         global: {
-          skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
           agents: ["web-developer"],
         },
         project: {
-          skillIds: ["api-framework-hono", "web-framework-react"],
+          skillIds: [E2E_SKILL.hono.id, E2E_SKILL.react.id],
           agents: ["api-developer", "web-developer"],
         },
       });
@@ -156,7 +156,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       // the pair P->G. web-developer is a plain global agent, so `s` G->P on it
       // moves the other way. This exercises both scope-toggle directions in the
       // same edit.
-      const projectSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
+      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
       const wizard = await EditWizard.launch({
@@ -195,7 +195,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         await directoryExists(projectSkillDir),
         "api-framework-hono must be removed from project scope after the `s` collapse",
       ).toBe(false);
-      const globalSkillDir = path.join(skillsPath(fakeHome), "api-framework-hono");
+      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
       expect(
         await directoryExists(globalSkillDir),
         "api-framework-hono must remain at global scope",
@@ -205,7 +205,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       const projectConfig = await readTestFile(configTsPath(projectDir));
       const honoProjectLines = projectConfig
         .split("\n")
-        .filter((l: string) => l.includes("api-framework-hono") && l.includes('"scope":"project"'));
+        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
       expect(
         honoProjectLines,
         "the collapsed pair must leave no project-scope api-framework-hono entry",

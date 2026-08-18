@@ -10,7 +10,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -46,8 +46,8 @@ describe("compile scope filtering", () => {
           metadata: renderMetadataYaml({ contentHash: "hash-global-sf" }),
         },
         projectSkills: [
-          { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
-          { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
+          { id: "web-testing-playwright-e2e", scope: "project", origin: "eject" },
+          { id: "web-testing-cypress-e2e", scope: "global", origin: "eject" },
         ],
         projectStack: {
           "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
@@ -113,8 +113,8 @@ describe("compile scope filtering", () => {
       await writeProjectConfig(globalHome, {
         name: "global-test",
         skills: [
-          { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
-          { id: "web-framework-react", scope: "global", source: "eject" },
+          { id: "web-testing-cypress-e2e", scope: "global", origin: "eject" },
+          { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
         ],
         agents: [
           { name: E2E_AGENT["web-developer"].name, scope: "global" },
@@ -126,7 +126,7 @@ describe("compile scope filtering", () => {
             "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
           },
           [E2E_AGENT["api-developer"].name]: {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
           },
         },
       });
@@ -135,7 +135,7 @@ describe("compile scope filtering", () => {
         description: "Global skill A",
         metadata: renderMetadataYaml({ contentHash: "hash-gA" }),
       });
-      await createLocalSkill(globalHome, "web-framework-react", {
+      await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "Global skill B",
         metadata: renderMetadataYaml({ contentHash: "hash-gB" }),
       });
@@ -143,7 +143,7 @@ describe("compile scope filtering", () => {
       // Project installation: completely different agent, no overlap with global
       await writeProjectConfig(projectDir, {
         name: "project-test",
-        skills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+        skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
         agents: [{ name: "cli-developer", scope: "project" }],
         selectedDomains: ["web"],
         stack: {
@@ -184,7 +184,7 @@ describe("compile scope filtering", () => {
       await expect({ dir: globalHome }).toHaveCompiledAgentContent(
         E2E_AGENT["api-developer"].name,
         {
-          contains: ["name: api-developer", "web-framework-react"],
+          contains: ["name: api-developer", E2E_SKILL.react.id],
         },
       );
 
@@ -216,7 +216,7 @@ describe("compile scope filtering", () => {
         },
         // Only the project-scoped skill is registered here — the global one is
         // referenced by the stack below and by nothing else.
-        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
         projectStack: {
           "web-testing": [
             { id: "web-testing-cypress-e2e", preloaded: true },
@@ -270,7 +270,7 @@ describe("compile scope filtering", () => {
           description: "Global skill for verbose test",
           metadata: renderMetadataYaml({ contentHash: "hash-gv" }),
         },
-        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", source: "eject" }],
+        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
         projectStack: {
           "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
         },

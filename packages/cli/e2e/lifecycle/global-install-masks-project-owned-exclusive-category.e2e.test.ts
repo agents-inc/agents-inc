@@ -25,12 +25,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type {
-  AgentName,
-  ProjectConfig,
-  SkillConfig,
-  StackAgentConfig,
-} from "../../src/cli/types/index.js";
+import type { AgentName, SkillConfig } from "../../src/cli/types/index.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Category exclusivity across scopes.
@@ -54,7 +50,7 @@ const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-testing": [createMockSkillAssignment(E2E_SKILL.vitest.id)],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const vueMetadata = renderMetadataYaml({
   displayName: E2E_SKILL["vue-composition-api"].display,
@@ -110,9 +106,9 @@ describe("global install masks a project-owned skill in an exclusive category", 
     // the Phase-2 edit ADDS React to the exclusive web-framework category — the
     // genuine project-then-global collision. The project is pre-registered so
     // the global save fans out to it.
-    const globalConfig: ProjectConfig = buildProjectConfig({
+    const globalConfig: FixtureProjectConfig = buildProjectConfig({
       name: "exclusivity-global",
-      skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
+      skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,
@@ -126,13 +122,13 @@ describe("global install masks a project-owned skill in an exclusive category", 
 
     // Registered project P: owns Vue at PROJECT scope in the exclusive
     // web-framework category, and inherits vitest from the global install.
-    const projectConfig: ProjectConfig = buildProjectConfig({
+    const projectConfig: FixtureProjectConfig = buildProjectConfig({
       name: "exclusivity-project",
       skills: [
-        ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
+        ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", origin: "eject" }),
         ...buildSkillConfigs([E2E_SKILL["vue-composition-api"].id], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
       ],
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
@@ -211,7 +207,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
   // global framework skill, backed by a real install on disk.
   it("adds the framework skill at global scope in the global config", () => {
     expect(globalReact).toStrictEqual([
-      { id: E2E_SKILL.react.id, scope: "global", source: "eject" },
+      { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
     ]);
   });
 
@@ -229,7 +225,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
   // The project's own framework skill is untouched by a global change.
   it("leaves the project-owned framework skill active at project scope", () => {
     expect(projectVue).toStrictEqual([
-      { id: E2E_SKILL["vue-composition-api"].id, scope: "project", source: "eject" },
+      { id: E2E_SKILL["vue-composition-api"].id, scope: "project", origin: "eject" },
     ]);
   });
 
@@ -245,7 +241,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
   // project holds two active skills in one exclusive category.
   it("masks the colliding global framework skill with a tombstone", () => {
     expect(projectReact).toStrictEqual([
-      { id: E2E_SKILL.react.id, scope: "global", source: "eject", excluded: true },
+      { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
     ]);
   });
 

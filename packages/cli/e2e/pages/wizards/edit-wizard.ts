@@ -17,9 +17,9 @@ export type EditWizardOptions = {
   /**
    * The source this installation answers to.
    *
-   * `edit` takes no `--source` and reads no `CC_SOURCE` — naming a source is `init`'s
+   * `edit` takes no `--marketplace` and reads no `CC_MARKETPLACE` — naming a source is `init`'s
    * decision (CLI-466) — so this is RECORDED in the install's config.ts before the
-   * wizard launches, exactly as an `init --source` would have left it. Installs that
+   * wizard launches, exactly as an `init --marketplace` would have left it. Installs that
    * already name their own source (anything a wizard produced) are untouched.
    */
   source?: E2ESource;
@@ -103,7 +103,7 @@ export class EditWizard {
     await createPermissionsFile(options.projectDir);
 
     const env: Record<string, string | undefined> = {
-      CC_SOURCE: undefined,
+      CC_MARKETPLACE: undefined,
       ...options.env,
       ...(globalHome !== undefined ? { HOME: globalHome } : {}),
     };

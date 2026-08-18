@@ -8,7 +8,7 @@ import {
   type PluginInstalledProjectOptions,
 } from "../fixtures/plugin-install-state.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, FILES } from "../pages/constants.js";
+import { DIRS, E2E_MARKETPLACE_NAME, FILES } from "../pages/constants.js";
 import { cleanupTempDir, createTempDir, readTestFile } from "../helpers/test-utils.js";
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
@@ -28,7 +28,12 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * nothing at all.
  */
 
-const MARKETPLACE = "e2e-matcher-marketplace";
+/**
+ * The marketplace the fixture's plugin refs name. The shared fixture name, so the
+ * `<id>@<marketplace>` refs this spec builds carry a marketplace that actually owns
+ * the ids in them.
+ */
+const MARKETPLACE = E2E_MARKETPLACE_NAME;
 const REACT_REF = buildMarketplacePluginRef(E2E_SKILL.react.id, MARKETPLACE);
 
 /** Fixture arguments every spec here shares — only `pluginsDir` is under test. */

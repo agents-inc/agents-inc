@@ -14,6 +14,7 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Edit global fallback E2E tests.
@@ -162,7 +163,7 @@ describe("edit with global-only installation (no project config)", () => {
       ).toBe(true);
 
       // Assertion: specific global skill still present
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
 
       // Assertion: global agent still compiled
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");

@@ -95,7 +95,7 @@ describe("init wizard — stack flow", () => {
         // compiled agents land in the wizard's global HOME.
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
           source: pluginSource!.marketplaceName,
         });
@@ -104,7 +104,7 @@ describe("init wizard — stack flow", () => {
           await expect(globalProject).toHaveCompiledAgent(agent);
         }
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
-          skills: ["web-framework-react:web-framework-react"],
+          skills: [`${E2E_SKILL.react.id}:${E2E_SKILL.react.id}`],
         });
       },
     );
@@ -129,7 +129,7 @@ describe("init wizard — stack flow", () => {
           COMPILED_AGENT_FILES,
         );
         await expect(globalProject).toHaveCompiledAgentContent("web-developer", {
-          contains: ["web-framework-react"],
+          contains: [E2E_SKILL.react.id],
         });
       },
     );
@@ -149,10 +149,10 @@ describe("init wizard — stack flow", () => {
         const globalProject = { dir: wizard.globalHome };
         await expectPhaseSuccess(
           { project: globalProject, exitCode: result.exitCode },
-          { copiedSkills: ["web-framework-react"] },
+          { copiedSkills: [E2E_SKILL.react.id] },
         );
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
           source: "eject",
         });

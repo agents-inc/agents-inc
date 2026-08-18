@@ -24,7 +24,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * Dual-scope partial removal: skill X is installed at BOTH scopes — a global copy
@@ -41,16 +42,16 @@ const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const projectStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 const vitestMetadata = renderMetadataYaml({
-  displayName: E2E_SKILL.vitest.id,
+  displayName: E2E_SKILL.vitest.display,
   category: "web-testing",
   slug: E2E_SKILL.vitest.slug,
   cliDescription: "E2E test skill",
@@ -103,7 +104,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
 
       const globalConfig = buildProjectConfig({
         name: "dual-scope-global",
-        skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
+        skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
         stack: globalStack,
@@ -120,8 +121,8 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       const projectConfig = buildProjectConfig({
         name: "dual-scope-project",
         skills: [
-          ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", source: "eject" }),
-          ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", source: "eject" }),
+          ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", origin: "eject" }),
+          ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", origin: "eject" }),
         ],
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
         stack: projectStack,
@@ -144,7 +145,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         ...TERMINAL_SIZE.TALL,
       });
 
-      await wizard.build.selectSkill(E2E_SKILL.vitest.id);
+      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -185,7 +186,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       expect(
         projectVitest,
         "project's own project-scope vitest must survive the global removal",
-      ).toStrictEqual({ id: E2E_SKILL.vitest.id, scope: "project", source: "eject" });
+      ).toStrictEqual({ id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" });
 
       // The project agent's stack still references its project-scope vitest.
       expect(

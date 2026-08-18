@@ -9,6 +9,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TERMINAL_SIZE, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import "../matchers/setup.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * E2E tests for the edit wizard in plugin mode — skill install/uninstall
@@ -48,9 +49,9 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
       // web-styling-tailwind is claimed by the config and installed nowhere — the
       // wizard cannot resolve it, so removing it is what this run has to uninstall.
       const project = await ProjectBuilder.pluginProject({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         unresolvableSkills: ["web-styling-tailwind"],
-        marketplace: fixture.marketplaceName,
+        marketplaceName: fixture.marketplaceName,
         agents: ["web-developer"],
         domains: ["web"],
       });
@@ -70,7 +71,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
       // Config should only contain the surviving skill
       await expect(result.project).toHaveConfig({
-        skillIds: ["web-framework-react"],
+        skillIds: [E2E_SKILL.react.id],
         source: fixture.marketplaceName,
       });
 
@@ -85,8 +86,8 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react", "web-styling-tailwind"],
-          marketplace: fixture.marketplaceName,
+          skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
+          marketplaceName: fixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -99,7 +100,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
         const result = await wizard.completeFromBuild();
 
         await expectPhaseSuccess(result, {
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
           source: fixture.marketplaceName,
           compiledAgents: [],
         });
@@ -111,8 +112,8 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react", "web-styling-tailwind"],
-          marketplace: fixture.marketplaceName,
+          skills: [E2E_SKILL.react.id, "web-styling-tailwind"],
+          marketplaceName: fixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -137,8 +138,8 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
-          marketplace: fixture.marketplaceName,
+          skills: [E2E_SKILL.react.id],
+          marketplaceName: fixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -163,7 +164,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
         // Config should include both the original and the newly added skill
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react", "web-state-pinia"],
+          skillIds: [E2E_SKILL.react.id, E2E_SKILL.pinia.id],
           source: fixture.marketplaceName,
         });
 
@@ -179,8 +180,8 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          skills: ["web-framework-react"],
-          marketplace: fixture.marketplaceName,
+          skills: [E2E_SKILL.react.id],
+          marketplaceName: fixture.marketplaceName,
           agents: ["web-developer"],
           domains: ["web"],
         });
@@ -199,7 +200,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
         expect(rawOutput).not.toContain("Removed");
 
         await expect(result.project).toHaveConfig({
-          skillIds: ["web-framework-react"],
+          skillIds: [E2E_SKILL.react.id],
         });
         await expect(result.project).toHaveCompiledAgent("web-developer");
       },
@@ -209,8 +210,8 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
   describe("cancellation in plugin mode", () => {
     it("should not trigger plugin install/uninstall when cancelled", async () => {
       const project = await ProjectBuilder.pluginProject({
-        skills: ["web-framework-react", "web-testing-vitest"],
-        marketplace: fixture.marketplaceName,
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+        marketplaceName: fixture.marketplaceName,
         agents: ["web-developer"],
         domains: ["web"],
       });

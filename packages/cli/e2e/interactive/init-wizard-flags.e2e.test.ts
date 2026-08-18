@@ -5,6 +5,7 @@ import { STEP_TEXT, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("init wizard — flags and permissions", () => {
   let wizard: InitWizard | undefined;
@@ -24,7 +25,7 @@ describe("init wizard — flags and permissions", () => {
     }
   });
 
-  describe("--source flag", () => {
+  describe("--marketplace flag", () => {
     it("should load custom source and display its stack", async () => {
       wizard = await InitWizard.launch();
 
@@ -35,9 +36,9 @@ describe("init wizard — flags and permissions", () => {
   });
 
   describe("flag combinations", () => {
-    it("should load skills from custom source with edit --source", async () => {
+    it("should load skills from custom source with edit --marketplace", async () => {
       const dashboardProject = await ProjectBuilder.editable({
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
       });

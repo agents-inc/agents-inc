@@ -22,7 +22,8 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { AgentName, StackAgentConfig } from "../../src/cli/types/index.js";
+import type { AgentName } from "../../src/cli/types/index.js";
+import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
  * No-collateral-damage guard for the buildStackForSelection fix: an agent with
@@ -39,7 +40,7 @@ const multiCategoryStack = {
     "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
     "web-client-state": [{ id: E2E_SKILL.zustand.id, preloaded: false }],
   },
-} satisfies Partial<Record<AgentName, StackAgentConfig>>;
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes exactly one skill from a multi-category agent stack", () => {
   let sourceDir: string;
@@ -83,7 +84,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
         name: "surgical-edit-test",
         skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
@@ -94,7 +95,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
       await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.react.id,
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: E2E_SKILL.react.slug,
           cliDescription: "E2E test skill",
@@ -105,7 +106,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
       await createLocalSkill(globalHome, E2E_SKILL.vitest.id, {
         description: "Vitest testing framework",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.vitest.id,
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: E2E_SKILL.vitest.slug,
           cliDescription: "E2E test skill",
@@ -116,7 +117,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
       await createLocalSkill(globalHome, E2E_SKILL.zustand.id, {
         description: "Zustand state management",
         metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.zustand.id,
+          displayName: E2E_SKILL.zustand.display,
           category: "web-client-state",
           slug: E2E_SKILL.zustand.slug,
           cliDescription: "E2E test skill",
@@ -139,7 +140,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
         ...TERMINAL_SIZE.TALL,
       });
 
-      await wizard.build.selectSkill(E2E_SKILL.zustand.id);
+      await wizard.build.selectSkill(E2E_SKILL.zustand.display);
 
       const sources = await wizard.build.passThroughAllDomainsGeneric();
       await sources.waitForReady();
@@ -166,7 +167,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
       // { id, preloaded }. Only the web-client-state category was removed;
       // web-framework (preloaded true) and web-testing (preloaded false) must
       // be exactly preserved, nothing reordered or re-flagged.
-      const expectedWebDeveloperStack: StackAgentConfig = {
+      const expectedWebDeveloperStack: FixtureStackAgentConfig = {
         "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
         "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],
       };

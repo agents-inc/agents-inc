@@ -44,14 +44,14 @@ import type { SourcesStep } from "../pages/steps/sources-step.js";
  */
 
 const OVERFLOW_SKILLS = [
-  "web-framework-react",
-  "web-state-zustand",
-  "web-testing-vitest",
-  "web-testing-visual-regression",
-  "api-framework-hono",
-  "meta-methodology-research-methodology",
-  "meta-reviewing-reviewing",
-  "meta-reviewing-cli-reviewing",
+  E2E_SKILL.react.id,
+  E2E_SKILL.zustand.id,
+  E2E_SKILL.vitest.id,
+  E2E_SKILL["visual-regression"].id,
+  E2E_SKILL.hono.id,
+  E2E_SKILL["research-methodology"].id,
+  E2E_SKILL.reviewing.id,
+  E2E_SKILL["cli-reviewing"].id,
 ] as const;
 
 /**
@@ -62,12 +62,12 @@ const OVERFLOW_SKILLS = [
  * viewport-follows-focus scroll cannot reach.
  */
 const ALL_INERT_GLOBAL_SKILLS = [
-  "web-state-zustand",
-  "web-testing-vitest",
-  "api-framework-hono",
-  "meta-methodology-research-methodology",
-  "meta-reviewing-reviewing",
-  "meta-reviewing-cli-reviewing",
+  E2E_SKILL.zustand.id,
+  E2E_SKILL.vitest.id,
+  E2E_SKILL.hono.id,
+  E2E_SKILL["research-methodology"].id,
+  E2E_SKILL.reviewing.id,
+  E2E_SKILL["cli-reviewing"].id,
 ] as const;
 
 /** Down-presses used to exhaust the Sources list looking for the clipped row — more than the row count. */

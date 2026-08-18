@@ -10,15 +10,14 @@ import {
   renderSkillMd,
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
-import { DIRS, FILES } from "../pages/constants.js";
 import type {
-  ProjectConfig,
-  SkillId,
-  SkillConfig,
-  AgentName,
-  Domain,
-  StackAgentConfig,
-} from "../../src/cli/types/index.js";
+  FixtureProjectConfig,
+  FixtureSkillConfig,
+  FixtureStackAgentConfig,
+} from "../helpers/test-utils.js";
+import { E2E_SKILL } from "./expected-values.js";
+import { DIRS, FILES } from "../pages/constants.js";
+import type { AgentName, Domain } from "../../src/cli/types/index.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
 
 export type DualScopeHandle = {
@@ -30,18 +29,18 @@ export type EditableOptions = {
   /**
    * The skills source this install answers to, recorded in its config.
    *
-   * Every command after `init` resolves the source out of the config — `--source` is
-   * `init`'s flag alone and `CC_SOURCE` is read at install time only — so a fixture that
+   * Every command after `init` resolves the source out of the config — `--marketplace` is
+   * `init`'s flag alone and `CC_MARKETPLACE` is read at install time only — so a fixture that
    * hand-writes an install has to write the source too, or the commands under test read
    * the default public marketplace. Pass it HERE rather than to a wizard launcher whenever
    * the spec snapshots config.ts: recorded at build time it is part of the fixture, and
    * recorded later it is a change the snapshot sees.
    */
-  source?: string;
-  skills?: SkillId[];
+  marketplace?: string;
+  skills?: string[];
   agents?: AgentName[];
   domains?: Domain[];
-  stack?: Partial<Record<AgentName, StackAgentConfig>>;
+  stack?: Partial<Record<AgentName, FixtureStackAgentConfig>>;
   /**
    * Writes `FORKED_FROM_METADATA` as each skill's metadata.yaml instead of the
    * default metadata, marking the skills as CLI-managed so `uninstall` removes
@@ -56,7 +55,7 @@ export type EditableOptions = {
    * `classifySkillSourceRows`). No disk copy is written: they model skills
    * inherited from the global install, not project-local files.
    */
-  globalSkills?: SkillId[];
+  globalSkills?: string[];
   /**
    * Skills recorded in the project config with NO files written for them. A skill
    * the session's source does not carry AND the install has no copy of is one the
@@ -67,7 +66,7 @@ export type EditableOptions = {
    * skill whose metadata.yaml describes it is merged into the matrix and offered
    * like any other, so the wizard resolves it and nothing changes.
    */
-  unresolvableSkills?: SkillId[];
+  unresolvableSkills?: string[];
 };
 
 /** Description and metadata.yaml body for one local skill written by a fixture. */
@@ -78,16 +77,16 @@ export type SkillContentOverride = {
 
 export type DualScopeOptions = {
   globalSkill?: SkillContentOverride;
-  projectSkills?: SkillConfig[];
-  projectStack?: StackAgentConfig;
+  projectSkills?: FixtureSkillConfig[];
+  projectStack?: FixtureStackAgentConfig;
   projectSkill?: SkillContentOverride;
 };
 
 export type PluginProjectOptions = {
-  skills: SkillId[];
-  marketplace: string;
-  /** The skills source this install answers to — see {@link EditableOptions.source}. */
-  source?: string;
+  skills: string[];
+  marketplaceName: string;
+  /** The skills source this install answers to — see {@link EditableOptions.marketplace}. */
+  marketplace?: string;
   agents?: AgentName[];
   domains?: Domain[];
   /**
@@ -99,39 +98,82 @@ export type PluginProjectOptions = {
    */
   omitMarketplaceField?: boolean;
   /** Config entries with no files written for them — see {@link EditableOptions.unresolvableSkills}. */
-  unresolvableSkills?: SkillId[];
+  unresolvableSkills?: string[];
 };
 
+/** The identity fields a fixture writes into an installed skill's metadata.yaml. */
+type SkillIdentityFields = { category: string; slug: string; displayName: string };
+
 /**
- * Explicit category/slug for every skill ID these fixtures write metadata for.
- * Deriving a slug from a skill ID is banned (see CLAUDE.md) because a wrong
- * guess still looks plausible on disk; an unmapped ID must fail loudly instead.
+ * Explicit category, slug and display name for every skill ID these fixtures write
+ * metadata for. Deriving any of them from a skill ID is banned (see CLAUDE.md) because
+ * a wrong guess still looks plausible on disk; an unmapped ID must fail loudly instead.
  *
  * Every `category` here must be a member of `CATEGORIES` in
  * `src/cli/types/generated/source-types.ts` — note that `web-state-*` skills
  * belong to `web-client-state`, not to a `web-state` category.
+ *
+ * `displayName` is the title the SOURCE publishes for the same skill, so an installed
+ * copy and the catalogue entry it came from name it the same way. It is not the id:
+ * the strict metadata schema bounds the field at 30 characters, and a namespaced id is
+ * longer than that on its own — `doctor`'s content layer validates every installed
+ * metadata.yaml, so a fixture writing one reads as a broken install rather than a
+ * healthy project. Same reasoning as `FORKED_FROM_METADATA` in test-utils.ts.
+ *
+ * Keyed by the id an install actually records, so the fixture marketplace's
+ * entries are namespaced and `web-styling-tailwind` — which no source here ships,
+ * and which exists to be UNRESOLVABLE — is not.
  */
-const SKILL_CATEGORY_SLUGS: Partial<Record<SkillId, { category: string; slug: string }>> = {
-  "api-framework-hono": { category: "api-api", slug: "hono" },
-  "meta-methodology-research-methodology": {
-    category: "meta-methodology",
-    slug: "research-methodology",
+const SKILL_IDENTITY_FIELDS: Record<string, SkillIdentityFields> = {
+  [E2E_SKILL.hono.id]: {
+    category: "api-api",
+    slug: E2E_SKILL.hono.slug,
+    displayName: E2E_SKILL.hono.display,
   },
-  "meta-reviewing-cli-reviewing": { category: "meta-reviewing", slug: "cli-reviewing" },
-  "meta-reviewing-reviewing": { category: "meta-reviewing", slug: "reviewing" },
-  "web-framework-react": { category: "web-framework", slug: "react" },
-  "web-state-zustand": { category: "web-client-state", slug: "zustand" },
-  "web-styling-tailwind": { category: "web-styling", slug: "tailwind" },
-  "web-testing-visual-regression": { category: "web-testing", slug: "visual-regression" },
-  "web-testing-vitest": { category: "web-testing", slug: "vitest" },
+  [E2E_SKILL["research-methodology"].id]: {
+    category: "meta-methodology",
+    slug: E2E_SKILL["research-methodology"].slug,
+    displayName: E2E_SKILL["research-methodology"].display,
+  },
+  [E2E_SKILL["cli-reviewing"].id]: {
+    category: "meta-reviewing",
+    slug: E2E_SKILL["cli-reviewing"].slug,
+    displayName: E2E_SKILL["cli-reviewing"].display,
+  },
+  [E2E_SKILL.reviewing.id]: {
+    category: "meta-reviewing",
+    slug: E2E_SKILL.reviewing.slug,
+    displayName: E2E_SKILL.reviewing.display,
+  },
+  [E2E_SKILL.react.id]: {
+    category: "web-framework",
+    slug: E2E_SKILL.react.slug,
+    displayName: E2E_SKILL.react.display,
+  },
+  [E2E_SKILL.zustand.id]: {
+    category: "web-client-state",
+    slug: E2E_SKILL.zustand.slug,
+    displayName: E2E_SKILL.zustand.display,
+  },
+  "web-styling-tailwind": { category: "web-styling", slug: "tailwind", displayName: "Tailwind" },
+  [E2E_SKILL["visual-regression"].id]: {
+    category: "web-testing",
+    slug: E2E_SKILL["visual-regression"].slug,
+    displayName: E2E_SKILL["visual-regression"].display,
+  },
+  [E2E_SKILL.vitest.id]: {
+    category: "web-testing",
+    slug: E2E_SKILL.vitest.slug,
+    displayName: E2E_SKILL.vitest.display,
+  },
 };
 
-function categorySlugFor(skillId: SkillId): { category: string; slug: string } {
-  const entry = SKILL_CATEGORY_SLUGS[skillId];
+function metadataFieldsFor(skillId: string): SkillIdentityFields {
+  const entry = SKILL_IDENTITY_FIELDS[skillId];
   if (!entry) {
     throw new Error(
-      `No category/slug mapping for skill "${skillId}". ` +
-        `Add it to SKILL_CATEGORY_SLUGS in e2e/fixtures/project-builder.ts.`,
+      `No category/slug/displayName mapping for skill "${skillId}". ` +
+        `Add it to SKILL_IDENTITY_FIELDS in e2e/fixtures/project-builder.ts.`,
     );
   }
   return entry;
@@ -143,7 +185,7 @@ function categorySlugFor(skillId: SkillId): { category: string; slug: string } {
  * fixture's own definition rather than re-typing the names the command echoes
  * back at them.
  */
-export const MINIMAL_PROJECT_SKILL_ID = "web-testing-vitest" satisfies SkillId;
+export const MINIMAL_PROJECT_SKILL_ID = E2E_SKILL.vitest.id;
 export const MINIMAL_PROJECT_AGENT_NAMES = [
   "web-developer",
   "api-developer",
@@ -179,17 +221,17 @@ export class ProjectBuilder {
       description: "E2E test skill for compile verification",
       body: "# Test E2E Skill\n\nThis skill exists solely for E2E testing of the compile command.",
       metadata: renderMetadataYaml({
-        displayName: MINIMAL_PROJECT_SKILL_ID,
-        slug: "vitest",
+        displayName: E2E_SKILL.vitest.display,
+        slug: E2E_SKILL.vitest.slug,
         cliDescription: "E2E test skill",
         usageGuidance: "Use when testing E2E scenarios",
         contentHash: "a1b2c3d",
       }),
     });
 
-    const config: ProjectConfig = {
+    const config: FixtureProjectConfig = {
       name: "e2e-compile-test",
-      skills: [{ id: MINIMAL_PROJECT_SKILL_ID, scope: "project", source: "eject" }],
+      skills: [{ id: MINIMAL_PROJECT_SKILL_ID, scope: "project", origin: "eject" }],
       agents: MINIMAL_PROJECT_AGENT_NAMES.map((name) => ({ name, scope: "project" })),
     };
 
@@ -216,7 +258,7 @@ export class ProjectBuilder {
   static async editable(options?: EditableOptions): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
-    const skills = options?.skills ?? ["web-framework-react"];
+    const skills = options?.skills ?? [E2E_SKILL.react.id];
     const agents = options?.agents ?? ["web-developer"];
     const domains = options?.domains ?? ["web"];
 
@@ -231,22 +273,22 @@ export class ProjectBuilder {
     const projectSkillConfigs = [...skills, ...unresolvableSkills].map((id) => ({
       id,
       scope: "project" as const,
-      source: "eject",
+      origin: "eject",
     }));
     const globalSkillConfigs = globalSkills.map((id) => ({
       id,
       scope: "global" as const,
-      source: "eject",
+      origin: "eject",
     }));
     const skillConfigs = [...projectSkillConfigs, ...globalSkillConfigs];
     const agentConfigs = agents.map((name) => ({ name, scope: "project" as const }));
 
-    const config: ProjectConfig = {
+    const config: FixtureProjectConfig = {
       name: "test-edit-project",
       skills: skillConfigs,
       agents: agentConfigs,
       selectedDomains: domains,
-      ...(options?.source !== undefined && { source: options.source }),
+      ...(options?.marketplace !== undefined && { marketplace: options.marketplace }),
       ...(options?.stack && { stack: options.stack }),
     };
 
@@ -259,8 +301,7 @@ export class ProjectBuilder {
         metadata: options?.forkedFrom
           ? FORKED_FROM_METADATA
           : renderMetadataYaml({
-              displayName: skillId,
-              ...categorySlugFor(skillId),
+              ...metadataFieldsFor(skillId),
               cliDescription: "E2E test skill",
               usageGuidance: "Use when testing E2E scenarios",
               contentHash: "b2c3d4e",
@@ -289,9 +330,9 @@ export class ProjectBuilder {
     const projectDir = path.join(tempDir, "project");
 
     // --- Global installation ---
-    const globalConfig: ProjectConfig = {
+    const globalConfig: FixtureProjectConfig = {
       name: "global-test",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", source: "eject" }],
+      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
       agents: [{ name: "web-developer", scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -315,11 +356,11 @@ export class ProjectBuilder {
     });
 
     // --- Project installation ---
-    const projectConfig: ProjectConfig = {
+    const projectConfig: FixtureProjectConfig = {
       name: "project-test",
       skills: options?.projectSkills ?? [
-        { id: "web-testing-playwright-e2e", scope: "project", source: "eject" },
-        { id: "web-testing-cypress-e2e", scope: "global", source: "eject" },
+        { id: "web-testing-playwright-e2e", scope: "project", origin: "eject" },
+        { id: "web-testing-cypress-e2e", scope: "global", origin: "eject" },
       ],
       agents: [{ name: "api-developer", scope: "project" }],
       selectedDomains: ["web"],
@@ -376,7 +417,7 @@ export class ProjectBuilder {
     // --- Global installation ---
     await writeProjectConfig(globalHome, {
       name: "global",
-      skills: [{ id: "web-framework-react", scope: "global", source: "eject" }],
+      skills: [{ id: "web-framework-react", scope: "global", origin: "eject" }],
       agents: [{ name: "web-developer", scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -401,7 +442,7 @@ export type SkillId = "web-framework-react" | "web-testing-vitest";
 export type AgentName = "web-developer" | "api-developer";
 export type Domain = "web";
 export type Category = "web-framework" | "web-testing";
-export type SkillConfig = { id: SkillId; scope: "project" | "global"; source: string };
+export type SkillConfig = { id: SkillId; scope: "project" | "global"; origin: string };
 export type SkillAssignment = SkillId | { id: SkillId; preloaded: boolean };
 export type StackAgentConfig = Partial<Record<Category, SkillAssignment>>;
 export type AgentScopeConfig = { name: AgentName; scope: "project" | "global" };
@@ -413,8 +454,8 @@ export interface ProjectConfig {
   skills: SkillConfig[];
   author?: string;
   stack?: Partial<Record<AgentName, StackAgentConfig>>;
-  source?: string;
   marketplace?: string;
+  marketplaceName?: string;
   agentsSource?: string;
   selectedDomains?: Domain[];
 }
@@ -437,7 +478,7 @@ import type { ProjectConfig } from "./config-types";
 
 const skills = [
   ...globalConfig.skills,
-  {"id":"web-testing-vitest","scope":"project","source":"eject"},
+  {"id":"web-testing-vitest","scope":"project","origin":"eject"},
 ];
 
 const agents = [
@@ -471,20 +512,26 @@ export default {
 
   /**
    * Creates a project with a custom (non-marketplace) skill and config-types.ts.
-   * Exercises Zod schema validation for custom skill IDs and category keys.
+   * Exercises Zod schema validation for a skill id outside the union.
+   *
+   * The ID is custom and the TAXONOMY is real. A custom skill is placed in a
+   * category that already exists rather than bringing one, so a fabricated
+   * `custom-e2e` domain and `web-custom-e2e` category — what this fixture wrote
+   * until the placement rule landed — is a file no product path can produce and
+   * the loader now refuses.
    *
    * Structure:
    *   <projectDir>/
    *     .claude-src/
-   *       config-types.ts   (auto-generated types including custom IDs)
+   *       config-types.ts   (auto-generated types including the custom ID)
    *       config.ts         (imports config-types, uses satisfies ProjectConfig)
    *     .claude/
    *       skills/
    *         web-custom-e2e-widget/
    *           SKILL.md
-   *           metadata.yaml  (custom: true, domain: custom-e2e, category: web-custom-e2e)
+   *           metadata.yaml  (custom: true, domain: web, category: web-tooling)
    */
-  static async withCustomSkill(options?: { source?: string }): Promise<ProjectHandle> {
+  static async withCustomSkill(options?: { marketplace?: string }): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
@@ -507,16 +554,13 @@ export type AgentName =
   | "web-developer";
 
 export type Domain =
-  // Custom
-  | "custom-e2e"
-  // Marketplace
   | "web";
 
 export type Category =
-  | "web-custom-e2e"
-  | "web-framework";
+  | "web-framework"
+  | "web-tooling";
 
-export type SkillConfig = { id: SkillId; scope: "project" | "global"; source: string };
+export type SkillConfig = { id: SkillId; scope: "project" | "global"; origin: string };
 
 export type SkillAssignment = SkillId | { id: SkillId; preloaded: boolean };
 
@@ -532,8 +576,8 @@ export interface ProjectConfig {
   skills: SkillConfig[];
   author?: string;
   stack?: Partial<Record<AgentName, StackAgentConfig>>;
-  source?: string;
   marketplace?: string;
+  marketplaceName?: string;
   agentsSource?: string;
   selectedDomains?: Domain[];
 }
@@ -542,17 +586,18 @@ export interface ProjectConfig {
     await writeFile(path.join(configDir, FILES.CONFIG_TYPES_TS), configTypesContent);
 
     // Config file that references custom skill and custom category
-    const sourceLine = options?.source === undefined ? "" : `\n  source: "${options.source}",`;
+    const marketplaceLine =
+      options?.marketplace === undefined ? "" : `\n  marketplace: "${options.marketplace}",`;
     const configContent = `import type { ProjectConfig } from "./config-types";
 
 export default {
-  name: "test-custom-skill-project",${sourceLine}
+  name: "test-custom-skill-project",${marketplaceLine}
   agents: [{ name: "web-developer", scope: "project" }],
-  skills: [{ id: "${CUSTOM_PROJECT_SKILL_ID}", scope: "project", source: "eject" }],
+  skills: [{ id: "${CUSTOM_PROJECT_SKILL_ID}", scope: "project", origin: "eject" }],
   selectedDomains: ["web"],
   stack: {
     "web-developer": {
-      "web-custom-e2e": {
+      "web-tooling": {
         id: "${CUSTOM_PROJECT_SKILL_ID}",
         preloaded: true,
       },
@@ -578,8 +623,8 @@ export default {
       path.join(skillDir, FILES.METADATA_YAML),
       renderMetadataYaml({
         custom: true,
-        domain: "custom-e2e",
-        category: "web-custom-e2e",
+        domain: "web",
+        category: "web-tooling",
         slug: "e2e-widget",
         displayName: "Custom E2E Widget",
         cliDescription: "E2E custom test skill",
@@ -604,12 +649,12 @@ export default {
 
     await writeProjectConfig(projectDir, {
       name: "plugin-edit-test",
-      ...(options.source !== undefined && { source: options.source }),
-      ...(options.omitMarketplaceField ? {} : { marketplace: options.marketplace }),
+      ...(options.marketplace !== undefined && { marketplace: options.marketplace }),
+      ...(options.omitMarketplaceField ? {} : { marketplaceName: options.marketplaceName }),
       skills: [...skills, ...(options.unresolvableSkills ?? [])].map((id) => ({
         id,
         scope: "project" as const,
-        source: options.marketplace,
+        origin: options.marketplaceName,
       })),
       agents: agents.map((name) => ({ name, scope: "project" as const })),
       selectedDomains: domains,
@@ -619,8 +664,7 @@ export default {
       await createLocalSkill(projectDir, skillId, {
         description: "Test skill",
         metadata: renderMetadataYaml({
-          displayName: skillId,
-          ...categorySlugFor(skillId),
+          ...metadataFieldsFor(skillId),
           contentHash: `e2e-hash-${skillId}`,
         }),
       });
@@ -646,12 +690,12 @@ export default {
 
     await writeProjectConfig(projectDir, {
       name: "local-edit-test",
-      ...(options.source !== undefined && { source: options.source }),
-      marketplace: options.marketplace,
+      ...(options.marketplace !== undefined && { marketplace: options.marketplace }),
+      marketplaceName: options.marketplaceName,
       skills: skills.map((id) => ({
         id,
         scope: "project" as const,
-        source: "eject",
+        origin: "eject",
       })),
       agents: agents.map((name) => ({ name, scope: "project" as const })),
       selectedDomains: domains,
@@ -661,8 +705,7 @@ export default {
       await createLocalSkill(projectDir, skillId, {
         description: "Test skill",
         metadata: renderMetadataYaml({
-          displayName: skillId,
-          ...categorySlugFor(skillId),
+          ...metadataFieldsFor(skillId),
           contentHash: `e2e-hash-${skillId}`,
         }),
       });
@@ -693,7 +736,7 @@ export default {
 
     await writeProjectConfig(tempDir, {
       name: "global-test",
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
       agents: [{ name: "web-developer", scope: "project" }],
       selectedDomains: ["web"],
     });
@@ -729,7 +772,7 @@ export default {
     // an installation.
     await writeProjectConfig(dir, {
       name: "test",
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
       selectedDomains: [],
     });
   }

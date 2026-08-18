@@ -12,7 +12,7 @@ import {
 import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 
 /**
@@ -66,8 +66,8 @@ describe("edit wizard — excluded skills", () => {
       await writeProjectConfig(projectDir, {
         name: "excluded-skills-test",
         skills: [
-          { id: "web-framework-react", scope: "project", source: "eject" },
-          { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
+          { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject", excluded: true },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         selectedDomains: ["web"],
@@ -75,11 +75,11 @@ describe("edit wizard — excluded skills", () => {
 
       // Create local skill directory only for the non-excluded skill.
       // The excluded skill has no local directory — it was excluded by the user.
-      await createLocalSkill(projectDir, "web-framework-react", {
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           cliDescription: "React framework",
@@ -101,7 +101,7 @@ describe("edit wizard — excluded skills", () => {
       expect(buildOutput).toContain("(1 of 1)");
 
       // Both skills appear in the build step (all skills in the source are shown).
-      expect(buildOutput).toContain("web-framework-react");
+      expect(buildOutput).toContain(E2E_SKILL.react.display);
 
       // The Testing category should be visible (vitest is in the source).
       expect(buildOutput).toContain("Testing");
@@ -117,14 +117,14 @@ describe("edit wizard — excluded skills", () => {
 
       // Both skills must be present in config
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-testing-vitest"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
       });
 
       // The excluded flag must survive the edit. Read structurally: a no-op edit
       // writes nothing at all, so asserting on the emitted text would be asserting
       // that a write happened rather than that the flag was preserved.
-      expect(await readSkillEntries(projectDir, "web-testing-vitest")).toStrictEqual([
-        { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.vitest.id)).toStrictEqual([
+        { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject", excluded: true },
       ]);
 
       // Hydrating the agent selection from the config's own agents[] makes this
@@ -146,18 +146,18 @@ describe("edit wizard — excluded skills", () => {
       await writeProjectConfig(projectDir, {
         name: "excluded-preserve-test",
         skills: [
-          { id: "web-framework-react", scope: "project", source: "eject" },
-          { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
+          { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject", excluded: true },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         selectedDomains: ["web"],
       });
 
-      await createLocalSkill(projectDir, "web-framework-react", {
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           cliDescription: "React framework",
@@ -179,14 +179,14 @@ describe("edit wizard — excluded skills", () => {
 
       // Both skills must be present in config
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-testing-vitest"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
       });
 
       // The excluded flag must survive the edit. Read structurally: a no-op edit
       // writes nothing at all, so asserting on the emitted text would be asserting
       // that a write happened rather than that the flag was preserved.
-      expect(await readSkillEntries(projectDir, "web-testing-vitest")).toStrictEqual([
-        { id: "web-testing-vitest", scope: "project", source: "eject", excluded: true },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.vitest.id)).toStrictEqual([
+        { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject", excluded: true },
       ]);
 
       // Hydrating the agent selection from the config's own agents[] makes this
@@ -208,20 +208,20 @@ describe("edit wizard — excluded skills", () => {
       await writeProjectConfig(projectDir, {
         name: "mixed-excluded-test",
         skills: [
-          { id: "web-framework-react", scope: "project", source: "eject" },
-          { id: "web-testing-vitest", scope: "project", source: "eject" },
-          { id: "web-state-zustand", scope: "project", source: "eject", excluded: true },
+          { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject", excluded: true },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         selectedDomains: ["web"],
       });
 
       // Create local skill directories for non-excluded skills only
-      await createLocalSkill(projectDir, "web-framework-react", {
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           cliDescription: "React framework",
@@ -230,11 +230,11 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      await createLocalSkill(projectDir, "web-testing-vitest", {
+      await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Vitest testing",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-testing-vitest",
+          displayName: E2E_SKILL.vitest.display,
           category: "web-testing",
           slug: "vitest",
           cliDescription: "Vitest testing",
@@ -255,7 +255,7 @@ describe("edit wizard — excluded skills", () => {
       expect(buildOutput).toContain("(1 of 1)");
 
       // Both non-excluded skills should appear with their names
-      expect(buildOutput).toContain("web-framework-react");
+      expect(buildOutput).toContain(E2E_SKILL.react.display);
 
       // The Testing category is visible (vitest is in the source)
       expect(buildOutput).toContain("Testing");
@@ -267,12 +267,12 @@ describe("edit wizard — excluded skills", () => {
 
       // Verify config after save: all skills present, excluded flag preserved on zustand
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-testing-vitest", "web-state-zustand"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
       });
 
       // The excluded flag must survive the edit — read structurally, as above.
-      expect(await readSkillEntries(projectDir, "web-state-zustand")).toStrictEqual([
-        { id: "web-state-zustand", scope: "project", source: "eject", excluded: true },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.zustand.id)).toStrictEqual([
+        { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject", excluded: true },
       ]);
 
       // Hydrating the agent selection from the config's own agents[] makes this
@@ -295,20 +295,20 @@ describe("edit wizard — excluded skills", () => {
       await writeProjectConfig(projectDir, {
         name: "dual-entry-test",
         skills: [
-          { id: "web-framework-react", scope: "project", source: "eject" },
-          { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
-          { id: "web-state-zustand", scope: "project", source: "eject" },
+          { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.zustand.id, scope: "global", origin: "eject", excluded: true },
+          { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject" },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         selectedDomains: ["web"],
       });
 
       // Create local skill directories for both non-excluded skills
-      await createLocalSkill(projectDir, "web-framework-react", {
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           cliDescription: "React framework",
@@ -317,11 +317,11 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      await createLocalSkill(projectDir, "web-state-zustand", {
+      await createLocalSkill(projectDir, E2E_SKILL.zustand.id, {
         description: "State management",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-state-zustand",
+          displayName: E2E_SKILL.zustand.display,
           category: "web-client-state",
           slug: "zustand",
           cliDescription: "State management",
@@ -343,7 +343,7 @@ describe("edit wizard — excluded skills", () => {
 
       // The active project entry for zustand must not be filtered out
       // by the excluded tombstone. zustand should be visible and selectable.
-      expect(buildOutput).toContain("web-state-zustand");
+      expect(buildOutput).toContain(E2E_SKILL.zustand.display);
 
       // Navigate through wizard without changes: Build → Sources → Agents → Confirm
       const result = await wizard.completeFromBuild();
@@ -352,20 +352,20 @@ describe("edit wizard — excluded skills", () => {
 
       // Both skills must be present in config
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-state-zustand"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.zustand.id],
       });
 
       // Both scope entries must survive: the global tombstone and the active
       // project entry. Read structurally — a no-op edit writes nothing, and a
       // raw-text check would also pass on any two unrelated rows carrying those
       // scopes rather than on this skill's own pair.
-      expect(await readSkillEntries(projectDir, "web-state-zustand")).toStrictEqual([
-        { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
-        { id: "web-state-zustand", scope: "project", source: "eject" },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.zustand.id)).toStrictEqual([
+        { id: E2E_SKILL.zustand.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject" },
       ]);
 
       // The zustand local skill directory must still exist after save
-      await expect({ dir: projectDir }).toHaveLocalSkills(["web-state-zustand"]);
+      await expect({ dir: projectDir }).toHaveLocalSkills([E2E_SKILL.zustand.id]);
 
       // Hydrating the agent selection from the config's own agents[] makes this
       // passthrough a genuine no-op, so the edit returns early: nothing is written
@@ -386,19 +386,19 @@ describe("edit wizard — excluded skills", () => {
       await writeProjectConfig(projectDir, {
         name: "dual-entry-preserve-test",
         skills: [
-          { id: "web-framework-react", scope: "project", source: "eject" },
-          { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
-          { id: "web-state-zustand", scope: "project", source: "eject" },
+          { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+          { id: E2E_SKILL.zustand.id, scope: "global", origin: "eject", excluded: true },
+          { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject" },
         ],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
         selectedDomains: ["web"],
       });
 
-      await createLocalSkill(projectDir, "web-framework-react", {
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "React framework",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-framework-react",
+          displayName: E2E_SKILL.react.display,
           category: "web-framework",
           slug: "react",
           cliDescription: "React framework",
@@ -407,11 +407,11 @@ describe("edit wizard — excluded skills", () => {
         }),
       });
 
-      await createLocalSkill(projectDir, "web-state-zustand", {
+      await createLocalSkill(projectDir, E2E_SKILL.zustand.id, {
         description: "State management",
         metadata: renderMetadataYaml({
           domain: "web",
-          displayName: "web-state-zustand",
+          displayName: E2E_SKILL.zustand.display,
           category: "web-client-state",
           slug: "zustand",
           cliDescription: "State management",
@@ -433,16 +433,16 @@ describe("edit wizard — excluded skills", () => {
 
       // Both skills must be present in config
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: ["web-framework-react", "web-state-zustand"],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.zustand.id],
       });
 
       // Both scope entries must survive: the global tombstone and the active
       // project entry. Read structurally — a no-op edit writes nothing, and a
       // raw-text check would also pass on any two unrelated rows carrying those
       // scopes rather than on this skill's own pair.
-      expect(await readSkillEntries(projectDir, "web-state-zustand")).toStrictEqual([
-        { id: "web-state-zustand", scope: "global", source: "eject", excluded: true },
-        { id: "web-state-zustand", scope: "project", source: "eject" },
+      expect(await readSkillEntries(projectDir, E2E_SKILL.zustand.id)).toStrictEqual([
+        { id: E2E_SKILL.zustand.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject" },
       ]);
 
       // Hydrating the agent selection from the config's own agents[] makes this

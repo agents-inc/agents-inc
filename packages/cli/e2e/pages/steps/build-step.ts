@@ -404,7 +404,8 @@ export class BuildStep extends BaseStep {
   async passThroughScratchDomains(): Promise<SourcesStep> {
     // Web domain — select the react framework. Options render alphabetically by
     // displayName, so the first-focused cell is Vue, not react; focus react
-    // explicitly (its E2E display title is the id "web-framework-react").
+    // explicitly. The label is the TITLE the E2E fixture gives that skill, which
+    // is its unprefixed id — not the namespaced id the fixture publishes it under.
     await this.screen.waitForText(STEP_TEXT.DOMAIN_WEB, TIMEOUTS.WIZARD_LOAD);
     await this.focusSkill("web-framework-react");
     await this.pressSpace();

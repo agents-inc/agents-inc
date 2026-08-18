@@ -101,7 +101,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "version:",
       );
 
-      const projectHonoSkillDir = path.join(skillsPath(projectDir), "api-framework-hono");
+      const projectHonoSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       expect(
         await directoryExists(projectHonoSkillDir),
         "Project must have api-framework-hono skill",
@@ -145,13 +145,13 @@ describe("init-edit-compile roundtrip lifecycle", () => {
 
       // Verify project config has web-framework-react with project scope
       const projectConfigAfterEdit = await readTestFile(projectConfigPath);
-      expect(projectConfigAfterEdit).toContain("web-framework-react");
+      expect(projectConfigAfterEdit).toContain(E2E_SKILL.react.id);
       expect(projectConfigAfterEdit).toMatch(/web-framework-react[^}]*"scope"\s*:\s*"project"/);
       expect(projectConfigAfterEdit, "version field is not emitted on edit").not.toContain(
         "version:",
       );
 
-      const projectReactSkillDir = path.join(skillsPath(projectDir), "web-framework-react");
+      const projectReactSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       expect(
         await directoryExists(projectReactSkillDir),
         "Project must have web-framework-react skill after scope toggle",
@@ -176,13 +176,13 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       // Verify project api-developer.md exists with frontmatter
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
       await expect({ dir: projectDir }).toHaveAgentFrontmatter("api-developer", {
-        skills: ["api-framework-hono"],
+        skills: [E2E_SKILL.hono.id],
       });
 
       // Verify global web-developer.md exists with frontmatter
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: fakeHome }).toHaveAgentFrontmatter("web-developer", {
-        skills: ["web-framework-react"],
+        skills: [E2E_SKILL.react.id],
       });
     },
   );

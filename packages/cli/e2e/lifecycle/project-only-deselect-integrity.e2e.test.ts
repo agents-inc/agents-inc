@@ -120,7 +120,7 @@ describe("project-only deselection integrity", () => {
 
       // The OTHER project-only entry (the vitest skill) is untouched — removal is surgical.
       expect(projectConfigAfter, "untouched project-only skill must be preserved").toContain(
-        "web-testing-vitest",
+        E2E_SKILL.vitest.id,
       );
 
       // Boundary: the inherited global-active agent survives the project edit.
@@ -149,9 +149,9 @@ describe("project-only deselection integrity", () => {
 
       // Setup proof: the project-only skill is genuinely present before the edit.
       const projectConfigBefore = await readTestFile(projectConfigPath);
-      expect(projectConfigBefore).toContain("web-testing-vitest");
+      expect(projectConfigBefore).toContain(E2E_SKILL.vitest.id);
       const projectTypesBefore = await readTestFile(projectTypesPath);
-      expect(projectTypesBefore).toContain("web-testing-vitest");
+      expect(projectTypesBefore).toContain(E2E_SKILL.vitest.id);
 
       // Snapshot the inherited global config before the project-scope edit.
       const globalConfigBefore = await readTestFile(globalConfigPath);
@@ -178,12 +178,12 @@ describe("project-only deselection integrity", () => {
       expect(
         await readConfigSkillIds(projectDir),
         "skills array must not retain the deselected project-only skill",
-      ).not.toContain("web-testing-vitest");
+      ).not.toContain(E2E_SKILL.vitest.id);
       const projectTypesAfter = await readTestFile(projectTypesPath);
       expect(
         projectTypesAfter,
         "config-types.ts SkillId union must drop the deselected skill",
-      ).not.toContain("web-testing-vitest");
+      ).not.toContain(E2E_SKILL.vitest.id);
 
       // The OTHER project-only entry (the api-developer agent) is untouched — surgical.
       expect(projectConfigAfter, "untouched project-only agent must be preserved").toContain(
@@ -191,9 +191,9 @@ describe("project-only deselection integrity", () => {
       );
 
       // Boundary: the inherited global-active skill survives the project edit.
-      await expect({ dir: fakeHome }).toHaveSkillCopied("web-framework-react");
+      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
       const globalConfigAfter = await readTestFile(globalConfigPath);
-      expect(globalConfigAfter).toContain("web-framework-react");
+      expect(globalConfigAfter).toContain(E2E_SKILL.react.id);
       expect(
         normalizeGlobalConfig(globalConfigAfter),
         "global config must be unchanged by a project-scope skill deselect",

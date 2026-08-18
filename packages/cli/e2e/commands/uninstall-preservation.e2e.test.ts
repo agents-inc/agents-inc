@@ -19,6 +19,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import type { AgentName } from "../../src/cli/types/index.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Uninstall preservation E2E tests.
@@ -50,7 +51,7 @@ describe("uninstall preservation behavior", () => {
     const project = await ProjectBuilder.editable();
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     // Eject templates to .claude-src/agents/_templates/
     const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
@@ -89,13 +90,13 @@ describe("uninstall preservation behavior", () => {
 
   it("should preserve custom agent source in .claude-src/agents after uninstall --yes", async () => {
     const project = await ProjectBuilder.editable({
-      skills: ["web-framework-react"],
+      skills: [E2E_SKILL.react.id],
       agents: ["web-developer"],
       domains: ["web"],
     });
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     // Create a custom agent source directory in .claude-src/agents/
     const customAgentSrcDir = path.join(projectDir, DIRS.CLAUDE_SRC, "agents", "my-custom-agent");
@@ -118,7 +119,7 @@ describe("uninstall preservation behavior", () => {
     // Add the custom agent to config so uninstall will track it
     await writeProjectConfig(projectDir, {
       name: "test-edit-project",
-      skills: [{ id: "web-framework-react", scope: "project", source: "eject" }],
+      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [
         { name: "web-developer", scope: "project" },
         { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
@@ -145,13 +146,13 @@ describe("uninstall preservation behavior", () => {
 
   it("should remove only config-tracked agents and preserve others", async () => {
     const project = await ProjectBuilder.editable({
-      skills: ["web-framework-react"],
+      skills: [E2E_SKILL.react.id],
       agents: ["web-developer"],
       domains: ["web"],
     });
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     // Config tracks only web-developer. Create compiled agent files for both
     // a tracked agent AND an extra non-tracked agent.
@@ -185,7 +186,7 @@ describe("uninstall preservation behavior", () => {
     const project = await ProjectBuilder.editable();
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
-    await addForkedFromMetadata(projectDir);
+    await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     // Add a user-created file to .claude/ that the CLI does not manage
     const claudeDir = path.join(projectDir, DIRS.CLAUDE);

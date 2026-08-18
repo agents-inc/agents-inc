@@ -13,7 +13,7 @@ import {
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * E2E tests for edit wizard skill detection (Gap 6).
@@ -65,10 +65,10 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         await writeProjectConfig(projectDir, {
           name: "test-mixed-detection",
           skills: [
-            { id: "web-framework-react", scope: "project", source: "eject" },
-            { id: "web-testing-vitest", scope: "global", source: "eject" },
-            { id: "web-state-zustand", scope: "project", source: "eject" },
-            { id: "api-framework-hono", scope: "global", source: "eject" },
+            { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+            { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" },
+            { id: E2E_SKILL.zustand.id, scope: "project", origin: "eject" },
+            { id: E2E_SKILL.hono.id, scope: "global", origin: "eject" },
           ],
           agents: [
             { name: E2E_AGENT["web-developer"].name, scope: "project" },
@@ -79,10 +79,34 @@ describe("edit wizard — skill detection across sources and scopes", () => {
 
         // Create local skill directories with SKILL.md and metadata
         const skills = [
-          { id: "web-framework-react", category: "web-framework", slug: "react", domain: "web" },
-          { id: "web-testing-vitest", category: "web-testing", slug: "vitest", domain: "web" },
-          { id: "web-state-zustand", category: "web-client-state", slug: "zustand", domain: "web" },
-          { id: "api-framework-hono", category: "api-api", slug: "hono", domain: "api" },
+          {
+            id: E2E_SKILL.react.id,
+            display: E2E_SKILL.react.display,
+            category: "web-framework",
+            slug: "react",
+            domain: "web",
+          },
+          {
+            id: E2E_SKILL.vitest.id,
+            display: E2E_SKILL.vitest.display,
+            category: "web-testing",
+            slug: "vitest",
+            domain: "web",
+          },
+          {
+            id: E2E_SKILL.zustand.id,
+            display: E2E_SKILL.zustand.display,
+            category: "web-client-state",
+            slug: "zustand",
+            domain: "web",
+          },
+          {
+            id: E2E_SKILL.hono.id,
+            display: E2E_SKILL.hono.display,
+            category: "api-api",
+            slug: "hono",
+            domain: "api",
+          },
         ] as const;
 
         for (const skill of skills) {
@@ -90,7 +114,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
             description: `Test skill ${skill.id}`,
             metadata: renderMetadataYaml({
               domain: skill.domain,
-              displayName: skill.id,
+              displayName: skill.display,
               category: skill.category,
               slug: skill.slug,
               cliDescription: "Test skill",
@@ -117,13 +141,15 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         // skill's `scope` out of config rather than merely listing the source's
         // catalogue. Without it "detected across sources and scopes" and
         // "painted the grid" are the same assertion.
-        expect(await wizard.build.getScopeBadgesForSkill("web-framework-react")).toStrictEqual([
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display)).toStrictEqual([
           "P",
         ]);
-        expect(await wizard.build.getScopeBadgesForSkill("web-testing-vitest")).toStrictEqual([
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.vitest.display)).toStrictEqual([
           "G",
         ]);
-        expect(await wizard.build.getScopeBadgesForSkill("web-state-zustand")).toStrictEqual(["P"]);
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.zustand.display)).toStrictEqual([
+          "P",
+        ]);
 
         // Navigate to API domain to verify api skills are also detected
         await wizard.build.advanceDomain();
@@ -131,7 +157,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         const apiOutput = wizard.build.getOutput();
         // The API domain's category header confirms we navigated to the API build step
         expect(apiOutput).toContain("API Framework");
-        expect(await wizard.build.getScopeBadgesForSkill("api-framework-hono")).toStrictEqual([
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.hono.display)).toStrictEqual([
           "G",
         ]);
       },
@@ -153,27 +179,23 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         await writeProjectConfig(projectDir, {
           name: "test-count-detection",
           skills: [
-            { id: "web-framework-react", scope: "project", source: "eject" },
-            { id: "web-testing-vitest", scope: "project", source: "eject" },
-            { id: "web-state-zustand", scope: "global", source: "eject" },
+            { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+            { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
+            { id: E2E_SKILL.zustand.id, scope: "global", origin: "eject" },
           ],
           agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
           selectedDomains: ["web"],
         });
 
         // Create local skill files for all 3
-        for (const id of [
-          "web-framework-react",
-          "web-testing-vitest",
-          "web-state-zustand",
-        ] as const) {
-          const parts = id.split("-");
+        for (const skill of [E2E_SKILL.react, E2E_SKILL.vitest, E2E_SKILL.zustand] as const) {
+          const parts = skill.id.split("-");
           const category = parts.slice(0, 2).join("-");
           const slug = parts.slice(2).join("-");
-          await createLocalSkill(projectDir, id, {
+          await createLocalSkill(projectDir, skill.id, {
             description: `Test skill`,
             metadata: renderMetadataYaml({
-              displayName: id,
+              displayName: skill.display,
               category,
               slug,
               cliDescription: "Test",
@@ -191,21 +213,23 @@ describe("edit wizard — skill detection across sources and scopes", () => {
 
         const buildOutput = wizard.build.getOutput();
         // All 3 installed skills should be pre-selected in the build step.
-        expect(buildOutput).toContain("web-framework-react");
-        expect(buildOutput).toContain("web-testing-vitest");
+        expect(buildOutput).toContain(E2E_SKILL.react.display);
+        expect(buildOutput).toContain(E2E_SKILL.vitest.display);
         // The exclusive Framework category's own counter, read by name so a
         // "(1 of 1)" printed by some other category cannot stand in for it.
         expect(await wizard.build.getExclusiveCategorySelectedCount("Framework")).toBe(1);
         // The scope badges are what say the counts came from this config: the
         // two project-scoped skills and the one global-scoped skill each carry
         // the badge their config entry declares.
-        expect(await wizard.build.getScopeBadgesForSkill("web-framework-react")).toStrictEqual([
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.react.display)).toStrictEqual([
           "P",
         ]);
-        expect(await wizard.build.getScopeBadgesForSkill("web-testing-vitest")).toStrictEqual([
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.vitest.display)).toStrictEqual([
           "P",
         ]);
-        expect(await wizard.build.getScopeBadgesForSkill("web-state-zustand")).toStrictEqual(["G"]);
+        expect(await wizard.build.getScopeBadgesForSkill(E2E_SKILL.zustand.display)).toStrictEqual([
+          "G",
+        ]);
       },
     );
   });
