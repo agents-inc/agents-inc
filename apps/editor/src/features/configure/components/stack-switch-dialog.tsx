@@ -1,4 +1,3 @@
-import { STACKS } from "@workspace/matrix"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,6 +9,7 @@ import {
 } from "@workspace/ui/components/alert-dialog"
 
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
+import { activeStacks } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import { SAVED_STACK_NAME } from "@/stores/saved-stack-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
@@ -21,7 +21,8 @@ const targetNameOf = (request: StackRequest) => {
   if (request.stackId === null) return "Start from scratch"
 
   return (
-    STACKS.find((stack) => stack.id === request.stackId)?.name ?? "this stack"
+    activeStacks().find((stack) => stack.id === request.stackId)?.name ??
+    "this stack"
   )
 }
 
