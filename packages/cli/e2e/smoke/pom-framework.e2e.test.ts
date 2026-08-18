@@ -18,7 +18,7 @@ import {
 } from "../helpers/test-utils.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import type { WizardResult, ProjectHandle } from "../pages/wizard-result.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -44,7 +44,7 @@ describe("POM Framework Smoke Tests", () => {
     let sharedHome: string | undefined;
 
     beforeAll(async () => {
-      pluginFixture = await createE2EPluginSource({ marketplaceName: "agents-inc" });
+      pluginFixture = await createE2EPluginSource();
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
@@ -78,7 +78,7 @@ describe("POM Framework Smoke Tests", () => {
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer", "api-developer"],
-          source: "agents-inc",
+          source: E2E_MARKETPLACE_NAME,
         });
         const globalProject = { dir: sharedHome };
         await expect(globalProject).toHaveCompiledAgent("web-developer");

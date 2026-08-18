@@ -146,6 +146,20 @@ jobs:
       - run: bun run test --filter=agents-inc
       - run: bun run test:e2e --filter=agents-inc
 
+      # The smoke files, which `test:e2e` does not collect — they probe the real
+      # `claude` binary and are a separate vitest project for that reason. Every
+      # describe in them is `skipIf(!claudeAvailable)` and this runner has no
+      # `claude`, so nothing here asserts anything about the Claude CLI and this
+      # step must not be read as coverage of it. What a fully-skipped run still
+      # proves is that the three files collect, import and resolve their helpers
+      # — which is precisely what rotted while no command ran them at all. Ten
+      # seconds for that. Run directly rather than through turbo: adding a task
+      # for one workspace's ten-second step buys nothing, and `working-directory`
+      # is what the schema check above already does.
+      - name: The smoke files must at least still load
+        working-directory: packages/cli
+        run: bun run test:smoke
+
   deploy:
     # check-web only, and check-cli deliberately absent. Nothing the CLI's
     # pseudo-terminal suite covers can change what Cloudflare serves, so gating

@@ -6,37 +6,40 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { TIMEOUTS, DIRS, FILES, SOURCE_PATHS } from "../pages/constants.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   claudePluginInstall,
   claudePluginMarketplaceAdd,
   cleanupFixture,
+  cleanupIsolatedClaudeHome,
   cleanupTempDir,
+  createIsolatedClaudeHome,
   createTempDir,
   ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   listFiles,
   readTestFile,
+  type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
 
 import "../matchers/setup.js";
 
 /**
- * Blocker 7.1: Full Plugin Chain Proof-of-Concept
+ * Full plugin chain proof-of-concept: the build -> register -> install chain
+ * against the real Claude CLI, using the E2E source fixture.
  *
- * This test proves the entire plugin build -> register -> install chain works
- * end-to-end using the E2E source fixture. It must pass before any plugin-mode
- * E2E tests can be written.
- *
- * The test uses the REAL HOME directory (not isolated) since Blocker 7.6
- * (HOME isolation) hasn't been resolved yet.
+ * Every Claude CLI call is pinned to a per-run config dir, so the marketplace
+ * registration and the plugin registry this chain produces live inside a temp
+ * tree and are removed with it. Nothing here reaches the installation on the
+ * machine running the suite — `home-isolation.smoke.test.ts` is the spec that
+ * pins that mechanism.
  *
  * Chain under test:
  *   createE2ESource() -> build plugins -> build marketplace -> claude plugin marketplace add -> claude plugin install
  *
  * NOTE: These are smoke tests for the Claude CLI binary integration, NOT pure E2E
  * tests for our CLI. Steps 3-5 call the Claude CLI directly.
- * Moved from e2e/integration/plugin-chain-poc.e2e.test.ts.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -47,10 +50,12 @@ describe.skipIf(!claudeAvailable)(
     let fixture: E2EPluginSource;
     let projectDir: string;
     let projectTempDir: string;
+    let isolated: IsolatedClaudeHome;
 
     beforeAll(async () => {
       await ensureBinaryExists();
       fixture = await createE2EPluginSource();
+      isolated = await createIsolatedClaudeHome();
 
       // Create an isolated project directory for plugin installation
       projectTempDir = await createTempDir();
@@ -63,6 +68,7 @@ describe.skipIf(!claudeAvailable)(
     afterAll(async () => {
       await cleanupFixture(fixture);
       if (projectTempDir) await cleanupTempDir(projectTempDir);
+      await cleanupIsolatedClaudeHome(isolated);
     });
 
     // Step 1: Verify build plugins produced output
@@ -98,24 +104,25 @@ describe.skipIf(!claudeAvailable)(
 
     // Step 3: Register marketplace with Claude CLI
     it("should register the marketplace via claude plugin marketplace add", async () => {
-      await claudePluginMarketplaceAdd(fixture.sourceDir);
+      await claudePluginMarketplaceAdd(fixture.sourceDir, { configDir: isolated.configDir });
       // If it doesn't throw, registration succeeded (or was already registered)
     });
 
     // Step 4: Install a plugin
     it("should install a plugin via claude plugin install", async () => {
-      const pluginRef = `web-framework-react@${fixture.marketplaceName}`;
-      await claudePluginInstall(pluginRef, "project", projectDir);
+      const pluginRef = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
+      await claudePluginInstall(pluginRef, "project", projectDir, {
+        configDir: isolated.configDir,
+      });
       // If it doesn't throw, installation succeeded
     });
 
     // Step 5: Verify the installed plugin exists on disk
     it("should have the plugin in the registry after install", async () => {
-      // Check the REAL home dir since we are NOT isolating HOME for this test
-      const homeDir = process.env.HOME;
-      if (!homeDir) throw new Error("HOME environment variable is not set");
-      await expect({ dir: homeDir }).toHavePluginInRegistry(
-        `web-framework-react@${fixture.marketplaceName}`,
+      // The registry belongs to the run's own config dir, which is `<home>/.claude`
+      // — the same path the matcher derives from a home.
+      await expect({ dir: isolated.home }).toHavePluginInRegistry(
+        `${E2E_SKILL.react.id}@${fixture.marketplaceName}`,
         "project",
       );
     });

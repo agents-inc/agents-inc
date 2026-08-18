@@ -3,7 +3,6 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["e2e/**/*.e2e.test.ts"],
     globalSetup: ["./e2e/global-setup.ts"],
     testTimeout: 30_000,
     hookTimeout: 60_000,
@@ -28,5 +27,27 @@ export default defineConfig({
     // genuine failure's cost at 2x instead of 3x, and a retry that fires shows
     // up in vitest's flaky report rather than passing silently.
     retry: 1,
+    // Two gates over one tree, split by filename rather than by directory —
+    // `smoke/pom-framework.e2e.test.ts` validates OUR page objects and belongs
+    // in the suite that runs on every commit, while its neighbours probe the
+    // real `claude` binary and are worth running only where that binary is.
+    //
+    // Named projects rather than a second config file: the include is the only
+    // thing that differs, and every option above has to reach both. It is also
+    // the shape vitest.config.ts at the package root already uses. Each gate
+    // needs a script (`test:e2e`, `test:smoke`) — a project nothing selects
+    // runs whenever the OTHER project is asked for by name and never
+    // otherwise, which is how `e2e/smoke/*.smoke.test.ts` went unrun for
+    // months. src/cli/lib/__tests__/spec-gates.test.ts is what now says so.
+    projects: [
+      {
+        extends: true,
+        test: { name: "e2e", include: ["e2e/**/*.e2e.test.ts"] },
+      },
+      {
+        extends: true,
+        test: { name: "smoke", include: ["e2e/**/*.smoke.test.ts"] },
+      },
+    ],
   },
 });

@@ -1,6 +1,6 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { DIRS, EXIT_CODES, FILES, SOURCE_PATHS } from "../pages/constants.js";
 import {
   isClaudeCLIAvailable,
@@ -8,11 +8,15 @@ import {
   claudePluginInstall,
   claudePluginUninstall,
   execCommand,
+  createIsolatedClaudeHome,
   createTempDir,
+  cleanupIsolatedClaudeHome,
   cleanupTempDir,
   ensureBinaryExists,
   fileExists,
+  type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
+import type { Marketplace } from "../../src/cli/types/index.js";
 
 /**
  * Smoke tests for Claude CLI plugin commands.
@@ -21,19 +25,46 @@ import {
  * and `claude plugin uninstall` work in the test environment. They call the real
  * `claude` binary via the exec utilities in src/cli/utils/exec.ts.
  *
+ * Every call is pinned to a per-test config dir. The marketplace add below used
+ * to land in the machine's own installation under a name outside
+ * `E2E_MARKETPLACE_PREFIX`, so the suite's own sweep could never reach it — a
+ * registration pointing at a temp directory that the same test then deleted.
+ *
  * The entire suite is skipped when the Claude CLI is not available (e.g. CI
  * without Claude installed).
  *
  * NOTE: These are smoke tests for the Claude CLI binary, NOT E2E tests for our CLI.
- * Moved from e2e/commands/plugin-install.e2e.test.ts.
  */
+
+/**
+ * The manifest this file writes and the registration it then reads back.
+ *
+ * Typed as `Marketplace` so the compiler enforces the required fields. It used
+ * to be an untyped `{ name, plugins }` literal that the Claude CLI rejected on
+ * `owner: expected object, received undefined` — invisible, because the only
+ * assertion was that the exit code was a number.
+ */
+const SMOKE_MARKETPLACE: Marketplace = {
+  name: "e2e-smoke-test-marketplace",
+  version: "1.0.0",
+  owner: { name: "agents-inc-e2e" },
+  plugins: [],
+};
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
   let tempDir: string;
+  let isolated: IsolatedClaudeHome;
 
-  beforeAll(ensureBinaryExists);
+  beforeAll(async () => {
+    await ensureBinaryExists();
+    isolated = await createIsolatedClaudeHome();
+  });
+
+  afterAll(async () => {
+    await cleanupIsolatedClaudeHome(isolated);
+  });
 
   afterEach(async () => {
     if (tempDir) {
@@ -52,7 +83,7 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
 
   describe("marketplace commands", () => {
     it("should list marketplaces without error", async () => {
-      const marketplaces = await claudePluginMarketplaceList();
+      const marketplaces = await claudePluginMarketplaceList({ configDir: isolated.configDir });
 
       // The list may be empty or populated -- we just verify it returns an array
       expect(Array.isArray(marketplaces)).toBe(true);
@@ -67,31 +98,20 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       const pluginDir = path.join(marketplaceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR);
       await mkdir(pluginDir, { recursive: true });
       await writeFile(
-        path.join(pluginDir, "marketplace.json"),
-        JSON.stringify({
-          name: "e2e-smoke-test-marketplace",
-          plugins: [],
-        }),
+        path.join(pluginDir, FILES.MARKETPLACE_JSON),
+        JSON.stringify(SMOKE_MARKETPLACE),
       );
 
-      // Attempt to add the local directory as a marketplace.
-      // This may fail if the Claude CLI rejects the format -- that's useful
-      // information too. We capture the result to understand the behavior.
-      const result = await execCommand(
-        "claude",
-        ["plugin", "marketplace", "add", marketplaceDir],
-        {},
-      );
+      const result = await execCommand("claude", ["plugin", "marketplace", "add", marketplaceDir], {
+        env: { CLAUDE_CONFIG_DIR: isolated.configDir },
+      });
 
-      // Record what happened for diagnostic purposes
-      const combined = result.stdout + result.stderr;
-
-      // The command should either succeed or fail with a descriptive error.
-      // We don't assert exitCode === 0 because the marketplace format may not
-      // match what the Claude CLI expects. Instead, we verify the command
-      // doesn't hang (which was the original concern).
-      expect(typeof result.exitCode).toBe("number");
-      expect(combined).toMatch(/.+/);
+      // Asserted rather than merely recorded: with the registration landing in a
+      // temp config dir, whether the Claude CLI accepts this manifest shape is a
+      // question the test can answer instead of tolerate.
+      expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const registered = await claudePluginMarketplaceList({ configDir: isolated.configDir });
+      expect(registered.map((marketplace) => marketplace.name)).toContain(SMOKE_MARKETPLACE.name);
     });
   });
 
@@ -109,7 +129,9 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       // We expect this to fail (plugin doesn't exist) but the key assertion is
       // that the command completes within a reasonable time.
       await expect(
-        claudePluginInstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir),
+        claudePluginInstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir, {
+          configDir: isolated.configDir,
+        }),
       ).rejects.toThrow("Plugin installation failed");
     });
 
@@ -124,7 +146,9 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       // Uninstalling a nonexistent plugin should succeed silently (the exec
       // wrapper treats "not installed" / "not found" as non-errors)
       await expect(
-        claudePluginUninstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir),
+        claudePluginUninstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir, {
+          configDir: isolated.configDir,
+        }),
       ).resolves.toBeUndefined();
     });
   });
@@ -138,7 +162,7 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       const result = await execCommand(
         "claude",
         ["plugin", "install", "fake-skill@fake-marketplace", "--scope", "project"],
-        { cwd: projectDir },
+        { cwd: projectDir, env: { CLAUDE_CONFIG_DIR: isolated.configDir } },
       );
 
       // The command should complete (not hang) and return a non-zero exit code
@@ -158,7 +182,7 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       const result = await execCommand(
         "claude",
         ["plugin", "uninstall", "fake-skill@fake-marketplace", "--scope", "project"],
-        { cwd: projectDir },
+        { cwd: projectDir, env: { CLAUDE_CONFIG_DIR: isolated.configDir } },
       );
 
       // Should complete without hanging
@@ -182,6 +206,9 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
         "nonexistent-plugin@nonexistent-marketplace",
         "project",
         projectDir,
+        {
+          configDir: isolated.configDir,
+        },
       ).catch(() => {});
 
       // A failed install should not create or modify settings.json
