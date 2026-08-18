@@ -57,6 +57,16 @@ describe("readSavedStack", () => {
     expect(readSavedStack(slot(payload({ v: SEED_VERSION - 1 })))).toBe(null)
   })
 
+  // The same seam pinned against a literal, because the test above follows
+  // `SEED_VERSION` wherever it goes and so can never say WHICH contract moved.
+  // Every stack saved before v4 sits in a browser in this shape; this is the
+  // read that throws all of them away, and it has to answer `null` rather than
+  // throw — nothing on screen explains an empty cell, but a broken page is not
+  // an explanation either.
+  it("discards a stack saved under the v3 contract", () => {
+    expect(readSavedStack(slot(payload({ v: 3 })))).toBe(null)
+  })
+
   it.each([
     ["an empty slot", undefined],
     ["nothing at all", null],

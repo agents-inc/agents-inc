@@ -1,6 +1,6 @@
 import { useConfigStore } from "@/stores/config-store"
 import { useSavedStackStore } from "@/stores/saved-stack-store"
-import { fromSeedPayload } from "./seed"
+import { adoptSeedPayload } from "./seed"
 
 import type { StackRequest } from "@/stores/ui-store"
 
@@ -22,6 +22,6 @@ export const useApplyStackRequest = () => {
 
   return (request: StackRequest) => {
     if (request.kind === "stack") applyStack(request.stackId)
-    else if (saved) applySavedStack(fromSeedPayload(saved))
+    else if (saved) applySavedStack(adoptSeedPayload(saved))
   }
 }

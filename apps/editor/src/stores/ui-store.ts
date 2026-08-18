@@ -18,7 +18,20 @@ type UiState = {
   openPanelSkillId: string | null
   // Switch awaiting confirmation because applying it would discard edits.
   pendingStack: StackRequest | null
-  dialog: "none" | "install" | "add"
+  // Which saved marketplace a switch has been asked for, awaiting the
+  // confirmation that names what it costs. Its own field rather than a
+  // `StackRequest` variant: seating a different catalogue and applying a stack
+  // replace the same selection, but only one of them can be described before it
+  // happens, and only that one has a catalogue to fetch first.
+  pendingMarketplace: string | null
+  dialog: "none" | "install" | "add" | "marketplace"
+  // Which added skill's contents are on show, over whatever else is open.
+  //
+  // Its own field rather than a fifth `dialog` value, because the install
+  // dialog is one of the two ways in: reading what a skill holds is a question
+  // asked ABOUT the list of what is going to be written, so that list has to
+  // still be there underneath and still be there afterwards.
+  previewSkillId: string | null
   // Domain id → that roster accordion is shut.
   rosterCollapsed: Record<string, boolean>
   // Agents currently pulsing in the roster because a selection reached them.
@@ -28,7 +41,10 @@ type UiState = {
   togglePanel: (skillId: string) => void
   requestStack: (request: StackRequest) => void
   dismissStackRequest: () => void
+  requestMarketplace: (marketplace: string) => void
+  dismissMarketplaceRequest: () => void
   setDialog: (dialog: UiState["dialog"]) => void
+  previewSkill: (skillId: string | null) => void
   toggleRosterDomain: (domainId: string) => void
   flashAgents: (agentIds: string[]) => void
   clearFlash: () => void
@@ -43,7 +59,9 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       openPanelSkillId: null,
       pendingStack: null,
+      pendingMarketplace: null,
       dialog: "none",
+      previewSkillId: null,
       rosterCollapsed: {},
       flashedAgentIds: [],
 
@@ -55,7 +73,11 @@ export const useUiStore = create<UiState>()(
 
       requestStack: (request) => set({ pendingStack: request }),
       dismissStackRequest: () => set({ pendingStack: null }),
+      requestMarketplace: (marketplace) =>
+        set({ pendingMarketplace: marketplace }),
+      dismissMarketplaceRequest: () => set({ pendingMarketplace: null }),
       setDialog: (dialog) => set({ dialog }),
+      previewSkill: (skillId) => set({ previewSkillId: skillId }),
 
       toggleRosterDomain: (domainId) =>
         set((state) => ({

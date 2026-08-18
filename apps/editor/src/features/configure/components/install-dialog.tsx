@@ -1,4 +1,4 @@
-import { DOMAIN_LABELS, STACKS } from "@workspace/matrix"
+import { DOMAIN_LABELS } from "@workspace/matrix"
 import { Button } from "@workspace/ui/components/button"
 import { CommandBlock } from "@workspace/ui/components/command-block"
 import {
@@ -18,6 +18,7 @@ import {
 import { useEffect } from "react"
 
 import {
+  PUBLIC_MARKETPLACE,
   selectInstallInventory,
   summarize,
   type InventoryAgent,
@@ -25,8 +26,8 @@ import {
 } from "@/features/configure/lib/derive"
 import { useInstallCommand } from "@/features/configure/lib/use-install-command"
 import { track } from "@/lib/analytics/track"
-import type { AddedSkill } from "@/stores/added-skills-store"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
+import { useCatalogStore } from "@/stores/catalog-store"
 import { useUiStore } from "@/stores/ui-store"
 
 // The line under the command, which is also where the id's absence is
@@ -37,6 +38,29 @@ const COMMAND_NOTES = {
   failed: "id unavailable — this command starts a fresh wizard",
   copied: "copied",
 } as const
+
+// A skill's name in the inventory. An added one's is a button, because this is
+// the list of what is about to be written to the reader's disk and an added
+// skill is the part of it written from somebody else's repository — EDITOR-32's
+// second way in, and the one the EDITOR-03 ruling is really about. The preview
+// opens OVER this dialog rather than replacing it, so the question can be asked
+// without losing the list that prompted it.
+function InventoryName({ skill }: { skill: InventorySkill }) {
+  const previewSkill = useUiStore((state) => state.previewSkill)
+
+  if (!skill.added) return <span className="truncate">{skill.displayName}</span>
+
+  return (
+    <button
+      type="button"
+      aria-label={`Contents of ${skill.displayName}`}
+      onClick={() => previewSkill(skill.id)}
+      className="cursor-pointer truncate text-left underline decoration-brand-border underline-offset-[0.1875rem] outline-none hover:text-brand-ink focus-visible:ring-1 focus-visible:ring-ring"
+    >
+      {skill.displayName}
+    </button>
+  )
+}
 
 function ScopeGroup({
   label,
@@ -64,7 +88,7 @@ function ScopeGroup({
             key={skill.id}
             className="flex break-inside-avoid items-baseline gap-[0.4375rem] py-0.5 text-11 text-ink-2"
           >
-            <span className="truncate">{skill.displayName}</span>
+            <InventoryName skill={skill} />
             <span
               className={`ml-auto shrink-0 font-mono text-8 font-medium tracking-[.06em] uppercase ${
                 skill.install === "eject"
@@ -125,19 +149,20 @@ function AgentScopeGroup({
 // There is deliberately **no Install button**: installing is a CLI action, so
 // the dialog's job is to tell the user exactly what they are about to get and
 // hand them the command. The only action is Close.
-export function InstallDialog({
-  config,
-  added,
-}: {
-  config: ConfigSelection
-  added: AddedSkill[]
-}) {
+export function InstallDialog({ config }: { config: ConfigSelection }) {
   const dialog = useUiStore((state) => state.dialog)
   const setDialog = useUiStore((state) => state.setDialog)
+  const stacks = useCatalogStore((state) => state.stacks)
+  // The marketplace SEATED in this tab, and the only one of the three notions
+  // this line may read: the command below hands over a payload stamped with
+  // `activeMarketplace()`, so naming anything else would describe an install
+  // that is not the one about to happen. Subscribed rather than read once,
+  // because the dialog survives a swap underneath it.
+  const marketplace = useCatalogStore((state) => state.marketplace)
 
-  const inventory = selectInstallInventory(config, added)
+  const inventory = selectInstallInventory(config)
   const stats = summarize(config)
-  const stack = STACKS.find((candidate) => candidate.id === config.stackId)
+  const stack = stacks.find((candidate) => candidate.id === config.stackId)
 
   const agentsByScope = {
     project: inventory.agents.filter((entry) => entry.scope === "project"),
@@ -170,7 +195,10 @@ export function InstallDialog({
           title="Install"
           subtitle={
             <>
-              marketplace <em className="text-ink not-italic">agents-inc</em>
+              marketplace{" "}
+              <em className="text-ink not-italic">
+                {marketplace ?? PUBLIC_MARKETPLACE}
+              </em>
               {stack ? (
                 <>
                   {" · "}stack{" "}

@@ -1,13 +1,18 @@
 import {
-  CATALOG,
   DEFAULT_SELECTION_OPTIONS,
-  STACKS,
   SUB_AGENTS_BY_ID,
   subAgentById,
 } from "@workspace/matrix"
 import { z } from "zod"
 
 import { reportIssue } from "@/lib/observability/report"
+import { activeCatalog, activeStacks } from "./catalog-store"
+
+// The roster is imported directly and the catalogue is not, and the asymmetry
+// is a ruling rather than an oversight: marketplaces do not ship sub-agents
+// (owner, 2026-08-09), so `SUB_AGENTS_BY_ID` is the vendored roster whichever
+// catalogue is loaded. Skills and stacks are the catalogue's, so they come off
+// the seat.
 
 // Bump when the persisted shape changes; older blobs are discarded on load.
 export const PERSIST_VERSION = 8
@@ -164,12 +169,16 @@ export const persistedUiSchema = z.object({
 
 export type PersistedUi = z.infer<typeof persistedUiSchema>
 
-// Drops references the regenerated catalog no longer knows. Session-added
-// skills are never persisted in the first place, so none reach here.
-const isKnownSkill = (skillId: string) => skillId in CATALOG.skillsById
+// Drops references the LOADED catalog does not know. An added skill IS in the
+// loaded catalog — that is the whole of EDITOR-03's ruling — so one arriving in
+// a payload survives this, provided its content was seated first; that ordering
+// is `adoptSeedPayload`'s job and the reason it exists. What still prunes here
+// is a configuration saved against one marketplace and reopened under another,
+// for exactly the same reason a regenerated catalogue's drops do.
+const isKnownSkill = (skillId: string) => skillId in activeCatalog().skillsById
 const isKnownAgent = (agentId: string) => agentId in SUB_AGENTS_BY_ID
 const isKnownStack = (stackId: string | null) =>
-  STACKS.some((stack) => stack.id === stackId)
+  activeStacks().some((stack) => stack.id === stackId)
 
 const pruneAssignments = (assignments: SkillEntry["assignments"]) =>
   Object.fromEntries(
