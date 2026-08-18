@@ -47,6 +47,19 @@ publishes to npm.
   deliberately (clarified by the owner 2026-08-09; the rule previously read as an absolute ban).
   This rule is in `packages/cli/CLAUDE.md` as well, but it is not the CLI's rule and that file
   does not load from here.
+- **The CLI is deliberately narrower than the editor.** It handles a few clear use cases; the full
+  experience is the editor, and the two front doors are not meant to be feature-equivalent. So a CLI
+  surface that is smaller than the editor's is a design decision rather than a gap. The test is
+  direction of travel: the CLI must **consume** anything the editor can produce — a payload it cannot
+  install is a real defect — but it need not **author** what the editor authors. Both halves have
+  already been ruled in practice: the skill-category dropdown is editor-only because nothing on the
+  CLI side creates a custom skill, while the CLI installing editor-added external skills was a
+  genuine blocker, because that is consumption.
+- **Always compact the session at 500k context used.** Not at a hard limit, and not only when
+  asked. Sessions here run long and orchestrate many sub-agents, each returning a large report, so
+  context fills unevenly and a limit hit mid-programme loses the thread of what landed, what is
+  running and what is still owed. Compact between units of work rather than mid-dispatch, so the
+  summary records a clean state.
 - **`packages/cli` formats itself** — 100 columns, semicolons, double quotes — while everything else
   uses the root config. Prettier picks the nearest config walking up, so this happens on its own; the
   reasoning is in the `//` notes in [`package.json`](./package.json).
@@ -63,5 +76,17 @@ Agreed process. It applies to every item in `todo/`, and the order is the point.
 4. **Then run it by hand through the CLI** and confirm it does what it claims. Passing tests and a
    working command are different claims; the `--from` work proved that when a green-looking path
    exited 13 on an unsettled Ink render that no assertion covered.
+5. **Then update the docs**, through the `codex-keeper` agent rather than inline — beyond the counts
+   a change's own diff moved.
+6. **Then update `todo/`, in the same turn the work lands.** Delete the row from its tracker, append
+   one line to [`archive.md`](./todo/archive.md), and update [`ROADMAP.md`](./todo/ROADMAP.md) if a
+   phase moved. All three, always — a finished task still sitting in a tracker is indistinguishable
+   from an unstarted one, and `archive.md` is the only record that it ever existed. **The roadmap is
+   the half that gets forgotten**: it once ran a full day stale while eleven of its twenty rows
+   landed, which would have told a fresh session the programme had not started.
 
-No jumping to step 2.
+No jumping to step 2, and steps 5 and 6 are not a tidy-up phase to batch at the end — they are how
+the work is finished.
+
+**Sub-agents do not edit `todo/`.** The orchestrator does, as each agent lands. The trackers carry
+curated git staging and several agents land at once, so briefs should say so explicitly.
