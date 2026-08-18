@@ -26,6 +26,13 @@ awaiting a decision. Nothing here depends on order.
 | REPO-07 (was monorepo-merge "Delete ~/dev/agents-inc-web-monorepo")  | Delete the old web monorepo once this repository is trusted                                                                                                                                                                                                                                                                                                                                                                                                                 | Needs Assistance | refactor | easy       |
 | REPO-09 (was monorepo-merge "Decide what a local `.env` should say") | A local `.env` can ship a live site whose every request goes to your own machine                                                                                                                                                                                                                                                                                                                                                                                            | Parked           | bug      | easy       |
 
+**Build-order constraint, found 2026-08-16.** `apps/editor`'s typecheck reads the worker's route
+types from `apps/server/dist/index.d.ts`, and that directory is gitignored. So **`apps/server` must be
+built before `apps/editor` typechecks**, or the editor fails with a type error naming whatever the
+worker's contract last emitted (it surfaced as `Type '4' is not assignable to type '3'` during the
+seed v4 bump). Nothing in the repository states this today; a clean checkout typechecking the editor
+first will fail for a reason that looks like the editor's fault.
+
 ---
 
 ## Active items

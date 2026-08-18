@@ -22,6 +22,14 @@ They are two distinct features sharing a name and no code:
 
 An editor-added skill can never become a CLI custom skill — the editor never obtains content.
 
+> **Superseded 2026-08-16 — this line was wrong, and it shaped the design for two months.** "The
+> editor never obtains content" described the build as it stood, not a constraint on it: the GitHub
+> contents API is CORS-enabled and reachable from the seam the editor already owns. The owner ruled
+> that the editor DOES resolve the content and carries it inline in the seed payload, which makes the
+> shared id self-contained and removes the install-time dependency on a third-party repo. Everything
+> below that reasons from "no content is available" should be read against that. See EDITOR-03 in
+> `todo/editor.md` and Journey 26 in `.ai-docs/standards/e2e/user-journeys.md`.
+
 ## Verdicts
 
 **Editor:** structurally acceptable base (store shape, grid plumbing, id-agnostic ••• panel all
