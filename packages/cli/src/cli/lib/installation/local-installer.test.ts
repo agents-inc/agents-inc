@@ -126,7 +126,7 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
     generateProjectConfigFromSkills: vi.fn().mockImplementation((name: string) => ({
       name,
       agents: [],
-      skills: [{ id: "test-skill", scope: "project", source: "eject" }],
+      skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
     })),
     buildStackProperty: vi.fn().mockReturnValue({}),
     // Use real splitConfigByScope for scope-aware config writing
@@ -268,8 +268,8 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-        source: tempDir,
+        skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+        marketplace: tempDir,
       });
       expect(result.configPath).toBe(configPath);
     });
@@ -292,8 +292,8 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-        source: "github:my-org/skills",
+        skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+        marketplace: "github:my-org/skills",
       });
     });
 
@@ -319,8 +319,8 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-        source: "github:default/source",
+        skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+        marketplace: "github:default/source",
       });
     });
 
@@ -343,9 +343,9 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-        source: tempDir,
-        marketplace: "my-marketplace",
+        skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+        marketplace: tempDir,
+        marketplaceName: "my-marketplace",
       });
     });
 
@@ -365,8 +365,8 @@ describe("local-installer", () => {
         config: {
           name: path.basename(tempDir),
           agents: [],
-          skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-          source: tempDir,
+          skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+          marketplace: tempDir,
         },
         configPath: path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         compiledAgents: [],
@@ -418,7 +418,7 @@ describe("local-installer", () => {
     it("should derive local installMode from skill configs", async () => {
       const matrix = EMPTY_MATRIX;
       const wizardResult = buildWizardResult(
-        buildSkillConfigs([TEST_SKILL_ID], { source: "eject" }),
+        buildSkillConfigs([TEST_SKILL_ID], { origin: "eject" }),
       );
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -432,8 +432,8 @@ describe("local-installer", () => {
       expect(result.config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-        source: tempDir,
+        skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+        marketplace: tempDir,
       });
     });
 
@@ -477,13 +477,13 @@ describe("local-installer", () => {
       mockGenerateProjectConfig.mockReturnValueOnce(
         buildProjectConfig({
           name: "agents-inc",
-          skills: buildSkillConfigs([TEST_SKILL_ID], { source: "agents-inc" }),
+          skills: buildSkillConfigs([TEST_SKILL_ID], { origin: "agents-inc" }),
         }),
       );
 
       const matrix = EMPTY_MATRIX;
       const wizardResult = buildWizardResult(
-        buildSkillConfigs([TEST_SKILL_ID], { source: "agents-inc" }),
+        buildSkillConfigs([TEST_SKILL_ID], { origin: "agents-inc" }),
       );
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -528,7 +528,7 @@ describe("local-installer", () => {
 
       const matrix = EMPTY_MATRIX;
       const wizardResult = buildWizardResult(
-        buildSkillConfigs([TEST_SKILL_ID], { source: "eject" }),
+        buildSkillConfigs([TEST_SKILL_ID], { origin: "eject" }),
       );
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -575,8 +575,8 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "test-skill", scope: "project", source: "eject" }],
-        source: tempDir,
+        skills: [{ id: "test-skill", scope: "project", origin: "eject" }],
+        marketplace: tempDir,
       });
     });
 
@@ -1034,7 +1034,7 @@ describe("local-installer", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -1069,7 +1069,7 @@ describe("local-installer", () => {
     it("should write project config when project split has skills", async () => {
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-testing-vitest"]),
         ],
         agents: [
@@ -1376,7 +1376,7 @@ describe("local-installer", () => {
             ...buildSkillConfigs(["web-framework-react"]),
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
           ],
@@ -1839,14 +1839,14 @@ describe("local-installer", () => {
         name: "global",
         skills: sharedSkills,
         agents: sharedAgents,
-        marketplace: "e2e-test-marketplace",
-        source: "/path/to/skills",
+        marketplaceName: "e2e-test-marketplace",
+        marketplace: "/path/to/skills",
       });
 
       const { config, changed } = mergeGlobalConfigs(existing, incoming);
 
-      expect(config.marketplace).toBe("e2e-test-marketplace");
-      expect(config.source).toBe("/path/to/skills");
+      expect(config.marketplaceName).toBe("e2e-test-marketplace");
+      expect(config.marketplace).toBe("/path/to/skills");
       // Newly-filled source identity must mark the merge dirty — `needsGlobalWrite` is gated
       // on this flag, so a false here would skip the global write and drop the fields again.
       expect(changed, "newly recorded source identity must trigger the global write").toBe(true);
@@ -1862,21 +1862,21 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: sharedAgents,
-        marketplace: "first-marketplace",
-        source: "/path/to/first",
+        marketplaceName: "first-marketplace",
+        marketplace: "/path/to/first",
       });
       const incoming: ProjectConfig = buildProjectConfig({
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: sharedAgents,
-        marketplace: "second-marketplace",
-        source: "/path/to/second",
+        marketplaceName: "second-marketplace",
+        marketplace: "/path/to/second",
       });
 
       const { config, changed } = mergeGlobalConfigs(existing, incoming);
 
-      expect(config.marketplace).toBe("first-marketplace");
-      expect(config.source).toBe("/path/to/first");
+      expect(config.marketplaceName).toBe("first-marketplace");
+      expect(config.marketplace).toBe("/path/to/first");
       // No delta at all — the global config must not be rewritten for an identical merge.
       expect(changed).toBe(false);
     });
@@ -1897,8 +1897,8 @@ describe("local-installer", () => {
 
       const { config, changed } = mergeGlobalConfigs(existing, incoming);
 
+      expect(config.marketplaceName).toBeUndefined();
       expect(config.marketplace).toBeUndefined();
-      expect(config.source).toBeUndefined();
       expect(changed).toBe(false);
     });
   });
@@ -1949,7 +1949,7 @@ describe("local-installer", () => {
 
       const result = setConfigMetadata(config, wizardResult, sourceResult, "github:my-org/skills");
 
-      expect(result.source).toBe("github:my-org/skills");
+      expect(result.marketplace).toBe("github:my-org/skills");
     });
 
     it("should use sourceResult.sourceConfig.source when no sourceFlag", () => {
@@ -1961,7 +1961,7 @@ describe("local-installer", () => {
 
       const result = setConfigMetadata(config, wizardResult, sourceResult);
 
-      expect(result.source).toBe("github:default/source");
+      expect(result.marketplace).toBe("github:default/source");
     });
 
     it("should set marketplace when available", () => {
@@ -1973,7 +1973,7 @@ describe("local-installer", () => {
 
       const result = setConfigMetadata(config, wizardResult, sourceResult);
 
-      expect(result.marketplace).toBe("my-marketplace");
+      expect(result.marketplaceName).toBe("my-marketplace");
     });
 
     it("should not mutate the original config object", () => {
@@ -1991,14 +1991,14 @@ describe("local-installer", () => {
 
       // Original config should not be mutated
       expect(config.selectedDomains).toBeUndefined();
-      expect(config.source).toBeUndefined();
       expect(config.marketplace).toBeUndefined();
+      expect(config.marketplaceName).toBeUndefined();
       expect(config.name).toBe(originalName);
 
       // Result should have the new values
       expect(result.selectedDomains).toStrictEqual(["web"]);
-      expect(result.source).toBe("github:my/repo");
-      expect(result.marketplace).toBe("my-marketplace");
+      expect(result.marketplace).toBe("github:my/repo");
+      expect(result.marketplaceName).toBe("my-marketplace");
     });
   });
 
@@ -2016,7 +2016,7 @@ describe("local-installer", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -2056,7 +2056,7 @@ describe("local-installer", () => {
 
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-testing-vitest"]),
         ],
         agents: [
@@ -2159,7 +2159,7 @@ describe("local-installer", () => {
         skills: [
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           ...buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
         ],
@@ -2224,7 +2224,7 @@ describe("local-installer", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -2330,7 +2330,7 @@ describe("local-installer", () => {
       const config = buildProjectConfig({
         skills: [
           // Global: web-framework / web
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           // Project: api-api / api
           ...buildSkillConfigs(["api-framework-hono"], { scope: "project" }),
         ],
@@ -2360,7 +2360,7 @@ describe("local-installer", () => {
       // assertions below would be asking the types to cover something nobody wrote.
       const projectConfigContent = await readFile(projectConfigPath, "utf-8");
       expect(projectConfigContent).toContain(
-        '{"id":"web-framework-react","scope":"global","source":"agents-inc"}',
+        '{"id":"web-framework-react","scope":"global","origin":"agents-inc"}',
       );
 
       // Control: the project-scoped entry is in the extras today.
@@ -2399,7 +2399,7 @@ describe("local-installer", () => {
 
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["api-framework-hono"], { scope: "project" }),
         ],
         agents: buildAgentConfigs(["web-researcher"], { scope: "project" }),
@@ -2447,17 +2447,17 @@ describe("local-installer", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
+      // The source declares the agent the config names — an empty definition record
+      // would make it one nothing declares, which the writer labels as the user's own.
+      const agents: Partial<Record<AgentName, AgentDefinition>> = {
+        "web-developer": createMockAgent("web-developer"),
+      };
 
-      await regenerateScopeConfigTypes(
-        fakeHomeHandle.dir,
-        config,
-        FULLSTACK_PAIR_MATRIX,
-        emptyAgents,
-      );
+      await regenerateScopeConfigTypes(fakeHomeHandle.dir, config, FULLSTACK_PAIR_MATRIX, agents);
 
       const typesContent = await readFile(typesPath, "utf-8");
       // Standalone form: no import from a global types file
@@ -2509,7 +2509,7 @@ describe("local-installer", () => {
           skills: [
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
             }),
             ...buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
           ],
@@ -2584,7 +2584,7 @@ describe("local-installer", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -2735,7 +2735,7 @@ describe("local-installer", () => {
         buildProjectConfig({
           skills: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         }),
@@ -2825,7 +2825,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         projects: [projectA, projectB],
@@ -2859,7 +2859,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         projects: [projectDir],
@@ -2890,7 +2890,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         projects: [projectDir],
@@ -2913,7 +2913,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: [],
         projects: [],
@@ -2939,7 +2939,7 @@ describe("local-installer", () => {
           ...buildSkillConfigs(["web-testing-vitest"]),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         ],
@@ -2978,7 +2978,7 @@ describe("local-installer", () => {
           ...buildSkillConfigs(["web-framework-react"]),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         ],
@@ -2991,7 +2991,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: [],
         projects: [projectDir],
@@ -3005,9 +3005,9 @@ describe("local-installer", () => {
         parsedConfig.skills,
         "a tombstone whose global entry still exists must survive the write",
       ).toStrictEqual([
-        { id: "web-framework-react", scope: "global", source: "agents-inc", excluded: true },
-        { id: "web-testing-vitest", scope: "project", source: "eject" },
-        { id: "web-framework-react", scope: "project", source: "eject" },
+        { id: "web-framework-react", scope: "global", origin: "agents-inc", excluded: true },
+        { id: "web-testing-vitest", scope: "project", origin: "eject" },
+        { id: "web-framework-react", scope: "project", origin: "eject" },
       ]);
     });
 
@@ -3136,7 +3136,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         projects: [projectDir],
@@ -3186,7 +3186,7 @@ describe("local-installer", () => {
           ...buildSkillConfigs(["web-testing-vitest"]),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
         ],
         agents: [
@@ -3207,7 +3207,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         projects: [projectDir],
@@ -3223,7 +3223,7 @@ describe("local-installer", () => {
 
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(parsedConfig.skills).toStrictEqual([
-        { id: "web-testing-vitest", scope: "project", source: "eject" },
+        { id: "web-testing-vitest", scope: "project", origin: "eject" },
       ]);
       expect(parsedConfig.agents).toStrictEqual([{ name: "web-researcher", scope: "project" }]);
       // The react ref is pruned from the stack; the emptied web-framework
@@ -3256,7 +3256,7 @@ describe("local-installer", () => {
           ...buildSkillConfigs(["web-framework-react"]),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         ],
@@ -3269,7 +3269,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: [],
         projects: [projectDir],
@@ -3283,7 +3283,7 @@ describe("local-installer", () => {
 
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(parsedConfig.skills).toStrictEqual([
-        { id: "web-framework-react", scope: "project", source: "eject" },
+        { id: "web-framework-react", scope: "project", origin: "eject" },
       ]);
     });
 
@@ -3294,7 +3294,7 @@ describe("local-installer", () => {
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: [],
         projects: [ghostDir],
@@ -3354,7 +3354,7 @@ describe("local-installer", () => {
           name: "global",
           skills: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: [],
           projects: [projectDir],
@@ -3374,10 +3374,10 @@ describe("local-installer", () => {
           {
             id: "web-framework-react",
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           },
-          { id: "web-framework-vue-composition-api", scope: "project", source: "eject" },
+          { id: "web-framework-vue-composition-api", scope: "project", origin: "eject" },
         ]);
       });
 
@@ -3394,7 +3394,7 @@ describe("local-installer", () => {
             name: "target",
             skills: buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
             agents: [],
@@ -3406,7 +3406,7 @@ describe("local-installer", () => {
           name: "global",
           skills: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: [],
           projects: [projectDir],
@@ -3422,7 +3422,7 @@ describe("local-installer", () => {
         expect(
           parsedConfig.skills,
           "a mask must not outlive the collision that produced it",
-        ).toStrictEqual([{ id: "web-framework-react", scope: "global", source: "agents-inc" }]);
+        ).toStrictEqual([{ id: "web-framework-react", scope: "global", origin: "agents-inc" }]);
       });
 
       it("reactivates the masked global skill once the project owns nothing in an optional exclusive category", async () => {
@@ -3439,7 +3439,7 @@ describe("local-installer", () => {
             name: "target",
             skills: buildSkillConfigs(["web-state-zustand"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
             agents: [],
@@ -3451,7 +3451,7 @@ describe("local-installer", () => {
           name: "global",
           skills: buildSkillConfigs(["web-state-zustand"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: [],
           projects: [projectDir],
@@ -3467,7 +3467,7 @@ describe("local-installer", () => {
         expect(
           parsedConfig.skills,
           "a mask must not outlive its collision, exclusive category required or not",
-        ).toStrictEqual([{ id: "web-state-zustand", scope: "global", source: "agents-inc" }]);
+        ).toStrictEqual([{ id: "web-state-zustand", scope: "global", origin: "agents-inc" }]);
       });
 
       it("retains the mask while the project still owns a colliding skill in an optional exclusive category", async () => {
@@ -3485,7 +3485,7 @@ describe("local-installer", () => {
               ...buildSkillConfigs(["web-state-pinia"]),
               ...buildSkillConfigs(["web-state-zustand"], {
                 scope: "global",
-                source: "agents-inc",
+                origin: "agents-inc",
                 excluded: true,
               }),
             ],
@@ -3498,7 +3498,7 @@ describe("local-installer", () => {
           name: "global",
           skills: buildSkillConfigs(["web-state-zustand"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: [],
           projects: [projectDir],
@@ -3515,8 +3515,8 @@ describe("local-installer", () => {
           parsedConfig.skills,
           "an exclusive category must hold exactly one active skill per project",
         ).toStrictEqual([
-          { id: "web-state-zustand", scope: "global", source: "agents-inc", excluded: true },
-          { id: "web-state-pinia", scope: "project", source: "eject" },
+          { id: "web-state-zustand", scope: "global", origin: "agents-inc", excluded: true },
+          { id: "web-state-pinia", scope: "project", origin: "eject" },
         ]);
       });
 
@@ -3576,7 +3576,7 @@ describe("local-installer", () => {
           name: "global",
           skills: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: [],
           projects: [projectDir],
@@ -3603,10 +3603,10 @@ describe("local-installer", () => {
           {
             id: "web-framework-react",
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           },
-          { id: "web-framework-vue-composition-api", scope: "project", source: "eject" },
+          { id: "web-framework-vue-composition-api", scope: "project", origin: "eject" },
         ]);
       });
 
@@ -3631,7 +3631,7 @@ describe("local-installer", () => {
           name: "global",
           skills: buildSkillConfigs(["web-styling-tailwind"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agents: [],
           projects: [projectDir],
@@ -3657,8 +3657,8 @@ describe("local-installer", () => {
           parsedConfig.skills,
           "a non-exclusive category must keep both scopes active",
         ).toStrictEqual([
-          { id: "web-styling-tailwind", scope: "global", source: "agents-inc" },
-          { id: "web-styling-scss-modules", scope: "project", source: "eject" },
+          { id: "web-styling-tailwind", scope: "global", origin: "agents-inc" },
+          { id: "web-styling-scss-modules", scope: "project", origin: "eject" },
         ]);
       });
     });
@@ -3686,7 +3686,7 @@ describe("local-installer", () => {
             name: "global",
             skills: buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
             }),
             agents: [],
           }),
@@ -3718,10 +3718,10 @@ describe("local-installer", () => {
           {
             id: "web-framework-react",
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           },
-          { id: "web-framework-vue-composition-api", scope: "project", source: "eject" },
+          { id: "web-framework-vue-composition-api", scope: "project", origin: "eject" },
         ]);
       });
 
@@ -3763,8 +3763,8 @@ describe("local-installer", () => {
           parsedConfig.skills,
           "one id must never be active at both scopes in the same project",
         ).toStrictEqual([
-          { id: "web-testing-vitest", scope: "global", source: "eject", excluded: true },
-          { id: "web-testing-vitest", scope: "project", source: "eject" },
+          { id: "web-testing-vitest", scope: "global", origin: "eject", excluded: true },
+          { id: "web-testing-vitest", scope: "project", origin: "eject" },
         ]);
       });
 
@@ -3824,7 +3824,7 @@ describe("local-installer", () => {
             skills: [
               ...buildSkillConfigs(["web-framework-react"], {
                 scope: "global",
-                source: "agents-inc",
+                origin: "agents-inc",
               }),
               ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
             ],
@@ -3846,7 +3846,7 @@ describe("local-installer", () => {
               ...buildSkillConfigs(["web-framework-react"]),
               ...buildSkillConfigs(["web-framework-react"], {
                 scope: "global",
-                source: "agents-inc",
+                origin: "agents-inc",
                 excluded: true,
               }),
               ...buildSkillConfigs(["web-testing-vitest"]),
@@ -3868,17 +3868,17 @@ describe("local-installer", () => {
           {
             id: "web-framework-react",
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           },
-          { id: "web-framework-react", scope: "project", source: "eject" },
+          { id: "web-framework-react", scope: "project", origin: "eject" },
         ]);
         expect(
           parsedConfig.skills.filter((s) => s.id === "web-testing-vitest"),
           "an unpaired ownership must be reconciled by the same write",
         ).toStrictEqual([
-          { id: "web-testing-vitest", scope: "global", source: "eject", excluded: true },
-          { id: "web-testing-vitest", scope: "project", source: "eject" },
+          { id: "web-testing-vitest", scope: "global", origin: "eject", excluded: true },
+          { id: "web-testing-vitest", scope: "project", origin: "eject" },
         ]);
       });
 
@@ -3894,7 +3894,7 @@ describe("local-installer", () => {
             name: "global",
             skills: buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
             }),
             agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
           }),
@@ -3922,7 +3922,7 @@ describe("local-installer", () => {
         expect(
           parsedGlobal.skills,
           "masking is project-local — the global config must stay untouched",
-        ).toStrictEqual([{ id: "web-framework-react", scope: "global", source: "agents-inc" }]);
+        ).toStrictEqual([{ id: "web-framework-react", scope: "global", origin: "agents-inc" }]);
         expect(parsedGlobal.agents).toStrictEqual([{ name: "web-developer", scope: "global" }]);
       });
     });

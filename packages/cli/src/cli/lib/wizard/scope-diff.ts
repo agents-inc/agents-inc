@@ -61,7 +61,7 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
     ? new Map(
         installedSkillConfigs
           .filter((s) => !s.excluded)
-          .map((s) => [skillSlotKey(s.id, s.scope), s.source]),
+          .map((s) => [skillSlotKey(s.id, s.scope), s.origin]),
       )
     : null;
   const prevAgentKeySet = installedAgentConfigs
@@ -213,7 +213,7 @@ export function deriveScopeBadges(
  *
  * The comparison is still on `source`, because that field IS where a skill's install mode is
  * recorded: `eject` means the project's own copy and anything else names the marketplace the
- * plugin comes from. With no second marketplace to move between, a `source` that changed is a
+ * plugin comes from. With no second marketplace to move between, an `origin` that changed is a
  * mode that changed, which is what the `~` marker has always meant to a reader.
  */
 function classifyDiffRow(
@@ -224,11 +224,11 @@ function classifyDiffRow(
   const key = skillSlotKey(skill.id, skill.scope);
   const isNew = prevKeySet === null || !prevKeySet.has(key);
   const prevSource = prevSourceMap?.get(key);
-  const modeChanged = !isNew && prevSource != null && prevSource !== skill.source;
+  const modeChanged = !isNew && prevSource != null && prevSource !== skill.origin;
   if (modeChanged) {
-    return { id: skill.id, source: skill.source, status: "mode-changed" };
+    return { id: skill.id, source: skill.origin, status: "mode-changed" };
   }
-  return { id: skill.id, source: skill.source, status: isNew ? "added" : "unchanged" };
+  return { id: skill.id, source: skill.origin, status: isNew ? "added" : "unchanged" };
 }
 
 function classifyAgentDiffRow(
@@ -240,7 +240,7 @@ function classifyAgentDiffRow(
 }
 
 function toRemovedSkillRow(skill: SkillConfig): SkillDiffRow {
-  return { id: skill.id, source: skill.source, status: "removed" };
+  return { id: skill.id, source: skill.origin, status: "removed" };
 }
 
 function toRemovedAgentRow(agent: AgentScopeConfig): AgentDiffRow {

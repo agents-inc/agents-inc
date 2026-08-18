@@ -34,12 +34,12 @@ describe("writeProjectPartial", () => {
   });
 
   /**
-   * Records `source` the way every caller does: read what is on disk, overlay
-   * the source, hand the partial over (see `recordSource` in `eject.ts`).
+   * Records the marketplace ref the way every caller does: read what is on disk, overlay
+   * the ref, hand the partial over (see `recordSource` in `eject.ts`).
    */
   async function saveSource(dir: string, source: string, fallbackName: string): Promise<void> {
     const existing = (await loadProjectSourceConfig(dir)) ?? {};
-    await writeProjectPartial(dir, { ...existing, source }, { fallbackName });
+    await writeProjectPartial(dir, { ...existing, marketplace: source }, { fallbackName });
   }
 
   it("creates config file with source when no config exists", async () => {
@@ -52,7 +52,7 @@ describe("writeProjectPartial", () => {
       name: "my-project",
       skills: [],
       agents: [],
-      source: "github:my-org/skills",
+      marketplace: "github:my-org/skills",
     });
   });
 
@@ -89,7 +89,7 @@ describe("writeProjectPartial", () => {
       agents: ["web-developer"],
       author: "@vince",
       skills: [],
-      source: "github:new/source",
+      marketplace: "github:new/source",
     });
   });
 
@@ -99,7 +99,7 @@ describe("writeProjectPartial", () => {
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
       renderConfigTs({
-        source: "github:old/source",
+        marketplace: "github:old/source",
         name: "project",
       }),
     );
@@ -113,7 +113,7 @@ describe("writeProjectPartial", () => {
       name: "project",
       skills: [],
       agents: [],
-      source: "github:new/source",
+      marketplace: "github:new/source",
     });
   });
 
@@ -134,7 +134,7 @@ describe("writeProjectPartial", () => {
       name: "recovered-project",
       skills: [],
       agents: [],
-      source: "github:my-org/skills",
+      marketplace: "github:my-org/skills",
     });
   });
 
@@ -152,12 +152,12 @@ describe("writeProjectPartial", () => {
       name: "empty-project",
       skills: [],
       agents: [],
-      source: "github:my-org/skills",
+      marketplace: "github:my-org/skills",
     });
   });
 
   it("throws when the partial has no name and no fallback is offered", async () => {
-    await expect(writeProjectPartial(tempDir, { source: "github:x/y" })).rejects.toThrow(
+    await expect(writeProjectPartial(tempDir, { marketplace: "github:x/y" })).rejects.toThrow(
       "no project config found",
     );
   });

@@ -115,7 +115,7 @@ function diffSkills(
   for (const [id, afterEntry] of after) {
     const beforeEntry = before.get(id);
     if (!beforeEntry || isDeepEqual(beforeEntry, afterEntry)) continue;
-    if (beforeEntry.source !== afterEntry.source) sourceChanged.push(id);
+    if (beforeEntry.origin !== afterEntry.origin) sourceChanged.push(id);
     else otherChanged.push(id);
   }
 

@@ -40,7 +40,7 @@ async function createLocalProject(
 
 const PLUGIN_CONFIG = buildProjectConfig({
   name: "my-project",
-  skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+  skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
 });
 
 async function createPluginProject(projectDir: string): Promise<void> {

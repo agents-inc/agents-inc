@@ -35,7 +35,7 @@ describe("mode-migrator", () => {
   describe("detectMigrations", () => {
     it("should detect skills moving from plugin to eject", () => {
       const result = detectMigrations(
-        buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         buildSkillConfigs(["web-framework-react"]),
       );
 
@@ -47,7 +47,7 @@ describe("mode-migrator", () => {
     it("should detect skills moving from eject to plugin", () => {
       const result = detectMigrations(
         buildSkillConfigs(["web-framework-react"]),
-        buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
       );
 
       expect(result.toEject).toStrictEqual([]);
@@ -58,12 +58,12 @@ describe("mode-migrator", () => {
     it("should detect mixed migrations", () => {
       const result = detectMigrations(
         [
-          ...buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
           ...buildSkillConfigs(["web-state-zustand"]),
         ],
         [
           ...buildSkillConfigs(["web-framework-react"]),
-          ...buildSkillConfigs(["web-state-zustand"], { source: "agents-inc" }),
+          ...buildSkillConfigs(["web-state-zustand"], { origin: "agents-inc" }),
         ],
       );
 
@@ -75,8 +75,8 @@ describe("mode-migrator", () => {
 
     it("should return empty plan when no migrations needed", () => {
       const result = detectMigrations(
-        buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
-        buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
       );
 
       expect(result.toEject).toStrictEqual([]);
@@ -120,7 +120,7 @@ describe("mode-migrator", () => {
     it("should NOT detect scope change when source also changes", () => {
       const result = detectMigrations(
         buildSkillConfigs(["web-framework-react"]),
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
 
       // Source changed (eject -> agents-inc), so this is a toPlugin, not a scopeChange
@@ -131,7 +131,7 @@ describe("mode-migrator", () => {
     it("should only detect migrations for skills present in both old and new", () => {
       const result = detectMigrations(
         [
-          ...buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
           ...buildSkillConfigs(["web-state-zustand"]),
         ],
         buildSkillConfigs(["web-framework-react"]),

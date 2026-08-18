@@ -36,8 +36,9 @@ describe("mutateGlobal — a mutation that moves nothing", () => {
     tempHome = await createTempDir("cc-mutate-global-noop-");
     registeredProject = await makeDir(path.join(tempHome, "registered"));
     unregisteredProject = await makeDir(path.join(tempHome, "unregistered"));
-    // `mutateGlobal` resolves the global config through `os.homedir()`, which
-    // ignores `process.env.HOME` — the spy is the only isolation that works here.
+    // `mutateGlobal` resolves the global config through `os.homedir()`, so the temp home has
+    // to be what that call returns. The spy says so directly; `vi.stubEnv("HOME", ...)` would
+    // reach it too, since `os.homedir()` reads `$HOME` on POSIX.
     vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     deps = { loadMatrix: vi.fn(), loadAgents: vi.fn() };
   });

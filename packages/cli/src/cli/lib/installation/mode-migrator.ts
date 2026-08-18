@@ -62,14 +62,14 @@ export function detectMigrations(
 
     const migration: SkillMigration = {
       id: newSkill.id,
-      oldSource: oldSkill.source,
-      newSource: newSkill.source,
+      oldSource: oldSkill.origin,
+      newSource: newSkill.origin,
       oldScope: oldSkill.scope,
       newScope: newSkill.scope,
     };
 
-    const wasEject = oldSkill.source === EJECT_SOURCE;
-    const isEject = newSkill.source === EJECT_SOURCE;
+    const wasEject = oldSkill.origin === EJECT_SOURCE;
+    const isEject = newSkill.origin === EJECT_SOURCE;
 
     if (wasEject && !isEject) {
       toPlugin.push(migration);
@@ -157,9 +157,9 @@ export async function executeMigration(
     // copy and leaves config entries claiming a plugin that was never installed.
     if (!sourceResult.marketplace) {
       throw new Error(
-        `Cannot install skills as plugins: marketplace could not be resolved from source ` +
+        `Cannot install skills as plugins: marketplace could not be resolved from ` +
           `'${sourceResult.sourceConfig.source}'. Plugin install mode requires a marketplace — ` +
-          `fix the source or switch the affected skills to eject mode.`,
+          `fix the marketplace or switch the affected skills to eject mode.`,
       );
     }
 

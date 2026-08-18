@@ -2,6 +2,7 @@ import os from "os";
 import path from "path";
 import type { ProjectConfig, SkillId } from "../../types";
 import type { SkillConfig } from "../../types/config";
+import type { AuthoritativeScope } from "../configuration/config-merger";
 import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND } from "../../consts";
 import { ensureDir, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
@@ -178,6 +179,14 @@ export type WizardWriteArgs = {
   projectDir: string;
   projectConfigPath: string;
   projectInstallationExists: boolean;
+  /**
+   * How much of what it can see this session owns, from `mergeConfigs`' own vocabulary.
+   *
+   * Read by the PROJECT branch only, and only to decide whether the global config is made to
+   * MATCH this session or merely absorb it. The home branch writes the whole global config from
+   * `finalConfig` either way, and `undefined` (init) keeps the additive default.
+   */
+  authoritativeScope?: AuthoritativeScope;
 };
 
 /**
@@ -229,6 +238,7 @@ async function writeFromProjectContext(
     globalConfig,
     existingGlobal?.config,
     projectDir,
+    args.authoritativeScope,
   );
   const effectiveGlobalConfig = effective.config;
 
@@ -374,19 +384,19 @@ export type GlobalMutation =
   | { kind: "deregister-project"; projectDir: string }
   | { kind: "set-source"; source: string; fallbackName: string };
 
-/** The migrated `source` for an active-global entry, or the entry unchanged. */
+/** The migrated `origin` for an active-global entry, or the entry unchanged. */
 function withMigratedSource(
   skill: SkillConfig,
   migratedSources: ReadonlyMap<SkillId, string>,
 ): SkillConfig {
   if (!isActiveAt(skill, "global")) return skill;
-  const source = migratedSources.get(skill.id);
-  if (source === undefined || source === skill.source) return skill;
-  return { ...skill, source };
+  const origin = migratedSources.get(skill.id);
+  if (origin === undefined || origin === skill.origin) return skill;
+  return { ...skill, origin };
 }
 
 /**
- * Rewrites `source` on exactly the active-global entries listed in `migratedSources`,
+ * Rewrites `origin` on exactly the active-global entries listed in `migratedSources`,
  * returning every other entry — including global entries this session did not migrate —
  * identical by reference.
  */
@@ -437,7 +447,7 @@ function applyMutation(
       return filtered.length === projects.length ? null : { ...current, projects: filtered };
     }
     case "set-source":
-      return { ...current, source: mutation.source };
+      return { ...current, marketplace: mutation.source };
     default: {
       const _exhaustive: never = mutation;
       return _exhaustive;

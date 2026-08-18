@@ -441,7 +441,7 @@ describe("config-gate enforcement", () => {
 
     it("writeProjectPartial throws", async () => {
       await expect(
-        writeProjectPartial(tempHome, { source: "github:x/y" }, { fallbackName: "home" }),
+        writeProjectPartial(tempHome, { marketplace: "github:x/y" }, { fallbackName: "home" }),
       ).rejects.toThrow("may only be written through config-gate");
     });
 

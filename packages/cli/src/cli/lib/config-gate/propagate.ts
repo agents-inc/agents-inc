@@ -14,6 +14,7 @@ import type {
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import { getProjectConfigPath } from "../installation/install-base-dir";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
+import { mergeConfigs, type AuthoritativeScope } from "../configuration/config-merger";
 import {
   activeProjectAgentNames,
   isActiveAt,
@@ -160,10 +161,10 @@ export function mergeGlobalConfigs(
     ...new Set([...(existing.selectedDomains ?? []), ...(incoming.selectedDomains ?? [])]),
   ];
 
-  // Source identity (`marketplace`, `source`) travels on the global partition of
+  // Marketplace identity (`marketplace`, `marketplaceName`) travels on the global partition of
   // `splitConfigByScope` but was previously lost here, leaving the global config with no
-  // record of where its plugins came from. `uninstall` reads `config.marketplace` to build
-  // the `<id>@<marketplace>` registry key (getCliInstalledPluginKeys) — without it a global
+  // record of where its plugins came from. `uninstall` reads `config.marketplaceName` to build
+  // the `<id>@<marketplace name>` registry key (getCliInstalledPluginKeys) — without it a global
   // uninstall silently owns nothing and leaves registered plugins behind.
   //
   // Precedence is FILL-ONLY: existing wins, incoming is used solely when the global config
@@ -173,13 +174,13 @@ export function mergeGlobalConfigs(
   // recorded orphans the other's registry key. Repointing is therefore never a strict
   // improvement, and doing it from a project context would silently rewrite global state on
   // behalf of every other registered project (commit 403df46). This also matches
-  // `mergeConfigs`, which preserves `existingConfig.marketplace` on the home-root install
-  // path. Changing global source identity stays an explicit global-scope operation
+  // `mergeConfigs`, which preserves `existingConfig.marketplaceName` on the home-root install
+  // path. Changing global marketplace identity stays an explicit global-scope operation
   // (`init` run from ~), which writes the global config directly and bypasses this merge.
+  const mergedMarketplaceName = existing.marketplaceName ?? incoming.marketplaceName;
   const mergedMarketplace = existing.marketplace ?? incoming.marketplace;
-  const mergedSource = existing.source ?? incoming.source;
 
-  // Newly-filled source identity must mark the merge dirty: `needsGlobalWrite` is gated on
+  // Newly-filled marketplace identity must mark the merge dirty: `needsGlobalWrite` is gated on
   // this flag, so a run whose only delta is the now-known marketplace would otherwise skip
   // the global write entirely and drop the field again.
   const changed =
@@ -187,8 +188,8 @@ export function mergeGlobalConfigs(
     newAgents.length > 0 ||
     stackChanged ||
     !isDeepEqual(existing.selectedDomains ?? [], mergedSelectedDomains) ||
-    mergedMarketplace !== existing.marketplace ||
-    mergedSource !== existing.source;
+    mergedMarketplaceName !== existing.marketplaceName ||
+    mergedMarketplace !== existing.marketplace;
 
   return {
     config: {
@@ -197,8 +198,8 @@ export function mergeGlobalConfigs(
       agents: mergedAgents,
       stack: mergedStack,
       selectedDomains: mergedSelectedDomains,
+      ...(mergedMarketplaceName !== undefined && { marketplaceName: mergedMarketplaceName }),
       ...(mergedMarketplace !== undefined && { marketplace: mergedMarketplace }),
-      ...(mergedSource !== undefined && { source: mergedSource }),
     },
     changed,
   };
@@ -784,27 +785,27 @@ export async function pruneGlobalEntriesFromRegisteredProjects(
   return propagateGlobalChangesToProjects(emptiedGlobal, matrix, agents);
 }
 
+/** What one resolution decided: the config to commit, and the two flags that gate the write. */
+type ResolvedGlobalConfig = { config: ProjectConfig; changed: boolean };
+
 /**
- * Resolves the global config a project install should write: merges new
- * global-scoped items into the existing global config (existing items are
- * never removed during project init) and registers this project's path.
+ * Resolves the global config a project install should write, and registers this project's path.
  * `globalDataChanged` gates propagation; `changed` gates the write itself.
+ *
+ * `authority` is `mergeConfigs`' own word for how much of what it can see the session owns, and
+ * it selects between the two resolutions below. Absent, or `"owned"`, keeps the standing
+ * additive behaviour.
  */
 export async function resolveEffectiveGlobalConfig(
   globalSplit: ProjectConfig,
   existingGlobalConfig: ProjectConfig | undefined,
   projectDir: string,
+  authority?: AuthoritativeScope,
 ): Promise<{ config: ProjectConfig; globalDataChanged: boolean; changed: boolean }> {
-  const hasGlobalItems = globalSplit.skills.length > 0 || globalSplit.agents.length > 0;
-
-  const merged = !hasGlobalItems
-    ? {
-        config: existingGlobalConfig ?? { name: GLOBAL_CONFIG_NAME, skills: [], agents: [] },
-        changed: false,
-      }
-    : existingGlobalConfig
-      ? mergeGlobalConfigs(existingGlobalConfig, globalSplit)
-      : { config: globalSplit, changed: true };
+  const merged =
+    authority === "all"
+      ? matchGlobalToSession(globalSplit, existingGlobalConfig)
+      : addSessionToGlobal(globalSplit, existingGlobalConfig);
 
   const registration = await registerProjectPath(merged.config, projectDir);
   return {
@@ -812,6 +813,60 @@ export async function resolveEffectiveGlobalConfig(
     globalDataChanged: merged.changed,
     changed: merged.changed || registration.changed,
   };
+}
+
+/**
+ * The standing resolution, and the one every caller but `edit --from` gets: the session's global
+ * items are ADDED and nothing is taken away.
+ *
+ * A project install has asked nobody about the machine, so it may not decide for it (commit
+ * 403df46, "never modify global config from project-level operations"). The `hasGlobalItems`
+ * shortcut is part of that: a session carrying nothing global is not a statement that the global
+ * install should be empty.
+ */
+function addSessionToGlobal(
+  globalSplit: ProjectConfig,
+  existingGlobalConfig: ProjectConfig | undefined,
+): ResolvedGlobalConfig {
+  const hasGlobalItems = globalSplit.skills.length > 0 || globalSplit.agents.length > 0;
+  if (!hasGlobalItems) {
+    return {
+      config: existingGlobalConfig ?? { name: GLOBAL_CONFIG_NAME, skills: [], agents: [] },
+      changed: false,
+    };
+  }
+
+  if (!existingGlobalConfig) return { config: globalSplit, changed: true };
+  return mergeGlobalConfigs(existingGlobalConfig, globalSplit);
+}
+
+/**
+ * The resolution for a session that owns every scope it can see: the global config is made to
+ * MATCH it, so a global entry the session left out is REMOVED rather than preserved.
+ *
+ * One caller reaches this — a confirmed `edit --from` — and it is not acting on its own
+ * initiative: it states a whole roster, its plan showed every global removal under its own
+ * heading, named every other registered project the removal reaches, and somebody answered yes.
+ * Nothing else in the CLI may write the global config from a project, and this does not widen
+ * that: the word arrives from the command, not from the shape of the data.
+ *
+ * `mergeConfigs` is what does it rather than a merge of this module's own, because "absent from
+ * the session means deselected" is exactly what `authoritativeScope: "all"` already means at the
+ * home root. It carries the global installation's identity, its stack fallback and its
+ * `projects[]` registry across — a session's split says nothing about who the global
+ * installation is or which projects read it, and the fan-out walks that registry.
+ *
+ * An empty session is a real answer here, so there is no `hasGlobalItems` shortcut: a
+ * configuration that installs nothing globally removes what was.
+ */
+function matchGlobalToSession(
+  globalSplit: ProjectConfig,
+  existingGlobalConfig: ProjectConfig | undefined,
+): ResolvedGlobalConfig {
+  if (!existingGlobalConfig) return { config: globalSplit, changed: true };
+
+  const config = mergeConfigs(globalSplit, existingGlobalConfig, { authoritativeScope: "all" });
+  return { config, changed: !isDeepEqual(config, existingGlobalConfig) };
 }
 
 export function buildConfigTypesBackgroundData(

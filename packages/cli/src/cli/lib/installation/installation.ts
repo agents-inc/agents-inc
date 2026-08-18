@@ -63,8 +63,8 @@ export function declaresNoContent(config: ProjectConfig): boolean {
 /** Derive install mode from skills array at runtime */
 export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
   if (skills.length === 0) return "eject";
-  const hasEject = skills.some((s) => s.source === EJECT_SOURCE);
-  const hasPlugin = skills.some((s) => s.source !== EJECT_SOURCE);
+  const hasEject = skills.some((s) => s.origin === EJECT_SOURCE);
+  const hasPlugin = skills.some((s) => s.origin !== EJECT_SOURCE);
   if (hasEject && hasPlugin) return "mixed";
   return hasEject ? "eject" : "plugin";
 }

@@ -61,8 +61,8 @@ export type EjectInstallOptions = {
   sourceResult: SourceLoadResult;
   /** Absolute path to the project root where `.claude/` artifacts will be written */
   projectDir: string;
-  /** Optional `--source` flag override (e.g., "github:org/repo"). Takes precedence over
-   *  source from config when writing the `source` field in config.ts */
+  /** Optional `--marketplace` flag override (e.g., "github:org/repo"). Takes precedence over
+   *  the marketplace from config when writing the `marketplace` field in config.ts */
   sourceFlag?: string;
 };
 
@@ -376,13 +376,13 @@ export function setConfigMetadata(
   }
 
   if (sourceFlag) {
-    result.source = sourceFlag;
+    result.marketplace = sourceFlag;
   } else if (sourceResult.sourceConfig.source) {
-    result.source = sourceResult.sourceConfig.source;
+    result.marketplace = sourceResult.sourceConfig.source;
   }
 
   if (sourceResult.marketplace) {
-    result.marketplace = sourceResult.marketplace;
+    result.marketplaceName = sourceResult.marketplace;
   }
 
   return result;
@@ -422,11 +422,11 @@ export function buildCompileAgents(
     config.skills.filter((s) => isActiveAt(s, "global")).map((s) => s.id),
   );
 
-  // D-217: attach per-skill `source` to each SkillReference so the compiler can
+  // D-217: attach each skill's `origin` to its SkillReference so the compiler can
   // decide between `${id}:${id}` (plugin) and bare id (eject) on a per-skill
   // basis. Missing entries are intentional — user-authored local skills have no
-  // SkillConfig and legitimately carry no source.
-  const sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.source]));
+  // SkillConfig and legitimately carry no origin.
+  const sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.origin]));
 
   const buildAgentCompileEntry = (agentConfig: AgentScopeConfig): CompileAgentConfig => {
     // Model/effort are the agent's own settings, not its skills' — a bare agent with no stack

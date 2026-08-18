@@ -40,11 +40,11 @@ const MARKETPLACE = "test-marketplace";
 /** The global config every case diffs against: one skill, one agent, one project. */
 const BASELINE: ProjectConfig = buildProjectConfig({
   name: "global",
-  skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: MARKETPLACE }),
+  skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: MARKETPLACE }),
   agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
   selectedDomains: ["web"],
   stack: { "web-developer": { "web-framework": [{ id: "web-framework-react", preloaded: true }] } },
-  source: "github:test-org/skills",
+  marketplace: "github:test-org/skills",
   projects: ["/tmp/registered-project"],
 });
 
@@ -60,7 +60,7 @@ describe("classify", () => {
         ...BASELINE,
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: EJECT_SOURCE,
+          origin: EJECT_SOURCE,
         }),
       };
 
@@ -75,7 +75,7 @@ describe("classify", () => {
         ...BASELINE,
         skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
           scope: "global",
-          source: MARKETPLACE,
+          origin: MARKETPLACE,
         }),
       };
 
@@ -131,16 +131,18 @@ describe("classify", () => {
 
   describe("T2 — config-half propagation only", () => {
     it("classifies a source-scalar-only change as T2 (propagate config, no types, no recompile)", () => {
-      const next: ProjectConfig = { ...BASELINE, source: "github:other-org/skills" };
+      const next: ProjectConfig = { ...BASELINE, marketplace: "github:other-org/skills" };
 
-      expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual(["source"]);
+      expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual(["marketplace"]);
       expect(tierOf(next)).toBe("T2");
     });
 
-    it("classifies a marketplace-scalar-only change as T2 (propagate config, no types, no recompile)", () => {
-      const next: ProjectConfig = { ...BASELINE, marketplace: MARKETPLACE };
+    it("classifies a marketplace-name-scalar-only change as T2 (propagate config, no types, no recompile)", () => {
+      const next: ProjectConfig = { ...BASELINE, marketplaceName: MARKETPLACE };
 
-      expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual(["marketplace"]);
+      expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual([
+        "marketplaceName",
+      ]);
       expect(tierOf(next)).toBe("T2");
     });
 
