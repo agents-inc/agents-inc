@@ -3,6 +3,7 @@ import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
 import { DOMAIN_REACH, DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
 
 const { web } = DOMAINS
@@ -49,6 +50,8 @@ const CATALOG_SOURCE_URL =
 const [ADDED] = SKILL_INDEX.skills
 const ADDED_NAME = ADDED!.name
 const ADDED_SOURCE_URL = `https://github.com/${ADDED!.repo}/tree/HEAD/${ADDED!.path}`
+// Where the intake files it, as the dropdown spells it.
+const ADDED_CATEGORY = `${web.toLowerCase()} · ${CATEGORY.toLowerCase()}`
 
 test.describe("skill options panel", () => {
   test("the ellipsis opens the panel", async ({ configure }) => {
@@ -277,8 +280,10 @@ test.describe("source code link", () => {
     page,
   }) => {
     await stubSkillIndex(page)
+    await stubSkillContents(page)
     await configure.addSkillButton.click()
     await configure.addSkillDialog.stage(ADDED_NAME)
+    await configure.addSkillDialog.categorise(ADDED_NAME, ADDED_CATEGORY)
     await configure.addSkillDialog.confirm()
 
     const added = configure.skill(ADDED_NAME)

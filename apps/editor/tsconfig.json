@@ -13,18 +13,10 @@
   ],
   "compilerOptions": {
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@workspace/ui/*": [
-        "../../packages/ui/src/*"
-      ],
-      "@workspace/matrix": [
-        "../../packages/matrix/src/index.ts"
-      ],
-      "@workspace/matrix/*": [
-        "../../packages/matrix/src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@workspace/ui/*": ["../../packages/ui/src/*"],
+      "@workspace/matrix": ["../../packages/matrix/src/index.ts"],
+      "@workspace/matrix/*": ["../../packages/matrix/src/*"]
     }
   }
 }

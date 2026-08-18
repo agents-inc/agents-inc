@@ -1,10 +1,31 @@
 import type { Locator, Page } from "@playwright/test"
 
-import { AddSkillDialog, InstallDialog, StackSwitchDialog } from "./dialogs"
+import {
+  AddSkillDialog,
+  InstallDialog,
+  MarketplaceDialog,
+  MarketplaceSwitchDialog,
+  SkillContentsDialog,
+  StackSwitchDialog,
+} from "./dialogs"
 import { RosterPanel } from "./roster-panel"
 import { SkillCell } from "./skill-cell"
 
 const CONFIGURE_URL = "/"
+
+const MARKETPLACE_STORAGE_KEY = "agents-inc:marketplace:v1"
+
+/**
+ * What the marketplace slot holds, keyed by marketplace.
+ *
+ * `current` is which catalogue this browser CHOSE — a third thing again from
+ * which one is loaded in the tab — and `saved` is every marketplace it has
+ * loaded against the token that reached it, empty for one that needed none.
+ */
+export type SavedMarketplaces = {
+  current: string
+  saved: Record<string, string>
+}
 
 // Every skill cell on the screen. The filter bar sits outside every section,
 // so nothing on the bar can ever match this.
@@ -32,22 +53,120 @@ export class ConfigurePage {
   readonly searchInput: Locator
   readonly addSkillButton: Locator
   readonly emptyState: Locator
+  // The floating button that opens the marketplace dialog. Floating because it
+  // belongs to the whole page rather than to any section of it — which
+  // marketplace the grid runs on is a statement about everything on screen.
+  readonly marketplaceButton: Locator
+  // What an arriving share link had to say for itself, above the grid. Scoped
+  // to `main` because a dialog's own status line is an alert too, and a parked
+  // import shows both at once.
+  readonly importNotice: Locator
 
   readonly roster: RosterPanel
   readonly installDialog: InstallDialog
   readonly addSkillDialog: AddSkillDialog
+  readonly skillContentsDialog: SkillContentsDialog
+  readonly marketplaceDialog: MarketplaceDialog
+  readonly marketplaceSwitchDialog: MarketplaceSwitchDialog
   readonly stackSwitchDialog: StackSwitchDialog
+  // The saved marketplaces the visitor is not currently on, offered beside the
+  // floating button. Absent entirely until there is more than one to choose
+  // between, because a switcher with one entry is furniture.
+  readonly marketplaceSwitcher: Locator
 
   constructor(readonly page: Page) {
     this.stacks = page.getByRole("group", { name: "Stacks" })
     this.searchInput = page.getByLabel("Search skills")
     this.addSkillButton = page.getByRole("button", { name: "＋ Add skill" })
     this.emptyState = page.getByText("No skills match this filter.")
+    this.marketplaceButton = page.getByRole("button", { name: "Marketplace" })
+    this.importNotice = page.locator("main").getByRole("alert")
 
     this.roster = new RosterPanel(page)
     this.installDialog = new InstallDialog(page)
     this.addSkillDialog = new AddSkillDialog(page)
+    this.skillContentsDialog = new SkillContentsDialog(page)
+    this.marketplaceDialog = new MarketplaceDialog(page)
+    this.marketplaceSwitchDialog = new MarketplaceSwitchDialog(page)
     this.stackSwitchDialog = new StackSwitchDialog(page)
+    this.marketplaceSwitcher = page.getByRole("group", {
+      name: "Saved marketplaces",
+    })
+  }
+
+  // What the browser kept, read back rather than inferred from the screen: the
+  // dialog's two fields survive a reload only if they really reached storage.
+  //
+  // PARSED rather than matched as a string, and that is not tidying. A blob
+  // that files the token under the wrong marketplace — or names one marketplace
+  // and holds another's credential — still CONTAINS both strings, so
+  // `toContain` passes on exactly the reshape this slot exists to make
+  // impossible. What is asserted has to be the shape.
+  async savedMarketplaces(): Promise<SavedMarketplaces | null> {
+    const raw = await this.page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      MARKETPLACE_STORAGE_KEY
+    )
+    if (raw === null) return null
+
+    return (JSON.parse(raw) as { state: SavedMarketplaces }).state
+  }
+
+  /** Which catalogue this browser chose; `null` when it has saved none. */
+  async chosenMarketplace() {
+    return (await this.savedMarketplaces())?.current ?? null
+  }
+
+  /**
+   * The token filed under one marketplace, and `null` when none is.
+   *
+   * The distinction is the point: `""` is a marketplace saved that needed no
+   * token, and `null` is one this browser never saved at all.
+   */
+  async savedToken(marketplace: string) {
+    return (await this.savedMarketplaces())?.saved[marketplace] ?? null
+  }
+
+  /** Every marketplace this browser saved, which is what the switcher lists. */
+  async savedMarketplaceRefs() {
+    const slot = await this.savedMarketplaces()
+    return slot === null ? [] : Object.keys(slot.saved)
+  }
+
+  /** Seeds the slot as the single-slot release wrote it, version and all. */
+  async seedLegacySlot(marketplace: string, token: string) {
+    await this.page.evaluate(
+      ([key, blob]) => window.localStorage.setItem(key!, blob!),
+      [
+        MARKETPLACE_STORAGE_KEY,
+        JSON.stringify({ state: { marketplace, token }, version: 0 }),
+      ]
+    )
+  }
+
+  /** Seeds the slot in the shape this release writes. */
+  async seedSavedMarketplaces(slot: SavedMarketplaces) {
+    await this.page.evaluate(
+      ([key, blob]) => window.localStorage.setItem(key!, blob!),
+      [MARKETPLACE_STORAGE_KEY, JSON.stringify({ state: slot, version: 1 })]
+    )
+  }
+
+  /** One switcher entry. Asking opens the confirmation, never the switch. */
+  switchTo(marketplace: string): Locator {
+    return this.marketplaceSwitcher.getByRole("button", {
+      name: `Switch to ${marketplace}`,
+    })
+  }
+
+  // The visitor's own saved selection, read the same way. What is on screen and
+  // what is in the slot are two different claims wherever a configuration that
+  // is not this browser's is showing — a shared link, or a saved marketplace
+  // still waiting on its token — so the slot has to be asked directly.
+  async storedConfig() {
+    return this.page.evaluate(
+      () => window.localStorage.getItem("agents-inc:config:v1") ?? ""
+    )
   }
 
   async goto() {

@@ -10,7 +10,7 @@ import {
   stubGetConfigMissing,
 } from "../support/sharing"
 
-const SEED_VERSION = 3
+const SEED_VERSION = 5
 const REACT_ID = "web-framework-react"
 
 test.describe("sharing a configuration", () => {
@@ -96,7 +96,7 @@ test.describe("sharing a configuration", () => {
 })
 
 test.describe("opening a share link", () => {
-  test("loads the shared config and strips the param", async ({
+  test("loads the shared config and keeps the param", async ({
     configure,
     page,
   }) => {
@@ -110,8 +110,10 @@ test.describe("opening a share link", () => {
       EXCLUSIVE_CATEGORY.first
     )
     await expect(react.root).toHaveAttribute("aria-pressed", "true")
-    // Consumed once: a reload must show the user's edits, not the snapshot.
-    await expect(page).toHaveURL("/")
+    // The address of a shared configuration rather than a one-shot command
+    // (EDITOR-37): stripping it is what left a reload with no idea it had ever
+    // been a shared link. `shared-link.spec.ts` covers what the address buys.
+    await expect(page).toHaveURL(`/?fromId=${STORED_ID}`)
   })
 
   test("carries the shared load states through to the roster", async ({
@@ -178,13 +180,17 @@ test.describe("opening a share link", () => {
     await page.goto(`/?fromId=${DEAD_LINK_ID}`)
 
     await expect(page.getByRole("alert")).toContainText("points to nothing")
-    // Vue was selected before following the link and must still be.
+    // Vue was selected before following the link and must still be: an id that
+    // names nothing has no shared state to govern, so this IS the visitor's own
+    // editor and it opens as one.
     const vue = configure.skillIn(
       DOMAINS.web,
       EXCLUSIVE_CATEGORY.name,
       EXCLUSIVE_CATEGORY.second
     )
     await expect(vue.root).toHaveAttribute("aria-pressed", "true")
-    await expect(page).toHaveURL("/")
+    // Kept, like every other id: retrying a worker that was briefly down is
+    // then a reload rather than a lost link.
+    await expect(page).toHaveURL(`/?fromId=${DEAD_LINK_ID}`)
   })
 })

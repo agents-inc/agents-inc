@@ -13,7 +13,7 @@ const REVIEWER = "reviewer"
 // surface for it, so `--from` wrote `project` unconditionally. The field is
 // additive-optional, but the CLI's vendored zod object strips what it does not
 // know — so the version is what says the field is really there.
-const SEED_VERSION = 3
+const SEED_VERSION = 5
 
 // Scope is a decision about the agent, exactly as model and effort are, and it
 // sits with them on the agent's own row.

@@ -1,6 +1,9 @@
 import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
+import { MAX_EXTERNAL_SKILL_BYTES } from "@workspace/matrix/seed"
 
 import { expect, test } from "../fixtures"
+import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { stubSkillContents } from "../support/skill-contents"
 import {
   stubSkillIndex,
   stubSkillIndexHidingFreshness,
@@ -11,6 +14,20 @@ import {
 const [FIRST, SECOND] = SKILL_INDEX.skills
 const FIRST_NAME = FIRST!.name
 const SECOND_NAME = SECOND!.name
+
+// The one indexed skill nothing can carry — 1.1 MB of XML schemas under a
+// SKILL.md. Found by weight rather than named, so it stays the right entry if
+// the fixture is re-ordered.
+const OVERSIZED = SKILL_INDEX.skills.find(
+  (entry) => entry.bytes > MAX_EXTERNAL_SKILL_BYTES
+)!
+const OVERSIZED_NAME = OVERSIZED.name
+
+// Where a staged skill is filed, as the dropdown spells it — domain-qualified,
+// because a bare category name appears under more than one domain. Any real
+// category would do; this one is named once in `support/catalog.ts` and already
+// carries the catalogue drift check.
+const CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLowerCase()}`
 
 // A term no entry's name or description holds, so the filter empties the list.
 const UNMATCHED_TERM = "no-such-skill-anywhere"
@@ -101,11 +118,14 @@ test.describe("add skill dialog", () => {
 
   test("confirming adds the skills to the grid with an added tag", async ({
     configure,
+    page,
   }) => {
+    await stubSkillContents(page)
+
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
     await dialog.stage(FIRST_NAME)
-    await dialog.stage(SECOND_NAME)
+    await dialog.categorise(FIRST_NAME, CATEGORY)
     await dialog.confirm()
 
     await expect(dialog.root).toBeHidden()
@@ -113,28 +133,18 @@ test.describe("add skill dialog", () => {
     const added = configure.skill(FIRST_NAME)
     await expect(added.root).toBeVisible()
     await expect(added.root).toContainText("added")
-    await expect(configure.skill(SECOND_NAME).root).toBeVisible()
-  })
-
-  test("unmatched skills land in their own Uncategorized section", async ({
-    configure,
-  }) => {
-    const dialog = configure.addSkillDialog
-    await configure.addSkillButton.click()
-    await dialog.stage(FIRST_NAME)
-    await expect(dialog.footerNote).toContainText("Uncategorized")
-    await dialog.confirm()
-
-    await expect(configure.domain("Added")).toBeVisible()
-    await expect(configure.category("Added", "Uncategorized")).toBeVisible()
   })
 
   test("an added skill can be selected like any other", async ({
     configure,
+    page,
   }) => {
+    await stubSkillContents(page)
+
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
     await dialog.stage(FIRST_NAME)
+    await dialog.categorise(FIRST_NAME, CATEGORY)
     await dialog.confirm()
 
     const added = configure.skill(FIRST_NAME)
@@ -142,6 +152,59 @@ test.describe("add skill dialog", () => {
 
     await expect(added.root).toHaveAttribute("aria-pressed", "true")
     await expect(configure.roster.installButton).toContainText("1 skill")
+  })
+
+  // EDITOR-46. The index carries each skill's weight, so a skill past the
+  // per-skill cap is refused where the visitor first sees it — not after
+  // search, stage, categorise, confirm AND a full GitHub tree listing.
+  test("a skill too large to carry says so on its own row", async ({
+    configure,
+  }) => {
+    await configure.addSkillButton.click()
+
+    const row = configure.addSkillDialog.result(OVERSIZED_NAME)
+    await expect(row).toContainText(/past the .* a shared link may carry/i)
+    // The weight itself, so the number is not a mystery — the same words the
+    // late refusal uses, arriving before anything has been staged.
+    await expect(row).toContainText(/KB/)
+  })
+
+  test("a skill too large to carry offers no way to stage it", async ({
+    configure,
+  }) => {
+    await configure.addSkillButton.click()
+
+    const row = configure.addSkillDialog.result(OVERSIZED_NAME)
+    await expect(row).toHaveAttribute("aria-disabled", "true")
+    await expect(row).not.toContainText(/stage/i)
+  })
+
+  test("clicking a skill too large to carry stages nothing", async ({
+    configure,
+  }) => {
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+
+    await dialog.stage(OVERSIZED_NAME)
+
+    await expect(dialog.footerNote).toContainText("0 staged")
+    await expect(dialog.stagedRow(OVERSIZED_NAME)).toBeHidden()
+    await expect(dialog.confirmButton).toBeDisabled()
+  })
+
+  // The mark is a refusal for one row and not a mood for the pane: everything
+  // inside the cap still stages exactly as it did.
+  test("a skill within the cap carries no refusal and still stages", async ({
+    configure,
+  }) => {
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+
+    const row = dialog.result(FIRST_NAME)
+    await expect(row).not.toContainText(/a shared link may carry/i)
+    await dialog.stage(FIRST_NAME)
+
+    await expect(dialog.footerNote).toContainText("1 staged")
   })
 
   test("cancelling adds nothing", async ({ configure }) => {

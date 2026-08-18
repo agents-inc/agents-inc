@@ -8,6 +8,7 @@ import {
   STACKS,
   STACK_MEMBER_SKILL,
 } from "../support/catalog"
+import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
 
 const { web } = DOMAINS
@@ -15,6 +16,8 @@ const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
 const CONFIG_KEY = "agents-inc:config:v1"
 const [FIRST] = SKILL_INDEX.skills
 const ADDED_SKILL = FIRST!.name
+// Where the intake files it, as the dropdown spells it.
+const ADDED_CATEGORY = `${web.toLowerCase()} · ${CATEGORY.toLowerCase()}`
 
 // A readable configuration saved under a version the app has moved past —
 // zustand's own envelope, so the store reaches `migrate` rather than failing
@@ -162,20 +165,25 @@ test.describe("persistence", () => {
   })
 })
 
-// Added skills are session-only by design: they have no catalogue entry, so a
-// selection referencing one must not survive into a session that cannot
-// describe or install it.
-test.describe("session-added skills are not persisted", () => {
-  test.beforeEach(async ({ page }) => {
+// An added skill is a real catalogue entry, but its DIRECTORY is not in
+// localStorage — it is resolved at add time and travels in a payload. So a
+// selection naming one must not survive into a session that has the id and none
+// of the bytes, and could therefore neither describe nor install it. Saving the
+// stack is the way to carry one across a reload: that slot holds a payload, and
+// a payload carries the content.
+test.describe("added skills do not survive a reload on their own", () => {
+  test.beforeEach(async ({ configure, page }) => {
     await stubSkillIndex(page)
+    await stubSkillContents(page)
+
+    await configure.addSkillButton.click()
+    await configure.addSkillDialog.stage(ADDED_SKILL)
+    await configure.addSkillDialog.categorise(ADDED_SKILL, ADDED_CATEGORY)
+    await configure.addSkillDialog.confirm()
+    await configure.skill(ADDED_SKILL).toggle()
   })
 
   test("an added skill disappears on reload", async ({ configure, page }) => {
-    await configure.addSkillButton.click()
-    await configure.addSkillDialog.stage(ADDED_SKILL)
-    await configure.addSkillDialog.confirm()
-    await configure.skill(ADDED_SKILL).toggle()
-
     await expect(configure.skill(ADDED_SKILL).root).toBeVisible()
 
     await page.reload()
@@ -185,17 +193,13 @@ test.describe("session-added skills are not persisted", () => {
   })
 
   test("its selection never reaches storage", async ({ configure, page }) => {
-    await configure.addSkillButton.click()
-    await configure.addSkillDialog.stage(ADDED_SKILL)
-    await configure.addSkillDialog.confirm()
-    await configure.skill(ADDED_SKILL).toggle()
-
     const stored = await page.evaluate(
       (key) => localStorage.getItem(key) ?? "",
       CONFIG_KEY
     )
-    // The repository, not the skill name: no catalogue id could ever contain
-    // an `owner/name`, so this cannot pass by the id simply having moved.
-    expect(stored).not.toContain(FIRST!.repo)
+    // The `external-` namespace, which no catalogue id can wear: Journey 26
+    // reserves it, so this cannot pass by the id simply having moved.
+    expect(stored).not.toContain("external-")
+    expect(configure.skill(ADDED_SKILL).root).toBeDefined()
   })
 })

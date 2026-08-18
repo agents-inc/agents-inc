@@ -5,10 +5,17 @@ import {
   STACKS,
   STACK_MEMBER_SKILL,
 } from "../support/catalog"
+import { stubMarketplaceCatalog } from "../support/marketplace"
 import { STORED_ID, stubCreateConfig } from "../support/sharing"
+
+import type { ConfigurePage } from "../pages/configure-page"
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
+
+// The fixture marketplace, and one skill only it ships — so "the dialog names
+// the loaded marketplace" is observable rather than a matter of counting.
+const ACME = { ref: "acme/skills", skill: "Acme Widgets" } as const
 
 test.describe("install dialog", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
@@ -155,4 +162,77 @@ test.describe("install dialog counts", () => {
 
     await expect(configure.installDialog.skillsPane).toContainText("Project")
   })
+})
+
+// EDITOR-44. The header used to write the literal `marketplace agents-inc`,
+// so on a loaded marketplace this dialog named a repository the CLI is not
+// about to install from — while the floating button behind it named the right
+// one and the payload the command carries stamped the right one too.
+//
+// It names the SEATED marketplace, and that is the one of the three notions
+// this surface has any business reading: the dialog describes what `--from`
+// will install, `toSeedPayload` stamps the payload with `activeMarketplace()`,
+// and a shared address can seat a marketplace this browser never chose.
+test.describe("install dialog on a loaded marketplace", () => {
+  test.beforeEach(async ({ page }) => {
+    await stubCreateConfig(page)
+    await stubMarketplaceCatalog(page)
+  })
+
+  const load = async (configure: ConfigurePage) => {
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(ACME.ref)
+    await configure.marketplaceDialog.load()
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+  }
+
+  test("names the marketplace the grid is running on", async ({
+    configure,
+  }) => {
+    await load(configure)
+    await configure.skill(ACME.skill).toggle()
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.header).toContainText(
+      `marketplace ${ACME.ref}`
+    )
+  })
+
+  test("does not name the public marketplace it is not installing from", async ({
+    configure,
+  }) => {
+    await load(configure)
+    await configure.skill(ACME.skill).toggle()
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.header).not.toContainText("agents-inc")
+  })
+
+  // The button is the only other place on screen that answers "which catalogue
+  // am I looking at?", and the two disagreeing is the whole of this row. Read
+  // before the dialog opens, because a modal makes everything under it
+  // `aria-hidden` and the button is then unreachable by role.
+  test("agrees with the floating button it opens over", async ({
+    configure,
+  }) => {
+    await load(configure)
+    await expect(configure.marketplaceButton).toContainText(ACME.ref)
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.header).toContainText(ACME.ref)
+  })
+})
+
+// The public catalogue is a marketplace like any other, and this is its name.
+test("the install dialog names the public marketplace when none is loaded", async ({
+  configure,
+  page,
+}) => {
+  await stubCreateConfig(page)
+  await configure.roster.installButton.click()
+
+  await expect(configure.installDialog.header).toContainText(
+    "marketplace agents-inc/skills"
+  )
 })

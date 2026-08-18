@@ -23,12 +23,30 @@ export class SkillCell {
     return this.root.getByRole("button", { name: /^Install mode: / })
   }
 
+  // The same badge whatever it renders as: a button on a catalogue skill, and a
+  // plain statement on an eject-only one, which has no plugin form to flip to.
+  // `installBadge` asks for the CONTROL and finds nothing on the second kind;
+  // this asks for what a pointer lands on, which is one target either way.
+  get installBadgeTarget(): Locator {
+    return this.root.locator('[aria-label^="Install mode: "]')
+  }
+
   get scopeBadge(): Locator {
     return this.root.getByRole("button", { name: /^Scope: / })
   }
 
   get optionsButton(): Locator {
     return this.root.getByRole("button", { name: `Options for ${this.name}` })
+  }
+
+  // The `added` tag, which is a button only on a skill that came from outside
+  // the catalogue: the provenance marker is the way into what it holds.
+  get contentsButton(): Locator {
+    return this.root.getByRole("button", { name: `Contents of ${this.name}` })
+  }
+
+  async openContents() {
+    await this.contentsButton.click()
   }
 
   // The ••• is revealed by opacity rather than mounted on hover, so that is
