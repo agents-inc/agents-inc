@@ -14,6 +14,13 @@ coverage/
 # Compiled output
 *.js.map
 
+# Emitted by scripts/handrun.mjs, which bundles the hand-run and its whole
+# dependency tree with esbuild. Mostly vendored third-party source, so
+# reformatting it is churn against code nobody here can edit — and its own
+# style is not this package's. Gitignored at the repository root; the ESLint
+# globalIgnores carries the matching entry.
+e2e/helpers/*.gen.mjs
+
 # Backup files
 .claude_backup/
 
