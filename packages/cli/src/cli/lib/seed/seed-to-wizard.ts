@@ -188,8 +188,8 @@ export function seedToWizardResult(payload: SeedPayload, matrix: MergedSkillsMat
     skills.push({
       id,
       scope: entry.scope,
-      // "eject" is a source in its own right; anything else names the marketplace it came from.
-      source: entry.install === "eject" ? "eject" : sourceForSkill(skill),
+      // "eject" is an origin in its own right; anything else names the marketplace it came from.
+      origin: entry.install === "eject" ? "eject" : sourceForSkill(skill),
     });
 
     // Only assignments on skills that survived — an agent should not be switched on by a skill

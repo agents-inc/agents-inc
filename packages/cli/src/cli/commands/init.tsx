@@ -21,6 +21,11 @@ import {
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
 import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
+import {
+  registerExternalSkills,
+  writeExternalSkills,
+  type ExternalSkillInstall,
+} from "../lib/seed/external-skills.js";
 import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import {
@@ -61,9 +66,12 @@ import { type StartupMessage } from "../utils/logger.js";
 import {
   SUCCESS_MESSAGES,
   STATUS_MESSAGES,
+  carriedSkillsWritten,
   globalScopedAgentsHint,
   sharedConfigExistingInstall,
   sharedConfigGlobalInstall,
+  skippedUnknownAgents,
+  skippedUnknownSkills,
 } from "../utils/messages.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -112,12 +120,12 @@ export function formatDashboardText(data: DashboardData): string {
   const lines = [
     DEFAULT_BRANDING.NAME,
     "",
-    `  Skills:  ${data.skillCount} installed`,
-    `  Agents:  ${data.agentCount} compiled`,
-    `  Mode:    ${modeLabel}`,
+    `  Skills:       ${data.skillCount} installed`,
+    `  Agents:       ${data.agentCount} compiled`,
+    `  Mode:         ${modeLabel}`,
   ];
   if (data.source) {
-    lines.push(`  Source:  ${data.source}`);
+    lines.push(`  Marketplace:  ${data.source}`);
   }
   lines.push("");
   lines.push(`  [Edit]  [Compile]  [Doctor]  [List]`);
@@ -201,19 +209,25 @@ export async function runDashboardFlow(
  * two paths growing separate copies of the install sequence.
  */
 /**
- * The source this run was pointed at, as oclif hands it over.
+ * The marketplace this run was pointed at, as oclif hands it over.
  *
- * `source` is a required key holding `string | undefined` rather than `source?: string`
- * because that is what oclif produces: a non-required flag still gets its key written on
- * the parse result, set to `undefined` when it was not passed. Under
+ * `marketplace` is a required key holding `string | undefined` rather than
+ * `marketplace?: string` because that is what oclif produces: a non-required flag still gets
+ * its key written on the parse result, set to `undefined` when it was not passed. Under
  * `exactOptionalPropertyTypes` the two are different types, and `?` would be describing a
  * producer that never omits the key.
  */
-type SourceFlags = { source: string | undefined };
+type SourceFlags = { marketplace: string | undefined };
 
 type Selection = {
   result: WizardResultV2;
   sourceResult: SourceLoadResult;
+  /**
+   * The marketplace this selection was actually loaded from, which the shared spine records in
+   * the written config. Carried on the value because a shared id may name one the command line
+   * did not, and the install has to record where its skills really came from either way.
+   */
+  sourceFlags: SourceFlags;
   /** Whether a person is at the terminal, so the permission notice may wait for them. */
   interactive: boolean;
   /** What to say if the selection turns out to be empty — only the producer knows why it is. */
@@ -233,6 +247,21 @@ function writesGlobalContent(result: WizardResultV2): boolean {
   );
 }
 
+/**
+ * Which marketplace a shared configuration installs from.
+ *
+ * A payload names the one its skills were fetched from, because a skill id carries whose skill it
+ * is and never where that repository lives — so without the ref the load walks on to the default
+ * public catalogue and installs a different repository's skill under the same id.
+ *
+ * `--marketplace` still outranks it: naming one is an instruction about THIS install, while the
+ * payload's ref is a record of where the sharer's came from. A payload that names none leaves the
+ * flag undefined, which puts the load back on the rungs it has always walked.
+ */
+function sharedConfigSourceFlags(flags: SourceFlags, payload: SeedPayload): SourceFlags {
+  return { marketplace: flags.marketplace ?? payload.marketplace };
+}
+
 export default class Init extends BaseCommand {
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
   static description =
@@ -245,14 +274,14 @@ export default class Init extends BaseCommand {
     },
     {
       description: "Initialize from a custom marketplace",
-      command: "<%= config.bin %> <%= command.id %> --source github:org/marketplace",
+      command: "<%= config.bin %> <%= command.id %> --marketplace github:org/marketplace",
     },
   ];
 
   static flags = {
-    source: Flags.string({
-      char: "s",
-      description: "Skills source path or URL",
+    marketplace: Flags.string({
+      char: "m",
+      description: "Skills marketplace path or URL",
       required: false,
     }),
     from: Flags.string({
@@ -303,7 +332,7 @@ export default class Init extends BaseCommand {
     await this.handleInstallation(
       selection.result,
       selection.sourceResult,
-      flags,
+      selection.sourceFlags,
       selection.interactive,
     );
   }
@@ -333,6 +362,7 @@ export default class Init extends BaseCommand {
     return {
       result,
       sourceResult,
+      sourceFlags: flags,
       // A person is already at the terminal, so the permission notice can wait for them.
       interactive: true,
       emptyMessage: "No skills selected",
@@ -372,8 +402,11 @@ export default class Init extends BaseCommand {
    * The `--from <id>` producer: fetch and map, no wizard. Nothing here may assume a TTY — running
    * headless is most of why the flag exists.
    *
-   * It is also greenfield-only, which is what the two refusals are: a shared configuration is
-   * installed whole, so anything it would have to install over has to be uninstalled first.
+   * It is also greenfield-only, which is what two of the three refusals are: a shared
+   * configuration is installed whole, so anything it would have to install over has to be
+   * uninstalled first. The third is about the LOCATION rather than what is already in it — a
+   * global installation holds only global-scoped content, and this is the one producer that never
+   * asked. All three fire before anything is written.
    */
   private async selectionFromSharedConfig(
     id: string,
@@ -388,26 +421,36 @@ export default class Init extends BaseCommand {
       this.error(fetched.error, { exit: EXIT_CODES.ERROR });
     }
 
-    const { sourceResult } = await this.loadSourceOrFail(flags);
+    const sourceFlags = sharedConfigSourceFlags(flags, fetched.payload);
+    const { sourceResult } = await this.loadSourceOrFail(sourceFlags);
+    // Before the decode, because a skill the payload CARRIES answers to no catalogue: unseated,
+    // its id is skipped like any other unknown one and its content is never read.
+    const carriedSkills = this.registerExternalSkillsOrFail(
+      fetched.payload,
+      sourceResult.matrix,
+      projectDir,
+    );
     const { result, skippedSkillIds, skippedAgentNames } = this.decodeSeedOrFail(
       fetched.payload,
       sourceResult.matrix,
     );
 
+    // The location refusal is `BaseCommand`'s, because `edit --from` reaches the same
+    // contradiction through the other door and an invariant enforced on one producer is enforced
+    // nowhere. It runs before {@link refuseBlockingGlobalInstall} because it needs no filesystem
+    // probe to answer: where the install root is, and what the payload said, is all of it.
+    this.refuseProjectScopedContentAtHome(result, projectDir);
     await this.refuseBlockingGlobalInstall(result);
 
+    // After the refusals and before the install: every refusal on this path fires with nothing
+    // written, and the copy step that follows finds these skills already where they belong.
+    await this.writeCarriedSkills(carriedSkills);
+
     // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
-    // one moment the user can tell whether what they shared is what they are getting.
-    if (skippedSkillIds.length > 0) {
-      this.warn(
-        `Skipped ${skippedSkillIds.length} skill(s) this catalog does not know: ${skippedSkillIds.join(", ")}`,
-      );
-    }
-    if (skippedAgentNames.length > 0) {
-      this.warn(
-        `Skipped ${skippedAgentNames.length} unknown sub-agent(s): ${skippedAgentNames.join(", ")}`,
-      );
-    }
+    // one moment the user can tell whether what they shared is what they are getting. Worded once,
+    // in `messages.ts`, because `edit --from` reports the same skips about the same wire.
+    if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
+    if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
 
     if (result.skills.length > 0) {
       this.log(
@@ -418,6 +461,7 @@ export default class Init extends BaseCommand {
     return {
       result,
       sourceResult,
+      sourceFlags,
       interactive: false,
       emptyMessage: `Configuration '${id}' contains no skills this catalog can install.`,
     };
@@ -470,6 +514,35 @@ export default class Init extends BaseCommand {
     }
   }
 
+  /**
+   * Seats the catalogue entries the payload carries with it, or refuses the run.
+   *
+   * The refusal is `registerExternalSkills`' own — a carried skill asked for as a plugin, which
+   * no marketplace serves — and is reported with this command's exit code for the same reason the
+   * decode's is.
+   */
+  private registerExternalSkillsOrFail(
+    payload: SeedPayload,
+    matrix: MergedSkillsMatrix,
+    projectDir: string,
+  ): ExternalSkillInstall[] {
+    try {
+      return registerExternalSkills(payload, matrix, projectDir);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  /** Writes the skills the payload brought with it, and says which they were. */
+  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
+    if (carried.length === 0) return;
+
+    await writeExternalSkills(carried);
+    // Named rather than counted, like the skips: these are the entries no catalogue can explain,
+    // so this line is the only place the user learns what arrived with the configuration itself.
+    this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
+  }
+
   private async showDashboardIfInitialized(projectDir: string): Promise<boolean> {
     return runDashboardFlow(projectDir, this.config, "init", (msg) => this.log(msg));
   }
@@ -486,9 +559,9 @@ export default class Init extends BaseCommand {
   ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
     try {
       const loaded = await loadSource({
-        // The one load that may CHOOSE a source rather than read the stored one.
+        // The one load that may CHOOSE a marketplace rather than read the stored one.
         caller: "init",
-        ...(flags.source !== undefined && { sourceFlag: flags.source }),
+        ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
         projectDir: process.cwd(),
         captureStartupMessages: true,
       });
@@ -547,8 +620,8 @@ export default class Init extends BaseCommand {
     const projectDir = process.cwd();
     const activeSkills = result.skills.filter((s) => !s.excluded);
     const installMode = deriveInstallMode(activeSkills);
-    const ejectedSkills = activeSkills.filter((s) => s.source === EJECT_SOURCE);
-    const pluginSkills = activeSkills.filter((s) => s.source !== EJECT_SOURCE);
+    const ejectedSkills = activeSkills.filter((s) => s.origin === EJECT_SOURCE);
+    const pluginSkills = activeSkills.filter((s) => s.origin !== EJECT_SOURCE);
 
     this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
 
@@ -571,7 +644,12 @@ export default class Init extends BaseCommand {
         : null;
 
     if (resolvedMarketplace !== null) {
-      await this.installPluginSkillsReported(pluginSkills, resolvedMarketplace, projectDir);
+      await this.installPluginSkillsReported(
+        pluginSkills,
+        resolvedMarketplace,
+        projectDir,
+        sourceResult.matrix,
+      );
     }
     // The shared install reporter hard-errors on any failure, so reaching here with
     // a resolved marketplace means plugin mode fully succeeded.
@@ -675,7 +753,7 @@ export default class Init extends BaseCommand {
       wizardResult: result,
       sourceResult,
       projectDir: process.cwd(),
-      ...(flags.source !== undefined && { sourceFlag: flags.source }),
+      ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
     });
 
     if (configResult.wasMerged) {
@@ -899,7 +977,7 @@ export async function getDashboardData(projectDir: string): Promise<DashboardDat
   const skillCount = info?.skillCount ?? 0;
   const agentCount = info?.agentCount ?? 0;
   const mode = info?.mode ?? (activeSkills ? deriveInstallMode(activeSkills) : "eject");
-  const source = loaded?.config.source;
+  const source = loaded?.config.marketplace;
 
   return { skillCount, agentCount, mode, ...(source !== undefined && { source }) };
 }

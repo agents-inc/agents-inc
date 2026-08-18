@@ -1,10 +1,11 @@
+import os from "os";
 import path from "path";
 
 import chalk from "chalk";
 import { Flags } from "@oclif/core";
 import { render } from "../components/render.js";
 
-import { difference, indexBy } from "remeda";
+import { difference, indexBy, partition } from "remeda";
 
 import { BaseCommand } from "../base-command.js";
 import { type WizardResultV2 } from "../components/wizard/wizard.js";
@@ -14,6 +15,7 @@ import {
   CLI_COLORS,
   EDIT_PROJECT_SETUP_FLAG,
   EJECT_SOURCE,
+  editorConfigUrl,
   formatSourceDisplayName,
 } from "../consts.js";
 import {
@@ -41,8 +43,13 @@ import {
   resolveInstallPaths,
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
-import { applyMigratedGlobalSources, mutateGlobal } from "../lib/config-gate/index.js";
+import {
+  applyMigratedGlobalSources,
+  mutateGlobal,
+  normalizeProjectPath,
+} from "../lib/config-gate/index.js";
 import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
+import { type AuthoritativeScope, loadProjectConfigFromDir } from "../lib/configuration/index.js";
 import {
   activeAgentNames,
   activeAgentScopeMap,
@@ -64,21 +71,52 @@ import type {
   SkillConfig,
   AgentName,
   AgentScopeConfig,
+  MergedSkillsMatrix,
   ProjectConfig,
   SkillScope,
 } from "../types/index.js";
+import {
+  seedPayloadForInstallation,
+  skillsAuthoredHere,
+} from "../lib/seed/installation-payload.js";
+import { publishSeedConfig } from "../lib/seed/publish-seed.js";
+import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
+import {
+  registerExternalSkills,
+  writeExternalSkills,
+  type ExternalSkillInstall,
+} from "../lib/seed/external-skills.js";
+import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
+import { reconcileSharedConfig, type KeptFromRoundTrip } from "../lib/seed/seed-apply.js";
+import {
+  RemovalPlanConfirm,
+  type RemovalPlanSection,
+} from "../components/common/removal-plan-confirm.js";
+import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { claudePluginInstall, claudePluginUninstall } from "../utils/exec.js";
+import { openUrl } from "../utils/open-url.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   ERROR_MESSAGES,
   INFO_MESSAGES,
+  SHARED_CONFIG_APPLY,
+  SHARED_CONFIG_ONE_DIRECTION,
   STATUS_MESSAGES,
+  authoredHereKept,
+  carriedSkillsWritten,
+  globallyInstalledRemoved,
   localSkillsCopied,
   recompileSummary,
+  sharedConfigDestinations,
+  sharedConfigNeedsTerminal,
+  skippedUnknownAgents,
+  skippedUnknownSkills,
+  unplaceableKept,
 } from "../utils/messages.js";
 import { formatScopeTag } from "../lib/wizard/index.js";
 import { typedKeys } from "../utils/typed-object.js";
+import type { SeedPayload } from "@workspace/matrix/seed";
 
 /** A scope transition (`from` → `to`) for a re-scoped skill or agent. */
 type ScopeChange = { from: SkillScope; to: SkillScope };
@@ -175,6 +213,182 @@ type EditContext = {
   currentSkillIds: SkillId[];
 };
 
+/**
+ * What this run is about to apply, and which producer said so.
+ *
+ * The two produce the same `WizardResultV2` and are applied by the same sequence — that is what
+ * stops `edit` growing a second copy of its own pipeline. They differ in what has to happen
+ * between the diff and the first mutation: a wizard result was authored keystroke by keystroke
+ * and needs no permission, while a shared configuration arrived whole and destroys whatever it
+ * left out, so its removals are shown and confirmed there.
+ */
+type EditSelection =
+  | { producer: "wizard"; result: WizardResultV2 }
+  | {
+      producer: "shared";
+      result: WizardResultV2;
+      /** Statements naming what this run may not remove — rendered in the confirm. */
+      kept: string[];
+      /** Skills the configuration carries rather than names, written once it is approved. */
+      carried: ExternalSkillInstall[];
+    };
+
+/** What a shared apply is confirmed against: one heading, the lists, and the prose under them. */
+type SharedConfigPlan = {
+  heading: string;
+  sections: RemovalPlanSection[];
+  statements: string[];
+};
+
+/** A removal set's two lists, whichever scope the entries in it were installed at. */
+type RemovedEntries = { skills: SkillId[]; agents: AgentName[] };
+
+/** The removal set split by the scope each entry was actually installed at. */
+type RemovalsByScope = { here: RemovedEntries; global: RemovedEntries };
+
+/** The entries this run is applying over, which is where a removal's scope is read from. */
+type InstalledEntries = Pick<ProjectConfig, "skills" | "agents">;
+
+/**
+ * The plan INSIDE the global installation: the ordinary one, and deliberately nothing more.
+ *
+ * The person ran this at their home directory. The location IS the global scope, they chose it,
+ * and that global is inherited by every project is what global means — so a second
+ * acknowledgement restates a fact the directory already states, and a gate that fires everywhere
+ * is one nobody is still reading by the time it matters.
+ */
+function globalScopePlan(changes: ConfigChanges, kept: string[]): SharedConfigPlan {
+  const sections = removalSections(changes.removedSkills, changes.removedAgents);
+  return { heading: planHeading(sections), sections, statements: kept };
+}
+
+/**
+ * The plan INSIDE a project, where a removal can reach past the directory it was asked for in.
+ *
+ * A global install is one installation every registered project reads, so removing one here
+ * changes projects the person confirming is not looking at. Those entries get their own section
+ * and a statement counting and naming the projects the yes changes; everything else reads as it
+ * always has. The split is on the entries' own scope rather than on wording, so the two confirms
+ * stay two branches — one gate firing everywhere and explaining itself differently is how a gate
+ * drifts into firing wrongly.
+ */
+function projectScopePlan(
+  changes: ConfigChanges,
+  kept: string[],
+  installed: InstalledEntries,
+  otherProjects: string[],
+): SharedConfigPlan {
+  const { here, global } = splitRemovalsByScope(changes, installed);
+  const sections = [
+    ...removalSections(here.skills, here.agents),
+    ...globalRemovalSections(global.skills, global.agents),
+  ];
+
+  return {
+    heading: planHeading(sections),
+    sections,
+    statements: [...globalReachStatement(global, otherProjects), ...kept],
+  };
+}
+
+/** Which removals leave this project only, and which leave the machine. */
+function splitRemovalsByScope(
+  changes: ConfigChanges,
+  installed: InstalledEntries,
+): RemovalsByScope {
+  const isGlobalSkill = (id: SkillId): boolean =>
+    installed.skills.some((skill) => skill.id === id && isActiveAt(skill, "global"));
+  const isGlobalAgent = (name: AgentName): boolean =>
+    installed.agents.some((agent) => agent.name === name && isActiveAt(agent, "global"));
+
+  const [globalSkills, projectSkills] = partition(changes.removedSkills, isGlobalSkill);
+  const [globalAgents, projectAgents] = partition(changes.removedAgents, isGlobalAgent);
+
+  return {
+    here: { skills: projectSkills, agents: projectAgents },
+    global: { skills: globalSkills, agents: globalAgents },
+  };
+}
+
+/** The removals a shared configuration makes here, grouped as the plan prints them. */
+function removalSections(skills: SkillId[], agents: AgentName[]): RemovalPlanSection[] {
+  return [
+    { label: SHARED_CONFIG_APPLY.SKILLS_HEADING, items: skills.map(skillLabel) },
+    { label: SHARED_CONFIG_APPLY.AGENTS_HEADING, items: [...agents] },
+  ].filter((section) => section.items.length > 0);
+}
+
+/** The same lists for entries that live at global scope, under headings that say so. */
+function globalRemovalSections(skills: SkillId[], agents: AgentName[]): RemovalPlanSection[] {
+  return [
+    { label: SHARED_CONFIG_APPLY.GLOBAL_SKILLS_HEADING, items: skills.map(skillLabel) },
+    { label: SHARED_CONFIG_APPLY.GLOBAL_AGENTS_HEADING, items: [...agents] },
+  ].filter((section) => section.items.length > 0);
+}
+
+/** Who else a global removal lands on — printed only when there is one to land. */
+function globalReachStatement(global: RemovedEntries, otherProjects: string[]): string[] {
+  if (global.skills.length === 0 && global.agents.length === 0) return [];
+  return [globallyInstalledRemoved(otherProjects)];
+}
+
+/**
+ * The plan's opening line. A heading is a promise about the lines beneath it, so one promising
+ * removals over an empty list would be a lie — a configuration that only adds says so instead,
+ * and is still confirmed, because it is still applied whole.
+ */
+function planHeading(sections: RemovalPlanSection[]): string {
+  if (sections.length === 0) return SHARED_CONFIG_APPLY.NOTHING_REMOVED;
+  return SHARED_CONFIG_APPLY.PREVIEW_HEADING;
+}
+
+/** How a removal reads in the plan: the name the user picked it by, with the id behind it. */
+function skillLabel(skillId: SkillId): string {
+  const displayName = getSkillDisplayName(skillId);
+  return displayName === skillId ? skillId : `${displayName} (${skillId})`;
+}
+
+/**
+ * The plan's kept half, one statement per reason.
+ *
+ * Both reasons are disclosed rather than acted on, which is the point: no configuration ever
+ * carried a skill written here, and an id this catalogue cannot place is one this run had an
+ * instruction about and could not honour — so an apply that silently left them behind would
+ * recreate exactly the defect the destructive ruling exists to kill, nobody able to tell why an
+ * agent still carries a skill they never picked.
+ */
+function keptStatements(kept: KeptFromRoundTrip): string[] {
+  return [...authorshipStatement(kept), ...catalogueStatement(kept)];
+}
+
+/** The ownership half, whose remedy is the wizard rather than another configuration. */
+function authorshipStatement(kept: KeptFromRoundTrip): string[] {
+  if (kept.authoredSkillIds.length === 0) return [];
+  return [authoredHereKept(kept.authoredSkillIds)];
+}
+
+/** The catalogue's own limit, whose remedy is the catalogue rather than anything installed. */
+function catalogueStatement(kept: KeptFromRoundTrip): string[] {
+  if (kept.unplaceableSkillIds.length === 0) return [];
+  return [unplaceableKept(kept.unplaceableSkillIds)];
+}
+
+/**
+ * How much of what it can see a run owns — the word the merger takes, and the same word the
+ * global config the project write commits is resolved under.
+ *
+ * At the home root, everything: the session loaded the whole global config, so an absent entry
+ * was deselected. In a project the WIZARD owns only what the project owns, because the store
+ * refuses to deselect a live global entry at all — an inherited row absent from its result is
+ * one it never offered, not one anybody dropped. A CONFIRMED shared configuration is the other
+ * case and the reason this is not simply `isHomeDirectory`: it states a whole roster, the plan
+ * above named every global removal and every project that reaches, and somebody answered yes.
+ */
+function applyAuthority(producer: EditSelection["producer"], cwd: string): AuthoritativeScope {
+  if (isHomeDirectory(cwd)) return "all";
+  return producer === "shared" ? "all" : "owned";
+}
+
 export default class Edit extends BaseCommand {
   static summary = "Edit skills in the plugin";
   static description = "Modify the currently installed skills via interactive wizard";
@@ -184,9 +398,26 @@ export default class Edit extends BaseCommand {
       description: "Open the edit wizard",
       command: "<%= config.bin %> <%= command.id %>",
     },
+    {
+      description: "Open this installation in the editor instead of the wizard",
+      command: "<%= config.bin %> <%= command.id %> --ui",
+    },
+    {
+      description: "Apply a configuration built in the editor, by its id",
+      command: "<%= config.bin %> <%= command.id %> --from <id>",
+    },
   ];
 
   static flags = {
+    ui: Flags.boolean({
+      description: "Edit this installation in the browser at agentsinc.sh instead of the wizard",
+      default: false,
+    }),
+    from: Flags.string({
+      description:
+        "Apply a configuration shared from agentsinc.sh by its id, removing whatever it leaves out",
+      helpValue: "<id>",
+    }),
     [EDIT_PROJECT_SETUP_FLAG]: Flags.boolean({
       description: "Internal: this run continues an `init` project setup",
       default: false,
@@ -203,6 +434,20 @@ export default class Edit extends BaseCommand {
     // copied skills and installed plugins by the time a config read fails.
     await this.ensureConfigReadable(cwd);
 
+    if (flags.ui && flags.from !== undefined) {
+      this.error(SHARED_CONFIG_ONE_DIRECTION, { exit: EXIT_CODES.ERROR });
+    }
+
+    // The browser is the other editor, so it replaces the wizard rather than preceding it —
+    // above the source load, which exists to fill screens this run will never paint.
+    if (flags.ui) return this.openInEditor(cwd);
+
+    // The inbound half is destructive, so it is confirmed — and a confirm nobody can answer must
+    // never become a yes. Refusing here, above the fetch and above the catalogue load, is what
+    // keeps a run that cannot finish from spending either.
+    const payload =
+      flags.from === undefined ? null : await this.fetchSharedConfigOrFail(flags.from);
+
     const context = await this.loadContextUnderSpinner();
 
     // Still before anything renders, one layer below the config itself: an entry whose skill
@@ -214,9 +459,12 @@ export default class Edit extends BaseCommand {
       context.projectDir,
     );
 
-    const result = await this.runEditWizard(context, cwd);
-    if (!result) this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+    const selection = payload
+      ? await this.selectionFromSharedConfig(payload, context, cwd)
+      : await this.selectionFromWizard(context, cwd);
+    if (!selection) this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
 
+    const { result } = selection;
     this.reportValidationErrors(result.validation);
 
     // Filter excluded entries ONCE — downstream methods receive only active entries
@@ -248,10 +496,28 @@ export default class Edit extends BaseCommand {
     // bare `cc edit`.
     const isProjectSetup = flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd);
 
+    // The gate, at the one point where the removals are known and none has been made: after the
+    // diff, above every mutation, and above the no-change return — a configuration that carries
+    // its own skills still has bytes to land when the roster is unchanged.
+    if (selection.producer === "shared") {
+      await this.confirmSharedConfigOrCancel(
+        changes,
+        selection.kept,
+        { skills: activeOldSkills, agents: activeOldAgents },
+        cwd,
+      );
+      await this.writeCarriedSkills(selection.carried);
+    }
+
+    // One word for both halves of the write, decided once from what was actually confirmed: the
+    // merger reads it for the config ROW, and the gate reads it for the global config a project
+    // write commits. Deriving it twice is how the row and the disk come to disagree.
+    const authority = applyAuthority(selection.producer, cwd);
+
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
       if (!isProjectSetup) return;
-      await this.writeConfigAndCompile(result, context, cwd);
+      await this.writeConfigAndCompile(result, context, cwd, authority);
       this.logCompletionSummary(changes);
       return;
     }
@@ -281,9 +547,272 @@ export default class Edit extends BaseCommand {
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd);
     await this.copyNewLocalSkills(changes, filteredResult, context, cwd);
     await this.removeDeletedLocalSkills(changes, activeOldSkills, cwd);
-    await this.writeConfigAndCompile(result, context, cwd);
+    await this.writeConfigAndCompile(result, context, cwd, authority);
     await this.cleanupStaleAgentFiles(changes, activeOldAgents, cwd);
     this.logCompletionSummary(changes);
+  }
+
+  /** The interactive producer: open the wizard on what is installed, return what was chosen. */
+  private async selectionFromWizard(
+    context: EditContext,
+    cwd: string,
+  ): Promise<EditSelection | null> {
+    const result = await this.runEditWizard(context, cwd);
+    if (!result) return null;
+
+    return { producer: "wizard", result };
+  }
+
+  /**
+   * The `--from <id>` producer: fetch, seat what the configuration carries, decode, and put back
+   * what this run has no authority to remove.
+   *
+   * Everything a shared configuration says is a statement about the whole roster, so the apply
+   * that follows is destructive — the project is made to MATCH it. Two exceptions come back into
+   * the result: a skill written here, which the producer drops on the way out because
+   * `forkedFrom` says the CLI never wrote it, and an id the configuration NAMES that this
+   * catalogue cannot place, because a destructive apply removes on intent and never on its own
+   * inability. Both are disclosed in the confirm rather than silently excused.
+   *
+   * A globally installed entry is NOT one of them. It is removable from here, and what its scope
+   * changes is who the removal reaches — which the confirm names, rather than this putting the
+   * entry back and calling the reach impossible.
+   */
+  private async selectionFromSharedConfig(
+    payload: SeedPayload,
+    context: EditContext,
+    cwd: string,
+  ): Promise<EditSelection> {
+    const { matrix: sourceMatrix } = context.sourceResult;
+    // Before the decode, because a skill the payload CARRIES answers to no catalogue: unseated,
+    // its id is skipped like any other unknown one and its content is never read.
+    const carried = this.registerExternalSkillsOrFail(payload, sourceMatrix, cwd);
+    const { result, skippedSkillIds, skippedAgentNames } = this.decodeSeedOrFail(
+      payload,
+      sourceMatrix,
+    );
+
+    // The first moment this can be asked, and above everything this run would say or do: an
+    // all-global configuration is exactly what a global installation is for, so only the decode
+    // says whether THIS one has anywhere to be written here. `init --from` asks it at the same
+    // point of the same value, and a run about to be refused must not first narrate its skips.
+    this.refuseProjectScopedContentAtHome(result, cwd);
+
+    if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
+    if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
+
+    const reconciled = reconcileSharedConfig({
+      decoded: result,
+      installed: context.projectConfig,
+      authoredHere: await this.readAuthoredHere(context.projectConfig, cwd),
+      // The ids the decode above could not place. They are the skips just reported, read as
+      // what STAYS rather than as what did not arrive: the payload named them, so their absence
+      // from the decode is this catalogue's limit and not an instruction to delete anything.
+      unplaceable: new Set(skippedSkillIds),
+    });
+
+    return {
+      producer: "shared",
+      result: reconciled.result,
+      kept: keptStatements(reconciled.kept),
+      carried,
+    };
+  }
+
+  /**
+   * Which installed skills the round trip does not own, asked of the disk exactly as the
+   * producing half asks it.
+   *
+   * Best-effort by nature and never fatal: the question is only ever asked to PROTECT a skill,
+   * so a directory that cannot be read protects nothing and must not fail an apply. The
+   * consequence of an unanswered question is that the entry is treated as the CLI's own, which
+   * is what every other command already assumes about it.
+   */
+  private async readAuthoredHere(
+    projectConfig: ProjectConfig | null,
+    cwd: string,
+  ): Promise<Set<SkillId>> {
+    if (!projectConfig) return new Set();
+
+    try {
+      return await skillsAuthoredHere(projectConfig, cwd);
+    } catch (error) {
+      this.warn(`Could not tell which skills were written here: ${getErrorMessage(error)}`);
+      return new Set();
+    }
+  }
+
+  /**
+   * The id, fetched — or the run refused before it is.
+   *
+   * The terminal question is answered first because nothing in the payload can change its
+   * answer: an apply that cannot be confirmed is over before the store is asked, and a refusal
+   * that had already spent a round trip would be describing work it never intended to do.
+   */
+  private async fetchSharedConfigOrFail(id: string): Promise<SeedPayload> {
+    if (!process.stdin.isTTY) {
+      this.error(sharedConfigNeedsTerminal(id), { exit: EXIT_CODES.ERROR });
+    }
+
+    this.log(`Fetching configuration ${id}...`);
+    const fetched = await fetchSeedConfig(id);
+    if (!fetched.ok) {
+      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
+    }
+
+    return fetched.payload;
+  }
+
+  /**
+   * The decode refuses a payload the config model has nowhere to write (see `seedToWizardResult`).
+   * That is a failure of this command, reported with this command's exit code rather than left to
+   * surface as an unhandled throw.
+   */
+  private decodeSeedOrFail(payload: SeedPayload, sourceMatrix: MergedSkillsMatrix): SeedMapping {
+    try {
+      return seedToWizardResult(payload, sourceMatrix);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  /**
+   * Seats the catalogue entries the payload carries with it, or refuses the run. The refusal is
+   * `registerExternalSkills`' own — a carried skill asked for as a plugin, which no marketplace
+   * serves — reported with this command's exit code for the same reason the decode's is.
+   */
+  private registerExternalSkillsOrFail(
+    payload: SeedPayload,
+    sourceMatrix: MergedSkillsMatrix,
+    projectDir: string,
+  ): ExternalSkillInstall[] {
+    try {
+      return registerExternalSkills(payload, sourceMatrix, projectDir);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  /** Writes the skills the configuration brought with it, and says which they were. */
+  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
+    if (carried.length === 0) return;
+
+    await writeExternalSkills(carried);
+    this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
+  }
+
+  /**
+   * Shows what applying this configuration takes away, and stops the run unless a person says
+   * yes.
+   *
+   * The plan is built from the SAME `ConfigChanges` the apply below acts on, so what is approved
+   * and what is removed are one value read twice. Its kept half is the other side of the same
+   * honesty: nothing is refused over an entry this run cannot remove, and nothing is silent
+   * about one either.
+   *
+   * WHICH plan is built is decided here and only here, on the directory the run was started in.
+   * Inside the global installation the scope was chosen and is obvious, so the ordinary confirm
+   * is the whole of the gate; inside a project a global removal reaches projects nobody here is
+   * looking at, so it is shown apart and the reach is named.
+   */
+  private async confirmSharedConfigOrCancel(
+    changes: ConfigChanges,
+    kept: string[],
+    installed: InstalledEntries,
+    cwd: string,
+  ): Promise<void> {
+    const plan = isHomeDirectory(cwd)
+      ? globalScopePlan(changes, kept)
+      : projectScopePlan(changes, kept, installed, await this.otherRegisteredProjects(cwd));
+
+    const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
+      <RemovalPlanConfirm
+        heading={plan.heading}
+        sections={plan.sections}
+        statements={plan.statements}
+        message={SHARED_CONFIG_APPLY.CONFIRM}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    ));
+    if (outcome === "confirmed") return;
+
+    this.log("\nEdit cancelled");
+    this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+  }
+
+  /**
+   * Every registered project but this one — the blast radius a global removal actually has.
+   *
+   * Read from the GLOBAL config rather than from `context.projectConfig`: `projects[]` is the
+   * registry the fan-out itself walks, and a project's own config never carries it, so taking
+   * the list from anywhere else would let the confirm name a set the propagation does not.
+   *
+   * Best-effort by nature. The list exists to be DISCLOSED, so a home directory that cannot be
+   * read leaves the disclosure counting nobody rather than failing an apply — and the statement
+   * it produces then is the one that says no other project is registered.
+   */
+  private async otherRegisteredProjects(cwd: string): Promise<string[]> {
+    try {
+      const global = await loadProjectConfigFromDir(os.homedir());
+      const here = normalizeProjectPath(cwd);
+      return (global?.config.projects ?? []).filter((projectDir) => projectDir !== here);
+    } catch (error) {
+      this.warn(`Could not tell which projects share this install: ${getErrorMessage(error)}`);
+      return [];
+    }
+  }
+
+  /**
+   * The outbound half of the editor round trip: this installation, minted as a configuration
+   * the editor opens, and handed to a browser.
+   *
+   * It is the same mint `share` performs — same reader, same mapping, same refusals, through
+   * `seedPayloadForInstallation` — because an id is the whole of what either command produces
+   * and two spellings of "the installation in this directory" would mint two different ids for
+   * one project. What differs is only the ending: `share` reports the id, this opens it.
+   *
+   * Nothing on disk is touched. A configuration is read, not rewritten, so a run that changed
+   * anything here would be editing the project on the way to offering to edit it.
+   */
+  private async openInEditor(projectDir: string): Promise<void> {
+    const prepared = await seedPayloadForInstallation(projectDir);
+    if (!prepared.ok) {
+      this.error(prepared.error, { exit: EXIT_CODES.ERROR });
+    }
+
+    this.log(`Opening ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
+
+    const published = await publishSeedConfig(prepared.payload);
+    if (!published.ok) {
+      this.error(published.error, { exit: EXIT_CODES.ERROR });
+    }
+
+    await this.handToBrowser(published.id);
+  }
+
+  /**
+   * The link, printed first and opened second.
+   *
+   * Printed first because it is the only part of this that works everywhere: over a pipe, in CI
+   * and on a machine with no desktop session there is no browser to be anybody's, and a link
+   * nobody can copy is the whole loss. Opening one is the convenience on top, so a failure to
+   * open is a warning beside a link that still works rather than a failed command.
+   *
+   * `process.stdin.isTTY` is the same question `init`'s dashboard asks before it offers a
+   * prompt — is there a person here — because that is exactly what "whose browser is this"
+   * means.
+   */
+  private async handToBrowser(id: string): Promise<void> {
+    this.logSuccess(`Shared as ${id}`);
+    for (const destination of sharedConfigDestinations(id)) {
+      this.log(destination);
+    }
+
+    if (!process.stdin.isTTY) return;
+
+    const opened = await openUrl(editorConfigUrl(id));
+    if (!opened.ok) this.warn(opened.error);
   }
 
   /**
@@ -451,7 +980,7 @@ export default class Edit extends BaseCommand {
     const migratedSources = new Map(
       newSkills
         .filter((s) => migratedSkillIds.has(s.id) && isActiveAt(s, "global"))
-        .map((s) => [s.id, s.source] as const),
+        .map((s) => [s.id, s.origin] as const),
     );
     if (migratedSources.size === 0) return;
 
@@ -469,7 +998,7 @@ export default class Edit extends BaseCommand {
       );
       this.reportPropagatedRecompile(report);
     } catch (error) {
-      this.warn(`Could not record global source change: ${getErrorMessage(error)}`);
+      this.warn(`Could not record global origin change: ${getErrorMessage(error)}`);
     }
   }
 
@@ -613,7 +1142,7 @@ export default class Edit extends BaseCommand {
     // Handle scope migrations (P->G or G->P) for eject-mode skills
     for (const [skillId, change] of scopeChanges) {
       const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
-      if (skillConfig?.source === EJECT_SOURCE) {
+      if (skillConfig?.origin === EJECT_SOURCE) {
         await migrateLocalSkillScope(skillId, change.from, cwd);
       }
     }
@@ -622,7 +1151,7 @@ export default class Edit extends BaseCommand {
     // Compute eligible migrations first; only resolve/demand marketplace when there are any.
     const hasPluginScopeChanges = [...scopeChanges.keys()].some((skillId) => {
       const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
-      return skillConfig && skillConfig.source !== EJECT_SOURCE;
+      return skillConfig && skillConfig.origin !== EJECT_SOURCE;
     });
     if (!hasPluginScopeChanges) return;
 
@@ -675,10 +1204,10 @@ export default class Edit extends BaseCommand {
 
     // Compute plugin-intent lists per-skill (ungated) — per-skill `source` drives install mode.
     const addedPluginSkills = filteredResult.skills.filter(
-      (s) => addedSkills.includes(s.id) && s.source !== EJECT_SOURCE,
+      (s) => addedSkills.includes(s.id) && s.origin !== EJECT_SOURCE,
     );
     const removedPluginSkills = removedSkills.filter(
-      (id) => activeOldSkills.find((s) => s.id === id)?.source !== EJECT_SOURCE,
+      (id) => activeOldSkills.find((s) => s.id === id)?.origin !== EJECT_SOURCE,
     );
 
     if (addedPluginSkills.length === 0 && removedPluginSkills.length === 0) return;
@@ -689,7 +1218,12 @@ export default class Edit extends BaseCommand {
     );
 
     if (addedPluginSkills.length > 0) {
-      await this.installPluginSkillsReported(addedPluginSkills, marketplace, cwd);
+      await this.installPluginSkillsReported(
+        addedPluginSkills,
+        marketplace,
+        cwd,
+        context.sourceResult.matrix,
+      );
     }
 
     if (removedPluginSkills.length > 0) {
@@ -720,7 +1254,7 @@ export default class Edit extends BaseCommand {
 
     // Copy newly added local-source skills to .claude/skills/ (split by scope)
     const addedLocalSkills = filteredResult.skills.filter(
-      (s) => addedSkills.includes(s.id) && s.source === EJECT_SOURCE,
+      (s) => addedSkills.includes(s.id) && s.origin === EJECT_SOURCE,
     );
 
     if (addedLocalSkills.length > 0) {
@@ -742,7 +1276,7 @@ export default class Edit extends BaseCommand {
     // applySourceChanges. deleteLocalSkill is a no-op when the directory is absent.
     for (const skillId of removedSkills) {
       const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-      if (oldSkill?.source !== EJECT_SOURCE) continue;
+      if (oldSkill?.origin !== EJECT_SOURCE) continue;
 
       const deleteDir = installBaseDir(cwd, oldSkill.scope);
       await deleteLocalSkill(deleteDir, skillId);
@@ -753,6 +1287,7 @@ export default class Edit extends BaseCommand {
     result: WizardResultV2,
     context: EditContext,
     cwd: string,
+    authority: AuthoritativeScope,
   ): Promise<void> {
     // Load agent definitions — needed for both config-types.ts and recompilation
     let agentDefsResult: AgentDefs;
@@ -771,10 +1306,10 @@ export default class Edit extends BaseCommand {
         projectDir: cwd,
         agents: agentDefsResult.agents,
         // A full `cc edit` pass is authoritative over the roster it owns, so deselected entries
-        // are removed rather than union-preserved (D-233 Scenario C). Global-context edit owns
-        // the entire config ("all"); a project edit owns only project-scoped entries and its own
-        // tombstones ("owned"), never inherited global-active entries.
-        authoritativeScope: isHomeDirectory(cwd) ? "all" : "owned",
+        // are removed rather than union-preserved (D-233 Scenario C). `applyAuthority` decides
+        // how much that is from the producer and the directory, and hands the same word to the
+        // merger and to the global config the project branch of the gate commits.
+        authoritativeScope: authority,
       });
     } catch (error) {
       this.warn(`Could not update config: ${getErrorMessage(error)}`);
@@ -917,7 +1452,7 @@ export function detectConfigChanges(
       wizardResult.skills,
       oldSkillsById,
       (s) => s.id,
-      (s) => s.source,
+      (s) => s.origin,
     ),
     scopeChanges,
     agentScopeChanges,
@@ -1050,7 +1585,7 @@ export type PluginScopeMigrationResult = {
 /** @internal Exported for testing */
 export async function migratePluginSkillScopes(
   scopeChanges: Map<SkillId, ScopeChange>,
-  skills: Pick<SkillConfig, "id" | "source">[],
+  skills: Pick<SkillConfig, "id" | "origin">[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult> {
@@ -1059,7 +1594,7 @@ export async function migratePluginSkillScopes(
 
   for (const [skillId, change] of scopeChanges) {
     const skillConfig = skills.find((s) => s.id === skillId);
-    if (!skillConfig || skillConfig.source === EJECT_SOURCE) {
+    if (!skillConfig || skillConfig.origin === EJECT_SOURCE) {
       continue;
     }
 

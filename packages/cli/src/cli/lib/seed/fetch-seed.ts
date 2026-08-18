@@ -48,11 +48,15 @@ export async function fetchSeedConfig(id: string): Promise<FetchSeedResult> {
 
   const parsed = seedPayloadSchema.safeParse(body);
   if (!parsed.success) {
-    // Validated on the way in, so a stored payload that no longer parses means the contract moved
-    // underneath it — worth saying plainly rather than reporting a generic failure.
+    // Names the remedy rather than a cause it cannot observe. The payload was validated by the
+    // store on the way IN, so a stored payload that no longer parses means the contract moved
+    // underneath it — and every way that happens lands in this one `safeParse`: an id minted
+    // before a version bump, an id minted after one, and a body that is simply broken. The CLI
+    // cannot tell them apart, and the one thing true of all three is that re-sharing fixes it,
+    // because the store content-addresses an id and a fresh share mints one under this version.
     return {
       ok: false,
-      error: `Configuration '${id}' does not match the expected format — it may have been created by a newer version.`,
+      error: `Configuration '${id}' is not in a format this version of the CLI can install. Shared ids are never migrated — re-share the configuration to mint a current one, or update the CLI if that id came from a newer version.`,
     };
   }
 

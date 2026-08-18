@@ -19,6 +19,33 @@ export const PLUGIN_MANIFEST_DIR = ".claude-plugin";
 export const PLUGIN_MANIFEST_FILE = "plugin.json";
 export const MARKETPLACE_JSON = "marketplace.json";
 
+/**
+ * The catalogue a marketplace publishes beside its manifest — its whole matrix
+ * as JSON, in the shape `@workspace/matrix`'s `matrixSchema` describes.
+ *
+ * `marketplace.json` lists what a marketplace installs; this lists what it
+ * OFFERS — every skill, category and stack, with the relationships resolved. The
+ * editor fetches it directly and parses it with that schema, so nothing between
+ * the two transforms it.
+ */
+export const CATALOG_JSON = "catalog.json";
+
+/**
+ * What `generatedAt` says on a matrix that was WRITTEN to disk rather than built
+ * in memory — a fixed word where the live matrix carries an ISO timestamp.
+ *
+ * A moment recorded in a committed artefact makes every regeneration a diff even
+ * when nothing about the matrix moved, which costs the vendored
+ * `types/generated/matrix.ts` a pull request of pure noise and costs
+ * {@link CATALOG_JSON} its cache: the editor fetches the catalogue directly, and
+ * a file whose bytes always change can never answer a conditional request.
+ * Nothing reads the field back, so there is nothing a real timestamp would buy.
+ *
+ * Both emitters — `scripts/generate-source-types.ts` and `build marketplace` —
+ * stamp this, and they are the only two places a matrix becomes a file.
+ */
+export const GENERATED_AT_BUILD = "build";
+
 /** Compiled plugin output directory, relative to a marketplace root */
 export const PLUGINS_DIST_PATH = "dist/plugins";
 
@@ -58,6 +85,18 @@ export const CLI_INVOKE_COMMAND = "npx agents-inc";
  * overridable for tests and this one is not.
  */
 export const EDITOR_URL = "https://agentsinc.sh";
+
+/**
+ * Where a shared configuration opens in the editor — the form the editor's own Share button
+ * copies, so a link the CLI prints and one the web app hands out are the same link.
+ *
+ * Exported before it had a second caller, and now it has two: `share` prints it, and
+ * `edit --ui` hands it to a browser. Two surfaces each building their own query string is
+ * exactly how one of them ends up pointing at a page the other never opens.
+ */
+export function editorConfigUrl(id: string): string {
+  return `${EDITOR_URL}/?fromId=${encodeURIComponent(id)}`;
+}
 
 /**
  * Internal `edit` flag marking the invocation as the project-setup half of a `cc init`
@@ -113,6 +152,7 @@ export const STANDARD_FILES = {
   CRITICAL_REMINDERS_MD: "critical-reminders.md",
   SETTINGS_JSON: "settings.json",
   SETTINGS_LOCAL_JSON: "settings.local.json",
+  PACKAGE_JSON: "package.json",
 } as const;
 
 export const STANDARD_DIRS = {
@@ -293,6 +333,26 @@ export const DEFAULT_BRANDING = {
  * is the resolved source/marketplace name, that is the plugin bundle name.
  */
 export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME;
+
+/**
+ * The npm package the public catalogue publishes from, and the one thing that
+ * tells the catalogue apart from a marketplace merely calling itself
+ * {@link DEFAULT_PUBLIC_SOURCE_NAME}.
+ *
+ * Nothing a marketplace ships is unforgeable — every signal is a string in a file
+ * its author controls, this one included. What it does is make the reserved
+ * namespace unreachable by ACCIDENT: taking it requires renaming your own package
+ * to the catalogue's published, npm-scope-governed name, which is impersonation
+ * rather than drift.
+ *
+ * Two guards read it and must agree, which is why it lives here rather than in
+ * either: `validateMarketplaceName` (`lib/marketplace-generator.ts`) exempts the
+ * catalogue from the reserved-name refusal at BUILD time, and the collision guard
+ * in `lib/loading/source-loader.ts` exempts it from the catalogue-id refusal at
+ * LOAD time. Two definitions of who the catalogue is would let a source be the
+ * catalogue to one guard and not to the other.
+ */
+export const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
 /** Human-readable labels for skill source types shown in the wizard and edit command */
 export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
