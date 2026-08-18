@@ -10,10 +10,12 @@ import {
   ALL_SKILLS_TEST_CATEGORIES_MATRIX,
   ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX,
   ALL_SKILLS_WEB_AND_API_MATRIX,
+  MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX,
   REACT_HONO_FRAMEWORK_API_MATRIX,
   REACT_HONO_ONE_STACK_MATRIX,
   REACT_HONO_WEB_API_DOMAINS_MATRIX,
 } from "../lib/__tests__/mock-data/mock-matrices";
+import { CUSTOM_HOUSE_TOOLING_ID } from "../lib/__tests__/mock-data/mock-skills";
 import type { AgentScopeConfig, Category, SkillConfig } from "../types";
 import { EXPECTED_AGENTS } from "../lib/__tests__/expected-values";
 import { BUILT_IN_MATRIX } from "../types/generated/matrix";
@@ -28,6 +30,9 @@ import { elementAt, firstElement } from "../lib/__tests__/helpers/element-at.js"
  */
 const categoryIsExclusive = (category: Category): boolean =>
   BUILT_IN_MATRIX.categories[category]?.exclusive ?? true;
+
+/** A provenance that is neither `eject` nor the public marketplace, so the decode is unambiguous. */
+const PRIVATE_MARKETPLACE_NAME = "Acme Corp";
 
 describe("WizardStore", () => {
   beforeEach(() => {
@@ -271,7 +276,7 @@ describe("WizardStore", () => {
       expect(domainSelections.web).toBeUndefined();
       expect(domainSelections.api!["api-api"]).toStrictEqual(["api-framework-hono"]);
       expect(skillConfigs).toStrictEqual(
-        buildSkillConfigs(["api-framework-hono"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["api-framework-hono"], { scope: "global", origin: "agents-inc" }),
       );
       expect(store.getAllSelectedTechnologies()).toStrictEqual(["api-framework-hono"]);
     });
@@ -345,7 +350,7 @@ describe("WizardStore", () => {
       const { domainSelections, skillConfigs } = useWizardStore.getState();
       expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
       expect(skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
@@ -361,7 +366,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["web-framework-vue-composition-api"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       );
     });
@@ -389,7 +394,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["web-testing-vitest", "web-testing-playwright-e2e"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       );
     });
@@ -403,7 +408,7 @@ describe("WizardStore", () => {
       const { domainSelections, skillConfigs } = useWizardStore.getState();
       expect(domainSelections.web!["web-styling"]).toStrictEqual(["web-styling-tailwind"]);
       expect(skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-styling-tailwind"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-styling-tailwind"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
@@ -440,7 +445,7 @@ describe("WizardStore", () => {
         skillConfigs,
         "a blocked deselect must leave the global entry active — no tombstone",
       ).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
       expect(toastMessage).toBe("Global skills cannot be changed from project scope");
     });
@@ -555,7 +560,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["shared-monorepo-turborepo", "shared-monorepo-pnpm-workspaces"], {
           scope: "global",
-          source: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
       );
     });
@@ -593,7 +598,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["api-email-setup-resend", "api-email-resend-react-email"], {
           scope: "global",
-          source: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
       );
     });
@@ -657,7 +662,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["shared-monorepo-nx"], {
           scope: "global",
-          source: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
       );
     });
@@ -685,7 +690,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["shared-tooling-eslint-prettier"], {
           scope: "global",
-          source: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
       );
     });
@@ -899,7 +904,7 @@ describe("WizardStore", () => {
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs).toHaveLength(1);
       expect(skillConfigs[0]).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" })[0],
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" })[0],
       );
     });
 
@@ -919,7 +924,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: true,
       });
@@ -939,7 +944,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["web-framework-vue-composition-api"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       );
     });
@@ -949,7 +954,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: true,
       });
@@ -962,7 +967,7 @@ describe("WizardStore", () => {
       expect(skillConfigs).toStrictEqual(
         buildSkillConfigs(["web-framework-vue-composition-api"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       );
     });
@@ -972,7 +977,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: true,
       });
@@ -985,7 +990,7 @@ describe("WizardStore", () => {
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
@@ -993,7 +998,7 @@ describe("WizardStore", () => {
       const store = useWizardStore.getState();
       const persisted = buildSkillConfigs(["web-framework-react"], {
         scope: "project",
-        source: "eject",
+        origin: "eject",
       });
       useWizardStore.setState({
         domainSelections: { web: { "web-framework": ["web-framework-react"] } },
@@ -1017,7 +1022,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
         isEditingFromGlobalScope: false,
         isInitMode: false,
@@ -1026,16 +1031,16 @@ describe("WizardStore", () => {
       store.toggleTechnology("web", "web-testing", "web-testing-vitest", false);
 
       expect(useWizardStore.getState().skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
     describe("dual-scope selection toggle", () => {
       const dualScopeConfigs = (): SkillConfig[] => [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       ];
@@ -1058,7 +1063,7 @@ describe("WizardStore", () => {
         expect(toastMessage).toBeNull();
         expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
         expect(skillConfigs).toStrictEqual(
-          buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
         );
       });
 
@@ -1071,7 +1076,7 @@ describe("WizardStore", () => {
           // would tombstone that install from project scope, which is the lock's whole subject.
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           installedSkillConfigs: dualScopeConfigs(),
           isEditingFromGlobalScope: false,
@@ -1084,7 +1089,7 @@ describe("WizardStore", () => {
         expect(toastMessage).toBe("Global skills cannot be changed from project scope");
         expect(domainSelections.web!["web-framework"]).toStrictEqual(["web-framework-react"]);
         expect(skillConfigs).toStrictEqual(
-          buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
         );
       });
 
@@ -1115,7 +1120,7 @@ describe("WizardStore", () => {
           domainSelections: { web: { "web-framework": [] } },
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           installedSkillConfigs: dualScopeConfigs(),
           isEditingFromGlobalScope: false,
@@ -1143,7 +1148,7 @@ describe("WizardStore", () => {
         // `s` collapses [P][G] -> single inherited-global [G]; react stays selected.
         store.toggleSkillScope("web-framework-react");
         expect(useWizardStore.getState().skillConfigs).toStrictEqual(
-          buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
         );
 
         // Simulate save-and-reopen: the persisted single-global entry becomes the installed
@@ -1153,11 +1158,11 @@ describe("WizardStore", () => {
         useWizardStore.setState({
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
         });
 
@@ -1166,12 +1171,12 @@ describe("WizardStore", () => {
         const { skillConfigs } = useWizardStore.getState();
         const activeEntries = skillConfigs.filter((sc) => !sc.excluded);
         expect(activeEntries).toStrictEqual(
-          buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+          buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         );
         expect(skillConfigs.filter((sc) => sc.excluded)).toStrictEqual(
           buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         );
@@ -1185,11 +1190,11 @@ describe("WizardStore", () => {
           domainSelections: { web: { "web-framework": ["web-framework-react"] } },
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           isEditingFromGlobalScope: true,
           isInitMode: false,
@@ -1245,7 +1250,7 @@ describe("WizardStore", () => {
         skillConfigs: buildSkillConfigs(["web-framework-react"]),
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -1261,11 +1266,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -1305,17 +1310,17 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
       store.toggleSkillScope("web-framework-react");
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs).toStrictEqual([
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       ]);
@@ -1327,7 +1332,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -1335,7 +1340,7 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react"); // project → global (removes excluded)
       const { skillConfigs } = useWizardStore.getState();
       expect(skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
@@ -1356,11 +1361,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -1368,10 +1373,10 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react");
       const afterGtoP = useWizardStore.getState();
       expect(afterGtoP.skillConfigs).toStrictEqual([
-        ...buildSkillConfigs(["web-framework-react"], { source: "eject" }),
+        ...buildSkillConfigs(["web-framework-react"], { origin: "eject" }),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
           excluded: true,
         }),
       ]);
@@ -1381,7 +1386,7 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react");
       const afterPtoG = useWizardStore.getState();
       expect(afterPtoG.skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
       );
       expect(afterPtoG.toastMessage).toBeNull();
     });
@@ -1391,10 +1396,10 @@ describe("WizardStore", () => {
       // global tombstone (never an active global entry). `s` is the SOLE dual-scope toggle —
       // P→G drops the tombstone (collapse), G→P re-adds it (restore), with no toast either way.
       const dualScope = (): SkillConfig[] => [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       ];
@@ -1410,7 +1415,7 @@ describe("WizardStore", () => {
       store.toggleSkillScope("web-framework-react");
       const first = useWizardStore.getState();
       expect(first.skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
       expect(first.toastMessage).toBeNull();
 
@@ -1425,15 +1430,15 @@ describe("WizardStore", () => {
       // frozen [P][G] (project-active + global tombstone) throughout, while the live config is
       // mutated by each keypress. Exercises the state machine the E2E suite drives end-to-end.
       const dualScope = (): SkillConfig[] => [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       ];
       const plainGlobal = (): SkillConfig[] =>
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" });
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" });
 
       const store = useWizardStore.getState();
       useWizardStore.setState({
@@ -1507,7 +1512,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: false,
         isInitMode: false,
@@ -1517,7 +1522,7 @@ describe("WizardStore", () => {
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
       store.toggleSkillScope("web-framework-react");
       expect(useWizardStore.getState().skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
 
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
@@ -1528,7 +1533,7 @@ describe("WizardStore", () => {
         "a skill never installed globally must not gain a global tombstone",
       ).toStrictEqual([]);
       expect(skillConfigs).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
@@ -1549,7 +1554,7 @@ describe("WizardStore", () => {
       store.setInstallMode("web-framework-react", "eject", "global");
 
       const { skillConfigs } = useWizardStore.getState();
-      expect(firstElement(skillConfigs).source).toBe("eject");
+      expect(firstElement(skillConfigs).origin).toBe("eject");
     });
 
     it("should write the marketplace source via setInstallMode on skillConfigs", () => {
@@ -1566,7 +1571,16 @@ describe("WizardStore", () => {
       store.setInstallMode("web-framework-react", "plugin", "global");
 
       const { skillConfigs } = useWizardStore.getState();
-      expect(firstElement(skillConfigs).source).toBe("Acme Corp");
+      expect(firstElement(skillConfigs).origin).toBe("Acme Corp");
+    });
+
+    it("should write the chosen install mode to the entry's origin", () => {
+      const store = useWizardStore.getState();
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+
+      store.setInstallMode("web-framework-react", "eject", "global");
+
+      expect(firstElement(useWizardStore.getState().skillConfigs).origin).toBe(EJECT_SOURCE);
     });
 
     it("should populate skillConfigs from populateFromSkillIds", () => {
@@ -1608,10 +1622,10 @@ describe("WizardStore", () => {
       initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
 
       const savedConfigs: SkillConfig[] = [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-testing-vitest"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       ];
@@ -1640,7 +1654,7 @@ describe("WizardStore", () => {
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
           excluded: true,
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       ];
 
@@ -1664,7 +1678,7 @@ describe("WizardStore", () => {
 
       // D-198: savedConfigs contains the same skill ID twice — once global, once project
       const savedConfigs: SkillConfig[] = [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"]),
       ];
 
@@ -1695,7 +1709,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: true,
       });
@@ -1749,7 +1763,7 @@ describe("WizardStore", () => {
       // Set react to global, zustand to project
       useWizardStore.setState({
         skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-state-zustand"]),
         ],
       });
@@ -1767,7 +1781,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: true,
       });
@@ -1777,7 +1791,7 @@ describe("WizardStore", () => {
       // Set react to global, zustand to project
       useWizardStore.setState({
         skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-state-zustand"]),
         ],
       });
@@ -1798,12 +1812,12 @@ describe("WizardStore", () => {
       store.toggleTechnology("web", "web-client-state", "web-state-zustand", false);
       useWizardStore.setState({
         skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
-          ...buildSkillConfigs(["web-state-zustand"], { scope: "project", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
+          ...buildSkillConfigs(["web-state-zustand"], { scope: "project", origin: "agents-inc" }),
         ],
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         isEditingFromGlobalScope: false,
         isInitMode: false,
@@ -1820,7 +1834,7 @@ describe("WizardStore", () => {
         "global entries must survive a project-scope domain deselect byte-identical",
       ).toStrictEqual(globalEntriesBefore);
       expect(skillConfigs, "only the domain's project-scoped entries are dropped").toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
       expect(selectedDomains).toStrictEqual([]);
       expect(domainSelections.web).toBeUndefined();
@@ -1829,10 +1843,10 @@ describe("WizardStore", () => {
     it("collapses a dual-scope pair to one inherited global entry when its domain is deselected", () => {
       initializeMatrix(ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX);
       const dualScope = (): SkillConfig[] => [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       ];
@@ -1853,7 +1867,7 @@ describe("WizardStore", () => {
         skillConfigs,
         "both halves of the pair are dropped and the still-live global install re-surfaces",
       ).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
       expect(selectedDomains).toStrictEqual([]);
       expect(domainSelections.web).toBeUndefined();
@@ -1894,7 +1908,7 @@ describe("WizardStore", () => {
     it("does not rewrite a global slot the hydration snapshot already owns", () => {
       const installed = buildSkillConfigs(["web-framework-react"], {
         scope: "global",
-        source: DEFAULT_PUBLIC_SOURCE_NAME,
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
       });
       useWizardStore.setState({
         skillConfigs: [...installed],
@@ -1916,18 +1930,18 @@ describe("WizardStore", () => {
       // This is the case an id-keyed gate would break, so it is pinned beside the gate itself.
       const installed = buildSkillConfigs(["web-framework-react"], {
         scope: "global",
-        source: DEFAULT_PUBLIC_SOURCE_NAME,
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
       });
       const tombstone = buildSkillConfigs(["web-framework-react"], {
         scope: "global",
-        source: DEFAULT_PUBLIC_SOURCE_NAME,
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
         excluded: true,
       });
       useWizardStore.setState({
         skillConfigs: [
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "project",
-            source: DEFAULT_PUBLIC_SOURCE_NAME,
+            origin: DEFAULT_PUBLIC_SOURCE_NAME,
           }),
           ...tombstone,
         ],
@@ -1943,7 +1957,7 @@ describe("WizardStore", () => {
       ).toStrictEqual([
         ...buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: EJECT_SOURCE,
+          origin: EJECT_SOURCE,
         }),
         ...tombstone,
       ]);
@@ -1952,7 +1966,7 @@ describe("WizardStore", () => {
     it("rewrites a global slot when the edit is running at global scope", () => {
       const installed = buildSkillConfigs(["web-framework-react"], {
         scope: "global",
-        source: DEFAULT_PUBLIC_SOURCE_NAME,
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
       });
       useWizardStore.setState({
         skillConfigs: [...installed],
@@ -1966,7 +1980,7 @@ describe("WizardStore", () => {
         useWizardStore.getState().skillConfigs,
         "an edit at global scope owns the global install and may change its mode",
       ).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: EJECT_SOURCE }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: EJECT_SOURCE }),
       );
     });
 
@@ -1976,7 +1990,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
         installedSkillConfigs: null,
         isEditingFromGlobalScope: false,
@@ -1988,7 +2002,7 @@ describe("WizardStore", () => {
         useWizardStore.getState().skillConfigs,
         "a global-scope skill this session added is nobody's install yet and stays editable",
       ).toStrictEqual(
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: EJECT_SOURCE }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: EJECT_SOURCE }),
       );
     });
   });
@@ -2198,7 +2212,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -2213,7 +2227,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "Acme Corp",
+          origin: "Acme Corp",
         }),
       });
 
@@ -2221,6 +2235,86 @@ describe("WizardStore", () => {
         (option) => option.selected,
       );
       expect(selected.map((option) => option.mode)).toStrictEqual(["plugin"]);
+    });
+
+    it("should read each skill's install mode from its origin", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
+      useWizardStore.setState({
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            origin: PRIVATE_MARKETPLACE_NAME,
+          }),
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "global", origin: EJECT_SOURCE }),
+        ],
+      });
+
+      const rows = store.buildSourceRows().map((row) => ({
+        skillId: row.skillId,
+        selected: row.options.filter((option) => option.selected).map((option) => option.mode),
+      }));
+
+      expect(rows).toStrictEqual([
+        { skillId: "web-framework-react", selected: ["plugin"] },
+        { skillId: "api-framework-hono", selected: ["eject"] },
+      ]);
+    });
+
+    it("offers the local cell alone for a skill no marketplace carries", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
+
+      store.toggleTechnology("web", "web-tooling", CUSTOM_HOUSE_TOOLING_ID, false);
+
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(firstElement(rows).options.map((option) => option.mode)).toStrictEqual(["eject"]);
+      expect(
+        firstElement(rows).options.filter((option) => option.selected).length,
+        "the only mode a skill can take is the one it renders as selected",
+      ).toBe(1);
+    });
+
+    it("still offers both cells for a skill the marketplace carries", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+
+      const rows = store.buildSourceRows();
+      expect(rows).toHaveLength(1);
+      expect(firstElement(rows).options.map((option) => option.mode)).toStrictEqual([
+        "eject",
+        "plugin",
+      ]);
+    });
+  });
+
+  describe("default origin of a newly selected skill", () => {
+    it("takes the marketplace that carries it", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+
+      expect(useWizardStore.getState().skillConfigs).toStrictEqual(
+        buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+      );
+    });
+
+    it("takes the project's own copy when no marketplace carries it", () => {
+      const store = useWizardStore.getState();
+      initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
+
+      store.toggleTechnology("web", "web-tooling", CUSTOM_HOUSE_TOOLING_ID, false);
+
+      expect(useWizardStore.getState().skillConfigs).toStrictEqual(
+        buildSkillConfigs([CUSTOM_HOUSE_TOOLING_ID], { scope: "global", origin: EJECT_SOURCE }),
+      );
     });
   });
 
@@ -2260,7 +2354,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -2286,7 +2380,7 @@ describe("WizardStore", () => {
         isEditingFromGlobalScope: true,
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -2304,11 +2398,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -2327,11 +2421,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2357,7 +2451,7 @@ describe("WizardStore", () => {
         installedSkillConfigs: [],
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2373,11 +2467,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2393,11 +2487,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       });
@@ -2415,13 +2509,13 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         ],
@@ -2442,7 +2536,7 @@ describe("WizardStore", () => {
         installedSkillConfigs: [],
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2460,13 +2554,13 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         ],
@@ -2499,7 +2593,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
         skillConfigs: [],
       });
@@ -2518,7 +2612,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
         skillConfigs: [],
       });
@@ -2551,7 +2645,7 @@ describe("WizardStore", () => {
         isEditingFromGlobalScope: true,
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "eject",
+          origin: "eject",
         }),
         skillConfigs: [],
       });
@@ -2573,7 +2667,7 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-testing-vitest"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
         skillConfigs: [],
       });
@@ -2592,16 +2686,16 @@ describe("WizardStore", () => {
         installedSkillConfigs: [
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "project",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
         ],
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2629,13 +2723,13 @@ describe("WizardStore", () => {
         installedSkillConfigs: [
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "project",
-            source: "eject",
+            origin: "eject",
           }),
-          ...buildSkillConfigs(["web-testing-vitest"], { scope: "project", source: "eject" }),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "project", origin: "eject" }),
         ],
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "eject",
+          origin: "eject",
         }),
       });
 
@@ -2685,11 +2779,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2708,16 +2802,16 @@ describe("WizardStore", () => {
       // addition, while the emptied PROJECT slot is what saving deletes and must stay visible.
       useWizardStore.setState({
         installedSkillConfigs: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         ],
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -2748,11 +2842,11 @@ describe("WizardStore", () => {
       useWizardStore.setState({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "project",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       });
 
@@ -3787,7 +3881,7 @@ describe("WizardStore", () => {
 
     it("merges global preselections into the opening step it skips the stack step for", () => {
       const skillConfigs: SkillConfig[] = [
-        { id: "web-framework-react", scope: "global", source: "eject" },
+        { id: "web-framework-react", scope: "global", origin: "eject" },
       ];
 
       hydrateWizardStore({ installedSkillConfigs: skillConfigs });
@@ -3800,7 +3894,7 @@ describe("WizardStore", () => {
 
     it("populates installedSkillConfigs for diff rendering", () => {
       const skillConfigs: SkillConfig[] = [
-        { id: "web-framework-react", scope: "global", source: "eject" },
+        { id: "web-framework-react", scope: "global", origin: "eject" },
       ];
 
       hydrateWizardStore({
@@ -3837,7 +3931,7 @@ describe("WizardStore", () => {
 
     it("stores globalPreselections in init flow when installedSkillConfigs provided", () => {
       const skillConfigs: SkillConfig[] = [
-        { id: "web-framework-react", scope: "global", source: "eject" },
+        { id: "web-framework-react", scope: "global", origin: "eject" },
       ];
 
       hydrateWizardStore({

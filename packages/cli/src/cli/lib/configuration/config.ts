@@ -1,16 +1,23 @@
 import os from "os";
-import { fileExists } from "../../utils/fs";
+import path from "path";
+import { z } from "zod";
+import { fileExists, readFileOptional } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
-import { DEFAULT_BRANDING, GITHUB_SOURCE } from "../../consts";
+import {
+  DEFAULT_BRANDING,
+  GITHUB_SOURCE,
+  PUBLIC_CATALOGUE_PACKAGE,
+  STANDARD_FILES,
+} from "../../consts";
 import { projectSourceConfigSchema } from "../schemas";
 import type { ProjectConfig, SourceEntry } from "../../types";
-import { loadConfig } from "./config-loader";
+import { ConfigDefaultExportError, ConfigSchemaError, loadConfig } from "./config-loader";
 import { getProjectConfigPath } from "../installation/install-base-dir";
 import { isHomeDirectory } from "../installation/is-home-directory";
 
 export const DEFAULT_SOURCE = `${GITHUB_SOURCE.GITHUB_PREFIX}agents-inc/skills`;
-export const SOURCE_ENV_VAR = "CC_SOURCE";
+export const SOURCE_ENV_VAR = "CC_MARKETPLACE";
 
 // Re-export types that moved to src/cli/types/config.ts for backward compatibility
 export type { SourceEntry, BrandingConfig } from "../../types/config";
@@ -26,23 +33,23 @@ export type ResolvedConfig = {
 };
 
 /**
- * Who is asking for a source, and therefore whether this run may CHOOSE one.
+ * Who is asking for a marketplace, and therefore whether this run may CHOOSE one.
  *
- * Choosing is an install-time decision (owner ruling 2026-08-09): `--source` is
+ * Choosing is an install-time decision (owner ruling 2026-08-09): `--marketplace` is
  * `init`'s flag and nobody else's, and {@link SOURCE_ENV_VAR} is the same choice made
  * without typing it — so the environment rung is read for `init` and for nothing else.
  * Every later command asks as `"stored"` and gets what the install recorded: the
  * project config, then the global one, then {@link DEFAULT_SOURCE}.
  *
- * A `"stored"` caller may still NAME a source it is reading for its own sake — `doctor`
- * validating a source repository points the loader at a path — which is why the flag is
- * not tied to the caller. What `init` alone gets is the ambient environment.
+ * A `"stored"` caller may still NAME a marketplace it is reading for its own sake —
+ * `doctor` validating a marketplace repository points the loader at a path — which is why
+ * the flag is not tied to the caller. What `init` alone gets is the ambient environment.
  */
 export type SourceCaller = "init" | "stored";
 
 export type ResolveSourceRequest = {
   caller: SourceCaller;
-  /** The source this run named, where it named one. */
+  /** The marketplace this run named, where it named one. */
   flag?: string | undefined;
   /** The project whose `config.ts` is the first stored rung. */
   projectDir?: string | undefined;
@@ -64,7 +71,15 @@ async function loadSourceConfig(
   try {
     data = await loadConfig(configPath, projectSourceConfigSchema);
   } catch (error) {
-    verbose(`Failed to load ${scope} source config at ${configPath}: ${getErrorMessage(error)}`);
+    // A shape the schema refused is raised, never reported as absence. `resolveSource` reads the
+    // return value alone, so a swallowed refusal is indistinguishable from a config that is not
+    // there — it walks past this rung to DEFAULT_SOURCE and installs from a marketplace nobody
+    // named. A file that could not be evaluated at all stays the "no config" this loader has
+    // always reported it as. A file whose exports are all named is on the loud side of that same
+    // line: it evaluated, and everything it says is a statement about this install.
+    if (error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError)
+      throw error;
+    verbose(`Failed to load ${scope} config at ${configPath}: ${getErrorMessage(error)}`);
     return null;
   }
   if (!data) return null;
@@ -114,7 +129,7 @@ async function loadEffectiveSourceConfig(
  * A project's OWN source config, and nothing at the home root.
  *
  * `~/.claude-src/config.ts` is the global config, so reading it as a project's would label
- * one file both things at once: `compile` naming `Source: project` beside
+ * one file both things at once: `compile` naming `Marketplace: project` beside
  * `Compiling global agents...`, `edit` announcing `(project)` while refusing scope toggles
  * as a global context. The axis is which FILE the settings were read from — never what
  * scope the skill and agent entries inside it carry.
@@ -133,13 +148,14 @@ async function loadOwnProjectSourceConfig(
 export async function resolveSource(request: ResolveSourceRequest): Promise<ResolvedConfig> {
   const { caller, flag, projectDir } = request;
   const effective = await loadEffectiveSourceConfig(projectDir);
-  const marketplace = effective?.config.marketplace;
-  // Every return below carries the same marketplace, present only when the config named one.
-  const marketplaceLabel = marketplace !== undefined && { marketplace };
+  // The stored NAME becomes this result's `marketplace` — the ref it was read beside becomes the
+  // `source`. Every return below carries the same name, present only when the config named one.
+  const marketplaceName = effective?.config.marketplaceName;
+  const marketplaceLabel = marketplaceName !== undefined && { marketplace: marketplaceName };
 
   if (flag !== undefined) {
     assertNamedSourceUsable(flag);
-    verbose(`Source named by this run: ${flag}`);
+    verbose(`Marketplace named by this run: ${flag}`);
     return { source: flag, sourceOrigin: "flag", ...marketplaceLabel };
   }
 
@@ -148,44 +164,44 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
     return { source: envSource, sourceOrigin: "env", ...marketplaceLabel };
   }
 
-  if (effective?.config.source) {
-    verbose(`Source from ${effective.origin} config: ${effective.config.source}`);
+  if (effective?.config.marketplace) {
+    verbose(`Marketplace from ${effective.origin} config: ${effective.config.marketplace}`);
     return {
-      source: effective.config.source,
+      source: effective.config.marketplace,
       sourceOrigin: effective.origin,
       ...marketplaceLabel,
     };
   }
 
-  verbose(`Using default source: ${DEFAULT_SOURCE}`);
+  verbose(`Using default marketplace: ${DEFAULT_SOURCE}`);
   return { source: DEFAULT_SOURCE, sourceOrigin: "default", ...marketplaceLabel };
 }
 
 /**
- * How a source this run NAMED is referred to back to whoever named it.
+ * How a marketplace this run NAMED is referred to back to whoever named it.
  *
- * Origin-neutral on purpose: `--source` is `init`'s flag and nobody else's, while a
- * `"stored"` caller may still name a source it is reading for its own sake — `doctor`
- * points the loader at a source repository. Naming the flag in a sentence that caller
+ * Origin-neutral on purpose: `--marketplace` is `init`'s flag and nobody else's, while a
+ * `"stored"` caller may still name a marketplace it is reading for its own sake — `doctor`
+ * points the loader at a marketplace repository. Naming the flag in a sentence that caller
  * reads blames an option it never passed.
  */
-const NAMED_SOURCE_LABEL = "The source";
+const NAMED_SOURCE_LABEL = "The marketplace";
 
 /**
- * Refuses a named source that cannot be one. Raised rather than warned: somebody named
- * this, so falling through to another source would install from a place they did not name.
+ * Refuses a named marketplace that cannot be one. Raised rather than warned: somebody named
+ * this, so falling through to another would install from a place they did not name.
  */
 function assertNamedSourceUsable(flag: string): void {
   if (flag.trim() === "") {
     throw new Error(
-      `${NAMED_SOURCE_LABEL} cannot be empty. Provide a valid source: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')`,
+      `${NAMED_SOURCE_LABEL} cannot be empty. Provide a valid marketplace: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')`,
     );
   }
   validateSourceFormat(flag.trim(), NAMED_SOURCE_LABEL);
 }
 
 /**
- * The source {@link SOURCE_ENV_VAR} names, or undefined when it names none this run.
+ * The marketplace {@link SOURCE_ENV_VAR} names, or undefined when it names none this run.
  *
  * Unset, empty and unusable all fall through to the next rung with a warning rather than
  * a refusal — the environment is ambient, so an exported value nobody meant for this run
@@ -198,7 +214,7 @@ function readEnvSource(): string | undefined {
 
   const trimmed = envValue.trim();
   if (trimmed === "") {
-    warn(`${SOURCE_ENV_VAR} is set but empty — ignoring and falling back to next source.`);
+    warn(`${SOURCE_ENV_VAR} is set but empty — ignoring and falling back to the next rung.`);
     return undefined;
   }
 
@@ -206,12 +222,12 @@ function readEnvSource(): string | undefined {
     validateSourceFormat(trimmed, SOURCE_ENV_VAR);
   } catch (error) {
     warn(
-      `${SOURCE_ENV_VAR} has an invalid value — ignoring and falling back to next source.\n${getErrorMessage(error)}`,
+      `${SOURCE_ENV_VAR} has an invalid value — ignoring and falling back to the next rung.\n${getErrorMessage(error)}`,
     );
     return undefined;
   }
 
-  verbose(`Source from ${SOURCE_ENV_VAR} env var: ${trimmed}`);
+  verbose(`Marketplace from ${SOURCE_ENV_VAR} env var: ${trimmed}`);
   return trimmed;
 }
 
@@ -287,19 +303,19 @@ const PRIVATE_IPV6_PATTERN =
   /^\[(?:::1|::ffff:(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)|fd[0-9a-f]{2}:.*|fe80:.*)\]$/i;
 
 /**
- * Validates a source string format before it reaches giget or filesystem operations.
+ * Validates a marketplace string format before it reaches giget or filesystem operations.
  * Catches obviously invalid formats early with clear error messages.
  *
- * @param source - The trimmed, non-empty source value to validate
+ * @param source - The trimmed, non-empty marketplace value to validate
  * @param flagName - What carried this value, as the error messages name it back: `init`'s
- *   `--source`, {@link SOURCE_ENV_VAR}, or {@link NAMED_SOURCE_LABEL} when no flag did
+ *   `--marketplace`, {@link SOURCE_ENV_VAR}, or {@link NAMED_SOURCE_LABEL} when no flag did
  */
 export function validateSourceFormat(source: string, flagName: string): void {
   // Null bytes can bypass C-level string termination in downstream tools (giget, git)
   if (NULL_BYTE_PATTERN.test(source)) {
     throw new Error(
       `${flagName} contains invalid characters.\n\n` +
-        `Source values must not contain null bytes.\n` +
+        `Marketplace values must not contain null bytes.\n` +
         `Examples:\n` +
         `  ${flagName} ./my-skills\n` +
         `  ${flagName} github:user/repo`,
@@ -309,7 +325,7 @@ export function validateSourceFormat(source: string, flagName: string): void {
   if (source.length > MAX_SOURCE_LENGTH) {
     throw new Error(
       `${flagName} value is too long (${source.length} characters, max ${MAX_SOURCE_LENGTH}).\n\n` +
-        `Provide a shorter source path or URL.\n` +
+        `Provide a shorter marketplace path or URL.\n` +
         `Examples:\n` +
         `  ${flagName} ./my-skills\n` +
         `  ${flagName} github:user/repo`,
@@ -338,11 +354,11 @@ function validateRemoteSource(source: string, protocol: string, flagName: string
     );
   }
 
-  // Block path traversal in any remote source (refs, branches, query params)
+  // Block path traversal in any remote marketplace (refs, branches, query params)
   if (PATH_TRAVERSAL_PATTERN.test(pathAfterProtocol)) {
     throw new Error(
       `${flagName} contains path traversal in URL: "${source}"\n\n` +
-        `Remote source URLs must not contain '..' sequences.\n` +
+        `Remote marketplace URLs must not contain '..' sequences.\n` +
         `Examples:\n` +
         `  ${flagName} github:user/repo\n` +
         `  ${flagName} https://github.com/user/repo`,
@@ -383,7 +399,7 @@ function validateHttpUrl(source: string, flagName: string): void {
   if (PRIVATE_IPV4_PATTERN.test(hostname) || PRIVATE_IPV6_PATTERN.test(hostnameWithPort)) {
     throw new Error(
       `${flagName} points to a private or reserved IP address: "${source}"\n\n` +
-        `Source URLs must not target private network addresses.\n` +
+        `Marketplace URLs must not target private network addresses.\n` +
         `Use a public hostname instead.\n` +
         `Examples:\n` +
         `  ${flagName} https://github.com/user/repo\n` +
@@ -397,7 +413,7 @@ function validateGitShorthand(source: string, repoPath: string, flagName: string
   if (!repoPath.includes("/")) {
     throw new Error(
       `${flagName} has an invalid repository reference: "${source}"\n\n` +
-        `Git shorthand sources require an owner/repo format.\n` +
+        `Git shorthand marketplaces require an owner/repo format.\n` +
         `Examples:\n` +
         `  ${flagName} github:user/repo\n` +
         `  ${flagName} gh:organization/skills`,
@@ -412,7 +428,7 @@ function validateLocalPath(source: string, flagName: string): void {
   if (CONTROL_CHAR_PATTERN.test(source)) {
     throw new Error(
       `${flagName} contains invalid characters: "${source}"\n\n` +
-        `Source paths must not contain control characters.\n` +
+        `Marketplace paths must not contain control characters.\n` +
         `Examples:\n` +
         `  ${flagName} ./my-skills\n` +
         `  ${flagName} /home/user/skills`,
@@ -435,18 +451,74 @@ function validateLocalPath(source: string, flagName: string): void {
 }
 
 /**
- * Whether a resolved source IS the default public marketplace.
+ * Whether a resolved marketplace IS the default public one, asked of the source
+ * STRING.
  *
  * The one place that question is answered, because more than one surface asks it
- * and they must agree: the loader decides whether the CLI's built-in stacks
- * stand in for a source that ships none, and the install-mode tagger decides
- * whether the marketplace it labels skills with is public or private. A source
- * named explicitly — by flag, env or config — is the default marketplace when it
- * spells {@link DEFAULT_SOURCE}; a local checkout of that same repository is
- * NOT, because nothing in a path says which repository it holds.
+ * and they must agree: the install-mode tagger decides whether the marketplace it
+ * labels skills with is public or private, and both stack lookups ask it as half
+ * of {@link offersBuiltInStacks}. A marketplace named explicitly — by flag, env
+ * or config — is the default one when it spells {@link DEFAULT_SOURCE}.
+ *
+ * A path is not this question's subject. Nothing in a source STRING that happens
+ * to be a path says which repository it holds; {@link isPublicCatalogueCheckout}
+ * asks the directory instead, and it is the one to use where a directory is in hand.
  */
 export function isDefaultSource(source: string): boolean {
   return source === DEFAULT_SOURCE;
+}
+
+/** The only field of a repository's package.json this module reads. */
+const packageIdentitySchema = z.object({ name: z.string() });
+
+/**
+ * Whether the DIRECTORY at `basePath` is a checkout of the public catalogue's own
+ * repository, read off package identity.
+ *
+ * Never off the name in `marketplace.json`: that name is a claim the author
+ * writes, so a guard keyed on it would exempt exactly the source it exists to
+ * catch. {@link PUBLIC_CATALOGUE_PACKAGE} carries what the signal is and is not
+ * worth.
+ *
+ * The build side asks a different question of the same identity and is spelled
+ * apart from this one on purpose: `isCatalogueOwnReservedName` in
+ * `marketplace-generator.ts` asks whether a marketplace NAME about to be
+ * published is the catalogue's own, and takes the package name it already holds
+ * rather than a directory to read one from.
+ */
+export async function isPublicCatalogueCheckout(basePath: string): Promise<boolean> {
+  const raw = await readFileOptional(path.join(basePath, STANDARD_FILES.PACKAGE_JSON));
+  return declaredPackageName(raw) === PUBLIC_CATALOGUE_PACKAGE;
+}
+
+/** The `name` a package.json declares, or null when there is none to read. */
+function declaredPackageName(raw: string): string | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const parsed = packageIdentitySchema.safeParse(json);
+  return parsed.success ? parsed.data.name : null;
+}
+
+/**
+ * Whether the CLI's built-in stack catalogue stands in for a marketplace that
+ * ships no stacks of its own.
+ *
+ * Two spellings of one marketplace, and BOTH stack lookups must read this rather
+ * than either half. `resolveOfferedStacks` decides the list the wizard offers and
+ * `loadStackById` resolves the id the user then picked; a rule they answer
+ * differently offers a stack and refuses to install it.
+ *
+ * The built-in stacks ARE the public catalogue's stacks — that repository ships
+ * no `config/stacks.ts` at all — so a checkout of it read off a path has to reach
+ * them too, and the source string cannot say that a path is that repository.
+ */
+export async function offersBuiltInStacks(basePath: string, source: string): Promise<boolean> {
+  return isDefaultSource(source) || (await isPublicCatalogueCheckout(basePath));
 }
 
 export function isLocalSource(source: string): boolean {
@@ -459,7 +531,7 @@ export function isLocalSource(source: string): boolean {
   if (!hasRemoteProtocol) {
     if (source.includes("..") || source.includes("~")) {
       throw new Error(
-        `Invalid source path: ${source}. Path traversal patterns like '..' and '~' are not allowed for security reasons. Use absolute paths or remote URLs instead (e.g., '/home/user/skills' or 'https://github.com/user/repo').`,
+        `Invalid marketplace path: ${source}. Path traversal patterns like '..' and '~' are not allowed for security reasons. Use absolute paths or remote URLs instead (e.g., '/home/user/skills' or 'https://github.com/user/repo').`,
       );
     }
   }

@@ -67,6 +67,33 @@ describe("loadConfig", () => {
     expect(result!.name).toBe("validated");
   });
 
+  it("names the missing default export instead of validating the module namespace", async () => {
+    const configPath = path.join(tempDir, "named-only.ts");
+    await writeFile(configPath, `export const skillRules = { version: "1.0.0" };\n`);
+
+    const schema = z.object({ version: z.string() });
+
+    await expect(loadConfig(configPath, schema)).rejects.toThrow(
+      `Config at '${configPath}' has no default export`,
+    );
+  });
+
+  it("names the missing default export even when no schema is supplied", async () => {
+    const configPath = path.join(tempDir, "named-only-no-schema.ts");
+    await writeFile(configPath, `export const stacks = {};\n`);
+
+    await expect(loadConfig(configPath)).rejects.toThrow("has no default export");
+  });
+
+  it("loads a module whose export is assigned to module.exports", async () => {
+    const configPath = path.join(tempDir, "commonjs-config.ts");
+    await writeFile(configPath, `module.exports = { name: "from-module-exports" };\n`);
+
+    const result = await loadConfig<{ name: string }>(configPath);
+
+    expect(result).toStrictEqual({ name: "from-module-exports" });
+  });
+
   it("returns null for empty file (zero bytes)", async () => {
     const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
     await writeFile(configPath, "");

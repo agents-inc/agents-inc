@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  ConfigLoadError,
   loadProjectConfig,
   loadProjectConfigFromDir,
   validateProjectConfig,
@@ -14,7 +15,12 @@ import { setVerbose } from "../../utils/logger";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
-import { buildProjectConfig, buildAgentConfigs } from "../__tests__/factories/config-factories.js";
+import {
+  buildAgentConfigs,
+  buildPreRenameProjectConfig,
+  buildPreRenameSkillEntryConfig,
+  buildProjectConfig,
+} from "../__tests__/factories/config-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { SINGLE_REACT_MATRIX, WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
@@ -398,6 +404,33 @@ describe("round-trip tests", () => {
       "an edit must not discard per-agent curation for a skill that changed category",
     ).toStrictEqual({
       "web-developer": { [LIVE_CATEGORY_KEY]: [sa(MOVED_SKILL, true)] },
+    });
+  });
+
+  /**
+   * The `.passthrough()` trap the rename has to close. An old key that is merely unrecognised
+   * loads clean, `resolveSource` finds nothing under the name it now reads, and the install
+   * repoints to the public marketplace with nothing on screen to say so. The load must stop.
+   */
+  describe("a config carrying a field name from before the rename", () => {
+    it("refuses to load when the project-level source ref sits under the old key", async () => {
+      await writeTestTsConfig(tempDir, buildPreRenameProjectConfig());
+
+      const load = loadProjectConfigFromDir(tempDir);
+
+      await expect(load).rejects.toBeInstanceOf(ConfigLoadError);
+      await expect(load).rejects.toThrow(/source/);
+      await expect(load).rejects.toThrow(/marketplace/);
+    });
+
+    it("refuses to load when a skill entry's provenance sits under the old key", async () => {
+      await writeTestTsConfig(tempDir, buildPreRenameSkillEntryConfig());
+
+      const load = loadProjectConfigFromDir(tempDir);
+
+      await expect(load).rejects.toBeInstanceOf(ConfigLoadError);
+      await expect(load).rejects.toThrow(/source/);
+      await expect(load).rejects.toThrow(/origin/);
     });
   });
 

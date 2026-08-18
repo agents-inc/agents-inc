@@ -5,13 +5,13 @@
   "description": "Schema for .claude-src/config.yaml marketplace source configuration files.",
   "type": "object",
   "properties": {
-    "source": {
+    "marketplace": {
       "type": "string"
     },
     "author": {
       "type": "string"
     },
-    "marketplace": {
+    "marketplaceName": {
       "type": "string"
     },
     "agentsSource": {

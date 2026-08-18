@@ -7,16 +7,18 @@ import {
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
   LOCAL_PSEUDO_CATEGORY,
+  STANDARD_FILES,
 } from "../../consts";
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultRules } from "../configuration/default-rules";
 import { defaultStacks } from "../configuration/default-stacks";
 import { isHomeDirectory } from "../installation/is-home-directory";
-import { LOCAL_DEFAULTS } from "../metadata-keys";
+import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 import type {
   AgentDefinition,
   AgentName,
   CategoryMap,
+  CategoryPath,
   ExtractedSkillMetadata,
   MergedSkillsMatrix,
   RelationshipDefinitions,
@@ -32,12 +34,14 @@ import type {
   Category,
 } from "../../types";
 import { fileExists } from "../../utils/fs";
-import { verbose } from "../../utils/logger";
+import { verbose, warn } from "../../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import {
   isDefaultSource,
   isLocalSource,
+  isPublicCatalogueCheckout,
   loadProjectSourceConfig,
+  offersBuiltInStacks,
   resolveSource,
   type ResolvedConfig,
   type SourceCaller,
@@ -45,6 +49,7 @@ import {
 import { discoverLocalSkills, type LocalSkillDiscoveryResult } from "../skills";
 import {
   checkMatrixHealth,
+  claimSlug,
   extractAllSkills,
   loadSkillCategories,
   loadSkillRules,
@@ -107,6 +112,11 @@ export async function loadSkillsMatrixFromSource(
 
   const resolvedProjectDir = projectDir || process.cwd();
 
+  // Everything the marketplace itself carries, read before any local skill is merged on
+  // top: past this point a skill's provenance is no longer legible from the matrix, and
+  // an id the merge INTRODUCES is one nothing but the copy on disk backs.
+  const marketplaceSkillIds = new Set(typedKeys<SkillId>(result.matrix.skills));
+
   // Load global local skills first, then project local skills — project wins on conflict
   const homeDir = os.homedir();
   if (!isHomeDirectory(resolvedProjectDir)) {
@@ -120,6 +130,7 @@ export async function loadSkillsMatrixFromSource(
       sourceConfig,
       resolvedProjectDir,
       result.marketplace,
+      idsOutsideMarketplace(result.matrix, marketplaceSkillIds),
     );
   }
 
@@ -127,6 +138,37 @@ export async function loadSkillsMatrixFromSource(
   initializeMatrix(result.matrix);
 
   return result;
+}
+
+/**
+ * Skills the merged matrix holds that the marketplace never offered — the local merge's
+ * own additions. Eject is the only install any of them can have, so they are the ids the
+ * tagging pass must leave a marketplace entry off.
+ */
+function idsOutsideMarketplace(
+  matrix: MergedSkillsMatrix,
+  marketplaceSkillIds: ReadonlySet<SkillId>,
+): ReadonlySet<SkillId> {
+  return new Set(typedKeys<SkillId>(matrix.skills).filter((id) => !marketplaceSkillIds.has(id)));
+}
+
+/**
+ * The shipped catalogue, in a copy this load may write into. Every collection the
+ * local-skill merge writes to is copied: `BUILT_IN_MATRIX` is a module constant,
+ * so a shared reference would leave one project's local skill in the catalogue
+ * every later load reads.
+ */
+function copyOfBuiltInMatrix(): MergedSkillsMatrix {
+  return {
+    ...BUILT_IN_MATRIX,
+    skills: { ...BUILT_IN_MATRIX.skills },
+    categories: { ...BUILT_IN_MATRIX.categories },
+    suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks],
+    slugMap: {
+      slugToId: { ...BUILT_IN_MATRIX.slugMap.slugToId },
+      idToSlug: { ...BUILT_IN_MATRIX.slugMap.idToSlug },
+    },
+  };
 }
 
 /**
@@ -147,12 +189,7 @@ async function resolveBaseResult(
     // The fetch is cached, so no network call if the clone already exists.
     const sourcePath = matrixOnly ? "" : (await fetchFromSource(source)).path;
     return {
-      matrix: {
-        ...BUILT_IN_MATRIX,
-        skills: { ...BUILT_IN_MATRIX.skills },
-        categories: { ...BUILT_IN_MATRIX.categories },
-        suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks],
-      },
+      matrix: copyOfBuiltInMatrix(),
       sourceConfig,
       sourcePath,
       isLocal: false,
@@ -182,7 +219,7 @@ async function resolveMarketplaceLabels(
     verbose(`Using marketplace name from marketplace.json: ${marketplace}`);
     return { marketplace };
   } catch {
-    verbose(`Source does not have a marketplace.json — using source name as label`);
+    verbose(`Marketplace has no marketplace.json — using its ref as the label`);
     return sourceConfig.marketplace === undefined ? {} : { marketplace: sourceConfig.marketplace };
   }
 }
@@ -324,10 +361,29 @@ async function loadFromRemote(
 }
 
 /**
+ * The matrix a marketplace on disk describes — its own skills, its own
+ * categories and stacks, and the built-in relationship rules narrowed to the
+ * slugs it actually ships.
+ *
+ * This is the load an AUTHOR's command makes, and it is deliberately not
+ * {@link loadSkillsMatrixFromSource}: that one merges the invoking machine's
+ * `~/.claude/skills` and the project's own into the result, which is right for
+ * an install and wrong for anything published — a catalogue carrying the
+ * author's private skills offers consumers skills that exist on one machine.
+ * The local merge lives one layer up, in the install path alone.
+ *
+ * A marketplace's base path is also the only word anything has for WHICH
+ * marketplace it is, so it stands as the source string too.
+ */
+export async function loadMarketplaceMatrix(marketplaceDir: string): Promise<MergedSkillsMatrix> {
+  return loadAndMergeFromBasePath(marketplaceDir, marketplaceDir);
+}
+
+/**
  * Builds the matrix for a source read from disk, from the files under
  * `basePath`. `source` is the source string that base path stands for — the
- * loader's only word for WHICH marketplace it is reading, and what
- * {@link resolveOfferedStacks} decides the built-in catalogue's fate on.
+ * loader's only word for WHICH marketplace it is reading, and one of the two
+ * things {@link resolveOfferedStacks} decides the built-in catalogue's fate on.
  */
 async function loadAndMergeFromBasePath(
   basePath: string,
@@ -371,6 +427,8 @@ async function loadAndMergeFromBasePath(
   verbose(`Skills from source: ${skillsDir}`);
 
   const skills = await extractAllSkills(skillsDir);
+  await refuseCatalogueCollisions(basePath, source, skills);
+
   const relationships = relationshipsForSource(sourceRules, skills);
   const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
   initializeMatrix(mergedMatrix);
@@ -396,10 +454,58 @@ async function loadAndMergeFromBasePath(
   return mergedMatrix;
 }
 
+/** Every skill id the shipped catalogue owns — the ids no other marketplace may take. */
+const CATALOGUE_SKILL_IDS: ReadonlySet<SkillId> = new Set(typedKeys(BUILT_IN_MATRIX.skills));
+
+/** How many colliding ids a refusal lists before summarising the rest. */
+const MAX_REPORTED_COLLISIONS = 10;
+
 /**
- * The stacks a source offers the wizard: the ones it ships, or — for the default
- * public marketplace alone — the CLI's built-in catalogue standing in when it
- * ships none.
+ * Refuses a marketplace shipping skill ids the public catalogue already owns.
+ *
+ * A skill id is the directory the skill installs into, and Claude reads
+ * `~/.claude` and `./.claude` together, so two marketplaces naming one id means
+ * one silently shadows the other. `build marketplace` refuses those ids at author
+ * time; this is what catches a marketplace that skipped that build, was
+ * hand-edited, or is lying — nothing a source ships is unforgeable, so the
+ * consumer's own load has to ask the question again.
+ *
+ * The SOURCE is refused, not the colliding skills: dropping them would hand the
+ * user a marketplace quietly missing the skills they chose it for, leave the
+ * catalogue's own copies standing in under those ids, and tell the author
+ * nothing. One loud refusal naming the fix beats a partial load that hides it.
+ */
+async function refuseCatalogueCollisions(
+  basePath: string,
+  source: string,
+  skills: ExtractedSkillMetadata[],
+): Promise<void> {
+  const collidingIds = skills.map((skill) => skill.id).filter((id) => CATALOGUE_SKILL_IDS.has(id));
+  if (collidingIds.length === 0) return;
+  if (await isPublicCatalogueCheckout(basePath)) return;
+
+  throw new Error(catalogueCollisionError(collidingIds, source));
+}
+
+function catalogueCollisionError(collidingIds: SkillId[], source: string): string {
+  const listed = collidingIds.slice(0, MAX_REPORTED_COLLISIONS).map((id) => `  ${id}`);
+  const unlisted = collidingIds.length - listed.length;
+
+  return [
+    `Marketplace '${source}' ships ${collidingIds.length} skill id(s) the public catalogue ` +
+      `already owns:`,
+    ...listed,
+    ...(unlisted > 0 ? [`  ... and ${unlisted} more`] : []),
+    `A skill id is the directory the skill installs into, so these would shadow the public ` +
+      `catalogue's own skills. Every id must carry its marketplace's name as a namespace — ` +
+      `'<marketplace>-<id>'. Rename each skill and the 'name' in its SKILL.md, then re-run ` +
+      `'build marketplace', which refuses the same ids before they are published.`,
+  ].join("\n");
+}
+
+/**
+ * The stacks a source offers the wizard: the ones it ships, or — for the public
+ * catalogue alone — the CLI's built-in catalogue standing in when it ships none.
  *
  * A custom marketplace gets no such stand-in. Handing it one meant offering a
  * catalogue of stacks written against a different catalogue of skills, under a
@@ -419,13 +525,15 @@ async function resolveOfferedStacks(
     return sourceStacks;
   }
 
-  if (!isDefaultSource(source)) {
-    verbose(`Source '${source}' ships no stacks, and gets no built-in stand-in — offering none`);
-    return [];
+  if (await offersBuiltInStacks(basePath, source)) {
+    verbose(
+      `The public catalogue ships no stacks — offering the ${defaultStacks.length} built-in stacks`,
+    );
+    return defaultStacks;
   }
 
-  verbose(`Default source ships no stacks — offering the ${defaultStacks.length} built-in stacks`);
-  return defaultStacks;
+  verbose(`Marketplace '${source}' ships no stacks, and gets no built-in stand-in — offering none`);
+  return [];
 }
 
 // Stack values are already skill IDs — no alias resolution needed
@@ -492,6 +600,34 @@ export function extractSourceName(source: string): string {
   return firstSegment || source;
 }
 
+/**
+ * Whether this matrix carries a definition for the category. `local` never is
+ * one — it is the trapdoor a skill wears when it belongs to no category at all.
+ */
+function declaresCategory(matrix: MergedSkillsMatrix, category: CategoryPath): boolean {
+  return category !== LOCAL_PSEUDO_CATEGORY && matrix.categories[category] !== undefined;
+}
+
+/**
+ * Why a custom skill was dropped, and which file places it.
+ *
+ * The categories on offer are deliberately not listed: they are the whole
+ * catalogue's, and a refusal that prints a hundred names is one nobody reads.
+ * Whatever the user picked the category in renders them already.
+ */
+function undeclaredCategoryRefusal(
+  metadata: ExtractedSkillMetadata,
+  category: CategoryPath,
+): string {
+  const metadataPath = path.join(metadata.path, STANDARD_FILES.METADATA_YAML);
+  return (
+    `Skipping local skill '${metadata.id}': ${METADATA_KEYS.CATEGORY} '${category}' is not one this ` +
+    `installation declares, so the skill belongs in no grid tab and can be given to no sub-agent. ` +
+    `Set ${METADATA_KEYS.CATEGORY} in ${metadataPath} to a category that already exists — a skill ` +
+    `is placed in the taxonomy, it does not extend it.`
+  );
+}
+
 export function mergeLocalSkillsIntoMatrix(
   matrix: MergedSkillsMatrix,
   localResult: LocalSkillDiscoveryResult,
@@ -504,6 +640,17 @@ export function mergeLocalSkillsIntoMatrix(
     const category = existingSkill?.category ?? metadata.category;
     const slug = existingSkill?.slug ?? metadata.slug;
     const displayName = existingSkill?.displayName ?? metadata.displayName;
+
+    // A custom skill is PLACED in the taxonomy — its category is picked from the
+    // ones that exist, never invented — so one naming a category nothing declares
+    // means no pick happened. Synthesizing a definition for it is what let a
+    // fabricated category read as a real placement while the skill sat in a tab
+    // nothing draws. Local skills that claim no `custom` flag keep the old
+    // behaviour below; narrowing that is matrix hygiene, not this rule.
+    if (metadata.custom === true && !declaresCategory(matrix, category)) {
+      warn(undeclaredCategoryRefusal(metadata, category));
+      continue;
+    }
 
     const resolvedSkill: ResolvedSkill = {
       id: metadata.id,
@@ -529,6 +676,12 @@ export function mergeLocalSkillsIntoMatrix(
     };
 
     matrix.skills[metadata.id] = resolvedSkill;
+
+    // Completes the map over the matrix this merge is building: the skill went
+    // into `matrix.skills` and the slug map stayed as the source left it, so
+    // `getSkillBySlug` — the asserting lookup the matrix barrel exports — threw
+    // for every skill a user had written themselves.
+    claimSlug(matrix.slugMap, slug, metadata.id);
 
     // Ensure the skill's category exists in matrix.categories so that
     // config-types generation can discover its domain and category.

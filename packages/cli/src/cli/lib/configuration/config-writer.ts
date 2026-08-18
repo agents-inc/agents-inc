@@ -46,8 +46,8 @@ const CANONICAL_FIELD_ORDER = [
   "author",
   "selectedDomains",
   "stack",
-  "source",
   "marketplace",
+  "marketplaceName",
   "agentsSource",
   "projects",
 ] as const satisfies readonly (keyof ProjectConfig)[];

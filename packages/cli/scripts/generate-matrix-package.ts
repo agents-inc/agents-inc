@@ -15,6 +15,7 @@
  * Every input is in this repository — this package's types and its agent metadata — which is
  * what lets CI check the output by regenerating it, unlike generate:types.
  */
+import { matrixSchema } from "@workspace/matrix/matrix-schema";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import path from "path";
 import { parse as parseYaml } from "yaml";
@@ -188,6 +189,23 @@ function writeEmittedFile(matrixRoot: string, file: EmittedFile): void {
 function matchesCommitted(matrixRoot: string, file: EmittedFile): boolean {
   const target = path.join(matrixRoot, file.path);
   return existsSync(target) && readFileSync(target, "utf-8") === file.content;
+}
+
+/**
+ * Where `matrix` stops being a matrix, as `path: message` lines — empty when it is one.
+ *
+ * The file comparison above proves the vendored copy matches `src/cli/types/generated/matrix.ts`
+ * byte for byte. It cannot say that file still holds a catalogue: a type generator emitting a
+ * differently-shaped one is vendored just as faithfully, and the failure surfaces in
+ * `packages/matrix` at import time, a package away from what moved. `matrixSchema` is the wire
+ * contract `catalog.json` and the vendored artefact both answer to, so asking it here makes the
+ * generator's own gate the place that reports it.
+ */
+export function matrixShapeIssues(matrix: unknown): string[] {
+  const result = matrixSchema.safeParse(matrix);
+  if (result.success) return [];
+
+  return result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
 }
 
 export function generate({ matrixRoot, cliRoot = CLI_ROOT }: GeneratorRoots): {

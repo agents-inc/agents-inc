@@ -9,11 +9,21 @@ import type {
   Category,
 } from "../../types";
 import { groupBy, indexBy, partition } from "remeda";
-import { resolveAssignment, resolveLoadState, type LoadState } from "@workspace/matrix";
+import {
+  resolveAssignment,
+  resolveLoadState,
+  type LoadState,
+  type SkillTaxonomy,
+} from "@workspace/matrix";
 
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
-import { matrix } from "../matrix/matrix-provider";
-import { EJECT_SOURCE, GLOBAL_CONFIG_NAME, LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { getCategoryDomain, matrix } from "../matrix/matrix-provider";
+import {
+  CLI_INVOKE_COMMAND,
+  EJECT_SOURCE,
+  GLOBAL_CONFIG_NAME,
+  LOCAL_PSEUDO_CATEGORY,
+} from "../../consts";
 import { isActiveAt, activeAgentScopeMap, effectivelyExcludedSkillIds } from "./scope-predicates";
 import { verbose, warn } from "../../utils/logger";
 import { isAgentName, isSkillId } from "../../utils/type-guards";
@@ -28,6 +38,9 @@ export type ProjectConfigOptions = {
   description?: string;
   author?: string;
 };
+
+/** How many matrix ids the verbose diagnostic names when a lookup misses. */
+const MATRIX_SAMPLE_SIZE = 5;
 
 function extractCategoryFromPath(categoryPath: CategoryPath): Category | undefined {
   if (categoryPath === LOCAL_PSEUDO_CATEGORY) return undefined;
@@ -107,15 +120,32 @@ function mappedLoadState(skillId: SkillId, agent: AgentName): LoadState {
 }
 
 /**
+ * How the shared resolver is told about a skill. Targeting reads a domain and a
+ * category, never catalog membership, so what goes is the taxonomy the LOADED
+ * matrix carries: a marketplace's skill wears its marketplace's namespace in its
+ * id, belongs to no catalog-keyed table, and is still placed by its domain like
+ * any other.
+ *
+ * A category the matrix gives no domain leaves no taxonomy to state, so the id
+ * goes alone and the resolver answers for it — nobody, unless the catalog knows
+ * it. `checkMatrixHealth` reports such a category in its own right.
+ */
+function taxonomyOrIdOf(skillId: SkillId, category: Category): SkillId | SkillTaxonomy {
+  const domainId = getCategoryDomain(category);
+  if (domainId === undefined) return skillId;
+
+  return { id: skillId, domainId, categoryId: category };
+}
+
+/**
  * The shared resolver's word on whether this sub-agent would reasonably use
  * this skill — the same targeting the editor's default assignments read, so a
  * pick lands on the same agents from either surface.
- *
- * An id outside the catalog — local, marketplace, or added this session —
- * targets nobody: relevance unknown, assignment the user's to make.
  */
-function isRelevantPair(skillId: SkillId, agent: AgentName): boolean {
-  return resolveAssignment(skillId).some((target) => target.agentId === agent);
+function isRelevantPair(skillId: SkillId, category: Category, agent: AgentName): boolean {
+  return resolveAssignment(taxonomyOrIdOf(skillId, category)).some(
+    (target) => target.agentId === agent,
+  );
 }
 
 /**
@@ -132,7 +162,7 @@ function isPreservedOrRelevant(
 ): boolean {
   const hasPriorEntry =
     priorLoadState(inputs.existingStack, agent, category, skillId) !== undefined;
-  return hasPriorEntry || isRelevantPair(skillId, agent);
+  return hasPriorEntry || isRelevantPair(skillId, category, agent);
 }
 
 function getScopeOrThrow<K>(map: Map<K, SkillScope>, key: K, kind: "skill" | "agent"): SkillScope {
@@ -316,34 +346,25 @@ function buildStackForSelection(
 type ResolvedSkillEntry = { skillId: SkillId; category: Category };
 
 /**
- * Resolves selected ids against the matrix: warns and drops unknown ids, extracts
- * each skill's category, and drops ids whose every config entry is excluded.
- * A skill with an excluded global entry AND an active project entry is KEPT —
+ * Resolves selected ids against the matrix: reports and drops the ids this marketplace does
+ * not carry, extracts each skill's category, and drops ids whose every config entry is
+ * excluded. A skill with an excluded global entry AND an active project entry is KEPT —
  * the active entry still needs to reach the stack builder.
  */
 function resolveValidSkills(
   selectedSkillIds: SkillId[],
   skillConfigs: SkillConfig[],
 ): { validSkills: ResolvedSkillEntry[]; foundCount: number; skippedCount: number } {
-  const looked = selectedSkillIds.map((skillId) => {
-    const skill = matrix.skills[skillId];
-    if (!skill) warn(`Skill '${skillId}' NOT FOUND in matrix`, { suppressInTest: true });
-    return { skillId, skill };
-  });
+  const looked = selectedSkillIds.map((skillId) => ({ skillId, skill: matrix.skills[skillId] }));
   const found = looked.filter(
     (entry): entry is typeof entry & { skill: NonNullable<typeof entry.skill> } =>
       entry.skill != null,
   );
-  const skippedCount = looked.length - found.length;
+  const absentSkillIds = looked
+    .filter((entry) => entry.skill == null)
+    .map((entry) => entry.skillId);
 
-  if (skippedCount > 0) {
-    const matrixSample = typedKeys<SkillId>(matrix.skills).slice(0, 5).join(", ");
-    warn(
-      `${skippedCount}/${selectedSkillIds.length} skills not found in matrix. ` +
-        `Matrix keys sample: [${matrixSample}]`,
-      { suppressInTest: true },
-    );
-  }
+  reportAbsentSkills(absentSkillIds);
 
   const excludedSkillIds = effectivelyExcludedSkillIds(skillConfigs);
 
@@ -355,7 +376,44 @@ function resolveValidSkills(
     .filter((entry): entry is typeof entry & { category: Category } => entry.category != null)
     .filter((entry) => !excludedSkillIds.has(entry.skillId));
 
-  return { validSkills, foundCount: found.length, skippedCount };
+  return { validSkills, foundCount: found.length, skippedCount: absentSkillIds.length };
+}
+
+/**
+ * Two audiences, one fact: what the user is told about an id this marketplace does not carry,
+ * and what the run's verbose diagnostics keep for whoever is debugging the loader.
+ *
+ * A sample of matrix keys belongs to the second audience entirely — five arbitrary ids explain
+ * nothing to anyone not comparing them against a catalogue — so it goes where this project's
+ * logging convention puts a diagnostic, and the warning carries only what a user can act on.
+ */
+function reportAbsentSkills(absentSkillIds: SkillId[]): void {
+  if (absentSkillIds.length === 0) return;
+
+  for (const skillId of absentSkillIds) {
+    warn(absentSkillWarning(skillId), { suppressInTest: true });
+  }
+
+  const matrixSample = typedKeys<SkillId>(matrix.skills).slice(0, MATRIX_SAMPLE_SIZE).join(", ");
+  verbose(
+    `${absentSkillIds.length} skills absent from the matrix. Matrix keys sample: [${matrixSample}]`,
+  );
+}
+
+/**
+ * What an unplaceable id means and what changes it.
+ *
+ * The outcome first, because it is the part the user cannot see: the entry stays in `config.ts`
+ * — nothing here removes it — and the skill reaches no sub-agent, which is what a stack built
+ * without it amounts to. Both ways out are named because the fact has two readings: a catalogue
+ * that has moved on since this configuration was written, and an id this one never carried.
+ */
+function absentSkillWarning(skillId: SkillId): string {
+  return (
+    `Skill '${skillId}' is not in this marketplace — it stays in the configuration and no ` +
+    `sub-agent is given it. Run '${CLI_INVOKE_COMMAND} update' to refresh the marketplace, or ` +
+    `remove it with '${CLI_INVOKE_COMMAND} edit'.`
+  );
 }
 
 /**
@@ -497,7 +555,7 @@ export function generateProjectConfigFromSkills(
 
   const skills: SkillConfig[] =
     options?.skillConfigs ??
-    selectedSkillIds.map((id) => ({ id, scope: "project" as const, source: EJECT_SOURCE }));
+    selectedSkillIds.map((id) => ({ id, scope: "project" as const, origin: EJECT_SOURCE }));
 
   const activeAgentConfigs = resolveActiveAgentConfigs(agentList, options?.agentConfigs);
   // Excluded agents aren't in selectedAgents but must be preserved in config
@@ -623,12 +681,20 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
 
   // Domains are a UI/preference concept — all selected domains go in global config.
   // Project config inherits domains from global at runtime, so it gets none.
+  //
+  // `stack` is written on BOTH partitions unconditionally, and that is the whole of what
+  // keeps each one to its own rows: the spread above carries the undivided stack, so an
+  // override that declines to fire hands a partition every row the other partition earned.
+  // A derivation that yielded nothing is a partition with no stack, and `{}` is how that is
+  // said — the same word `buildStackForSelection` uses and for the same reason, since the
+  // merger reads an absent stack as no statement and keeps the stale one. `generateConfigSource`
+  // omits an empty stack from the file it writes, so nothing emits `stack: {}` on this account.
   const globalConfig: ProjectConfig = {
     ...config,
     name: GLOBAL_CONFIG_NAME,
     agents: globalAgents,
     skills: globalSkills,
-    ...(Object.keys(globalStack).length > 0 && { stack: globalStack }),
+    stack: globalStack,
     ...(config.selectedDomains !== undefined && { selectedDomains: config.selectedDomains }),
   };
 
@@ -637,7 +703,7 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
     name: config.name,
     agents: projectAgents,
     skills: projectSkills,
-    ...(Object.keys(projectStack).length > 0 && { stack: projectStack }),
+    stack: projectStack,
   };
 
   return { global: globalConfig, project: projectConfig };

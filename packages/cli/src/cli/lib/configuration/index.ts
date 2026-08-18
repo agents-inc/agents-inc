@@ -16,6 +16,8 @@ export {
   resolvePrimarySourceEntry,
   isDefaultSource,
   isLocalSource,
+  isPublicCatalogueCheckout,
+  offersBuiltInStacks,
   validateSourceFormat,
 } from "./config";
 
@@ -55,7 +57,7 @@ export { defineConfig } from "./define-config";
 export { defaultCategories } from "./default-categories";
 export { defaultRules } from "./default-rules";
 export { defaultStacks } from "./default-stacks";
-export { loadConfig } from "./config-loader";
+export { ConfigDefaultExportError, loadConfig } from "./config-loader";
 
 /**
  * Neither half's renderer is re-exported here, and neither is the writer that

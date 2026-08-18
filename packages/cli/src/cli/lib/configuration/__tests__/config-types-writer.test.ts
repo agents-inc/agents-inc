@@ -41,6 +41,7 @@ import type {
   CategoryDefinition,
   CategoryPath,
   SkillId,
+  SkillSlug,
   Category,
 } from "../../../types";
 
@@ -147,6 +148,27 @@ describe("generateConfigTypesSource", () => {
     );
   });
 
+  /**
+   * These two interfaces are emitted as literal TEXT into every user's
+   * `.claude-src/config-types.ts`, which is what their own `config.ts` is checked against. A
+   * field renamed in the type but not here type-errors the file the CLI just wrote.
+   */
+  it("declares a skill entry's provenance as origin", () => {
+    const source = generateConfigTypesSource(EMPTY_MATRIX, []);
+
+    expect(source).toContain("export type SkillConfig = {");
+    expect(source).toContain("  origin: string;");
+    expect(source).not.toContain("  source: string;");
+  });
+
+  it("declares the marketplace ref and the marketplace name on ProjectConfig", () => {
+    const source = generateConfigTypesSource(EMPTY_MATRIX, []);
+
+    expect(source).toContain("  marketplace?: string;");
+    expect(source).toContain("  marketplaceName?: string;");
+    expect(source).not.toContain("  source?: string;");
+  });
+
   it("falls back to loose StackAgentConfig when no categories have skills", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
@@ -248,8 +270,8 @@ describe("generateConfigTypesSource", () => {
     expect(source, "the active agents list is the only record of who is selected").not.toContain(
       "selectedAgents",
     );
-    expect(source).toContain("source?: string;");
     expect(source).toContain("marketplace?: string;");
+    expect(source).toContain("marketplaceName?: string;");
     expect(source).toContain("agentsSource?: string;");
     expect(source).toContain("author?: string;");
     expect(source).toContain("description?: string;");
@@ -356,8 +378,16 @@ describe("generateConfigTypesSource", () => {
       const acmeDeploy = "acme-deploy-pipeline" as SkillId;
       const acmeAudit = "acme-audit-runner" as SkillId;
       const matrix = createMockMatrix(
-        createMockSkill(acmeDeploy, { category: "web-framework", custom: true }),
-        createMockSkill(acmeAudit, { category: "web-framework", custom: true }),
+        createMockSkill(acmeDeploy, {
+          category: "web-framework",
+          slug: "deploy-pipeline" as SkillSlug,
+          custom: true,
+        }),
+        createMockSkill(acmeAudit, {
+          category: "web-framework",
+          slug: "audit-runner" as SkillSlug,
+          custom: true,
+        }),
         SKILLS.react,
         SKILLS.scss,
       );
@@ -401,6 +431,20 @@ describe("generateConfigTypesSource", () => {
       expect(extraIdx).toBeGreaterThan(customIdx);
     });
 
+    it("leaves a declared skill out of the custom section when it arrives as an extra", () => {
+      const matrix = FULLSTACK_PAIR_MATRIX;
+      const source = generateConfigTypesSource(matrix, [], [], {
+        extraSkillIds: ["web-framework-react"],
+      });
+
+      const skillStart = source.indexOf("export type SkillId =");
+      const skillEnd = source.indexOf(";", skillStart);
+      const skillSection = source.slice(skillStart, skillEnd);
+
+      expect(skillSection).not.toContain("// Custom");
+      expect(skillSection).toContain('"web-framework-react"');
+    });
+
     it("omits comments when no custom skills exist", () => {
       const matrix = FULLSTACK_PAIR_MATRIX;
       const source = generateConfigTypesSource(matrix, []);
@@ -413,8 +457,16 @@ describe("generateConfigTypesSource", () => {
       const acmeDeploy = "acme-deploy-pipeline" as SkillId;
       const acmeAudit = "acme-audit-runner" as SkillId;
       const matrix = createMockMatrix(
-        createMockSkill(acmeDeploy, { category: "web-framework", custom: true }),
-        createMockSkill(acmeAudit, { category: "web-framework", custom: true }),
+        createMockSkill(acmeDeploy, {
+          category: "web-framework",
+          slug: "deploy-pipeline" as SkillSlug,
+          custom: true,
+        }),
+        createMockSkill(acmeAudit, {
+          category: "web-framework",
+          slug: "audit-runner" as SkillSlug,
+          custom: true,
+        }),
       );
       const source = generateConfigTypesSource(matrix, []);
       expect(source).toContain("// Custom");
@@ -456,7 +508,53 @@ describe("generateConfigTypesSource", () => {
       expect(customAgentIdx).toBeGreaterThan(customIdx);
     });
 
-    it("shows section comments for custom categories (derived from custom skills)", () => {
+    it("leaves a declared agent out of the custom section when it arrives as an extra", () => {
+      const matrix = EMPTY_MATRIX;
+      const agentNames: AgentName[] = ["api-developer", "web-developer"];
+      const source = generateConfigTypesSource(matrix, agentNames, [], {
+        extraAgentNames: ["web-developer"],
+      });
+
+      const agentStart = source.indexOf("export type AgentName =");
+      const agentEnd = source.indexOf(";", agentStart);
+      const agentSection = source.slice(agentStart, agentEnd);
+
+      expect(agentSection).not.toContain("// Custom");
+      expect(agentSection).toContain('"web-developer"');
+    });
+
+    it("leaves a declared domain out of the custom section when it arrives as an extra", () => {
+      const categories = buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework });
+      const matrix = createMockMatrix(SKILLS.react, { categories });
+      const source = generateConfigTypesSource(matrix, [], [], { extraDomains: ["web"] });
+
+      const domainStart = source.indexOf("export type Domain =");
+      const domainEnd = source.indexOf(";", domainStart);
+      const domainSection = source.slice(domainStart, domainEnd);
+
+      expect(domainSection).not.toContain("// Custom");
+      expect(domainSection).toContain('"web"');
+    });
+
+    it("labels nothing custom when the extras name the whole configuration", () => {
+      const categories = buildCategoryMap({
+        "web-framework": TEST_CATEGORIES.framework,
+        "api-api": { ...TEST_CATEGORIES.api, domain: "api" },
+      });
+      const matrix = createMockMatrix(SKILLS.react, SKILLS.hono, { categories });
+      const agentNames: AgentName[] = ["api-developer", "web-developer"];
+
+      const source = generateConfigTypesSource(matrix, agentNames, [], {
+        extraSkillIds: ["api-framework-hono", "web-framework-react"],
+        extraAgentNames: ["api-developer", "web-developer"],
+        extraDomains: ["api", "web"],
+        extraCategories: ["api-api", "web-framework"],
+      });
+
+      expect(source).not.toContain("// Custom");
+    });
+
+    it("leaves a declared category out of the custom section when a custom skill sits in it", () => {
       // Boundary cast: custom skill/category IDs may not match built-in prefix patterns
       const acmeDeploy = "acme-deploy-pipeline" as SkillId;
       const categories = {
@@ -469,6 +567,7 @@ describe("generateConfigTypesSource", () => {
       const matrix = createMockMatrix(
         createMockSkill(acmeDeploy, {
           category: "acme-deploy" as CategoryPath,
+          slug: "deploy-pipeline" as SkillSlug,
           custom: true,
         }),
         { categories },
@@ -479,13 +578,51 @@ describe("generateConfigTypesSource", () => {
       const categoryEnd = source.indexOf(";", categoryStart);
       const categorySection = source.slice(categoryStart, categoryEnd);
 
-      expect(categorySection).toContain("// Custom");
-      expect(categorySection).toContain("// Marketplace");
+      // Both categories are the catalogue's — it declares them — however custom their skills are.
+      expect(categorySection).not.toContain("// Custom");
       expect(categorySection).toContain('"acme-deploy"');
       expect(categorySection).toContain('"web-framework"');
     });
 
-    it("shows section comments for custom domains (derived from custom skills)", () => {
+    it("leaves a declared category out of the custom section when it arrives as an extra", () => {
+      const categories = buildCategoryMap({
+        "web-framework": TEST_CATEGORIES.framework,
+        "web-styling": TEST_CATEGORIES.styling,
+      });
+      const matrix = createMockMatrix(SKILLS.react, SKILLS.scss, { categories });
+      const source = generateConfigTypesSource(matrix, [], [], {
+        extraCategories: ["web-framework", "web-styling"],
+      });
+
+      const categoryStart = source.indexOf("export type Category =");
+      const categoryEnd = source.indexOf(";", categoryStart);
+      const categorySection = source.slice(categoryStart, categoryEnd);
+
+      expect(categorySection).not.toContain("// Custom");
+      expect(categorySection).toContain('"web-framework"');
+    });
+
+    it("marks a category no declaration covers as custom", () => {
+      const categories = buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework });
+      const matrix = createMockMatrix(SKILLS.react, { categories });
+      const source = generateConfigTypesSource(matrix, [], [], {
+        extraCategories: ["acme-deploy"],
+      });
+
+      const categoryStart = source.indexOf("export type Category =");
+      const categoryEnd = source.indexOf(";", categoryStart);
+      const categorySection = source.slice(categoryStart, categoryEnd);
+
+      expect(categorySection).toContain("// Custom");
+      expect(categorySection).toContain("// Marketplace");
+      const customIdx = categorySection.indexOf("// Custom");
+      const marketplaceIdx = categorySection.indexOf("// Marketplace");
+      expect(categorySection.indexOf('"acme-deploy"')).toBeGreaterThan(customIdx);
+      expect(categorySection.indexOf('"acme-deploy"')).toBeLessThan(marketplaceIdx);
+      expect(categorySection.indexOf('"web-framework"')).toBeGreaterThan(marketplaceIdx);
+    });
+
+    it("does not mark a domain custom because a custom skill's category carries it", () => {
       // Boundary cast: custom skill/category/domain not in built-in unions
       const acmeCi = "acme-ci-runner" as SkillId;
       const categories = {
@@ -498,6 +635,7 @@ describe("generateConfigTypesSource", () => {
       const matrix = createMockMatrix(
         createMockSkill(acmeCi, {
           category: "devops-ci" as CategoryPath,
+          slug: "ci-runner" as SkillSlug,
           custom: true,
         }),
         { categories },
@@ -508,10 +646,26 @@ describe("generateConfigTypesSource", () => {
       const domainEnd = source.indexOf(";", domainStart);
       const domainSection = source.slice(domainStart, domainEnd);
 
-      expect(domainSection).toContain("// Custom");
-      expect(domainSection).toContain("// Marketplace");
+      expect(domainSection).not.toContain("// Custom");
       expect(domainSection).toContain('"devops"');
       expect(domainSection).toContain('"web"');
+    });
+
+    it("treats extra domains as custom", () => {
+      const categories = buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework });
+      const matrix = createMockMatrix(SKILLS.react, { categories });
+      const source = generateConfigTypesSource(matrix, [], [], { extraDomains: ["devops"] });
+
+      const domainStart = source.indexOf("export type Domain =");
+      const domainEnd = source.indexOf(";", domainStart);
+      const domainSection = source.slice(domainStart, domainEnd);
+
+      expect(domainSection).toContain("// Custom");
+      expect(domainSection).toContain("// Marketplace");
+      const customIdx = domainSection.indexOf("// Custom");
+      const marketplaceIdx = domainSection.indexOf("// Marketplace");
+      expect(domainSection.indexOf('"devops"')).toBeGreaterThan(customIdx);
+      expect(domainSection.indexOf('"devops"')).toBeLessThan(marketplaceIdx);
     });
 
     it("does not mark domain as custom if it appears on both custom and non-custom categories", () => {
@@ -527,6 +681,7 @@ describe("generateConfigTypesSource", () => {
       const matrix = createMockMatrix(
         createMockSkill(acmeTool, {
           category: "web-custom-tool" as CategoryPath,
+          slug: "web-tool" as SkillSlug,
           custom: true,
         }),
         { categories },
@@ -546,7 +701,11 @@ describe("generateConfigTypesSource", () => {
       // Boundary cast: custom skill ID may not match built-in SkillId prefix patterns
       const acmeDeploy = "acme-deploy-pipeline" as SkillId;
       const matrix = createMockMatrix(
-        createMockSkill(acmeDeploy, { category: "web-framework", custom: true }),
+        createMockSkill(acmeDeploy, {
+          category: "web-framework",
+          slug: "deploy-pipeline" as SkillSlug,
+          custom: true,
+        }),
         SKILLS.react,
       );
       const source = generateConfigTypesSource(matrix, []);

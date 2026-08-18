@@ -16,10 +16,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { STANDARD_FILES } from "../src/cli/consts.js";
 import { renderAgentYaml } from "../src/cli/lib/__tests__/content-generators.js";
 import { AGENT_DEFS } from "../src/cli/lib/__tests__/mock-data/mock-agents.js";
+import { SKILLS } from "../src/cli/lib/__tests__/test-fixtures.js";
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 import { AGENT_NAMES } from "../src/cli/types/agents.js";
 
-import { check, generate } from "./generate-matrix-package.js";
+import { BUILT_IN_MATRIX } from "../src/cli/types/generated/matrix.js";
+
+import { check, generate, matrixShapeIssues } from "./generate-matrix-package.js";
 
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 const MATRIX_ROOT = path.resolve(CLI_ROOT, "../matrix");
@@ -34,6 +37,9 @@ const CLI_AGENTS_DIR = "src/agents";
 
 const DRIFTED_FILE = "src/vendor/matrix.ts";
 const DRIFTED_CONTENT = "// hand-edited after generation\n";
+
+/** The vendored copy of `src/cli/types/config.ts`, relative to `VENDOR_DIR`. */
+const VENDORED_CONFIG_FILE = "config.ts";
 
 const DEVELOPER_FLAVOR = "developer";
 const TESTER_FLAVOR = "tester";
@@ -266,11 +272,37 @@ describe("generating from a fixture cli root", () => {
   });
 });
 
+// -- Vendored field names ----------------------------------------------------
+
+/**
+ * `check` above proves the vendored copy matches whatever `src/cli/types/` currently says. It
+ * cannot say what that ought to be, so a rename that stops at the CLI leaves both halves
+ * agreeing on the old name. These name the fields the matrix package's consumers read.
+ */
+describe("the vendored config types", () => {
+  const vendoredConfig = readFileSync(path.join(VENDOR_DIR, VENDORED_CONFIG_FILE), "utf-8");
+
+  it("declares a skill entry's provenance as origin", () => {
+    expect(vendoredConfig).toContain("  origin: string;");
+    expect(vendoredConfig).not.toContain("  source: string;");
+  });
+
+  it("declares the marketplace ref and the marketplace name on ProjectConfig", () => {
+    expect(vendoredConfig).toContain("  marketplace?: string;");
+    expect(vendoredConfig).toContain("  marketplaceName?: string;");
+    expect(vendoredConfig).not.toContain("  source?: string;");
+  });
+});
+
 // -- Check mode --------------------------------------------------------------
 
 describe("check mode", () => {
   it("reports no drift against the committed matrix package", () => {
     expect(check({ matrixRoot: MATRIX_ROOT })).toStrictEqual({ clean: true, drifted: [] });
+  });
+
+  it("reports the matrix shape as satisfied by the artefact about to be vendored", () => {
+    expect(matrixShapeIssues(BUILT_IN_MATRIX)).toStrictEqual([]);
   });
 
   it("reports the drifted file and leaves the tree untouched", async () => {
@@ -289,5 +321,38 @@ describe("check mode", () => {
     expect(listFilesRecursive(copyRoot)).toStrictEqual(filesBefore);
 
     await cleanupTempDir(copyRoot);
+  });
+});
+
+// -- Matrix shape ------------------------------------------------------------
+
+/**
+ * Byte-comparison says the vendored copy matches `src/cli/types/generated/matrix.ts`. It cannot
+ * say that file still holds a matrix — a generator change that emits a differently-shaped one
+ * vendors it faithfully and turns every read model in `packages/matrix` red at import time
+ * instead. `matrixShapeIssues` is what the gate asks that question with.
+ */
+describe("matrix shape", () => {
+  it("names the path of a skill that lost its category", () => {
+    const { category: _dropped, ...skillWithoutCategory } = SKILLS.react;
+
+    const issues = matrixShapeIssues({
+      ...BUILT_IN_MATRIX,
+      skills: { [SKILLS.react.id]: skillWithoutCategory },
+    });
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain(`skills.${SKILLS.react.id}.category`);
+  });
+
+  it("names the path of a catalogue whose stacks are not a list", () => {
+    const issues = matrixShapeIssues({ ...BUILT_IN_MATRIX, suggestedStacks: {} });
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("suggestedStacks");
+  });
+
+  it("reports something that is not a matrix at all", () => {
+    expect(matrixShapeIssues({}).length).toBeGreaterThan(0);
   });
 });

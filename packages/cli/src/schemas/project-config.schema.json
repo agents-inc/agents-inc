@@ -220,16 +220,16 @@
         }
       }
     },
-    "source": {
+    "marketplace": {
       "type": "string"
     },
-    "marketplace": {
+    "marketplaceName": {
       "type": "string"
     },
     "agentsSource": {
       "type": "string"
     }
   },
-  "required": ["name", "agents", "skills", "installMode", "stack", "source"],
+  "required": ["name", "agents", "skills", "installMode", "stack", "marketplace"],
   "additionalProperties": false
 }

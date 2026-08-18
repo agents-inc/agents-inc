@@ -4,8 +4,16 @@ import { runDashboardFlow } from "../commands/init.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import type { ConfigWithSource } from "../base-command.js";
 
-/** oclif's id for the one command that may name a source. */
+/** oclif's id for the one command that may name a marketplace. */
 const INIT_COMMAND_ID = "init";
+
+/**
+ * `init`'s marketplace flag, in the three spellings raw argv can carry it. The long
+ * `=` form is derived rather than spelled again, so the two cannot drift apart.
+ */
+const MARKETPLACE_FLAG_SHORT = "-m";
+const MARKETPLACE_FLAG_LONG = "--marketplace";
+const MARKETPLACE_FLAG_LONG_INLINE = `${MARKETPLACE_FLAG_LONG}=`;
 
 const hook: Hook<"init"> = async function (options) {
   const projectDir = process.cwd();
@@ -18,8 +26,8 @@ const hook: Hook<"init"> = async function (options) {
     }
   }
 
-  // `init` is the one command that may name a source, so it is the one command whose
-  // argv can carry `--source` and the one caller the environment rung answers.
+  // `init` is the one command that may name a marketplace, so it is the one command whose
+  // argv can carry `--marketplace` and the one caller the environment rung answers.
   const isInit = options.id === INIT_COMMAND_ID;
   const sourceFlag = isInit ? extractSourceFlag(options.argv) : undefined;
 
@@ -37,19 +45,33 @@ const hook: Hook<"init"> = async function (options) {
 };
 
 /**
- * Extracts the source flag from raw argv (oclif has not parsed flags yet at
- * init-hook time). `-s` wins over both long forms — preserving the historical
- * mutation-order precedence; the `--source=` form is only consulted when the
- * bare `--source` flag is absent.
+ * Extracts the marketplace flag from raw argv (oclif has not parsed flags yet at
+ * init-hook time). `-m` wins over both long forms — preserving the historical
+ * mutation-order precedence; the `--marketplace=` form is only consulted when the
+ * bare `--marketplace` flag is absent.
+ *
+ * The withdrawn `--source` / `-s` spellings are read by nothing here, exactly as
+ * oclif refuses them once it parses: pre-1.0 aliases nothing, so a run that typed
+ * the old flag named no marketplace rather than quietly choosing one.
  */
 function extractSourceFlag(argv: string[]): string | undefined {
-  const shortIndex = argv.indexOf("-s");
-  if (shortIndex !== -1 && shortIndex + 1 < argv.length) return argv[shortIndex + 1];
+  return (
+    separateValueAfter(argv, MARKETPLACE_FLAG_SHORT) ??
+    separateValueAfter(argv, MARKETPLACE_FLAG_LONG) ??
+    inlineValueAfter(argv, MARKETPLACE_FLAG_LONG_INLINE)
+  );
+}
 
-  const longIndex = argv.indexOf("--source");
-  if (longIndex !== -1 && longIndex + 1 < argv.length) return argv[longIndex + 1];
+/** The argument following `flag`, where the flag is present and something follows it. */
+function separateValueAfter(argv: string[], flag: string): string | undefined {
+  const flagIndex = argv.indexOf(flag);
+  if (flagIndex === -1) return undefined;
+  return argv[flagIndex + 1];
+}
 
-  return argv.find((arg) => arg.startsWith("--source="))?.split("=")[1];
+/** The value welded onto the flag by an `=`, as in `--marketplace=github:org/skills`. */
+function inlineValueAfter(argv: string[], flagPrefix: string): string | undefined {
+  return argv.find((arg) => arg.startsWith(flagPrefix))?.slice(flagPrefix.length);
 }
 
 export default hook;

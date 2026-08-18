@@ -7,7 +7,6 @@ import type {
   Domain,
   MergedSkillsMatrix,
   ProjectConfig,
-  ResolvedSkill,
   SkillId,
 } from "../../types";
 import { loadProjectConfigFromDir } from "./project-config";
@@ -102,7 +101,7 @@ export const PROJECT_CONFIG_TYPES_BEFORE = `export type InstallMode = "eject" | 
 export type SkillConfig = {
   id: SkillId;
   scope: "project" | "global";
-  source: string;
+  origin: string;
   excluded?: boolean;
 };
 
@@ -130,7 +129,7 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
   /** Per-agent configuration with scope */
   agents: AgentScopeConfig[];
 
-  /** Per-skill configuration with scope and source */
+  /** Per-skill configuration with scope and provenance */
   skills: SkillConfig[];
 
   /** Author handle (e.g., "@vince") */
@@ -139,11 +138,11 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
   /** Stack configuration: agent -> category -> skill assignment */
   stack?: Partial<Record<ProjectAgentName, StackAgentConfig>>;
 
-  /** Skills source path or URL */
-  source?: string;
-
-  /** Marketplace identifier for plugin installation */
+  /** The marketplace this install reads skills from, as a path or URL */
   marketplace?: string;
+
+  /** The name that marketplace's manifest gives it, which plugins are registered under */
+  marketplaceName?: string;
 
   /** Agents source path or URL (when agents come from a different source than skills) */
   agentsSource?: string;
@@ -272,28 +271,59 @@ function buildSkillsByCategory(
 }
 
 /**
- * Domains that only ever appear on custom categories — the subtraction rule:
- * a domain is custom only if it NEVER appears on a non-custom (marketplace)
- * category. Explicitly-passed extra domains are always treated as custom.
+ * A category no loaded catalogue declares, which is the whole of what makes one custom.
+ *
+ * Deliberately not "a category a custom skill is in": a custom skill is PLACED in a category that
+ * already exists rather than bringing one, so the skills that REFERENCE a category say nothing
+ * about who declared it — and reading them that way labelled a category the public catalogue
+ * ships as the user's own. The same holds for a category arriving as an extra: an extra is every
+ * literal a just-written config.ts holds, most of them the catalogue's.
  */
-function collectCustomDomains(
-  matrix: MergedSkillsMatrix,
-  customCategorySet: Set<string>,
-  extraDomains: string[],
-): Set<string> {
-  const categories = typedKeys(matrix.categories)
-    .map((key) => ({ key, domain: matrix.categories[key]?.domain }))
-    .filter((c): c is { key: Category; domain: Domain } => c.domain !== undefined);
+function isUndeclaredCategory(category: Category, matrix: MergedSkillsMatrix): boolean {
+  return matrix.categories[category] === undefined;
+}
 
-  const marketplaceDomains = new Set(
-    categories.filter((c) => !customCategorySet.has(c.key)).map((c) => c.domain),
-  );
-  const customOnlyDomains = categories
-    .filter((c) => customCategorySet.has(c.key))
-    .map((c) => c.domain)
-    .filter((domain) => !marketplaceDomains.has(domain));
+/**
+ * A skill the loaded catalogue does not declare, or declares as the user's own.
+ *
+ * The same rule the category axis takes, plus the one signal skills carry that categories do not:
+ * `custom: true` is written into a skill's own metadata, so a skill the matrix holds AND flags is
+ * the user's however it got there. What is NOT read is which argument the id arrived in — an extra
+ * is a literal the just-written config.ts holds, and on the project standalone path that is the
+ * whole configuration, most of it the catalogue's.
+ *
+ * `local: true` is deliberately not a second signal: an ejected catalogue skill is copied into
+ * `.claude/skills/` and rediscovered as local, so it would label the catalogue's own work custom.
+ */
+function isCustomSkill(skillId: SkillId, matrix: MergedSkillsMatrix): boolean {
+  const declared = matrix.skills[skillId];
+  return declared === undefined || declared.custom === true;
+}
 
-  return new Set<string>([...customOnlyDomains, ...extraDomains]);
+/**
+ * An agent the loaded source does not declare, or declares as the user's own.
+ *
+ * `agentNames` is every agent that source ships and `customAgentNames` the ones it marks custom,
+ * so the pair is the agent axis's equivalent of the matrix: anything outside the first is nobody's
+ * declaration, anything inside the second is declared as the user's.
+ */
+function isCustomAgent(
+  agentName: AgentName,
+  declared: ReadonlySet<AgentName>,
+  flaggedCustom: ReadonlySet<AgentName>,
+): boolean {
+  return !declared.has(agentName) || flaggedCustom.has(agentName);
+}
+
+/**
+ * A domain no category the loaded catalogue declares carries.
+ *
+ * This replaces a subtraction over custom categories that can no longer fire: under the category
+ * rule above a custom category is by definition absent from `matrix.categories`, and that map was
+ * the only thing the subtraction walked.
+ */
+function isCustomDomain(domain: string, declared: ReadonlySet<string>): boolean {
+  return !declared.has(domain);
 }
 
 export type ConfigTypesBackgroundData = {
@@ -307,7 +337,7 @@ export type ConfigTypesBackgroundData = {
  * Returns a promise that resolves with the loaded data. Callers should NOT await this immediately;
  * instead, pass the promise to `regenerateConfigTypes` after the main operation completes.
  *
- * @param sourceFlag Optional --source flag value
+ * @param sourceFlag Optional --marketplace flag value
  * @param projectDir The project root directory
  */
 export function loadConfigTypesDataInBackground(
@@ -467,31 +497,20 @@ export function generateConfigTypesSource(
     categories = unique([...typedKeys(matrix.categories), ...extraCategoriesArr]).sort();
   }
 
-  // Determine which skills are custom
-  const customSkillSet = new Set<SkillId>([
-    ...extraSkillIds,
-    ...typedKeys(matrix.skills).filter((id) => matrix.skills[id]?.custom === true),
-  ]);
+  const declaredAgents = new Set<AgentName>(agentNames);
+  const flaggedCustomAgents = new Set<AgentName>(customAgentNames);
+  const declaredDomains = new Set<string>(extractDomains(matrix));
 
-  // Determine which agents are custom
-  const customAgentSet = new Set<AgentName>([...customAgentNames, ...extraAgentNamesArr]);
-
-  // Determine which categories are custom (referenced by custom skills or passed as extras)
-  const customCategorySet = new Set<Category>([
-    ...extraCategoriesArr,
-    ...typedKeys(matrix.skills)
-      .map((id) => matrix.skills[id])
-      .filter((skill): skill is ResolvedSkill => skill?.custom === true)
-      .map((skill) => skill.category)
-      .filter(isNonLocalCategory),
-  ]);
-
-  const customDomainSet = collectCustomDomains(matrix, customCategorySet, extraDomainsArr);
-
-  const skillIdLine = formatMaybeSectionedUnion(skillIds, (id) => customSkillSet.has(id));
-  const agentNameLine = formatMaybeSectionedUnion(sortedAgents, (name) => customAgentSet.has(name));
-  const domainLine = formatMaybeSectionedUnion(domains, (d) => customDomainSet.has(d));
-  const categoryLine = formatMaybeSectionedUnion(categories, (s) => customCategorySet.has(s));
+  const skillIdLine = formatMaybeSectionedUnion(skillIds, (id) => isCustomSkill(id, matrix));
+  const agentNameLine = formatMaybeSectionedUnion(sortedAgents, (name) =>
+    isCustomAgent(name, declaredAgents, flaggedCustomAgents),
+  );
+  const domainLine = formatMaybeSectionedUnion(domains, (domain) =>
+    isCustomDomain(domain, declaredDomains),
+  );
+  const categoryLine = formatMaybeSectionedUnion(categories, (category) =>
+    isUndeclaredCategory(category, matrix),
+  );
 
   const selectedAgents = config?.agents ? activeAgentNames(config.agents) : [];
   const selectedAgentNameLine =

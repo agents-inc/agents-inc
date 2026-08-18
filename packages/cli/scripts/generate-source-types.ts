@@ -12,6 +12,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 // Phase 2 imports — pure logic, no circular dependencies
+import { GENERATED_AT_BUILD } from "../src/cli/consts";
 import { defaultCategories } from "../src/cli/lib/configuration/default-categories";
 import { defaultRules } from "../src/cli/lib/configuration/default-rules";
 import { defaultStacks } from "../src/cli/lib/configuration/default-stacks";
@@ -322,8 +323,8 @@ export function generatePhase2(
   // Call the pure resolution function
   const matrix = mergeMatrixWithSkills(defaultCategories, defaultRules.relationships, sortedSkills);
 
-  // Override generatedAt with fixed string to avoid unnecessary diffs
-  matrix.generatedAt = "build";
+  // A written matrix records a build, not a moment — see GENERATED_AT_BUILD
+  matrix.generatedAt = GENERATED_AT_BUILD;
 
   // Resolve stacks from defaultStacks
   matrix.suggestedStacks = defaultStacks.map((stack) => resolveStack(stack, skillIdSet));

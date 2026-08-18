@@ -47,6 +47,9 @@
         "source": {
           "type": "string"
         },
+        "path": {
+          "type": "string"
+        },
         "date": {
           "type": "string"
         }

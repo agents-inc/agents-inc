@@ -13,7 +13,7 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { expectAgentConfigs, expectSkillConfigs } from "../../__tests__/assertions/index.js";
 import type { ProjectConfig } from "../../../types";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
 
 let tempDir: string;
@@ -180,8 +180,8 @@ describe("config round-trip", () => {
       skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_AND_API]),
       author: "@vince",
       selectedDomains: ["web", "api"],
-      source: TEST_SOURCE_URL,
-      marketplace: "agents-inc",
+      marketplace: TEST_SOURCE_URL,
+      marketplaceName: "agents-inc",
     });
 
     const loaded = await writeAndLoad(config);
@@ -222,7 +222,7 @@ describe("config round-trip", () => {
       name: "fixed-point-project",
       agents: buildAgentConfigs(["web-developer"]),
       skills: buildSkillConfigs(["web-framework-react", "web-styling-tailwind"]),
-      source: TEST_SOURCE_URL,
+      marketplace: TEST_SOURCE_URL,
       author: "@vince",
       stack: {
         "web-developer": {
@@ -237,8 +237,52 @@ describe("config round-trip", () => {
 
     // Subject guard: the values really did survive the round trip, so the byte
     // comparison below is about ORDER and not about a config that came back empty.
-    expect(loaded.source).toBe(TEST_SOURCE_URL);
+    expect(loaded.marketplace).toBe(TEST_SOURCE_URL);
     expect(loaded.author).toBe("@vince");
+    expect(
+      generateConfigSource(loaded),
+      "writing back a config just read off disk must not move a single byte",
+    ).toBe(firstEmission);
+  });
+
+  it("lands the marketplace ref, the marketplace name and each skill's origin on their own fields", async () => {
+    const config = buildProjectConfig({
+      name: "renamed-fields-project",
+      skills: buildSkillConfigs(["web-framework-react"], { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+      marketplace: TEST_SOURCE_URL,
+      marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
+    });
+
+    const loaded = await writeAndLoadProjectConfig(config);
+
+    expect(loaded.marketplace, "the ref the run was told to install from").toBe(TEST_SOURCE_URL);
+    expect(loaded.marketplaceName, "the name the fetched manifest gave it").toBe(
+      DEFAULT_PUBLIC_SOURCE_NAME,
+    );
+    expect(
+      loaded.skills.map((skill) => skill.origin),
+      "each skill's provenance, which is neither of the two above",
+    ).toStrictEqual([DEFAULT_PUBLIC_SOURCE_NAME]);
+  });
+
+  it("re-emits a config carrying the renamed marketplace fields with the same bytes", async () => {
+    const config = buildProjectConfig({
+      name: "renamed-fixed-point-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills: buildSkillConfigs(["web-framework-react"], { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+      marketplace: TEST_SOURCE_URL,
+      marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
+      author: "@vince",
+    });
+    const firstEmission = generateConfigSource(config);
+
+    const loaded = await writeAndLoadProjectConfig(config);
+
+    // Subject guard: the renamed fields really did survive the round trip, so the byte
+    // comparison below is about ORDER and not about a config that came back empty.
+    expect(loaded.marketplace).toBe(TEST_SOURCE_URL);
+    expect(loaded.marketplaceName).toBe(DEFAULT_PUBLIC_SOURCE_NAME);
+    expect(loaded.skills.map((skill) => skill.origin)).toStrictEqual([DEFAULT_PUBLIC_SOURCE_NAME]);
     expect(
       generateConfigSource(loaded),
       "writing back a config just read off disk must not move a single byte",

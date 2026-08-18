@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import { writeTestPackageJson, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import {
   buildAgentConfigs,
@@ -15,10 +15,11 @@ import {
   DEFAULT_SOURCE,
   getProjectConfigPath,
   isLocalSource,
+  isPublicCatalogueCheckout,
   loadProjectSourceConfig,
   resolveBranding,
+  resolvePrimarySourceEntry,
   resolveSource,
-  SOURCE_ENV_VAR,
   validateSourceFormat,
 } from "./config";
 import { CLAUDE_SRC_DIR, DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
@@ -28,17 +29,56 @@ const HOME_CONFIG_SOURCE = "github:home/skills";
 /** A source named by a project's own `.claude-src/config.ts`. */
 const PROJECT_CONFIG_SOURCE = "github:project-of-its-own/skills";
 
+/**
+ * The environment rung, mirrored as a LITERAL rather than imported from `./config`.
+ * A test that reads the very constant the product reads the environment through cannot
+ * fail when that constant's value changes — both sides move together and the assertion
+ * asserts nothing. The name a user exports is the contract, so the test spells it.
+ */
+const MARKETPLACE_ENV_VAR = "CC_MARKETPLACE";
+
+/**
+ * The spelling that used to carry it. Pre-1.0 ships no compatibility shims, so this is
+ * read by nothing: an exported `CC_SOURCE` must fall through as if it were unset rather
+ * than quietly still choosing where skills come from.
+ */
+const WITHDRAWN_SOURCE_ENV_VAR = "CC_SOURCE";
+
+/**
+ * `init`'s flag, as every validation message names it back. Mirrored for the same reason
+ * as the env var above — and passed as the `flagName` argument, which is what the
+ * messages interpolate.
+ */
+const MARKETPLACE_FLAG = "--marketplace";
+
+/** A second, deliberately different label — proves the messages interpolate what they are given. */
+const OTHER_FLAG_LABEL = "--agent-marketplace";
+
+/**
+ * The word CLI-463 withdraws from every message this module raises. Asserted as a whole
+ * word so `sourcehut:` and a path that happens to spell it are not matched.
+ */
+const WITHDRAWN_NOUN = /\bsources?\b/i;
+
+/**
+ * The catalogue's package name, mirrored as a LITERAL for the same reason as the env var
+ * above: a test that reads the constant the product reads cannot fail when its value moves.
+ */
+const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
+
 describe("config", () => {
   let tempDir: string;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-config-test-");
-    delete process.env[SOURCE_ENV_VAR];
+    delete process.env[MARKETPLACE_ENV_VAR];
+    delete process.env[WITHDRAWN_SOURCE_ENV_VAR];
   });
 
   afterEach(async () => {
     await cleanupTempDir(tempDir);
-    delete process.env[SOURCE_ENV_VAR];
+    delete process.env[MARKETPLACE_ENV_VAR];
+    delete process.env[WITHDRAWN_SOURCE_ENV_VAR];
   });
 
   describe("DEFAULT_SOURCE", () => {
@@ -47,9 +87,16 @@ describe("config", () => {
     });
   });
 
-  describe("SOURCE_ENV_VAR", () => {
-    it("should be CC_SOURCE", () => {
-      expect(SOURCE_ENV_VAR).toBe("CC_SOURCE");
+  describe("the primary entry the listing surfaces read", () => {
+    it("should keep naming the marketplace it is, with the description it carries", async () => {
+      const entry = await resolvePrimarySourceEntry(tempDir);
+
+      expect(
+        entry.name,
+        "doctor prints this label in front of the ref — a user never sees the config field it now reads like, so the label stays the plain noun",
+      ).toBe("marketplace");
+      expect(entry.description).toBe("Primary skills marketplace");
+      expect(entry.url).toBe(DEFAULT_SOURCE);
     });
   });
 
@@ -113,91 +160,118 @@ describe("config", () => {
     });
   });
 
+  describe("isPublicCatalogueCheckout", () => {
+    it("recognises a directory holding the public catalogue's own package", async () => {
+      await writeTestPackageJson(tempDir, { name: PUBLIC_CATALOGUE_PACKAGE });
+
+      expect(
+        await isPublicCatalogueCheckout(tempDir),
+        "the question this one answers is about a DIRECTORY, read off package identity",
+      ).toBe(true);
+    });
+
+    it("refuses a directory whose package merely resembles the catalogue's", async () => {
+      await writeTestPackageJson(tempDir, { name: `${PUBLIC_CATALOGUE_PACKAGE}-extra` });
+
+      expect(await isPublicCatalogueCheckout(tempDir)).toBe(false);
+    });
+
+    it("refuses a directory that declares no package at all", async () => {
+      expect(await isPublicCatalogueCheckout(tempDir)).toBe(false);
+    });
+  });
+
   describe("validateSourceFormat", () => {
     describe("valid sources", () => {
       it("should accept valid github: shorthand", () => {
-        expect(() => validateSourceFormat("github:user/repo", "--source")).not.toThrow();
-        expect(() => validateSourceFormat("github:org/my-skills", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("github:user/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("github:org/my-skills", MARKETPLACE_FLAG)).not.toThrow();
       });
 
       it("should accept valid gh: shorthand", () => {
-        expect(() => validateSourceFormat("gh:user/repo", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("gh:user/repo", MARKETPLACE_FLAG)).not.toThrow();
       });
 
       it("should accept valid gitlab: shorthand", () => {
-        expect(() => validateSourceFormat("gitlab:user/repo", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("gitlab:user/repo", MARKETPLACE_FLAG)).not.toThrow();
       });
 
       it("should accept valid bitbucket: shorthand", () => {
-        expect(() => validateSourceFormat("bitbucket:user/repo", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("bitbucket:user/repo", MARKETPLACE_FLAG)).not.toThrow();
       });
 
       it("should accept valid sourcehut: shorthand", () => {
-        expect(() => validateSourceFormat("sourcehut:user/repo", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("sourcehut:user/repo", MARKETPLACE_FLAG)).not.toThrow();
       });
 
       it("should accept valid https:// URLs", () => {
         expect(() =>
-          validateSourceFormat("https://github.com/user/repo", "--source"),
+          validateSourceFormat("https://github.com/user/repo", MARKETPLACE_FLAG),
         ).not.toThrow();
         expect(() =>
-          validateSourceFormat("https://gitlab.company.com/team/skills", "--source"),
+          validateSourceFormat("https://gitlab.company.com/team/skills", MARKETPLACE_FLAG),
         ).not.toThrow();
       });
 
       it("should accept valid http:// URLs", () => {
-        expect(() => validateSourceFormat("http://github.com/user/repo", "--source")).not.toThrow();
+        expect(() =>
+          validateSourceFormat("http://github.com/user/repo", MARKETPLACE_FLAG),
+        ).not.toThrow();
       });
 
       it("should accept localhost URLs", () => {
-        expect(() => validateSourceFormat("https://localhost/repo", "--source")).not.toThrow();
+        expect(() =>
+          validateSourceFormat("https://localhost/repo", MARKETPLACE_FLAG),
+        ).not.toThrow();
       });
 
       it("should accept valid local paths", () => {
-        expect(() => validateSourceFormat("./my-skills", "--source")).not.toThrow();
-        expect(() => validateSourceFormat("../other-project/skills", "--source")).not.toThrow();
-        expect(() => validateSourceFormat("/home/user/skills", "--source")).not.toThrow();
-        expect(() => validateSourceFormat("my-skills", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("./my-skills", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() =>
+          validateSourceFormat("../other-project/skills", MARKETPLACE_FLAG),
+        ).not.toThrow();
+        expect(() => validateSourceFormat("/home/user/skills", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("my-skills", MARKETPLACE_FLAG)).not.toThrow();
       });
     });
 
     describe("invalid remote sources", () => {
       it("should reject incomplete github: shorthand", () => {
-        expect(() => validateSourceFormat("github:", "--source")).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("github:x", "--source")).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("github:", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("github:x", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
       });
 
       it("should reject github: without owner/repo format", () => {
-        expect(() => validateSourceFormat("github:just-a-name", "--source")).toThrow(
+        expect(() => validateSourceFormat("github:just-a-name", MARKETPLACE_FLAG)).toThrow(
           /owner\/repo format/,
         );
       });
 
       it("should reject incomplete gh: shorthand", () => {
-        expect(() => validateSourceFormat("gh:", "--source")).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("gh:", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
       });
 
       it("should reject gh: without owner/repo format", () => {
-        expect(() => validateSourceFormat("gh:just-a-name", "--source")).toThrow(
+        expect(() => validateSourceFormat("gh:just-a-name", MARKETPLACE_FLAG)).toThrow(
           /owner\/repo format/,
         );
       });
 
       it("should reject incomplete https:// URLs", () => {
-        expect(() => validateSourceFormat("https://", "--source")).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("https://x", "--source")).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("https://", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("https://x", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
       });
 
       it("should reject https:// URLs without valid hostname", () => {
-        expect(() => validateSourceFormat("https://not-a-host/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://not-a-host/repo", MARKETPLACE_FLAG)).toThrow(
           /invalid URL/,
         );
       });
 
       it("should reject http:// URLs without valid hostname", () => {
-        expect(() => validateSourceFormat("http://", "--source")).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("http://x", "--source")).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("http://not-a-host/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("http://", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("http://x", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("http://not-a-host/repo", MARKETPLACE_FLAG)).toThrow(
           /invalid URL/,
         );
       });
@@ -205,22 +279,22 @@ describe("config", () => {
 
     describe("invalid local sources", () => {
       it("should reject paths with control characters", () => {
-        expect(() => validateSourceFormat("my-skills\x00", "--source")).toThrow(
+        expect(() => validateSourceFormat("my-skills\x00", MARKETPLACE_FLAG)).toThrow(
           /invalid characters/,
         );
-        expect(() => validateSourceFormat("my\x07skills", "--source")).toThrow(
+        expect(() => validateSourceFormat("my\x07skills", MARKETPLACE_FLAG)).toThrow(
           /invalid characters/,
         );
       });
 
       it("should reject UNC paths (Windows network paths)", () => {
-        expect(() => validateSourceFormat("//attacker.com/payload", "--source")).toThrow(
+        expect(() => validateSourceFormat("//attacker.com/payload", MARKETPLACE_FLAG)).toThrow(
           /UNC network path/,
         );
-        expect(() => validateSourceFormat("\\\\attacker.com\\share", "--source")).toThrow(
+        expect(() => validateSourceFormat("\\\\attacker.com\\share", MARKETPLACE_FLAG)).toThrow(
           /UNC network path/,
         );
-        expect(() => validateSourceFormat("//192.168.1.1/share", "--source")).toThrow(
+        expect(() => validateSourceFormat("//192.168.1.1/share", MARKETPLACE_FLAG)).toThrow(
           /UNC network path/,
         );
       });
@@ -228,146 +302,186 @@ describe("config", () => {
 
     describe("null byte validation", () => {
       it("should reject null bytes in any source type", () => {
-        expect(() => validateSourceFormat("github:user/repo\x00", "--source")).toThrow(
+        expect(() => validateSourceFormat("github:user/repo\x00", MARKETPLACE_FLAG)).toThrow(
           /null bytes/,
         );
-        expect(() => validateSourceFormat("https://github.com/user/repo\x00", "--source")).toThrow(
+        expect(() =>
+          validateSourceFormat("https://github.com/user/repo\x00", MARKETPLACE_FLAG),
+        ).toThrow(/null bytes/);
+        expect(() => validateSourceFormat("./my-\x00skills", MARKETPLACE_FLAG)).toThrow(
           /null bytes/,
         );
-        expect(() => validateSourceFormat("./my-\x00skills", "--source")).toThrow(/null bytes/);
       });
     });
 
     describe("path traversal in remote sources", () => {
       it("should reject .. in git shorthand paths", () => {
-        expect(() => validateSourceFormat("github:user/repo/../other", "--source")).toThrow(
+        expect(() => validateSourceFormat("github:user/repo/../other", MARKETPLACE_FLAG)).toThrow(
           /path traversal/,
         );
-        expect(() => validateSourceFormat("gh:user/../../etc", "--source")).toThrow(
+        expect(() => validateSourceFormat("gh:user/../../etc", MARKETPLACE_FLAG)).toThrow(
           /path traversal/,
         );
       });
 
       it("should reject .. in HTTP URL paths", () => {
         expect(() =>
-          validateSourceFormat("https://github.com/user/../admin/repo", "--source"),
+          validateSourceFormat("https://github.com/user/../admin/repo", MARKETPLACE_FLAG),
         ).toThrow(/path traversal/);
         expect(() =>
-          validateSourceFormat("http://gitlab.com/user/repo/../../etc", "--source"),
+          validateSourceFormat("http://gitlab.com/user/repo/../../etc", MARKETPLACE_FLAG),
         ).toThrow(/path traversal/);
       });
 
       it("should reject .. in git ref query parameters", () => {
         expect(() =>
-          validateSourceFormat("github:user/repo?branch=../../etc/passwd", "--source"),
+          validateSourceFormat("github:user/repo?branch=../../etc/passwd", MARKETPLACE_FLAG),
         ).toThrow(/path traversal/);
-        expect(() => validateSourceFormat("gh:user/repo#../sensitive", "--source")).toThrow(
+        expect(() => validateSourceFormat("gh:user/repo#../sensitive", MARKETPLACE_FLAG)).toThrow(
           /path traversal/,
         );
       });
 
       it("should accept legitimate paths without traversal", () => {
-        expect(() => validateSourceFormat("github:user/repo", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("github:user/repo", MARKETPLACE_FLAG)).not.toThrow();
         expect(() =>
-          validateSourceFormat("https://github.com/user/repo/tree/main", "--source"),
+          validateSourceFormat("https://github.com/user/repo/tree/main", MARKETPLACE_FLAG),
         ).not.toThrow();
-        expect(() => validateSourceFormat("gitlab:team/skills", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("gitlab:team/skills", MARKETPLACE_FLAG)).not.toThrow();
       });
     });
 
     describe("private IP address validation", () => {
       it("should reject loopback addresses", () => {
-        expect(() => validateSourceFormat("https://127.0.0.1/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://127.0.0.1/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("http://127.0.0.1/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("http://127.0.0.1/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://127.255.255.255/repo", "--source")).toThrow(
-          /private or reserved IP/,
-        );
+        expect(() =>
+          validateSourceFormat("https://127.255.255.255/repo", MARKETPLACE_FLAG),
+        ).toThrow(/private or reserved IP/);
       });
 
       it("should reject private network addresses (10.x.x.x)", () => {
-        expect(() => validateSourceFormat("https://10.0.0.1/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://10.0.0.1/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://10.255.255.255/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://10.255.255.255/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject private network addresses (172.16-31.x.x)", () => {
-        expect(() => validateSourceFormat("https://172.16.0.1/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://172.16.0.1/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://172.31.255.255/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://172.31.255.255/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject private network addresses (192.168.x.x)", () => {
-        expect(() => validateSourceFormat("https://192.168.0.1/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://192.168.0.1/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://192.168.1.100/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://192.168.1.100/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject 0.0.0.0", () => {
-        expect(() => validateSourceFormat("https://0.0.0.0/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://0.0.0.0/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject link-local addresses (169.254.x.x)", () => {
-        expect(() => validateSourceFormat("https://169.254.1.1/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://169.254.1.1/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject IPv6 loopback", () => {
-        expect(() => validateSourceFormat("https://[::1]/repo", "--source")).toThrow(
+        expect(() => validateSourceFormat("https://[::1]/repo", MARKETPLACE_FLAG)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should allow public IP addresses", () => {
-        expect(() => validateSourceFormat("https://8.8.8.8/repo", "--source")).not.toThrow();
-        expect(() => validateSourceFormat("https://1.2.3.4/repo", "--source")).not.toThrow();
+        expect(() => validateSourceFormat("https://8.8.8.8/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("https://1.2.3.4/repo", MARKETPLACE_FLAG)).not.toThrow();
       });
 
       it("should allow non-private 172.x addresses", () => {
-        expect(() => validateSourceFormat("https://172.32.0.1/repo", "--source")).not.toThrow();
-        expect(() => validateSourceFormat("https://172.15.0.1/repo", "--source")).not.toThrow();
+        expect(() =>
+          validateSourceFormat("https://172.32.0.1/repo", MARKETPLACE_FLAG),
+        ).not.toThrow();
+        expect(() =>
+          validateSourceFormat("https://172.15.0.1/repo", MARKETPLACE_FLAG),
+        ).not.toThrow();
       });
 
       it("should still allow localhost by hostname", () => {
-        expect(() => validateSourceFormat("https://localhost/repo", "--source")).not.toThrow();
+        expect(() =>
+          validateSourceFormat("https://localhost/repo", MARKETPLACE_FLAG),
+        ).not.toThrow();
       });
     });
 
     describe("length validation", () => {
       it("should reject sources exceeding max length", () => {
         const longSource = "a".repeat(513);
-        expect(() => validateSourceFormat(longSource, "--source")).toThrow(/too long/);
+        expect(() => validateSourceFormat(longSource, MARKETPLACE_FLAG)).toThrow(/too long/);
       });
 
       it("should accept sources at max length", () => {
         const maxSource = "./a".repeat(170); // 510 chars, under 512
-        expect(() => validateSourceFormat(maxSource, "--source")).not.toThrow();
+        expect(() => validateSourceFormat(maxSource, MARKETPLACE_FLAG)).not.toThrow();
       });
     });
 
     describe("error message quality", () => {
       it("should include flag name in error messages", () => {
-        expect(() => validateSourceFormat("github:", "--source")).toThrow(/--source/);
-        expect(() => validateSourceFormat("github:", "--agent-source")).toThrow(/--agent-source/);
+        expect(() => validateSourceFormat("github:", MARKETPLACE_FLAG)).toThrow(MARKETPLACE_FLAG);
+        expect(() => validateSourceFormat("github:", OTHER_FLAG_LABEL)).toThrow(OTHER_FLAG_LABEL);
       });
 
       it("should include examples in error messages", () => {
-        expect(() => validateSourceFormat("github:", "--source")).toThrow(/Examples/);
+        expect(() => validateSourceFormat("github:", MARKETPLACE_FLAG)).toThrow(/Examples/);
+      });
+    });
+
+    /**
+     * Every message this validator raises interpolates `flagName` and then narrates around
+     * it in its own words — "Source values must not contain null bytes", "Source URLs must
+     * not target private network addresses". The interpolation is the caller's; the prose
+     * is the product's, and it is the half a rename of the flag leaves behind.
+     */
+    describe("the prose around the flag name", () => {
+      const REFUSALS: [name: string, value: string][] = [
+        ["null byte", "github:user/repo\x00"],
+        ["over-length", "a".repeat(513)],
+        ["incomplete remote", "github:"],
+        ["path traversal", "github:user/repo/../other"],
+        ["bare git shorthand", "github:just-a-name"],
+        ["hostname-less URL", "https://not-a-host/repo"],
+        ["private address", "https://192.168.1.100/repo"],
+        ["control character", "my\x07skills"],
+        ["UNC path", "//attacker.com/payload"],
+      ];
+
+      it.each(REFUSALS)("should not say 'source' when refusing a %s", (_name, value) => {
+        // The positive half is the subject guard: `not.toThrow` also passes for a call
+        // that never refused at all, which would make the negative vacuous.
+        expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(MARKETPLACE_FLAG);
+        expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).not.toThrow(WITHDRAWN_NOUN);
+      });
+
+      it("should refuse a path traversal in a bare name without naming a source", () => {
+        expect(() => isLocalSource("my-skills/../../../etc")).toThrow(/Path traversal patterns/);
+        expect(() => isLocalSource("my-skills/../../../etc")).not.toThrow(WITHDRAWN_NOUN);
       });
     });
   });
@@ -379,10 +493,13 @@ describe("config", () => {
     });
 
     it("should load config from .claude-src/config.ts", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:mycompany/skills" }));
+      await writeTestTsConfig(
+        tempDir,
+        buildSourceConfig({ marketplace: "github:mycompany/skills" }),
+      );
 
       const config = await loadProjectSourceConfig(tempDir);
-      expect(config).toStrictEqual({ source: "github:mycompany/skills" });
+      expect(config).toStrictEqual({ marketplace: "github:mycompany/skills" });
     });
 
     it("when config.ts contains invalid syntax, should return null", async () => {
@@ -400,11 +517,44 @@ describe("config", () => {
     it("should load marketplace from project config", async () => {
       await writeTestTsConfig(
         tempDir,
-        buildSourceConfig({ marketplace: "https://custom-marketplace.io" }),
+        buildSourceConfig({ marketplaceName: "https://custom-marketplace.io" }),
       );
 
       const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.marketplace).toBe("https://custom-marketplace.io");
+      expect(config?.marketplaceName).toBe("https://custom-marketplace.io");
+    });
+
+    /**
+     * The loader's own diagnostic for a file it could not evaluate. `doctor` runs verbose,
+     * so this line reaches a user's terminal — and `e2e/pages/constants.ts`
+     * `CONFIG_SOURCE_LOAD_NOISE` duplicates it exactly to assert its ABSENCE, which is the
+     * assertion that silently stops matching if the two drift apart.
+     */
+    describe("the diagnostic for a config it could not evaluate", () => {
+      const consoleSpies = silenceConsole(["log"]);
+
+      beforeEach(() => {
+        setVerbose(true);
+      });
+
+      afterEach(() => {
+        setVerbose(false);
+      });
+
+      it("should name the config it failed on without calling it a source config", async () => {
+        const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
+        await mkdir(configDir, { recursive: true });
+        await writeFile(
+          path.join(configDir, STANDARD_FILES.CONFIG_TS),
+          "invalid typescript content {{",
+        );
+
+        await loadProjectSourceConfig(tempDir);
+
+        expect(consoleSpies.log).toHaveBeenCalledWith(
+          expect.stringContaining("Failed to load project config at"),
+        );
+      });
     });
   });
 
@@ -428,7 +578,7 @@ describe("config", () => {
     });
 
     it("should return flag value with highest priority", async () => {
-      process.env[SOURCE_ENV_VAR] = "github:env/repo";
+      process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
 
       const result = await resolveSource({
         caller: "init",
@@ -441,7 +591,7 @@ describe("config", () => {
     });
 
     it("should return env value when no flag is provided", async () => {
-      process.env[SOURCE_ENV_VAR] = "github:env/repo";
+      process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
 
       const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -450,7 +600,7 @@ describe("config", () => {
     });
 
     it("should return project config when no flag or env", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
+      await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
 
       const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -473,8 +623,8 @@ describe("config", () => {
     });
 
     it("should prioritize flag over all other sources", async () => {
-      process.env[SOURCE_ENV_VAR] = "github:env/repo";
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
+      process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
+      await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
 
       const result = await resolveSource({
         caller: "init",
@@ -487,8 +637,8 @@ describe("config", () => {
     });
 
     it("should prioritize env over project config", async () => {
-      process.env[SOURCE_ENV_VAR] = "github:env/repo";
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
+      process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
+      await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
 
       const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -499,13 +649,27 @@ describe("config", () => {
     it("should throw error for empty source flag", async () => {
       await expect(
         resolveSource({ caller: "init", flag: "", projectDir: tempDir }),
-      ).rejects.toThrow(/The source cannot be empty/);
+      ).rejects.toThrow(/The marketplace cannot be empty/);
     });
 
     it("should throw error for whitespace-only source flag", async () => {
       await expect(
         resolveSource({ caller: "init", flag: "   ", projectDir: tempDir }),
-      ).rejects.toThrow(/The source cannot be empty/);
+      ).rejects.toThrow(/The marketplace cannot be empty/);
+    });
+
+    /**
+     * The label is origin-neutral on purpose — a `"stored"` caller may name a marketplace
+     * it is reading for its own sake — so it cannot say `--marketplace`, and after CLI-463
+     * it must not say "source" either.
+     */
+    it("should refuse an empty named marketplace without saying 'source'", async () => {
+      await expect(
+        resolveSource({ caller: "stored", flag: "", projectDir: tempDir }),
+      ).rejects.toThrow(/cannot be empty/);
+      await expect(
+        resolveSource({ caller: "stored", flag: "", projectDir: tempDir }),
+      ).rejects.not.toThrow(WITHDRAWN_NOUN);
     });
 
     it("should throw error for incomplete github: URL in flag", async () => {
@@ -528,8 +692,8 @@ describe("config", () => {
 
     describe("the env var is the init caller's rung alone", () => {
       it("should ignore the env var for a stored caller and read the project config", async () => {
-        process.env[SOURCE_ENV_VAR] = "github:env/repo";
-        await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
+        process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -540,7 +704,7 @@ describe("config", () => {
       });
 
       it("should ignore the env var for a stored caller with nothing stored", async () => {
-        process.env[SOURCE_ENV_VAR] = "github:env/repo";
+        process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -548,6 +712,79 @@ describe("config", () => {
           DEFAULT_SOURCE,
         );
         expect(result.sourceOrigin).toBe("default");
+      });
+    });
+
+    /**
+     * The environment rung is marketplace-named. Pre-1.0 ships no compatibility shims, so
+     * the old spelling is not aliased, not warned about and not read — an exported
+     * `CC_SOURCE` chooses nothing, which is the only behaviour that cannot silently install
+     * from a marketplace this run never named.
+     */
+    describe("the environment rung names the marketplace", () => {
+      let warnSpy: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      });
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it("should read the marketplace-named env var for an init caller", async () => {
+        process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
+
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(result.source).toBe("github:env/repo");
+        expect(result.sourceOrigin).toBe("env");
+      });
+
+      it("should not read the withdrawn env var", async () => {
+        process.env[WITHDRAWN_SOURCE_ENV_VAR] = "github:withdrawn/repo";
+
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(result.source, "the withdrawn spelling is aliased to nothing").toBe(DEFAULT_SOURCE);
+        expect(result.sourceOrigin).toBe("default");
+      });
+
+      it("should let the marketplace-named env var win over the withdrawn one", async () => {
+        process.env[WITHDRAWN_SOURCE_ENV_VAR] = "github:withdrawn/repo";
+        process.env[MARKETPLACE_ENV_VAR] = "github:env/repo";
+
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(result.source).toBe("github:env/repo");
+      });
+
+      it("should not warn about the withdrawn env var", async () => {
+        process.env[WITHDRAWN_SOURCE_ENV_VAR] = "github:";
+
+        await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(
+          warnSpy,
+          "an unusable value in a variable nothing reads is not this run's problem",
+        ).not.toHaveBeenCalled();
+      });
+
+      it("should name the marketplace-named env var in the warning it does raise", async () => {
+        process.env[MARKETPLACE_ENV_VAR] = "github:";
+
+        await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(MARKETPLACE_ENV_VAR));
+        expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining(WITHDRAWN_SOURCE_ENV_VAR));
+      });
+
+      it("should not fall back to a 'source' when the env var is unusable", async () => {
+        process.env[MARKETPLACE_ENV_VAR] = "   ";
+
+        await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.not.stringMatching(WITHDRAWN_NOUN));
       });
     });
 
@@ -563,7 +800,7 @@ describe("config", () => {
       });
 
       it("should accept valid env var source", async () => {
-        process.env[SOURCE_ENV_VAR] = "github:org/repo";
+        process.env[MARKETPLACE_ENV_VAR] = "github:org/repo";
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -572,7 +809,7 @@ describe("config", () => {
       });
 
       it("should warn and fall back to default for invalid env var (incomplete URL)", async () => {
-        process.env[SOURCE_ENV_VAR] = "github:";
+        process.env[MARKETPLACE_ENV_VAR] = "github:";
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -582,9 +819,9 @@ describe("config", () => {
       });
 
       it("should warn and fall back to project config for invalid env var", async () => {
-        process.env[SOURCE_ENV_VAR] = "github:just-a-name";
+        process.env[MARKETPLACE_ENV_VAR] = "github:just-a-name";
 
-        await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:project/repo" }));
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -594,7 +831,7 @@ describe("config", () => {
       });
 
       it("should warn and fall back for whitespace-only env var", async () => {
-        process.env[SOURCE_ENV_VAR] = "   ";
+        process.env[MARKETPLACE_ENV_VAR] = "   ";
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -604,7 +841,7 @@ describe("config", () => {
       });
 
       it("should warn and fall back for malformed URL in env var", async () => {
-        process.env[SOURCE_ENV_VAR] = "https://";
+        process.env[MARKETPLACE_ENV_VAR] = "https://";
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -614,7 +851,7 @@ describe("config", () => {
       });
 
       it("should warn and fall back for UNC path in env var", async () => {
-        process.env[SOURCE_ENV_VAR] = "//attacker.com/payload";
+        process.env[MARKETPLACE_ENV_VAR] = "//attacker.com/payload";
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -624,7 +861,7 @@ describe("config", () => {
       });
 
       it("should trim valid env var values", async () => {
-        process.env[SOURCE_ENV_VAR] = "  github:org/repo  ";
+        process.env[MARKETPLACE_ENV_VAR] = "  github:org/repo  ";
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
@@ -637,7 +874,7 @@ describe("config", () => {
       it("should return marketplace from project config", async () => {
         await writeTestTsConfig(
           tempDir,
-          buildSourceConfig({ marketplace: "https://my-company.com/plugins" }),
+          buildSourceConfig({ marketplaceName: "https://my-company.com/plugins" }),
         );
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
@@ -649,8 +886,8 @@ describe("config", () => {
         await writeTestTsConfig(
           tempDir,
           buildSourceConfig({
-            source: "github:mycompany/skills",
-            marketplace: "https://enterprise.example.com/plugins",
+            marketplace: "github:mycompany/skills",
+            marketplaceName: "https://enterprise.example.com/plugins",
           }),
         );
 
@@ -670,7 +907,7 @@ describe("config", () => {
 
     describe("the config at the home root is the global one", () => {
       it("should label a source read at the home root as global", async () => {
-        await writeTestTsConfig(homeDir, buildSourceConfig({ source: HOME_CONFIG_SOURCE }));
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: HOME_CONFIG_SOURCE }));
 
         const result = await resolveSource({ caller: "stored", projectDir: homeDir });
 
@@ -682,8 +919,8 @@ describe("config", () => {
       });
 
       it("should label a source read from a project's own config as project", async () => {
-        await writeTestTsConfig(tempDir, buildSourceConfig({ source: PROJECT_CONFIG_SOURCE }));
-        await writeTestTsConfig(homeDir, buildSourceConfig({ source: HOME_CONFIG_SOURCE }));
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: PROJECT_CONFIG_SOURCE }));
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: HOME_CONFIG_SOURCE }));
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -697,7 +934,7 @@ describe("config", () => {
             skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
             agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
           }),
-          source: PROJECT_CONFIG_SOURCE,
+          marketplace: PROJECT_CONFIG_SOURCE,
         });
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
@@ -709,7 +946,7 @@ describe("config", () => {
       });
 
       it("should fall back to the global config from a project that has none", async () => {
-        await writeTestTsConfig(homeDir, buildSourceConfig({ source: HOME_CONFIG_SOURCE }));
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: HOME_CONFIG_SOURCE }));
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -731,19 +968,19 @@ describe("config", () => {
         setVerbose(false);
       });
 
-      it("should not claim a --source flag for a caller that has none", async () => {
-        // `doctor` validates a source repository by pointing the loader at a path.
-        // It is a stored caller: `--source` is `init`'s flag and nobody else's.
+      it("should not claim the marketplace flag for a caller that has none", async () => {
+        // `doctor` validates a marketplace repository by pointing the loader at a path.
+        // It is a stored caller: `--marketplace` is `init`'s flag and nobody else's.
         await resolveSource({ caller: "stored", flag: namedSource, projectDir: tempDir });
 
         expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringContaining(namedSource));
         expect(
           consoleSpies.log,
-          "no --source flag was passed to this run, so the line must not say one was",
-        ).not.toHaveBeenCalledWith(expect.stringContaining("--source"));
+          "no marketplace flag was passed to this run, so the line must not say one was",
+        ).not.toHaveBeenCalledWith(expect.stringContaining(MARKETPLACE_FLAG));
       });
 
-      it("should still name the source init passed as its flag", async () => {
+      it("should still name the marketplace init passed as its flag", async () => {
         await resolveSource({ caller: "init", flag: namedSource, projectDir: tempDir });
 
         expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringContaining(namedSource));
@@ -791,7 +1028,7 @@ describe("config", () => {
     });
 
     it("should return undefined for missing path fields (defaults applied by consumer)", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:myorg/skills" }));
+      await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
 
       const config = await loadProjectSourceConfig(tempDir);
       expect(config?.skillsDir).toBeUndefined();
@@ -805,7 +1042,7 @@ describe("config", () => {
       await writeTestTsConfig(
         tempDir,
         buildSourceConfig({
-          source: "github:myorg/skills",
+          marketplace: "github:myorg/skills",
           skillsDir: "lib/skills",
           agentsDir: "lib/agents",
           stacksFile: "data/stacks.ts",
@@ -815,7 +1052,7 @@ describe("config", () => {
       );
 
       const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.source).toBe("github:myorg/skills");
+      expect(config?.marketplace).toBe("github:myorg/skills");
       expect(config?.skillsDir).toBe("lib/skills");
       expect(config?.agentsDir).toBe("lib/agents");
       expect(config?.stacksFile).toBe("data/stacks.ts");
@@ -839,15 +1076,15 @@ describe("config", () => {
       await writeTestTsConfig(
         tempDir,
         buildSourceConfig({
-          source: "github:myorg/skills",
-          marketplace: "https://market.example.com",
+          marketplace: "github:myorg/skills",
+          marketplaceName: "https://market.example.com",
           agentsSource: "https://agents.example.com",
         }),
       );
 
       const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.source).toBe("github:myorg/skills");
-      expect(config?.marketplace).toBe("https://market.example.com");
+      expect(config?.marketplace).toBe("github:myorg/skills");
+      expect(config?.marketplaceName).toBe("https://market.example.com");
       expect(config?.agentsSource).toBe("https://agents.example.com");
     });
   });
@@ -867,7 +1104,7 @@ describe("config", () => {
     });
 
     it("should return undefined branding when not configured", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:myorg/skills" }));
+      await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
 
       const config = await loadProjectSourceConfig(tempDir);
       expect(config?.branding).toBeUndefined();
@@ -939,7 +1176,7 @@ describe("config", () => {
     });
 
     it("should return default branding when config has no branding section", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ source: "github:myorg/skills" }));
+      await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
 
       const branding = await resolveBranding(tempDir);
       expect(branding.name).toBe(DEFAULT_BRANDING.NAME);

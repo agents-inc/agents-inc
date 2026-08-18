@@ -1,4 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+
+vi.mock("../../utils/logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../utils/logger")>()),
+  verbose: vi.fn(),
+  warn: vi.fn(),
+}));
+
+import { verbose, warn } from "../../utils/logger";
 import {
   generateProjectConfigFromSkills,
   buildStackProperty,
@@ -30,11 +38,15 @@ import {
   UNFLAGGED_TWO_AGENT_STACK,
   AUTHORED_FLAGS_STACK,
 } from "../__tests__/mock-data/mock-stacks.js";
+import { CUSTOM_HOUSE_TOOLING_ID } from "../__tests__/mock-data/mock-skills.js";
+import { CLI_INVOKE_COMMAND } from "../../consts";
 import {
   CUSTOM_SKILL_MATRIX,
   LOCAL_SKILL_MATRIX,
+  MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX,
   MIXED_LOCAL_REMOTE_MATRIX,
   METHODOLOGY_MATRIX,
+  NAMESPACED_SKILL_MATRIX,
   SHARED_SECURITY_MATRIX,
   VITEST_MATRIX,
   EMPTY_MATRIX,
@@ -266,6 +278,74 @@ describe("config-generator", () => {
         },
       });
       expectAgentConfigs(config, buildAgentConfigs(["web-developer"]));
+    });
+
+    describe("what the user is told about a skill this marketplace does not carry", () => {
+      /** An id no marketplace declares — the whole point of the warning under test. */
+      const ABSENT_SKILL_ID = "web-unknown-skill" as SkillId;
+      /** The developer-only half of the old warning: five arbitrary matrix keys. */
+      const MATRIX_SAMPLE_LABEL = "Matrix keys sample";
+
+      beforeEach(() => {
+        vi.clearAllMocks();
+        initializeMatrix(SINGLE_REACT_MATRIX);
+      });
+
+      function generateWithAbsentSkill(): void {
+        const selectedAgents: AgentName[] = ["web-developer"];
+        generateProjectConfigFromSkills("my-project", ["web-framework-react", ABSENT_SKILL_ID], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-framework-react", ABSENT_SKILL_ID]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+      }
+
+      it("names the skill and what to do about it", () => {
+        generateWithAbsentSkill();
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(ABSENT_SKILL_ID),
+          expect.anything(),
+        );
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(`${CLI_INVOKE_COMMAND} update`),
+          expect.anything(),
+        );
+      });
+
+      it("says the skill stays in the configuration rather than that it was not found", () => {
+        generateWithAbsentSkill();
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("marketplace"),
+          expect.anything(),
+        );
+        expect(warn).not.toHaveBeenCalledWith(
+          expect.stringContaining("NOT FOUND"),
+          expect.anything(),
+        );
+      });
+
+      it("keeps the matrix key sample in verbose diagnostics, out of the warning", () => {
+        generateWithAbsentSkill();
+
+        expect(warn).not.toHaveBeenCalledWith(
+          expect.stringContaining(MATRIX_SAMPLE_LABEL),
+          expect.anything(),
+        );
+        expect(verbose).toHaveBeenCalledWith(expect.stringContaining(MATRIX_SAMPLE_LABEL));
+      });
+
+      it("says nothing when every selected skill is in the marketplace", () => {
+        const selectedAgents: AgentName[] = ["web-developer"];
+        generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(["web-framework-react"]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+
+        expect(warn).not.toHaveBeenCalled();
+      });
     });
 
     it("deduplicates agents across skills in the same domain", () => {
@@ -749,7 +829,7 @@ describe("config-generator", () => {
           selectedAgents: ["web-developer", "reviewer"],
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -1078,7 +1158,7 @@ describe("config-generator", () => {
 
         const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
           selectedAgents,
-          skillConfigs: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          skillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
           agentConfigs: buildAgentConfigs(selectedAgents),
           existingStack: ejectExistingStack,
         });
@@ -1101,7 +1181,7 @@ describe("config-generator", () => {
 
         const config = generateProjectConfigFromSkills("my-project", ["web-framework-react"], {
           selectedAgents,
-          skillConfigs: buildSkillConfigs(["web-framework-react"], { source: "eject" }),
+          skillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "eject" }),
           agentConfigs: buildAgentConfigs(selectedAgents),
           existingStack: pluginExistingStack,
         });
@@ -1160,7 +1240,7 @@ describe("config-generator", () => {
           // Flip skill from project → global
           skillConfigs: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
           agentConfigs: [
             ...buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -1200,7 +1280,7 @@ describe("config-generator", () => {
             // Only scss changes source; react's entry must be byte-identical in the output
             skillConfigs: [
               ...buildSkillConfigs(["web-framework-react"]),
-              ...buildSkillConfigs(["web-styling-scss-modules"], { source: "agents-inc" }),
+              ...buildSkillConfigs(["web-styling-scss-modules"], { origin: "agents-inc" }),
             ],
             agentConfigs: buildAgentConfigs(selectedAgents),
             existingStack,
@@ -1237,7 +1317,7 @@ describe("config-generator", () => {
             skillConfigs: [
               ...buildSkillConfigs(["web-framework-react"], {
                 scope: "global",
-                source: "agents-inc",
+                origin: "agents-inc",
               }),
               ...buildSkillConfigs(["web-styling-scss-modules"]),
             ],
@@ -1379,11 +1459,10 @@ describe("config-generator", () => {
         });
       });
 
-      // The resolver is keyed by catalog skill, so a skill from a marketplace
-      // or a local directory has no domain it could be placed by. Relevance
-      // unknown means it reaches nobody as a new triple — assignment is the
-      // user's to make, not a broadcast's.
-      it("assigns a skill outside the catalog to no agent", () => {
+      // A skill whose category this matrix places in no domain has no taxonomy
+      // to be targeted on. Relevance unknown means it reaches nobody as a new
+      // triple — assignment is the user's to make, not a broadcast's.
+      it("assigns a skill whose category names no domain to no agent", () => {
         initializeMatrix(CUSTOM_SKILL_MATRIX);
         const selectedAgents: AgentName[] = ["web-developer"];
         // Fabricated test ID outside the SkillId union — the matrix entry is local
@@ -1396,6 +1475,51 @@ describe("config-generator", () => {
         });
 
         expect(config.stack).toStrictEqual({});
+      });
+
+      // A marketplace's own skill is namespaced, so no catalog lookup can
+      // answer for its id — and targeting never needed one. The matrix carries
+      // the domain its category belongs to, and the skill lands on that
+      // domain's agents like any other, whatever marketplace shipped it.
+      it("assigns a marketplace-namespaced skill to its own domain's agents", () => {
+        initializeMatrix(NAMESPACED_SKILL_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
+        // Boundary cast: a marketplace-namespaced id is outside the generated union
+        const namespacedSkillIds = ["acme-web-state-zustand" as SkillId];
+
+        const config = generateProjectConfigFromSkills("my-project", namespacedSkillIds, {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs(namespacedSkillIds),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-client-state": [{ id: "acme-web-state-zustand" }],
+          },
+        });
+      });
+
+      // A skill the user wrote is targeted the same way a marketplace's is: by
+      // the taxonomy the loaded matrix carries. Provenance decides nothing about
+      // reach, so a custom skill in a real category lands on that domain's
+      // agents — lazily, because eagerness is keyed by catalog id and no custom
+      // skill has one.
+      it("assigns a custom skill in a real category to its own domain's agents", () => {
+        initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
+        const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
+
+        const config = generateProjectConfigFromSkills("my-project", [CUSTOM_HOUSE_TOOLING_ID], {
+          selectedAgents,
+          skillConfigs: buildSkillConfigs([CUSTOM_HOUSE_TOOLING_ID]),
+          agentConfigs: buildAgentConfigs(selectedAgents),
+        });
+
+        expect(config.stack).toStrictEqual({
+          "web-developer": {
+            "web-tooling": [{ id: CUSTOM_HOUSE_TOOLING_ID }],
+          },
+        });
       });
 
       // The prior save's word covers outside-catalog entries too: what an
@@ -1625,7 +1749,7 @@ describe("config-generator", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer", "reviewer"], { scope: "global" }),
       });
@@ -1636,7 +1760,7 @@ describe("config-generator", () => {
         result.global,
         buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
       );
       expectAgentConfigs(
@@ -1663,7 +1787,7 @@ describe("config-generator", () => {
     it("correctly separates mixed-scope items", () => {
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-testing-vitest"]),
         ],
         agents: [
@@ -1706,7 +1830,7 @@ describe("config-generator", () => {
         name: "my-project",
         description: "A test project",
         author: "@vince",
-        source: "github:org/repo",
+        marketplace: "github:org/repo",
         skills: buildSkillConfigs(["web-framework-react"]),
       });
 
@@ -1715,7 +1839,7 @@ describe("config-generator", () => {
       expect(result.project.name).toBe("my-project");
       expect(result.project.description).toBe("A test project");
       expect(result.project.author).toBe("@vince");
-      expect(result.project.source).toBe("github:org/repo");
+      expect(result.project.marketplace).toBe("github:org/repo");
     });
 
     it("sets global partition name to 'global'", () => {
@@ -1737,7 +1861,7 @@ describe("config-generator", () => {
       // project skills were silently dropped from the stack.
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-testing-vitest"]),
         ],
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -1766,6 +1890,66 @@ describe("config-generator", () => {
         },
       });
     });
+
+    /**
+     * The global partition holds only what the global partition declares. `stack` on it is
+     * derived from the global agents, never inherited from the whole config — and today it is
+     * inherited whenever the derivation yields nothing, because the override guarding the
+     * spread is conditional and the spread underneath it is not.
+     *
+     * See `.ai-docs/agent-findings/2026-08-17-the-global-split-carries-the-whole-stack-when-no-global-agent-survives.md`.
+     */
+    it("gives the global partition no stack when no global agent survives", () => {
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"]),
+        agents: buildAgentConfigs(["web-developer"]),
+        stack: {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          },
+        },
+      });
+
+      const result = splitConfigByScope(config);
+
+      // The subject guard for the assertion below: the split kept no global agent, so every
+      // stack row left names a sub-agent the global partition does not install.
+      expectConfigAgents(result.global, []);
+      expect(
+        result.global.stack ?? {},
+        "a stack row for a sub-agent the global config does not declare is not the global config's",
+      ).toStrictEqual({});
+    });
+
+    /**
+     * The same rule read from the other side. Both partitions override `stack` over the same
+     * unconditional spread, so a derivation that yields nothing inherits the whole config's
+     * stack on either — and a fix that closes one side leaves the mirror live.
+     */
+    it("gives the project partition no stack when no project agent survives", () => {
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        stack: {
+          "web-developer": {
+            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          },
+        },
+      });
+
+      const result = splitConfigByScope(config);
+
+      // The subject guard: every agent went global, so every stack row left names a sub-agent
+      // the project partition does not install.
+      expectConfigAgents(result.project, []);
+      expect(
+        result.project.stack ?? {},
+        "a stack row for a sub-agent the project config does not declare is not the project config's",
+      ).toStrictEqual({});
+    });
   });
 
   describe("splitConfigByScope — excluded routing", () => {
@@ -1774,10 +1958,10 @@ describe("config-generator", () => {
         skills: [
           ...buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
-          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
         ],
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -1789,14 +1973,14 @@ describe("config-generator", () => {
         result.project,
         buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
       );
       // Active global skill stays in global partition
       expectSkillConfigs(
         result.global,
-        buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
       );
     });
 
@@ -1823,10 +2007,10 @@ describe("config-generator", () => {
     it("should keep active global skills in global partition", () => {
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-testing-vitest"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
           ...buildSkillConfigs(["web-state-zustand"]),
@@ -1839,13 +2023,13 @@ describe("config-generator", () => {
       // Active global skill in global partition
       expectSkillConfigs(
         result.global,
-        buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
       // Excluded global + project skills in project partition
       expectSkillConfigs(result.project, [
         ...buildSkillConfigs(["web-testing-vitest"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         }),
         ...buildSkillConfigs(["web-state-zustand"]),
@@ -1856,7 +2040,7 @@ describe("config-generator", () => {
       const config = buildProjectConfig({
         skills: [
           ...buildSkillConfigs(["web-framework-react"], { excluded: true }),
-          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
         ],
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -1871,7 +2055,7 @@ describe("config-generator", () => {
       // Does NOT appear in global partition
       expectSkillConfigs(
         result.global,
-        buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+        buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
       );
     });
   });
@@ -1884,7 +2068,7 @@ describe("config-generator", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
@@ -1898,7 +2082,7 @@ describe("config-generator", () => {
     it("should correctly split mixed-scope configs", () => {
       const config = buildProjectConfig({
         skills: [
-          ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "agents-inc" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
           ...buildSkillConfigs(["web-testing-vitest"]),
         ],
         agents: [

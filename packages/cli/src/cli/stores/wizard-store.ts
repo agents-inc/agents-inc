@@ -14,6 +14,7 @@ import {
   isGlobalTombstone,
   isProjectOwned,
 } from "../lib/configuration/scope-predicates.js";
+import { isLocalOnlySkill } from "../lib/loading/multi-source-loader.js";
 import { matrix, getSkillById, getCategoryDomain } from "../lib/matrix/matrix-provider.js";
 import { buildCategoriesForDomain, orderDomains, skillSlotKey } from "../lib/wizard/index.js";
 import type {
@@ -28,6 +29,12 @@ import type {
 import type { SourceOption, SourceRow } from "../components/wizard/source-grid.js";
 import { warn } from "../utils/logger.js";
 import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../utils/typed-object.js";
+
+/** The whole of what a skill no marketplace carries can be installed as. */
+const LOCAL_ONLY_INSTALL_MODES = ["eject"] as const satisfies readonly Exclude<
+  InstallMode,
+  "mixed"
+>[];
 
 /** Toast strings surfaced by scope/selection guards (E2E asserts these verbatim). */
 const TOAST_MESSAGES = {
@@ -47,10 +54,25 @@ function primarySourceName(skill: ResolvedSkill | undefined): string | undefined
   return skill?.availableSources?.find((s) => s.primary)?.name;
 }
 
+/** The one marketplace a skill can be plugin-installed from, when one carries it. */
+function marketplaceSourceName(skill: ResolvedSkill | undefined): string | undefined {
+  return skill?.availableSources?.find((source) => source.type !== "local")?.name;
+}
+
+/**
+ * The origin a skill takes when nothing saved names one: the marketplace that carries
+ * it, or the project's own copy when none does. A marketplace origin on a skill no
+ * marketplace has names an install that cannot happen, which is what made a
+ * locally-written skill default to a plugin it could never be.
+ */
+function defaultOriginFor(skill: ResolvedSkill | undefined): string {
+  if (isLocalOnlySkill(skill)) return EJECT_SOURCE;
+
+  return primarySourceName(skill) ?? DEFAULT_PUBLIC_SOURCE_NAME;
+}
+
 function createDefaultSkillConfig(id: SkillId): SkillConfig {
-  const skill = matrix.skills[id];
-  const primarySource = primarySourceName(skill);
-  return { id, scope: "global", source: primarySource ?? DEFAULT_PUBLIC_SOURCE_NAME };
+  return { id, scope: "global", origin: defaultOriginFor(matrix.skills[id]) };
 }
 
 /** True when configs hold an active (non-excluded) project-scope entry for the id. */
@@ -134,10 +156,10 @@ function wouldOverwriteGlobalEject(
   liveConfigs: SkillConfig[],
   installedSkillConfigs: SkillConfig[] | null,
 ): boolean {
-  if (config.scope !== "project" || config.source !== EJECT_SOURCE) return false;
+  if (config.scope !== "project" || config.origin !== EJECT_SOURCE) return false;
   const globalEjectInstalled = installedSkillConfigs?.some(
     (sc) =>
-      sc.id === config.id && sc.scope === "global" && sc.source === EJECT_SOURCE && !sc.excluded,
+      sc.id === config.id && sc.scope === "global" && sc.origin === EJECT_SOURCE && !sc.excluded,
   );
   if (!globalEjectInstalled) return false;
   return !liveConfigs.some((sc) => sc.id === config.id && sc.excluded);
@@ -166,18 +188,18 @@ function isInheritedGlobalSlot(
 }
 
 /**
- * Rewrites the source of the ACTIVE entry at (id, scope), leaving every other entry untouched —
+ * Rewrites the origin of the ACTIVE entry at (id, scope), leaving every other entry untouched —
  * in particular a dual-scope skill's excluded global tombstone, which keeps describing the
  * masked global install (D-262).
  */
-function withActiveEntrySource(
+function withActiveEntryOrigin(
   configs: SkillConfig[],
   id: SkillId,
   scope: SkillScope | undefined,
-  source: string,
+  origin: string,
 ): SkillConfig[] {
   return configs.map((sc) =>
-    sc.id === id && !sc.excluded && sc.scope === scope ? { ...sc, source } : sc,
+    sc.id === id && !sc.excluded && sc.scope === scope ? { ...sc, origin } : sc,
   );
 }
 
@@ -224,8 +246,8 @@ function applySkillRemoval(
     .map((id) => ({
       id,
       scope: "global" as const,
-      source:
-        configs.find((sc) => sc.id === id && sc.scope === "global")?.source ??
+      origin:
+        configs.find((sc) => sc.id === id && sc.scope === "global")?.origin ??
         DEFAULT_PUBLIC_SOURCE_NAME,
     }));
 
@@ -269,11 +291,11 @@ function reconcileSkillConfigs(
       const globalEntry =
         (installedSkillConfigs ?? []).find((sc) => sc.id === id && sc.scope === "global") ??
         result.find((sc) => sc.id === id && sc.scope === "global");
-      const source = globalEntry?.source ?? DEFAULT_PUBLIC_SOURCE_NAME;
+      const origin = globalEntry?.origin ?? DEFAULT_PUBLIC_SOURCE_NAME;
       result = [
         ...result.filter((sc) => sc.id !== id),
-        { id, scope: "project", source },
-        { id, scope: "global", excluded: true, source },
+        { id, scope: "project", origin },
+        { id, scope: "global", excluded: true, origin },
       ];
       continue;
     }
@@ -418,12 +440,10 @@ function buildSkillConfigForId(id: SkillId, savedConfigs?: SkillConfig[] | null)
   const saved =
     savedConfigs?.find((sc) => sc.id === id && !sc.excluded && sc.scope === "project") ??
     savedConfigs?.find((sc) => sc.id === id && !sc.excluded);
-  const skill = matrix.skills[id];
-  const primarySource = primarySourceName(skill);
   return {
     id,
     scope: saved?.scope ?? "global",
-    source: resolveEffectiveSource(saved?.source, primarySource),
+    origin: saved?.origin ?? defaultOriginFor(matrix.skills[id]),
   };
 }
 
@@ -518,31 +538,36 @@ function addToDomainSelections(
   return true;
 }
 
-/** The one marketplace a skill can be installed from as a plugin. */
-function marketplaceSourceName(skill: ResolvedSkill): string {
-  return (
-    skill.availableSources?.find((source) => source.type !== "local")?.name ??
-    DEFAULT_PUBLIC_SOURCE_NAME
-  );
-}
-
-/** The `SkillConfig.source` value an install mode writes for this skill. */
+/** The `SkillConfig.origin` value an install mode writes for this skill. */
 function sourceForInstallMode(skill: ResolvedSkill, mode: Exclude<InstallMode, "mixed">): string {
-  return mode === "eject" ? EJECT_SOURCE : marketplaceSourceName(skill);
+  if (mode === "eject") return EJECT_SOURCE;
+
+  return marketplaceSourceName(skill) ?? DEFAULT_PUBLIC_SOURCE_NAME;
 }
 
 /**
- * The install mode a persisted `source` value stands for. The per-skill half of
+ * The install mode a persisted `origin` value stands for. The per-skill half of
  * `deriveInstallMode`, which asks the same question of a whole selection: `eject` names the
  * project's own copy and every other value names the marketplace the plugin comes from.
  */
-function installModeOfSource(source: string | undefined): Exclude<InstallMode, "mixed"> {
-  return source === EJECT_SOURCE ? "eject" : "plugin";
+function installModeOfSource(origin: string | undefined): Exclude<InstallMode, "mixed"> {
+  return origin === EJECT_SOURCE ? "eject" : "plugin";
 }
 
-/** The two cells of one skill's install-mode control, with the current mode selected. */
-function buildInstallModeOptions(selectedMode: Exclude<InstallMode, "mixed">): SourceOption[] {
-  return INSTALL_MODES.map((mode) => ({ mode, selected: mode === selectedMode }));
+/**
+ * The cells of one skill's install-mode control, with the current mode selected.
+ *
+ * A skill nothing but the copy on disk backs gets the local cell ALONE — the grid cannot
+ * express a plugin install that no marketplace could serve, so the refusal downstream is
+ * a guard against callers reaching past this surface rather than the user's first
+ * encounter with it.
+ */
+function buildInstallModeOptions(
+  skill: ResolvedSkill | undefined,
+  selectedMode: Exclude<InstallMode, "mixed">,
+): SourceOption[] {
+  const modes = isLocalOnlySkill(skill) ? LOCAL_ONLY_INSTALL_MODES : INSTALL_MODES;
+  return modes.map((mode) => ({ mode, selected: mode === selectedMode }));
 }
 
 /**
@@ -638,14 +663,14 @@ function resolveSkillRowInputs(
   const skill = getSkillById(id);
   const configEntry = skillConfigs.find((sc) => sc.id === skill.id);
   const selectedSource = resolveEffectiveSource(
-    configEntry?.source,
+    configEntry?.origin,
     skill.activeSource?.name,
     primarySourceName(skill),
   );
   return {
     skillId: skill.id,
     configEntry,
-    options: buildInstallModeOptions(installModeOfSource(selectedSource)),
+    options: buildInstallModeOptions(skill, installModeOfSource(selectedSource)),
   };
 }
 
@@ -671,7 +696,7 @@ function toPendingRemovalRow(
 ): SourceRow {
   return {
     skillId,
-    options: withSelectedMode(options, removedInstalledEntry.source),
+    options: withSelectedMode(options, removedInstalledEntry.origin),
     scope: removedInstalledEntry.scope,
     disabled: true,
   };
@@ -733,7 +758,7 @@ function classifySkillSourceRows(
       toLockedGlobalRow(
         skillId,
         options,
-        installedGlobalConfig?.source ?? configEntry.source,
+        installedGlobalConfig?.origin ?? configEntry.origin,
         installedSkillSlots,
       ),
     ];
@@ -744,7 +769,7 @@ function classifySkillSourceRows(
     // half derives its own added flag from its own slot, so the `+` lands on the newly occupied
     // PROJECT row while the still-installed global row stays a plain lock.
     return [
-      toLockedGlobalRow(skillId, options, installedGlobalConfig.source, installedSkillSlots),
+      toLockedGlobalRow(skillId, options, installedGlobalConfig.origin, installedSkillSlots),
       {
         skillId,
         options,
@@ -1516,7 +1541,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
           skillConfigs: needsTombstone
             ? [
                 ...rescoped,
-                { id: skillId, scope: "global" as const, excluded: true, source: config.source },
+                { id: skillId, scope: "global" as const, excluded: true, origin: config.origin },
               ]
             : rescoped,
         };
@@ -1566,9 +1591,9 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       ) {
         return state;
       }
-      const source = sourceForInstallMode(getSkillById(skillId), mode);
+      const origin = sourceForInstallMode(getSkillById(skillId), mode);
       return {
-        skillConfigs: withActiveEntrySource(state.skillConfigs, skillId, scope, source),
+        skillConfigs: withActiveEntryOrigin(state.skillConfigs, skillId, scope, origin),
       };
     }),
 

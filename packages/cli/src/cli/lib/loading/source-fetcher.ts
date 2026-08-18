@@ -95,14 +95,14 @@ async function fetchFromLocalSource(source: string, subdir?: string): Promise<Fe
 
   if (!(await directoryExists(absolutePath))) {
     throw new Error(
-      `Local source not found: '${absolutePath}'\n\n` +
-        `Nothing is at that path, and a local source must be a directory holding a skills marketplace.\n\n` +
+      `Local marketplace not found: '${absolutePath}'\n\n` +
+        `Nothing is at that path, and a local marketplace must be a directory holding skills.\n\n` +
         `Check it for a typo, or name a marketplace that exists:\n` +
-        `  --source ${DEFAULT_SOURCE}`,
+        `  --marketplace ${DEFAULT_SOURCE}`,
     );
   }
 
-  verbose(`Using local source: ${absolutePath}`);
+  verbose(`Using local marketplace: ${absolutePath}`);
 
   return {
     path: absolutePath,
@@ -172,7 +172,7 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
     const cached: FetchResult = { path: cacheDir, fromCache: true, source: fullSource };
 
     if (verdict === "current" || verdict === "unreachable") {
-      verbose(`Using cached source: ${cacheDir}`);
+      verbose(`Using cached marketplace: ${cacheDir}`);
       return cached;
     }
 
@@ -330,7 +330,7 @@ async function readFetchRecord(cacheDir: string): Promise<SourceRevalidation | u
 
   const parsed = sourceRevalidationSchema.safeParse(parseJsonOrUndefined(raw));
   if (!parsed.success) {
-    verbose(`Unusable fetch record at ${fetchRecordPath(cacheDir)} — re-fetching the source`);
+    verbose(`Unusable fetch record at ${fetchRecordPath(cacheDir)} — re-fetching the marketplace`);
     return undefined;
   }
 
@@ -426,12 +426,12 @@ export async function fetchMarketplace(source: string): Promise<MarketplaceFetch
 
   if (!(await directoryExists(path.dirname(marketplacePath)))) {
     throw new Error(
-      `Marketplace not found for source: ${source}\n\n` +
+      `Marketplace not found at: ${source}\n\n` +
         `The .claude-plugin/marketplace.json file is missing from this repository.\n\n` +
         `Possible causes:\n` +
-        "  - The source URL may be incorrect\n" +
+        "  - The marketplace URL may be incorrect\n" +
         "  - The repository may not have a marketplace configured\n\n" +
-        "To create a marketplace, add a .claude-plugin/marketplace.json file to your source repository.",
+        "To create a marketplace, add a .claude-plugin/marketplace.json file to your marketplace repository.",
     );
   }
 

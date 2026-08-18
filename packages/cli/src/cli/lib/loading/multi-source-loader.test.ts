@@ -4,6 +4,10 @@ import { loadSkillsFromAllSources } from "./multi-source-loader";
 import type { SkillDefinition, SkillId } from "../../types";
 import type { ResolvedConfig } from "../configuration";
 import { SKILLS } from "../__tests__/test-fixtures";
+import {
+  CUSTOM_HOUSE_TOOLING_ID,
+  CUSTOM_HOUSE_TOOLING_SKILL,
+} from "../__tests__/mock-data/mock-skills.js";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { discoverAllPluginSkills } from "../plugins";
 
@@ -164,6 +168,49 @@ describe("multi-source-loader", () => {
         installed: true,
         installMode: "eject",
       });
+    });
+
+    it("leaves a skill no marketplace carries with its local copy as its only source", async () => {
+      const matrix = createMockMatrix(
+        { ...SKILLS.react },
+        { ...CUSTOM_HOUSE_TOOLING_SKILL, localPath: "/mock-project/.claude/skills/house/" },
+      );
+
+      await loadSkillsFromAllSources(
+        matrix,
+        DEFAULT_SOURCE_CONFIG,
+        "/tmp/test",
+        undefined,
+        new Set([CUSTOM_HOUSE_TOOLING_ID]),
+      );
+
+      const custom = matrix.skills[CUSTOM_HOUSE_TOOLING_ID]!;
+      expect(custom.availableSources).toStrictEqual([
+        { name: "eject", type: "local", installed: true, installMode: "eject" },
+      ]);
+      expect(custom.activeSource).toStrictEqual({
+        name: "eject",
+        type: "local",
+        installed: true,
+        installMode: "eject",
+      });
+    });
+
+    it("still tags every skill the marketplace does carry", async () => {
+      const matrix = createMockMatrix({ ...SKILLS.react }, { ...CUSTOM_HOUSE_TOOLING_SKILL });
+
+      await loadSkillsFromAllSources(
+        matrix,
+        DEFAULT_SOURCE_CONFIG,
+        "/tmp/test",
+        undefined,
+        new Set([CUSTOM_HOUSE_TOOLING_ID]),
+      );
+
+      const react = matrix.skills["web-framework-react"]!;
+      expect(react.availableSources).toStrictEqual([
+        { name: "agents-inc", type: "public", installed: false, primary: true },
+      ]);
     });
   });
 

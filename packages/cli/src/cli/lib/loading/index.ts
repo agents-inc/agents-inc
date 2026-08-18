@@ -16,6 +16,7 @@ export {
 export {
   type SourceLoadOptions,
   type SourceLoadResult,
+  loadMarketplaceMatrix,
   loadSkillsMatrixFromSource,
 } from "./source-loader";
 
@@ -27,4 +28,4 @@ export {
   fetchMarketplace,
 } from "./source-fetcher";
 
-export { loadSkillsFromAllSources } from "./multi-source-loader";
+export { isLocalOnlySkill, loadSkillsFromAllSources } from "./multi-source-loader";

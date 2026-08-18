@@ -133,6 +133,13 @@ export type MergedSkillsMatrix = {
   suggestedStacks: ResolvedStack[];
   /** Bidirectional slug <-> ID mapping */
   slugMap: SkillSlugMap;
+  /**
+   * Slugs the relationship rules name that no skill in this matrix carries.
+   * Absent when every reference resolved. Resolution drops such a reference and
+   * warns; carrying the list is what lets `checkMatrixHealth` report the typo
+   * against the source that shipped it rather than only logging it.
+   */
+  unresolvedSlugs?: SkillSlug[];
   /** Explicit domain definitions from agent metadata files */
   agentDefinedDomains?: Partial<Record<AgentName, Domain>>;
   /** ISO timestamp of when this matrix was generated */

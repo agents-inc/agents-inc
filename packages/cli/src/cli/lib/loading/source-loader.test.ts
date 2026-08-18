@@ -12,8 +12,10 @@ import {
   createMockSkill,
   createMockSkillAssignment,
   createMockExtractedSkill,
+  createTestSkill,
 } from "../__tests__/factories/skill-factories.js";
-import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
+import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
+import { createMockCategory } from "../__tests__/factories/category-factories.js";
 import { createMockStack } from "../__tests__/factories/stack-factories.js";
 import {
   createMockMarketplace,
@@ -21,6 +23,8 @@ import {
 } from "../__tests__/factories/plugin-factories.js";
 import {
   CLAUDE_DIR,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  EJECT_SOURCE,
   SKILL_RULES_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
@@ -29,28 +33,45 @@ import {
 import {
   createTestSource,
   cleanupTestSource,
+  inTestMarketplace,
+  testMarketplaceSkillId,
   type TestDirs,
+  type TestSkill,
   type TestStack,
 } from "../__tests__/fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS, EXTRA_DOMAIN_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
 import type {
+  Category,
   CategoryDefinition,
   CategoryPath,
+  MergedSkillsMatrix,
   ResolvedSkill,
   SkillId,
   SkillSlug,
 } from "../../types";
 import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
+import { getErrorMessage } from "../../utils/errors";
 import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logger";
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
-import { initializeMatrix } from "../matrix/matrix-provider";
+import { getSkillBySlug, initializeMatrix } from "../matrix/matrix-provider";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 
-const FIXTURE_SKILLS = [...DEFAULT_TEST_SKILLS, ...EXTRA_DOMAIN_TEST_SKILLS];
+/**
+ * What the fixture marketplace ships, published in its own namespace: a custom
+ * marketplace shipping a catalogue id is refused whole, so a fixture that reaches
+ * a real load has to be a legal marketplace.
+ */
+const FIXTURE_SKILLS = inTestMarketplace([...DEFAULT_TEST_SKILLS, ...EXTRA_DOMAIN_TEST_SKILLS]);
+
+/** The fixture marketplace's id for the skill the source's react entry publishes. */
+const FIXTURE_REACT_ID = testMarketplaceSkillId("web-framework-react");
+
+/** The same, for the entry the local-skill merge specs overwrite. */
+const FIXTURE_VITEST_ID = testMarketplaceSkillId("web-testing-vitest");
 
 const FIXTURE_SKILL_COUNT = FIXTURE_SKILLS.length;
 
@@ -68,19 +89,56 @@ const UNRESOLVED_SLUG_WARNING = "Unresolved slug";
  */
 const SLUG_NO_TEST_SOURCE_SHIPS: SkillSlug = "angular-standalone";
 
+/** A slug only a user's own skill carries — nothing in any catalogue claims it. */
+// Boundary cast: a local skill's slug is outside the generated union, as its id is
+const LOCAL_ONLY_SLUG = "house-style" as SkillSlug;
+
+/** The id and slug of the local skill the load-level slug specs write to disk. */
+const LOCAL_DISK_SKILL_ID = "my-house-style";
+const LOCAL_DISK_SKILL_SLUG = LOCAL_ONLY_SLUG;
+
 /** A slug the test source does ship — read off the fixture so it cannot drift from it. */
 const SLUG_THE_TEST_SOURCE_SHIPS: SkillSlug = firstElement(FIXTURE_SKILLS).slug;
 
 /**
- * What the load said, read the way `init` and `edit` read it: buffering is the
- * production mechanism that carries `warn()` past Ink's `clearTerminal` into the
- * wizard's startup band, so draining it is asking the question the band answers.
+ * What the load produced and what it said, read the way `init` and `edit` read
+ * it: buffering is the production mechanism that carries `warn()` past Ink's
+ * `clearTerminal` into the wizard's startup band, so draining it is asking the
+ * question the band answers.
  */
-async function warningsWhileLoading(sourceFlag: string, projectDir: string): Promise<string[]> {
+async function loadWithWarnings(
+  sourceFlag: string,
+  projectDir: string,
+): Promise<{ matrix: MergedSkillsMatrix; warnings: string[] }> {
   enableBuffering();
   try {
-    await loadSkillsMatrixFromSource({ sourceFlag, projectDir });
-    return drainBuffer().map((message) => message.text);
+    const { matrix } = await loadSkillsMatrixFromSource({ sourceFlag, projectDir });
+    return { matrix, warnings: drainBuffer().map((message) => message.text) };
+  } finally {
+    disableBuffering();
+  }
+}
+
+/**
+ * A loaded skill read by an id outside the generated union. A namespaced
+ * marketplace id is a `string` — the union is the public catalogue's — while
+ * `matrix.skills` is keyed by `SkillId`, so the widening happens once here rather
+ * than at every call site.
+ */
+function loadedSkill(matrix: MergedSkillsMatrix, id: string): ResolvedSkill | undefined {
+  // Boundary cast: skills keys are branded SkillId, widened to string for test indexing
+  return (matrix.skills as Record<string, ResolvedSkill>)[id];
+}
+
+/** The same question of a synchronous local-skill merge. */
+function mergeLocalSkillsWithWarnings(
+  matrix: MergedSkillsMatrix,
+  localResult: LocalSkillDiscoveryResult,
+): { matrix: MergedSkillsMatrix; warnings: string[] } {
+  enableBuffering();
+  try {
+    const merged = mergeLocalSkillsIntoMatrix(matrix, localResult);
+    return { matrix: merged, warnings: drainBuffer().map((message) => message.text) };
   } finally {
     disableBuffering();
   }
@@ -93,7 +151,7 @@ const FIXTURE_STACKS: TestStack[] = [
     description: "A stack for source-loader tests",
     agents: {
       "web-developer": {
-        "web-framework": "web-framework-react",
+        "web-framework": FIXTURE_REACT_ID,
       },
     },
   },
@@ -255,7 +313,7 @@ describe("source-loader", () => {
             sourceFlag: MISSING_SOURCE_PATH,
             projectDir: tempDir,
           }),
-        ).rejects.toThrow(`Local source not found: '${MISSING_SOURCE_PATH}'`);
+        ).rejects.toThrow(`Local marketplace not found: '${MISSING_SOURCE_PATH}'`);
       });
 
       it("should return empty skills if skills directory is missing", async () => {
@@ -282,6 +340,29 @@ describe("source-loader", () => {
 describe("source-loader relationship rules", () => {
   let tempDir: string;
 
+  /** A source whose OWN `skill-rules.ts` names one slug it ships and one it does not. */
+  async function createSourceWhoseOwnRulesDangle(): Promise<TestDirs> {
+    const dirs = await createTestSource({ skills: FIXTURE_SKILLS });
+    await writeFile(
+      path.join(dirs.sourceDir, SKILL_RULES_PATH),
+      renderConfigTs({
+        version: "1.0.0",
+        relationships: {
+          conflicts: [
+            {
+              skills: [SLUG_THE_TEST_SOURCE_SHIPS, SLUG_NO_TEST_SOURCE_SHIPS],
+              reason: "One slug this source ships, one it does not",
+            },
+          ],
+          discourages: [],
+          requires: [],
+          alternatives: [],
+        },
+      }),
+    );
+    return dirs;
+  }
+
   beforeEach(async () => {
     tempDir = await createTempDir("cc-relationship-rules-test-");
   });
@@ -296,35 +377,26 @@ describe("source-loader relationship rules", () => {
     // every dangling name used to warn once per skill in the source — thousands of
     // lines, painted above the wizard's step since the startup band landed. None of
     // them was ever actionable: the reference resolves to nothing and is dropped.
-    const warnings = await warningsWhileLoading(fixtureDirs.sourceDir, tempDir);
+    const { warnings } = await loadWithWarnings(fixtureDirs.sourceDir, tempDir);
 
     expect(warnings.filter((text) => text.includes(UNRESOLVED_SLUG_WARNING))).toStrictEqual([]);
   });
 
+  it("hands the health check nothing for the built-in slugs a source does not ship", async () => {
+    // The same rule the row above states in warnings, stated in the finding
+    // `doctor` reads: a built-in slug narrowed out before resolution is not the
+    // source's defect and must not be reported against it.
+    const { matrix } = await loadWithWarnings(fixtureDirs.sourceDir, tempDir);
+
+    expect(matrix.unresolvedSlugs).toBeUndefined();
+  });
+
   it("still warns about a slug the source's own rules name and its skills do not carry", async () => {
     // The other half of the same rule: a slug a source AUTHOR typed is that source's
-    // defect, and this warning is the only place it is ever reported.
-    const dirs = await createTestSource({ skills: FIXTURE_SKILLS });
+    // defect, and the load is where it is caught.
+    const dirs = await createSourceWhoseOwnRulesDangle();
     try {
-      await writeFile(
-        path.join(dirs.sourceDir, SKILL_RULES_PATH),
-        renderConfigTs({
-          version: "1.0.0",
-          relationships: {
-            conflicts: [
-              {
-                skills: [SLUG_THE_TEST_SOURCE_SHIPS, SLUG_NO_TEST_SOURCE_SHIPS],
-                reason: "One slug this source ships, one it does not",
-              },
-            ],
-            discourages: [],
-            requires: [],
-            alternatives: [],
-          },
-        }),
-      );
-
-      const warnings = await warningsWhileLoading(dirs.sourceDir, tempDir);
+      const { warnings } = await loadWithWarnings(dirs.sourceDir, tempDir);
       const unresolved = warnings.filter((text) => text.includes(UNRESOLVED_SLUG_WARNING));
 
       expect(unresolved).not.toStrictEqual([]);
@@ -332,6 +404,19 @@ describe("source-loader relationship rules", () => {
         unresolved.filter((text) => !text.includes(SLUG_NO_TEST_SOURCE_SHIPS)),
         "only the slug the source's own rules name may be reported unresolved",
       ).toStrictEqual([]);
+    } finally {
+      await cleanupTestSource(dirs);
+    }
+  });
+
+  it("hands the health check the slug the source's own rules dangle", async () => {
+    // The warning above is written to a log the author may never read. `doctor`
+    // reads the matrix, so the finding has to survive the merge to reach it.
+    const dirs = await createSourceWhoseOwnRulesDangle();
+    try {
+      const { matrix } = await loadWithWarnings(dirs.sourceDir, tempDir);
+
+      expect(matrix.unresolvedSlugs).toStrictEqual([SLUG_NO_TEST_SOURCE_SHIPS]);
     } finally {
       await cleanupTestSource(dirs);
     }
@@ -356,7 +441,7 @@ describe("source-loader local skills integration", () => {
 
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.METADATA_YAML),
-      `displayName: My Local Skill\nslug: my-local-skill\ncliDescription: A local skill\ndomain: web\ncategory: dummy-category\ncustom: true`,
+      `displayName: My Local Skill\nslug: my-local-skill\ncliDescription: A local skill\ndomain: web\ncategory: web-tooling\ncustom: true`,
     );
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.SKILL_MD),
@@ -376,12 +461,38 @@ describe("source-loader local skills integration", () => {
     expect(localSkill).toStrictEqual(
       expect.objectContaining({
         id: "my-local-skill",
-        category: "dummy-category",
+        category: "web-tooling",
         author: "@dummy-author",
         local: true,
         localPath: path.join(tempDir, ".claude/skills", "test-my-skill") + path.sep,
       }),
     );
+  });
+
+  it("tags a discovered skill the source does not carry with its local copy alone", async () => {
+    const skillsDir = path.join(tempDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "test-house-tooling");
+    await mkdir(skillsDir, { recursive: true });
+
+    await writeFile(
+      path.join(skillsDir, STANDARD_FILES.METADATA_YAML),
+      `displayName: House Tooling\nslug: house-tooling\ncliDescription: A skill the user wrote\ndomain: web\ncategory: web-tooling\ncustom: true`,
+    );
+    await writeFile(
+      path.join(skillsDir, STANDARD_FILES.SKILL_MD),
+      renderSkillMd("external-web-tooling-house", "A skill the user wrote", "Content"),
+    );
+
+    const result = await loadSkillsMatrixFromSource({
+      sourceFlag: fixtureDirs.sourceDir,
+      projectDir: tempDir,
+    });
+
+    const skills = result.matrix.skills as Record<string, ResolvedSkill>;
+    const custom = skills["external-web-tooling-house"];
+
+    expect(custom?.availableSources).toStrictEqual([
+      { name: EJECT_SOURCE, type: "local", installed: true, installMode: "eject" },
+    ]);
   });
 
   it("should not inject fake local category definitions into the matrix", async () => {
@@ -390,7 +501,7 @@ describe("source-loader local skills integration", () => {
 
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.METADATA_YAML),
-      `displayName: Category Test\nslug: cat-skill\ndomain: web\ncategory: dummy-category\ncustom: true`,
+      `displayName: Category Test\nslug: cat-skill\ndomain: web\ncategory: web-tooling\ncustom: true`,
     );
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.SKILL_MD),
@@ -425,7 +536,7 @@ describe("source-loader local skills integration", () => {
 
   it("should preserve remote skill category when local skill overwrites with category 'local'", async () => {
     // Use a known fixture skill with a domain-mapped category
-    const targetSkillId = "web-framework-react";
+    const targetSkillId = FIXTURE_REACT_ID;
     const expectedCategory = "web-framework";
 
     // Create a local skill with the SAME ID but a different category in metadata
@@ -471,7 +582,7 @@ describe("source-loader local skills integration", () => {
 
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.METADATA_YAML),
-      `displayName: Preserve Test\nslug: preserve-test\ndomain: web\ncategory: dummy-category\ncustom: true`,
+      `displayName: Preserve Test\nslug: preserve-test\ndomain: web\ncategory: web-tooling\ncustom: true`,
     );
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.SKILL_MD),
@@ -503,14 +614,14 @@ describe("source-loader local skills integration", () => {
       STANDARD_DIRS.SKILLS,
       "web",
       "testing",
-      "web-testing-vitest",
+      FIXTURE_VITEST_ID,
     );
     await mkdir(skillDir, { recursive: true });
 
     await writeFile(
       path.join(skillDir, STANDARD_FILES.SKILL_MD),
       renderSkillMd(
-        "web-testing-vitest",
+        FIXTURE_VITEST_ID,
         "Marketplace vitest configuration",
         "Marketplace vitest skill content.",
       ),
@@ -526,8 +637,8 @@ describe("source-loader local skills integration", () => {
       projectDir: tempDir,
     });
 
-    const existingSkillId = "web-testing-vitest";
-    const existingSkill = initialResult.matrix.skills[existingSkillId]!;
+    const existingSkillId = FIXTURE_VITEST_ID;
+    const existingSkill = loadedSkill(initialResult.matrix, existingSkillId)!;
     expect(existingSkill).toStrictEqual(
       expect.objectContaining({
         id: existingSkillId,
@@ -548,7 +659,7 @@ describe("source-loader local skills integration", () => {
     await writeFile(
       path.join(localSkillsDir, STANDARD_FILES.SKILL_MD),
       renderSkillMd(
-        "web-testing-vitest",
+        FIXTURE_VITEST_ID,
         "My custom vitest configuration",
         "This is my local override of the vitest skill.",
       ),
@@ -561,7 +672,7 @@ describe("source-loader local skills integration", () => {
     });
 
     // The skill should now be the LOCAL version, not the marketplace version
-    const overriddenSkill = result.matrix.skills[existingSkillId]!;
+    const overriddenSkill = loadedSkill(result.matrix, existingSkillId)!;
     expect(overriddenSkill).toStrictEqual(
       expect.objectContaining({
         local: true,
@@ -574,6 +685,60 @@ describe("source-loader local skills integration", () => {
     );
     // Verify the original description was different (proves we actually overwrote something)
     expect(overriddenSkill.description).not.toBe(existingSkill.description);
+  });
+});
+
+describe("source-loader local skill slugs", () => {
+  let tempDir: string;
+
+  /** Writes one local skill under `<projectDir>/.claude/skills`, the way a user's own skill sits. */
+  async function writeLocalSkill(projectDir: string): Promise<void> {
+    const skillDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "house-style");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+      `displayName: House Style\nslug: ${LOCAL_DISK_SKILL_SLUG}\ndomain: web\ncategory: web-tooling\ncustom: true`,
+    );
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.SKILL_MD),
+      renderSkillMd(LOCAL_DISK_SKILL_ID, "The house style", "Content"),
+    );
+  }
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-local-slug-test-");
+    await writeLocalSkill(tempDir);
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  it("resolves a local skill by the slug its metadata declares", async () => {
+    // `getSkillBySlug` asserts, and the merge left the slug map as the source built
+    // it — so this lookup threw for every skill the user had written themselves.
+    await loadSkillsMatrixFromSource({ sourceFlag: fixtureDirs.sourceDir, projectDir: tempDir });
+
+    expect(getSkillBySlug(LOCAL_DISK_SKILL_SLUG)).toStrictEqual(
+      expect.objectContaining({ id: LOCAL_DISK_SKILL_ID, local: true }),
+    );
+  });
+
+  it("leaves the built-in matrix's own slug map alone", async () => {
+    // The default-source branch hands out BUILT_IN_MATRIX's fields, so a merge that
+    // writes through one of them edits a module constant every later load reads.
+    const result = await loadSkillsMatrixFromSource({
+      projectDir: tempDir,
+      skipExtraSources: true,
+      matrixOnly: true,
+    });
+
+    expect(result.matrix.slugMap.slugToId[LOCAL_DISK_SKILL_SLUG]).toBe(LOCAL_DISK_SKILL_ID);
+    expect(
+      BUILT_IN_MATRIX.slugMap.slugToId[LOCAL_DISK_SKILL_SLUG],
+      "a project's local skill must not reach the shipped catalogue",
+    ).toBeUndefined();
   });
 });
 
@@ -611,7 +776,7 @@ describe("source-loader config-driven paths", () => {
     await mkdir(skillsDir, { recursive: true });
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.SKILL_MD),
-      renderSkillMd("web-framework-react", "React framework", "React skill content"),
+      renderSkillMd(FIXTURE_REACT_ID, "React framework", "React skill content"),
     );
     await writeFile(
       path.join(skillsDir, STANDARD_FILES.METADATA_YAML),
@@ -624,8 +789,8 @@ describe("source-loader config-driven paths", () => {
     });
 
     // Skill should be loaded from custom path
-    expect(result.matrix.skills["web-framework-react"]).toStrictEqual(
-      expect.objectContaining({ id: "web-framework-react" }),
+    expect(loadedSkill(result.matrix, FIXTURE_REACT_ID)).toStrictEqual(
+      expect.objectContaining({ id: FIXTURE_REACT_ID }),
     );
   });
 
@@ -739,7 +904,7 @@ describe("source-loader config-driven paths", () => {
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      'export default { source: "github:myorg/skills" };',
+      'export default { marketplace: "github:myorg/skills" };',
     );
 
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
@@ -779,14 +944,14 @@ describe("source-loader integration", () => {
     }
 
     // Verify a known skill has meaningful properties from the fixture data
-    const reactSkill = result.matrix.skills["web-framework-react"]!;
+    const reactSkill = loadedSkill(result.matrix, FIXTURE_REACT_ID)!;
     expect(reactSkill).toStrictEqual(
       expect.objectContaining({
-        id: "web-framework-react",
+        id: FIXTURE_REACT_ID,
         category: "web-framework",
       }),
     );
-    expect(reactSkill.path).toContain("web-framework/web-framework-react");
+    expect(reactSkill.path).toContain(`web-framework/${FIXTURE_REACT_ID}`);
   });
 
   it("should load suggested stacks", async () => {
@@ -802,7 +967,7 @@ describe("source-loader integration", () => {
         name: "Fixture Test Stack",
       }),
     );
-    expect(fixtureStack!.allSkillIds).toContain("web-framework-react");
+    expect(fixtureStack!.allSkillIds).toContain(FIXTURE_REACT_ID);
   });
 
   it("should load stacks from source when source has config/stacks.ts", async () => {
@@ -1084,6 +1249,84 @@ describe("convertStackToResolvedStack", () => {
   });
 });
 
+describe("mergeLocalSkillsIntoMatrix slug map", () => {
+  it("makes a local skill reachable by the slug its metadata declares", () => {
+    const localResult: LocalSkillDiscoveryResult = {
+      skills: [
+        createMockExtractedSkill("web-tooling-custom" as SkillId, {
+          local: true,
+          localPath: "/project/.claude/skills/house-style/",
+          slug: LOCAL_ONLY_SLUG,
+        }),
+      ],
+      localSkillsPath: "/project/.claude/skills",
+    };
+
+    const result = mergeLocalSkillsIntoMatrix(createMockMatrix(), localResult);
+
+    expect(result.slugMap.slugToId[LOCAL_ONLY_SLUG]).toBe("web-tooling-custom");
+    expect(result.slugMap.idToSlug["web-tooling-custom" as SkillId]).toBe(LOCAL_ONLY_SLUG);
+  });
+
+  it("leaves a slug the matrix already maps with the skill holding it", () => {
+    // Ids are namespaced by their author (CLI-498); slugs are not, so a user's own
+    // skill can spell one the catalogue already uses. Letting it win would reroute
+    // every rule naming that slug to the local skill, silently.
+    const incumbent = createMockSkill("web-framework-react");
+    const localResult: LocalSkillDiscoveryResult = {
+      skills: [
+        createMockExtractedSkill("web-tooling-custom" as SkillId, {
+          local: true,
+          localPath: "/project/.claude/skills/my-react/",
+          slug: incumbent.slug,
+        }),
+      ],
+      localSkillsPath: "/project/.claude/skills",
+    };
+
+    const { matrix, warnings } = mergeLocalSkillsWithWarnings(
+      createMockMatrix(incumbent),
+      localResult,
+    );
+
+    expect(matrix.slugMap.slugToId[incumbent.slug]).toBe("web-framework-react");
+    expect(
+      warnings.filter((text) => text.includes(`Duplicate slug '${incumbent.slug}'`)),
+      "the refused claim is named, not silently dropped",
+    ).toHaveLength(1);
+    expect(
+      matrix.skills["web-tooling-custom" as SkillId],
+      "the local skill is still in the matrix — only its slug claim was refused",
+    ).toBeDefined();
+  });
+
+  it("keeps the mapping when a local skill overrides an id the matrix already holds", () => {
+    const incumbent = createMockSkill("web-framework-react");
+    const localResult: LocalSkillDiscoveryResult = {
+      skills: [
+        createMockExtractedSkill("web-framework-react", {
+          local: true,
+          localPath: "/project/.claude/skills/react/",
+          slug: LOCAL_ONLY_SLUG,
+        }),
+      ],
+      localSkillsPath: "/project/.claude/skills",
+    };
+
+    const { matrix, warnings } = mergeLocalSkillsWithWarnings(
+      createMockMatrix(incumbent),
+      localResult,
+    );
+
+    expect(matrix.slugMap.slugToId[incumbent.slug]).toBe("web-framework-react");
+    expect(
+      matrix.slugMap.slugToId[LOCAL_ONLY_SLUG],
+      "an override inherits the slug the matrix already maps, so it claims none of its own",
+    ).toBeUndefined();
+    expect(warnings).toStrictEqual([]);
+  });
+});
+
 describe("mergeLocalSkillsIntoMatrix", () => {
   it("should add a local skill to an empty matrix", () => {
     const matrix = createMockMatrix();
@@ -1321,7 +1564,7 @@ describe("mergeLocalSkillsIntoMatrix", () => {
   });
 
   it("should mark custom local skills with their custom flag", () => {
-    const matrix = createMockMatrix();
+    const matrix = createMockMatrix({}, { categories: CUSTOM_SKILL_CATEGORY_MAP });
     const localResult: LocalSkillDiscoveryResult = {
       skills: [
         createMockExtractedSkill("web-tooling-custom" as SkillId, {
@@ -1338,5 +1581,291 @@ describe("mergeLocalSkillsIntoMatrix", () => {
 
     const skills = result.skills as Record<string, ResolvedSkill>;
     expect(skills["web-tooling-custom"]).toMatchObject({ custom: true });
+  });
+});
+
+/**
+ * The category `web-tooling-custom` declares, as a matrix that declares it —
+ * the shape a custom skill is entitled to expect, since a custom skill brings
+ * no category with it.
+ */
+const CUSTOM_SKILL_CATEGORY_MAP = buildCategoryMap({
+  "web-tooling": createMockCategory("web-tooling", "Tooling"),
+});
+
+/**
+ * A category no built-in defines, declared by the marketplace under test. A
+ * custom skill accepted into it proves the question asked is "does this load
+ * declare the category", not "is it in the CLI's generated union" — a
+ * marketplace's own categories are as real as the catalogue's, and the intake's
+ * dropdown offers both.
+ */
+// Boundary cast: the category is a marketplace's own, so outside the generated union by design
+const MARKETPLACE_DECLARED_CATEGORY = "acme-conventions" as Category;
+
+/** A category nothing declares — what typing one in rather than picking it produces. */
+const UNDECLARED_CATEGORY = "acme-invented";
+
+/** A skill answering to no marketplace, so wearing the `external-` namespace. */
+const CUSTOM_LOCAL_SKILL_ID = "external-acme-house" as SkillId;
+
+/** Where that skill's files sit, and so the metadata.yaml a refusal must name. */
+const CUSTOM_LOCAL_SKILL_PATH = ".claude/skills/acme-house/";
+
+function customSkillDeclaring(category: string): LocalSkillDiscoveryResult {
+  return {
+    skills: [
+      createMockExtractedSkill(CUSTOM_LOCAL_SKILL_ID, {
+        local: true,
+        custom: true,
+        localPath: `/project/${CUSTOM_LOCAL_SKILL_PATH}`,
+        path: CUSTOM_LOCAL_SKILL_PATH,
+        // Boundary cast: the fixture names categories outside the generated union
+        category: category as CategoryPath,
+        domain: "web",
+        slug: "acme-house" as SkillSlug,
+      }),
+    ],
+    localSkillsPath: "/project/.claude/skills",
+  };
+}
+
+/**
+ * A custom skill is placed in a category that already exists, never in one it
+ * invents: the intake makes the user pick from the categories the grid renders,
+ * so a category no definition declares means the pick never happened. Accepting
+ * one would put the skill in a tab nothing draws and a stack no sub-agent reads —
+ * silently, which is the failure the placeholder taxonomy used to produce.
+ */
+describe("mergeLocalSkillsIntoMatrix — a custom skill's category", () => {
+  const matrixDeclaringMarketplaceCategory = () =>
+    createMockMatrix(
+      {},
+      {
+        categories: buildCategoryMap({
+          [MARKETPLACE_DECLARED_CATEGORY]: createMockCategory(
+            MARKETPLACE_DECLARED_CATEGORY,
+            "House Conventions",
+          ),
+        }),
+      },
+    );
+
+  it("admits a custom skill into a category the marketplace declares", () => {
+    const { matrix, warnings } = mergeLocalSkillsWithWarnings(
+      matrixDeclaringMarketplaceCategory(),
+      customSkillDeclaring(MARKETPLACE_DECLARED_CATEGORY),
+    );
+
+    expect(loadedSkill(matrix, CUSTOM_LOCAL_SKILL_ID)).toMatchObject({
+      category: MARKETPLACE_DECLARED_CATEGORY,
+      custom: true,
+      local: true,
+    });
+    expect(warnings).toStrictEqual([]);
+  });
+
+  it("refuses a custom skill whose category no definition declares", () => {
+    const { matrix } = mergeLocalSkillsWithWarnings(
+      matrixDeclaringMarketplaceCategory(),
+      customSkillDeclaring(UNDECLARED_CATEGORY),
+    );
+
+    expect(
+      loadedSkill(matrix, CUSTOM_LOCAL_SKILL_ID),
+      "a skill nothing can place must not enter the matrix as if it had been placed",
+    ).toBeUndefined();
+  });
+
+  it("invents no category definition for the skill it refused", () => {
+    const { matrix } = mergeLocalSkillsWithWarnings(
+      matrixDeclaringMarketplaceCategory(),
+      customSkillDeclaring(UNDECLARED_CATEGORY),
+    );
+
+    expect(
+      (matrix.categories as Record<string, CategoryDefinition>)[UNDECLARED_CATEGORY],
+      "synthesizing the category is what made the placeholder look like a real placement",
+    ).toBeUndefined();
+  });
+
+  it("names the skill, the category and the file to edit when it refuses", () => {
+    const { warnings } = mergeLocalSkillsWithWarnings(
+      matrixDeclaringMarketplaceCategory(),
+      customSkillDeclaring(UNDECLARED_CATEGORY),
+    );
+
+    const refusal = warnings.find((text) => text.includes(CUSTOM_LOCAL_SKILL_ID));
+    expect(refusal, "a dropped skill the user wrote must say so").toBeDefined();
+    expect(refusal).toContain(UNDECLARED_CATEGORY);
+    expect(refusal).toContain(`${CUSTOM_LOCAL_SKILL_PATH}${STANDARD_FILES.METADATA_YAML}`);
+  });
+
+  it("leaves the slug of a refused custom skill unclaimed", () => {
+    const { matrix } = mergeLocalSkillsWithWarnings(
+      matrixDeclaringMarketplaceCategory(),
+      customSkillDeclaring(UNDECLARED_CATEGORY),
+    );
+
+    expect(
+      matrix.slugMap.slugToId["acme-house" as SkillSlug],
+      "a skill that never entered the matrix must not be reachable by slug either",
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * Two ids the shipped catalogue owns. A skill id IS the directory the skill
+ * installs into, so a marketplace shipping either of these names the directory
+ * a catalogue skill already occupies — the shadowing the namespace rule exists
+ * to make unrepresentable.
+ */
+const CATALOGUE_OWNED_IDS: SkillId[] = ["web-framework-react", "web-testing-vitest"];
+
+/** A marketplace name of the author's own, and therefore the namespace its ids live in. */
+const AUTHOR_MARKETPLACE_NAME = "acme";
+
+/**
+ * The npm package the public catalogue publishes from. Written out rather than
+ * imported from the constant the guard reads: it is an identity, and a test
+ * asserting it against its own definition cannot notice that identity moving.
+ */
+const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
+
+/** A package name that is any author's to take. */
+const AUTHOR_PACKAGE_NAME = "@acme/skills";
+
+/** The catalogue's skills as a marketplace that skipped the namespace rule ships them. */
+function skillsUnderCatalogueIds(): TestSkill[] {
+  return CATALOGUE_OWNED_IDS.map((id) => createTestSkill(id, `Published as '${id}'`));
+}
+
+/**
+ * The same skills published in a marketplace's own namespace. The bare id still
+ * selects the taxonomy — a namespaced id names no category, slug or domain of
+ * its own — and only the published id moves.
+ */
+function skillsUnderAuthorNamespace(): TestSkill[] {
+  return CATALOGUE_OWNED_IDS.map((id) =>
+    createTestSkill(id, `Published as '${AUTHOR_MARKETPLACE_NAME}-${id}'`, {
+      id: `${AUTHOR_MARKETPLACE_NAME}-${id}`,
+    }),
+  );
+}
+
+/** The ids {@link skillsUnderAuthorNamespace} publishes, sorted. */
+const AUTHOR_NAMESPACED_IDS = CATALOGUE_OWNED_IDS.map(
+  (id) => `${AUTHOR_MARKETPLACE_NAME}-${id}`,
+).sort();
+
+/** Gives a source a package.json, the file the catalogue is recognised by. */
+async function writeSourcePackageJson(sourceDir: string, name: string): Promise<void> {
+  await writeFile(
+    path.join(sourceDir, STANDARD_FILES.PACKAGE_JSON),
+    JSON.stringify({ name, version: "1.0.0" }),
+  );
+}
+
+/** Gives a source a marketplace.json publishing under `name`. */
+async function writeSourceMarketplaceJson(sourceDir: string, name: string): Promise<void> {
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace(CATALOGUE_OWNED_IDS.map((id) => createMockMarketplacePlugin(id))),
+      name,
+    }),
+  );
+}
+
+/** The message a load refused with, or null when it loaded. */
+async function refusalLoading(sourceDir: string, projectDir: string): Promise<string | null> {
+  return loadSkillsMatrixFromSource({ sourceFlag: sourceDir, projectDir }).then(
+    () => null,
+    (error: unknown) => getErrorMessage(error),
+  );
+}
+
+describe("source-loader public catalogue collision guard", () => {
+  let tempDir: string;
+  let sourceDirs: TestDirs | undefined;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-catalogue-collision-");
+    delete process.env.CC_SOURCE;
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+    if (sourceDirs) {
+      await cleanupTestSource(sourceDirs);
+      sourceDirs = undefined;
+    }
+    delete process.env.CC_SOURCE;
+  });
+
+  it("refuses a marketplace whose skill ids the public catalogue already owns", async () => {
+    sourceDirs = await createTestSource({ skills: skillsUnderCatalogueIds() });
+
+    const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
+
+    expect(refusal, "a marketplace shipping catalogue ids must not load at all").not.toBeNull();
+    for (const id of CATALOGUE_OWNED_IDS) {
+      expect(refusal, "every colliding id must be named").toContain(id);
+    }
+    expect(refusal, "the marketplace that shipped them must be named").toContain(
+      sourceDirs.sourceDir,
+    );
+    expect(refusal, "the fix is a namespace, and the refusal must say so").toContain("namespace");
+  });
+
+  it("loads a marketplace whose skill ids all carry its own namespace", async () => {
+    sourceDirs = await createTestSource({ skills: skillsUnderAuthorNamespace() });
+
+    const result = await loadSkillsMatrixFromSource({
+      sourceFlag: sourceDirs.sourceDir,
+      projectDir: tempDir,
+    });
+
+    expect(Object.keys(result.matrix.skills).sort()).toStrictEqual(AUTHOR_NAMESPACED_IDS);
+  });
+
+  it("loads the public catalogue itself, read from a checkout of its own repository", async () => {
+    sourceDirs = await createTestSource({ skills: skillsUnderCatalogueIds() });
+    await writeSourcePackageJson(sourceDirs.sourceDir, PUBLIC_CATALOGUE_PACKAGE);
+
+    const result = await loadSkillsMatrixFromSource({
+      sourceFlag: sourceDirs.sourceDir,
+      projectDir: tempDir,
+    });
+
+    expect(Object.keys(result.matrix.skills).sort()).toStrictEqual([...CATALOGUE_OWNED_IDS].sort());
+  });
+
+  it("refuses a marketplace that only calls itself the public one", async () => {
+    sourceDirs = await createTestSource({ skills: skillsUnderCatalogueIds() });
+    await writeSourceMarketplaceJson(sourceDirs.sourceDir, DEFAULT_PUBLIC_SOURCE_NAME);
+    await writeSourcePackageJson(sourceDirs.sourceDir, AUTHOR_PACKAGE_NAME);
+
+    const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
+
+    expect(
+      refusal,
+      "the name in marketplace.json is a claim the author writes, never a credential",
+    ).not.toBeNull();
+  });
+
+  it("leaves the default public marketplace loading the whole built-in catalogue", async () => {
+    const result = await loadSkillsMatrixFromSource({
+      projectDir: tempDir,
+      skipExtraSources: true,
+      matrixOnly: true,
+    });
+
+    expect(
+      Object.keys(result.matrix.skills),
+      "the source every default install uses must not be refused by its own ids",
+    ).toStrictEqual(Object.keys(BUILT_IN_MATRIX.skills));
   });
 });

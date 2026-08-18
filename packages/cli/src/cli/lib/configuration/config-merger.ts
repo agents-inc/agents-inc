@@ -125,8 +125,8 @@ export function mergeConfigs(
     merged.description = existingConfig.description;
   }
 
-  if (existingConfig.source && !newConfig.source) {
-    merged.source = existingConfig.source;
+  if (existingConfig.marketplace && !newConfig.marketplace) {
+    merged.marketplace = existingConfig.marketplace;
   }
 
   if (existingConfig.agents.length > 0) {
@@ -202,8 +202,8 @@ export function mergeConfigs(
     merged.agentsSource = existingConfig.agentsSource;
   }
 
-  if (existingConfig.marketplace) {
-    merged.marketplace = existingConfig.marketplace;
+  if (existingConfig.marketplaceName) {
+    merged.marketplaceName = existingConfig.marketplaceName;
   }
 
   // Preserve the registered project paths from the existing (global) config — the wizard

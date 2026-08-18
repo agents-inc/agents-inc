@@ -53,7 +53,7 @@ describe("config-merger", () => {
       await writeTestTsConfig(
         tempDir,
         buildSourceConfig({
-          source: "github:my-org/skills",
+          marketplace: "github:my-org/skills",
           author: "@vince",
         }),
       );
@@ -74,7 +74,7 @@ describe("config-merger", () => {
       await writeTestTsConfig(
         tempDir,
         buildSourceConfig({
-          source: "github:my-org/skills",
+          marketplace: "github:my-org/skills",
           agentsSource: "github:my-org/agents",
         }),
       );
@@ -115,10 +115,10 @@ describe("config-merger", () => {
         buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
           ],
@@ -223,7 +223,7 @@ describe("config-merger", () => {
         },
         { field: "author" as const, existingValue: "@existing-author", newValue: "@new-author" },
         {
-          field: "marketplace" as const,
+          field: "marketplaceName" as const,
           existingValue: "existing-marketplace",
           newValue: "new-marketplace",
         },
@@ -254,14 +254,14 @@ describe("config-merger", () => {
           buildProjectConfig({
             name: "project",
             skills: [],
-            source: "github:existing/source",
+            marketplace: "github:existing/source",
           }),
         );
 
         const newConfig = buildProjectConfig({
           name: "project",
           skills: [],
-          source: "github:new/source",
+          marketplace: "github:new/source",
         });
 
         const result = await mergeWithExistingConfig(newConfig, {
@@ -269,7 +269,7 @@ describe("config-merger", () => {
         });
 
         expect(result.merged).toBe(true);
-        expect(result.config.source).toBe("github:new/source");
+        expect(result.config.marketplace).toBe("github:new/source");
       });
 
       it("should keep existing source when new config has no source", async () => {
@@ -277,7 +277,7 @@ describe("config-merger", () => {
           buildProjectConfig({
             name: "project",
             skills: [],
-            source: "github:existing/source",
+            marketplace: "github:existing/source",
           }),
         );
 
@@ -291,7 +291,7 @@ describe("config-merger", () => {
         });
 
         expect(result.merged).toBe(true);
-        expect(result.config.source).toBe("github:existing/source");
+        expect(result.config.marketplace).toBe("github:existing/source");
       });
     });
 
@@ -540,19 +540,19 @@ describe("config-merger", () => {
         const newConfig = buildProjectConfig({
           name: "project",
           skills: [],
-          source: "github:new/source",
+          marketplace: "github:new/source",
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [],
-          source: "github:existing/source",
+          marketplace: "github:existing/source",
         });
 
         const result = mergeConfigs(newConfig, existingConfig);
 
         expect(result).toStrictEqual({
           name: "project",
-          source: "github:new/source",
+          marketplace: "github:new/source",
           agents: buildAgentConfigs(["web-developer"]),
           skills: [],
         });
@@ -566,14 +566,14 @@ describe("config-merger", () => {
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [],
-          source: "github:existing/source",
+          marketplace: "github:existing/source",
         });
 
         const result = mergeConfigs(newConfig, existingConfig);
 
         expect(result).toStrictEqual({
           name: "project",
-          source: "github:existing/source",
+          marketplace: "github:existing/source",
           agents: buildAgentConfigs(["web-developer"]),
           skills: [],
         });
@@ -601,23 +601,23 @@ describe("config-merger", () => {
         });
       });
 
-      it("should use existing marketplace when present", () => {
+      it("should use existing marketplace name when present", () => {
         const newConfig = buildProjectConfig({
           name: "project",
           skills: [],
-          marketplace: "new-marketplace",
+          marketplaceName: "new-marketplace",
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [],
-          marketplace: "existing-marketplace",
+          marketplaceName: "existing-marketplace",
         });
 
         const result = mergeConfigs(newConfig, existingConfig);
 
         expect(result).toStrictEqual({
           name: "project",
-          marketplace: "existing-marketplace",
+          marketplaceName: "existing-marketplace",
           agents: buildAgentConfigs(["web-developer"]),
           skills: [],
         });
@@ -735,11 +735,11 @@ describe("config-merger", () => {
       it("should override existing skills with matching new skills", () => {
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { source: "new-source" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "new-source" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { source: "old-source" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "old-source" }),
         });
 
         const result = mergeConfigs(newConfig, existingConfig);
@@ -747,7 +747,7 @@ describe("config-merger", () => {
         expect(result).toStrictEqual({
           name: "project",
           agents: buildAgentConfigs(["web-developer"]),
-          skills: buildSkillConfigs(["web-framework-react"], { source: "new-source" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "new-source" }),
         });
       });
 
@@ -967,10 +967,10 @@ describe("config-merger", () => {
         const newConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
           ],
@@ -988,12 +988,12 @@ describe("config-merger", () => {
         expect(reactEntries.find((s) => !s.excluded)).toStrictEqual({
           id: "web-framework-react",
           scope: "project",
-          source: "eject",
+          origin: "eject",
         });
         expect(reactEntries.find((s) => s.excluded)).toStrictEqual({
           id: "web-framework-react",
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         });
       });
@@ -1006,17 +1006,17 @@ describe("config-merger", () => {
         // Skills at unrelated ids remain untouched.
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
-            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
           ],
         });
 
@@ -1029,14 +1029,14 @@ describe("config-merger", () => {
           {
             id: "web-framework-react",
             scope: "project",
-            source: "eject",
+            origin: "eject",
           },
         ]);
         // Existing vitest entry preserved — id is not referenced by newConfig.
         expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
           id: "web-testing-vitest",
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         });
       });
 
@@ -1050,11 +1050,11 @@ describe("config-merger", () => {
           skills: [
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "project",
-              source: "eject",
+              origin: "eject",
             }),
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
           ],
@@ -1064,10 +1064,10 @@ describe("config-merger", () => {
           skills: [
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
-            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
           ],
         });
 
@@ -1078,18 +1078,18 @@ describe("config-merger", () => {
         expect(reactEntries.find((s) => !s.excluded)).toStrictEqual({
           id: "web-framework-react",
           scope: "project",
-          source: "eject",
+          origin: "eject",
         });
         expect(reactEntries.find((s) => s.excluded)).toStrictEqual({
           id: "web-framework-react",
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
           excluded: true,
         });
         expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
           id: "web-testing-vitest",
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         });
       });
 
@@ -1102,13 +1102,13 @@ describe("config-merger", () => {
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
             ...buildSkillConfigs(["web-framework-react"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             }),
-            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
           ],
         });
 
@@ -1119,20 +1119,20 @@ describe("config-merger", () => {
         expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
           id: "web-testing-vitest",
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         });
       });
 
       it("drops an active global skill absent from new when newConfig is authoritative (global-context edit)", () => {
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
-            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "eject" }),
           ],
         });
 
@@ -1152,14 +1152,14 @@ describe("config-merger", () => {
         // skill the project does not own must be preserved even though it is absent from new.
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
-            ...buildSkillConfigs(["web-state-zustand"], { scope: "project", source: "eject" }),
-            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", source: "agents-inc" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+            ...buildSkillConfigs(["web-state-zustand"], { scope: "project", origin: "eject" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
           ],
         });
 
@@ -1179,13 +1179,13 @@ describe("config-merger", () => {
         // entry the same run's summary announced as gone (CLI-450).
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
-            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "project", origin: "eject" }),
           ],
         });
 
@@ -1203,14 +1203,14 @@ describe("config-merger", () => {
         // the session was authoritative over — so both drop, and only what is still selected stays.
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
-            ...buildSkillConfigs(["web-state-zustand"], { scope: "project", source: "eject" }),
-            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "project", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+            ...buildSkillConfigs(["web-state-zustand"], { scope: "project", origin: "eject" }),
+            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "project", origin: "eject" }),
           ],
         });
 
@@ -1225,13 +1225,13 @@ describe("config-merger", () => {
         // resolve it, so the removal never becomes a way to uninstall someone else's install.
         const newConfig = buildProjectConfig({
           name: "project",
-          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
         });
         const existingConfig = buildProjectConfig({
           name: "project",
           skills: [
-            ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
-            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "global", source: "eject" }),
+            ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+            ...buildSkillConfigs(["web-styling-tailwind"], { scope: "global", origin: "eject" }),
           ],
         });
 
@@ -1240,7 +1240,7 @@ describe("config-merger", () => {
         expect(result.skills.find((s) => s.id === "web-styling-tailwind")).toStrictEqual({
           id: "web-styling-tailwind",
           scope: "global",
-          source: "eject",
+          origin: "eject",
         });
       });
 
@@ -1249,7 +1249,7 @@ describe("config-merger", () => {
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         });
@@ -1257,7 +1257,7 @@ describe("config-merger", () => {
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
             excluded: true,
           }),
         });

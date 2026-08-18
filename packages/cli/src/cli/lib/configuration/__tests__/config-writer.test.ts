@@ -21,12 +21,22 @@ import {
   buildProjectConfig,
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
-import { CLAUDE_SRC_DIR } from "../../../consts";
+import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../../consts";
+import type { SkillId } from "../../../types";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
+import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
 import {
   extractNamedSection,
   extractScopeSections,
 } from "../../__tests__/helpers/config-source-sections.js";
+
+/**
+ * A skill answering to no marketplace, wearing the namespace such a skill takes.
+ * The id is the whole tell a config-only reader gets, and it is enough: nothing
+ * in the catalogue can be named `external-`.
+ */
+// Boundary cast: a skill outside every marketplace is outside the generated union by construction
+const EXTERNAL_SKILL_ID = "external-web-tooling-house" as SkillId;
 
 describe("generateConfigSource", () => {
   it("produces valid TypeScript with import type, export default, and named variables", () => {
@@ -62,6 +72,62 @@ describe("generateConfigSource", () => {
     expect(source).not.toContain("description");
     expect(source).not.toContain("author");
     expect(source).toContain('"name": "sparse-project"');
+  });
+
+  /**
+   * The writer is a fixed point, so a field the canonical order does not name is emitted after
+   * every field it does — at the tail, beside the passthrough junk. A renamed field left out of
+   * that array reorders every config on its next re-emit.
+   */
+  it("gives the renamed marketplace fields their place in the canonical order", () => {
+    const config = buildProjectConfig({
+      marketplace: TEST_SOURCE_URL,
+      marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
+      agentsSource: TEST_CUSTOM_SOURCE_URL,
+    });
+
+    const source = generateConfigSource(config);
+
+    const marketplaceIdx = source.indexOf(`"marketplace": ${JSON.stringify(TEST_SOURCE_URL)}`);
+    const nameIdx = source.indexOf(
+      `"marketplaceName": ${JSON.stringify(DEFAULT_PUBLIC_SOURCE_NAME)}`,
+    );
+    const agentsSourceIdx = source.indexOf(`"agentsSource"`);
+    expect(marketplaceIdx).toBeGreaterThan(-1);
+    expect(nameIdx, "the marketplace name follows the ref it names").toBeGreaterThan(
+      marketplaceIdx,
+    );
+    expect(
+      agentsSourceIdx,
+      "a canonically-ordered field must not be pushed behind a schema field it precedes",
+    ).toBeGreaterThan(nameIdx);
+  });
+
+  it("emits a skill entry's provenance under origin", () => {
+    const config = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { origin: EJECT_SOURCE }),
+    });
+
+    const source = generateConfigSource(config);
+
+    expect(source).toContain(`"origin":"${EJECT_SOURCE}"`);
+    expect(source, "no skill entry may still be keyed by the pre-rename name").not.toContain(
+      `"source":"`,
+    );
+  });
+
+  it("writes no custom flag beside a skill entry's origin", () => {
+    const config = buildProjectConfig({
+      skills: buildSkillConfigs([EXTERNAL_SKILL_ID], { origin: EJECT_SOURCE }),
+    });
+
+    const source = generateConfigSource(config);
+
+    expect(source).toContain(`"origin":"${EJECT_SOURCE}"`);
+    expect(
+      source,
+      "whether a skill is custom is the matrix's answer and every reader of it holds one — a second copy written into config.ts is a copy that can disagree",
+    ).not.toContain(`"custom"`);
   });
 
   it("uses inline empty arrays for empty skills/agents", () => {
@@ -478,8 +544,8 @@ describe("generateConfigSource", () => {
       name: "global",
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
-      source: "/path/to/skills",
-      marketplace: "agents-inc",
+      marketplace: "/path/to/skills",
+      marketplaceName: "agents-inc",
     });
 
     it("does not generate import globalConfig line when globalConfig is provided", () => {
@@ -566,8 +632,8 @@ describe("generateConfigSource", () => {
         isProjectConfig: true,
         globalConfig,
       });
-      expect(source).toContain('"source": "/path/to/skills"');
-      expect(source).toContain('"marketplace": "agents-inc"');
+      expect(source).toContain('"marketplace": "/path/to/skills"');
+      expect(source).toContain('"marketplaceName": "agents-inc"');
     });
 
     it("uses project name instead of global name", () => {
@@ -756,15 +822,15 @@ describe("generateConfigSource", () => {
         name: "global",
         skills: [],
         agents: [],
-        source: "/global/skills",
-        marketplace: "agents-inc",
+        marketplace: "/global/skills",
+        marketplaceName: "agents-inc",
       });
       const projectConfig = buildProjectConfig({
         name: "my-project",
         skills: [],
         agents: [],
-        source: "/project/skills",
-        marketplace: "custom-marketplace",
+        marketplace: "/project/skills",
+        marketplaceName: "custom-marketplace",
       });
       const source = generateConfigSource(projectConfig, {
         isProjectConfig: true,
@@ -772,17 +838,17 @@ describe("generateConfigSource", () => {
       });
 
       // Project values should appear (they take precedence)
-      expect(source).toContain('"source": "/project/skills"');
-      expect(source).toContain('"marketplace": "custom-marketplace"');
+      expect(source).toContain('"marketplace": "/project/skills"');
+      expect(source).toContain('"marketplaceName": "custom-marketplace"');
 
       // Global values should NOT appear (overridden by project)
-      expect(source).not.toContain('"source": "/global/skills"');
-      expect(source).not.toContain('"marketplace": "agents-inc"');
+      expect(source).not.toContain('"marketplace": "/global/skills"');
+      expect(source).not.toContain('"marketplaceName": "agents-inc"');
 
       // Each key should appear exactly once in the export default block
       const exportBlock = source.slice(source.indexOf("export default {"));
-      const sourceMatches = exportBlock.match(/"source":/g);
-      const marketplaceMatches = exportBlock.match(/"marketplace":/g);
+      const sourceMatches = exportBlock.match(/"marketplace":/g);
+      const marketplaceMatches = exportBlock.match(/"marketplaceName":/g);
       expect(sourceMatches).toHaveLength(1);
       expect(marketplaceMatches).toHaveLength(1);
     });
@@ -1255,17 +1321,17 @@ describe("generateConfigSource", () => {
       expect(source).toContain('"author": "@tester"');
     });
 
-    it("serializes source and marketplace fields", () => {
+    it("serializes the marketplace ref and the marketplace name", () => {
       const config = buildProjectConfig({
         name: "with-source",
-        source: "/path/to/skills",
-        marketplace: "custom-marketplace",
+        marketplace: "/path/to/skills",
+        marketplaceName: "custom-marketplace",
         skills: [],
         agents: [],
       });
       const source = generateConfigSource(config);
-      expect(source).toContain('"source": "/path/to/skills"');
-      expect(source).toContain('"marketplace": "custom-marketplace"');
+      expect(source).toContain('"marketplace": "/path/to/skills"');
+      expect(source).toContain('"marketplaceName": "custom-marketplace"');
     });
   });
 
@@ -1282,16 +1348,16 @@ describe("generateConfigSource", () => {
       const author = "@tester";
       const skillsSource = "/path/to/skills";
       const sourceFirst = generateConfigSource(
-        buildProjectConfig({ name: "insertion-order", source: skillsSource, author }),
+        buildProjectConfig({ name: "insertion-order", marketplace: skillsSource, author }),
       );
       const authorFirst = generateConfigSource(
-        buildProjectConfig({ name: "insertion-order", author, source: skillsSource }),
+        buildProjectConfig({ name: "insertion-order", author, marketplace: skillsSource }),
       );
 
       // Subject guard: both really carry both scalars, so the equality below is
       // not comparing two outputs that emitted neither.
       expect(sourceFirst).toContain(`"author": "${author}"`);
-      expect(sourceFirst).toContain(`"source": "${skillsSource}"`);
+      expect(sourceFirst).toContain(`"marketplace": "${skillsSource}"`);
       expect(authorFirst, "config.ts bytes must be decided by the config's values alone").toBe(
         sourceFirst,
       );
@@ -1303,8 +1369,8 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
         author: "@tester",
-        source: "/path/to/skills",
-        marketplace: "agents-inc",
+        marketplace: "/path/to/skills",
+        marketplaceName: "agents-inc",
       });
       // The same effective values, split two ways. This pair IS a load/re-emit
       // round trip: the first emission inlines the global scalars into the file,
@@ -1313,15 +1379,15 @@ describe("generateConfigSource", () => {
         name: "my-project",
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
-        source: "/path/to/skills",
+        marketplace: "/path/to/skills",
       });
       const carriesEveryScalar = buildProjectConfig({
         name: "my-project",
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
         author: "@tester",
-        source: "/path/to/skills",
-        marketplace: "agents-inc",
+        marketplace: "/path/to/skills",
+        marketplaceName: "agents-inc",
       });
 
       const beforeRoundTrip = generateConfigSource(inheritsMostScalars, {
@@ -1335,8 +1401,8 @@ describe("generateConfigSource", () => {
 
       // Subject guard: the merged union really is all three scalars.
       expect(beforeRoundTrip).toContain('"author": "@tester"');
-      expect(beforeRoundTrip).toContain('"source": "/path/to/skills"');
-      expect(beforeRoundTrip).toContain('"marketplace": "agents-inc"');
+      expect(beforeRoundTrip).toContain('"marketplace": "/path/to/skills"');
+      expect(beforeRoundTrip).toContain('"marketplaceName": "agents-inc"');
       expect(
         afterRoundTrip,
         "the inlined scalar union must be one ordered sequence, not a global block then a project block",

@@ -15,11 +15,24 @@ import type { Marketplace } from "../../types";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { elementAt } from "../__tests__/helpers/element-at.js";
 
+/**
+ * `init`'s flag as the refusal's worked example types it, mirrored as a literal — importing
+ * the command's own definition would move both sides of the assertion at once.
+ */
+const MARKETPLACE_FLAG = "--marketplace";
+
+/** The word CLI-463 withdraws from the user-facing surface, as a whole word. */
+const WITHDRAWN_NOUN = /\bsources?\b/i;
+
 describe("source-fetcher", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await createTempDir("cc-source-fetcher-test-");
+    // The prefix must not spell WITHDRAWN_NOUN: the refusal below echoes this path back,
+    // and `-source-` is a whole-word match under `\b` because a hyphen is a non-word
+    // character. A prefix carrying the word would fail that negative on the fixture's
+    // own name rather than on the product's prose.
+    tempDir = await createTempDir("cc-fetcher-test-");
   });
 
   afterEach(async () => {
@@ -52,7 +65,19 @@ describe("source-fetcher", () => {
     it("should throw error for non-existent local path", async () => {
       const nonExistent = path.join(tempDir, "does-not-exist");
 
-      await expect(fetchFromSource(nonExistent)).rejects.toThrow(/Local source not found/);
+      await expect(fetchFromSource(nonExistent)).rejects.toThrow(/Local marketplace not found/);
+    });
+
+    /**
+     * The refusal narrates around the path and closes with a worked example that types
+     * the flag out. It is the one message in this module that names an option, so a flag
+     * rename that stops here leaves the CLI advising a spelling its own parser refuses.
+     */
+    it("should refuse a missing local path in the marketplace vocabulary", async () => {
+      const nonExistent = path.join(tempDir, "does-not-exist");
+
+      await expect(fetchFromSource(nonExistent)).rejects.toThrow(MARKETPLACE_FLAG);
+      await expect(fetchFromSource(nonExistent)).rejects.not.toThrow(WITHDRAWN_NOUN);
     });
 
     it("should handle subdir option for local paths", async () => {
