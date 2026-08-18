@@ -1,4 +1,11 @@
-import { CLI_INVOKE_COMMAND, DEFAULT_BRANDING, EDITOR_URL, STANDARD_FILES } from "../consts.js";
+import {
+  CLI_INVOKE_COMMAND,
+  DEFAULT_BRANDING,
+  DEFAULT_PLUGIN_NAME,
+  EDITOR_URL,
+  STANDARD_FILES,
+  editorConfigUrl,
+} from "../consts.js";
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
 import type { AgentName, SkillId } from "../types/index.js";
 
@@ -8,7 +15,7 @@ export const ERROR_MESSAGES = {
   NO_INSTALLATION: `No installation found. Run '${CLI_INVOKE_COMMAND} init' first to set up ${DEFAULT_BRANDING.NAME}`,
   NO_SKILLS_FOUND: "No skills found",
   VALIDATION_FAILED: "Validation failed",
-  FAILED_RESOLVE_SOURCE: "Failed to resolve source",
+  FAILED_RESOLVE_SOURCE: "Failed to resolve marketplace",
   FAILED_LOAD_AGENT_PARTIALS: "Failed to load agent partials",
   FAILED_COMPILE_AGENTS: "Failed to compile agents",
   CLAUDE_CLI_NOT_FOUND: `Claude CLI not found — '${CLI_INVOKE_COMMAND} update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`,
@@ -23,18 +30,18 @@ export const SUCCESS_MESSAGES = {
 export const STATUS_MESSAGES = {
   INSTALLING_PLUGINS: "Installing skill plugins...",
   LOADING_SKILLS: "Loading skills...",
-  LOADING_MARKETPLACE_SOURCE: "Loading marketplace source...",
+  LOADING_MARKETPLACE_SOURCE: "Loading marketplace...",
   RECOMPILING_AGENTS: "Recompiling agents...",
   COMPILING_AGENTS: "Compiling agents...",
   DISCOVERING_SKILLS: "Discovering skills...",
-  RESOLVING_SOURCE: "Resolving source...",
-  RESOLVING_MARKETPLACE_SOURCE: "Resolving marketplace source...",
+  RESOLVING_SOURCE: "Resolving marketplace...",
+  RESOLVING_MARKETPLACE_SOURCE: "Resolving marketplace...",
   LOADING_AGENT_PARTIALS: "Loading agent partials...",
   FETCHING_REPOSITORY: "Fetching repository...",
   COPYING_SKILLS: "Copying skills...",
   UPDATING_PLUGIN_SKILLS: "Updating plugin skills...",
   /**
-   * Printed when revalidation found the remote source had moved on. It is the
+   * Printed when revalidation found the remote marketplace had moved on. It is the
    * only warning a user gets that this load costs a download rather than a
    * cache read, so it goes out before the download starts, not after.
    */
@@ -267,7 +274,7 @@ export function skillMetadataUnusableError(entries: UnusableSkillMetadata[]): st
 export function savedSkillMetadataUnusableError(entries: UnusableSkillMetadata[]): string {
   return [
     metadataUnusableOpening(entries),
-    `A config entry naming a skill this file cannot describe is dropped as one this source does not carry — and a file that can be repaired must not cost an install its record.`,
+    `A config entry naming a skill this file cannot describe is dropped as one this marketplace does not carry — and a file that can be repaired must not cost an install its record.`,
     METADATA_UNUSABLE_WAY_OUT,
   ].join("\n");
 }
@@ -281,6 +288,21 @@ export function savedSkillMetadataUnusableError(entries: UnusableSkillMetadata[]
 const SHARED_CONFIG_GREENFIELD_HINT =
   "installing a shared configuration is a fresh setup, not a merge";
 
+/**
+ * Where a freshly minted id can be acted on, which is the whole of what makes it a share.
+ *
+ * Exactly two things read one — this CLI and the editor the configuration reopens in — and both
+ * commands that mint an id (`share`, and `edit --ui`) print both lines, because an id nobody can
+ * act on is not a share. One definition rather than two, so the two commands cannot come to
+ * describe the same id differently.
+ */
+export function sharedConfigDestinations(id: string): string[] {
+  return [
+    `  Install it:  ${CLI_INVOKE_COMMAND} init --from ${id}`,
+    `  Open it:     ${editorConfigUrl(id)}`,
+  ];
+}
+
 /** Refusal printed when the directory `init --from` was run in is already installed. */
 export function sharedConfigExistingInstall(configPath: string): string {
   return `An installation already exists at ${configPath}. Run '${CLI_INVOKE_COMMAND} uninstall' first — ${SHARED_CONFIG_GREENFIELD_HINT}.`;
@@ -293,6 +315,182 @@ export function sharedConfigExistingInstall(configPath: string): string {
  */
 export function sharedConfigGlobalInstall(configPath: string): string {
   return `This configuration installs global-scoped content, and a global installation already exists at ${configPath}. Run '${CLI_INVOKE_COMMAND} uninstall' from your home directory first — ${SHARED_CONFIG_GREENFIELD_HINT}.`;
+}
+
+/**
+ * Refusal printed when `init --from` runs at the home directory and the payload carries
+ * project-scoped entries.
+ *
+ * It is NOT a greenfield refusal, and deliberately says nothing about `uninstall`: the payload is
+ * installable and the location is not, so the way out is another directory rather than a removal.
+ * A global installation holds only global-scoped content, and at the home root both scopes resolve
+ * to the same files — so a project-scoped entry does not land elsewhere, it lands in the global
+ * config wearing a label that contradicts the file it is in.
+ *
+ * Every offender is named, skills and sub-agents alike, because they are separate decisions in the
+ * payload and only the sharer knows which one they meant — the same reason the unwritable-pair
+ * refusal names both halves of every pair.
+ */
+export function sharedConfigProjectScopeAtHome(
+  skillIds: readonly SkillId[],
+  agentNames: readonly AgentName[],
+): string {
+  return [
+    "This configuration cannot be installed here: the home directory is the global scope, and a " +
+      "global installation holds only global-scoped content — so these project-scoped entries " +
+      "have nowhere to be written:",
+    ...skillIds.map((id) => `  skill ${id} (scope: project)`),
+    ...agentNames.map((name) => `  sub-agent ${name} (scope: project)`),
+    "Run this from inside a project directory, or re-share it with each entry above at global scope.",
+  ].join("\n");
+}
+
+/**
+ * The ids a decode could not place, named rather than counted.
+ *
+ * "3 skills were skipped" cannot be acted on; the ids can, and this is the one moment a user
+ * can tell whether what was shared is what they are getting. One definition because both
+ * consumers of a shared configuration report it — `init --from` on the way into a clean
+ * directory, `edit --from` on the way over an installed one — and a skip that read differently
+ * per command would look like a different kind of skip.
+ */
+export function skippedUnknownSkills(skillIds: readonly string[]): string {
+  return `Skipped ${skillIds.length} skill(s) this catalog does not know: ${skillIds.join(", ")}`;
+}
+
+/** The sub-agent half of {@link skippedUnknownSkills}, judged against `AGENT_NAMES`. */
+export function skippedUnknownAgents(agentNames: readonly string[]): string {
+  return `Skipped ${agentNames.length} unknown sub-agent(s): ${agentNames.join(", ")}`;
+}
+
+/**
+ * What a shared configuration brought with it rather than named. Named for the same reason the
+ * skips are: these are the entries no catalogue can explain, so this line is the only place a
+ * user learns what arrived inside the configuration itself.
+ */
+export function carriedSkillsWritten(skillIds: readonly string[]): string {
+  return `Wrote ${skillIds.length} skill(s) this configuration carries: ${skillIds.join(", ")}`;
+}
+
+/**
+ * The fixed text of `edit --from`'s removal plan.
+ *
+ * Applying a shared configuration makes this project MATCH it, so a skill the previous
+ * configuration installed and this payload omits is removed. That is the whole reason the
+ * command is interactive, and the reason the heading names removal rather than the apply:
+ * additions and re-tunings need no permission, and the change summary prints them afterwards.
+ */
+export const SHARED_CONFIG_APPLY = {
+  PREVIEW_HEADING: "Applying this configuration will remove:",
+  SKILLS_HEADING: "Skills:",
+  AGENTS_HEADING: "Sub-agents:",
+  /**
+   * The two headings a PROJECT run prints instead, for entries that live at global scope. They
+   * exist only there: at the home directory every entry is global, so a heading saying so would
+   * label the whole list with the one fact the location already states.
+   */
+  GLOBAL_SKILLS_HEADING: "Skills installed globally:",
+  GLOBAL_AGENTS_HEADING: "Sub-agents installed globally:",
+  /** Printed in place of the sections when the payload takes nothing away. */
+  NOTHING_REMOVED: "Nothing is removed — this configuration only adds and re-tunes.",
+  CONFIRM: "Apply this configuration?",
+} as const;
+
+/**
+ * Refusal printed when `edit --from` has no terminal to confirm its removals at.
+ *
+ * A confirm nobody can answer must never become a yes, so this refuses rather than applying
+ * silently. It names the other command deliberately: `init --from` installs the same
+ * configuration into a clean directory and removes nothing, so it is safe headless and is the
+ * whole of what a pipeline can do with an id.
+ */
+export function sharedConfigNeedsTerminal(id: string): string {
+  return [
+    `Applying configuration '${id}' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.`,
+    `Run '${CLI_INVOKE_COMMAND} edit --from ${id}' from a terminal, or '${CLI_INVOKE_COMMAND} init --from ${id}' in a clean directory, which installs without removing anything.`,
+  ].join("\n");
+}
+
+/**
+ * Refusal printed when `edit --ui` and `edit --from` are asked for at once. They are the two
+ * ends of one round trip — one hands this installation to the editor, the other applies a
+ * configuration back — and there is no order in which doing both in a single run means
+ * anything.
+ */
+export const SHARED_CONFIG_ONE_DIRECTION =
+  "--ui and --from are the two directions of the same round trip: --ui hands this installation to the editor, and --from applies one back. Run one, then the other.";
+
+/**
+ * The removal plan's statement of CONSEQUENCE for entries a project run removes at global scope.
+ *
+ * A global install is one installation every registered project reads, so removing one from
+ * inside a project changes projects the person confirming is not looking at and did not choose
+ * to be looking at. Nothing is refused over that — the ruling is that they may do it — but a yes
+ * given without it is a yes to a change nobody described, so the reach is counted AND named:
+ * "2 other projects" cannot be weighed against anything, and a path can.
+ *
+ * Printed only from a PROJECT. Inside the global installation the location IS the scope and the
+ * person chose it, so the ordinary apply confirm is the whole of the gate there — see
+ * `edit`'s two plan branches.
+ */
+export function globallyInstalledRemoved(otherProjects: readonly string[]): string {
+  return [
+    "These are installed globally, and a global install is shared by every project on this machine.",
+    ...globalRemovalReach(otherProjects),
+    `To keep them, answer no and re-share the configuration with them included.`,
+  ].join("\n");
+}
+
+/** Who else the removal above lands on: every registered project but the one being edited. */
+function globalRemovalReach(otherProjects: readonly string[]): string[] {
+  if (otherProjects.length === 0) {
+    return [
+      "No other project is registered here, so nothing else changes today — a project set up later inherits whatever the global install holds then.",
+    ];
+  }
+
+  return [
+    `Also affects ${otherProjects.length} other registered project(s):`,
+    ...otherProjects.map((projectDir) => `  ${projectDir}`),
+  ];
+}
+
+/**
+ * The removal plan's statement for skills the round trip does not own.
+ *
+ * `forkedFrom` decides ownership: the CLI stamps it into every skill directory it writes, and a
+ * skill written by hand into `.claude/skills/` carries none — so no shared configuration ever
+ * carried it, and this one made no statement about it. Deleting it would be this command
+ * inventing an instruction nobody gave.
+ */
+export function authoredHereKept(skillIds: readonly SkillId[]): string {
+  return [
+    "Kept — written here rather than installed, so a shared configuration never carried them:",
+    ...skillIds.map((id) => `  skill ${id}`),
+    `Remove them with '${CLI_INVOKE_COMMAND} edit'.`,
+  ].join("\n");
+}
+
+/**
+ * The removal plan's statement for skills this configuration NAMES that this catalogue cannot
+ * place.
+ *
+ * The skips reported earlier say what did not arrive; this says what stayed because of it, and
+ * the two are one fact read from either end. A destructive apply removes on intent and never on
+ * its own inability: the payload asked for these ids, so their absence from the decode is this
+ * catalogue's limit rather than an instruction, and deleting an installed skill over it would
+ * delete it because the catalogue moved.
+ *
+ * The remedy is the catalogue rather than the skill, which is the whole difference from the two
+ * statements above: nothing is wrong with what is installed, and nothing the user does to it
+ * makes the configuration's instruction applicable.
+ */
+export function unplaceableKept(skillIds: readonly SkillId[]): string {
+  return [
+    "Kept — named by this configuration, and this catalogue cannot place them:",
+    ...skillIds.map((id) => `  skill ${id}`),
+    `Run '${CLI_INVOKE_COMMAND} update' to refresh this installation's marketplace, then apply the configuration again.`,
+  ].join("\n");
 }
 
 /**
@@ -330,14 +528,18 @@ export function registeredProjectsUpdateFailed(reason: string): string {
 }
 
 /**
- * Statement printed in the uninstall removal plan when compiled agent files are on
- * disk but nothing can say which of them this CLI compiled. Removal matches on-disk
- * basenames against `config.agents`, so a run with no configuration it can read
- * leaves every one of them where it is — and the plan owes the reader that sentence
- * in place of the removal it would otherwise promise and then decline to make.
+ * Statement printed in the uninstall removal plan, and again in the summary, for the agent
+ * files this run leaves where they are. Every agent the compiler writes carries a provenance
+ * marker, so an agent file without one was written by somebody else — and saying so is what
+ * makes the removal beside it a claim about provably-ours rather than about a directory.
+ *
+ * Printed both before the confirmation and after the removal, from the one plan, so what the
+ * user approved and what the run reports cannot disagree.
  */
-export function compiledAgentsKept(agentsDir: string): string {
-  return `Kept compiled agents in ${agentsDir}/ — identifying which of them this CLI compiled needs the configuration, and this run has none it could read.`;
+export function unmarkedAgentsKept(agentsDir: string, count: number): string {
+  const subject = count === 1 ? "agent" : "agents";
+  const object = count === 1 ? "it" : "them";
+  return `Kept ${count} ${subject} in ${agentsDir}/ — no ${DEFAULT_PLUGIN_NAME} marker, so this CLI did not compile ${object}.`;
 }
 
 /**
@@ -356,17 +558,18 @@ export const UNINSTALL_PLAN = {
 
 /**
  * The plan's line for the local skills directory. The directory is not removed wholesale —
- * only the skills whose `forked-from` metadata names a source are — so the line says which
- * of its contents the run is claiming.
+ * only the skills whose `forked-from` metadata names a marketplace are — so the line says
+ * which of its contents the run is claiming.
  */
 export function localSkillsRemoval(skillsDir: string): string {
-  return `${skillsDir}/ (matching sources)`;
+  return `${skillsDir}/ (matching the marketplace)`;
 }
 
 /**
  * The plan's line for the compiled agents directory, marking it as the CLI's to delete
- * rather than the user's. Printed only when the configuration names which agents this CLI
- * compiled; {@link compiledAgentsKept} stands in its place when nothing can.
+ * rather than the user's. Printed when the run can name which agents those are — from the
+ * configuration, or from the provenance marker each compiled file carries when the
+ * configuration is gone. {@link unmarkedAgentsKept} names the rest.
  */
 export function compiledAgentsRemoval(agentsDir: string): string {
   return `${agentsDir}/ (CLI-compiled)`;

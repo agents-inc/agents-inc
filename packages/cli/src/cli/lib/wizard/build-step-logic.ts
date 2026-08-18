@@ -66,7 +66,7 @@ export function buildCategoriesForDomain(
         installed: installedSkillIds?.includes(skill.id) || false,
         ...(activeConfig?.scope !== undefined && { scope: activeConfig.scope }),
         ...(secondaryScope !== undefined && { secondaryScope }),
-        ...(activeConfig?.source !== undefined && { source: activeConfig.source }),
+        ...(activeConfig?.origin !== undefined && { source: activeConfig.origin }),
         hasUnmetRequirements: skill.hasUnmetRequirements,
         ...(skill.unmetRequirementsReason !== undefined && {
           unmetRequirementsReason: skill.unmetRequirementsReason,

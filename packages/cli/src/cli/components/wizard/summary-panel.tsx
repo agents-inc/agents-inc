@@ -18,7 +18,7 @@ import { getStackName } from "./utils.js";
 /**
  * The Marketplace row's value: the distinct marketplaces the summarised skills come from.
  *
- * `SkillConfig.source` is authoritative for where a skill came from (D-217) and holds exactly one
+ * `SkillConfig.origin` is authoritative for where a skill came from (D-217) and holds exactly one
  * of two things: {@link EJECT_SOURCE}, meaning the files were copied locally, or the marketplace's
  * own name as its `marketplace.json` declares it — which is why a project initialised from a
  * different marketplace names that marketplace here without any extra plumbing.
@@ -41,7 +41,7 @@ function formatSkillMarketplaces(skillConfigs: SkillConfig[]): string {
   if (skillConfigs.length === 0) return formatSourceDisplayName(DEFAULT_PUBLIC_SOURCE_NAME);
 
   const marketplaceNames = unique(
-    skillConfigs.map((config) => config.source).filter((source) => source !== EJECT_SOURCE),
+    skillConfigs.map((config) => config.origin).filter((origin) => origin !== EJECT_SOURCE),
   );
   if (marketplaceNames.length === 0) return ALL_SKILLS_EJECTED_LABEL;
 

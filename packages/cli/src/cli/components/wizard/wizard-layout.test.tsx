@@ -20,6 +20,13 @@ const FOOTER_LABEL = "select";
 /** Stands in for `ASCII_LOGO`: the layout takes the art as an opaque string. */
 const LOGO_MARKER = "ASCII LOGO ART";
 
+/**
+ * The subtitle the layout heads the sources step with, mirrored as a literal for the same
+ * reason `e2e/pages/constants.ts` mirrors it: an assertion that imports the very constant
+ * the component renders cannot fail when that constant changes.
+ */
+const SOURCES_STEP_SUBTITLE = "Customize skill sources";
+
 const VERSION = "9.9.9";
 
 const TOO_NARROW = { columns: MIN_TERMINAL_SIZE.COLS - 1, rows: MIN_TERMINAL_SIZE.ROWS + 10 };
@@ -398,5 +405,39 @@ describe("WizardLayout logo", () => {
     await delay(RENDER_DELAY_MS);
 
     expect(lastFrame()).toContain(LOGO_MARKER);
+  });
+});
+
+/**
+ * THE SUBTITLE IS A SCREEN SENTINEL. `e2e/pages/constants.ts` `STEP_TEXT.SOURCES`
+ * duplicates this exact string and every E2E step page object waits on it to know the
+ * screen arrived — so a subtitle that moves without it does not fail an assertion, it
+ * hangs each wizard spec for the full `TIMEOUTS.WIZARD_LOAD` budget. This test is the
+ * fast half of that pair: it goes red in under a second and names the string, which is
+ * the signal `STEP_TEXT.SOURCES` has to be moved to match.
+ *
+ * The wording is the step's own subject — where each skill comes from — and NOT the config
+ * field the step writes, which is `SkillConfig.origin`. Heading it with that field's noun was
+ * proposed and withdrawn by the owner, so the mismatch is deliberate. If it is ever reworded,
+ * it moves in exactly two places: here and `STEP_TEXT.SOURCES`.
+ */
+describe("the step the wizard names its sources on", () => {
+  let cleanup: (() => void) | undefined;
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("heads the step with the sentinel the E2E page objects wait on", async () => {
+    useWizardStore.setState({ step: "sources" });
+
+    const { stdout, lastFrame, unmount } = await mountLayout();
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    expect(lastFrame()).toContain(SOURCES_STEP_SUBTITLE);
   });
 });

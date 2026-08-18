@@ -21,6 +21,8 @@ export {
   installPluginSkills,
   type PluginInstallResult,
   pluginInstallFailureError,
+  unbackedPluginInstallError,
+  unbackedPluginSkillIds,
   uninstallPluginSkills,
   type PluginUninstallResult,
 } from "./skills/index.js";

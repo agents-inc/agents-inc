@@ -44,23 +44,23 @@ function validatePluginPath(pluginPath: string): void {
 
 function validateMarketplaceSource(source: string): void {
   if (!source || source.trim().length === 0) {
-    throw new Error("Marketplace source must not be empty.");
+    throw new Error("Marketplace must not be empty.");
   }
 
   if (source.length > MAX_MARKETPLACE_SOURCE_LENGTH) {
     throw new Error(
-      `Marketplace source is too long (${source.length} characters, max ${MAX_MARKETPLACE_SOURCE_LENGTH}).`,
+      `Marketplace is too long (${source.length} characters, max ${MAX_MARKETPLACE_SOURCE_LENGTH}).`,
     );
   }
 
   if (CONTROL_CHAR_PATTERN.test(source)) {
-    throw new Error("Marketplace source contains invalid control characters.");
+    throw new Error("Marketplace contains invalid control characters.");
   }
 
   if (!SAFE_PLUGIN_PATH_PATTERN.test(source)) {
     throw new Error(
-      `Marketplace source contains invalid characters: "${source}"\n` +
-        "Source may only contain alphanumeric characters, dashes, underscores, dots, slashes, @, and colons.",
+      `Marketplace contains invalid characters: "${source}"\n` +
+        "Marketplaces may only contain alphanumeric characters, dashes, underscores, dots, slashes, @, and colons.",
     );
   }
 }
@@ -136,16 +136,40 @@ function resolvePluginCwd(scope: ClaudePluginScope, projectDir: string): string 
   return scope === "user" ? os.homedir() : projectDir;
 }
 
+/**
+ * Which Claude installation a `claude plugin` call reads and writes.
+ *
+ * Omitted, the call inherits the one its process already points at — the user's
+ * own, in production. `configDir` redirects the entire config tree: the
+ * marketplace registry, the installed-plugin registry and user settings all move
+ * with it. It is how a test drives the Claude CLI without touching the machine
+ * running it.
+ */
+export type ClaudeConfigOptions = { configDir?: string };
+
+/**
+ * The `execCommand` options fragment that pins the config dir — empty when there
+ * is none, so the call inherits its process's environment untouched.
+ *
+ * `CLAUDE_CONFIG_DIR` takes precedence over `HOME` in the Claude CLI, so passing
+ * it also overrides an exported one rather than merely competing with it.
+ */
+function configDirEnv(options: ClaudeConfigOptions | undefined): { env?: NodeJS.ProcessEnv } {
+  if (options?.configDir === undefined) return {};
+  return { env: { CLAUDE_CONFIG_DIR: options.configDir } };
+}
+
 export async function claudePluginInstall(
   pluginPath: string,
   scope: ClaudePluginScope,
   projectDir: string,
+  options?: ClaudeConfigOptions,
 ): Promise<void> {
   validatePluginPath(pluginPath);
 
   const cwd = resolvePluginCwd(scope, projectDir);
   const args = ["plugin", "install", pluginPath, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd });
+  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
 
   if (result.exitCode !== 0) {
     const errorMessage = result.stderr || result.stdout || "Unknown error";
@@ -178,9 +202,15 @@ const marketplaceInfoListSchema: z.ZodType<MarketplaceInfo[]> = z.array(
   }),
 );
 
-export async function claudePluginMarketplaceList(): Promise<MarketplaceInfo[]> {
+export async function claudePluginMarketplaceList(
+  options?: ClaudeConfigOptions,
+): Promise<MarketplaceInfo[]> {
   try {
-    const result = await execCommand("claude", ["plugin", "marketplace", "list", "--json"], {});
+    const result = await execCommand(
+      "claude",
+      ["plugin", "marketplace", "list", "--json"],
+      configDirEnv(options),
+    );
 
     if (result.exitCode !== 0) {
       return [];
@@ -206,18 +236,24 @@ export async function claudePluginMarketplaceList(): Promise<MarketplaceInfo[]> 
   }
 }
 
-export async function claudePluginMarketplaceExists(name: string): Promise<boolean> {
-  const marketplaces = await claudePluginMarketplaceList();
+export async function claudePluginMarketplaceExists(
+  name: string,
+  options?: ClaudeConfigOptions,
+): Promise<boolean> {
+  const marketplaces = await claudePluginMarketplaceList(options);
   return marketplaces.some((m) => m.name === name);
 }
 
-export async function claudePluginMarketplaceAdd(source: string): Promise<void> {
+export async function claudePluginMarketplaceAdd(
+  source: string,
+  options?: ClaudeConfigOptions,
+): Promise<void> {
   validateMarketplaceSource(source);
 
   const args = ["plugin", "marketplace", "add", source];
   let result;
   try {
-    result = await execCommand("claude", args, {});
+    result = await execCommand("claude", args, configDirEnv(options));
   } catch (err) {
     throw new Error(`Failed to add marketplace: ${getErrorMessage(err)}`, { cause: err });
   }
@@ -231,13 +267,16 @@ export async function claudePluginMarketplaceAdd(source: string): Promise<void> 
   }
 }
 
-export async function claudePluginMarketplaceRemove(name: string): Promise<void> {
+export async function claudePluginMarketplaceRemove(
+  name: string,
+  options?: ClaudeConfigOptions,
+): Promise<void> {
   validatePluginName(name);
 
   const args = ["plugin", "marketplace", "remove", name];
   let result;
   try {
-    result = await execCommand("claude", args, {});
+    result = await execCommand("claude", args, configDirEnv(options));
   } catch (err) {
     throw new Error(`Failed to remove marketplace: ${getErrorMessage(err)}`, { cause: err });
   }
@@ -251,13 +290,16 @@ export async function claudePluginMarketplaceRemove(name: string): Promise<void>
   }
 }
 
-export async function claudePluginMarketplaceUpdate(name: string): Promise<void> {
+export async function claudePluginMarketplaceUpdate(
+  name: string,
+  options?: ClaudeConfigOptions,
+): Promise<void> {
   validatePluginName(name);
 
   const args = ["plugin", "marketplace", "update", name];
   let result;
   try {
-    result = await execCommand("claude", args, {});
+    result = await execCommand("claude", args, configDirEnv(options));
   } catch (err) {
     throw new Error(`Failed to update marketplace: ${getErrorMessage(err)}`, { cause: err });
   }
@@ -272,12 +314,13 @@ export async function claudePluginUninstall(
   pluginName: string,
   scope: ClaudePluginScope,
   projectDir: string,
+  options?: ClaudeConfigOptions,
 ): Promise<void> {
   validatePluginName(pluginName);
 
   const cwd = resolvePluginCwd(scope, projectDir);
   const args = ["plugin", "uninstall", pluginName, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd });
+  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
 
   if (result.exitCode !== 0) {
     const errorMessage = result.stderr || result.stdout || "Unknown error";
@@ -304,15 +347,16 @@ export async function claudePluginUninstallBestEffort(
   pluginRef: string,
   primaryScope: ClaudePluginScope,
   projectDir: string,
+  options?: ClaudeConfigOptions,
 ): Promise<void> {
   const fallbackScope = primaryScope === "project" ? "user" : "project";
   try {
-    await claudePluginUninstall(pluginRef, primaryScope, projectDir);
+    await claudePluginUninstall(pluginRef, primaryScope, projectDir, options);
   } catch {
     // Best-effort: plugin may not be registered with primary scope
   }
   try {
-    await claudePluginUninstall(pluginRef, fallbackScope, projectDir);
+    await claudePluginUninstall(pluginRef, fallbackScope, projectDir, options);
   } catch {
     // Best-effort: plugin may not be registered with fallback scope either
   }

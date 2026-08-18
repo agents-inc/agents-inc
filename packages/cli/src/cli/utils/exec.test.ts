@@ -36,8 +36,25 @@ vi.mock("child_process", () => ({
 
 vi.mock("./logger");
 
+import { spawn } from "child_process";
 import { DEFAULT_PLUGIN_NAME } from "../consts";
-import { claudePluginInstall, claudePluginMarketplaceAdd, claudePluginUninstall } from "./exec";
+import type { ClaudeConfigOptions } from "./exec";
+import {
+  claudePluginInstall,
+  claudePluginMarketplaceAdd,
+  claudePluginMarketplaceExists,
+  claudePluginMarketplaceList,
+  claudePluginMarketplaceRemove,
+  claudePluginMarketplaceUpdate,
+  claudePluginUninstall,
+  claudePluginUninstallBestEffort,
+} from "./exec";
+
+/**
+ * The word CLI-463 withdraws from the user-facing surface, as a whole word so
+ * `resource` and a path that happens to spell it are not matched.
+ */
+const WITHDRAWN_NOUN = /\bsources?\b/i;
 
 describe("exec argument validation", () => {
   beforeEach(() => {
@@ -128,16 +145,29 @@ describe("exec argument validation", () => {
 
   describe("claudePluginMarketplaceAdd validation", () => {
     it("rejects empty source", async () => {
-      await expect(claudePluginMarketplaceAdd("")).rejects.toThrow(
-        "Marketplace source must not be empty",
-      );
+      await expect(claudePluginMarketplaceAdd("")).rejects.toThrow("Marketplace must not be empty");
     });
 
     it("rejects oversized source", async () => {
       const longSource = "a".repeat(1025);
       await expect(claudePluginMarketplaceAdd(longSource)).rejects.toThrow(
-        "Marketplace source is too long",
+        "Marketplace is too long",
       );
+    });
+
+    /**
+     * The four refusals narrate around the value they were handed. Each one is a
+     * `Marketplace ...` sentence, so the qualifier "source" in front of it is the word
+     * CLI-463 takes out — including the one in the character-set explanation.
+     */
+    it.each([
+      ["empty", ""],
+      ["oversized", "a".repeat(1025)],
+      ["control character", "user\x00/repo"],
+      ["shell injection", "$(whoami)/repo"],
+    ])("does not call the marketplace a source when refusing a %s value", async (_name, value) => {
+      await expect(claudePluginMarketplaceAdd(value)).rejects.toThrow(/Marketplace/);
+      await expect(claudePluginMarketplaceAdd(value)).rejects.not.toThrow(WITHDRAWN_NOUN);
     });
 
     it("accepts source at max length", async () => {
@@ -223,5 +253,88 @@ describe("exec argument validation", () => {
       const promise = claudePluginUninstall("@org/plugin-name", "project", "/project");
       expect(promise).toBeInstanceOf(Promise);
     });
+  });
+});
+
+const ISOLATED_CONFIG_DIR = "/tmp/isolated-claude-config";
+const PROJECT_DIR = "/project";
+const PLUGIN_REF = "my-skill@my-marketplace";
+const MARKETPLACE_NAME = "my-marketplace";
+const MARKETPLACE_SOURCE = "my-org/my-repo";
+
+/**
+ * Every helper that reaches the Claude CLI's config tree. `isClaudeCLIAvailable`
+ * is absent on purpose — `claude --version` reads no config, so it has nothing
+ * to isolate.
+ */
+const CONFIG_READING_HELPERS: Array<[string, (options?: ClaudeConfigOptions) => Promise<unknown>]> =
+  [
+    [
+      "claudePluginInstall",
+      (options) => claudePluginInstall(PLUGIN_REF, "user", PROJECT_DIR, options),
+    ],
+    [
+      "claudePluginUninstall",
+      (options) => claudePluginUninstall(PLUGIN_REF, "user", PROJECT_DIR, options),
+    ],
+    [
+      "claudePluginUninstallBestEffort",
+      (options) => claudePluginUninstallBestEffort(PLUGIN_REF, "user", PROJECT_DIR, options),
+    ],
+    ["claudePluginMarketplaceList", (options) => claudePluginMarketplaceList(options)],
+    [
+      "claudePluginMarketplaceExists",
+      (options) => claudePluginMarketplaceExists(MARKETPLACE_NAME, options),
+    ],
+    [
+      "claudePluginMarketplaceAdd",
+      (options) => claudePluginMarketplaceAdd(MARKETPLACE_SOURCE, options),
+    ],
+    [
+      "claudePluginMarketplaceRemove",
+      (options) => claudePluginMarketplaceRemove(MARKETPLACE_NAME, options),
+    ],
+    [
+      "claudePluginMarketplaceUpdate",
+      (options) => claudePluginMarketplaceUpdate(MARKETPLACE_NAME, options),
+    ],
+  ];
+
+/**
+ * `CLAUDE_CONFIG_DIR` redirects the Claude CLI's whole config tree — marketplace
+ * registry, installed-plugin registry and user settings — and it BEATS `HOME`
+ * when both are set (measured against Claude Code 2.1.231). A helper that does
+ * not forward it writes into whichever installation the calling process happens
+ * to inherit, which for a test runner is the developer's own.
+ */
+describe("Claude config dir isolation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(CONFIG_READING_HELPERS)(
+    "%s forwards the config dir it was given",
+    async (_name, call) => {
+      await call({ configDir: ISOLATED_CONFIG_DIR });
+
+      expect(vi.mocked(spawn).mock.lastCall?.[2]?.env?.CLAUDE_CONFIG_DIR).toBe(ISOLATED_CONFIG_DIR);
+    },
+  );
+
+  it.each(CONFIG_READING_HELPERS)(
+    "%s leaves the inherited config dir alone when given none",
+    async (_name, call) => {
+      await call();
+
+      expect(vi.mocked(spawn).mock.lastCall?.[2]?.env?.CLAUDE_CONFIG_DIR).toBe(
+        process.env.CLAUDE_CONFIG_DIR,
+      );
+    },
+  );
+
+  it("keeps the rest of the environment when isolating the config dir", async () => {
+    await claudePluginMarketplaceAdd(MARKETPLACE_SOURCE, { configDir: ISOLATED_CONFIG_DIR });
+
+    expect(vi.mocked(spawn).mock.lastCall?.[2]?.env?.PATH).toBe(process.env.PATH);
   });
 });

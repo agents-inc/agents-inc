@@ -428,7 +428,7 @@ describe("plugin-info", () => {
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({
           name: "my-plugin",
-          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
         configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
       });
@@ -481,7 +481,7 @@ describe("plugin-info", () => {
           name: "globally-installed-plugins",
           skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
         }),
         configPath,
@@ -517,11 +517,11 @@ describe("plugin-info", () => {
           skills: [
             ...buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
             }),
             ...buildSkillConfigs(["web-state-zustand", "web-testing-vitest"], {
               scope: "project",
-              source: "agents-inc",
+              origin: "agents-inc",
             }),
           ],
         }),
@@ -562,7 +562,7 @@ describe("plugin-info", () => {
           name: "global-plugins",
           skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
             scope: "global",
-            source: "agents-inc",
+            origin: "agents-inc",
           }),
         }),
         configPath,

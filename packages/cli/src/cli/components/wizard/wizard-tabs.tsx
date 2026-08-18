@@ -37,7 +37,13 @@ export type WizardTabsProps = {
   dropdowns?: Partial<Record<WizardStep, TabDropdownProps>>;
 };
 
-/** Display label per wizard step. Step ORDER has a single source: WIZARD_STEP_ORDER. */
+/**
+ * Display label per wizard step. Step ORDER has a single source: WIZARD_STEP_ORDER.
+ *
+ * The `sources` step is where a user picks where each skill comes from, so that is what
+ * its tab is called. `e2e/pages/constants.ts` `WIZARD_TAB_LABELS` mirrors the whole set,
+ * so a label moves in both places or in neither.
+ */
 const WIZARD_STEP_LABELS = {
   stack: "Stack",
   domains: "Domains",

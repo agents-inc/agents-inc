@@ -87,7 +87,7 @@ describe("SummaryPanel component", () => {
 
     it("should say every skill is ejected when no selected skill names a marketplace", () => {
       useWizardStore.setState({
-        skillConfigs: buildSkillConfigs([SKILLS.react.id], { source: EJECT_SOURCE }),
+        skillConfigs: buildSkillConfigs([SKILLS.react.id], { origin: EJECT_SOURCE }),
       });
 
       const { lastFrame, unmount } = render(<SummaryPanel />);
@@ -100,7 +100,7 @@ describe("SummaryPanel component", () => {
 
     it("should name the marketplace the selected skills come from", () => {
       useWizardStore.setState({
-        skillConfigs: buildSkillConfigs([SKILLS.react.id], { source: CUSTOM_MARKETPLACE }),
+        skillConfigs: buildSkillConfigs([SKILLS.react.id], { origin: CUSTOM_MARKETPLACE }),
       });
 
       const { lastFrame, unmount } = render(<SummaryPanel />);
@@ -114,8 +114,8 @@ describe("SummaryPanel component", () => {
     it("should join every distinct marketplace in play", () => {
       useWizardStore.setState({
         skillConfigs: [
-          ...buildSkillConfigs([SKILLS.react.id], { source: CUSTOM_MARKETPLACE }),
-          ...buildSkillConfigs([SKILLS.vitest.id], { source: OTHER_MARKETPLACE }),
+          ...buildSkillConfigs([SKILLS.react.id], { origin: CUSTOM_MARKETPLACE }),
+          ...buildSkillConfigs([SKILLS.vitest.id], { origin: OTHER_MARKETPLACE }),
         ],
       });
 
@@ -128,8 +128,8 @@ describe("SummaryPanel component", () => {
     it("should order the marketplaces the same way whatever order the configs hold", () => {
       useWizardStore.setState({
         skillConfigs: [
-          ...buildSkillConfigs([SKILLS.vitest.id], { source: OTHER_MARKETPLACE }),
-          ...buildSkillConfigs([SKILLS.react.id], { source: CUSTOM_MARKETPLACE }),
+          ...buildSkillConfigs([SKILLS.vitest.id], { origin: OTHER_MARKETPLACE }),
+          ...buildSkillConfigs([SKILLS.react.id], { origin: CUSTOM_MARKETPLACE }),
         ],
       });
 
@@ -142,7 +142,7 @@ describe("SummaryPanel component", () => {
     it("should name a shared marketplace once", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs([SKILLS.react.id, SKILLS.vitest.id], {
-          source: CUSTOM_MARKETPLACE,
+          origin: CUSTOM_MARKETPLACE,
         }),
       });
 
@@ -157,8 +157,8 @@ describe("SummaryPanel component", () => {
     it("should keep naming a marketplace when only some of the skills are ejected", () => {
       useWizardStore.setState({
         skillConfigs: [
-          ...buildSkillConfigs([SKILLS.react.id], { source: EJECT_SOURCE }),
-          ...buildSkillConfigs([SKILLS.vitest.id], { source: CUSTOM_MARKETPLACE }),
+          ...buildSkillConfigs([SKILLS.react.id], { origin: EJECT_SOURCE }),
+          ...buildSkillConfigs([SKILLS.vitest.id], { origin: CUSTOM_MARKETPLACE }),
         ],
       });
 
@@ -176,7 +176,7 @@ describe("SummaryPanel component", () => {
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs([SKILLS.react.id], {
           scope: "global",
-          source: CUSTOM_MARKETPLACE,
+          origin: CUSTOM_MARKETPLACE,
           excluded: true,
         }),
       });

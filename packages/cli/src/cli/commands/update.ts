@@ -17,7 +17,7 @@ import type { ProjectConfig, SkillConfig } from "../types/index.js";
 
 /** A copy the user owns rather than a plugin the marketplace serves. */
 function isEjected(skill: SkillConfig): boolean {
-  return skill.source === EJECT_SOURCE;
+  return skill.origin === EJECT_SOURCE;
 }
 
 /** Entries the installation actually has — an excluded entry is a tombstone, not an install. */
@@ -27,7 +27,7 @@ function activeSkills(skills: SkillConfig[]): SkillConfig[] {
 
 /** The marketplaces this installation actually uses, deduplicated, in config order. */
 function configuredMarketplaces(skills: SkillConfig[]): string[] {
-  return unique(skills.filter((skill) => !isEjected(skill)).map((skill) => skill.source));
+  return unique(skills.filter((skill) => !isEjected(skill)).map((skill) => skill.origin));
 }
 
 export default class Update extends BaseCommand {

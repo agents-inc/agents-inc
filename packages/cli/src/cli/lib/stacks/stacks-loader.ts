@@ -17,7 +17,7 @@ import { typedEntries } from "../../utils/typed-object";
 import { isSkillAssignment } from "../../utils/type-guards";
 import { LOCAL_PSEUDO_CATEGORY, STACKS_FILE_PATH } from "../../consts";
 import { loadConfig } from "../configuration/config-loader";
-import { isDefaultSource } from "../configuration/config";
+import { offersBuiltInStacks } from "../configuration/config";
 import { defaultStacks } from "../configuration/default-stacks";
 
 const stacksCache = new Map<string, Stack[]>();
@@ -178,12 +178,16 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
  * One stack by id, scoped the way the wizard's stack step is.
  *
  * The source's own stacks answer first. The CLI's built-in catalogue stands in
- * only for the default public marketplace — the same rule `resolveOfferedStacks`
- * applies to the list the wizard offers, applied here to the per-id lookup the
- * install path makes. Under any other source a built-in id names a stack that
- * source does not have, and answering with one would install stacks written
- * against a different catalogue of skills, under a name the user never asked
- * for. Null is the honest answer there; the callers name the id they asked for.
+ * only for the public catalogue — the same rule `resolveOfferedStacks` applies to
+ * the list the wizard offers, read from the same {@link offersBuiltInStacks} so
+ * the two cannot answer differently. They are a pair: that one decides what is
+ * OFFERED and this one resolves what was PICKED, so a rule they disagree on
+ * offers a stack and then refuses to install it.
+ *
+ * Under any other source a built-in id names a stack that source does not have,
+ * and answering with one would install stacks written against a different
+ * catalogue of skills, under a name the user never asked for. Null is the honest
+ * answer there; the callers name the id they asked for.
  */
 export async function loadStackById(
   stackId: string,
@@ -198,8 +202,10 @@ export async function loadStackById(
     return stack;
   }
 
-  if (!isDefaultSource(source)) {
-    verbose(`Source '${source}' does not ship stack '${stackId}', and gets no built-in stand-in`);
+  if (!(await offersBuiltInStacks(configDir, source))) {
+    verbose(
+      `Marketplace '${source}' does not ship stack '${stackId}', and gets no built-in stand-in`,
+    );
     return null;
   }
 

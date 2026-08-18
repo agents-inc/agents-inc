@@ -19,8 +19,8 @@ export async function requireMarketplace(
     return {
       ok: false,
       error:
-        `Cannot ${purpose}: marketplace could not be resolved from source '${sourceResult.sourceConfig.source}'. ` +
-        `Plugin install mode requires a marketplace — fix the source or switch the affected skills to eject mode.`,
+        `Cannot ${purpose}: marketplace could not be resolved from '${sourceResult.sourceConfig.source}'. ` +
+        `Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.`,
     };
   }
   return { ok: true, marketplace: mpResult.marketplace, registered: mpResult.registered };

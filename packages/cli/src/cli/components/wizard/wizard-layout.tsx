@@ -143,6 +143,13 @@ const StartupMessages: React.FC<{ messages: StartupMessage[]; terminalHeight: nu
   );
 };
 
+/**
+ * The subtitle each step is headed with. The `sources` entry is A SCREEN SENTINEL:
+ * `e2e/pages/constants.ts` `STEP_TEXT.SOURCES` duplicates it exactly and every E2E step
+ * page object waits on it, so a subtitle that moves without it hangs each wizard spec for
+ * the full wizard-load budget instead of failing. `wizard-layout.test.tsx` is the fast
+ * half of that pair. Its wording mirrors the step's tab in `wizard-tabs.tsx`.
+ */
 const STEP_DROPDOWN_LABEL: Partial<Record<WizardStep, string>> = {
   stack: "Choose a stack",
   domains: "Select domains",

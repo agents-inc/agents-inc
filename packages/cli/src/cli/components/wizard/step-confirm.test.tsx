@@ -110,7 +110,7 @@ describe("StepConfirm component", () => {
       // default is `eject`, which names no marketplace at all.
       useWizardStore.setState({
         skillConfigs: buildSkillConfigs(["web-framework-react"], {
-          source: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
         }),
       });
 
@@ -127,7 +127,7 @@ describe("StepConfirm component", () => {
   describe("eject icon display", () => {
     it("should show eject icon for eject-source skills", () => {
       useWizardStore.setState({
-        skillConfigs: buildSkillConfigs(["web-framework-react"], { source: "eject" }),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "eject" }),
       });
 
       const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
@@ -138,7 +138,7 @@ describe("StepConfirm component", () => {
 
     it("should not show eject icon for plugin-source skills", () => {
       useWizardStore.setState({
-        skillConfigs: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
       });
 
       const { lastFrame, unmount } = render(<StepConfirm onComplete={vi.fn()} onBack={vi.fn()} />);
@@ -507,8 +507,8 @@ describe("StepConfirm component", () => {
       useWizardStore.setState({
         isInitMode: false,
         installedSkillConfigs: [
-          { id: "web-framework-react", scope: "global", source: "agents-inc" },
-          { id: "web-testing-vitest", scope: "global", source: "agents-inc" },
+          { id: "web-framework-react", scope: "global", origin: "agents-inc" },
+          { id: "web-testing-vitest", scope: "global", origin: "agents-inc" },
         ],
         installedAgentConfigs: null,
       });
@@ -516,17 +516,17 @@ describe("StepConfirm component", () => {
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
           skillConfigs={[
-            { id: "web-framework-react", scope: "project", source: "agents-inc" },
+            { id: "web-framework-react", scope: "project", origin: "agents-inc" },
             {
               id: "web-framework-react",
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             },
             {
               id: "web-testing-vitest",
               scope: "global",
-              source: "agents-inc",
+              origin: "agents-inc",
               excluded: true,
             },
           ]}
@@ -582,7 +582,7 @@ describe("SkillAgentSummary component", () => {
     it("should show ~ prefix when skill source changes from plugin to eject", () => {
       useWizardStore.setState({
         isInitMode: false,
-        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         installedAgentConfigs: null,
       });
 
@@ -611,7 +611,7 @@ describe("SkillAgentSummary component", () => {
 
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "agents-inc" })}
+          skillConfigs={buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" })}
           agentConfigs={[]}
         />,
       );
@@ -628,13 +628,13 @@ describe("SkillAgentSummary component", () => {
     it("should not show ~ when skill source is unchanged", () => {
       useWizardStore.setState({
         isInitMode: false,
-        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         installedAgentConfigs: null,
       });
 
       const { lastFrame, unmount } = render(
         <SkillAgentSummary
-          skillConfigs={buildSkillConfigs(["web-framework-react"], { source: "agents-inc" })}
+          skillConfigs={buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" })}
           agentConfigs={[]}
         />,
       );
@@ -651,7 +651,7 @@ describe("SkillAgentSummary component", () => {
         isInitMode: false,
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
-          source: "agents-inc",
+          origin: "agents-inc",
         }),
         installedAgentConfigs: null,
       });
@@ -674,7 +674,7 @@ describe("SkillAgentSummary component", () => {
       initializeMatrix(WEB_TRIO_MATRIX);
       useWizardStore.setState({
         isInitMode: false,
-        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         installedAgentConfigs: null,
       });
 
@@ -682,7 +682,7 @@ describe("SkillAgentSummary component", () => {
         <SkillAgentSummary
           skillConfigs={[
             ...buildSkillConfigs(["web-framework-react"]),
-            ...buildSkillConfigs(["web-testing-vitest"], { source: "agents-inc" }),
+            ...buildSkillConfigs(["web-testing-vitest"], { origin: "agents-inc" }),
           ]}
           agentConfigs={[]}
         />,

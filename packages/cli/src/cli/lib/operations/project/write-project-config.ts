@@ -89,6 +89,12 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     projectDir,
     projectConfigPath: projectPaths.configPath,
     projectInstallationExists: isProjectContext,
+    // The same word the merger above took. It decides the config ROW there and the GLOBAL
+    // config a project write commits here, and the two files disagree the moment it does not
+    // reach both: a row preserved for a skill whose directory the removal diff deleted.
+    ...(options.authoritativeScope !== undefined && {
+      authoritativeScope: options.authoritativeScope,
+    }),
   });
 
   return {

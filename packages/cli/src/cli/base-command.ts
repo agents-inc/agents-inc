@@ -11,6 +11,7 @@ import {
   propagatedRecompileSummary,
   savedSkillMetadataUnusableError,
   scopeBlockedStackAssignment,
+  sharedConfigProjectScopeAtHome,
   skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   STATUS_MESSAGES,
@@ -23,6 +24,8 @@ import {
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import type { ResolvedConfig } from "./lib/configuration/index.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
+import { isHomeDirectory } from "./lib/installation/index.js";
+import type { WizardResultV2 } from "./components/wizard/wizard.js";
 import { getStackSkillIds } from "./lib/stacks/index.js";
 import type {
   AgentName,
@@ -38,6 +41,8 @@ import { requireMarketplace } from "./lib/operations/source/require-marketplace.
 import {
   installPluginSkills,
   pluginInstallFailureError,
+  unbackedPluginInstallError,
+  unbackedPluginSkillIds,
   type PluginInstallResult,
 } from "./lib/operations/skills/install-plugin-skills.js";
 import type { GateReport } from "./lib/config-gate/index.js";
@@ -119,12 +124,31 @@ function hasActiveProjectEntry(skills: readonly SkillConfig[], skillId: SkillId)
 }
 
 /**
+ * What a decoded selection would file at PROJECT scope, split by kind because a skill's scope
+ * and a sub-agent's are independent decisions in a payload — a refusal naming only one kind
+ * would send the sharer to change the wrong entry.
+ */
+function projectScopedContent(result: WizardResultV2): {
+  skillIds: SkillId[];
+  agentNames: AgentName[];
+} {
+  return {
+    skillIds: result.skills
+      .filter((skill) => isActiveAt(skill, "project"))
+      .map((skill) => skill.id),
+    agentNames: result.agentConfigs
+      .filter((agent) => isActiveAt(agent, "project"))
+      .map((agent) => agent.name),
+  };
+}
+
+/**
  * Nothing is inherited by every command, so this class declares no `baseFlags`.
  *
- * There was one — `--source` — until naming a source became `init`'s decision alone
- * (owner ruling 2026-08-09). Six commands were already opting out of it through an
- * exported empty-object cast; a flag one command wants is that command's flag, so it
- * is declared in `init` and the six opt-outs went with it.
+ * There was one — the marketplace flag — until naming a marketplace became `init`'s
+ * decision alone (owner ruling 2026-08-09). Six commands were already opting out of it
+ * through an exported empty-object cast; a flag one command wants is that command's flag,
+ * so it is declared in `init` as `--marketplace` and the six opt-outs went with it.
  */
 export abstract class BaseCommand extends Command {
   async init(): Promise<void> {
@@ -218,12 +242,22 @@ export abstract class BaseCommand extends Command {
    * both run the SAME install against the same marketplace, so a line one prints about
    * it the other owes. `edit` used to run it in silence — a real `claude plugin install`
    * was indistinguishable in the output from nothing having happened.
+   *
+   * The skills nothing carries are refused FIRST, by name: an install no marketplace
+   * could serve is knowable before the Claude CLI is asked, and the generic
+   * install-failure advice is unfollowable for a skill the user wrote themselves.
    */
   protected async installPluginSkillsReported(
     skills: SkillConfig[],
     marketplace: string,
     projectDir: string,
+    matrix: MergedSkillsMatrix,
   ): Promise<PluginInstallResult> {
+    const unbacked = unbackedPluginSkillIds(skills, matrix);
+    if (unbacked.length > 0) {
+      this.error(unbackedPluginInstallError(unbacked), { exit: EXIT_CODES.ERROR });
+    }
+
     this.announcePluginInstall();
     const result = await installPluginSkills(skills, marketplace, projectDir);
     this.reportPluginInstalls(result);
@@ -360,5 +394,41 @@ export abstract class BaseCommand extends Command {
       this.log(skillMetadataUnusableDetail(entry));
     }
     this.error(savedSkillMetadataUnusableError(unusable), { exit: EXIT_CODES.ERROR });
+  }
+
+  /**
+   * Refuses a shared configuration carrying project-scoped content at the home directory.
+   *
+   * The home directory IS the global scope, and a global installation holds only global-scoped
+   * content. Both scopes resolve to the same files there — one config, one skills directory, one
+   * agents directory — so a project-scoped entry does not land somewhere else; it lands in the
+   * global config wearing a label that contradicts the file it is in, and `toClaudePluginScope`
+   * maps that declared scope onward, registering the skill against `$HOME` as a project. Nothing
+   * below this point reads the scope again, so whatever the boundary lets through becomes the
+   * truth.
+   *
+   * Shared by `init --from` and `edit --from` for the reason {@link reportValidationErrors} is
+   * shared: it is a fact about the payload and the directory, identical whichever command asked,
+   * and an invariant enforced on one producer and not the other is enforced nowhere. It matters
+   * more on the destructive one — `edit --from` reaches the same contradiction through the other
+   * door and can remove global entries on the way.
+   *
+   * The interactive producer has always answered this for itself — `isHomeDirectory(projectDir)`
+   * reaches the wizard session as `isGlobalRoot` and the scope toggles are inert under it — so
+   * this puts both `--from` paths on the rule the wizard already follows.
+   *
+   * It takes the DECODED selection, so it must run after the decode and can run no earlier: an
+   * all-global configuration is exactly what a global installation is for, and only the decode
+   * says which entries survived this catalogue and what scope each rests at. Every caller runs it
+   * before it reports a skip and before it writes anything, so a run about to be refused neither
+   * narrates nor mutates.
+   */
+  protected refuseProjectScopedContentAtHome(result: WizardResultV2, projectDir: string): void {
+    if (!isHomeDirectory(projectDir)) return;
+
+    const { skillIds, agentNames } = projectScopedContent(result);
+    if (skillIds.length === 0 && agentNames.length === 0) return;
+
+    this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames), { exit: EXIT_CODES.ERROR });
   }
 }

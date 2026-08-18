@@ -43,8 +43,8 @@ export default class Eject extends BaseCommand {
   static description =
     "Copy agent partials, templates, or skills to your project for customization. " +
     "Agent partials and templates are always copied from the CLI. " +
-    "Skills are copied from the source this installation is configured to read " +
-    "(the public marketplace by default).";
+    "Skills are copied from the marketplace this installation is configured to read " +
+    "(the public one by default).";
 
   static examples = [
     {
@@ -184,13 +184,13 @@ export default class Eject extends BaseCommand {
         break;
       case "skills":
         if (!sourceResult) {
-          throw new Error("Source must be loaded for skills eject");
+          throw new Error("The marketplace must be loaded for skills eject");
         }
         await this.handleSkills(projectDir, flags.force, sourceResult, directOutput, outputBase);
         break;
       case "all":
         if (!sourceResult) {
-          throw new Error("Source must be loaded for full eject");
+          throw new Error("The marketplace must be loaded for full eject");
         }
         await this.handleAgentPartials(outputBase, flags.force, directOutput, false);
         await this.handleAgentPartials(outputBase, true, directOutput, true);
@@ -446,7 +446,7 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
   if (skillIds.length === 0) {
     return {
       skipped: true,
-      skipReason: "No skills found in source to eject.",
+      skipReason: "No skills found in the marketplace to eject.",
       copiedSkills: [],
     };
   }
@@ -517,8 +517,8 @@ async function ensureMinimalConfig(
     {
       skills: [],
       agents: [],
-      ...(source ? { source } : {}),
-      ...(resolvedConfig.marketplace ? { marketplace: resolvedConfig.marketplace } : {}),
+      ...(source ? { marketplace: source } : {}),
+      ...(resolvedConfig.marketplace ? { marketplaceName: resolvedConfig.marketplace } : {}),
       ...(existingProjectConfig?.author ? { author: existingProjectConfig.author } : {}),
       ...(existingProjectConfig?.agentsSource
         ? { agentsSource: existingProjectConfig.agentsSource }
@@ -531,7 +531,7 @@ async function ensureMinimalConfig(
 }
 
 /**
- * Records `source` in whichever scope's config `projectDir` names. At the home
+ * Records the marketplace ref in whichever scope's config `projectDir` names. At the home
  * directory that config is the global manifest every project's generated types
  * import from, so the write goes through the gate: registered projects inline
  * the scalar and follow it.
@@ -548,7 +548,7 @@ async function recordSource(projectDir: string, source: string): Promise<void> {
   const existing = (await loadProjectSourceConfig(projectDir)) ?? {};
   await writeProjectPartial(
     projectDir,
-    { ...existing, source },
+    { ...existing, marketplace: source },
     { fallbackName: path.basename(projectDir) },
   );
 }

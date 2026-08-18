@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { ERROR_MESSAGES, SUCCESS_MESSAGES, STATUS_MESSAGES, INFO_MESSAGES } from "./messages";
+import {
+  ERROR_MESSAGES,
+  SUCCESS_MESSAGES,
+  STATUS_MESSAGES,
+  INFO_MESSAGES,
+  localSkillsRemoval,
+  sourceUnreachableUsingCache,
+} from "./messages";
+
+/**
+ * The word CLI-463 withdraws from the user-facing surface, as a whole word so
+ * `resource` and a path that happens to spell it are not matched.
+ */
+const WITHDRAWN_NOUN = /\bsources?\b/i;
+
+/** Stand-in path for the removal line — the line's subject is its parenthetical, not the path. */
+const SKILLS_DIR = "/project/.claude/skills";
+/** Stand-in ref for the cache warning — the ref is echoed verbatim, so it must not be a marketplace word. */
+const UNREACHABLE_REF = "github:org/repo";
 
 describe("ERROR_MESSAGES", () => {
   it("should have all expected keys", () => {
@@ -71,6 +89,37 @@ describe("STATUS_MESSAGES", () => {
     for (const [key, value] of Object.entries(STATUS_MESSAGES)) {
       expect(value, `${key} should end with '...'`).toMatch(/\.\.\.$/);
     }
+  });
+});
+
+/**
+ * The tables are asserted by VALUE rather than by key: the keys are internal identifiers
+ * (CLI-499's pass), the values are what a user reads. A key still spelling `SOURCE` while
+ * its value says "marketplace" is correct here and deliberately not flagged.
+ */
+describe("the vocabulary the message tables print in", () => {
+  const TABLES: [name: string, table: Record<string, string>][] = [
+    ["ERROR_MESSAGES", ERROR_MESSAGES],
+    ["SUCCESS_MESSAGES", SUCCESS_MESSAGES],
+    ["STATUS_MESSAGES", STATUS_MESSAGES],
+    ["INFO_MESSAGES", INFO_MESSAGES],
+  ];
+
+  it.each(TABLES)("should not call a marketplace a source in %s", (name, table) => {
+    for (const [key, value] of Object.entries(table)) {
+      expect(value, `${name}.${key} must not name a source`).not.toMatch(WITHDRAWN_NOUN);
+    }
+  });
+
+  it("should not call the matching skills 'sources' in the removal plan", () => {
+    expect(localSkillsRemoval(SKILLS_DIR)).toContain(SKILLS_DIR);
+    expect(localSkillsRemoval(SKILLS_DIR)).not.toMatch(WITHDRAWN_NOUN);
+  });
+
+  it("should keep the unreachable-cache warning, which already names no source", () => {
+    expect(sourceUnreachableUsingCache(UNREACHABLE_REF)).toBe(
+      `Could not reach ${UNREACHABLE_REF} — using the cached copy, which may be out of date.`,
+    );
   });
 });
 

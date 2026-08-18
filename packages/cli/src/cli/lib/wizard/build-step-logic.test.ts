@@ -242,7 +242,7 @@ describe("buildCategoriesForDomain", () => {
 
     const skillConfigs = [
       ...buildSkillConfigs(["web-framework-react"], { scope: "global" }),
-      ...buildSkillConfigs(["web-state-zustand"], { source: "agents-inc" }),
+      ...buildSkillConfigs(["web-state-zustand"], { origin: "agents-inc" }),
     ];
 
     const result = buildCategoriesForDomain("web", [], [], skillConfigs);

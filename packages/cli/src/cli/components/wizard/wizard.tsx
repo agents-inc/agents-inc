@@ -187,7 +187,7 @@ export const Wizard: React.FC<WizardProps> = ({
 
     const skillConfigs: SkillConfig[] = allSkills.map((id) => {
       const existing = store.skillConfigs.find((sc) => sc.id === id && !sc.excluded);
-      return existing ?? { id, scope: "global" as const, source: EJECT_SOURCE };
+      return existing ?? { id, scope: "global" as const, origin: EJECT_SOURCE };
     });
 
     // Append excluded entries so they flow through to config generation

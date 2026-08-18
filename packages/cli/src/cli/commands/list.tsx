@@ -39,7 +39,7 @@ const ListView: React.FC<ListViewProps> = ({ mode, source, skillConfigs, agentCo
         {source && (
           <Box flexDirection="row" columnGap={1}>
             <Text color={CLI_COLORS.WARNING} bold>
-              Source
+              Marketplace
             </Text>
             <Text color={CLI_COLORS.NEUTRAL}>{source}</Text>
           </Box>
@@ -99,7 +99,7 @@ export default class List extends BaseCommand {
     const { waitUntilExit, clear } = render(
       <ListView
         mode={modeLabel}
-        source={config.source}
+        source={config.marketplace}
         skillConfigs={activeSkills}
         agentConfigs={activeAgents}
       />,

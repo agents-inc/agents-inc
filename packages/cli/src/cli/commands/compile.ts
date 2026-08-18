@@ -103,8 +103,8 @@ export default class Compile extends BaseCommand {
   }
 
   /**
-   * Names where the source came from — the project's own config first, then the global
-   * one, then the default. `compile` takes no `--source`: it recompiles an installation
+   * Names where the marketplace came from — the project's own config first, then the global
+   * one, then the default. `compile` takes no `--marketplace`: it recompiles an installation
    * that already recorded which marketplace its skill references answer to, and reading
    * a different one would write agents against a catalogue config.ts does not name.
    */
@@ -112,7 +112,7 @@ export default class Compile extends BaseCommand {
     this.log(STATUS_MESSAGES.RESOLVING_SOURCE);
     try {
       const sourceConfig = await resolveSource({ caller: "stored", projectDir });
-      this.log(`Source: ${sourceConfig.sourceOrigin}`);
+      this.log(`Marketplace: ${sourceConfig.sourceOrigin}`);
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_RESOLVE_SOURCE);
       this.handleError(error);

@@ -3,8 +3,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { WizardStep } from "../../stores/wizard-store";
 import { WizardTabs, wizardTabsFor, formatStepLabel, type WizardTabsProps } from "./wizard-tabs";
 
-/** Every step the wizard has, in order — the flow a source that ships stacks runs. */
+/** Every step the wizard has, in order — the flow a marketplace that ships stacks runs. */
 const FULL_STEP_FLOW: WizardStep[] = ["stack", "domains", "build", "sources", "agents", "confirm"];
+
+/**
+ * The `sources` step's tab, mirrored as a literal for the same reason
+ * `e2e/pages/constants.ts` mirrors it — importing `WIZARD_STEP_LABELS` would move both
+ * sides at once and assert nothing.
+ */
+const SOURCES_TAB_LABEL = "Sources";
 
 const renderWizardTabs = (props: Partial<WizardTabsProps> = {}) => {
   const defaultProps: WizardTabsProps = {
@@ -311,6 +318,32 @@ describe("WizardTabs component", () => {
 
       const output = lastFrame();
       expect(output).toContain("Only Step");
+    });
+  });
+
+  /**
+   * The tab bar's own labels, which `e2e/pages/constants.ts` `WIZARD_TAB_LABELS` mirrors
+   * as a whole set — a spec naming two of six cannot tell a complete bar from one that
+   * dropped the steps it did not mention, so the label and the mirror move together.
+   *
+   * The tab is named for what a user picks on the step — where each skill comes from — and
+   * NOT for the config field the step writes. Renaming it to that field's noun was proposed
+   * and withdrawn by the owner, so a later reader should read the mismatch with
+   * `SkillConfig.origin` as deliberate rather than as a rename left half-finished.
+   */
+  describe("the vocabulary the tabs are labelled in", () => {
+    it("should label the sources step after where each skill comes from", () => {
+      expect(formatStepLabel("sources")).toBe(SOURCES_TAB_LABEL);
+    });
+
+    it("should paint that label onto the bar, spelled as the E2E mirror spells it", () => {
+      const { lastFrame, unmount } = renderWizardTabs();
+      cleanup = unmount;
+
+      // Every other tab assertion here reads its label back through `formatStepLabel`, so it
+      // moves with the component and cannot fail on a rename. This one is the literal the
+      // E2E tab-bar mirror carries, matched against the bar as painted.
+      expect(lastFrame()).toContain(SOURCES_TAB_LABEL);
     });
   });
 });

@@ -66,8 +66,17 @@ export async function listDirectories(dirPath: string): Promise<string[]> {
   }
 }
 
-export async function glob(pattern: string, cwd: string): Promise<string[]> {
-  return fg(pattern, { cwd, onlyFiles: true });
+/**
+ * @param dot Include files and directories whose name starts with a dot. Off by default, which
+ *   is what a scan LOOKING for something wants; a read that has to reproduce a directory
+ *   faithfully wants it on, since a file the read skips is one the copy silently loses.
+ */
+export async function glob(
+  pattern: string,
+  cwd: string,
+  { dot = false }: { dot?: boolean } = {},
+): Promise<string[]> {
+  return fg(pattern, { cwd, onlyFiles: true, dot });
 }
 
 /**
@@ -105,7 +114,12 @@ export async function remove(filePath: string): Promise<void> {
   await fs.remove(filePath);
 }
 
-async function isDirectoryEmpty(dirPath: string): Promise<boolean> {
+/**
+ * True when `dirPath` holds nothing, and true when it cannot be read at all —
+ * an absent directory holds nothing either. Both callers ask the same question
+ * of a directory they are about to write into or remove.
+ */
+export async function isDirectoryEmpty(dirPath: string): Promise<boolean> {
   try {
     const entries = await fs.readdir(dirPath);
     return entries.length === 0;

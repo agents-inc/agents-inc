@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import path from "path";
+import { writeFile } from "fs/promises";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { STANDARD_FILES } from "../../consts";
 import type { SkillId, StackAgentConfig } from "../../types";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { createMockSkill, createMockSkillAssignment } from "../__tests__/factories/skill-factories";
@@ -29,9 +32,31 @@ import { DEFAULT_SOURCE } from "../configuration/config";
 import { warn } from "../../utils/logger";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
+import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
 
-/** A stack the CLI ships, resolvable by id under the default marketplace alone. */
+/** A stack the CLI ships, resolvable by id for the public catalogue alone. */
 const BUILT_IN_STACK_ID = "nextjs-fullstack";
+
+/**
+ * The npm package the public catalogue publishes from. Written out rather than
+ * imported from the constant the guard reads: it is an identity, and a test
+ * asserting it against its own definition cannot notice that identity moving.
+ */
+const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
+
+/** Every repository {@link writeCataloguePackage} wrote, removed when the file is done. */
+const identityDirs: string[] = [];
+
+/** A repository holding nothing but a package.json declaring `packageName`. */
+async function writeCataloguePackage(packageName: string): Promise<string> {
+  const dir = await createTempDir("cc-stack-identity-");
+  identityDirs.push(dir);
+  await writeFile(
+    path.join(dir, STANDARD_FILES.PACKAGE_JSON),
+    JSON.stringify({ name: packageName, version: "1.0.0" }),
+  );
+  return dir;
+}
 
 // Matrix containing all skills referenced in stacks-loader test data
 const stacksTestMatrix = createMockMatrix(
@@ -47,6 +72,10 @@ const stacksTestMatrix = createMockMatrix(
 );
 
 describe("stacks-loader", () => {
+  afterAll(async () => {
+    await Promise.all(identityDirs.map(cleanupTempDir));
+  });
+
   beforeEach(() => {
     // Clear the internal cache between tests by re-importing
     // The module has a stacksCache Map that persists across calls
@@ -259,6 +288,31 @@ describe("stacks-loader", () => {
       const stack = await freshLoadStackById(BUILT_IN_STACK_ID, "/project", TEST_CUSTOM_SOURCE_URL);
 
       expect(stack).toBeNull();
+    });
+
+    // The pair with `resolveOfferedStacks`: the wizard offers the built-in stacks
+    // from a checkout of the catalogue's own repository, so this lookup — which the
+    // eject install makes for the id the user then picked — has to answer for the
+    // same repository. Disagreeing means offering a stack and refusing to install it.
+    it("resolves a built-in stack id from the public catalogue's own repository", async () => {
+      vi.mocked(loadConfig).mockResolvedValue(null);
+      const catalogueDir = await writeCataloguePackage(PUBLIC_CATALOGUE_PACKAGE);
+
+      const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
+      const stack = await freshLoadStackById(BUILT_IN_STACK_ID, catalogueDir, catalogueDir);
+
+      expect(stack, "a checkout of the catalogue is still the catalogue").not.toBeNull();
+      expect(stack!.id).toBe(BUILT_IN_STACK_ID);
+    });
+
+    it("returns null for a repository whose package merely resembles the catalogue's", async () => {
+      vi.mocked(loadConfig).mockResolvedValue(null);
+      const lookalikeDir = await writeCataloguePackage(`${PUBLIC_CATALOGUE_PACKAGE}-extra`);
+
+      const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
+      const stack = await freshLoadStackById(BUILT_IN_STACK_ID, lookalikeDir, lookalikeDir);
+
+      expect(stack, "the identity is the whole package name, not a prefix of it").toBeNull();
     });
   });
 

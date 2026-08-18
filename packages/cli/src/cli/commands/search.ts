@@ -80,7 +80,7 @@ export default class Search extends BaseCommand {
         columns: [
           { key: "id", name: "ID" },
           { key: "name", name: "Name" },
-          { key: "source", name: "Source" },
+          { key: "source", name: "Origin" },
           { key: "category", name: "Category" },
           { key: "description", name: "Description" },
         ],
@@ -128,7 +128,9 @@ function toResultRow(skill: ResolvedSkill): ResultRow {
 function activeSourceName(skill: ResolvedSkill): string {
   const { activeSource } = skill;
   if (!activeSource) {
-    throw new Error(`Skill "${skill.id}" was loaded without a source, so its origin is unknown`);
+    throw new Error(
+      `Skill "${skill.id}" was loaded with no origin, so where it comes from is unknown`,
+    );
   }
   return activeSource.name;
 }
