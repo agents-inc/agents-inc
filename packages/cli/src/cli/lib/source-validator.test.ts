@@ -566,7 +566,7 @@ describe("source-validator", () => {
         expect(categoriesErrors.length).toBeGreaterThan(0);
       });
 
-      it("should report error when config/stacks.ts has no default export", async () => {
+      it("should name the missing default export when config/stacks.ts exports only named bindings", async () => {
         const configDir = path.join(sourceDir, "config");
         await mkdir(configDir, { recursive: true });
         await writeFile(path.join(sourceDir, STACKS_FILE_PATH), "export const stacks = {};\n");
@@ -576,7 +576,37 @@ describe("source-validator", () => {
         const stacksErrors = result.issues.filter(
           (i) => i.file === STACKS_FILE_PATH && i.severity === "error",
         );
-        expect(stacksErrors.length).toBeGreaterThan(0);
+        expect(stacksErrors.map((i) => i.message)).toStrictEqual(["Config has no default export"]);
+      });
+
+      it("should report an empty config file as empty rather than as a missing default export", async () => {
+        const configDir = path.join(sourceDir, "config");
+        await mkdir(configDir, { recursive: true });
+        await writeFile(path.join(sourceDir, STACKS_FILE_PATH), "");
+
+        const result = await validateSource(sourceDir);
+
+        const stacksErrors = result.issues.filter(
+          (i) => i.file === STACKS_FILE_PATH && i.severity === "error",
+        );
+        expect(stacksErrors.map((i) => i.message)).toStrictEqual(["Config is empty"]);
+      });
+
+      it("should keep naming the field the schema refused when a default export is present", async () => {
+        const configDir = path.join(sourceDir, "config");
+        await mkdir(configDir, { recursive: true });
+        // A real default export whose shape the schema rejects — the message must name the field,
+        // never the export, or the two faults become indistinguishable again.
+        await writeFile(path.join(sourceDir, SKILL_RULES_PATH), renderConfigTs({ version: 1 }));
+
+        const result = await validateSource(sourceDir);
+
+        const rulesErrors = result.issues.filter(
+          (i) => i.file === SKILL_RULES_PATH && i.severity === "error",
+        );
+        expect(rulesErrors).toHaveLength(1);
+        expect(rulesErrors[0]?.message).toContain("version");
+        expect(rulesErrors[0]?.message).not.toContain("default export");
       });
     });
   });

@@ -1,7 +1,16 @@
+import path from "path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
-import { buildAgentConfigs } from "./__tests__/factories/config-factories.js";
+import {
+  buildAgentConfigs,
+  buildPreRenameProjectConfig,
+  buildPreRenameSkillEntryConfig,
+  buildProjectConfig,
+  buildSourceConfig,
+} from "./__tests__/factories/config-factories.js";
+import { readTestJson } from "./__tests__/helpers/config-io.js";
 import { buildSkillConfigs } from "./__tests__/helpers/wizard-simulation.js";
+import { EJECT_SOURCE } from "../consts";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
   VALID_SKILL_CATEGORIES_FILE,
@@ -27,6 +36,32 @@ vi.mock("../utils/logger", async (importOriginal) => ({
 }));
 
 import { warn } from "../utils/logger";
+
+/**
+ * The three key names the rename moves between, written out here because the assertions are
+ * about the KEYS themselves — a test that read them off the type would agree with whatever
+ * the type happened to say.
+ */
+const PRE_RENAME_CONFIG_KEY = "source";
+const RENAMED_CONFIG_KEY = "marketplace";
+const MARKETPLACE_NAME_KEY = "marketplaceName";
+const RENAMED_SKILL_KEY = "origin";
+
+/** Rejected by a declared `z.string()` field and accepted by `.passthrough()` — the difference. */
+const NON_STRING_FIELD_VALUE = 123;
+
+const SCHEMAS_DIR = path.resolve(import.meta.dirname, "../../schemas");
+const PROJECT_CONFIG_SCHEMA_PATH = path.join(SCHEMAS_DIR, "project-config.schema.json");
+const PROJECT_SOURCE_CONFIG_SCHEMA_PATH = path.join(
+  SCHEMAS_DIR,
+  "project-source-config.schema.json",
+);
+
+/** The two hand-maintained schema files, read for the field names they publish to editors. */
+type JsonSchemaFile = {
+  properties: Record<string, unknown>;
+  required?: string[];
+};
 
 describe("schema utilities", () => {
   beforeEach(() => {
@@ -300,6 +335,102 @@ describe("projectConfigLoaderSchema", () => {
   });
 });
 
+/**
+ * Whether `marketplace` holds a REF or a NAME is invisible to a schema — both are strings —
+ * so the meaning of that key is pinned where it is read, in the resolveSource specs. What a
+ * schema CAN answer is whether a key is declared at all, which is what these ask: a declared
+ * `z.string()` refuses a number where `.passthrough()` waves it through.
+ */
+describe("the marketplace fields the loader schemas name", () => {
+  it("types marketplaceName rather than admitting it as an unrecognised passthrough key", () => {
+    const result = projectConfigLoaderSchema.safeParse({
+      ...buildProjectConfig(),
+      marketplaceName: NON_STRING_FIELD_VALUE,
+    });
+
+    expect(
+      result.success,
+      "a declared string field must reject a number; passthrough would accept it",
+    ).toBe(false);
+  });
+
+  it("types marketplaceName on the source config schema too", () => {
+    const result = projectSourceConfigSchema.safeParse(
+      buildSourceConfig({ marketplaceName: NON_STRING_FIELD_VALUE }),
+    );
+
+    expect(
+      result.success,
+      "a declared string field must reject a number; passthrough would accept it",
+    ).toBe(false);
+  });
+
+  it("holds a skill entry's provenance under origin", () => {
+    const result = projectConfigLoaderSchema.safeParse(
+      buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], { origin: EJECT_SOURCE }),
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.skills?.map((skill) => skill.origin)).toStrictEqual([EJECT_SOURCE]);
+  });
+});
+
+describe("a config carrying a field name from before the rename", () => {
+  it("is refused by the project config schema, which names the old key and the new one", () => {
+    const result = projectConfigLoaderSchema.safeParse(buildPreRenameProjectConfig());
+
+    expect(result.success, "an old key must not survive as a passthrough key").toBe(false);
+    const issues = formatZodIssues(result.error?.issues ?? []);
+    expect(issues).toContain(PRE_RENAME_CONFIG_KEY);
+    expect(issues).toContain(RENAMED_CONFIG_KEY);
+  });
+
+  it("is refused when a skill entry carries the old key, naming it and its replacement", () => {
+    const result = projectConfigLoaderSchema.safeParse(buildPreRenameSkillEntryConfig());
+
+    expect(result.success, "an old key must not survive as a passthrough key").toBe(false);
+    const issues = formatZodIssues(result.error?.issues ?? []);
+    expect(issues).toContain(PRE_RENAME_CONFIG_KEY);
+    expect(issues).toContain(RENAMED_SKILL_KEY);
+  });
+
+  it("is refused by the source config schema, which reads the very same file", () => {
+    const result = projectSourceConfigSchema.safeParse(buildPreRenameProjectConfig());
+
+    expect(result.success, "an old key must not survive as a passthrough key").toBe(false);
+    const issues = formatZodIssues(result.error?.issues ?? []);
+    expect(issues).toContain(PRE_RENAME_CONFIG_KEY);
+    expect(issues).toContain(RENAMED_CONFIG_KEY);
+  });
+});
+
+describe("the hand-maintained JSON schemas", () => {
+  it("names marketplace and marketplaceName on the project config schema, and no source", async () => {
+    const schema = await readTestJson<JsonSchemaFile>(PROJECT_CONFIG_SCHEMA_PATH);
+
+    expect(Object.keys(schema.properties)).toContain(RENAMED_CONFIG_KEY);
+    expect(Object.keys(schema.properties)).toContain(MARKETPLACE_NAME_KEY);
+    expect(Object.keys(schema.properties)).not.toContain(PRE_RENAME_CONFIG_KEY);
+  });
+
+  it("requires the marketplace ref under its new name", async () => {
+    const schema = await readTestJson<JsonSchemaFile>(PROJECT_CONFIG_SCHEMA_PATH);
+
+    expect(schema.required).toContain(RENAMED_CONFIG_KEY);
+    expect(schema.required).not.toContain(PRE_RENAME_CONFIG_KEY);
+  });
+
+  it("names marketplace and marketplaceName on the project source config schema, and no source", async () => {
+    const schema = await readTestJson<JsonSchemaFile>(PROJECT_SOURCE_CONFIG_SCHEMA_PATH);
+
+    expect(Object.keys(schema.properties)).toContain(RENAMED_CONFIG_KEY);
+    expect(Object.keys(schema.properties)).toContain(MARKETPLACE_NAME_KEY);
+    expect(Object.keys(schema.properties)).not.toContain(PRE_RENAME_CONFIG_KEY);
+  });
+});
+
 describe("branding via projectSourceConfigSchema", () => {
   it("should accept full branding config", () => {
     const result = projectSourceConfigSchema.safeParse({
@@ -352,7 +483,7 @@ describe("branding via projectSourceConfigSchema", () => {
 describe("projectSourceConfigSchema with branding", () => {
   it("should accept config with branding", () => {
     const result = projectSourceConfigSchema.safeParse({
-      source: "github:myorg/skills",
+      marketplace: "github:myorg/skills",
       branding: {
         name: "Acme Dev Tools",
         tagline: "Build faster with Acme",
@@ -363,7 +494,7 @@ describe("projectSourceConfigSchema with branding", () => {
 
   it("should accept config without branding", () => {
     const result = projectSourceConfigSchema.safeParse({
-      source: "github:myorg/skills",
+      marketplace: "github:myorg/skills",
     });
     expect(result.success).toBe(true);
   });
@@ -536,6 +667,17 @@ describe("category validation", () => {
       expect(result.success).toBe(true);
     });
 
+    it("should reject an empty category", () => {
+      const result = skillMetadataLoaderSchema.safeParse({
+        category: "",
+        domain: "web",
+      });
+      expect(
+        result.success,
+        "a category field present and blank names no placement — omitting it and emptying it are different claims",
+      ).toBe(false);
+    });
+
     it("should reject metadata without domain field", () => {
       const result = skillMetadataLoaderSchema.safeParse({
         author: "@test",
@@ -614,6 +756,19 @@ describe("category validation", () => {
         domain: "web",
       });
       expect(result.success).toBe(false);
+    });
+
+    it("should reject an empty category", () => {
+      const result = localRawMetadataSchema.safeParse({
+        displayName: "Test Skill",
+        slug: "react",
+        category: "",
+        domain: "web",
+      });
+      expect(
+        result.success,
+        "a blank category is a placement nothing can honour, so the file describes no skill",
+      ).toBe(false);
     });
 
     it("should reject metadata without domain field", () => {
@@ -702,7 +857,7 @@ describe("lenient schemas accept custom values without pre-registration", () => 
       agents: buildAgentConfigs(["web-developer"]),
       skills: [
         ...buildSkillConfigs(["web-framework-react"]),
-        { id: "acme-pipeline-deploy", scope: "project", source: "eject" },
+        { id: "acme-pipeline-deploy", scope: "project", origin: "eject" },
       ],
     });
     expect(result.success).toBe(true);

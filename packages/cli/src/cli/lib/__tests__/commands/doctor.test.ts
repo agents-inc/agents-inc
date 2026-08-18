@@ -5,6 +5,7 @@ import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
+import { cliVersion, stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
@@ -22,6 +23,30 @@ const ORPHANED_AGENT_NAME = "web-developer";
 
 /** A config file the loader cannot evaluate — present on disk, and describing nothing. */
 const UNREADABLE_CONFIG = "export default {{{ not valid typescript";
+
+/**
+ * A skill directory in the shared `~/.claude/skills/` tree that this CLI did not put there.
+ * `.claude/skills/` belongs to Claude Code, not to this installation.
+ */
+const FOREIGN_SKILL_DIR = "context7-mcp";
+
+/**
+ * An agent file in the shared `.claude/agents/` tree that this CLI did not compile. Its
+ * counterpart claim is the provenance marker rather than `forkedFrom`, and it carries none —
+ * which is the whole of what makes it somebody else's file.
+ */
+const FOREIGN_AGENT_NAME = "my-own-reviewer";
+
+/**
+ * The provenance block the copier stamps into every skill directory this CLI writes. With no
+ * configuration left to name an id, it is the only claim an installed directory can carry — and
+ * it is the same claim `uninstall` reads before removing anything.
+ */
+const CLI_PROVENANCE = {
+  skillId: ORPHANED_SKILL_ID,
+  contentHash: "abc1234",
+  date: "2026-01-01",
+};
 
 describe("doctor command", () => {
   let projectDir: string;
@@ -231,7 +256,11 @@ describe("doctor command", () => {
    * unknown — it is settled, and the answer is that nothing owns any of it.
    */
   describe("orphans check with no configuration", () => {
-    /** An installed skill and a compiled agent, both valid enough to clear the content layer. */
+    /**
+     * An installed skill and a compiled agent, both valid enough to clear the content layer.
+     * Each carries the claim its own kind can make with no configuration left to name it: the
+     * skill its `forkedFrom` block, the agent the marker the compiler stamps into every file.
+     */
     async function installContentWithoutConfig(): Promise<void> {
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, ORPHANED_SKILL_ID);
       await mkdir(skillDir, { recursive: true });
@@ -248,14 +277,35 @@ describe("doctor command", () => {
           cliDescription: "React JavaScript framework",
           usageGuidance: "Use React for building component-based UIs",
           contentHash: "b2c3d4e",
+          forkedFrom: CLI_PROVENANCE,
         }),
       );
 
+      await writeAgentFileForTest(ORPHANED_AGENT_NAME, { compiled: true });
+    }
+
+    /** A bare directory in the shared skills tree, of the shape another tool leaves behind. */
+    async function installForeignSkillDir(): Promise<void> {
+      await mkdir(path.join(projectDir, LOCAL_SKILLS_PATH, FOREIGN_SKILL_DIR), {
+        recursive: true,
+      });
+    }
+
+    /** An agent file in the shared agents tree that this CLI did not compile — no marker. */
+    async function installForeignAgentFile(): Promise<void> {
+      await writeAgentFileForTest(FOREIGN_AGENT_NAME, { compiled: false });
+    }
+
+    async function writeAgentFileForTest(
+      agentName: string,
+      options: { compiled: boolean },
+    ): Promise<void> {
       const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
+      const rendered = renderAgentMd(agentName, "Stranded agent content.");
       await writeFile(
-        path.join(agentsDir, `${ORPHANED_AGENT_NAME}.md`),
-        renderAgentMd(ORPHANED_AGENT_NAME, "Stranded agent content."),
+        path.join(agentsDir, `${agentName}.md`),
+        options.compiled ? stampProvenanceMarker(rendered, await cliVersion()) : rendered,
       );
     }
 
@@ -280,6 +330,70 @@ describe("doctor command", () => {
 
       // An empty directory with no configuration is the state `init` exists for,
       // not a stranded one — there is nothing for a configuration to have owned.
+      expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
+      expect(output).not.toContain("no configuration declares them");
+    });
+
+    it("counts only the directories carrying provenance when a foreign one sits beside them", async () => {
+      await installContentWithoutConfig();
+      await installForeignSkillDir();
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      // The count is the assertion, not the absence of the name: the content layer names the
+      // foreign directory in the same report, so `not.toContain` on it would be vacuous either
+      // way. Two skill directories are on disk and exactly one of them is this CLI's.
+      expect(
+        output,
+        "the row offers files for removal — it must count only what `uninstall` would remove",
+      ).toContain("1 skill and 1 agent installed here, and no configuration declares them");
+      expect(output).toContain(ORPHANED_SKILL_ID);
+    });
+
+    it("keeps the skip when the only thing installed is a directory this CLI did not install", async () => {
+      await installForeignSkillDir();
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      // `uninstall` refuses a directory carrying no provenance, so a row that offered this one
+      // for removal would be the CLI contradicting itself across two of its own screens.
+      expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
+      expect(output).not.toContain("no configuration declares them");
+      expect(output).not.toContain("Nothing declares the files above");
+
+      // Stepped over is not unmentioned. The content layer names it in the same run, so the
+      // directory is accounted for rather than silently dropped.
+      expect(output).toContain(FOREIGN_SKILL_DIR);
+      expect(output).toContain("not installed by this CLI");
+    });
+
+    it("counts only the agent files carrying the marker when a hand-written one sits beside them", async () => {
+      await installContentWithoutConfig();
+      await installForeignAgentFile();
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      // The count, for the same reason the skills half asserts on it: the content layer walks
+      // every agent file in the same run, so a `not.toContain` on the hand-written name would
+      // hold either way. Two agent files are on disk and exactly one of them is this CLI's.
+      expect(
+        output,
+        "the row offers files for removal — it must count only what `uninstall` would remove",
+      ).toContain("1 skill and 1 agent installed here, and no configuration declares them");
+      expect(output).toContain(`${ORPHANED_AGENT_NAME}.md`);
+    });
+
+    it("keeps the skip when the only thing installed is an agent this CLI did not compile", async () => {
+      await installForeignAgentFile();
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      // `uninstall` with no configuration removes the marker-carrying agents and keeps the rest,
+      // so a row that offered this one for removal would be the CLI contradicting itself.
       expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
       expect(output).not.toContain("no configuration declares them");
     });
@@ -361,7 +475,7 @@ describe("doctor command", () => {
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         agents: [],
-        skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+        skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
       });
 
       const { stdout, error } = await runCliCommand(["doctor"]);

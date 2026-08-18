@@ -4,6 +4,7 @@ import type { LocalSkillMetadata } from "./skills/skill-metadata";
 import type { LocalRawMetadata } from "./skills/local-skill-loader";
 import { AUTHOR_HANDLE_PATTERN, KEBAB_CASE_PATTERN, LOCAL_PSEUDO_CATEGORY } from "../consts";
 import { formatZodIssue } from "./schema-validator";
+import { isRecord } from "../utils/type-guards";
 import { warn } from "../utils/logger";
 import { SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
 import { EFFORT_NAMES, MODEL_NAMES, PERMISSION_MODES } from "../types/matrix";
@@ -28,9 +29,11 @@ import type {
   PermissionMode,
   PluginAuthor,
   PluginManifest,
+  ProjectConfig,
   RelationshipDefinitions,
   RequireRule,
   SkillAssignment,
+  SkillConfig,
   SkillId,
   SkillSlug,
   Category,
@@ -43,32 +46,6 @@ export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 export const permissionModeSchema = z.enum(PERMISSION_MODES) as z.ZodType<PermissionMode>;
 
 export const skillSlugSchema = z.enum(SKILL_SLUGS) as z.ZodType<SkillSlug>;
-
-/** Validates category: strict categoryPathSchema by default, any kebab-case string when custom: true */
-function validateCategoryField(
-  val: { category?: string; custom?: boolean },
-  ctx: z.RefinementCtx,
-): void {
-  if (!val.category) return;
-
-  if (val.custom) {
-    if (!KEBAB_CASE_PATTERN.test(val.category)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["category"],
-        message: "Custom category must be kebab-case",
-      });
-    }
-    return;
-  }
-
-  const result = categoryPathSchema.safeParse(val.category);
-  if (!result.success) {
-    for (const issue of result.error.issues) {
-      ctx.addIssue({ ...issue, path: ["category"] });
-    }
-  }
-}
 
 // Accepts: known category, "local", or any kebab-case string (custom categories)
 export const categoryPathSchema = z.string().refine(
@@ -124,25 +101,29 @@ export const skillFrontmatterLoaderSchema = z.object({
   model: modelNameSchema.exactOptional(),
 });
 
-// Loader schema: category strictness depends on custom field (see validateCategoryField)
+/**
+ * Loader schema for a skill's metadata.yaml.
+ *
+ * `custom` buys its category NOTHING here. It used to: a `custom: true` skill's
+ * category was waved through on a bare kebab-case test while every other skill's
+ * went to `categoryPathSchema`. A custom skill is placed in a category that
+ * already exists rather than bringing one, so the leniency described a freedom it
+ * no longer has, and the same field now answers to the same schema either way.
+ * Whether the category is one this installation actually declares is asked where
+ * the declarations are — `mergeLocalSkillsIntoMatrix`, not here.
+ */
 export const skillMetadataLoaderSchema = z
   .object({
-    // Field accepts any string; cross-field validation in superRefine enforces strict/custom rules
-    category: (z.string() as z.ZodType<CategoryPath>).exactOptional(),
+    category: categoryPathSchema.exactOptional(),
     author: z.string().exactOptional(),
     domain: z.string() as z.ZodType<Domain>,
     custom: z.boolean().exactOptional(),
   })
-  .passthrough()
-  .superRefine(validateCategoryField);
+  .passthrough();
 
 /**
  * Raw metadata.yaml shape read by the matrix loader during skill extraction.
- * DELIBERATE DIFFERENCE from skillMetadataLoaderSchema / localRawMetadataSchema:
- * this schema validates `category` with categoryPathSchema directly and does NOT
- * run the validateCategoryField superRefine, so a `custom: true` category is not
- * cross-checked against the kebab-case rule. Preserved verbatim on the move from
- * matrix-loader.ts — do not add the superRefine without an explicit decision.
+ * Preserved verbatim on the move from matrix-loader.ts.
  */
 export const matrixRawMetadataSchema = z.object({
   category: categoryPathSchema,
@@ -215,11 +196,73 @@ export const stackAgentConfigSchema = z.record(
 );
 
 /**
- * Lenient loader for .claude-src/config.ts (ProjectConfig).
- * name/agents optional since partial configs are valid at load time.
- * Full validation happens in validateProjectConfig().
+ * The top-level keys a saved config carried before the marketplace fields were renamed, each
+ * mapped to the field its value lives on now. Data rather than a check per key because both
+ * loader schemas read the same file and have to refuse the same keys — and `satisfies` ties every
+ * replacement to a field that really exists, so the next rename cannot leave this list stale.
  */
-export const projectConfigLoaderSchema = z
+const RENAMED_CONFIG_FIELDS = { source: "marketplace" } as const satisfies Record<
+  string,
+  keyof ProjectConfig
+>;
+
+/** The same, for the keys a saved config's SKILL ENTRIES carried. */
+const RENAMED_SKILL_ENTRY_FIELDS = { source: "origin" } as const satisfies Record<
+  string,
+  keyof SkillConfig
+>;
+
+function renamedFieldMessage(oldKey: string, newKey: string): string {
+  return `"${oldKey}" was renamed to "${newKey}". Rename the key in this config — the CLI does not read "${oldKey}" any more and will not fall back to it.`;
+}
+
+function reportRenamedKeys(
+  record: Record<string, unknown>,
+  renames: Record<string, string>,
+  path: PropertyKey[],
+  ctx: z.RefinementCtx,
+): void {
+  for (const [oldKey, newKey] of Object.entries(renames)) {
+    if (!(oldKey in record)) continue;
+    ctx.addIssue({
+      code: "custom",
+      path: [...path, oldKey],
+      message: renamedFieldMessage(oldKey, newKey),
+    });
+  }
+}
+
+/**
+ * Refuses a saved config that still names a field by the key it had before the rename.
+ *
+ * Reads the raw document rather than parse output because neither schema would show it one: both
+ * are `.passthrough()`, so a stale top-level key survives as unrecognised data, and the skills
+ * array is declared, so a stale key on an entry is stripped before any refinement runs. Either way
+ * the run would look for the value under its NEW name, find nothing, and quietly install from the
+ * default marketplace instead of the one the config named.
+ */
+function refuseRenamedFields(config: unknown, ctx: z.RefinementCtx): void {
+  if (!isRecord(config)) return;
+
+  reportRenamedKeys(config, RENAMED_CONFIG_FIELDS, [], ctx);
+
+  const { skills } = config;
+  if (!Array.isArray(skills)) return;
+  for (const [index, entry] of skills.entries()) {
+    if (!isRecord(entry)) continue;
+    reportRenamedKeys(entry, RENAMED_SKILL_ENTRY_FIELDS, ["skills", index], ctx);
+  }
+}
+
+/**
+ * Both loader schemas behind the same refusal, piped so it runs on the file as written. A failure
+ * here short-circuits the shape check, so a config carrying an old key is answered with the rename
+ * it needs rather than with the missing-field noise the rename causes.
+ */
+const renamedFieldGuard = z.unknown().superRefine(refuseRenamedFields);
+
+/** The shape {@link projectConfigLoaderSchema} admits once the rename guard has passed. */
+const projectConfigFields = z
   .object({
     /** Project/plugin name in kebab-case */
     name: z.string().exactOptional(),
@@ -237,13 +280,13 @@ export const projectConfigLoaderSchema = z
         }),
       )
       .exactOptional(),
-    /** Per-skill configuration with scope and source */
+    /** Per-skill configuration with scope and provenance */
     skills: z
       .array(
         z.object({
           id: z.string() as z.ZodType<SkillId>,
           scope: z.enum(["project", "global"]),
-          source: z.string(),
+          origin: z.string(),
           excluded: z.boolean().exactOptional(),
         }),
       )
@@ -255,16 +298,23 @@ export const projectConfigLoaderSchema = z
     selectedDomains: z.array(z.string() as z.ZodType<Domain>).exactOptional(),
     /** Agent-to-category-to-skill mappings from selected stack (accepts same formats as stacks.ts) */
     stack: z.record(z.string(), stackAgentConfigSchema).exactOptional(),
-    /** Skills source path or URL (e.g., "github:my-org/skills") */
-    source: z.string().exactOptional(),
-    /** Marketplace identifier for plugin installation */
+    /** The marketplace this install reads skills from, as a path or URL (e.g., "github:my-org/skills") */
     marketplace: z.string().exactOptional(),
+    /** The name that marketplace's manifest gives it, which plugins are registered under */
+    marketplaceName: z.string().exactOptional(),
     /** Separate source for agents when different from skills source */
     agentsSource: z.string().exactOptional(),
     /** Tracked project installation paths (global config only) */
     projects: z.array(z.string()).exactOptional(),
   })
   .passthrough();
+
+/**
+ * Lenient loader for .claude-src/config.ts (ProjectConfig).
+ * name/agents optional since partial configs are valid at load time.
+ * Full validation happens in validateProjectConfig().
+ */
+export const projectConfigLoaderSchema = renamedFieldGuard.pipe(projectConfigFields);
 
 const categoryDefinitionSchema: z.ZodType<CategoryDefinition> = z.object({
   id: z.string() as z.ZodType<Category>,
@@ -340,8 +390,7 @@ export const localRawMetadataSchema = z
     /** One-line description for the wizard */
     cliDescription: z.string().exactOptional(),
     /** Category to place this skill in (e.g., "web-framework") */
-    // Field accepts any string; cross-field validation in superRefine enforces strict/custom rules
-    category: z.string() as z.ZodType<CategoryPath>,
+    category: categoryPathSchema,
     /** When an AI agent should invoke this skill */
     usageGuidance: z.string().exactOptional(),
     /** Domain this skill belongs to (e.g., "web", "api", "cli") */
@@ -349,10 +398,9 @@ export const localRawMetadataSchema = z
     /** True if this skill was created outside the CLI's built-in vocabulary */
     custom: z.boolean().exactOptional(),
   })
-  .passthrough()
   // Passthrough widens the output with an index signature; LocalRawMetadata is the
   // honest declared shape consumers read (same round-1 pattern as localSkillMetadataSchema).
-  .superRefine(validateCategoryField) as z.ZodType<LocalRawMetadata>;
+  .passthrough() as z.ZodType<LocalRawMetadata>;
 
 /** Metadata for local skills that were forked/copied from a marketplace skill */
 export const localSkillMetadataSchema = z
@@ -367,6 +415,8 @@ export const localSkillMetadataSchema = z
         date: z.string(),
         /** Source URL the skill was installed from (e.g., "github:agents-inc/skills") */
         source: z.string().exactOptional(),
+        /** Directory inside that repository, for a skill only its own bytes can install again */
+        path: z.string().exactOptional(),
       })
       .exactOptional(),
   })
@@ -464,18 +514,15 @@ const brandingConfigSchema = z.object({
   tagline: z.string().exactOptional(),
 });
 
-/**
- * Project source configuration from .claude-src/config.ts.
- * Stores multi-source settings, custom directory overrides, and bound skills.
- */
-export const projectSourceConfigSchema = z
+/** The shape {@link projectSourceConfigSchema} admits once the rename guard has passed. */
+const projectSourceConfigFields = z
   .object({
-    /** Primary skills source (path or URL) */
-    source: z.string().exactOptional(),
+    /** The marketplace this install reads skills from, as a path or URL */
+    marketplace: z.string().exactOptional(),
     /** Author handle for this project's config */
     author: z.string().exactOptional(),
-    /** Marketplace identifier for plugin installation */
-    marketplace: z.string().exactOptional(),
+    /** The name that marketplace's manifest gives it, which plugins are registered under */
+    marketplaceName: z.string().exactOptional(),
     /** Separate source for agent definitions (when different from skills) */
     agentsSource: z.string().exactOptional(),
     /** Branding overrides for white-labeling the CLI */
@@ -492,6 +539,12 @@ export const projectSourceConfigSchema = z
     rulesFile: z.string().exactOptional(),
   })
   .passthrough();
+
+/**
+ * Project source configuration from .claude-src/config.ts.
+ * Stores multi-source settings, custom directory overrides, and bound skills.
+ */
+export const projectSourceConfigSchema = renamedFieldGuard.pipe(projectSourceConfigFields);
 
 // Strict validation schemas enforce all constraints and use .strict() to reject unknown fields,
 // unlike the lenient loader schemas above which use .passthrough() for forward compatibility at parse boundaries
@@ -570,6 +623,8 @@ const forkedFromSchema = z.object({
   contentHash: z.string(),
   /** Source URL or identifier */
   source: z.string().exactOptional(),
+  /** Directory inside that source, for a skill only its own bytes can install again */
+  path: z.string().exactOptional(),
   /** ISO date of the fork */
   date: z.string(),
 });

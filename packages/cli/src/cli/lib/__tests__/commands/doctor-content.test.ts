@@ -4,13 +4,14 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
-import { writeTestTsConfig } from "../helpers/config-io.js";
+import { writeCorruptTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import {
   writeTestInstalledPluginsRegistry,
   writeTestPluginManifest,
 } from "../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
+import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { validateSource } from "../../source-validator";
 import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
@@ -19,11 +20,14 @@ import {
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
   PLUGINS_SUBDIR,
+  PUBLIC_CATALOGUE_PACKAGE,
   CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../../consts";
-import type { TestSkill } from "../fixtures/create-test-source";
+import type { RelationshipDefinitions } from "../../../types";
+import { testMarketplaceSkillId, type TestSkill } from "../fixtures/create-test-source";
 import { renderAgentMd, renderConfigTs, renderSkillMd } from "../content-generators";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
@@ -41,7 +45,118 @@ const CONTENT_SECTION = "Content checks";
 const OPERATIONAL_SECTION = "Operational checks";
 const SKIP_AFTER_CONTENT_ERRORS = "Skipped — fix the content errors above first";
 
-/** Write a valid installed skill under `<skillsDir>/<dirName>/` with strict-schema metadata. */
+/** The operational rows, as the report heads them. */
+const ROW_CONFIG_VALID = "Config Valid";
+const ROW_SKILLS_RESOLVED = "Skills Resolved";
+const ROW_AGENTS_COMPILED = "Agents Compiled";
+const ROW_NO_ORPHANS = "No Orphans";
+const ROW_SKILLS_INSTALLED = "Skills Installed";
+const ROW_PLUGINS_INSTALLED = "Plugins Installed";
+const ROW_MARKETPLACE_REACHABLE = "Marketplace Reachable";
+
+/**
+ * One operational row standing down: the name, the `-` its skip status prints, and the word.
+ * The blanket notice carries no row name and no status column, so it never matches this.
+ */
+function skippedRow(name: string): RegExp {
+  return new RegExp(`${name}\\s+-\\s+Skipped`);
+}
+
+/** The agent `setupValidatedProject` declares, and the compiled file that satisfies it. */
+const CONFIGURED_AGENT_NAME = "web-developer";
+
+/** A compiled agent file no configuration declares — what the orphan row exists to name. */
+const ORPHANED_AGENT_NAME = "orphan-agent";
+
+/**
+ * The skill the fixtures configure, which the registered marketplace provides.
+ *
+ * Namespaced, because the marketplace these fixtures build IS a custom one and a
+ * custom marketplace shipping a public-catalogue id is refused whole at load.
+ */
+const CONFIGURED_SKILL_ID = testMarketplaceSkillId("web-framework-react");
+
+/**
+ * An installed skill directory the configuration never mentions. It is the unrelated content the
+ * operational rows are asserted to survive, so it must be a skill nothing else in the fixture reads.
+ */
+const UNRELATED_INSTALLED_SKILL_ID = "web-framework-vue-composition-api";
+
+/** A marketplace name rather than the eject origin, which is what makes a skill plugin-mode. */
+const PLUGIN_MODE_ORIGIN = "agents-inc";
+
+/** A registry file the JSON parser refuses, so nothing can be read out of it. */
+const UNPARSEABLE_REGISTRY = "{ not valid json !!!";
+
+/** An agent file carrying no frontmatter — content the agents pass reports and nothing else reads. */
+const AGENT_MD_WITHOUT_FRONTMATTER = "# Just a plain markdown file, no frontmatter here.\n";
+
+/** A config file the loader cannot evaluate — present on disk, and describing nothing. */
+const UNREADABLE_CONFIG = "export default {{{ not valid typescript";
+
+/** A slug the fixture marketplaces below never ship, so a rule naming it resolves to nothing. */
+const DANGLING_RULE_SLUG = "angular-standalone";
+
+/**
+ * A conflict rule pairing a slug the source ships with one it does not. A source's own rules
+ * are never narrowed to what it ships, so the merge drops the reference and records the slug —
+ * the one shape that produces an author's typo.
+ */
+const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
+  conflicts: [
+    {
+      skills: ["react", DANGLING_RULE_SLUG],
+      reason: "Deliberately names a slug no skill in this marketplace carries",
+    },
+  ],
+};
+
+/**
+ * A skill the built-in audit manifest records as `universal`. Placed in an exclusive category it
+ * contradicts its own verdict, which is the only OTHER health finding reported at error severity
+ * — the control for "the reader's relationship moves this one finding and no other".
+ *
+ * Its id is bare, and has to be: the audit manifest is keyed by the public catalogue's own ids,
+ * so a skill outside them cannot contradict a verdict nothing records for it. Only the catalogue
+ * may ship such an id, which is why the one source built around this skill declares itself the
+ * catalogue — see {@link buildSourceWithDanglingSlugAndAuditContradiction}.
+ */
+const UNIVERSAL_VERDICT_SKILL: TestSkill = {
+  id: "web-forms-zod-validation",
+  description: "Zod schema validation",
+  category: "web-forms",
+  domain: "web",
+  displayName: "zod-validation",
+  cliDescription: "Runtime schema validation with Zod",
+  usageGuidance: "Use Zod to validate data crossing a trust boundary",
+  slug: "zod-validation",
+  author: "@test",
+};
+
+/**
+ * A skill directory under `~/.claude/skills/` that something other than this CLI installed —
+ * the shared Claude Code directory's other tenants. Named after the live example: an MCP helper
+ * skill with no metadata.yaml at all.
+ */
+const FOREIGN_SKILL_DIR = "context7-mcp";
+
+/**
+ * The provenance block this CLI stamps into every skill directory it writes. Its presence is one
+ * of the two things that make a directory this installation's to judge.
+ */
+const CLI_PROVENANCE = {
+  skillId: "web-framework-react",
+  contentHash: "abc1234",
+  date: "2026-01-01",
+};
+
+/**
+ * Write a valid installed skill under `<skillsDir>/<dirName>/` with strict-schema metadata.
+ *
+ * Provenance is part of the fixture rather than an option, because it is part of what an install
+ * IS: the copier stamps `forkedFrom` into every directory it writes, and a skill directory without
+ * it is one somebody else put there.
+ */
 async function writeValidInstalledSkill(
   skillsDir: string,
   dirName: string,
@@ -58,6 +173,7 @@ async function writeValidInstalledSkill(
   const metadata: Record<string, unknown> = {
     ...VALID_EMBEDDED_SKILL_METADATA_FILE,
     domain: "web",
+    forkedFrom: CLI_PROVENANCE,
     ...overrides,
   };
 
@@ -88,7 +204,7 @@ async function writeValidInstalledAgent(
 }
 
 const REACT_SOURCE_SKILL: TestSkill = {
-  id: "web-framework-react",
+  id: CONFIGURED_SKILL_ID,
   description: "React framework",
   category: "web-framework",
   domain: "web",
@@ -135,6 +251,7 @@ async function writeValidSourceSkill(
 async function writeTestMatrix(
   configDir: string,
   categories: Record<string, { domain: string; displayName: string }>,
+  relationships?: Partial<RelationshipDefinitions>,
 ): Promise<void> {
   const matrixCategories: Record<string, Record<string, unknown>> = Object.fromEntries(
     Object.entries(categories).map(([id, cat], order) => [
@@ -157,10 +274,10 @@ async function writeTestMatrix(
   const rulesData = {
     ...VALID_SKILL_RULES_FILE,
     relationships: {
-      conflicts: [],
-      discourages: [],
-      requires: [],
-      alternatives: [],
+      conflicts: relationships?.conflicts ?? [],
+      discourages: relationships?.discourages ?? [],
+      requires: relationships?.requires ?? [],
+      alternatives: relationships?.alternatives ?? [],
     },
   };
   await writeFile(path.join(configDir, "skill-rules.ts"), renderConfigTs(rulesData));
@@ -173,11 +290,57 @@ async function buildValidSource(sourceDir: string): Promise<void> {
   await mkdir(configDir, { recursive: true });
 
   // Directory name equals the skill id (marketplace convention) so the source is warning-free
-  await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
+  await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
   await writeTestMatrix(configDir, {
     "web-framework": { domain: "web", displayName: "Framework" },
   });
+}
+
+/** Build an otherwise valid marketplace whose own relationship rules name a slug it never ships. */
+async function buildSourceWithDanglingRuleSlug(sourceDir: string): Promise<void> {
+  const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
+  const configDir = path.join(sourceDir, "config");
+  await mkdir(configDir, { recursive: true });
+
+  await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
+
+  await writeTestMatrix(
+    configDir,
+    { "web-framework": { domain: "web", displayName: "Framework" } },
+    RULES_WITH_DANGLING_SLUG,
+  );
+}
+
+/**
+ * The same marketplace, carrying a second health defect alongside the dangling slug: a skill the
+ * audit manifest calls `universal` sitting in an exclusive category.
+ *
+ * This one is the PUBLIC CATALOGUE's own checkout rather than a custom marketplace, and the
+ * package.json below is what says so. The audit manifest names catalogue ids and nothing else, so
+ * the contradiction is only constructible for a source entitled to ship one — every other source
+ * is refused for taking it.
+ */
+async function buildSourceWithDanglingSlugAndAuditContradiction(sourceDir: string): Promise<void> {
+  const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
+  const configDir = path.join(sourceDir, "config");
+  await mkdir(configDir, { recursive: true });
+  await writeFile(
+    path.join(sourceDir, STANDARD_FILES.PACKAGE_JSON),
+    JSON.stringify({ name: PUBLIC_CATALOGUE_PACKAGE, version: "1.0.0" }),
+  );
+
+  await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
+  await writeValidSourceSkill(skillsDir, UNIVERSAL_VERDICT_SKILL.id, UNIVERSAL_VERDICT_SKILL);
+
+  await writeTestMatrix(
+    configDir,
+    {
+      "web-framework": { domain: "web", displayName: "Framework" },
+      "web-forms": { domain: "web", displayName: "Forms" },
+    },
+    RULES_WITH_DANGLING_SLUG,
+  );
 }
 
 /** Build a source with a metadata schema violation (missing required fields). */
@@ -206,14 +369,19 @@ async function buildInvalidSource(sourceDir: string): Promise<void> {
  * report a missing config rather than checking the one that is there.
  * Returns the source directory.
  */
-async function setupValidatedProject(tempDir: string, projectDir: string): Promise<string> {
+async function setupValidatedProject(
+  tempDir: string,
+  projectDir: string,
+  configOverrides?: Record<string, unknown>,
+): Promise<string> {
   const sourceDir = path.join(tempDir, "source");
   await buildValidSource(sourceDir);
   await writeTestTsConfig(projectDir, {
     name: "test-project",
     skills: [],
-    agents: buildAgentConfigs(["web-developer"]),
-    source: sourceDir,
+    agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+    marketplace: sourceDir,
+    ...configOverrides,
   });
   return sourceDir;
 }
@@ -240,7 +408,7 @@ describe("doctor content checks", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain(CONTENT_SECTION);
-      expect(stdout).toContain("1 source validated");
+      expect(stdout).toContain("1 marketplace validated");
       expect(stdout).toContain(sourceDir);
       expect(stdout, "clean content must not stop the run at the content layer").toContain(
         OPERATIONAL_SECTION,
@@ -248,24 +416,33 @@ describe("doctor content checks", () => {
       expect(stdout).toContain("0 errors");
     });
 
-    it("should stop before the operational layer when the primary source has errors", async () => {
+    /**
+     * A marketplace whose content is broken is missing skills from the matrix every configured id
+     * is resolved against, so the skills row would report ids as "not found" that the row above
+     * has already explained. It is the only operational row that reads what the marketplace holds:
+     * the rest read config.ts and the files on disk, and answer as truthfully as ever.
+     */
+    it("should stand down only the row a broken primary source can mislead", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildInvalidSource(sourceDir);
       await writeTestTsConfig(projectDir, {
         name: "test-project",
-        skills: [],
-        agents: buildAgentConfigs(["web-developer"]),
-        source: sourceDir,
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        marketplace: sourceDir,
       });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toMatch(/1 source: [1-9]\d* errors?/);
-      expect(stdout).toContain(SKIP_AFTER_CONTENT_ERRORS);
-      expect(stdout, "operational rows are downstream cascades of broken content").not.toContain(
-        "Config Valid",
+      expect(stdout).toMatch(/1 marketplace: [1-9]\d* errors?/);
+      expect(stdout).toMatch(skippedRow(ROW_SKILLS_RESOLVED));
+      expect(stdout).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout, "the config row reads config.ts and nothing the marketplace holds").toContain(
+        ROW_CONFIG_VALID,
       );
+      expect(stdout).toContain(ROW_NO_ORPHANS);
+      expect(stdout).toContain(ROW_SKILLS_INSTALLED);
     });
 
     it("should skip remote sources and not count them as errors", async () => {
@@ -273,13 +450,13 @@ describe("doctor content checks", () => {
         name: "test-project",
         skills: [],
         agents: buildAgentConfigs(["web-developer"]),
-        source: TEST_SOURCE_URL,
+        marketplace: TEST_SOURCE_URL,
       });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error).toBeUndefined();
-      expect(stdout).toContain("skipped (remote source)");
+      expect(stdout).toContain("skipped (remote)");
       expect(stdout).toContain("github:agents-inc/skills");
       expect(stdout).toContain("0 errors");
     });
@@ -292,13 +469,13 @@ describe("doctor content checks", () => {
         name: "test-project",
         skills: [],
         agents: buildAgentConfigs(["web-developer"]),
-        source: primarySourceDir,
+        marketplace: primarySourceDir,
       });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error).toBeUndefined();
-      expect(stdout).toContain("1 source validated");
+      expect(stdout).toContain("1 marketplace validated");
       expect(stdout).toContain(primarySourceDir);
     });
 
@@ -308,7 +485,7 @@ describe("doctor content checks", () => {
         name: "test-project",
         skills: [],
         agents: buildAgentConfigs(["web-developer"]),
-        source: missingSourceDir,
+        marketplace: missingSourceDir,
       });
 
       const { stdout, error } = await runCliCommand(["doctor"]);
@@ -325,9 +502,11 @@ describe("doctor content checks", () => {
       await mkdir(sourceDir, { recursive: true });
       await writeTestTsConfig(projectDir, {
         name: "test-project",
-        skills: [],
+        // The configuration names the skill below, which is what makes its directory this
+        // installation's to judge — a metadata.yaml that is gone can carry no provenance.
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: buildAgentConfigs(["web-developer"]),
-        source: sourceDir,
+        marketplace: sourceDir,
       });
 
       // Plugin with invalid JSON in plugin.json → 1 error.
@@ -348,9 +527,67 @@ describe("doctor content checks", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toMatch(/1 source: 1 error/);
+      expect(stdout).toMatch(/1 marketplace: 1 error/);
       expect(stdout).toMatch(/1 plugin: 1 error/);
       expect(stdout).toMatch(/1 skill: 1 error/);
+    });
+
+    /**
+     * One command, two contexts, already told apart by whether the marketplace being validated
+     * is the directory the command ran in. The author is standing in the repository that holds
+     * the typo; the consumer is being told about a file in someone else's.
+     */
+    it("should fail the run for a slug the marketplace under the cwd dangles", async () => {
+      await buildSourceWithDanglingRuleSlug(projectDir);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toMatch(/1 marketplace: 1 error/);
+      expect(stdout).toContain(DANGLING_RULE_SLUG);
+    });
+
+    it("should warn without failing for a slug the marketplace it reads from dangles", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingRuleSlug(sourceDir);
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        marketplace: sourceDir,
+      });
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toMatch(/1 marketplace: 0 errors, 1 warning/);
+      expect(stdout).toContain(DANGLING_RULE_SLUG);
+      expect(stdout).toContain(`Marketplace '${sourceDir}'`);
+    });
+
+    /**
+     * The stand-down is keyed on a content pass FAILING, and a warning does not. That is the
+     * right outcome on the merits too: `blocks: ["skills"]` is justified by a broken marketplace
+     * leaving skills out of the matrix, and an unresolved rule slug leaves every skill in it.
+     */
+    it("should stand no operational row down for a marketplace warning", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingRuleSlug(sourceDir);
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        marketplace: sourceDir,
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(OPERATIONAL_SECTION);
+      expect(stdout).toContain(ROW_SKILLS_RESOLVED);
+      expect(stdout, "a warning disables nothing — the skills row still answers").not.toMatch(
+        skippedRow(ROW_SKILLS_RESOLVED),
+      );
+      expect(stdout).toContain("1/1 skills found");
     });
   });
 
@@ -588,6 +825,7 @@ describe("doctor content checks", () => {
           cliDescription: "React JavaScript framework",
           usageGuidance: "Use React for building component-based UIs",
           slug: "react",
+          forkedFrom: CLI_PROVENANCE,
         }),
       );
 
@@ -598,7 +836,9 @@ describe("doctor content checks", () => {
     });
 
     it("should exit ERROR when an installed skill is missing metadata.yaml", async () => {
-      await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      });
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -615,7 +855,9 @@ describe("doctor content checks", () => {
     });
 
     it("should exit ERROR when metadata.yaml is malformed YAML", async () => {
-      await setupValidatedProject(tempDir, projectDir);
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      });
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
@@ -683,6 +925,7 @@ describe("doctor content checks", () => {
           cliDescription: "Vue framework",
           usageGuidance: "Use Vue for building component-based UIs",
           slug: "vue",
+          forkedFrom: CLI_PROVENANCE,
         }),
       );
 
@@ -693,6 +936,89 @@ describe("doctor content checks", () => {
       expect(stdout).toMatch(/2 skills: 2 errors/);
       // The broken skill's error is surfaced — pass did not abort after it.
       expect(stdout).toContain("Missing SKILL.md");
+    });
+  });
+
+  describe("installed skills this CLI did not install", () => {
+    it("should not judge a directory no configuration names and no provenance claims", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      await mkdir(path.join(globalSkillsDir, FOREIGN_SKILL_DIR), { recursive: true });
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).not.toContain(`Missing ${STANDARD_FILES.METADATA_YAML}`);
+    });
+
+    it("should name the directory it stepped over rather than pass over it silently", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      await mkdir(path.join(globalSkillsDir, FOREIGN_SKILL_DIR), { recursive: true });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(FOREIGN_SKILL_DIR);
+      expect(stdout).toContain("not installed by this CLI");
+    });
+
+    it("should count only the skills it owns when a foreign directory sits beside one", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
+        forkedFrom: CLI_PROVENANCE,
+      });
+      await mkdir(path.join(globalSkillsDir, FOREIGN_SKILL_DIR), { recursive: true });
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain("1 skill validated");
+    });
+
+    it("should still report a broken skill the configuration names", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      });
+
+      // No metadata.yaml, so nothing in this directory can carry provenance — the configuration
+      // naming the id is the whole claim.
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      const skillDir = path.join(globalSkillsDir, "web-framework-react");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.SKILL_MD),
+        renderSkillMd("web-framework-react", "React"),
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(`Missing ${STANDARD_FILES.METADATA_YAML}`);
+    });
+
+    it("should still report a broken skill whose metadata carries this CLI's provenance", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      const skillDir = path.join(globalSkillsDir, "web-framework-react");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        stringifyYaml({
+          ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+          domain: "web",
+          forkedFrom: CLI_PROVENANCE,
+        }),
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(`Missing ${STANDARD_FILES.SKILL_MD}`);
     });
   });
 
@@ -763,7 +1089,7 @@ describe("doctor content checks", () => {
         name: "test-project",
         skills: [],
         agents: buildAgentConfigs(["web-developer"]),
-        source: sourceDir,
+        marketplace: sourceDir,
       });
 
       // Install a skill and an agent under the fake-home location only.
@@ -782,6 +1108,216 @@ describe("doctor content checks", () => {
       // file would be counted twice.
       expect(stdout).toContain("1 skill validated");
       expect(stdout).toContain("1 agent validated");
+    });
+  });
+
+  /**
+   * Which operational rows a content error may stand down, and which it may not. An operational row
+   * is a cascade of a content finding only when it reads the content that finding is about: the
+   * orphan row compares file NAMES against the config, the config row reads config.ts, and the
+   * marketplace row reports whether the marketplace loads — none of them opens an installed skill,
+   * a plugin registry or an agent's frontmatter, so none of them can be misled by one being broken.
+   */
+  describe("operational rows an unrelated content error must not silence", () => {
+    /** Where the user-scoped plugin registry lives under the isolated home. */
+    const userPluginsDir = () => path.join(fakeHome, CLAUDE_DIR, PLUGINS_SUBDIR);
+
+    /**
+     * A project with sound config, marketplace and plugins, carrying the two operational findings
+     * a reader runs `doctor` to be told about: one compiled agent no config declares, and one
+     * eject-mode skill the config names that never reached disk. Both are true of the installation
+     * whatever any installed skill's metadata says.
+     */
+    async function setupProjectWithOperationalFindings(): Promise<string> {
+      const sourceDir = await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+      });
+
+      const projectAgentsDir = path.join(projectDir, INSTALLED_AGENTS_SUBDIR);
+      await writeValidInstalledAgent(projectAgentsDir, CONFIGURED_AGENT_NAME);
+      await writeValidInstalledAgent(projectAgentsDir, ORPHANED_AGENT_NAME);
+
+      return sourceDir;
+    }
+
+    /**
+     * The owner's machine, reduced: one skill directory this CLI installed — its metadata says so
+     — whose SKILL.md is gone. Broken, and provably this installation's without the configuration
+     * having to name it, which is what keeps it unrelated to every operational row below.
+     */
+    async function installSkillMissingItsSkillMd(): Promise<void> {
+      const skillDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR, UNRELATED_INSTALLED_SKILL_ID);
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        stringifyYaml({
+          ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+          domain: "web",
+          forkedFrom: CLI_PROVENANCE,
+        }),
+      );
+    }
+
+    it("names the orphaned agent file a broken skill directory has nothing to do with", async () => {
+      await setupProjectWithOperationalFindings();
+      await installSkillMissingItsSkillMd();
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(`Missing ${STANDARD_FILES.SKILL_MD}`);
+      expect(
+        stdout,
+        "one unreadable skill directory is not a reason to stop reporting everything else",
+      ).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout).toContain(ROW_NO_ORPHANS);
+      expect(stdout).toContain("1 orphaned agent file");
+      expect(stdout).toContain(`- ${ORPHANED_AGENT_NAME}.md (not in config)`);
+    });
+
+    it("reports config validity and marketplace reachability, which read no skill content", async () => {
+      const sourceDir = await setupProjectWithOperationalFindings();
+      await installSkillMissingItsSkillMd();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(ROW_CONFIG_VALID);
+      expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
+      expect(stdout).toContain(ROW_MARKETPLACE_REACHABLE);
+      expect(stdout).toContain(`Connected to local: ${sourceDir}`);
+    });
+
+    it("reports the compiled agents and the eject-mode skill that never reached disk", async () => {
+      await setupProjectWithOperationalFindings();
+      await installSkillMissingItsSkillMd();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(ROW_AGENTS_COMPILED);
+      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain(ROW_SKILLS_INSTALLED);
+      expect(stdout).toContain("1 skill missing from disk");
+      expect(stdout).toContain(CONFIGURED_SKILL_ID);
+      expect(stdout).toContain(ROW_PLUGINS_INSTALLED);
+      expect(stdout).toContain("No plugin-mode skills configured");
+    });
+
+    /**
+     * The one row that genuinely cannot answer. It resolves configured ids against the local-skill
+     * discovery pass, and that pass drops any skill whose metadata it cannot read — so a "not found"
+     * from it would be the same finding one row above, worded as if it were a second one.
+     */
+    it("stands the skills row down and says which finding blocked it", async () => {
+      await setupProjectWithOperationalFindings();
+      await installSkillMissingItsSkillMd();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toMatch(skippedRow(ROW_SKILLS_RESOLVED));
+      expect(
+        stdout,
+        "a row that stands down must name what blocked it, not carry a blanket notice",
+      ).toMatch(new RegExp(`${ROW_SKILLS_RESOLVED}\\s+-\\s+Skipped[^\\n]*skill`, "i"));
+    });
+
+    /**
+     * Twelve rows are printed and one of them stands down, so eleven verdicts are what the counts
+     * add up to. A summary that folded the skipped row into `passed` would claim one nobody reached.
+     */
+    it("counts only the rows it actually ran", async () => {
+      await setupProjectWithOperationalFindings();
+      await installSkillMissingItsSkillMd();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      // Four content rows pass and the skills pass fails; of the operational rows the config,
+      // agents, plugins and marketplace rows pass, orphans and installed skills warn, and the
+      // skills row stands down — counted nowhere.
+      expect(stdout).toContain("Summary: 8 passed, 2 warnings, 1 error");
+    });
+
+    it("stands the plugins row down when the registry it reads cannot be parsed", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { origin: PLUGIN_MODE_ORIGIN }),
+      });
+      await mkdir(userPluginsDir(), { recursive: true });
+      await writeFile(getInstalledPluginsRegistryPath(userPluginsDir()), UNPARSEABLE_REGISTRY);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      // Every plugin-mode skill would read as "no enabled plugin found" off a registry nobody
+      // could parse, which is the registry's finding wearing the row's words.
+      expect(stdout).toMatch(skippedRow(ROW_PLUGINS_INSTALLED));
+      expect(
+        stdout,
+        "a row that stands down must name what blocked it, not carry a blanket notice",
+      ).toMatch(new RegExp(`${ROW_PLUGINS_INSTALLED}\\s+-\\s+Skipped[^\\n]*plugin`, "i"));
+      expect(stdout).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
+    });
+
+    it("keeps the rows a broken plugin registry cannot mislead", async () => {
+      const sourceDir = await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { origin: PLUGIN_MODE_ORIGIN }),
+      });
+      await mkdir(userPluginsDir(), { recursive: true });
+      await writeFile(getInstalledPluginsRegistryPath(userPluginsDir()), UNPARSEABLE_REGISTRY);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
+      expect(stdout).toContain(ROW_NO_ORPHANS);
+      expect(stdout).toContain(`Connected to local: ${sourceDir}`);
+      expect(
+        stdout,
+        "the matrix resolves the configured skill whatever the registry holds",
+      ).toContain("1/1 skills found");
+    });
+
+    /**
+     * The content pass no operational row reads. `Agents Compiled` asks whether a file is there and
+     * `No Orphans` reads the names of the files that are — neither opens one, so a file with no
+     * frontmatter changes neither answer.
+     */
+    it("runs every operational row when the broken content is an agent file", async () => {
+      const sourceDir = await setupProjectWithOperationalFindings();
+      await writeFile(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR, "bad-agent.md"),
+        AGENT_MD_WITHOUT_FRONTMATTER,
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain("Missing or invalid YAML frontmatter");
+      expect(stdout).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
+      expect(stdout).toContain("1/1 skills found");
+      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain("2 orphaned agent files");
+      expect(stdout).toContain("- bad-agent.md (not in config)");
+      expect(stdout).toContain("1 skill missing from disk");
+      expect(stdout).toContain("No plugin-mode skills configured");
+      expect(stdout).toContain(`Connected to local: ${sourceDir}`);
+    });
+
+    /**
+     * The boundary the scoping stops at. Every operational row is read out of config.ts, so a
+     * config that cannot be loaded still takes the whole layer down — the one content finding that
+     * genuinely cascades into all of them.
+     */
+    it("keeps the whole layer down when the config every row reads cannot be loaded", async () => {
+      await setupProjectWithOperationalFindings();
+      await writeCorruptTestConfig(projectDir, UNREADABLE_CONFIG);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain("exists but could not be loaded");
+      expect(stdout).toContain(SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout).not.toContain(ROW_CONFIG_VALID);
+      expect(stdout).not.toContain(ROW_NO_ORPHANS);
+      expect(stdout).not.toContain(ROW_MARKETPLACE_REACHABLE);
     });
   });
 });
@@ -820,7 +1356,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -935,7 +1471,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    // Directory name is "react" but the skill id (SKILL.md frontmatter name) is "web-framework-react"
+    // Directory name is "react" but the skill id is its SKILL.md frontmatter name
     await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
@@ -949,7 +1485,7 @@ describe("source validation (validateSource)", () => {
     );
     expect(mismatchIssues.length).toBe(1);
     expect(firstElement(mismatchIssues).severity).toBe("warning");
-    expect(firstElement(mismatchIssues).message).toContain("'web-framework-react'");
+    expect(firstElement(mismatchIssues).message).toContain(`'${CONFIGURED_SKILL_ID}'`);
   });
 
   it("should not warn about a human displayName when the directory name equals the skill id", async () => {
@@ -958,7 +1494,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web-framework-react", {
+    await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, {
       ...REACT_SOURCE_SKILL,
       displayName: "React",
     });
@@ -1048,7 +1584,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
     await writeValidSourceSkill(skillsDir, "api-framework-hono", {
       id: "api-framework-hono",
@@ -1079,7 +1615,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
@@ -1102,7 +1638,7 @@ describe("source validation (validateSource)", () => {
     await mkdir(skillsDir, { recursive: true });
 
     // Create a valid skill but with a malformed categories config to trigger Phase 3 failure
-    await writeValidSourceSkill(skillsDir, "web-framework-react", REACT_SOURCE_SKILL);
+    await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
     // Write a malformed categories file so loadSkillsMatrixFromSource throws
     const configDir = path.join(sourceDir, "config");
@@ -1157,6 +1693,57 @@ describe("source validation (validateSource)", () => {
       (i) => i.severity === "error" && i.file.includes("my-linter"),
     );
     expect(schemaErrors).toHaveLength(0);
+  });
+
+  /**
+   * The same defect, weighed by whether the reader can act on it. An author is standing in the
+   * repository that holds the typo and wants the run to fail; a consumer is being told about a
+   * file they cannot open, in a marketplace whose skills still install and still resolve.
+   */
+  describe("a slug the marketplace's own rules dangle", () => {
+    it("is an error for the author of the marketplace being validated", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingRuleSlug(sourceDir);
+
+      const result = await validateSource(sourceDir, "author");
+
+      const slugIssues = result.issues.filter((i) => i.message.includes(DANGLING_RULE_SLUG));
+      expect(slugIssues).toHaveLength(1);
+      expect(firstElement(slugIssues).severity).toBe("error");
+    });
+
+    it("is a warning that names the marketplace for a reader who only consumes it", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingRuleSlug(sourceDir);
+
+      const result = await validateSource(sourceDir, "consumer");
+
+      const slugIssues = result.issues.filter((i) => i.message.includes(DANGLING_RULE_SLUG));
+      expect(slugIssues).toHaveLength(1);
+      expect(firstElement(slugIssues).severity).toBe("warning");
+      expect(
+        firstElement(slugIssues).message,
+        "a reader who cannot open the file has to be told whose file it is",
+      ).toContain(sourceDir);
+      expect(result.errorCount).toBe(0);
+    });
+
+    it("moves no other health finding when the reader only consumes the marketplace", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingSlugAndAuditContradiction(sourceDir);
+
+      const result = await validateSource(sourceDir, "consumer");
+
+      const auditIssues = result.issues.filter((i) =>
+        i.message.includes(UNIVERSAL_VERDICT_SKILL.id),
+      );
+      expect(auditIssues).toHaveLength(1);
+      expect(
+        firstElement(auditIssues).severity,
+        "only the unresolved-slug finding is under the ruling",
+      ).toBe("error");
+      expect(result.errorCount).toBe(1);
+    });
   });
 });
 

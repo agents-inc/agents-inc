@@ -340,13 +340,17 @@ function orphanedAgentNames(mdFiles: string[], knownAgents: ReadonlySet<string>)
 
 /**
  * The same row when there is no configuration at all. Ownership is not unknown here, it is
- * settled: nothing declares any of it, so every installed skill directory and compiled agent
- * file is an orphan and the row names them all. It reuses the content layer's walk — those
- * counts four rows above and these names are the same files.
+ * settled: nothing declares any of it, so every artefact this CLI can prove it wrote is an
+ * orphan and the row names it. What it CANNOT prove it wrote is left out — a skill directory
+ * with no `forkedFrom` and an agent file with no provenance marker are somebody's own work,
+ * and naming them here would offer `uninstall` files that command declines. See
+ * {@link listInstalledArtifacts}, which asks exactly that question on both axes.
  *
  * A `fail`, where a stray file beside a config is a warning: that warning is earned by the next
- * `compile` pruning what it names, and nothing prunes these. `compile` and `edit` refuse without
- * a config, and `uninstall` cannot identify compiled agents no config declares.
+ * `compile` pruning what it names, and nothing prunes these unattended. `compile` and `edit`
+ * refuse without a config; `uninstall` does not need one, identifying skill directories by
+ * their own `forkedFrom` and compiled agents by the marker each carries, which is why the tip
+ * beneath this row can promise both halves.
  *
  * With nothing installed the row keeps the skip it has always printed. An empty directory with
  * no config is the state `init` exists for — there is nothing for a configuration to have owned.
@@ -378,7 +382,7 @@ async function checkSkillsInstalled(
   projectDir: string,
 ): Promise<CheckResult> {
   const skills: SkillConfig[] = config.skills;
-  const ejectSkills = skills.filter((s) => s.source === EJECT_SOURCE);
+  const ejectSkills = skills.filter((s) => s.origin === EJECT_SOURCE);
 
   if (ejectSkills.length === 0) {
     return {
@@ -422,7 +426,7 @@ async function checkPluginSkillsInstalled(
   config: ProjectConfig,
   projectDir: string,
 ): Promise<CheckResult> {
-  const pluginSkills: SkillConfig[] = config.skills.filter((s) => s.source !== EJECT_SOURCE);
+  const pluginSkills: SkillConfig[] = config.skills.filter((s) => s.origin !== EJECT_SOURCE);
 
   if (pluginSkills.length === 0) {
     return {
@@ -484,7 +488,7 @@ async function checkSourceReachable(projectDir: string): Promise<CheckResult> {
     return {
       kind: "source",
       status: "fail",
-      message: "Failed to load source",
+      message: "Failed to load marketplace",
       details: [message],
     };
   }
@@ -497,8 +501,18 @@ type ContentCheck = {
   run: (projectDir: string) => Promise<ContentValidation>;
 };
 
-/** A check plus whether it reads config.ts to know WHAT to validate — see {@link CONFIG_CHECK}. */
-type GatedContentCheck = ContentCheck & { readsConfig: boolean };
+/**
+ * A content check plus the two gates it owns: whether it reads config.ts to know WHAT to validate
+ * (see {@link CONFIG_CHECK}), and which operational rows its errors stand down.
+ *
+ * `blocks` names only the rows that READ what this pass validates, so their own verdict would be
+ * this pass's finding in the row's words. A row absent from every `blocks` list reads none of the
+ * content on disk and answers as truthfully as ever — an error here is not its business.
+ */
+type GatedContentCheck = ContentCheck & {
+  readsConfig: boolean;
+  blocks: readonly CheckKind[];
+};
 
 /**
  * The config file every other check is read against, so it is validated before any of them and
@@ -513,17 +527,21 @@ const CONFIG_CHECK: ContentCheck = {
 };
 
 /**
- * The content layer: schema and file-level validation of what is on disk. It runs
- * before the operational layer because an unresolved skill or an uncompiled agent
- * is usually the downstream cascade of a broken metadata.yaml, not its own finding.
+ * The content layer: schema and file-level validation of what is on disk. It runs before the
+ * operational layer so that a row whose inputs this layer has already reported broken can stand
+ * down rather than re-report the same fault as a finding of its own.
  */
 const CONTENT_CHECKS: GatedContentCheck[] = [
   {
     kind: "content-sources",
-    name: "Sources",
-    noun: "source",
-    // The registered sources are the ones config.ts names.
+    name: "Marketplaces",
+    noun: "marketplace",
+    // The registered marketplaces are the ones config.ts names.
     readsConfig: true,
+    // A marketplace whose content is broken is missing skills from the matrix every configured
+    // id is resolved against, so the skills row would call ids "not found" that this row has
+    // already accounted for.
+    blocks: ["skills"],
     run: validateRegisteredSources,
   },
   {
@@ -531,13 +549,23 @@ const CONTENT_CHECKS: GatedContentCheck[] = [
     name: "Plugins",
     noun: "plugin",
     readsConfig: false,
+    // `resolvePluginInstallPaths` swallows a registry it cannot parse and returns none, so every
+    // plugin-mode skill would read "no enabled plugin found" — the registry's finding, once per
+    // configured skill, wearing the row's words.
+    blocks: ["plugins"],
     run: validateInstalledPlugins,
   },
   {
     kind: "content-skills",
     name: "Skills",
     noun: "skill",
-    readsConfig: false,
+    // `~/.claude/skills/` is shared with everything else that installs a skill there, so which of
+    // its directories are this installation's is a question only the config can answer for the
+    // ones carrying no provenance marker. A config nobody can read leaves that unanswerable.
+    readsConfig: true,
+    // `extractLocalSkill` DROPS a skill whose metadata.yaml is missing or unusable, so a "not
+    // found" from the skills row would be this finding re-worded.
+    blocks: ["skills"],
     run: validateInstalledSkills,
   },
   {
@@ -545,6 +573,9 @@ const CONTENT_CHECKS: GatedContentCheck[] = [
     name: "Agents",
     noun: "agent",
     readsConfig: false,
+    // Nothing downstream opens an agent .md. `Agents Compiled` asks whether the file is there and
+    // `No Orphans` reads the names of the files that are — broken frontmatter changes neither.
+    blocks: [],
     run: validateInstalledAgents,
   },
 ];
@@ -584,7 +615,12 @@ function toContentResult(check: ContentCheck, validation: ContentValidation): Ch
   };
 }
 
-const CHECK_WIDTH = 20;
+/**
+ * The column every row's status symbol starts at. It has to clear the longest row name
+ * the report prints — "Marketplace Reachable", 21 characters — or that row's name runs
+ * straight into its own tick with no gap.
+ */
+const CHECK_WIDTH = 24;
 
 /** Section headings and the rows underneath them are indented one step apart. */
 const SECTION_INDENT = "  ";
@@ -592,9 +628,24 @@ const ROW_INDENT = "    ";
 
 const SECTION_CONTENT = "Content checks";
 const SECTION_OPERATIONAL = "Operational checks";
-const SKIP_AFTER_CONTENT_ERRORS = "Skipped — fix the content errors above first";
-const SKIP_NO_INSTALLATION = "Skipped — no installation here (skills source repository)";
+const SKIP_NO_INSTALLATION = "Skipped — no installation here (marketplace repository)";
 const SKIP_CONFIG_UNREADABLE = "Skipped — the configuration that names them cannot be read";
+
+/**
+ * The whole operational layer standing down, for the one content finding that leaves every row
+ * with nothing to say: a config nobody can read. It still says "errors" rather than naming that
+ * file, because the config row is one of them and whatever else failed is above it too.
+ */
+const SKIP_AFTER_CONFIG_ERROR = "Skipped — fix the content errors above first";
+
+/**
+ * The sentence a single row stands down with. Unlike its neighbours it names the finding rather
+ * than the layer: which pass blocked it is the one thing separating a row that cannot answer from
+ * the ones printing verdicts beside it.
+ */
+function skipRestatingContent(nouns: string[]): string {
+  return `Skipped — this row would only restate the ${nouns.join(" and ")} errors above`;
+}
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -671,11 +722,12 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
   {
     // Printed beside the config tip above, which says how to get a configuration back and
     // nothing about the files that outlived the old one. Both halves are named with what they
-    // actually do: `uninstall` matches skill directories by their own `forked-from` metadata,
-    // so it clears them without a config — and identifies compiled agents only through one.
+    // actually do: `uninstall` matches skill directories by their own `forked-from` metadata and
+    // compiled agents by the marker each one carries, so neither needs the configuration that is
+    // gone — which is why the row can name both and this tip can promise both.
     kind: "orphans-unowned",
     status: "fail",
-    tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes the installed skills (the compiled agents outlive it: identifying them needs the configuration that is gone)`,
+    tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
   },
   {
     kind: "skills",
@@ -686,9 +738,9 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
     kind: "installed",
     status: "warn",
     // No command is named on purpose: 'eject skills --force' re-copies every skill in the
-    // source and always targets project scope, so it cannot repair a global-scoped skill
-    // and it litters a plugin-mode project with local skill directories.
-    tip: "  Tip: Re-eject the missing skills from the source to restore their files",
+    // marketplace and always targets project scope, so it cannot repair a global-scoped
+    // skill and it litters a plugin-mode project with local skill directories.
+    tip: "  Tip: Re-eject the missing skills from the marketplace to restore their files",
   },
 ];
 
@@ -703,15 +755,38 @@ function skippedResult(kind: CheckKind): CheckResult {
 }
 
 /**
- * The skills row when the source never loaded. Distinct from {@link skippedResult}: the config
- * is fine, and what is missing is the matrix to resolve its skills against.
+ * The skills row when the marketplace never loaded. Distinct from {@link skippedResult}: the
+ * config is fine, and what is missing is the matrix to resolve its skills against.
  */
 function sourceUnreachableSkillsResult(): CheckResult {
-  return { kind: "skills", status: "skip", message: "Skipped (source unreachable)" };
+  return { kind: "skills", status: "skip", message: "Skipped (marketplace unreachable)" };
 }
 
 function skippedContentResult(kind: CheckKind): CheckResult {
   return { kind, status: "skip", message: SKIP_CONFIG_UNREADABLE };
+}
+
+/** The content passes that failed this run — the set every operational row is gated against. */
+function failedContentKinds(contentResults: CheckResult[]): ReadonlySet<CheckKind> {
+  return new Set(contentResults.filter((r) => r.status === "fail").map((r) => r.kind));
+}
+
+/**
+ * An operational row standing down because a content pass it reads through failed, naming what
+ * blocked it. `null` — the answer for most rows on most runs — means nothing it reads is broken
+ * and it can speak for itself.
+ */
+function contentBlockedResult(
+  row: CheckKind,
+  failedContent: ReadonlySet<CheckKind>,
+): CheckResult | null {
+  const blockingNouns = CONTENT_CHECKS.filter((check) => failedContent.has(check.kind))
+    .filter((check) => check.blocks.includes(row))
+    .map((check) => check.noun);
+
+  if (blockingNouns.length === 0) return null;
+
+  return { kind: row, status: "skip", message: skipRestatingContent(blockingNouns) };
 }
 
 function runContentCheck(check: ContentCheck, projectDir: string): Promise<CheckResult> {
@@ -733,7 +808,7 @@ async function safeCheck(kind: CheckKind, fn: () => Promise<CheckResult>): Promi
 export default class Doctor extends BaseCommand {
   static summary = "Diagnose common configuration issues";
 
-  static description = `Run diagnostic checks on your ${DEFAULT_BRANDING.NAME} configuration to identify issues with config validity, skill resolution, agent compilation, and source connectivity.`;
+  static description = `Run diagnostic checks on your ${DEFAULT_BRANDING.NAME} configuration to identify issues with config validity, skill resolution, agent compilation, and marketplace connectivity.`;
 
   static examples = ["<%= config.bin %> <%= command.id %>"];
 
@@ -796,10 +871,11 @@ export default class Doctor extends BaseCommand {
   }
 
   /**
-   * The operational layer runs only when it can say something the reader can act on:
-   * not after content errors (its findings would be their cascades), and not in a
-   * source repository with nothing installed (a marketplace author has no install
-   * for it to describe).
+   * The whole layer stands down for the two findings that leave every row with nothing to say: a
+   * config nobody can read — every row is read out of it, so all of them would be cascades of that
+   * one file — and a marketplace repository with nothing installed, where a marketplace author has
+   * no install for the layer to describe. Every other content error is scoped to the rows that
+   * read what it is about; {@link GatedContentCheck} says which those are, per pass.
    */
   private async runOperationalChecks(
     projectDir: string,
@@ -808,8 +884,9 @@ export default class Doctor extends BaseCommand {
     this.log("");
     this.log(`${SECTION_INDENT}${SECTION_OPERATIONAL}`);
 
-    if (contentResults.some((r) => r.status === "fail")) {
-      this.log(`${ROW_INDENT}${SKIP_AFTER_CONTENT_ERRORS}`);
+    const failedContent = failedContentKinds(contentResults);
+    if (failedContent.has(CONFIG_CHECK.kind)) {
+      this.log(`${ROW_INDENT}${SKIP_AFTER_CONFIG_ERROR}`);
       return [];
     }
 
@@ -819,7 +896,8 @@ export default class Doctor extends BaseCommand {
       return [];
     }
 
-    return this.runAllChecks(projectDir, await resolveConfigState(detected, projectDir));
+    const configState = await resolveConfigState(detected, projectDir);
+    return this.runAllChecks(projectDir, configState, failedContent);
   }
 
   /**
@@ -832,7 +910,11 @@ export default class Doctor extends BaseCommand {
     return isSourceRepo(projectDir);
   }
 
-  private async runAllChecks(projectDir: string, configState: ConfigState): Promise<CheckResult[]> {
+  private async runAllChecks(
+    projectDir: string,
+    configState: ConfigState,
+    failedContent: ReadonlySet<CheckKind>,
+  ): Promise<CheckResult[]> {
     const { result: configResult, config } = checkConfigValid(configState);
     this.logCheck("Config Valid", configResult);
 
@@ -843,7 +925,12 @@ export default class Doctor extends BaseCommand {
 
     const filteredConfig = config ? filterExcludedEntries(config) : null;
 
-    const skillsResult = await this.resolveSkillsCheck(config, sourceResult, projectDir);
+    const skillsResult = await this.resolveSkillsCheck(
+      config,
+      sourceResult,
+      projectDir,
+      failedContent,
+    );
     this.logCheck("Skills Resolved", skillsResult);
 
     const agentsResult = filteredConfig
@@ -859,12 +946,10 @@ export default class Doctor extends BaseCommand {
       : skippedResult("installed");
     this.logCheck("Skills Installed", installedResult);
 
-    const pluginsResult = filteredConfig
-      ? await safeCheck("plugins", () => checkPluginSkillsInstalled(filteredConfig, projectDir))
-      : skippedResult("plugins");
+    const pluginsResult = await this.resolvePluginsCheck(filteredConfig, projectDir, failedContent);
     this.logCheck("Plugins Installed", pluginsResult);
 
-    this.logCheck("Source Reachable", sourceResult);
+    this.logCheck("Marketplace Reachable", sourceResult);
 
     return [
       configResult,
@@ -897,19 +982,42 @@ export default class Doctor extends BaseCommand {
   }
 
   /**
-   * The skills row, and the two states in which it cannot be computed: no config to read the
-   * skills out of, and a source that never loaded — so there is no populated matrix to resolve
-   * them against, and every configured skill would be reported "not found".
+   * The skills row, and the three states in which it cannot be computed: no config to read the
+   * skills out of, content it resolves against that the layer above has already reported broken,
+   * and a marketplace that never loaded — so there is no populated matrix to resolve them
+   * against, and every configured skill would be reported "not found".
    */
   private async resolveSkillsCheck(
     config: ProjectConfig | null,
     sourceResult: CheckResult,
     projectDir: string,
+    failedContent: ReadonlySet<CheckKind>,
   ): Promise<CheckResult> {
     if (!config) return skippedResult("skills");
+
+    const blocked = contentBlockedResult("skills", failedContent);
+    if (blocked) return blocked;
     if (sourceResult.status === "fail") return sourceUnreachableSkillsResult();
 
     return safeCheck("skills", () => checkSkillsResolved(config, matrix, projectDir));
+  }
+
+  /**
+   * The plugin row, and the two states in which it cannot be computed: no config to read the
+   * plugin-mode skills out of, and a plugin registry the layer above could not parse — which
+   * resolves as no installs at all, so every configured skill would be reported missing.
+   */
+  private async resolvePluginsCheck(
+    config: ProjectConfig | null,
+    projectDir: string,
+    failedContent: ReadonlySet<CheckKind>,
+  ): Promise<CheckResult> {
+    if (!config) return skippedResult("plugins");
+
+    const blocked = contentBlockedResult("plugins", failedContent);
+    if (blocked) return blocked;
+
+    return safeCheck("plugins", () => checkPluginSkillsInstalled(config, projectDir));
   }
 
   private logCheck(name: string, result: CheckResult): void {

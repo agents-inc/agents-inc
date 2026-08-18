@@ -22,8 +22,8 @@ import {
   stacksConfigSchema,
 } from "./schemas";
 import { parseFrontmatter } from "./loading/loader";
-import { loadConfig, loadProjectSourceConfig } from "./configuration";
-import { checkMatrixHealth } from "./matrix";
+import { ConfigDefaultExportError, loadConfig, loadProjectSourceConfig } from "./configuration";
+import { checkMatrixHealth, type MatrixHealthIssue } from "./matrix";
 import { loadSkillsMatrixFromSource } from "./loading/source-loader";
 import { matrix } from "./matrix/matrix-provider";
 import { getErrorMessage } from "../utils/errors";
@@ -41,6 +41,21 @@ export type SourceValidationResult = {
   errorCount: number;
   warningCount: number;
 };
+
+/**
+ * Who this report is for, relative to the marketplace it is about.
+ *
+ * You are the `"author"` of the marketplace being validated when it IS the directory the command
+ * ran in; a marketplace anywhere else — fetched, or on disk at another path — is one you are only
+ * a `"consumer"` of. Not "is there a marketplace under the cwd": that says nothing about the OTHER
+ * marketplace a config may point at, and the severity turns on the per-marketplace question.
+ *
+ * It changes one finding. A slug a marketplace's rules dangle is a typo its author can fix and
+ * wants the run to fail on, and it is a defect a consumer cannot touch in a file they cannot open
+ * — while every skill still installs and still resolves. Whether the reader holds push rights is
+ * not knowable here and is not the test: a checkout under your cursor is a file you can edit.
+ */
+export type MarketplaceReader = "author" | "consumer";
 
 /**
  * True when `dir` is itself a skills source repository — it carries the skills tree
@@ -174,8 +189,16 @@ export function validateSkillFilePairs(
  * 3. Cross-references resolve to existing skill IDs (via checkMatrixHealth)
  * 4. camelCase key convention (no snake_case)
  * 5. Every skill directory has both SKILL.md and metadata.yaml
+ *
+ * `reader` decides how loudly one of those findings is stated — see {@link MarketplaceReader}.
+ * It defaults to `"author"`, the louder verdict: a caller that names nobody has said nothing
+ * about who is reading, and under-reporting to the one person who can fix the file is the worse
+ * of the two ways to be wrong.
  */
-export async function validateSource(sourcePath: string): Promise<SourceValidationResult> {
+export async function validateSource(
+  sourcePath: string,
+  reader: MarketplaceReader = "author",
+): Promise<SourceValidationResult> {
   const issues: SourceValidationIssue[] = [];
 
   const resolvedPath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(sourcePath);
@@ -184,7 +207,7 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
     issues.push({
       severity: "error",
       file: resolvedPath,
-      message: "Source directory does not exist",
+      message: "Marketplace directory does not exist",
     });
     return buildResult(issues, 0);
   }
@@ -219,7 +242,7 @@ export async function validateSource(sourcePath: string): Promise<SourceValidati
   }
 
   // Phase 3: Cross-reference validation via matrix health check
-  issues.push(...(await checkCrossReferences(resolvedPath)));
+  issues.push(...(await checkCrossReferences(resolvedPath, reader)));
 
   // Phases 4–6: optional source-repo targets — run in parallel
   // Phase 4: stack skill metadata + stack configs
@@ -289,14 +312,15 @@ function checkMetadataSchema(rawMetadata: unknown, relPath: string): SourceValid
  * A source whose categories/rules could not be loaded is a warning rather than a failure: the
  * per-skill checks above already reported what they found, and this pass simply could not run.
  */
-async function checkCrossReferences(resolvedPath: string): Promise<SourceValidationIssue[]> {
+async function checkCrossReferences(
+  resolvedPath: string,
+  reader: MarketplaceReader,
+): Promise<SourceValidationIssue[]> {
   try {
     await loadSkillsMatrixFromSource({ sourceFlag: resolvedPath, skipExtraSources: true });
-    return checkMatrixHealth(matrix).map((healthIssue) => ({
-      severity: healthIssue.severity,
-      file: SKILL_CATEGORIES_PATH,
-      message: healthIssue.details,
-    }));
+    return checkMatrixHealth(matrix).map((healthIssue) =>
+      toSourceIssue(healthIssue, resolvedPath, reader),
+    );
   } catch (error) {
     return [
       {
@@ -306,6 +330,42 @@ async function checkCrossReferences(resolvedPath: string): Promise<SourceValidat
       },
     ];
   }
+}
+
+/**
+ * One health finding as this reader should hear it. Every kind but one is reported at the
+ * severity the health check gave it — that severity is a property of the defect. The exception
+ * is the slug a marketplace's own rules dangle, which is a property of the defect AND of who is
+ * looking: a typo the author can fix, and a file the consumer cannot open.
+ */
+function toSourceIssue(
+  healthIssue: MatrixHealthIssue,
+  marketplacePath: string,
+  reader: MarketplaceReader,
+): SourceValidationIssue {
+  if (reader === "consumer" && healthIssue.finding === "rule-unresolved-slug") {
+    return {
+      severity: "warning",
+      file: SKILL_CATEGORIES_PATH,
+      message: consumedMarketplaceMessage(marketplacePath, healthIssue.details),
+    };
+  }
+
+  return {
+    severity: healthIssue.severity,
+    file: SKILL_CATEGORIES_PATH,
+    message: healthIssue.details,
+  };
+}
+
+/**
+ * The same finding, addressed to someone who did not write the rule. It leads with the
+ * marketplace because that is the part the slug alone does not tell them, and it says outright
+ * that there is nothing here to fix — a warning that sends a reader hunting through their own
+ * project for a typo in a file they do not own is worse than no warning at all.
+ */
+function consumedMarketplaceMessage(marketplacePath: string, details: string): string {
+  return `Marketplace '${marketplacePath}': ${details}. Nothing to fix here — the rule is that marketplace's, not this project's`;
 }
 
 /**
@@ -407,8 +467,12 @@ async function validateYamlFiles(opts: {
  * Runtime-loads a TypeScript config file via loadConfig and reports validation failures.
  * Absent files are not errors — only report when the file exists but fails to load or validate.
  *
- * loadConfig already unwraps the default export (via jiti's `{ default: true }` + interopDefault),
- * so a returned `null` means the module has no default export (named-only modules surface here).
+ * The two ways a file can say nothing are reported apart, because the author's next move differs
+ * and they used to arrive wearing each other's words. A `null` is a file that exported nothing at
+ * all; a module that exported only named bindings raises {@link ConfigDefaultExportError}, which
+ * is the one this file's own config files get wrong — `export const skillRules = {...}` reads to
+ * `loadConfig` as a namespace, and validating THAT against the schema reports whichever field the
+ * schema names first as missing from a file the author can see it in.
  */
 async function validateTsConfig(
   resolvedPath: string,
@@ -421,10 +485,13 @@ async function validateTsConfig(
   try {
     const loaded = await loadConfig(absPath, schema);
     if (loaded === null) {
-      return [{ severity: "error", file: relConfigPath, message: "Config has no default export" }];
+      return [{ severity: "error", file: relConfigPath, message: "Config is empty" }];
     }
     return [];
   } catch (error) {
+    if (error instanceof ConfigDefaultExportError) {
+      return [{ severity: "error", file: relConfigPath, message: "Config has no default export" }];
+    }
     return [
       { severity: "error", file: relConfigPath, message: formatLoadError(relConfigPath, error) },
     ];
