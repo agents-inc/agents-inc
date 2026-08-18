@@ -70,7 +70,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 1. User runs command (e.g., `agents-inc init`)
 
 2. oclif init hook runs
-   -> Extracts --source from raw argv (for `init`, the one command that has it)
+   -> Extracts --marketplace from raw argv (for `init`, the one command that has it)
    -> resolveSource() determines skills source
    -> Attaches ResolvedConfig to oclif config object
 
@@ -99,11 +99,11 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 ## Key Architectural Patterns
 
-- **BaseCommand**: All commands extend `BaseCommand`, which provides the `sourceConfig` getter (populated by the init hook), the terminal-size gate and error handling with named `EXIT_CODES`. It declares no flags — `--source` belongs to `init` alone.
+- **BaseCommand**: All commands extend `BaseCommand`, which provides the `sourceConfig` getter (populated by the init hook), the terminal-size gate and error handling with named `EXIT_CODES`. It declares no flags — `--marketplace` belongs to `init` alone.
 
 - **Init hook**: Runs before every command. Resolves the skills source and attaches config to oclif's config object. When no command is given and a project is already initialized, shows a dashboard.
 
-- **Source resolution precedence**: `--source` flag > `CC_SOURCE` env var > `.claude-src/config.ts` (project) > `~/.claude-src/config.ts` (global) > default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_SOURCE` is read for, so every later command starts at the project config.
+- **Marketplace resolution precedence**: `--marketplace` flag > `CC_MARKETPLACE` env var > `.claude-src/config.ts` (project) > `~/.claude-src/config.ts` (global) > the default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_MARKETPLACE` is read for, so every later command starts at the project config.
 
 - **Install modes**: Skills can be installed as **Claude plugins** (managed by Claude's plugin system) or **locally** (copied to `.claude/skills/`). Agents are always written to `.claude/agents/`. Config is always at `.claude-src/config.ts`.
 

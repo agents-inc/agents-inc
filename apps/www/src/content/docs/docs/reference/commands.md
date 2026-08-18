@@ -7,13 +7,13 @@ sidebar:
 
 Every command available in the `agents-inc` CLI. Run `agents-inc <command> --help` for flag help; this doc is the fuller picture: purpose, invocation model, flag semantics, and current gaps.
 
-> **`--source, -s <path|url>` belongs to `init` alone.** Naming a skills source is an install-time decision, so `init` declares the flag and no other command accepts it — passing it elsewhere is a parse error. Every later command resolves the source that install recorded: the project's `.claude-src/config.ts`, then the global one, then the default marketplace. `CC_SOURCE` is the same choice made without typing it, and is read at install time only.
+> **`--marketplace, -m <path|url>` belongs to `init` alone.** Naming a marketplace is an install-time decision, so `init` declares the flag and no other command accepts it — passing it elsewhere is a parse error. Every later command resolves the marketplace that install recorded: the project's `.claude-src/config.ts`, then the global one, then the default. `CC_MARKETPLACE` is the same choice made without typing it, and is read at install time only.
 
 ## Command matrix
 
 | Command             | Purpose                                                         | Interactive | Flags                                                           |
 | ------------------- | --------------------------------------------------------------- | ----------- | --------------------------------------------------------------- |
-| `init`              | First-time wizard: pick a stack, skills, agents, compile        | Yes         | `--source/-s`, `--from <id>`                                    |
+| `init`              | First-time wizard: pick a stack, skills, agents, compile        | Yes         | `--marketplace/-m`, `--from <id>`                               |
 | `edit`              | Modify an existing installation via the wizard                  | Yes         | (none)                                                          |
 | `compile`           | Recompile agents from the current config                        | No          | `--verbose/-v`                                                  |
 | `update`            | Refresh the marketplaces this installation uses                 | No          | (none — no base)                                                |
@@ -39,7 +39,7 @@ Greenfield setup. Detects if already installed (shows dashboard), otherwise open
 
 **The six wizard steps, in order:** stack → domains → build → sources → agents → confirm. `WIZARD_STEP_ORDER` in `src/cli/stores/wizard-store.ts` is the single source for that order, and [Quickstart](/docs/quickstart) walks each step in prose. Taking a stack's defaults without customising skips the middle steps.
 
-**Flags:** `--source/-s` (the skills source this installation is made from, and the only command that takes it), `--from <id>` (install a configuration shared from the web editor, without the wizard).
+**Flags:** `--marketplace/-m` (the marketplace this installation is made from, and the only command that takes it), `--from <id>` (install a configuration shared from the web editor, without the wizard).
 
 **When to use:** First run on a machine, or first run inside a project that needs a project-scoped config.
 
@@ -129,7 +129,7 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 
 Compiles skills (and optionally agents) from a source tree into standalone Claude Code plugins. Used by marketplace authors. Skills dir is hardcoded to `src/skills/` (marketplace convention — no longer a flag).
 
-**Flags:** `--agents-dir/-a`, `--output-dir/-o`, `--skill` (single-skill mode), `--verbose/-v`. No `--source` (it produces plugins from a source, it doesn't consume one).
+**Flags:** `--agents-dir/-a`, `--output-dir/-o`, `--skill` (single-skill mode), `--verbose/-v`. No `--marketplace` (it produces plugins from a marketplace, it doesn't consume one).
 
 ---
 
@@ -149,7 +149,7 @@ The `author` field is parsed flexibly:
 
 The `MarketplaceIdentity` type is derived from `z.infer<typeof packageJsonSchema>` via `Pick` rather than redeclared.
 
-**Flags:** `--name`, `--plugins-dir/-p`, `--output/-o`, `--verbose/-v`. No `--source`.
+**Flags:** `--name`, `--plugins-dir/-p`, `--output/-o`, `--verbose/-v`. No `--marketplace`.
 
 `--name` overrides the marketplace name that would otherwise come from `package.json`'s `name`, and exists for one case: an npm scoped name like `@scope/pkg` is not a valid marketplace name. The override is checked for kebab-case and a bad value exits `INVALID_ARGS`. `version`, `description` and `author` still come from `package.json` either way.
 
@@ -167,7 +167,7 @@ The single "is everything OK?" command. It answers in two layers, and the order 
 
 **Layer 1 — content checks.** Schema and file-level validation of what is on disk, each row carrying the file a reader has to open:
 
-- **Sources** — every registered _local_ source via `validateSource`, plus the current directory when it is itself a skills source repository (`isSourceRepo`) and no registered source already covers it. Remote sources (`github:owner/repo`, `http(s)://…`) are recorded as `— skipped (remote source)` rather than fetched, since the user is not their author.
+- **Marketplaces** — every registered _local_ marketplace via `validateSource`, plus the current directory when it is itself a marketplace repository (`isSourceRepo`) and no registered one already covers it. Remote marketplaces (`github:owner/repo`, `http(s)://…`) are recorded as `— skipped (remote)` rather than fetched, since the user is not their author.
 - **Plugins** — `~/.claude/plugins/` and `<project>/.claude/plugins/` via `validatePlugin` / `validateAllPlugins`. Installs recorded in `installed_plugins.json` are validated at their recorded paths; the direct-children scan is the fallback.
 - **Skills** — every directory under `~/.claude/skills/` and `<project>/.claude/skills/`, whether or not a config references it. Each needs `SKILL.md` plus a `metadata.yaml` that satisfies the strict schema. An over-length `cliDescription` is a warning, not an error.
 - **Agents** — `~/.claude/agents/*.md` and `<project>/.claude/agents/*.md`: frontmatter parses, required fields present, `name` kebab-case.
@@ -198,7 +198,7 @@ Agents Inc Doctor
   Checking configuration health...
 
   Content checks
-    Sources             ✓  1 source validated
+    Marketplaces            ✓  1 marketplace validated
                            - marketplace (/home/me/my-skills) — 152 skills
     Plugins             ✓  4 plugins validated
     Skills              ✗  12 skills: 1 error, 0 warnings
@@ -236,7 +236,7 @@ Removes CLI-managed plugins, CLI-installed skills (matched by `forked-from` meta
 ## Conventions across commands
 
 - **Exit codes** from `EXIT_CODES`: `SUCCESS = 0`, `ERROR = 1`, `INVALID_ARGS = 2`, `NETWORK_ERROR = 3`, `CANCELLED = 4`. Every `this.error()` call passes an explicit code.
-- **`--source` is `init`'s flag and nobody else's.** Naming a source is an install-time decision; every later command resolves the stored one (project config → global config → default). The same rule governs the `CC_SOURCE` environment variable, which is read at install time only.
+- **`--marketplace` is `init`'s flag and nobody else's.** Naming a marketplace is an install-time decision; every later command resolves the stored one (project config → global config → default). The same rule governs the `CC_MARKETPLACE` environment variable, which is read at install time only.
 - **Interactive vs non-interactive TTY handling** — `list` degrades gracefully when `process.stdin.isTTY` is false. `init --from` and `update` never need a terminal at all.
 - **There is no `--refresh`.** Every load revalidates its cache against the remote, so there is nothing to force. `update` is a different operation entirely: it asks the Claude CLI to refresh a marketplace, and reads no skills source.
 - **`--verbose/-v`** retained only on `compile`, `build plugins`, `build marketplace`. `doctor` always emits full detail (a diagnostic command shouldn't have a hide-info toggle). `search` prints a table, no verbosity levels.
