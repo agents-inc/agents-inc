@@ -44,7 +44,7 @@ Three silent-skip branches inside the per-project loop:
 No pre-existing ticket covers this gap:
 
 - `todo/D-216-global-config-propagation.md` tracks propagation feature mechanics (scope defaults, `writeStandaloneConfigTypes` at project branch), not skip visibility.
-- `.ai-docs/agent-findings/2026-04-18-mergeConfigs-drops-projects-field.md` tracks one reason propagation never fires (drops `projects`), not per-project skip visibility.
+- The merger gap that dropped `projects` from a HOME-context write was one reason propagation never fired at all — since closed, `mergeConfigs` now carries `existingConfig.projects` forward — and it was never about per-project skip visibility.
 - `.ai-docs/agent-findings/2026-04-21-d233-projects-normalization-asymmetry.md` covers register/deregister path mismatch, not runtime-skip visibility.
 
 ## Fix Applied

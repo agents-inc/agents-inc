@@ -3,12 +3,9 @@ type: standard-gap
 severity: medium
 affected_files:
   - .ai-docs/agent-findings/2026-04-21-agent-findings-frontmatter-drift-iter45.md
-  - .ai-docs/agent-findings/2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md
   - .ai-docs/agent-findings/2026-07-17-e2e-helper-tests-have-no-runnable-home.md
   - .ai-docs/agent-findings/2026-07-24-d226-phase1-launcher-sugar-and-multiphase-home.md
   - .ai-docs/agent-findings/2026-07-24-d226-phase2-wave1-source-switch-lock-and-global-stack.md
-  - .ai-docs/agent-findings/2026-04-21-r73-atomicity-bible-drift.md
-  - .ai-docs/agent-findings/2026-04-21-ralph76-memory-md-stale-phase-entries.md
   - .ai-docs/agent-findings/2026-07-29-qa-sweep-working-tree-v0144.md
 standards_docs:
   - .ai-docs/standards/documentation-bible.md
@@ -35,12 +32,12 @@ Three keys. Those are the three the author had in mind, and they are the three t
 the same one-line existence check over those two keys on 2026-08-01 found **four dangling targets**
 the mandated scan is structurally unable to see:
 
-| Dangling target                                        | Named by                                                  | Key              |
-| ------------------------------------------------------ | --------------------------------------------------------- | ---------------- |
-| `2026-04-20-new-agent-toggle-defaults-global-scope.md` | `2026-04-21-agent-findings-frontmatter-drift-iter45`      | `standards_docs` |
-| `2026-04-13-e2e-anti-pattern-audit-d168.md`            | `2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps` | `related`        |
-| `2026-04-14-missing-home-isolation-in-unit-tests.md`   | `2026-07-17-e2e-helper-tests-have-no-runnable-home`       | `related`        |
-| `2026-04-14-unit-test-home-isolation.md`               | `2026-07-17-e2e-helper-tests-have-no-runnable-home`       | `related`        |
+| Dangling target                                        | Named by                                             | Key              |
+| ------------------------------------------------------ | ---------------------------------------------------- | ---------------- |
+| `2026-04-20-new-agent-toggle-defaults-global-scope.md` | `2026-04-21-agent-findings-frontmatter-drift-iter45` | `standards_docs` |
+| `2026-04-13-e2e-anti-pattern-audit-d168.md`            | a keypress-coverage finding since deleted itself     | `related`        |
+| `2026-04-14-missing-home-isolation-in-unit-tests.md`   | `2026-07-17-e2e-helper-tests-have-no-runnable-home`  | `related`        |
+| `2026-04-14-unit-test-home-isolation.md`               | `2026-07-17-e2e-helper-tests-have-no-runnable-home`  | `related`        |
 
 Three of the four point into the 2026-03-21..2026-04-16 window that a batch deletion removed from
 disk, so they have the same cause as the two dangling targets the 2026-07-30 pass repaired. The
@@ -62,10 +59,12 @@ real:
    `2026-07-24-d226-phase2-wave1-source-switch-lock-and-global-stack.md`. A scratchpad path is not a
    durable reference target.
 
-2. **Three findings carry machine-specific absolute paths beginning `/home/vince/`** —
-   `2026-04-21-r73-atomicity-bible-drift.md`, `2026-04-21-ralph76-memory-md-stale-phase-entries.md`
-   and `2026-07-29-qa-sweep-working-tree-v0144.md`. `CLAUDE.md` states: _"NEVER put machine-specific
-   absolute paths in any file tracked by git."_ These are tracked files.
+2. **Findings carry machine-specific absolute paths beginning `/home/vince/`** — a
+   recursive grep for that prefix over `.ai-docs/agent-findings/` still returns several, among them
+   `2026-07-29-qa-sweep-working-tree-v0144.md`. `CLAUDE.md` states: _"NEVER put machine-specific
+   absolute paths in any file tracked by git."_ These are tracked files, and the set is larger
+   than the three this scan first named — two of which have since been deleted for other reasons,
+   which is not a repair.
 
 ## Fix Applied
 

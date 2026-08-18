@@ -76,9 +76,9 @@ checkpoint is read before work begins rather than after. The original claim came
 of `critical-requirements.md` alone, which reports a misplaced block and a missing one
 identically. A placement convention needs to be checked as "in this file and not that one".
 
-Both are the same class as
-`2026-08-05-api-researcher-critical-reminders-missing-post-action-reflection.md`: the partial
-contract is documented in `reference/features/agent-system.md` as prose and enforced nowhere.
+Both are instances of one class, the same one that let an agent ship with its post-action
+reflection in no partial at all — the partial contract is documented in
+`reference/features/agent-system.md` as prose and enforced nowhere.
 `validateCompiledAgent()` inspects compiled output and runs only on the legacy
 `compileAllAgents()` path, which has no production caller.
 

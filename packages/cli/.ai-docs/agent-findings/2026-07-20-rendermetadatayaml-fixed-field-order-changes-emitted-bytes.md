@@ -80,9 +80,8 @@ recipe for adopting any fixed-order renderer:
 3. **Never hand-edit the replacement to force byte parity.** Writing a YAML string
    to preserve ordering re-introduces the anti-pattern the rule exists to remove.
 
-Related and adjacent, not duplicate:
-`2026-07-20-rendermetadatayaml-cannot-omit-contenthash.md` covers the case where the
-renderer cannot express a field's _absence_; this one covers the case where it can
-express every field but not their _order_. Both point at the same underlying lesson —
+Related and adjacent, not duplicate: the renderer cannot express a field's _absence_ either
+(`contentHash` is typed required on `SkillMetadataFields`), and this one covers the case
+where it can express every field but not their _order_. Both point at the same underlying lesson —
 a shared renderer is mandatory only where it is expressive enough to reproduce the
 fixture exactly, and the burden is on the sweep to prove that per site.

@@ -15,9 +15,10 @@ status: open
 ---
 
 <!--
-Read together with 2026-07-20-rendermetadatayaml-cannot-omit-contenthash.md. Neither
-supersedes the other: that finding covers the fixable field-set gap, this one covers the
-permanent invalid-by-design gap. Both stay open until the single carve-out note lands.
+Read beside the field-set gap — `contentHash` is typed required on `SkillMetadataFields`, so
+`renderMetadataYaml()` always emits it and no fixture can ask for its absence. That gap is
+fixable by making the field optional; the invalid-by-design gap recorded here is not. Neither
+subsumes the other, and this one stays open until the single carve-out note lands.
 -->
 
 ## What Was Wrong
@@ -28,10 +29,9 @@ inline SKILL.md frontmatter or agent YAML template strings — use `renderSkillM
 `metadata.yaml` renderer, and the Pass 8 Cluster G sweep converted inline `metadata:`
 strings to it across the e2e tree.
 
-A sibling finding (`2026-07-20-rendermetadatayaml-cannot-omit-contenthash.md`) already
-documents one class of exception: a fixture whose _field set_ the renderer cannot express,
-because `contentHash` is typed required and always emitted. That one is fixable — making
-the field optional would remove the exception.
+One class of exception is already known: a fixture whose _field set_ the renderer cannot
+express, because `contentHash` is typed required on `SkillMetadataFields` and always
+emitted. That one is fixable — making the field optional would remove the exception.
 
 There is a second class that is **permanently** unfixable, and it was not documented.
 `e2e/commands/compile-edge-cases.e2e.test.ts` — test "should skip skill with completely

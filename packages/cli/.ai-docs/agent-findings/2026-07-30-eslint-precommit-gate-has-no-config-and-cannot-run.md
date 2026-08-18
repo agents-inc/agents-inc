@@ -58,10 +58,10 @@ Consequences, in order of how likely they are to bite:
 3. **The rules ESLint would enforce are enforced by prose instead.** CLAUDE.md
    carries a long NEVER/ALWAYS list (no `any`, no `@ts-ignore` without comment,
    no unused imports, named exports only) that reads like a lint config. Those
-   are currently upheld by agent diligence and review alone. This is also the
-   mechanism behind `2026-07-20-e2e-spec-files-accumulate-unused-imports-unenforced.md`
-   and `2026-07-17-d167-task-id-recurrence-no-lint-guard.md`, both of which
-   propose lint rules that have nowhere to live.
+   are currently upheld by agent diligence and review alone. It is the same
+   mechanism behind two sibling gaps of the identical shape — unused imports
+   accumulating in e2e spec files, and task IDs recurring in test names — each of
+   which proposes a lint rule that has nowhere to live.
 
 ## Fix Applied
 

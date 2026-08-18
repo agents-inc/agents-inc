@@ -4,7 +4,6 @@ severity: low
 affected_files:
   - src/cli/lib/matrix/matrix-resolver.test.ts
   - src/cli/lib/matrix/skill-resolution.integration.test.ts
-  - .ai-docs/agent-findings/2026-08-07-selectionvalidation-valid-is-hardcoded-true-and-two-specs-assert-it-beside-errors.md
 standards_docs:
   - .ai-docs/agent-findings/README.md
 date: 2026-08-08

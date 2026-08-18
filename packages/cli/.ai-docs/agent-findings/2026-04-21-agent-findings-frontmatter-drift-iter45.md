@@ -4,7 +4,6 @@ severity: low
 affected_files:
   - .ai-docs/agent-findings/2026-04-20-new-agent-toggle-defaults-global-scope.md
   - .ai-docs/agent-findings/2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md
-  - .ai-docs/agent-findings/2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md
   - .ai-docs/agent-findings/2026-04-13-e2e-anti-pattern-audit-d168.md
   - .ai-docs/agent-findings/2026-04-14-missing-home-isolation-in-unit-tests.md
   - .ai-docs/agent-findings/2026-04-14-unit-test-home-isolation.md
@@ -33,7 +32,7 @@ Audit of all findings surfaced three classes of frontmatter drift that the curre
 
 1. **Missing frontmatter entirely.** `2026-04-20-new-agent-toggle-defaults-global-scope.md` had no YAML block at all — a free-form narrative file was committed alongside its own properly-formatted sibling (`2026-04-20-newly-toggled-agent-defaults-global-breaks-project-scope-stack.md`). Duplicate root cause, same day, same `affected_files`. No mechanism flagged the missing frontmatter at write time.
 
-2. **Invented root_cause enum value.** `2026-04-20-d217-installmode-plumbing-dead-in-wrappers.md` uses `root_cause: scope-boundary-preserved` — semantically defensible ("deferred cleanup preserved scope discipline") but not one of TEMPLATE.md's five allowed values (`missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap`). Finding writers extend the enum rather than picking the closest match.
+2. **Invented root_cause enum value.** A finding recording deferred cleanup of dead `installMode` plumbing used `root_cause: scope-boundary-preserved` — semantically defensible ("deferred cleanup preserved scope discipline") but not one of the five values TEMPLATE.md allowed at the time (`missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap`). Finding writers extend the enum rather than picking the closest match.
 
 3. **Document-class conflation.** `2026-04-13-e2e-anti-pattern-audit-d168.md` uses an entirely different schema (`task`, `auditor`, `status`) — it is an audit tracking document, not a single finding. The `agent-findings/` directory mixes two document classes with no structural separation.
 

@@ -54,7 +54,7 @@ Three distinct gaps surface in one session:
 
 ### Gap 3 — plugin uninstall at home-dir ambiguity (already filed)
 
-`mode-migrator.ts:133` calls `claudePluginUninstall(id, pluginScope, projectDir)` once with the derived scope. When `projectDir === os.homedir()` the Claude CLI reports "enabled at project scope" because `~/.claude/settings.json` is both user and project from its perspective. The same ambiguity hits `migratePluginSkillScopes` (`edit.tsx:778`) and the per-skill operator `uninstallPluginSkills` (`uninstall-plugin-skills.ts:26`). The canonical dual-scope fallback pattern lives in `uninstall.tsx:559-580`; none of the edit-mode paths use it. This is already documented in `2026-04-22-mode-migrator-single-scope-uninstall-cwd-ambiguity.md` — this audit broadens it to every uninstall call site invoked from edit.
+`mode-migrator.ts:133` calls `claudePluginUninstall(id, pluginScope, projectDir)` once with the derived scope. When `projectDir === os.homedir()` the Claude CLI reports "enabled at project scope" because `~/.claude/settings.json` is both user and project from its perspective. The same ambiguity hits `migratePluginSkillScopes` (`edit.tsx:778`) and the per-skill operator `uninstallPluginSkills` (`uninstall-plugin-skills.ts:26`). The canonical dual-scope fallback pattern lives in `uninstall.tsx:559-580` — try the primary scope, then the other one, each in its own try/catch — and none of the edit-mode paths use it. The single-scope call in `mode-migrator.ts` is the first instance of this class; this audit broadens it to every uninstall call site invoked from edit.
 
 ### Secondary observations
 

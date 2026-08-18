@@ -23,8 +23,8 @@ domain: e2e
 root_cause: enforcement-gap
 status: partial
 partial_note: >-
-  Landed — the seven-file keypress-guard sweep (item 1 of
-  2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md) across base-step,
+  Landed — the seven-file keypress-guard sweep (the sibling-step coverage gap the
+  earlier build-step fix left open) across base-step,
   all six sibling step files, build-step loop bodies, dashboard-session, and
   InitWizard.acceptStackDefaults. Pending — three sync `abort()`/`escape()`/
   `ctrlC()` wizard methods cannot be guarded without changing their signature
@@ -41,15 +41,15 @@ partial_note: >-
 > timeout, causing 72 failures across 35 files. The three guards on `arrowDown()`,
 > `arrowUp()` and `selectEdit()` were removed, restoring the file byte-identical
 > to its pre-sweep state. The other ten files in this sweep are wizard screens
-> rendered through `WizardLayout` and their guards stand. See
-> `2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md`.
+> rendered through `WizardLayout` and their guards stand. The wait is a wizard-footer
+> sentinel, not a generic render barrier — a non-wizard page object needs its own
+> screen-specific sentinel.
 
 ## What Was Wrong
 
-`2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md` audited every
-key-press-emitting page-object method and found the 2026-04-21 `build-step.ts`
-fix had not been swept across the sibling files. That finding's item 1 (the
-seven-file sweep) stayed `open` on `main`; only the docs items landed.
+An earlier audit of every key-press-emitting page-object method found the
+2026-04-21 `build-step.ts` fix had not been swept across the sibling files. Its
+seven-file sweep stayed open on `main`; only its docs items landed.
 
 Re-audit on 2026-07-20 confirmed the gap was still present, and found two
 method classes the original audit did not enumerate:

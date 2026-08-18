@@ -72,6 +72,7 @@ Cheaper alternative if that reads as too much ceremony for every update: require
 when the snapshot's **leading whitespace** changes, since that is what a column shift looks like and
 it is mechanically detectable in a diff.
 
-Related: `2026-07-30-component-tests-assert-text-presence-never-column-position.md` (the finding that
-produced 6.17a) — this one is its follow-through, not a duplicate: that finding established that
-geometry needs a snapshot, this one that a snapshot needs reading.
+Related: the observation that produced 6.17a — that component tests assert text presence and never
+column position, so an 11-column header shift preserved every `toContain` and every relative-order
+assertion in the suite that covered the branch. This finding is its follow-through, not a duplicate:
+that one established that geometry needs a snapshot, this one that a snapshot needs reading.

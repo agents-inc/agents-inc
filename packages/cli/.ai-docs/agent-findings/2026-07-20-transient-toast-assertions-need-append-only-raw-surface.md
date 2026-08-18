@@ -70,12 +70,11 @@ Two further traps found while fixing this:
    non-vacuous.
 
 Trap 1 is a second, independent reason not to treat `waitForStableRender` /
-`waitForStableRenderAfter` as a generic "the UI has settled" primitive —
-complementary to
-`2026-07-20-waitforstablerender-is-a-wizard-footer-sentinel-not-a-generic-primitive.md`,
-which makes the same point from the opposite direction (the footer sentinel is
-absent outside the wizard). Here the footer is present but arrives at an
-unstable position relative to the element under assertion.
+`waitForStableRenderAfter` as a generic "the UI has settled" primitive. The wait
+matches the wizard footer and nothing else, so outside the wizard the sentinel is
+absent and the wait hangs for its full budget; here the footer is present but
+arrives at an unstable position relative to the element under assertion. Two
+directions, same conclusion — it is a wizard-footer sentinel, not a render barrier.
 
 `e2e/pages/terminal-screen.ts` already documented the underlying hazard in
 the `waitForTextAfter` JSDoc ("xterm's processed buffer is not append-only

@@ -3,7 +3,6 @@ type: convention-drift
 severity: medium
 affected_files:
   - e2e/lifecycle/global-agent-toggle-guard.e2e.test.ts
-  - .ai-docs/agent-findings/2026-07-20-toast-assertions-must-use-cursor-anchored-raw-waits.md
 standards_docs:
   - .ai-docs/standards/e2e/assertions.md
 date: 2026-08-06
@@ -16,21 +15,21 @@ resolved_by: 'CLI-391. The site now presses through `AgentsStep.navigateCursorTo
 ---
 
 <!--
-Deliberately NOT linked with `supersedes:` to
-`2026-07-20-toast-assertions-must-use-cursor-anchored-raw-waits.md`. TEMPLATE.md rule 3 makes
-`supersedes:` / `superseded_by:` a mirrored pair, and the mirror obliges the target to carry
-`status: superseded` — which would be false here. That finding's own fix landed and is not
-obsolete; this one records a site its sweep could not have covered, because the affordance the
+Deliberately NOT linked with `supersedes:` to the earlier sweep that established the toast rule.
+TEMPLATE.md rule 3 makes `supersedes:` / `superseded_by:` a mirrored pair, and the mirror obliges
+the target to carry `status: superseded` — which would be false: that sweep's own fix landed and is
+not obsolete. This one records a site the sweep could not have covered, because the affordance the
 site needed did not exist yet. The relationship is "continues", not "replaces", and the frontmatter
 has no key for it, so it is stated in prose below rather than forced into the wrong one.
 -->
 
 ## What Was Wrong
 
-`2026-07-20-toast-assertions-must-use-cursor-anchored-raw-waits.md` is marked `status: resolved`,
-and its `resolved_by` records that `AgentsStep.toggleFocusedAgentAwaiting(sentinel)` "now exists and
-is documented as the toast-asserting counterpart of `toggleAgent`". Both halves are true. What the
-note does not say is that the one spec which needed it was never converted.
+The sweep that made toast assertions cursor-anchored raw waits — the rule now in
+`.ai-docs/standards/e2e/assertions.md`, "Toasts are always a raw-output assertion" — added
+`AgentsStep.toggleFocusedAgentAwaiting(sentinel)` as the toast-asserting counterpart of
+`toggleAgent`, and converted the four `BuildStep` sites it found. The one spec that needed the new
+agents-side affordance was never converted.
 
 `e2e/lifecycle/global-agent-toggle-guard.e2e.test.ts` asserted the `GLOBAL_AGENTS_LOCKED` toast on
 the PROCESSED buffer:

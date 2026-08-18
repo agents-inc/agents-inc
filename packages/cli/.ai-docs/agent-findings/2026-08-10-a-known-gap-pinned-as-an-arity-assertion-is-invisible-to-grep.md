@@ -63,16 +63,14 @@ All three pins updated to the new truth as part of CLI-481, not deleted:
   on the entry) and the no-category case, which is now about a manifest authored without one rather
   than about a pipeline that cannot produce one.
 
-Two existing findings in this directory are overtaken by the same change and were left untouched —
-they are dated evidence, and re-statusing them is the convention-keeper's step:
-`2026-08-06-category-is-dropped-on-the-way-into-marketplace-json.md` (correct diagnosis; its
-code-side fix has now shipped, its two proposed standards have not been written into
-`clean-code-standards.md`) and
-`2026-08-07-a-skills-category-never-reaches-dist-or-the-marketplace.md`, whose central claim —
-"neither carries `category` through" and "the field is for third-party marketplace authors, not for
-this repo's output" — is now false, and whose proposed standard 1 asks `plugin-system.md` to state
-the opposite of what it now correctly states. Its proposed standard 2 (`metadata.yaml` is a
-generator input, not a shipped artefact) is unaffected and still unaddressed.
+Two findings in this directory recorded this defect from either end and were overtaken by the same
+change; both have since been deleted rather than re-statused. What did not go with them is the
+standards half neither ever got written down. The diagnoses are spent — the code-side fix shipped,
+so "neither carries `category` through" and "the field is for third-party marketplace authors, not
+for this repo's output" are both false today, and `plugin-system.md` correctly states the opposite.
+What remains outstanding is that `clean-code-standards.md` carries neither of the two standards the
+first proposed, and that the rule `metadata.yaml` is a generator input rather than a shipped
+artefact is still unaddressed.
 
 ## Proposed Standard
 

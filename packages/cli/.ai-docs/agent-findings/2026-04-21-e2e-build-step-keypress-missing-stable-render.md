@@ -12,7 +12,14 @@ category: testing
 domain: e2e
 root_cause: rule-not-specific-enough
 status: partial
-partial_note: Landed — CLAUDE.md rule added (Test Assertions section) and all 7 `build-step.ts` methods fixed with `waitForStableRender()`. Pending — sibling coverage gap across ~32 keypress methods in `base-step.ts` + 6 other step files (agents/confirm/domain/search-modal/sources/stack), tracked in sibling finding `2026-04-21-e2e-keypress-rule-coverage-gap-sibling-steps.md`.
+partial_note: >-
+  Landed — the CLAUDE.md rule (Test Assertions section), all 7 `build-step.ts` methods, and the
+  sibling sweep across `base-step.ts` and the six other step files
+  (agents/confirm/domain/search-modal/sources/stack), every one of which now guards its key
+  presses with the wizard-footer wait (`waitForWizardFooter`, the renamed
+  `waitForStableRender`). Pending — three sync `abort()`/`escape()`/`ctrlC()` wizard methods
+  that cannot be guarded without changing their signature to async, carved out and recorded in
+  `2026-07-20-e2e-keypress-guard-sweep-landed-sync-abort-carveout.md`.
 ---
 
 ## What Was Wrong

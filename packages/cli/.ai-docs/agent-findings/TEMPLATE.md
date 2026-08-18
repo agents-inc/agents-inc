@@ -113,19 +113,18 @@ KNOWN GAP: status backfill — CLOSED 2026-07-30
   still READ as open — their "Fix Applied" sections describe work that later releases superseded,
   and only the source tells you the defect is unreachable.
 
-  ALSO FIXED 2026-07-30: `2026-07-20-e2e-spec-files-accumulate-unused-imports-unenforced.md`
-  carried `type: enforcement-gap`, which rule 2 makes invalid. It is now `type: standard-gap`,
-  matching the two sibling findings in the identical class (a hygiene rule with no runnable
-  checker): `2026-07-17-d167-task-id-recurrence-no-lint-guard.md` and
-  `2026-07-30-eslint-precommit-gate-has-no-config-and-cannot-run.md`. Its `root_cause:
-  enforcement-gap` is correct and unchanged — the author's diagnosis was right, it was just
-  written into the WHAT field as well as the WHY field. No `type` value now appears in both enums.
+  ALSO FIXED 2026-07-30: one finding carried `type: enforcement-gap`, which rule 2 makes
+  invalid; it is now `type: standard-gap` — the value taken by every finding in that class, a
+  hygiene rule with no runnable checker, of which
+  `2026-07-30-eslint-precommit-gate-has-no-config-and-cannot-run.md` is the surviving example.
+  Its `root_cause: enforcement-gap` was correct and unchanged — the author's diagnosis was
+  right, it was just written into the WHAT field as well as the WHY field. No `type` value now
+  appears in both enums.
 
-  FIXED EARLIER 2026-07-30: 7 link defects — the rule-3 violation on
-  `2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse.md` (`superseded_by:` with no
-  `status:`), two more unpaired `superseded_by:` links, three one-sided supersession pairs and two
-  dangling `supersedes:` / `blocked_by:` targets — found by the directory's first link-integrity
-  scan.
+  FIXED EARLIER 2026-07-30: 7 link defects — one rule-3 violation (a `superseded_by:` written
+  with no paired `status: superseded`), two more unpaired `superseded_by:` links, three one-sided
+  supersession pairs and two dangling `supersedes:` / `blocked_by:` targets — found by the
+  directory's first link-integrity scan.
 
   STILL OPEN — lifecycle-field pairing, a class nobody has scanned for. Seven files whose `status:`
   was already present carry a mismatched or missing paired field: three `status: resolved` with no

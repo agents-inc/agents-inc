@@ -5,8 +5,6 @@ affected_files:
   - .ai-docs/reference/findings-impact-report.md
   - .ai-docs/agent-findings/TEMPLATE.md
   - .ai-docs/agent-findings/README.md
-  - .ai-docs/agent-findings/2026-07-20-e2e-spec-files-accumulate-unused-imports-unenforced.md
-  - .ai-docs/agent-findings/2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse.md
 standards_docs:
   - .ai-docs/standards/documentation-bible.md
   - .ai-docs/agent-findings/TEMPLATE.md
@@ -52,11 +50,11 @@ report is stale, was built from a partial snapshot, or the directory grew since.
 
 Three defects, all machine-detectable, all present today:
 
-| Defect                                                                                                       | Count | Example                                                                |
-| ------------------------------------------------------------------------------------------------------------ | ----- | ---------------------------------------------------------------------- |
-| `type:` value outside the `TEMPLATE.md` enum — `enforcement-gap` is a `root_cause` value, not a `type` value | 1     | `2026-07-20-e2e-spec-files-accumulate-unused-imports-unenforced.md`    |
-| `superseded_by:` present without the paired `status: superseded`                                             | 1     | `2026-07-18-dual-scope-agent-s-toggle-guarded-noop-not-collapse.md`    |
-| No `status:` field at all (README default is `open`, so the rollup must infer it)                            | 39    | `2026-04-22-edit-mode-scope-awareness-systemic-audit.md` and 38 others |
+| Defect                                                                                                       | Count | Example                                                                     |
+| ------------------------------------------------------------------------------------------------------------ | ----- | --------------------------------------------------------------------------- |
+| `type:` value outside the `TEMPLATE.md` enum — `enforcement-gap` is a `root_cause` value, not a `type` value | 1     | a spec-hygiene finding, corrected to `type: standard-gap` and since deleted |
+| `superseded_by:` present without the paired `status: superseded`                                             | 1     | a dual-scope agent-toggle finding, since deleted                            |
+| No `status:` field at all (README default is `open`, so the rollup must infer it)                            | 39    | `2026-04-22-edit-mode-scope-awareness-systemic-audit.md` and 38 others      |
 
 The 39 status-less files matter to every rollup: 30 files carry an explicit
 `status: open` and 39 carry none, so "open = 69" is 43% inference. The

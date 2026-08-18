@@ -35,8 +35,9 @@ files — has no runnable way to verify its own regen. On this task the flag fli
 by reading the emitted files and diffing them by eye, while the matrix half of the identical
 verification was one green command.
 
-There is a second, git-independent problem the two scripts share, already noted from another angle
-in `2026-08-06-skills-repo-never-validated-against-its-own-metadata-schema.md`: they regenerate
+There is a second, git-independent problem the two scripts share, already noted from the other
+angle — that `generate:types:check` is the only gate between the skills repository and the
+contract generated from it. They regenerate
 before comparing, so they report "did the committed output match" rather than "is the output
 current", and they only detect drift for files git is already tracking. A newly emitted untracked
 file passes `git diff --exit-code` silently. The in-generator check has neither weakness.

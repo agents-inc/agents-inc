@@ -54,11 +54,11 @@ Two more sites in the same class were corrected in passing (`features/configurat
 `concepts/scope-system.md`), because the paragraph naming the wrong module was the same
 paragraph a `validate`-routing sweep had to rewrite.
 
-This is the fourth recorded recurrence of "a doc names an identifier or a path that moved":
-`2026-07-30-negative-exhaustiveness-claims-in-reference-docs-go-stale-silently.md`,
-`2026-08-01-reference-docs-name-identifiers-that-no-longer-exist.md` and
-`2026-08-07-eight-reference-docs-still-route-readers-through-a-deleted-command.md` are the
-others. A moved symbol is worse than a deleted one: the deleted name greps to nothing and the
+This is a repeat recurrence of "a doc names an identifier or a path that moved" —
+`2026-07-30-negative-exhaustiveness-claims-in-reference-docs-go-stale-silently.md` and
+`2026-08-01-reference-docs-name-identifiers-that-no-longer-exist.md` record earlier ones, and a
+further pass found eight reference docs still routing readers through a command that had been
+deleted. A moved symbol is worse than a deleted one: the deleted name greps to nothing and the
 reader knows immediately, while the moved name greps to a live declaration in a file the doc
 does not mention.
 
@@ -71,8 +71,7 @@ string, `src/cli/lib/config-gate/propagate.ts`.
 
 ## Proposed Standard
 
-The runnable check already proposed in
-`2026-08-07-eight-reference-docs-still-route-readers-through-a-deleted-command.md` — every
+The runnable check already proposed for the deleted-command class — every
 `src/cli/**` path in `.ai-docs/**` must exist on disk — would not have caught any of these,
 because `local-installer.ts` still exists. Extend it by one step, in
 `.ai-docs/standards/documentation-bible.md` beside the path rule: **where a document pairs a
