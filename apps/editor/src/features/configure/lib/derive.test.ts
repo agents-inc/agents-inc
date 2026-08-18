@@ -1,3 +1,4 @@
+import { MARKETPLACE_CATALOG, MARKETPLACE_REF } from "@workspace/api-mocks"
 import {
   CATALOG,
   STACKS,
@@ -5,10 +6,14 @@ import {
   SUB_AGENT_GROUPS,
   expandStack,
 } from "@workspace/matrix"
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import type { ConfigureSearch } from "@/routes/search"
-import type { AddedSkill } from "@/stores/added-skills-store"
+import {
+  externalSkillId,
+  useCatalogStore,
+  type ExternalSkill,
+} from "@/stores/catalog-store"
 import {
   DEFAULT_SKILL_OPTIONS,
   type Assignment,
@@ -23,7 +28,9 @@ import {
   selectReachability,
   selectRosterGroups,
   summarize,
+  toSkillContents,
   type ConfigSelection,
+  type DomainView,
 } from "./derive"
 
 // `derive.ts` is where the screen's arithmetic lives, and most of it is
@@ -303,7 +310,7 @@ describe("summarize", () => {
 
 describe("selectRosterGroups", () => {
   const allRows = (config: ConfigSelection) =>
-    selectRosterGroups(config, []).flatMap((group) => group.agents)
+    selectRosterGroups(config).flatMap((group) => group.agents)
 
   it("lists every sub-agent that exists, on or off", () => {
     const rows = allRows(scratch())
@@ -356,8 +363,7 @@ describe("selectRosterGroups", () => {
           ...DEFAULT_SKILL_OPTIONS,
           assignments: { "web-developer": live(), "web-tester": live() },
         },
-      }),
-      []
+      })
     )
     const web = groups.find((group) => group.domainId === "web")!
 
@@ -374,8 +380,7 @@ describe("selectRosterGroups", () => {
           ...DEFAULT_SKILL_OPTIONS,
           assignments: { "web-developer": live(), reviewer: live() },
         },
-      }),
-      []
+      })
     )
 
     expect(groups.find((group) => group.domainId === "web")!.onCount).toBe(1)
@@ -415,7 +420,7 @@ describe("selectRosterGroups", () => {
 // derivation, not a default written into state.
 describe("roster model, effort and scope", () => {
   const rowFor = (config: ConfigSelection, agentId: string) =>
-    selectRosterGroups(config, [])
+    selectRosterGroups(config)
       .flatMap((group) => group.agents)
       .find((row) => row.agent.id === agentId)!
 
@@ -426,9 +431,7 @@ describe("roster model, effort and scope", () => {
   // the opposite — the catalogue says nothing about it, so every agent rests on
   // the shared selection default of writing front-matter into ~/.claude.
   it("rests every agent on its catalogue model, medium effort and global", () => {
-    const rows = selectRosterGroups(scratch(), []).flatMap(
-      (group) => group.agents
-    )
+    const rows = selectRosterGroups(scratch()).flatMap((group) => group.agents)
 
     for (const row of rows) {
       expect(row.model).toBe(SUB_AGENTS_BY_ID[row.agent.id]?.model ?? "sonnet")
@@ -509,7 +512,7 @@ describe("selectInstallInventory", () => {
   })
 
   it("splits skills by scope", () => {
-    const inventory = selectInstallInventory(config, [])
+    const inventory = selectInstallInventory(config)
 
     expect(inventory.project.map((skill) => skill.id)).toEqual([FIRST_SKILL])
     expect(inventory.global.map((skill) => skill.id)).toEqual([
@@ -520,14 +523,11 @@ describe("selectInstallInventory", () => {
   // Insertion order would reshuffle the pane as skills are toggled.
   it("orders agents by the catalog, not by which skill referenced them first", () => {
     const applied = asApplied()
-    const forward = selectInstallInventory(applied, [])
-    const reversed = selectInstallInventory(
-      {
-        ...applied,
-        skills: Object.fromEntries(Object.entries(applied.skills).reverse()),
-      },
-      []
-    )
+    const forward = selectInstallInventory(applied)
+    const reversed = selectInstallInventory({
+      ...applied,
+      skills: Object.fromEntries(Object.entries(applied.skills).reverse()),
+    })
 
     expect(forward.agents.map(({ agent }) => agent.id)).toEqual(
       reversed.agents.map(({ agent }) => agent.id)
@@ -536,8 +536,7 @@ describe("selectInstallInventory", () => {
 
   it("includes a pinned bare agent, marked base-only", () => {
     const inventory = selectInstallInventory(
-      scratch({}, { "web-developer": { on: true } }),
-      []
+      scratch({}, { "web-developer": { on: true } })
     )
 
     expect(inventory.agents).toHaveLength(1)
@@ -556,8 +555,7 @@ describe("selectInstallInventory", () => {
           "web-developer": { on: true, scope: "project" },
           reviewer: { on: true },
         }
-      ),
-      []
+      )
     )
 
     expect(
@@ -577,8 +575,7 @@ describe("selectInstallInventory", () => {
           },
         },
         { "web-developer": { on: false } }
-      ),
-      []
+      )
     )
 
     expect(inventory.agents).toEqual([])
@@ -592,18 +589,16 @@ describe("selectDomainViews", () => {
   const empty = scratch()
 
   const allCells = (config: ConfigSelection, over?: Partial<ConfigureSearch>) =>
-    selectDomainViews(config, [], search(over)).flatMap((domain) =>
+    selectDomainViews(config, search(over)).flatMap((domain) =>
       domain.categories.flatMap((category) => category.cells)
     )
 
   it("renders every domain when nothing is filtered", () => {
-    expect(selectDomainViews(empty, [], SEARCH).length).toBe(
-      CATALOG.domains.length
-    )
+    expect(selectDomainViews(empty, SEARCH).length).toBe(CATALOG.domains.length)
   })
 
   it("narrows to one domain", () => {
-    const views = selectDomainViews(empty, [], search({ domain: "web" }))
+    const views = selectDomainViews(empty, search({ domain: "web" }))
 
     expect(views).toHaveLength(1)
     expect(views[0]!.id).toBe("web")
@@ -619,7 +614,7 @@ describe("selectDomainViews", () => {
   })
 
   it("drops categories and domains that filter down to nothing", () => {
-    const views = selectDomainViews(empty, [], search({ q: "zzzznotaskill" }))
+    const views = selectDomainViews(empty, search({ q: "zzzznotaskill" }))
     expect(views).toEqual([])
   })
 
@@ -751,7 +746,7 @@ describe("selectReachability", () => {
 
 describe("incompatible cells", () => {
   const cellFor = (config: ConfigSelection, skillId: string) =>
-    selectDomainViews(config, [], SEARCH)
+    selectDomainViews(config, SEARCH)
       .flatMap((domain) => domain.categories.flatMap((c) => c.cells))
       .find((cell) => cell.skill.id === skillId)
 
@@ -832,7 +827,7 @@ describe("incompatible cells", () => {
   })
 
   it("marks nothing while nothing is selected", () => {
-    const cells = selectDomainViews(scratch(), [], SEARCH).flatMap((domain) =>
+    const cells = selectDomainViews(scratch(), SEARCH).flatMap((domain) =>
       domain.categories.flatMap((c) => c.cells)
     )
 
@@ -840,31 +835,294 @@ describe("incompatible cells", () => {
   })
 })
 
-describe("selectDomainViews with added skills", () => {
-  const uncategorised: AddedSkill = {
-    id: "github:acme/widget",
-    displayName: "widget",
-    description: "Added from GitHub",
-    monogram: "WI",
-    repo: "acme/widget",
-    path: "skills/widget",
-    categoryId: null,
-    domainId: null,
+// An added skill is a real catalogue entry now, so nothing in this file has a
+// second code path for one: it is placed by the category it was given, filtered
+// by the same filters, listed by the same lists and named by the same lookup.
+// These say so — the tests EDITOR-15 to EDITOR-20 each described a way the
+// second path went wrong, and there is no second path left to go wrong.
+describe("derivations over an external skill", () => {
+  const HOST = CATALOG.skillsById["web-framework-react"]!
+  const CATEGORY = HOST.categoryId
+  const DOMAIN = HOST.domainId
+  const HOUSE_ID = externalSkillId(CATEGORY, "House React")
+
+  const house: ExternalSkill = {
+    id: HOUSE_ID,
+    displayName: "House React",
+    description: "The house React skill.",
+    categoryId: CATEGORY,
+    repo: "acme/skills",
+    path: "skills/house-react",
+    files: { "SKILL.md": "# House React\n" },
   }
 
-  it("collects unmatched skills in their own trailing section", () => {
-    const views = selectDomainViews(scratch(), [uncategorised], SEARCH)
-    const last = views.at(-1)!
+  const picked = () =>
+    scratch({
+      [HOUSE_ID]: {
+        install: "eject",
+        scope: "project",
+        assignments: { "web-developer": live() },
+      },
+    })
 
-    expect(last.id).toBe("added")
-    expect(last.categories[0]!.cells.map((cell) => cell.skill.id)).toEqual([
-      uncategorised.id,
+  beforeEach(() => {
+    useCatalogStore.getState().addExternal([house])
+  })
+
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  const cellsIn = (view: DomainView, categoryId: string) =>
+    view.categories.find((category) => category.id === categoryId)?.cells ?? []
+
+  // EDITOR-17: it lands beside the skills it belongs with. There is no Added
+  // section and no Uncategorized category, because the dropdown made the
+  // placement a decision rather than a guess `categoriseRepo` had to make.
+  it("renders in the category it was filed under", () => {
+    const views = selectDomainViews(scratch(), SEARCH)
+    const domain = views.find((view) => view.id === DOMAIN)!
+
+    expect(cellsIn(domain, CATEGORY).map((cell) => cell.skill.id)).toContain(
+      HOUSE_ID
+    )
+    expect(views.some((view) => view.id === "added")).toBe(false)
+  })
+
+  it("still marks its provenance, so the cell can draw the added tag", () => {
+    const domain = selectDomainViews(scratch(), SEARCH).find(
+      (view) => view.id === DOMAIN
+    )!
+    const cell = cellsIn(domain, CATEGORY).find(
+      (candidate) => candidate.skill.id === HOUSE_ID
+    )!
+
+    expect(cell.skill.added).toBe(true)
+    expect(cell.skill.sourceUrl).toContain("acme/skills")
+  })
+
+  // EDITOR-19: the chip filters domains, and this skill now has one. It used to
+  // sit outside every domain, so any chip at all erased it — selected or not.
+  it("survives its own domain's filter chip", () => {
+    const views = selectDomainViews(picked(), search({ domain: DOMAIN }))
+    const domain = views.find((view) => view.id === DOMAIN)!
+
+    expect(cellsIn(domain, CATEGORY).map((cell) => cell.skill.id)).toContain(
+      HOUSE_ID
+    )
+  })
+
+  it("is filtered out by another domain's chip, exactly as its neighbours are", () => {
+    const views = selectDomainViews(picked(), search({ domain: "api" }))
+
+    expect(
+      views.flatMap((view) => view.categories.flatMap((c) => c.cells))
+    ).not.toContainEqual(expect.objectContaining({ skill: { id: HOUSE_ID } }))
+  })
+
+  it("answers the search box like any other skill", () => {
+    const views = selectDomainViews(scratch(), search({ q: "house react" }))
+    const cells = views.flatMap((view) =>
+      view.categories.flatMap((category) => category.cells)
+    )
+
+    expect(cells.map((cell) => cell.skill.id)).toStrictEqual([HOUSE_ID])
+  })
+
+  // EDITOR-15, in the roster and the install pane: the name comes off the
+  // catalogue now, so no consumer needs a second list passed alongside.
+  it("is named by the roster without being handed a second list", () => {
+    const rows = selectRosterGroups(picked())
+      .flatMap((group) => group.agents)
+      .flatMap((agent) => agent.skills)
+
+    expect(rows.map((row) => row.displayName)).toContain("House React")
+  })
+
+  it("is listed in the install inventory under its own name", () => {
+    const inventory = selectInstallInventory(picked())
+
+    expect(inventory.project.map((skill) => skill.displayName)).toStrictEqual([
+      "House React",
     ])
   })
 
-  it("marks them so the cell can draw the added tag", () => {
-    const views = selectDomainViews(scratch(), [uncategorised], SEARCH)
+  // EDITOR-32: the install pane is the second way into the contents preview, so
+  // the row has to know which of its skills has one to offer. The same
+  // provenance flag `GridSkill.added` carries for the cell's tag — a marker, not
+  // a branch in any derivation.
+  it("is marked in the install inventory as one whose contents can be read", () => {
+    const inventory = selectInstallInventory(picked())
 
-    expect(views.at(-1)!.categories[0]!.cells[0]!.skill.added).toBe(true)
+    expect(inventory.project[0]?.added).toBe(true)
+  })
+})
+
+// ── Contents ─────────────────────────────────────────────────────────────
+//
+// EDITOR-32, and a REQUIREMENT of the EDITOR-03 inline-content ruling rather
+// than a nicety: a shared link carries a stranger's files, which the CLI writes
+// to somebody's disk, so being able to READ them before installing is what
+// makes carrying them acceptable. The bytes are already seated by then —
+// `adoptSeedPayload` seats a payload's `external` map before anything renders —
+// so this is a rendering surface over the seat, never a fetch.
+describe("an external skill's contents", () => {
+  const CATEGORY = CATALOG.skillsById["web-framework-react"]!.categoryId
+
+  // Deliberately NOT in reading order, and SKILL.md deliberately not first: the
+  // order is the fetch's, which is the tree listing's, which is GitHub's.
+  const SPRAWLING: ExternalSkill = {
+    id: externalSkillId(CATEGORY, "Sprawling"),
+    displayName: "Sprawling",
+    description: "A skill of many files.",
+    categoryId: CATEGORY,
+    repo: "acme/skills",
+    path: "skills/sprawling",
+    files: {
+      "reference/prompts.md": "# Prompts\n",
+      "metadata.yaml": "slug: sprawling\n",
+      "SKILL.md": "---\nname: sprawling\n---\n\nThe body.\n",
+      "examples-core.md": "# Examples\n",
+      "scripts/run.sh": "#!/bin/sh\necho hi\n",
+    },
+  }
+
+  const paths = () => toSkillContents(SPRAWLING).files.map((file) => file.path)
+
+  // SKILL.md is what the skill IS — the file Claude Code reads to learn one
+  // exists — so it is what a reader is deciding whether to trust, and it opens
+  // without being asked for. First in the list rather than named in a second
+  // field, so the order and the opening file cannot disagree.
+  it("opens on SKILL.md however the directory listed it", () => {
+    expect(paths()[0]).toBe("SKILL.md")
+  })
+
+  // The whole directory, per the same ruling that made the payload carry it:
+  // `scripts/` and `reference/` are where a third-party skill keeps everything
+  // a reader would actually want to look at before installing it.
+  it("lists every file in the directory, not the manifest alone", () => {
+    expect(paths()).toHaveLength(Object.keys(SPRAWLING.files).length)
+  })
+
+  it("orders the rest by path, so a tree does not reshuffle between opens", () => {
+    expect(paths().slice(1)).toStrictEqual([
+      "examples-core.md",
+      "metadata.yaml",
+      "reference/prompts.md",
+      "scripts/run.sh",
+    ])
+  })
+
+  // Verbatim, byte for byte. What is on screen has to be what the CLI would
+  // write, or the preview is reassuring the reader about a different file.
+  it("carries each file's text exactly as it was fetched", () => {
+    const manifest = toSkillContents(SPRAWLING).files[0]
+
+    expect(manifest?.text).toBe(SPRAWLING.files["SKILL.md"])
+  })
+
+  // A reader deciding whether to trust content wants to know whose it is. The
+  // whole coordinate — owner, repository and the directory within it — because
+  // one repository holds many skills and the owner is the informative half.
+  it("names the coordinate the bytes were read from", () => {
+    expect(toSkillContents(SPRAWLING).coordinate).toBe(
+      "acme/skills/skills/sprawling"
+    )
+  })
+
+  it("names the skill, so a reader knows which one they opened", () => {
+    expect(toSkillContents(SPRAWLING).displayName).toBe("Sprawling")
+  })
+})
+
+// ── Source links ─────────────────────────────────────────────────────────
+//
+// EDITOR-44. A cell's `Source code` link is the only address on the screen that
+// leaves it, and it used to be built from a hardcoded `agents-inc/skills` — so
+// on any loaded marketplace every one of its skills linked to a repository that
+// does not hold them. Checked against live GitHub on a custom marketplace: 404.
+//
+// The SEATED marketplace is what answers, because the grid draws the seated
+// catalogue: these are ITS skills, and a shared address that seated one without
+// this browser ever choosing it (EDITOR-37) still has to link to where the
+// skills on screen actually live.
+
+describe("a catalogue skill's source link", () => {
+  const ACME_SKILL = "acme-web-widgets"
+
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  const linkTo = (skillId: string) =>
+    selectDomainViews(scratch(), SEARCH)
+      .flatMap((view) => view.categories)
+      .flatMap((category) => category.cells)
+      .find((cell) => cell.skill.id === skillId)?.skill.sourceUrl
+
+  const seat = (marketplace: string) =>
+    useCatalogStore.getState().load(MARKETPLACE_CATALOG, marketplace)
+
+  it("addresses the public repository while nothing else is seated", () => {
+    expect(linkTo("web-framework-react")).toBe(
+      "https://github.com/agents-inc/skills/tree/HEAD/src/skills/web-framework-react"
+    )
+  })
+
+  it("addresses the seated marketplace's repository, never the public one", () => {
+    seat(MARKETPLACE_REF)
+
+    expect(linkTo(ACME_SKILL)).toBe(
+      `https://github.com/${MARKETPLACE_REF}/tree/HEAD/src/skills/${ACME_SKILL}`
+    )
+  })
+
+  // Whatever was typed reaches the seat verbatim — the field takes a pasted
+  // browser URL and the CLI's own `github:` prefix — so the address has to be
+  // read out of it rather than pasted into a template.
+  it("reads a marketplace pasted as a browser URL down to its repository", () => {
+    seat("https://github.com/acme/skills")
+
+    expect(linkTo(ACME_SKILL)).toBe(
+      `https://github.com/acme/skills/tree/HEAD/src/skills/${ACME_SKILL}`
+    )
+  })
+
+  it("reads a marketplace named with the CLI's github: prefix", () => {
+    seat("github:acme/skills")
+
+    expect(linkTo(ACME_SKILL)).toBe(
+      `https://github.com/acme/skills/tree/HEAD/src/skills/${ACME_SKILL}`
+    )
+  })
+
+  // The catalogue came off that ref, so its skills are the ones on that ref.
+  // `HEAD` would be a different branch's answer to the same question.
+  it("follows the ref the marketplace was named with", () => {
+    seat("acme/skills#beta")
+
+    expect(linkTo(ACME_SKILL)).toBe(
+      `https://github.com/acme/skills/tree/beta/src/skills/${ACME_SKILL}`
+    )
+  })
+
+  // An added skill answers to no marketplace at all, so a swap must not move
+  // its address: it is in the repository the index read it from.
+  it("leaves an added skill pointing at the repository it came from", () => {
+    const HOST = CATALOG.skillsById["web-framework-react"]!
+    const outsider: ExternalSkill = {
+      id: externalSkillId(HOST.categoryId, "Outsider"),
+      displayName: "Outsider",
+      description: "From somewhere else entirely.",
+      categoryId: HOST.categoryId,
+      repo: "obra/superpowers",
+      path: "skills/outsider",
+      files: { "SKILL.md": "# Outsider\n" },
+    }
+    useCatalogStore.getState().addExternal([outsider])
+
+    expect(linkTo(outsider.id)).toBe(
+      "https://github.com/obra/superpowers/tree/HEAD/skills/outsider"
+    )
   })
 })

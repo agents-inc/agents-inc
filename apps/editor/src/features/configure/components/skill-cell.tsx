@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react"
 import { SkillIcon } from "@/components/skill-icon"
 import type { SkillCellView } from "@/features/configure/lib/derive"
 import { track } from "@/lib/analytics/track"
-import { freshEntry, useConfigStore } from "@/stores/config-store"
+import { freshEntry, isEjectOnly, useConfigStore } from "@/stores/config-store"
 import { useUiStore } from "@/stores/ui-store"
 import { SkillOptionsPanel } from "./skill-options-panel"
 
@@ -35,9 +35,13 @@ export function SkillCell({
   const openPanelSkillId = useUiStore((state) => state.openPanelSkillId)
   const togglePanel = useUiStore((state) => state.togglePanel)
   const openPanel = useUiStore((state) => state.openPanel)
+  const previewSkill = useUiStore((state) => state.previewSkill)
 
   const { skill, entry, selected, incompatible, agentCount } = view
   const open = openPanelSkillId === skill.id
+  // A skill from outside the catalogue has no plugin form, so its badge is a
+  // statement rather than a toggle — see `isEjectOnly`.
+  const ejectOnly = isEjectOnly(skill.id)
   const cellRef = useRef<HTMLDivElement>(null)
 
   // What the badges and the panel show. A selected skill's own entry, else
@@ -146,7 +150,33 @@ export function SkillCell({
             <span className="truncate text-12 leading-[1.25] font-semibold text-ink">
               {skill.displayName}
             </span>
-            {skill.added && <Badge variant="tag">added</Badge>}
+            {/* The provenance tag is also the way into what this skill holds
+                — one click, on the very thing that says it came from somewhere
+                else. Only added skills have contents to show: the catalogue's
+                own are generated from the marketplace repository this app is
+                built from, and the ••• already links their source.
+
+                No `incompatible` guard, unlike the ••• and the badges below:
+                reading is not configuring, and a cell stays hoverable so its
+                reason can be read — what it holds is part of that reason. */}
+            {skill.added && (
+              <Badge
+                variant="tag"
+                interactive
+                render={
+                  <button
+                    type="button"
+                    aria-label={`Contents of ${skill.displayName}`}
+                    onClick={(event) => {
+                      stop(event)
+                      previewSkill(skill.id)
+                    }}
+                  />
+                }
+              >
+                added
+              </Badge>
+            )}
           </div>
           <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 font-mono text-9 font-medium text-muted-foreground">
             <span className="truncate">{skill.description}</span>
@@ -185,20 +215,34 @@ export function SkillCell({
 
       <div className="mt-[0.5625rem] -ml-[0.3125rem] flex items-center gap-[0.125rem]">
         <Badge
-          interactive
+          interactive={!ejectOnly}
           alt={options.install === "eject"}
           render={
-            <button
-              type="button"
-              // "plugin, button" tells a screen reader nothing on its own.
-              aria-label={`Install mode: ${options.install}`}
-              onClick={(event) => {
-                stop(event)
-                flip({
-                  install: options.install === "eject" ? "plugin" : "eject",
-                })
-              }}
-            />
+            ejectOnly ? (
+              // A statement rather than a control: an added skill has no plugin
+              // form, so there is nothing here to press. The press is still
+              // caught — without that it reached the cell underneath and
+              // TOGGLED SELECTION, which made one target on screen mean two
+              // different things depending on the kind of skill under it
+              // (EDITOR-45). A badge that says it cannot flip must not select
+              // either.
+              <span
+                aria-label={`Install mode: ${options.install}`}
+                onClick={stop}
+              />
+            ) : (
+              <button
+                type="button"
+                // "plugin, button" tells a screen reader nothing on its own.
+                aria-label={`Install mode: ${options.install}`}
+                onClick={(event) => {
+                  stop(event)
+                  flip({
+                    install: options.install === "eject" ? "plugin" : "eject",
+                  })
+                }}
+              />
+            )
           }
         >
           {options.install}

@@ -1,15 +1,15 @@
-import {
-  STACKS,
-  expandStack,
-  skillById,
-  type SeedPayload,
-} from "@workspace/matrix"
+import type { SeedPayload } from "@workspace/matrix"
 import { Lattice, LatticeCell } from "@workspace/ui/components/lattice"
 import { useMemo } from "react"
 
 import { isStackCustom } from "@/features/configure/lib/derive"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
+import {
+  activeSkillById,
+  expandActiveStack,
+  useCatalogStore,
+} from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import {
   SAVED_STACK_NAME,
@@ -33,7 +33,7 @@ const MEMBER_LIMIT = 5
 // holds, so a snapshot and a stack describe themselves the same way.
 const membersLine = (skillIds: readonly string[]) => {
   const names = skillIds
-    .map((skillId) => skillById(skillId)?.displayName ?? skillId)
+    .map((skillId) => activeSkillById(skillId)?.displayName ?? skillId)
     .slice(0, MEMBER_LIMIT)
     .map((name) => name.toLowerCase())
 
@@ -42,6 +42,8 @@ const membersLine = (skillIds: readonly string[]) => {
     : names.join(" · ")
 }
 
+// The app's own cell rather than any catalogue's, so it survives a marketplace
+// swap unchanged — every catalogue can be started from nothing.
 const scratchCell: StackCell = {
   key: "scratch",
   name: "Start from scratch",
@@ -49,14 +51,15 @@ const scratchCell: StackCell = {
   request: { kind: "stack", stackId: null },
 }
 
-// Computed once: per render this would re-expand every stack on every
-// keystroke in the filter bar.
-const catalogueCells: StackCell[] = STACKS.map((stack) => ({
-  key: stack.id,
-  name: stack.name,
-  members: membersLine(expandStack(stack.id)?.skillIds ?? []),
-  request: { kind: "stack", stackId: stack.id },
-}))
+const toCatalogueCells = (
+  stacks: readonly { id: string; name: string }[]
+): StackCell[] =>
+  stacks.map((stack) => ({
+    key: stack.id,
+    name: stack.name,
+    members: membersLine(expandActiveStack(stack.id)?.skillIds ?? []),
+    request: { kind: "stack", stackId: stack.id },
+  }))
 
 const savedCell = (payload: SeedPayload): StackCell => ({
   key: "saved",
@@ -75,6 +78,7 @@ export function StackGrid() {
   const skills = useConfigStore((state) => state.skills)
   const agents = useConfigStore((state) => state.agents)
   const saved = useSavedStackStore((state) => state.saved)
+  const stacks = useCatalogStore((state) => state.stacks)
   const requestStack = useUiStore((state) => state.requestStack)
   const applyStackRequest = useApplyStackRequest()
 
@@ -97,6 +101,11 @@ export function StackGrid() {
   // expansion nor the snapshot already sitting in the slot.
   const unsaved = edited && !savedApplied
 
+  // Memoised on the stacks rather than computed at module scope: expanding
+  // every stack per render would re-run on every keystroke in the filter bar,
+  // and a module-level constant would be the vendored catalogue forever.
+  const catalogueCells = useMemo(() => toCatalogueCells(stacks), [stacks])
+
   // Straight after scratch, and only while a snapshot exists: it is a starting
   // point rather than a stack the catalogue knows about.
   const cells = useMemo(
@@ -104,7 +113,7 @@ export function StackGrid() {
       saved
         ? [scratchCell, savedCell(saved), ...catalogueCells]
         : [scratchCell, ...catalogueCells],
-    [saved]
+    [saved, catalogueCells]
   )
 
   // The saved cell is drawn as the current stack by the selection *being* the

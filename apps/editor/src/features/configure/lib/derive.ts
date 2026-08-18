@@ -2,11 +2,7 @@
 // search) in, view data out — so nothing here can cache a stale copy.
 
 import {
-  CATALOG,
   SUB_AGENT_GROUPS,
-  expandStack,
-  judgeSelection,
-  skillById,
   type AssignmentTarget,
   type CatalogCategory,
   type CatalogDomain,
@@ -16,8 +12,17 @@ import {
   type SubAgent,
 } from "@workspace/matrix"
 
+import { parseMarketplaceRef } from "@/lib/api/catalog"
 import type { ConfigureSearch } from "@/routes/search"
-import type { AddedSkill } from "@/stores/added-skills-store"
+import {
+  activeCatalog,
+  activeExternalSkill,
+  activeMarketplace,
+  activeSkillById,
+  expandActiveStack,
+  judgeActiveSelection,
+  type ExternalSkill,
+} from "@/stores/catalog-store"
 import {
   DEFAULT_SKILL_OPTIONS,
   isAgentOn,
@@ -37,15 +42,15 @@ export type ConfigSelection = Pick<
   "stackId" | "skills" | "agents"
 >
 
-// Catalog and session-added skills flattened to one shape, so the cell never
-// branches on provenance — only on `added`, which draws the tag.
+// One shape for every skill the grid can draw. There is no second kind any
+// more — an added skill is a real catalogue entry — so `added` is provenance
+// for the tag and the EDITOR-22 filter, never a branch in a derivation.
 export type GridSkill = {
   id: string
   displayName: string
   description: string
   monogram: string
-  // Catalog skills carry a slug for the logo lookup; added ones do not.
-  slug?: string
+  slug: string
   added: boolean
   // The skill's own directory on GitHub. Required rather than optional
   // because every skill the grid can draw has one — see `githubTreeUrl`.
@@ -94,43 +99,84 @@ export const monogramOf = (displayName: string) => {
 // skill on this screen has an address, and neither kind needs a fallback.
 //
 // `HEAD` rather than a branch name — it resolves to whatever the repository
-// calls its default branch, which is the one thing neither source carries.
-const githubTreeUrl = (repo: string, path: string) =>
-  `https://github.com/${repo}/tree/HEAD/${path}`
+// calls its default branch, which is what an added skill's index entry carries
+// none of, and what a marketplace named without one is asking for.
+const DEFAULT_REF = "HEAD"
 
-// The marketplace repository, where a skill's catalogue id *is* its directory
-// name. Verified 2026-08-09: the mapping is 1:1 across all 237 of them.
-const MARKETPLACE_REPO = "agents-inc/skills"
+const githubTreeUrl = (repo: string, path: string, ref = DEFAULT_REF) =>
+  `https://github.com/${repo}/tree/${ref}/${path}`
+
+/**
+ * The catalogue an app nobody has pointed anywhere runs on.
+ *
+ * Exported because the install dialog names the marketplace its command is
+ * about to install from, and "none loaded" is not the name of one: a payload
+ * carrying no marketplace installs from this repository, so this is what it is
+ * called (EDITOR-44).
+ */
+export const PUBLIC_MARKETPLACE = "agents-inc/skills"
+
+// Where a marketplace keeps its skills, and a skill's catalogue id *is* its
+// directory name — `build marketplace` reads `src/skills/<id>`, so the layout
+// holds for every repository it built rather than for the public one alone.
+// Re-verified 2026-08-18 against the public catalogue: the mapping is 1:1 with
+// nothing on either side unaccounted for.
+//
+// No count here, deliberately. This note read "all 237 of them" from 2026-08-09
+// until the catalogue reached 238, and a verification line carrying a stale
+// number reads as freshly checked while being nine days out of date — the same
+// shape as the exhaustive tables that went stale six times over. The claim that
+// matters is that the mapping is total, and that survives the catalogue growing.
 const MARKETPLACE_SKILLS_DIR = "src/skills"
 
-const marketplaceSourceUrl = (skillId: string) =>
-  githubTreeUrl(MARKETPLACE_REPO, `${MARKETPLACE_SKILLS_DIR}/${skillId}`)
+// The address of a skill the catalogue shipped, in the marketplace SEATED right
+// now. It used to be the public repository whatever was loaded, which made
+// every source link on a custom marketplace a 404 — the repository named does
+// not hold these skills and never did (EDITOR-44).
+//
+// Seated rather than chosen: the grid draws the seated catalogue, so these are
+// its skills, and a shared address seats a marketplace this browser never chose
+// (EDITOR-37) without changing where the skills on it live.
+//
+// Whatever was typed reaches the seat verbatim — a pasted browser URL and the
+// CLI's own `github:` prefix among them — so it is read back down with the
+// parser `fetchCatalog` already reduced it with rather than pasted into a
+// template. Nothing is seated that failed that parse; one that somehow did is
+// left as it stands, because naming the public repository instead is the single
+// thing this must never do.
+const marketplaceSourceUrl = (skillId: string) => {
+  const seated = activeMarketplace() ?? PUBLIC_MARKETPLACE
+  const named = parseMarketplaceRef(seated)
+  const repo = named ? `${named.owner}/${named.repo}` : seated
 
-const toGridSkill = (skill: CatalogSkill): GridSkill => ({
-  id: skill.id,
-  displayName: skill.displayName,
-  description: skill.description,
-  monogram: monogramOf(skill.displayName),
-  slug: skill.slug,
-  added: false,
-  sourceUrl: marketplaceSourceUrl(skill.id),
-})
+  return githubTreeUrl(repo, `${MARKETPLACE_SKILLS_DIR}/${skillId}`, named?.ref)
+}
 
-const addedToGridSkill = (skill: AddedSkill): GridSkill => ({
-  id: skill.id,
-  displayName: skill.displayName,
-  description: skill.description,
-  monogram: skill.monogram,
-  added: true,
-  sourceUrl: githubTreeUrl(skill.repo, skill.path),
-})
+// Where a skill came from decides its address and its tag, and nothing else.
+// An external skill knows its own repository and directory; a catalogue one is
+// in the marketplace repository, at a path its id spells.
+const toGridSkill = (skill: CatalogSkill): GridSkill => {
+  const external = activeExternalSkill(skill.id)
+
+  return {
+    id: skill.id,
+    displayName: skill.displayName,
+    description: skill.description,
+    monogram: monogramOf(skill.displayName),
+    slug: skill.slug,
+    added: external !== undefined,
+    sourceUrl: external
+      ? githubTreeUrl(external.repo, external.path)
+      : marketplaceSourceUrl(skill.id),
+  }
+}
 
 const matchesQuery = (skill: GridSkill, query: string) => {
   if (!query) return true
   const needle = query.toLowerCase()
   return (
     skill.displayName.toLowerCase().includes(needle) ||
-    (skill.slug?.toLowerCase().includes(needle) ?? false) ||
+    skill.slug.toLowerCase().includes(needle) ||
     skill.description.toLowerCase().includes(needle)
   )
 }
@@ -145,18 +191,22 @@ export type Reachability = {
 }
 
 // The semantics live in `@workspace/matrix` — one implementation, shared with
-// the CLI — and only catalogue skills reach them: a session-added skill
-// declares no relationships, so it neither rules anything out nor is ruled
-// out, and its `github:` id would read to the whitelist as "no host selected".
-const judgeCatalogSelection = (selectedIds: Iterable<string>) =>
-  judgeSelection(
-    [...selectedIds].filter((skillId) => skillById(skillId) !== undefined)
+// the CLI — and reach them through the seat, so a loaded marketplace's skills
+// are judged by that marketplace's own relationships. An added skill is in the
+// catalogue too, and is judged with the rest: it declares no relationships and
+// is named by none, so it neither rules anything out nor is ruled out, but the
+// semantics have SEEN it. The filter is for the id a selection still names
+// after the catalogue dropped it, which is a different question.
+const judgeSelectedSkills = (selectedIds: Iterable<string>) =>
+  judgeActiveSelection(
+    [...selectedIds].filter((skillId) => activeSkillById(skillId) !== undefined)
   )
 
 export const selectReachability = (selectedIds: Set<string>): Reachability =>
-  judgeCatalogSelection(selectedIds)
+  judgeSelectedSkills(selectedIds)
 
-const nameOf = (skillId: string) => skillById(skillId)?.displayName ?? skillId
+const nameOf = (skillId: string) =>
+  activeSkillById(skillId)?.displayName ?? skillId
 
 const listNames = (skillIds: readonly string[], joiner: string) =>
   skillIds.map(nameOf).join(joiner)
@@ -197,8 +247,6 @@ const toCell = (
   agentCount: entry ? enabledAssignments(entry).length : 0,
 })
 
-export const UNCATEGORIZED_ID = "uncategorized"
-
 // ── Grid ─────────────────────────────────────────────────────────────────
 
 // Everything the grid derivation needs, gathered once rather than threaded.
@@ -208,20 +256,6 @@ type GridContext = {
   // Judged once per derivation, not per cell — it holds a whole-catalogue
   // fixpoint and the grid asks it once for every skill.
   judgement: SelectionJudgement
-  addedByCategory: Map<string, AddedSkill[]>
-}
-
-const groupAddedByCategory = (added: AddedSkill[]) => {
-  const byCategory = new Map<string, AddedSkill[]>()
-
-  for (const skill of added) {
-    const key = skill.categoryId ?? UNCATEGORIZED_ID
-    const bucket = byCategory.get(key)
-    if (bucket) bucket.push(skill)
-    else byCategory.set(key, [skill])
-  }
-
-  return byCategory
 }
 
 const isVisibleDomain = (domain: CatalogDomain, search: ConfigureSearch) =>
@@ -236,13 +270,13 @@ const survivesSelectionFilter = (
 // A selected skill is never disabled, whatever the selection did to it — the
 // way out of a bad combination is to click it off. Everything else renders
 // the shared verdict: disabled with the reason, softly warned, or clear.
-const toCatalogCell = (
+const toGridCell = (
   skill: GridSkill,
   { config, judgement }: GridContext
 ): SkillCellView => {
   const entry = config.skills[skill.id]
 
-  if (entry || !skillById(skill.id)) return toCell(skill, entry)
+  if (entry) return toCell(skill, entry)
 
   const verdict = judgement.verdictOf(skill.id)
   if (verdict.status === "incompatible") {
@@ -254,7 +288,7 @@ const toCatalogCell = (
   return toCell(skill, entry)
 }
 
-const catalogCellsIn = (
+const cellsIn = (
   category: CatalogCategory,
   context: GridContext
 ): SkillCellView[] => {
@@ -263,20 +297,7 @@ const catalogCellsIn = (
   return category.skills
     .map(toGridSkill)
     .filter((skill) => matchesQuery(skill, search.q))
-    .map((skill) => toCatalogCell(skill, context))
-    .filter((cell) => survivesSelectionFilter(cell, search))
-}
-
-const addedCellsIn = (
-  categoryId: string,
-  context: GridContext
-): SkillCellView[] => {
-  const { config, search, addedByCategory } = context
-
-  return (addedByCategory.get(categoryId) ?? [])
-    .map(addedToGridSkill)
-    .filter((skill) => matchesQuery(skill, search.q))
-    .map((skill) => toCell(skill, config.skills[skill.id]))
+    .map((skill) => toGridCell(skill, context))
     .filter((cell) => survivesSelectionFilter(cell, search))
 }
 
@@ -287,10 +308,7 @@ const toCategoryView = (
   id: category.id,
   displayName: category.displayName,
   exclusive: category.exclusive,
-  cells: [
-    ...catalogCellsIn(category, context),
-    ...addedCellsIn(category.id, context),
-  ],
+  cells: cellsIn(category, context),
 })
 
 const hasCells = (category: CategoryView) => category.cells.length > 0
@@ -307,43 +325,29 @@ const toDomainView = (
     .filter(hasCells),
 })
 
-// Its own section, so an unmatched skill does not imply a real domain.
-const toAddedSection = (cells: SkillCellView[]): DomainView => ({
-  id: "added",
-  label: "Added",
-  categories: [
-    {
-      id: UNCATEGORIZED_ID,
-      displayName: "Uncategorized",
-      exclusive: false,
-      cells,
-    },
-  ],
-})
-
 // Categories that filter down to nothing are dropped, and so are the domains
 // that lose all of theirs, so the page never renders an empty header.
+//
+// There is no trailing Added section, and its absence is the point: an added
+// skill is placed by the category the user confirmed, so it renders under a
+// real domain and answers the domain chip like its neighbours. The orphan
+// section used to be the only home for a skill `categoriseRepo` could not
+// guess a category for, and it was invisible to every filter (EDITOR-17,
+// EDITOR-19).
 export const selectDomainViews = (
   config: ConfigSelection,
-  added: AddedSkill[],
   search: ConfigureSearch
 ): DomainView[] => {
   const context: GridContext = {
     config,
     search,
-    judgement: judgeCatalogSelection(Object.keys(config.skills)),
-    addedByCategory: groupAddedByCategory(added),
+    judgement: judgeSelectedSkills(Object.keys(config.skills)),
   }
 
-  const domains = CATALOG.domains
-    .filter((domain) => isVisibleDomain(domain, search))
+  return activeCatalog()
+    .domains.filter((domain) => isVisibleDomain(domain, search))
     .map((domain) => toDomainView(domain, context))
     .filter(hasCategories)
-
-  const orphans = addedCellsIn(UNCATEGORIZED_ID, context)
-  if (orphans.length === 0 || search.domain) return domains
-
-  return [...domains, toAddedSection(orphans)]
 }
 // ── Roster ───────────────────────────────────────────────────────────────
 
@@ -376,10 +380,11 @@ export type RosterDomainGroup = {
   agents: RosterAgentRow[]
 }
 
-const displayNameOf = (skillId: string, added: AddedSkill[]) =>
-  skillById(skillId)?.displayName ??
-  added.find((skill) => skill.id === skillId)?.displayName ??
-  skillId
+// The catalogue answers for every skill on screen, added ones included, so
+// there is no second list to consult. An id it still misses is one a saved
+// selection named and the catalogue has since dropped, which renders as itself.
+const displayNameOf = (skillId: string) =>
+  activeSkillById(skillId)?.displayName ?? skillId
 
 // In the catalogue's own order, so lists never reshuffle as skills are toggled.
 const allAgents = () => SUB_AGENT_GROUPS.flatMap((group) => group.agents)
@@ -391,20 +396,27 @@ const byDisplayName = (
 
 // skill id → position in the catalogue, so roster rows list in the grid's
 // order — what the prototype does. Added skills fall to the end, by name.
-const CATALOG_POSITION = new Map(
-  CATALOG.domains
-    .flatMap((domain) => domain.categories)
-    .flatMap((category) => category.skills)
-    .map((skill, index) => [skill.id as string, index])
-)
+//
+// Built per derivation rather than once at module scope. A module-level map
+// would be the vendored catalogue's positions forever, which is precisely the
+// bug the seat exists to make unrepresentable — and it is the same reason
+// nothing else in this file holds a catalogue binding across a call.
+const catalogPositions = () =>
+  new Map(
+    activeCatalog()
+      .domains.flatMap((domain) => domain.categories)
+      .flatMap((category) => category.skills)
+      .map((skill, index) => [skill.id, index])
+  )
 
-const byCatalogPosition = (
-  a: { id: string; displayName: string },
-  b: { id: string; displayName: string }
-) =>
-  (CATALOG_POSITION.get(a.id) ?? Infinity) -
-    (CATALOG_POSITION.get(b.id) ?? Infinity) ||
-  a.displayName.localeCompare(b.displayName)
+const byCatalogPosition =
+  (positions: Map<string, number>) =>
+  (
+    a: { id: string; displayName: string },
+    b: { id: string; displayName: string }
+  ) =>
+    (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity) ||
+    a.displayName.localeCompare(b.displayName)
 
 type AgentSkill = {
   id: string
@@ -413,7 +425,7 @@ type AgentSkill = {
   enabled: boolean
 }
 
-const skillsByAgent = (config: ConfigSelection, added: AddedSkill[]) => {
+const skillsByAgent = (config: ConfigSelection) => {
   const byAgent = new Map<string, AgentSkill[]>()
 
   for (const [skillId, entry] of Object.entries(config.skills)) {
@@ -421,7 +433,7 @@ const skillsByAgent = (config: ConfigSelection, added: AddedSkill[]) => {
       const bucket = byAgent.get(agentId) ?? []
       bucket.push({
         id: skillId,
-        displayName: displayNameOf(skillId, added),
+        displayName: displayNameOf(skillId),
         load: assignment.load,
         enabled: assignment.enabled,
       })
@@ -456,11 +468,13 @@ const liveUsesBySkill = (config: ConfigSelection) => {
 // on or off — and under each agent every assignment it holds, including the
 // switched-off ones, which render recessed rather than vanish.
 export const selectRosterGroups = (
-  config: ConfigSelection,
-  added: AddedSkill[]
+  config: ConfigSelection
 ): RosterDomainGroup[] => {
-  const byAgent = skillsByAgent(config, added)
+  const byAgent = skillsByAgent(config)
   const uses = liveUsesBySkill(config)
+  // Once per derivation, not once per agent row: the roster draws eighteen of
+  // them and the map is the whole catalogue.
+  const inGridOrder = byCatalogPosition(catalogPositions())
 
   return SUB_AGENT_GROUPS.map((group) => {
     const agents = group.agents.map((agent): RosterAgentRow => ({
@@ -468,7 +482,7 @@ export const selectRosterGroups = (
       on: isAgentOn(config, agent.id),
       ...resolveAgentOptions(config.agents, agent.id),
       skills: [...(byAgent.get(agent.id) ?? [])]
-        .sort(byCatalogPosition)
+        .sort(inGridOrder)
         .map((skill): RosterSkillRow => ({
           ...skill,
           usedBy: uses.get(skill.id) ?? [],
@@ -526,6 +540,10 @@ export type InventorySkill = {
   id: string
   displayName: string
   install: "plugin" | "eject"
+  // Provenance, so the row can offer to show what it holds. The same marker
+  // `GridSkill.added` carries for the cell's tag, never a branch in a
+  // derivation — the inventory lists both kinds identically.
+  added: boolean
 }
 
 export type InventoryAgent = {
@@ -544,16 +562,14 @@ export type InstallInventory = {
 
 type ScopedInventorySkill = InventorySkill & { scope: "project" | "global" }
 
-const toInventorySkills = (
-  config: ConfigSelection,
-  added: AddedSkill[]
-): ScopedInventorySkill[] =>
+const toInventorySkills = (config: ConfigSelection): ScopedInventorySkill[] =>
   Object.entries(config.skills)
     .map(([id, entry]) => ({
       id,
-      displayName: displayNameOf(id, added),
+      displayName: displayNameOf(id),
       install: entry.install,
       scope: entry.scope,
+      added: activeExternalSkill(id) !== undefined,
     }))
     .sort(byDisplayName)
 
@@ -562,10 +578,9 @@ const inScope =
     skill.scope === scope
 
 export const selectInstallInventory = (
-  config: ConfigSelection,
-  added: AddedSkill[]
+  config: ConfigSelection
 ): InstallInventory => {
-  const skills = toInventorySkills(config, added)
+  const skills = toInventorySkills(config)
 
   const holdsSkills = (agentId: string) =>
     Object.values(config.skills).some(
@@ -584,6 +599,54 @@ export const selectInstallInventory = (
       })),
   }
 }
+
+// ── Contents ─────────────────────────────────────────────────────────────
+//
+// What an added skill actually holds, ready to read. A REQUIREMENT of the
+// EDITOR-03 inline-content ruling rather than a nicety: a shared link carries a
+// stranger's files and the CLI writes them to somebody's disk, so being able to
+// read them first is what makes carrying them acceptable.
+//
+// Pure, like everything else here, and over the bytes the seat already has —
+// added this session or arrived in a payload, both are seated before anything
+// renders, so there is nothing to fetch and no second reader to build.
+
+/** One file of the directory, exactly as it was fetched. */
+export type SkillContentsFile = { path: string; text: string }
+
+export type SkillContents = {
+  displayName: string
+  /** `owner/name/directory` — the whole coordinate the bytes were read from. */
+  coordinate: string
+  /** SKILL.md first, then the rest by path, so the head of the list opens. */
+  files: SkillContentsFile[]
+}
+
+// The file Claude Code reads to learn a skill exists at all, which makes it the
+// one a reader is deciding about. Present in every directory that gets this
+// far: the fetch refuses one without it, and so does the payload schema.
+const SKILL_MANIFEST = "SKILL.md"
+
+const isManifest = (file: SkillContentsFile) => file.path === SKILL_MANIFEST
+
+const byPath = (a: SkillContentsFile, b: SkillContentsFile) =>
+  a.path.localeCompare(b.path)
+
+// The manifest first whatever it sorts as, then the rest in reading order.
+// Said as an ORDER rather than as a second "which one opens" field, so the
+// list and the opening file cannot disagree.
+const inReadingOrder = (files: SkillContentsFile[]): SkillContentsFile[] => [
+  ...files.filter(isManifest),
+  ...files.filter((file) => !isManifest(file)).sort(byPath),
+]
+
+export const toSkillContents = (skill: ExternalSkill): SkillContents => ({
+  displayName: skill.displayName,
+  coordinate: `${skill.repo}/${skill.path}`,
+  files: inReadingOrder(
+    Object.entries(skill.files).map(([path, text]) => ({ path, text }))
+  ),
+})
 
 // ── Stack ────────────────────────────────────────────────────────────────
 
@@ -629,7 +692,7 @@ export const isStackCustom = (config: ConfigSelection): boolean => {
 
   if (config.stackId === null) return Object.keys(config.skills).length > 0
 
-  const expansion = expandStack(config.stackId)
+  const expansion = expandActiveStack(config.stackId)
   if (!expansion) return true
 
   const selectedIds = Object.keys(config.skills)

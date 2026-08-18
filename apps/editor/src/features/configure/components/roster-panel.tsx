@@ -13,7 +13,6 @@ import {
   useShareLink,
   type ShareState,
 } from "@/features/configure/lib/use-share-link"
-import type { AddedSkill } from "@/stores/added-skills-store"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
 import { useConfigStore } from "@/stores/config-store"
 import {
@@ -434,13 +433,7 @@ function AgentBlock({
 // The right column: every sub-agent there is, grouped under stacking sticky
 // domain bands, with each agent's assignments inline. Everything is derived
 // from `assignments` + `agents` — the panel stores nothing but hover geometry.
-export function RosterPanel({
-  config,
-  added,
-}: {
-  config: ConfigSelection
-  added: AddedSkill[]
-}) {
+export function RosterPanel({ config }: { config: ConfigSelection }) {
   const collapsed = useUiStore((state) => state.rosterCollapsed)
   const toggleRosterDomain = useUiStore((state) => state.toggleRosterDomain)
   const flashedAgentIds = useUiStore((state) => state.flashedAgentIds)
@@ -450,7 +443,7 @@ export function RosterPanel({
   const asideRef = useRef<HTMLElement>(null)
   const [tip, setTip] = useState<UseTip | null>(null)
 
-  const groups = selectRosterGroups(config, added)
+  const groups = selectRosterGroups(config)
   const stats = summarize(config)
   const { state: shareState, share } = useShareLink(config)
   const flashed = new Set(flashedAgentIds)

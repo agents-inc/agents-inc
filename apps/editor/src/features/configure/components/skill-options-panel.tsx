@@ -17,7 +17,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { useState } from "react"
 
-import { useConfigStore } from "@/stores/config-store"
+import { isEjectOnly, useConfigStore } from "@/stores/config-store"
 import type { LoadState, SkillEntry } from "@/stores/persisted-schema"
 
 // The one option in the panel whose consequence is not self-evident, so the
@@ -207,6 +207,8 @@ export function SkillOptionsPanel({
   const cycleAssignment = useConfigStore((state) => state.cycleAssignment)
   const [metaOpen, setMetaOpen] = useState(false)
 
+  const ejectOnly = isEjectOnly(skillId)
+
   // Both close over the open skill, so they live here rather than at module
   // scope — but they are still named, so the grid below reads as one line.
   const toMatrixCell = (group: MatrixGroup, role: RoleColumn) => {
@@ -252,6 +254,13 @@ export function SkillOptionsPanel({
           <SegmentedItem
             key={install}
             active={entry.install === install}
+            // A skill from outside the catalogue has no plugin form to offer:
+            // a plugin install serves the third party's content as-is, and our
+            // generated metadata cannot be written into their repository. So
+            // the control cannot express it rather than expressing it and
+            // being overruled — the store refuses it too, and neither half is
+            // a fallback for the other.
+            disabled={ejectOnly && install === "plugin"}
             onClick={() => setSkillOption(skillId, { install })}
           >
             {install}

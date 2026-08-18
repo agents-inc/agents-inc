@@ -48,7 +48,7 @@ const configFor = (selection: readonly string[]): ConfigSelection => ({
 
 // The cell is the contract: what the grid draws is what the user can act on.
 const cellsFor = (selection: readonly string[]) =>
-  selectDomainViews(configFor(selection), [], UNFILTERED).flatMap((domain) =>
+  selectDomainViews(configFor(selection), UNFILTERED).flatMap((domain) =>
     domain.categories.flatMap((category) => category.cells)
   )
 
