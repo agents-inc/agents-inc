@@ -59,6 +59,33 @@ describe("skill-metadata", () => {
       expect(fileExists).toHaveBeenCalledWith("/project/.claude/skills/react/metadata.yaml");
     });
 
+    it("returns the directory inside the repository when the install recorded one", async () => {
+      vi.mocked(fileExists).mockResolvedValue(true);
+      vi.mocked(readFile).mockResolvedValue(
+        stringifyYaml({
+          forkedFrom: {
+            skillId: "external-web-tooling-brainstorming",
+            contentHash: "abc1234",
+            date: "2026-01-01",
+            source: "github:obra/superpowers",
+            path: "skills/brainstorming",
+          },
+        }),
+      );
+
+      const result = await readForkedFromMetadata("/project/.claude/skills/brainstorming");
+
+      // Read back whole, not merely tolerated: the schema strips what it does not declare, so a
+      // field this reader does not name is one the producer that reads it can never see.
+      expect(result).toStrictEqual({
+        skillId: "external-web-tooling-brainstorming",
+        contentHash: "abc1234",
+        date: "2026-01-01",
+        source: "github:obra/superpowers",
+        path: "skills/brainstorming",
+      });
+    });
+
     it("returns null when metadata.yaml does not exist", async () => {
       vi.mocked(fileExists).mockResolvedValue(false);
 
@@ -139,6 +166,26 @@ describe("skill-metadata", () => {
         expect.any(String),
         expect.stringContaining("2026-01-15"), // From mocked getCurrentDate
       );
+    });
+
+    it("records the repository and the directory within it, for a skill its own bytes install", async () => {
+      vi.mocked(readFile).mockResolvedValue(createMetadataWithoutForkedFrom());
+
+      await injectForkedFromMetadata(
+        "/dest",
+        // Boundary cast: a skill outside every catalogue has an id outside the generated union.
+        "external-web-tooling-brainstorming" as SkillId,
+        "abc1234",
+        { source: "github:obra/superpowers", path: "skills/brainstorming" },
+      );
+
+      const writtenContent = elementAt(firstElement(vi.mocked(writeFile).mock.calls), 1);
+      // A marketplace resolves the ids it serves, so where inside it a skill lives is nobody
+      // else's business. A skill that answers to no catalogue has no other address, and this is
+      // the only record of it: without the pair, a producer rebuilding what this install carries
+      // has a repository and no way to say which directory of it travelled.
+      expect(writtenContent).toContain("source: github:obra/superpowers");
+      expect(writtenContent).toContain("path: skills/brainstorming");
     });
 
     it("updates existing forkedFrom metadata", async () => {

@@ -77,7 +77,12 @@ async function copySkillTo(
   await ensureDir(path.dirname(destPath));
   await copy(sourcePath, destPath);
 
-  await injectForkedFromMetadata(destPath, skill.id, contentHash, source);
+  // No directory: the marketplace this ref names resolves the id itself, so where inside it the
+  // skill lived is not part of installing it again. Absent rather than undefined, because that is
+  // the difference between "no ref was given" and "the ref is the word undefined".
+  await injectForkedFromMetadata(destPath, skill.id, contentHash, {
+    ...(source !== undefined && { source }),
+  });
 
   return { skillId: skill.id, contentHash, sourcePath, destPath };
 }

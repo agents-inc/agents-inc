@@ -40,8 +40,8 @@ async function copyScopedLocalSkills(
 
   if (deleteAlternateSource) {
     for (const skill of scopeSkills) {
-      if (skill.source !== EJECT_SOURCE) {
-        verbose(`Using alternate source '${skill.source}' for ${skill.id}`);
+      if (skill.origin !== EJECT_SOURCE) {
+        verbose(`Using alternate source '${skill.origin}' for ${skill.id}`);
         await deleteLocalSkill(baseDir, skill.id);
       }
     }

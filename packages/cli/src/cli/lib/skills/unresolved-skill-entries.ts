@@ -104,7 +104,7 @@ async function classifySavedSkill(
   saved: SkillConfig | undefined,
   projectDir: string,
 ): Promise<SavedSkillFate> {
-  if (saved?.source !== EJECT_SOURCE) return { kind: "dropped-by-source" };
+  if (saved?.origin !== EJECT_SOURCE) return { kind: "dropped-by-source" };
 
   const skillDir = path.join(resolveInstallPaths(projectDir, saved.scope).skillsDir, id);
   if (!(await directoryExists(skillDir))) return { kind: "files-gone", skillDir };

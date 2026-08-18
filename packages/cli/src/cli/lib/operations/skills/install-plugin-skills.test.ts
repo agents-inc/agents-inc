@@ -20,8 +20,8 @@ describe("installPluginSkills", () => {
 
   it("should install plugin skills with correct scope routing", async () => {
     const skills = [
-      buildSkillConfig("web-framework-react", { scope: "project", source: MARKETPLACE }),
-      buildSkillConfig("api-framework-hono", { scope: "global", source: MARKETPLACE }),
+      buildSkillConfig("web-framework-react", { scope: "project", origin: MARKETPLACE }),
+      buildSkillConfig("api-framework-hono", { scope: "global", origin: MARKETPLACE }),
     ];
 
     const result = await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
@@ -47,9 +47,9 @@ describe("installPluginSkills", () => {
 
   it("should filter out local-source skills", async () => {
     const skills = [
-      buildSkillConfig("web-framework-react", { scope: "project", source: "eject" }),
-      buildSkillConfig("api-framework-hono", { scope: "project", source: MARKETPLACE }),
-      buildSkillConfig("web-styling-tailwind", { scope: "global", source: "eject" }),
+      buildSkillConfig("web-framework-react", { scope: "project", origin: "eject" }),
+      buildSkillConfig("api-framework-hono", { scope: "project", origin: MARKETPLACE }),
+      buildSkillConfig("web-styling-tailwind", { scope: "global", origin: "eject" }),
     ];
 
     const result = await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
@@ -68,8 +68,8 @@ describe("installPluginSkills", () => {
 
   it("should collect failed installations without throwing", async () => {
     const skills = [
-      buildSkillConfig("web-framework-react", { scope: "project", source: MARKETPLACE }),
-      buildSkillConfig("api-framework-hono", { scope: "project", source: MARKETPLACE }),
+      buildSkillConfig("web-framework-react", { scope: "project", origin: MARKETPLACE }),
+      buildSkillConfig("api-framework-hono", { scope: "project", origin: MARKETPLACE }),
     ];
 
     mockClaudePluginInstall
@@ -88,7 +88,7 @@ describe("installPluginSkills", () => {
 
   it("should construct plugin refs as ${id}@${marketplace}", async () => {
     const skills = [
-      buildSkillConfig("web-testing-vitest", { scope: "project", source: MARKETPLACE }),
+      buildSkillConfig("web-testing-vitest", { scope: "project", origin: MARKETPLACE }),
     ];
 
     await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);

@@ -23,8 +23,8 @@ describe("uninstallPluginSkills", () => {
   it("should uninstall skills with scope from old config", async () => {
     const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
-      buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
-      buildSkillConfig("api-framework-hono", { scope: "global", source: "agents-inc" }),
+      buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
+      buildSkillConfig("api-framework-hono", { scope: "global", origin: "agents-inc" }),
     ];
 
     const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
@@ -61,8 +61,8 @@ describe("uninstallPluginSkills", () => {
   it("should collect failures without throwing", async () => {
     const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
-      buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
-      buildSkillConfig("api-framework-hono", { scope: "project", source: "agents-inc" }),
+      buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
+      buildSkillConfig("api-framework-hono", { scope: "project", origin: "agents-inc" }),
     ];
 
     mockClaudePluginUninstall
@@ -82,9 +82,9 @@ describe("uninstallPluginSkills", () => {
       "api-framework-hono",
     ];
     const oldSkills = [
-      buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
-      buildSkillConfig("web-styling-tailwind", { scope: "project", source: "agents-inc" }),
-      buildSkillConfig("api-framework-hono", { scope: "global", source: "agents-inc" }),
+      buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
+      buildSkillConfig("web-styling-tailwind", { scope: "project", origin: "agents-inc" }),
+      buildSkillConfig("api-framework-hono", { scope: "global", origin: "agents-inc" }),
     ];
 
     const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);

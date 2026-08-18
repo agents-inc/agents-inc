@@ -176,8 +176,8 @@ describe("copyLocalSkills", () => {
   describe("deleteAlternateSourceSkills", () => {
     it("deletes only the skills whose source is not eject", async () => {
       const skills = [
-        buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
-        buildSkillConfig("web-styling-tailwind", { scope: "project", source: "eject" }),
+        buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
+        buildSkillConfig("web-styling-tailwind", { scope: "project", origin: "eject" }),
       ];
 
       await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
@@ -189,7 +189,7 @@ describe("copyLocalSkills", () => {
     });
 
     it("treats an empty source as an alternate source rather than silently skipping it", async () => {
-      const skills = [buildSkillConfig("web-framework-react", { scope: "project", source: "" })];
+      const skills = [buildSkillConfig("web-framework-react", { scope: "project", origin: "" })];
 
       await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
         deleteAlternateSourceSkills: true,
@@ -200,7 +200,7 @@ describe("copyLocalSkills", () => {
 
     it("deletes global-scoped skills relative to the home directory", async () => {
       const skills = [
-        buildSkillConfig("api-framework-hono", { scope: "global", source: "agents-inc" }),
+        buildSkillConfig("api-framework-hono", { scope: "global", origin: "agents-inc" }),
       ];
 
       await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
@@ -212,7 +212,7 @@ describe("copyLocalSkills", () => {
 
     it("deletes nothing when the option is off", async () => {
       const skills = [
-        buildSkillConfig("web-framework-react", { scope: "project", source: "agents-inc" }),
+        buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
       ];
 
       await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT);

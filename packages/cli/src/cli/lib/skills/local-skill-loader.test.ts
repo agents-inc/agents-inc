@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { discoverLocalSkills } from "./local-skill-loader";
-import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
+import {
+  CLAUDE_DIR,
+  LOCAL_PSEUDO_CATEGORY,
+  LOCAL_SKILLS_PATH,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../consts";
+import { METADATA_KEYS } from "../metadata-keys";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderSkillMd } from "../__tests__/content-generators";
 import { warn } from "../../utils/logger";
@@ -313,6 +320,29 @@ describe("local-skill-loader", () => {
         expect.stringContaining("Skipping local skill 'unparseable-meta'"),
       );
       expect(warn).toHaveBeenCalledWith(expect.stringContaining(STANDARD_FILES.METADATA_YAML));
+    });
+
+    it("refuses a skill declaring the local pseudo-category, and says what to declare instead", async () => {
+      await writeLocalSkill("uncategorised-skill", {
+        metadata: `displayName: Uncategorised\nslug: uncategorised\ndomain: web\ncategory: ${LOCAL_PSEUDO_CATEGORY}\ncustom: true`,
+        skillMd: renderSkillMd("uncategorised (@local)", "No real category", "Content"),
+      });
+      await writeLocalSkill("categorised-skill", {
+        metadata:
+          "displayName: Categorised\nslug: categorised\ndomain: web\ncategory: web-tooling\ncustom: true",
+        skillMd: renderSkillMd("categorised (@local)", "A real category", "Content"),
+      });
+
+      const result = await discoverLocalSkills(tempDir);
+
+      expect(
+        result?.skills.map((skill) => skill.id),
+        "the pseudo-category reaches no sub-agent, so a skill wearing it is refused rather than loaded unusable",
+      ).toStrictEqual(["categorised (@local)"]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Skipping local skill 'uncategorised-skill'"),
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(METADATA_KEYS.CATEGORY));
     });
 
     it("handles directory with only non-skill subdirectories", async () => {

@@ -1,5 +1,4 @@
 import { STANDARD_FILES, STANDARD_DIRS } from "../consts";
-import type { CategoryPath } from "../types";
 
 /**
  * YAML field names used in skill metadata.yaml files.
@@ -15,14 +14,18 @@ export const METADATA_KEYS = {
 } as const;
 
 /**
- * Default values used for local skills (discovered on disk without full metadata).
+ * What a skill discovered on disk is attributed to.
+ *
+ * Forced rather than defaulted: the merge writes it over whatever the file says,
+ * because a local skill answers to the machine it sits on and not to a handle.
+ *
+ * It used to have a `CATEGORY` and a `DOMAIN` beside it — `dummy-category` and
+ * `dummy`, a taxonomy in no union, placing a skill in a tab nothing draws and a
+ * stack no sub-agent reads. They were scaffold placeholders for `new skill` and
+ * `import skill`, and both commands were deleted; nothing has read either since.
  */
 export const LOCAL_DEFAULTS = {
-  // Boundary cast: deliberately outside the generated Category union — scaffold
-  // placeholder written into starter files for the user to replace
-  CATEGORY: "dummy-category" as CategoryPath,
   AUTHOR: "@dummy-author",
-  DOMAIN: "dummy" as const,
 } as const;
 
 /**

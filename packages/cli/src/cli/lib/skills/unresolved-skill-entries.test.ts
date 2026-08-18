@@ -65,7 +65,7 @@ describe("unresolved-skill-entries", () => {
 
   describe("unresolvedSkillRemovalReasons", () => {
     it("names the source a marketplace-sourced entry is no longer present in", async () => {
-      const saved = buildSkillConfigs([EJECTED_SKILL], { source: MARKETPLACE });
+      const saved = buildSkillConfigs([EJECTED_SKILL], { origin: MARKETPLACE });
 
       const reasons = await unresolvedSkillRemovalReasons(
         [EJECTED_SKILL],
@@ -234,7 +234,7 @@ describe("unresolved-skill-entries", () => {
 
     it("names nothing for a marketplace-sourced entry, whatever is on disk under its id", async () => {
       await installLocalSkill(projectDir, EJECTED_SKILL, UNPARSEABLE_YAML);
-      const saved = buildSkillConfigs([EJECTED_SKILL], { source: MARKETPLACE });
+      const saved = buildSkillConfigs([EJECTED_SKILL], { origin: MARKETPLACE });
 
       const unusable = await findUnusableSavedSkillMetadata([EJECTED_SKILL], saved, projectDir);
 

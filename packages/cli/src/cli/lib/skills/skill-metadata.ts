@@ -25,6 +25,17 @@ export type ForkedFromMetadata = {
   date: string;
   /** Source URL the skill was installed from (e.g., "github:agents-inc/skills") */
   source?: string;
+  /**
+   * The skill's own DIRECTORY inside the repository `source` names — `skills/brainstorming`,
+   * never the SKILL.md.
+   *
+   * Recorded only where it is the whole address. A marketplace resolves every id it serves, so a
+   * skill ejected from one is installed again by its id and where inside that repository it lived
+   * is nobody else's business. A skill a shared configuration CARRIED answers to no catalogue at
+   * all, and this pair — repository and directory — is the only address it has: without it, the
+   * producer that shares this installation can name the id and not the content behind it.
+   */
+  path?: string;
 };
 
 /**
@@ -103,7 +114,10 @@ export async function readLocalSkillMetadata(skillDir: string): Promise<LocalSki
  *                   The file must already exist (created during skill copy).
  * @param skillId - Canonical skill ID from the source repository (e.g., "cc-ts-react-hook-form")
  * @param contentHash - SHA-256 hash of the source SKILL.md content at install time
- * @param source - Source URL the skill was installed from (e.g., "github:agents-inc/skills")
+ * @param origin - Where the bytes came from: the repository ref, and the directory inside it for
+ *                 a skill nothing but that directory can install again. A bag rather than two
+ *                 positional strings, because two adjacent optional strings can be swapped
+ *                 silently and these two mean entirely different things.
  *
  * @remarks
  * **Side effect:** Overwrites `{destPath}/metadata.yaml` on disk. Existing fields
@@ -114,7 +128,7 @@ export async function injectForkedFromMetadata(
   destPath: string,
   skillId: SkillId,
   contentHash: string,
-  source?: string,
+  origin: Pick<ForkedFromMetadata, "source" | "path"> = {},
 ): Promise<void> {
   const metadataPath = path.join(destPath, STANDARD_FILES.METADATA_YAML);
   const rawContent = await readFile(metadataPath);
@@ -127,10 +141,11 @@ export async function injectForkedFromMetadata(
   const metadata: LocalSkillMetadata = {
     ...(parseResult.success ? parseResult.data : {}),
     forkedFrom: {
-      skillId: skillId,
-      contentHash: contentHash,
+      skillId,
+      contentHash,
       date: getCurrentDate(),
-      ...(source ? { source } : {}),
+      ...(origin.source !== undefined && { source: origin.source }),
+      ...(origin.path !== undefined && { path: origin.path }),
     },
   };
 

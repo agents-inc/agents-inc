@@ -1,10 +1,10 @@
 import path from "path";
 import { directoryExists, listDirectories, fileExists, readFile } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts";
+import { LOCAL_PSEUDO_CATEGORY, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts";
 import { parseFrontmatter, readSkillMetadata } from "../loading";
 import type { CategoryPath, Domain, ExtractedSkillMetadata, SkillSlug } from "../../types";
-import { LOCAL_DEFAULTS } from "../metadata-keys";
+import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 
 export type LocalRawMetadata = {
   displayName: string;
@@ -80,6 +80,17 @@ async function extractLocalSkill(
   }
 
   const metadata = read.metadata;
+
+  // `local` is a trapdoor, not a category: it belongs to no domain, so a skill wearing it
+  // renders in no tab and is dropped from every sub-agent's stack. Refusing it here is
+  // what keeps that from happening silently — the skill is unusable either way, and this
+  // way the user is told which field to fix.
+  if (metadata.category === LOCAL_PSEUDO_CATEGORY) {
+    warn(
+      `Skipping local skill '${skillDirName}': ${METADATA_KEYS.CATEGORY} '${LOCAL_PSEUDO_CATEGORY}' is a placeholder, not a real category, so no sub-agent can be given this skill. Set ${METADATA_KEYS.CATEGORY} in ${metadataPath} to a real one.`,
+    );
+    return null;
+  }
 
   const skillMdContent = await readFile(skillMdPath);
   const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);
