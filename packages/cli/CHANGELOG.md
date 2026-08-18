@@ -7,6 +7,47 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.155.0] - 2026-08-18
+
+**The editor and the CLI share one configuration**
+
+- **Breaking:** `--source`/`-s` is now `--marketplace`/`-m`, the old spelling rejected rather than aliased, and `CC_SOURCE` is now `CC_MARKETPLACE` (CLI-463)
+- **Breaking:** the config fields say what they hold — `marketplace` to `marketplaceName`, `source` to `marketplace`, `SkillConfig.source` to `origin`; an older `config.ts` is a hard error naming the pairs that moved (CLI-501)
+- `share` and `edit --ui` mint a shared id from the installation in the current directory (CLI-354)
+- `edit --from <id>` applies a configuration built in the editor, destructively and interactively (CLI-462)
+- External skills install: a skill in neither catalogue travels in the payload as content (CLI-507)
+- The round trip leaves what it does not own alone — a skill nobody installed is neither carried nor removed (CLI-508)
+- Carry-back closes the loop, so a shared configuration survives more than one lap (CLI-509)
+- The stale-id refusal names the remedy instead of a cause it cannot observe (CLI-510)
+- `new marketplace` returns, and what it scaffolds works end to end (CLI-454)
+- `build marketplace` emits the `catalog.json` the editor fetches (CLI-504)
+- A locally authored skill installs (CLI-407), keeps its identity through the install (CLI-408), and one writer answers the custom question (CLI-409), completing the install half of custom skill support (D-212)
+- A compiled agent says who compiled it — legs 2 and 3 (CLI-470)
+- Two marketplaces can no longer name one skill: ids are namespaced by their marketplace (CLI-498)
+- `catalog.json` becomes deterministic (CLI-411), carries what the editor needs (CLI-412) and is emitted from one place (CLI-413)
+- One broken skill no longer blinds `doctor` — each skill is judged on its own (CLI-475)
+- A global install refuses project-scoped content at the boundary (D-310)
+- A global skill is removable from a project, with the user's informed consent (CLI-519)
+- Three validators that judged the wrong subject: a parse boundary that reads as guarded (CLI-503), `doctor` judging a shared directory as if it owned it (CLI-505), and one more found in the same pass (CLI-513)
+- The second producer stops re-costing its skips (CLI-511) and stops inheriting the first's refusals (CLI-512)
+- The `FILES` enumeration is complete, and so are five others beside it (CLI-506)
+- The unowned-install row stops claiming agent files `uninstall` refuses (CLI-515)
+- The global split stops carrying the whole stack when no global agent survives (CLI-516)
+- The two screens agree (CLI-517), and they agree on agents (CLI-522)
+- The fan-out line counts projects reached, not rewrites (CLI-518)
+- The removal reporting says what it did (CLI-521)
+- The narrowing probe cannot be fooled by a syntax error (CLI-525), and the page is now checked (CLI-526)
+- The harness stops handing the binary its own environment (CLI-523) and spawns it clean (CLI-524)
+- The plugin suite stops writing into the machine that runs it (CLI-514)
+- Journey 7's arc is actually run, and journey 9 closed with it (CLI-527)
+- The gate that declined to judge, silently, now reports what it skipped (CLI-528)
+- Prose that asserted behaviour the code no longer had (CLI-530), and a documented gap filled a day earlier (CLI-533)
+- The enumeration-drift checker, filed five times in eighteen days, is finally built (CLI-531)
+- The smoke files are finally run by something (CLI-520)
+- Three of the four escape shapes are judgement and one is a selector (CLI-529), and the vacuous-comparison rules reach every workspace (CLI-532)
+
+See [changelogs/0.155.0.md](./changelogs/0.155.0.md) for full details.
+
 ## [0.154.0] - 2026-08-10
 
 **The wizard stops reaching through the lock**
