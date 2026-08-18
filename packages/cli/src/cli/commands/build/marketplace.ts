@@ -5,15 +5,25 @@ import { z } from "zod";
 
 import { BaseCommand } from "../../base-command";
 import { setVerbose, warn } from "../../utils/logger";
-import { readFile } from "../../utils/fs";
+import { readFile, writeFile } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
 import { EXIT_CODES } from "../../lib/exit-codes";
+import { loadMarketplaceMatrix } from "../../lib/loading";
 import {
   generateMarketplace,
   writeMarketplace,
   getMarketplaceStats,
+  validateMarketplaceName,
+  validateSkillIdNamespace,
 } from "../../lib/marketplace-generator";
-import { MARKETPLACE_JSON, PLUGIN_MANIFEST_DIR, PLUGINS_DIST_PATH } from "../../consts";
+import {
+  CATALOG_JSON,
+  GENERATED_AT_BUILD,
+  MARKETPLACE_JSON,
+  PLUGIN_MANIFEST_DIR,
+  PLUGINS_DIST_PATH,
+  STANDARD_FILES,
+} from "../../consts";
 import type { Marketplace } from "../../types/plugins";
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 
@@ -108,6 +118,7 @@ export default class BuildMarketplace extends BaseCommand {
         flags["plugins-dir"],
         identity,
       );
+      await this.writeCatalog(projectRoot, outputPath);
       this.printStats(marketplace);
       this.printSample(marketplace);
 
@@ -126,7 +137,7 @@ export default class BuildMarketplace extends BaseCommand {
     projectRoot: string,
     nameOverride?: string,
   ): Promise<MarketplaceIdentity> {
-    const packageJsonPath = path.join(projectRoot, "package.json");
+    const packageJsonPath = path.join(projectRoot, STANDARD_FILES.PACKAGE_JSON);
 
     let rawContent: string;
     try {
@@ -170,6 +181,11 @@ export default class BuildMarketplace extends BaseCommand {
       resolvedName = nameOverride;
     }
 
+    const reservedError = validateMarketplaceName(resolvedName, name);
+    if (reservedError) {
+      this.error(reservedError, { exit: EXIT_CODES.ERROR });
+    }
+
     return {
       name: resolvedName,
       version,
@@ -207,11 +223,36 @@ export default class BuildMarketplace extends BaseCommand {
     const stats = getMarketplaceStats(marketplace);
     this.log(`Found ${stats.total} plugins`);
 
+    const namespaceError = validateSkillIdNamespace(marketplace);
+    if (namespaceError) {
+      this.error(namespaceError, { exit: EXIT_CODES.ERROR });
+    }
+
     this.log("Writing marketplace.json...");
     await writeMarketplace(outputPath, marketplace);
     this.log(`Wrote ${outputPath}`);
 
     return marketplace;
+  }
+
+  /**
+   * Writes the marketplace's catalogue beside its manifest.
+   *
+   * Unconditional, and there is no flag to make it otherwise: a consumer
+   * fetching a marketplace cannot tell an author who omitted a flag from a
+   * marketplace that is broken, so an absent catalogue has to mean the second.
+   *
+   * `generatedAt` is stamped rather than carried: see {@link GENERATED_AT_BUILD}
+   * for why a published artefact records a build and not a moment.
+   */
+  private async writeCatalog(projectRoot: string, outputPath: string): Promise<void> {
+    const catalogPath = path.join(path.dirname(outputPath), CATALOG_JSON);
+
+    this.log(`Writing ${CATALOG_JSON}...`);
+    const matrix = await loadMarketplaceMatrix(projectRoot);
+    const catalog = { ...matrix, generatedAt: GENERATED_AT_BUILD };
+    await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+    this.log(`Wrote ${catalogPath}`);
   }
 
   private printStats(marketplace: Marketplace): void {

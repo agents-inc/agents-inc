@@ -1,5 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import path from "path";
+import { getErrorMessage } from "../../utils/errors";
 import { glob, readFile, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { DIRS, STANDARD_FILES } from "../../consts";
@@ -71,12 +72,14 @@ export async function loadSkillRules(configPath: string): Promise<SkillRulesConf
  *
  * Discovers skills by globbing for `metadata.yaml` files, then for each:
  * 1. Validates a corresponding SKILL.md exists (skips if missing)
- * 2. Parses and validates metadata.yaml against the raw metadata schema
+ * 2. Parses metadata.yaml and validates it against the raw metadata schema
  * 3. Parses SKILL.md frontmatter for the canonical skill ID
  * 4. Merges metadata fields into an ExtractedSkillMetadata object
  *
- * Skills with invalid metadata are warned and skipped. Skills missing
- * the required `displayName` field in metadata.yaml cause a hard error.
+ * A metadata.yaml that describes no skill — unparseable, or parseable without the
+ * fields the schema requires — is warned by path and skips its own skill; one bad
+ * file does not take the scan down with it. Skills missing the required
+ * `displayName` field in metadata.yaml cause a hard error.
  *
  * @param skillsDir - Absolute path to the skills root directory (e.g., `{root}/src/skills`)
  * @returns Array of extracted skill metadata, one per valid skill found
@@ -97,7 +100,20 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
     }
 
     const metadataContent = await readFile(metadataPath);
-    const rawMetadata: unknown = parseYaml(metadataContent);
+
+    // The safeParse below catches a file that parses without the fields a skill is
+    // described by, and cannot catch a file nothing parses out of at all. Both refuse
+    // the same way readSkillMetadata does: skip this skill, not the whole scan.
+    let rawMetadata: unknown;
+    try {
+      rawMetadata = parseYaml(metadataContent);
+    } catch (error) {
+      warn(
+        `Skipping '${metadataFile}': unparseable ${STANDARD_FILES.METADATA_YAML} at ${metadataPath} — ${getErrorMessage(error)}`,
+      );
+      continue;
+    }
+
     const metadataResult = matrixRawMetadataSchema.safeParse(rawMetadata);
 
     if (!metadataResult.success) {

@@ -9,12 +9,35 @@ import {
   REQUIRES_MATRIX,
   EMPTY_MATRIX_CONFIG,
   UNRESOLVED_CONFLICT_MATRIX,
+  PARTIAL_REQUIRES_ALL_MATRIX,
+  PARTIAL_REQUIRES_ANY_MATRIX,
+  RESOLVED_REQUIRES_ALL_MATRIX,
+  UNREACHABLE_REQUIRES_MATRIX,
+  UNRESOLVABLE_SLUG,
 } from "../__tests__/mock-data/mock-matrices.js";
+import type { MockMatrixConfig } from "../__tests__/factories/matrix-factories.js";
+import { firstElement } from "../__tests__/helpers/element-at.js";
 
 vi.mock("../../utils/logger");
 
 import { mergeMatrixWithSkills, synthesizeCategory } from "./skill-resolution";
-import type { CategoryPath, Category, SkillId } from "../../types";
+import { warn } from "../../utils/logger";
+import type { CategoryPath, Category, SkillId, SkillSlug } from "../../types";
+
+/** Two directories under one marketplace whose SKILL.md declares the same name. */
+const DUPLICATED_ID: SkillId = "web-framework-react";
+const FIRST_SKILL_PATH = "skills/web-framework-react/";
+const SECOND_SKILL_PATH = "skills/web-framework-react-copy/";
+
+/** One slug claimed by two skills that agree on nothing else — the other identity axis. */
+const COLLIDING_SLUG: SkillSlug = "react";
+
+/**
+ * The slug of the fictional skill the auto-synthesis cases use. No registry
+ * knows that id, so every one of its fields is stated rather than looked up.
+ */
+// Boundary cast: a fixture slug outside the generated SkillSlug union
+const CUSTOM_TOOL_SLUG = "custom-tool" as SkillSlug;
 
 describe("skill-resolution", () => {
   describe("mergeMatrixWithSkills", () => {
@@ -38,7 +61,7 @@ describe("skill-resolution", () => {
         expect.objectContaining({
           id: "web-framework-react",
           slug: "react",
-          displayName: "react",
+          displayName: "React",
           description: "React framework",
           author: "@vince",
           category: "web-framework",
@@ -182,12 +205,186 @@ describe("skill-resolution", () => {
     });
   });
 
+  describe("partial requirements", () => {
+    /** Zustand — every rule below is written about it — beside the skills its needs name. */
+    function mergeRequiresFixture(config: MockMatrixConfig) {
+      return mergeMatrixWithSkills(config.categories, config.relationships, [
+        createMockExtractedSkill("web-state-zustand"),
+        createMockExtractedSkill("web-framework-react"),
+        createMockExtractedSkill("web-testing-vitest"),
+      ]);
+    }
+
+    it("drops an all-of requirement when one of the skills it needs is missing", () => {
+      const merged = mergeRequiresFixture(PARTIAL_REQUIRES_ALL_MATRIX);
+
+      expect(
+        merged.skills["web-state-zustand"]?.requires,
+        "an AND over fewer skills than the author wrote is not the author's rule",
+      ).toStrictEqual([]);
+    });
+
+    it("drops an either-or requirement when one of its alternatives is missing", () => {
+      const merged = mergeRequiresFixture(PARTIAL_REQUIRES_ANY_MATRIX);
+
+      expect(
+        merged.skills["web-state-zustand"]?.requires,
+        "an OR over fewer alternatives than the author wrote rules out selections they allowed",
+      ).toStrictEqual([]);
+    });
+
+    it("keeps a requirement whose every need resolves", () => {
+      const merged = mergeRequiresFixture(RESOLVED_REQUIRES_ALL_MATRIX);
+
+      expect(merged.skills["web-state-zustand"]?.requires).toStrictEqual([
+        {
+          skillIds: ["web-framework-react", "web-testing-vitest"],
+          needsAny: false,
+          reason: firstElement(RESOLVED_REQUIRES_ALL_MATRIX.relationships.requires).reason,
+        },
+      ]);
+    });
+
+    it("names the slug that cost the rule", () => {
+      mergeRequiresFixture(PARTIAL_REQUIRES_ALL_MATRIX);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`Unresolved slug '${UNRESOLVABLE_SLUG}'`),
+      );
+    });
+  });
+
+  describe("unresolved slugs", () => {
+    it("reports a slug the rules name that no skill carries", () => {
+      const merged = mergeMatrixWithSkills(
+        UNRESOLVED_CONFLICT_MATRIX.categories,
+        UNRESOLVED_CONFLICT_MATRIX.relationships,
+        [createMockExtractedSkill("web-framework-react")],
+      );
+
+      expect(merged.unresolvedSlugs).toStrictEqual([UNRESOLVABLE_SLUG]);
+    });
+
+    it("reports a slug once however many skills the rule naming it reaches", () => {
+      const merged = mergeMatrixWithSkills(
+        UNRESOLVED_CONFLICT_MATRIX.categories,
+        UNRESOLVED_CONFLICT_MATRIX.relationships,
+        [
+          createMockExtractedSkill("web-framework-react"),
+          createMockExtractedSkill("web-testing-vitest"),
+        ],
+      );
+
+      expect(
+        merged.unresolvedSlugs,
+        "one typo is one finding, whatever the resolution pass cost to discover it",
+      ).toStrictEqual([UNRESOLVABLE_SLUG]);
+    });
+
+    it("reports a rule whose own skill is missing along with what it needs", () => {
+      const rule = firstElement(UNREACHABLE_REQUIRES_MATRIX.relationships.requires);
+      const merged = mergeMatrixWithSkills(
+        UNREACHABLE_REQUIRES_MATRIX.categories,
+        UNREACHABLE_REQUIRES_MATRIX.relationships,
+        [createMockExtractedSkill("web-framework-react")],
+      );
+
+      expect(merged.unresolvedSlugs).toStrictEqual([rule.skill, ...rule.needs]);
+    });
+
+    it("carries no unresolved slugs when every rule reference resolves", () => {
+      const merged = mergeMatrixWithSkills(
+        CONFLICT_MATRIX.categories,
+        CONFLICT_MATRIX.relationships,
+        [
+          createMockExtractedSkill("web-framework-react"),
+          createMockExtractedSkill("web-framework-vue-composition-api"),
+        ],
+      );
+
+      expect(merged.unresolvedSlugs).toBeUndefined();
+    });
+  });
+
+  describe("duplicate identity", () => {
+    function mergeTwoSkillsSharingAnId() {
+      return mergeMatrixWithSkills(
+        EMPTY_MATRIX_CONFIG.categories,
+        EMPTY_MATRIX_CONFIG.relationships,
+        [
+          createMockExtractedSkill(DUPLICATED_ID, {
+            path: FIRST_SKILL_PATH,
+            slug: COLLIDING_SLUG,
+          }),
+          createMockExtractedSkill(DUPLICATED_ID, {
+            path: SECOND_SKILL_PATH,
+            slug: COLLIDING_SLUG,
+          }),
+        ],
+      );
+    }
+
+    it("keeps the first of two skills declaring the same id", () => {
+      const merged = mergeTwoSkillsSharingAnId();
+
+      expect(
+        merged.skills[DUPLICATED_ID]?.path,
+        "the second skill declaring an id must not silently overwrite the first",
+      ).toBe(FIRST_SKILL_PATH);
+    });
+
+    it("names the duplicated id and the ignored location", () => {
+      mergeTwoSkillsSharingAnId();
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`Duplicate skill id '${DUPLICATED_ID}'`),
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(SECOND_SKILL_PATH));
+    });
+
+    it("keeps the first mapping and warns when two skills claim the same slug", () => {
+      const merged = mergeMatrixWithSkills(
+        EMPTY_MATRIX_CONFIG.categories,
+        EMPTY_MATRIX_CONFIG.relationships,
+        [
+          createMockExtractedSkill("web-framework-react", { slug: COLLIDING_SLUG }),
+          createMockExtractedSkill("web-framework-vue-composition-api", {
+            slug: COLLIDING_SLUG,
+          }),
+        ],
+      );
+
+      expect(merged.slugMap.slugToId[COLLIDING_SLUG]).toBe("web-framework-react");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`Duplicate slug '${COLLIDING_SLUG}'`),
+      );
+    });
+
+    it("resolves both skills when two distinct ids share nothing", () => {
+      const merged = mergeMatrixWithSkills(
+        EMPTY_MATRIX_CONFIG.categories,
+        EMPTY_MATRIX_CONFIG.relationships,
+        [
+          createMockExtractedSkill("web-framework-react"),
+          createMockExtractedSkill("web-framework-vue-composition-api"),
+        ],
+      );
+
+      expect(Object.keys(merged.skills)).toStrictEqual([
+        "web-framework-react",
+        "web-framework-vue-composition-api",
+      ]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
   describe("auto-synthesis", () => {
     it("synthesizes missing categories for skills with unknown category", () => {
       // Boundary cast: intentionally custom category not in built-in union
       const skill = createMockExtractedSkill("web-custom-tool" as SkillId, {
         category: "devops-iac" as CategoryPath,
         domain: "web",
+        slug: CUSTOM_TOOL_SLUG,
       });
 
       const merged = mergeMatrixWithSkills({}, EMPTY_MATRIX_CONFIG.relationships, [skill]);
@@ -210,6 +407,7 @@ describe("skill-resolution", () => {
       const skill = createMockExtractedSkill("web-custom-tool" as SkillId, {
         category: "devops-iac" as CategoryPath,
         domain: "api",
+        slug: CUSTOM_TOOL_SLUG,
       });
 
       const merged = mergeMatrixWithSkills({}, EMPTY_MATRIX_CONFIG.relationships, [skill]);
@@ -222,6 +420,7 @@ describe("skill-resolution", () => {
         // Boundary cast: intentionally custom category not in built-in union
         category: "web-custom" as CategoryPath,
         domain: "cli",
+        slug: CUSTOM_TOOL_SLUG,
       });
 
       const merged = mergeMatrixWithSkills({}, EMPTY_MATRIX_CONFIG.relationships, [skill]);
@@ -234,6 +433,7 @@ describe("skill-resolution", () => {
       const skill = createMockExtractedSkill("web-custom-tool" as SkillId, {
         category: "devops-iac" as CategoryPath,
         domain: "shared",
+        slug: CUSTOM_TOOL_SLUG,
       });
 
       const merged = mergeMatrixWithSkills({}, EMPTY_MATRIX_CONFIG.relationships, [skill]);

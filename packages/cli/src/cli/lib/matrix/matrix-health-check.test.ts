@@ -21,10 +21,13 @@ import {
   HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_MATRIX,
   HEALTH_AUDIT_CONSTRAINED_IN_EXCLUSIVE_MATRIX,
   HEALTH_AUDIT_APPLIED_DISPOSITION_MATRIX,
+  HEALTH_UNRESOLVED_RULE_SLUG_MATRIX,
   CUSTOM_SKILL_MATRIX,
   LOCAL_SKILL_MATRIX,
+  NAMESPACED_SKILL_MATRIX,
+  UNRESOLVABLE_SLUG,
 } from "../__tests__/mock-data/mock-matrices";
-import type { Category, SkillId } from "../../types";
+import type { Category, SkillId, SkillSlug } from "../../types";
 
 vi.mock("../../utils/logger");
 
@@ -98,6 +101,8 @@ describe("matrix-health-check", () => {
       // Boundary cast: fictional skill ID for testing auto-synthesized categories
       const skillInSynthesizedCategory = createMockSkill("web-custom-tool" as SkillId, {
         category: "web-custom" as Category,
+        // Boundary cast: fictional slug, as the ID it belongs to is fictional
+        slug: "custom-tool" as SkillSlug,
       });
       const matrixWithSynthesized = createMockMatrix(skillInSynthesizedCategory, {
         categories: {
@@ -178,6 +183,27 @@ describe("matrix-health-check", () => {
     });
   });
 
+  describe("unresolved rule slugs", () => {
+    // A slug a source's own skill-rules.ts names and its skills do not carry used to
+    // be warned during the merge and then forgotten, so `doctor` could not report the
+    // typo against the marketplace that shipped it.
+    it("errors for a slug the merge could not resolve", () => {
+      const issues = checkMatrixHealth(HEALTH_UNRESOLVED_RULE_SLUG_MATRIX);
+      const slugIssues = issues.filter((i) => i.finding === "rule-unresolved-slug");
+
+      expect(slugIssues).toHaveLength(1);
+      expect(firstElement(slugIssues).severity).toBe("error");
+      expect(firstElement(slugIssues).details).toContain(UNRESOLVABLE_SLUG);
+    });
+
+    it("reports nothing when the merge resolved every slug its rules named", () => {
+      const issues = checkMatrixHealth(HEALTH_HEALTHY_MATRIX);
+      const slugIssues = issues.filter((i) => i.finding === "rule-unresolved-slug");
+
+      expect(slugIssues).toStrictEqual([]);
+    });
+  });
+
   describe("audit verdict contradictions", () => {
     it("errors when a universal verdict sits in an exclusive category", () => {
       const issues = checkMatrixHealth(HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX);
@@ -222,13 +248,22 @@ describe("matrix-health-check", () => {
   });
 
   describe("unaudited skills", () => {
-    it("flags a source-provided skill with no audit manifest entry", () => {
+    // The manifest is the built-in catalog's audit record, and only ids that
+    // catalog names could ever have an entry in it. A marketplace's own skills
+    // are namespaced and outside it by construction, so a project installed
+    // from one must still be able to reach a clean bill of health.
+    it("does not flag a marketplace's own namespaced skill", () => {
+      const issues = checkMatrixHealth(NAMESPACED_SKILL_MATRIX);
+      const unauditedIssues = issues.filter((i) => i.finding === "skill-unaudited");
+
+      expect(unauditedIssues).toStrictEqual([]);
+    });
+
+    it("does not flag a skill whose id the built-in catalog does not name", () => {
       const issues = checkMatrixHealth(CUSTOM_SKILL_MATRIX);
       const unauditedIssues = issues.filter((i) => i.finding === "skill-unaudited");
 
-      expect(unauditedIssues).toHaveLength(1);
-      expect(firstElement(unauditedIssues).severity).toBe("warning");
-      expect(firstElement(unauditedIssues).details).toContain("web-framework-arbitrary");
+      expect(unauditedIssues).toStrictEqual([]);
     });
 
     it("does not flag built-in skills, which the manifest covers exhaustively", () => {

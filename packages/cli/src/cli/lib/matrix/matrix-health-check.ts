@@ -8,13 +8,28 @@ import type {
   SkillId,
   Category,
 } from "../../types";
+import { isSkillId } from "../../utils/type-guards";
 import { typedEntries } from "../../utils/typed-object";
 import { skillAudit, auditVerdictsPendingApply } from "../configuration/skill-audit";
 import type { SkillAuditEntry } from "../configuration/skill-audit";
 
+/**
+ * Which check produced an issue. A closed union rather than a free string because a caller may
+ * branch on one kind — `source-validator` weighs `rule-unresolved-slug` differently for the
+ * author of a marketplace than for someone consuming it — and a misspelled branch there must be
+ * a compile error rather than a condition that is quietly never true.
+ */
+type MatrixHealthFinding =
+  | "category-missing-domain"
+  | "skill-unknown-category"
+  | "skill-unresolved-relation-ref"
+  | "rule-unresolved-slug"
+  | "audit-verdict-contradiction"
+  | "skill-unaudited";
+
 export type MatrixHealthIssue = {
   severity: "warning" | "error";
-  finding: string;
+  finding: MatrixHealthFinding;
   details: string;
 };
 
@@ -23,6 +38,7 @@ export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue
     ...checkCategoryDomains(matrix),
     ...checkSkillCategories(matrix),
     ...checkSkillRelationRefs(matrix),
+    ...checkUnresolvedRuleSlugs(matrix),
     ...checkAuditVerdictContradictions(matrix),
     ...checkUnauditedSkills(matrix),
   ];
@@ -90,6 +106,26 @@ function checkSkillRelationRefs(matrix: MergedSkillsMatrix): MatrixHealthIssue[]
   );
 }
 
+/**
+ * A slug a relationship rule names that no skill carries. The rule containing it
+ * states nothing — resolution drops the reference — so the source shipped a rule
+ * that cannot act, which is a defect in the source rather than an advisory about
+ * it. The CLI's own built-in rules are narrowed to the slugs a source ships
+ * before resolution (CLI-471), so nothing here can be the CLI's doing.
+ *
+ * `error` is the AUTHOR's verdict, and it is the only one this module can reach: a matrix says
+ * what is wrong with it and cannot say who is reading. Someone who merely installed from the
+ * marketplace can neither open the file nor be harmed by it, and `source-validator` — the one
+ * layer that knows which of the two is asking — serves them the same finding as a warning.
+ */
+function checkUnresolvedRuleSlugs(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
+  return (matrix.unresolvedSlugs ?? []).map((slug) => ({
+    severity: "error" as const,
+    finding: "rule-unresolved-slug",
+    details: `Unresolved slug '${slug}' in the relationship rules — no skill carries it, so every rule naming it states nothing`,
+  }));
+}
+
 function isExclusiveCategory(matrix: MergedSkillsMatrix, category: CategoryPath): boolean {
   // "local" is a pseudo-category with no definition in matrix.categories — never a fence
   if (category === LOCAL_PSEUDO_CATEGORY) return false;
@@ -143,20 +179,30 @@ function checkAuditVerdictContradictions(matrix: MergedSkillsMatrix): MatrixHeal
 }
 
 /**
- * Built-ins are covered exhaustively at compile time by `Record<SkillId, SkillAuditEntry>`, so
- * anything the matrix carries without an entry came from a source and has never been audited.
- * Local skills are the user's own and are deliberately out of scope.
+ * "Unaudited" means the manifest was expected to carry a verdict and does not, so the population
+ * is the ids the manifest is keyed by: the built-in catalog's. A marketplace's skills carry that
+ * marketplace's namespace and are outside the manifest by construction, not unaudited — warning
+ * per skill for every one of them would cost a screen of noise and put a clean bill of health out
+ * of reach for anyone not on the public catalog. Local skills are the user's own and were already
+ * out of scope.
+ *
+ * `Record<SkillId, SkillAuditEntry>` covers the built-ins exhaustively at compile time, so what
+ * remains here is that same totality asserted against a matrix whose keys are open strings at
+ * runtime.
  */
 function checkUnauditedSkills(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills)
     .filter(
       ([skillId, skill]) =>
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
-        skill !== undefined && !skill.local && auditEntryFor(skillId) === undefined,
+        skill !== undefined &&
+        !skill.local &&
+        isSkillId(skillId) &&
+        auditEntryFor(skillId) === undefined,
     )
     .map(([skillId]) => ({
       severity: "warning" as const,
       finding: "skill-unaudited",
-      details: `Skill '${skillId}' has no audit verdict — source-provided skills are outside the built-in audit manifest`,
+      details: `Skill '${skillId}' has no audit verdict — the built-in audit manifest is missing an entry it is meant to carry`,
     }));
 }

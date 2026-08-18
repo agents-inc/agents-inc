@@ -5,6 +5,8 @@ import {
   generateMarketplace,
   writeMarketplace,
   getMarketplaceStats,
+  validateMarketplaceName,
+  validateSkillIdNamespace,
 } from "./marketplace-generator";
 import type { Marketplace } from "../types";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../consts";
@@ -17,6 +19,34 @@ const TEST_MARKETPLACE_OPTIONS = {
   ownerName: "Test Owner",
   pluginRoot: "./plugins",
 };
+
+/** An ordinary author's package.json name — no claim on any reserved namespace. */
+const AUTHOR_PACKAGE_NAME = "acme-skills";
+
+/** The npm package the public catalogue publishes from, and the only holder of its name. */
+const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
+
+/** The name the public catalogue publishes its marketplace under. */
+const PUBLIC_CATALOGUE_NAME = "agents-inc";
+
+/** How many offending ids a namespace refusal spells out before summarising. */
+const LISTED_VIOLATIONS = 10;
+
+/** Enough beyond {@link LISTED_VIOLATIONS} that the summary line has to appear. */
+const OVERFLOWING_VIOLATIONS = 3;
+
+/** A marketplace published under `name` listing exactly `pluginNames`. */
+function marketplaceListing(name: string, pluginNames: string[]): Marketplace {
+  return {
+    name,
+    version: "1.0.0",
+    owner: { name: "Test Owner" },
+    plugins: pluginNames.map((pluginName) => ({
+      name: pluginName,
+      source: `./plugins/${pluginName}`,
+    })),
+  };
+}
 
 describe("marketplace-generator", () => {
   let tempDir: string;
@@ -422,6 +452,116 @@ describe("marketplace-generator", () => {
           "api-orm": 1,
         },
       });
+    });
+  });
+
+  describe("validateMarketplaceName", () => {
+    it("accepts a name no other namespace owns", () => {
+      expect(validateMarketplaceName("acme", AUTHOR_PACKAGE_NAME)).toBeNull();
+    });
+
+    it("refuses the public catalogue's name from any other package", () => {
+      const error = validateMarketplaceName(PUBLIC_CATALOGUE_NAME, AUTHOR_PACKAGE_NAME);
+
+      expect(error).not.toBeNull();
+      expect(error).toContain(PUBLIC_CATALOGUE_NAME);
+      expect(error).toContain("reserved");
+    });
+
+    it("refuses the namespace held by skills that have no marketplace", () => {
+      const error = validateMarketplaceName("external", AUTHOR_PACKAGE_NAME);
+
+      expect(error).not.toBeNull();
+      expect(error).toContain("external");
+    });
+
+    it("refuses the namespace held by locally created skills", () => {
+      const error = validateMarketplaceName("local", AUTHOR_PACKAGE_NAME);
+
+      expect(error).not.toBeNull();
+      expect(error).toContain("local");
+    });
+
+    it("lets the public catalogue's own package publish under the name it owns", () => {
+      expect(validateMarketplaceName(PUBLIC_CATALOGUE_NAME, PUBLIC_CATALOGUE_PACKAGE)).toBeNull();
+    });
+
+    it("refuses the marketplace-less namespaces even to the public catalogue's package", () => {
+      expect(validateMarketplaceName("external", PUBLIC_CATALOGUE_PACKAGE)).not.toBeNull();
+      expect(validateMarketplaceName("local", PUBLIC_CATALOGUE_PACKAGE)).not.toBeNull();
+    });
+  });
+
+  describe("validateSkillIdNamespace", () => {
+    it("accepts a marketplace whose every skill id carries its name", () => {
+      const marketplace = marketplaceListing("acme", [
+        "acme-web-framework-react",
+        "acme-api-framework-hono",
+      ]);
+
+      expect(validateSkillIdNamespace(marketplace)).toBeNull();
+    });
+
+    it("accepts a marketplace with no skills at all", () => {
+      expect(validateSkillIdNamespace(marketplaceListing("acme", []))).toBeNull();
+    });
+
+    it("refuses a bare skill id, naming the marketplace and the id it expected", () => {
+      const marketplace = marketplaceListing("acme", [
+        "acme-api-framework-hono",
+        "web-framework-react",
+      ]);
+
+      const error = validateSkillIdNamespace(marketplace);
+
+      expect(error).not.toBeNull();
+      expect(error).toContain("acme");
+      expect(error).toContain("web-framework-react");
+      expect(error).toContain("acme-web-framework-react");
+    });
+
+    it("names every id outside the namespace, not just the first", () => {
+      const marketplace = marketplaceListing("acme", ["web-framework-react", "api-framework-hono"]);
+
+      const error = validateSkillIdNamespace(marketplace);
+
+      expect(error).toContain("acme-web-framework-react");
+      expect(error).toContain("acme-api-framework-hono");
+    });
+
+    it("summarises the remainder rather than listing a whole broken catalogue", () => {
+      const foreignIds = Array.from(
+        { length: LISTED_VIOLATIONS + OVERFLOWING_VIOLATIONS },
+        (_unused, index) => `web-framework-${index}`,
+      );
+
+      const error = validateSkillIdNamespace(marketplaceListing("acme", foreignIds));
+
+      expect(error).toContain(`acme-${foreignIds[0]}`);
+      expect(error).toContain(`... and ${OVERFLOWING_VIOLATIONS} more`);
+      expect(
+        error,
+        "an id past the listing cap belongs to the summary, not to the list",
+      ).not.toContain(`acme-${foreignIds[foreignIds.length - 1]}`);
+    });
+
+    it("refuses an id that is the marketplace's name with no skill after it", () => {
+      expect(validateSkillIdNamespace(marketplaceListing("acme", ["acme"]))).not.toBeNull();
+    });
+
+    it("refuses a prefix that only shares a leading substring with the name", () => {
+      const marketplace = marketplaceListing("acme", ["acmewide-web-framework-react"]);
+
+      expect(validateSkillIdNamespace(marketplace)).not.toBeNull();
+    });
+
+    it("accepts the public catalogue's unprefixed ids", () => {
+      const marketplace = marketplaceListing(PUBLIC_CATALOGUE_NAME, [
+        "web-framework-react",
+        "api-framework-hono",
+      ]);
+
+      expect(validateSkillIdNamespace(marketplace)).toBeNull();
     });
   });
 });

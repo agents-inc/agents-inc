@@ -7,8 +7,41 @@ import { writeTestPluginManifest } from "../../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists } from "../../test-fs-utils";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../../../consts";
+import { VALID_PACKAGE_JSON_FILE } from "../../mock-data/mock-source-files.js";
 import type { Marketplace, PluginManifest } from "../../../../types";
 import { firstElement } from "../../helpers/element-at.js";
+
+/** The marketplace name every build here publishes under unless it overrides it. */
+const MARKETPLACE_NAME = VALID_PACKAGE_JSON_FILE.name;
+
+/**
+ * The names no marketplace may publish under. Spelled out rather than imported:
+ * the rule is these three strings, and a test that read the module's own list
+ * would agree with any list it grew.
+ */
+const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local"] as const;
+
+/** The npm package the public catalogue publishes from — the sole holder of its name. */
+const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
+
+/** The marketplace name that package publishes under, and no other may. */
+const PUBLIC_CATALOGUE_NAME = "agents-inc";
+
+/**
+ * Composes a skill id in a marketplace's own namespace.
+ *
+ * A marketplace's skill ids carry its name as their prefix, so a fixture plugin's
+ * name and the name its build publishes under are one string — spelling either
+ * alone produces a build the namespace validator refuses.
+ */
+function namespacedId(marketplaceName: string, bare: string): string {
+  return `${marketplaceName}-${bare}`;
+}
+
+/** {@link namespacedId} in the default {@link MARKETPLACE_NAME} namespace. */
+function skillId(bare: string): string {
+  return namespacedId(MARKETPLACE_NAME, bare);
+}
 
 /**
  * Creates a plugin directory with a valid plugin.json manifest. The manifest
@@ -324,7 +357,7 @@ describe("build:marketplace command", () => {
       await mkdir(pluginsDir, { recursive: true });
 
       // Valid plugin
-      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework");
 
       // Invalid plugin: plugin.json exists but contains invalid JSON
       const invalidPluginDir = path.join(pluginsDir, "broken-plugin");
@@ -342,7 +375,7 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
+      expect(firstElement(marketplace.plugins).name).toBe(skillId("web-framework-react"));
     });
 
     it("should skip plugins with missing required name field in plugin.json", async () => {
@@ -351,7 +384,7 @@ describe("build:marketplace command", () => {
       await mkdir(pluginsDir, { recursive: true });
 
       // Valid plugin
-      await createPluginDir(pluginsDir, "api-framework-hono", "Hono framework");
+      await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono framework");
 
       // Invalid plugin: valid JSON but missing required 'name' field
       const invalidPluginDir = path.join(pluginsDir, "nameless-plugin");
@@ -369,7 +402,7 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(firstElement(marketplace.plugins).name).toBe("api-framework-hono");
+      expect(firstElement(marketplace.plugins).name).toBe(skillId("api-framework-hono"));
     });
   });
 
@@ -385,7 +418,7 @@ describe("build:marketplace command", () => {
     });
 
     it("should create marketplace.json from a single plugin", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", "React framework skills");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework skills");
 
       const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -395,27 +428,30 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
+      expect(firstElement(marketplace.plugins).name).toBe(skillId("web-framework-react"));
       expect(firstElement(marketplace.plugins).description).toBe("React framework skills");
       expect(firstElement(marketplace.plugins).version).toBe("1.0.0");
     });
 
     it("should include marketplace identity from package.json in output", async () => {
       // Rewrite package.json with single-word values to match assertions
+      const customName = "my-marketplace";
       await writeTestPackageJson(projectDir, {
-        name: "my-marketplace",
+        name: customName,
         version: "2.5.0",
         description: "test-marketplace-description",
         author: "TestOwner <owner@test.com>",
       });
 
-      await createPluginDir(pluginsDir, "web-test-a", "Test plugin", { version: "0.1.0" });
+      await createPluginDir(pluginsDir, namespacedId(customName, "web-test-a"), "Test plugin", {
+        version: "0.1.0",
+      });
 
       await runBuildMarketplace(pluginsDir, outputPath);
 
       const marketplace = await readMarketplaceJson(outputPath);
 
-      expect(marketplace.name).toBe("my-marketplace");
+      expect(marketplace.name).toBe(customName);
       expect(marketplace.version).toBe("2.5.0");
       expect(marketplace.description).toBe("test-marketplace-description");
       expect(marketplace.owner.name).toBe("TestOwner");
@@ -425,11 +461,11 @@ describe("build:marketplace command", () => {
 
     it("should include all 5 plugins from a populated plugins directory", async () => {
       const plugins = [
-        { name: "web-framework-react", description: "React framework" },
-        { name: "web-state-zustand", description: "Zustand state management" },
-        { name: "web-styling-scss-modules", description: "SCSS Modules styling" },
-        { name: "api-framework-hono", description: "Hono API framework" },
-        { name: "api-database-drizzle", description: "Drizzle ORM" },
+        { name: skillId("web-framework-react"), description: "React framework" },
+        { name: skillId("web-state-zustand"), description: "Zustand state management" },
+        { name: skillId("web-styling-scss-modules"), description: "SCSS Modules styling" },
+        { name: skillId("api-framework-hono"), description: "Hono API framework" },
+        { name: skillId("api-database-drizzle"), description: "Drizzle ORM" },
       ];
 
       for (const plugin of plugins) {
@@ -452,9 +488,9 @@ describe("build:marketplace command", () => {
 
     it("should sort plugins alphabetically in output", async () => {
       // Create plugins in non-alphabetical order
-      await createPluginDir(pluginsDir, "web-state-zustand", "Zustand");
-      await createPluginDir(pluginsDir, "api-framework-hono", "Hono");
-      await createPluginDir(pluginsDir, "web-framework-react", "React");
+      await createPluginDir(pluginsDir, skillId("web-state-zustand"), "Zustand");
+      await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
 
       await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -462,18 +498,18 @@ describe("build:marketplace command", () => {
       const names = marketplace.plugins.map((p) => p.name);
 
       expect(names).toStrictEqual([
-        "api-framework-hono",
-        "web-framework-react",
-        "web-state-zustand",
+        skillId("api-framework-hono"),
+        skillId("web-framework-react"),
+        skillId("web-state-zustand"),
       ]);
     });
 
     it("should preserve explicit categories from plugin manifests", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", "React");
-      await createPluginDir(pluginsDir, "api-database-drizzle", "Drizzle");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
+      await createPluginDir(pluginsDir, skillId("api-database-drizzle"), "Drizzle");
       await createPluginDir(
         pluginsDir,
-        "meta-methodology-anti-over-engineering",
+        skillId("meta-methodology-anti-over-engineering"),
         "Anti over-engineering",
       );
 
@@ -481,10 +517,14 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
 
-      const reactPlugin = marketplace.plugins.find((p) => p.name === "web-framework-react");
-      const drizzlePlugin = marketplace.plugins.find((p) => p.name === "api-database-drizzle");
+      const reactPlugin = marketplace.plugins.find(
+        (p) => p.name === skillId("web-framework-react"),
+      );
+      const drizzlePlugin = marketplace.plugins.find(
+        (p) => p.name === skillId("api-database-drizzle"),
+      );
       const metaPlugin = marketplace.plugins.find(
-        (p) => p.name === "meta-methodology-anti-over-engineering",
+        (p) => p.name === skillId("meta-methodology-anti-over-engineering"),
       );
 
       // Plugin manifests don't carry category — it comes from skill metadata.yaml
@@ -494,7 +534,7 @@ describe("build:marketplace command", () => {
     });
 
     it("should generate correct source paths referencing plugin directories", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", "React");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
 
       await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -503,11 +543,11 @@ describe("build:marketplace command", () => {
 
       // Source should reference the plugin directory relative to plugin root
       expect(typeof plugin.source).toBe("string");
-      expect(plugin.source).toContain("web-framework-react");
+      expect(plugin.source).toContain(skillId("web-framework-react"));
     });
 
     it("should preserve author and keywords from plugin manifests", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", "React framework", {
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework", {
         author: { name: "@vince", email: "vince@example.com" },
         keywords: ["react", "framework", "web"],
       });
@@ -525,7 +565,7 @@ describe("build:marketplace command", () => {
     it("should use version from package.json", async () => {
       await writeTestPackageJson(projectDir, { version: "3.0.0" });
 
-      await createPluginDir(pluginsDir, "web-test-a", "Test");
+      await createPluginDir(pluginsDir, skillId("web-test-a"), "Test");
 
       await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -534,7 +574,7 @@ describe("build:marketplace command", () => {
     });
 
     it("should overwrite existing marketplace.json on repeated builds", async () => {
-      await createPluginDir(pluginsDir, "web-test-a", "Test");
+      await createPluginDir(pluginsDir, skillId("web-test-a"), "Test");
 
       // First build with version 1.0.0
       await writeTestPackageJson(projectDir, { version: "1.0.0" });
@@ -545,7 +585,7 @@ describe("build:marketplace command", () => {
       expect(first.plugins).toHaveLength(1);
 
       // Add another plugin and rebuild with bumped version
-      await createPluginDir(pluginsDir, "api-framework-hono", "Hono");
+      await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono");
       await writeTestPackageJson(projectDir, { version: "1.1.0" });
 
       await runBuildMarketplace(pluginsDir, outputPath);
@@ -557,7 +597,7 @@ describe("build:marketplace command", () => {
 
     it("should skip directories without valid plugin.json manifests", async () => {
       // Valid plugin
-      await createPluginDir(pluginsDir, "web-framework-react", "React");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
 
       // Invalid: directory without .claude-plugin/plugin.json
       const invalidDir = path.join(pluginsDir, "not-a-plugin");
@@ -568,7 +608,7 @@ describe("build:marketplace command", () => {
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
-      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
+      expect(firstElement(marketplace.plugins).name).toBe(skillId("web-framework-react"));
     });
 
     it("should generate marketplace.json with 0 plugins for empty plugins directory", async () => {
@@ -586,7 +626,7 @@ describe("build:marketplace command", () => {
     });
 
     it("should write valid JSON with 2-space indentation and trailing newline", async () => {
-      await createPluginDir(pluginsDir, "web-test-a", "Test");
+      await createPluginDir(pluginsDir, skillId("web-test-a"), "Test");
 
       await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -603,8 +643,8 @@ describe("build:marketplace command", () => {
     });
 
     it("should report plugin count and category breakdown in stdout", async () => {
-      await createPluginDir(pluginsDir, "web-framework-react", "React");
-      await createPluginDir(pluginsDir, "api-framework-hono", "Hono");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
+      await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono");
 
       const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -624,35 +664,33 @@ describe("build:marketplace command", () => {
       pluginsDir = path.join(projectDir, "dist", "plugins");
       outputPath = path.join(projectDir, "marketplace.json");
       await mkdir(pluginsDir, { recursive: true });
-      await createPluginDir(pluginsDir, "web-test-a", "Test");
     });
 
     it("should override package.json name when --name is provided", async () => {
       // package.json has an npm scoped name, which is not a valid marketplace name
+      const overrideName = "agents-inc-skills";
       await writeTestPackageJson(projectDir, { name: "@agents-inc/skills" });
+      await createPluginDir(pluginsDir, namespacedId(overrideName, "web-test-a"), "Test");
 
-      const { error } = await runBuildMarketplace(
-        pluginsDir,
-        outputPath,
-        "--name",
-        "agents-inc-skills",
-      );
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath, "--name", overrideName);
 
       expect(error).toBeUndefined();
       expect(await fileExists(outputPath)).toBe(true);
       const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.name).toBe("agents-inc-skills");
+      expect(marketplace.name).toBe(overrideName);
     });
 
     it("should use package.json name when --name is omitted", async () => {
-      await writeTestPackageJson(projectDir, { name: "my-marketplace" });
+      const packageName = "my-marketplace";
+      await writeTestPackageJson(projectDir, { name: packageName });
+      await createPluginDir(pluginsDir, namespacedId(packageName, "web-test-a"), "Test");
 
       const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
       expect(await fileExists(outputPath)).toBe(true);
       const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.name).toBe("my-marketplace");
+      expect(marketplace.name).toBe(packageName);
     });
 
     it("should error and write no file when --name contains a path separator", async () => {
@@ -667,6 +705,152 @@ describe("build:marketplace command", () => {
 
       expect(error).toBeInstanceOf(Error);
       expect(error!.message).toContain("Invalid --name");
+      expect(await fileExists(outputPath)).toBe(false);
+    });
+  });
+
+  describe("skill id namespace", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await mkdir(pluginsDir, { recursive: true });
+    });
+
+    it("should refuse a skill id that does not carry the marketplace name", async () => {
+      await writeTestPackageJson(projectDir);
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error!.message).toContain("web-framework-react");
+      expect(error!.message).toContain(MARKETPLACE_NAME);
+    });
+
+    it("should name the id the refused skill should have carried", async () => {
+      await writeTestPackageJson(projectDir);
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error!.message).toContain(skillId("web-framework-react"));
+    });
+
+    it("should write no marketplace.json when a skill id is refused", async () => {
+      await writeTestPackageJson(projectDir);
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
+
+      await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(await fileExists(outputPath)).toBe(false);
+    });
+
+    it("should refuse every id outside the namespace in one run", async () => {
+      await writeTestPackageJson(projectDir);
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
+      await createPluginDir(pluginsDir, "api-framework-hono", "Hono framework");
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error!.message).toContain(skillId("web-framework-react"));
+      expect(error!.message).toContain(skillId("api-framework-hono"));
+    });
+
+    it("should build when every skill id carries the marketplace name", async () => {
+      await writeTestPackageJson(projectDir);
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework");
+      await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono framework");
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      const marketplace = await readMarketplaceJson(outputPath);
+      expect(marketplace.plugins.map((p) => p.name)).toStrictEqual([
+        skillId("api-framework-hono"),
+        skillId("web-framework-react"),
+      ]);
+    });
+
+    it("should build the public catalogue's unprefixed ids under its own package", async () => {
+      await writeTestPackageJson(projectDir, { name: PUBLIC_CATALOGUE_PACKAGE });
+      await createPluginDir(pluginsDir, "web-framework-react", "React framework");
+
+      const { error } = await runBuildMarketplace(
+        pluginsDir,
+        outputPath,
+        "--name",
+        PUBLIC_CATALOGUE_NAME,
+      );
+
+      expect(error).toBeUndefined();
+      const marketplace = await readMarketplaceJson(outputPath);
+      expect(marketplace.name).toBe(PUBLIC_CATALOGUE_NAME);
+      expect(firstElement(marketplace.plugins).name).toBe("web-framework-react");
+    });
+  });
+
+  describe("reserved marketplace names", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await mkdir(pluginsDir, { recursive: true });
+    });
+
+    it.each(RESERVED_MARKETPLACE_NAMES)(
+      "should refuse '%s' as a name in package.json",
+      async (reservedName) => {
+        await writeTestPackageJson(projectDir, { name: reservedName });
+
+        const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error!.message).toContain(reservedName);
+        expect(error!.message).toContain("reserved");
+        expect(await fileExists(outputPath)).toBe(false);
+      },
+    );
+
+    it.each(RESERVED_MARKETPLACE_NAMES)(
+      "should refuse '%s' passed through --name",
+      async (reservedName) => {
+        await writeTestPackageJson(projectDir);
+
+        const { error } = await runBuildMarketplace(pluginsDir, outputPath, "--name", reservedName);
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error!.message).toContain(reservedName);
+        expect(await fileExists(outputPath)).toBe(false);
+      },
+    );
+
+    it("should refuse the public catalogue's name to a package that is not it", async () => {
+      await writeTestPackageJson(projectDir, { name: "@acme/skills" });
+
+      const { error } = await runBuildMarketplace(
+        pluginsDir,
+        outputPath,
+        "--name",
+        PUBLIC_CATALOGUE_NAME,
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error!.message).toContain("reserved");
+      expect(await fileExists(outputPath)).toBe(false);
+    });
+
+    it("should still refuse 'external' to the public catalogue's own package", async () => {
+      await writeTestPackageJson(projectDir, { name: PUBLIC_CATALOGUE_PACKAGE });
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath, "--name", "external");
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error!.message).toContain("reserved");
       expect(await fileExists(outputPath)).toBe(false);
     });
   });

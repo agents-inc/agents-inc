@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
+import path from "path";
 
-import { renderSkillMd } from "../__tests__/content-generators";
+import {
+  renderMetadataYaml,
+  renderSkillMd,
+  renderUnparseableMetadataYaml,
+} from "../__tests__/content-generators";
 import { STANDARD_FILES } from "../../consts";
+import type { SkillId } from "../../types";
 
 // For extractAllSkills tests, we mock fs/loader. For loadSkillCategories/loadSkillRules,
 // we mock loadConfig from the configuration module.
@@ -33,6 +39,52 @@ vi.mock("../configuration/config-loader", async (importOriginal) => ({
 import { loadSkillCategories, loadSkillRules, extractAllSkills } from "./matrix-loader";
 import { warn } from "../../utils/logger";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+
+/** The marketplace tree a scan walks, and the two skill directories under it. */
+const SKILLS_DIR = "/marketplace/skills";
+const BROKEN_SKILL_DIR = "web-testing-vitest";
+const HEALTHY_SKILL_DIR = "web-framework-react";
+const HEALTHY_SKILL_ID: SkillId = "web-framework-react";
+const HEALTHY_SKILL_DESCRIPTION = "React framework";
+const CONTENT_HASH = "abc123";
+
+const BROKEN_METADATA_PATH = path.join(SKILLS_DIR, BROKEN_SKILL_DIR, STANDARD_FILES.METADATA_YAML);
+
+/** The yaml parser's own words for what renderUnparseableMetadataYaml() writes. */
+const PARSER_REASON = "Nested mappings are not allowed";
+
+/**
+ * A scan of two skill directories where the first one's metadata.yaml is
+ * unparseable — the order that proves a parse failure does not take the rest of
+ * the scan down with it.
+ */
+function mockBrokenSkillBeforeHealthySkill(): void {
+  mockGlob.mockResolvedValue([
+    `${BROKEN_SKILL_DIR}/${STANDARD_FILES.METADATA_YAML}`,
+    `${HEALTHY_SKILL_DIR}/${STANDARD_FILES.METADATA_YAML}`,
+  ]);
+  mockFileExists.mockResolvedValue(true);
+  mockReadFile.mockImplementation(async (filePath: string) => {
+    if (!filePath.includes(STANDARD_FILES.METADATA_YAML)) {
+      return renderSkillMd(HEALTHY_SKILL_ID, HEALTHY_SKILL_DESCRIPTION);
+    }
+    if (filePath.includes(BROKEN_SKILL_DIR)) {
+      return renderUnparseableMetadataYaml();
+    }
+    return renderMetadataYaml({
+      contentHash: CONTENT_HASH,
+      category: "web-framework",
+      domain: "web",
+      displayName: "React",
+      slug: "react",
+      cliDescription: HEALTHY_SKILL_DESCRIPTION,
+    });
+  });
+  mockParseFrontmatter.mockReturnValue({
+    name: HEALTHY_SKILL_ID,
+    description: HEALTHY_SKILL_DESCRIPTION,
+  });
+}
 
 describe("matrix-loader", () => {
   describe("loadSkillCategories", () => {
@@ -348,18 +400,31 @@ slug: bad-fm
       expect(skills).toHaveLength(0);
     });
 
-    it("warns when metadata.yaml has invalid YAML syntax", async () => {
-      mockGlob.mockResolvedValue([`broken-yaml/${STANDARD_FILES.METADATA_YAML}`]);
-      mockFileExists.mockResolvedValue(true);
-      mockReadFile.mockImplementation(async (filePath: string) => {
-        if (filePath.includes(STANDARD_FILES.METADATA_YAML)) {
-          return "category: [unclosed bracket";
-        }
-        return renderSkillMd("broken", "test", "# Broken");
-      });
+    it("skips an unparseable metadata.yaml and extracts every other skill", async () => {
+      mockBrokenSkillBeforeHealthySkill();
 
-      // YAML parse error should propagate (metadata readFile succeeds but YAML is malformed)
-      await expect(extractAllSkills("/project/src/skills")).rejects.toThrow();
+      const skills = await extractAllSkills(SKILLS_DIR);
+
+      expect(
+        skills.map((skill) => skill.id),
+        "one unparseable metadata.yaml must not abort the scan",
+      ).toStrictEqual([HEALTHY_SKILL_ID]);
+    });
+
+    it("names the unparseable metadata.yaml's path in the warning", async () => {
+      mockBrokenSkillBeforeHealthySkill();
+
+      await extractAllSkills(SKILLS_DIR);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(BROKEN_METADATA_PATH));
+    });
+
+    it("carries the parser's own reason in the unparseable warning", async () => {
+      mockBrokenSkillBeforeHealthySkill();
+
+      await extractAllSkills(SKILLS_DIR);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(PARSER_REASON));
     });
 
     it("warns and skips when metadata.yaml has wrong field types", async () => {

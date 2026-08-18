@@ -14,7 +14,7 @@ import {
   getSkillsByCategory,
   getAvailableSkills,
 } from "./matrix-resolver";
-import type { CategoryPath, SkillId } from "../../types";
+import type { CategoryPath, SkillId, SkillSlug } from "../../types";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures";
 import { createMockSkill } from "../__tests__/factories/skill-factories.js";
 import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
@@ -1062,7 +1062,11 @@ describe("getAvailableSkills edge cases", () => {
     const skills = Object.fromEntries(
       Array.from({ length: SKILL_COUNT }, (_, i) => {
         const id = `web-perf-skill${i}` as SkillId;
-        return [id, createMockSkill(id, { category: "api-performance" })];
+        // Boundary casts: generated IDs and slugs for a volume test, outside both unions
+        return [
+          id,
+          createMockSkill(id, { category: "api-performance", slug: `perf-skill${i}` as SkillSlug }),
+        ];
       }),
     );
     const matrix = createMockMatrix(skills, {

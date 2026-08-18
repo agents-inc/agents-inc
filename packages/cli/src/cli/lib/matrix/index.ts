@@ -5,7 +5,7 @@ export {
   loadAndMergeSkillsMatrix,
 } from "./matrix-loader";
 
-export { mergeMatrixWithSkills, synthesizeCategory } from "./skill-resolution";
+export { claimSlug, mergeMatrixWithSkills, synthesizeCategory } from "./skill-resolution";
 
 export {
   getDependentSkills,

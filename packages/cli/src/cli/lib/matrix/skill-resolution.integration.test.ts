@@ -26,7 +26,7 @@ import {
   RESOLUTION_PIPELINE_SKILLS,
 } from "../__tests__/mock-data/mock-skills.js";
 import { buildMultiSourceMatrix } from "../__tests__/mock-data/mock-matrices.js";
-import type { MergedSkillsMatrix, ProjectConfig, SkillId, Category } from "../../types";
+import type { MergedSkillsMatrix, ProjectConfig, SkillId, SkillSlug, Category } from "../../types";
 import { initializeMatrix, getSkillById } from "./matrix-provider";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 
@@ -208,6 +208,8 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         "web-feature-advanced" as SkillId,
         {
           category: "web-framework",
+          // Boundary cast: fictional slug, as the ID it belongs to is fictional
+          slug: "feature-advanced" as SkillSlug,
           requires: [
             {
               skillIds: ["web-nonexistent-dep" as SkillId],
@@ -461,11 +463,11 @@ describe("Integration: Multi-Source Install Pipeline", () => {
 
     const wizardResult = buildWizardResult(
       [
-        ...buildSkillConfigs(["web-framework-react", "web-testing-vitest"], { source: "public" }),
+        ...buildSkillConfigs(["web-framework-react", "web-testing-vitest"], { origin: "public" }),
         ...buildSkillConfigs(["api-framework-hono", "api-database-drizzle"], {
-          source: "acme-corp",
+          origin: "acme-corp",
         }),
-        ...buildSkillConfigs(["web-animation-framer" as SkillId], { source: "internal" }),
+        ...buildSkillConfigs(["web-animation-framer" as SkillId], { origin: "internal" }),
       ],
       {
         selectedAgents: ["web-developer", "api-developer"],
@@ -515,8 +517,8 @@ describe("Integration: Multi-Source Install Pipeline", () => {
     const config = await readTestTsConfig<ProjectConfig>(installResult.configPath);
 
     // Source metadata should be preserved
-    expect(config.source).toBe("github:test-org/skills");
-    expect(config.marketplace).toBe("test-marketplace");
+    expect(config.marketplace).toBe("github:test-org/skills");
+    expect(config.marketplaceName).toBe("test-marketplace");
   });
 });
 
