@@ -7,9 +7,9 @@ const CONFIG_SOURCE = `export default {
 
 const skills: SkillConfig[] = [
   // global
-  { id: "web-framework-react", scope: "global", source: "eject" },
+  { id: "web-framework-react", scope: "global", origin: "eject" },
   // project
-  { id: "web-testing-vitest", scope: "project", source: "eject" },
+  { id: "web-testing-vitest", scope: "project", origin: "eject" },
 ];
 
 const agents: AgentScopeConfig[] = [
@@ -22,22 +22,22 @@ const stack: Stack = {
 `;
 
 const CONFIG_SOURCE_WITHOUT_STACK = `const skills: SkillConfig[] = [
-  { id: "web-framework-react", scope: "global", source: "eject" },
+  { id: "web-framework-react", scope: "global", origin: "eject" },
 ];
 `;
 
 const CONFIG_SOURCE_WITH_UNTERMINATED_SKILLS = `const skills: SkillConfig[] = [
-  { id: "web-framework-react", scope: "global", source: "eject" },
+  { id: "web-framework-react", scope: "global", origin: "eject" },
 `;
 
 const GLOBAL_ONLY_SECTION = `const skills: SkillConfig[] = [
   // global
-  { id: "web-framework-react", scope: "global", source: "eject" },
+  { id: "web-framework-react", scope: "global", origin: "eject" },
 ];`;
 
 const PROJECT_ONLY_SECTION = `const skills: SkillConfig[] = [
   // project
-  { id: "web-testing-vitest", scope: "project", source: "eject" },
+  { id: "web-testing-vitest", scope: "project", origin: "eject" },
 ];`;
 
 describe("extractNamedSection", () => {

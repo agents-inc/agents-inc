@@ -586,7 +586,7 @@ describe("edit command eject-mode skill fallback", () => {
   const CONFIG_SKILLS = CONFIG_SKILL_IDS.map((id) => ({
     id,
     scope: "project" as const,
-    source: "eject",
+    origin: "eject",
   }));
 
   const testMatrix = FULLSTACK_PAIR_MATRIX;
@@ -681,7 +681,7 @@ describe("edit command detects added agents", () => {
   const EXISTING_SKILL_IDS: SkillId[] = ["web-framework-react"];
   const EXISTING_SKILLS = buildSkillConfigs(EXISTING_SKILL_IDS, {
     scope: "project",
-    source: "eject",
+    origin: "eject",
   });
 
   const testMatrix = FULLSTACK_PAIR_MATRIX;
@@ -776,7 +776,7 @@ describe("edit command copies newly added local skills", () => {
 
     const newLocalSkills = buildSkillConfigs(["web-framework-react"], {
       scope: "project",
-      source: "eject",
+      origin: "eject",
     });
 
     // Mock render to invoke onComplete with a wizard result that adds a local skill
@@ -836,7 +836,7 @@ describe("edit command removes deselected local skills", () => {
     mockProjectConfig(projectDir, {
       name: "test-project",
       agents: buildAgentConfigs(["web-developer"]),
-      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
     });
     mockRemovalWizard();
 
@@ -850,7 +850,7 @@ describe("edit command removes deselected local skills", () => {
     mockProjectConfig(projectDir, {
       name: "test-project",
       agents: buildAgentConfigs(["web-developer"]),
-      skills: buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
     });
     mockRemovalWizard();
 
@@ -866,7 +866,7 @@ describe("edit command removes deselected local skills", () => {
       agents: buildAgentConfigs(["web-developer"]),
       skills: buildSkillConfigs(["web-framework-react"], {
         scope: "project",
-        source: "agents-inc",
+        origin: "agents-inc",
       }),
     });
     mockRemovalWizard();
@@ -884,15 +884,15 @@ describe("edit command removes deselected local skills", () => {
 
 const GLOBAL_PLUGIN_REACT = buildSkillConfigs(["web-framework-react"], {
   scope: "global",
-  source: "agents-inc",
+  origin: "agents-inc",
 });
 const GLOBAL_EJECT_REACT = buildSkillConfigs(["web-framework-react"], {
   scope: "global",
-  source: "eject",
+  origin: "eject",
 });
 const PROJECT_PLUGIN_HONO = buildSkillConfigs(["api-framework-hono"], {
   scope: "project",
-  source: "agents-inc",
+  origin: "agents-inc",
 });
 const REACT_MIGRATED_TO_EJECT = new Map<SkillId, string>([["web-framework-react", "eject"]]);
 
@@ -907,7 +907,7 @@ describe("applyMigratedGlobalSources", () => {
   it("leaves a global skill absent from the migration set untouched", () => {
     const otherGlobal = buildSkillConfigs(["web-state-zustand"], {
       scope: "global",
-      source: "agents-inc",
+      origin: "agents-inc",
     });
 
     const result = applyMigratedGlobalSources(otherGlobal, REACT_MIGRATED_TO_EJECT);
@@ -919,7 +919,7 @@ describe("applyMigratedGlobalSources", () => {
   it("leaves a global tombstone untouched even when its id migrated", () => {
     const tombstone = buildSkillConfigs(["web-framework-react"], {
       scope: "global",
-      source: "agents-inc",
+      origin: "agents-inc",
       excluded: true,
     });
 
@@ -932,7 +932,7 @@ describe("applyMigratedGlobalSources", () => {
   it("leaves a project-scoped entry untouched even when its id migrated", () => {
     const projectReact = buildSkillConfigs(["web-framework-react"], {
       scope: "project",
-      source: "agents-inc",
+      origin: "agents-inc",
     });
 
     const result = applyMigratedGlobalSources(projectReact, REACT_MIGRATED_TO_EJECT);
@@ -951,7 +951,7 @@ describe("applyMigratedGlobalSources", () => {
   it("rewrites only the migrated entry in a mixed global config", () => {
     const otherGlobal = buildSkillConfigs(["web-state-zustand"], {
       scope: "global",
-      source: "agents-inc",
+      origin: "agents-inc",
     });
 
     const result = applyMigratedGlobalSources(
@@ -1074,11 +1074,11 @@ describe("edit command mode migration with a failing plugin install", () => {
     mockProjectConfig(projectDir, {
       name: "test-project",
       agents: AGENTS,
-      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", source: "eject" }),
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
     });
     mockWizardCompletion(
       buildWizardResult(
-        buildSkillConfigs(["web-framework-react"], { scope: "project", source: MARKETPLACE }),
+        buildSkillConfigs(["web-framework-react"], { scope: "project", origin: MARKETPLACE }),
         { agentConfigs: AGENTS },
       ),
     );
@@ -1134,7 +1134,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
   const GLOBAL_AGENTS = buildAgentConfigs(["web-developer"], { scope: "global" });
   const PROJECT_EJECT_REACT = buildSkillConfigs(["web-framework-react"], {
     scope: "project",
-    source: EJECT_SOURCE,
+    origin: EJECT_SOURCE,
   });
   const testSourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, "/test/source");
   /**
@@ -1236,8 +1236,8 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "agents-inc" },
     ];
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1258,8 +1258,8 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "agents-inc" },
     ];
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1276,8 +1276,8 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "eject" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "eject" },
     ];
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1291,9 +1291,9 @@ describe("migratePluginSkillScopes", () => {
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
       ["web-state-zustand", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "agents-inc" },
-      { id: "web-state-zustand", source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "agents-inc" },
+      { id: "web-state-zustand", origin: "agents-inc" },
     ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1327,8 +1327,8 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "agents-inc" },
     ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1351,8 +1351,8 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "agents-inc" },
     ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1379,7 +1379,7 @@ describe("migratePluginSkillScopes", () => {
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
     // Empty skills array — skill not found
-    const skills: Array<{ id: SkillId; source: string }> = [];
+    const skills: Array<{ id: SkillId; origin: string }> = [];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1396,9 +1396,9 @@ describe("migratePluginSkillScopes", () => {
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
       ["web-state-zustand", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "source">[] = [
-      { id: "web-framework-react", source: "agents-inc" },
-      { id: "web-state-zustand", source: "agents-inc" },
+    const skills: Pick<SkillConfig, "id" | "origin">[] = [
+      { id: "web-framework-react", origin: "agents-inc" },
+      { id: "web-state-zustand", origin: "agents-inc" },
     ];
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1466,11 +1466,11 @@ describe("detectConfigChanges", () => {
 
   it("should detect source changes on skills", () => {
     const oldConfig = buildProjectConfig({
-      skills: buildSkillConfigs(["web-framework-react"], { source: "eject" }),
+      skills: buildSkillConfigs(["web-framework-react"], { origin: "eject" }),
       agents: [],
     });
     const wizardResult = buildWizardResult(
-      buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+      buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
     );
 
     const changes = detectConfigChanges(oldConfig, wizardResult);
@@ -1553,14 +1553,14 @@ describe("detectConfigChanges", () => {
   it("should detect multiple change types simultaneously", () => {
     const oldConfig = buildProjectConfig({
       skills: [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "global", source: "eject" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
         ...buildSkillConfigs(["web-testing-vitest"]),
       ],
       agents: buildAgentConfigs(["web-developer"]),
     });
     const wizardResult = buildWizardResult(
       [
-        ...buildSkillConfigs(["web-framework-react"], { scope: "project", source: "agents-inc" }),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["api-framework-hono"]),
       ],
       {
@@ -1939,13 +1939,13 @@ describe("edit change summary display", () => {
     mockProjectConfig(
       projectDir,
       buildProjectConfig({
-        skills: buildSkillConfigs(["web-framework-react"], { source: "eject" }),
+        skills: buildSkillConfigs(["web-framework-react"], { origin: "eject" }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
     );
 
     mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }), {
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
@@ -1966,13 +1966,13 @@ describe("edit change summary display", () => {
     mockProjectConfig(
       projectDir,
       buildProjectConfig({
-        skills: buildSkillConfigs(["web-framework-react"], { source: EJECT_SOURCE }),
+        skills: buildSkillConfigs(["web-framework-react"], { origin: EJECT_SOURCE }),
         agents: buildAgentConfigs(["web-developer"]),
       }),
     );
 
     mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }), {
+      buildWizardResult(buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );

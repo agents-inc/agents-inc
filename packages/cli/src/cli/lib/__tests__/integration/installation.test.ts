@@ -71,7 +71,7 @@ describe("installation", () => {
       await writeInstallationConfig(
         tempDir,
         buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
       );
 
@@ -88,7 +88,7 @@ describe("installation", () => {
       await writeInstallationConfig(
         tempDir,
         buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
       );
 
@@ -166,7 +166,7 @@ describe("installation", () => {
       await writeInstallationConfig(
         tempDir,
         buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
       );
 
@@ -183,7 +183,7 @@ describe("installation", () => {
       await writeInstallationConfig(
         tempDir,
         buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react"], { source: "agents-inc" }),
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
       );
 

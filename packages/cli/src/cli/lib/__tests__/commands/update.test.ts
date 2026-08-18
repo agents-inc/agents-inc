@@ -92,9 +92,9 @@ describe("update command", () => {
     it("updates each marketplace the config's active skills name, once", async () => {
       await installConfig({
         skills: [
-          buildSkillConfig("web-framework-react", { source: MARKETPLACE }),
-          buildSkillConfig("web-testing-vitest", { source: MARKETPLACE }),
-          buildSkillConfig("api-framework-hono", { source: OTHER_MARKETPLACE }),
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("web-testing-vitest", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE }),
         ],
       });
 
@@ -109,8 +109,8 @@ describe("update command", () => {
     it("ignores the eject sentinel — it names no marketplace", async () => {
       await installConfig({
         skills: [
-          buildSkillConfig("web-framework-react", { source: EJECT_SOURCE }),
-          buildSkillConfig("web-testing-vitest", { source: MARKETPLACE }),
+          buildSkillConfig("web-framework-react", { origin: EJECT_SOURCE }),
+          buildSkillConfig("web-testing-vitest", { origin: MARKETPLACE }),
         ],
       });
 
@@ -122,9 +122,9 @@ describe("update command", () => {
     it("ignores excluded entries — an excluded skill is not installed", async () => {
       await installConfig({
         skills: [
-          buildSkillConfig("web-framework-react", { source: MARKETPLACE }),
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
           buildSkillConfig("api-framework-hono", {
-            source: OTHER_MARKETPLACE,
+            origin: OTHER_MARKETPLACE,
             excluded: true,
           }),
         ],
@@ -137,7 +137,7 @@ describe("update command", () => {
 
     it("exits non-zero when a marketplace refresh fails", async () => {
       await installConfig({
-        skills: [buildSkillConfig("web-framework-react", { source: MARKETPLACE })],
+        skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
       });
       mockMarketplaceUpdate.mockRejectedValueOnce(new Error(MARKETPLACE_FAILURE));
 
@@ -151,7 +151,7 @@ describe("update command", () => {
   describe("installations with nothing to refresh", () => {
     it("never touches the Claude CLI for an eject-only installation", async () => {
       await installConfig({
-        skills: [buildSkillConfig("web-framework-react", { source: EJECT_SOURCE })],
+        skills: [buildSkillConfig("web-framework-react", { origin: EJECT_SOURCE })],
       });
 
       const error = await runUpdate();
@@ -175,7 +175,7 @@ describe("update command", () => {
   describe("Claude CLI availability", () => {
     it("refuses to refresh a marketplace when the Claude CLI is missing", async () => {
       await installConfig({
-        skills: [buildSkillConfig("web-framework-react", { source: MARKETPLACE })],
+        skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
       });
       mockIsClaudeCLIAvailable.mockResolvedValue(false);
 

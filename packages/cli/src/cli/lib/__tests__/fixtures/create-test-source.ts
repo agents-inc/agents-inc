@@ -212,6 +212,38 @@ function generateMatrix(
 }
 
 /**
+ * The marketplace a test source publishes under, and therefore the namespace its
+ * skill ids live in.
+ *
+ * A source written here is a CUSTOM marketplace, and a custom marketplace may not
+ * ship an id the public catalogue owns — the loader refuses the whole source when
+ * it does, because a skill id is the directory the skill installs into. Fixtures
+ * built from catalogue ids were exactly that refusal's subject, so the ones that
+ * reach a real load publish through {@link inTestMarketplace} instead.
+ *
+ * The value spells neither noun of the marketplace/source vocabulary on purpose:
+ * an id is printed in `search`'s ID column, and a fixture id containing the word
+ * "marketplace" satisfies assertions about the CLI's own prose for free.
+ */
+export const TEST_MARKETPLACE_NAME = "test-fixture";
+
+/**
+ * The same skills, republished in {@link TEST_MARKETPLACE_NAME}'s namespace.
+ *
+ * Only the id moves. A slug names a skill inside its own source and a category
+ * keeps its `domain-…` shape, so neither is namespaced, and every assertion
+ * reading an id off the returned array follows on its own.
+ */
+export function inTestMarketplace(skills: TestSkill[]): TestSkill[] {
+  return skills.map((skill) => ({ ...skill, id: testMarketplaceSkillId(skill.id) }));
+}
+
+/** Composes a bare id into {@link TEST_MARKETPLACE_NAME}'s namespace. */
+export function testMarketplaceSkillId(bareId: string): string {
+  return `${TEST_MARKETPLACE_NAME}-${bareId}`;
+}
+
+/**
  * Creates a complete test source directory structure with skills, agents,
  * categories/rules config, and optionally a plugin layout. Sets up temp
  * directories that must be cleaned up via cleanupTestSource.

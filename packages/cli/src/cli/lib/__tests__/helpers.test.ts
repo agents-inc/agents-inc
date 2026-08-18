@@ -6,7 +6,7 @@ import { createTestDirs, cleanupTestDirs } from "./helpers/test-dir-setup.js";
 import type { PluginTestDirs } from "./helpers/test-dir-setup.js";
 import { writeTestSkill, writeTestAgent } from "./helpers/disk-writers.js";
 import { fileExists, directoryExists } from "./test-fs-utils";
-import type { SkillId } from "../../types";
+import type { SkillId, SkillSlug } from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { VITEST_MATRIX } from "./mock-data/mock-matrices";
 
@@ -48,9 +48,11 @@ describe("test helpers", () => {
       );
     });
 
-    it("accepts unknown skill with category override", () => {
+    it("accepts unknown skill with category and slug overrides", () => {
       const skill = createMockSkill("web-unknown-mystery" as SkillId, {
         category: "web-framework",
+        // Boundary cast: fictional slug, as the ID it belongs to is fictional
+        slug: "unknown-mystery" as SkillSlug,
       });
 
       expect(skill.id).toBe("web-unknown-mystery");

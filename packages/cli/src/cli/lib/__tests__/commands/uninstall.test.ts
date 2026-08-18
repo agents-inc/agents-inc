@@ -23,6 +23,8 @@ import {
 } from "../../../consts";
 import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillId } from "../../../types";
 import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
+import { cliVersion, stampProvenanceMarker } from "../../agents/agent-provenance.js";
+import { renderAgentMd } from "../content-generators.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { firstElement } from "../helpers/element-at.js";
 
@@ -33,15 +35,16 @@ vi.mock("../../../utils/exec.js", async (importOriginal) => ({
 }));
 
 /**
- * The removal plan's compiled-agents item, the section header it sits under, and the two halves
- * of the statement that replaces it when nothing can identify which agents this CLI compiled.
- * Written out here rather than imported from the command, so an assertion meant to hold a
- * user-facing string still cannot move with it.
+ * The removal plan's compiled-agents item, the section header it sits under, and the statement
+ * that stands beside it for the agent files this run leaves alone. Written out here rather than
+ * imported from the command, so an assertion meant to hold a user-facing string still cannot move
+ * with it. Both singular and plural forms are spelled out — the count is part of the claim.
  */
 const PLAN_AGENTS_ITEM = "(CLI-compiled)";
 const PLAN_CLI_MANAGED_SECTION = "CLI-managed files:";
-const PLAN_AGENTS_KEPT = "Kept compiled agents";
-const PLAN_AGENTS_KEPT_REASON = "needs the configuration";
+const PLAN_AGENTS_KEPT_ONE = "Kept 1 agent in";
+const PLAN_AGENTS_KEPT_TWO = "Kept 2 agents in";
+const PLAN_AGENTS_KEPT_REASON = "no agents-inc marker";
 
 /**
  * The three lines that say whether this run has a removal to make at all: the heading the plan is
@@ -58,24 +61,31 @@ const TEST_SOURCE = TEST_SOURCE_URL;
 const TEST_EXTRA_SOURCE = "github:acme-corp/skills";
 
 /**
+ * Two marketplace NAMES — what the plugin registry keys on — kept apart from the refs above so
+ * an assertion cannot pass by matching the wrong one.
+ */
+const MARKETPLACE_NAME = "agents-inc";
+const OTHER_MARKETPLACE_NAME = "custom-source";
+
+/**
  * Creates a .claude-src/config.ts with source configuration.
  */
 async function createProjectConfig(
   projectDir: string,
   options?: {
-    source?: string;
     marketplace?: string;
+    marketplaceName?: string;
     extraSources?: Array<{ name: string; url: string }>;
     agents?: AgentScopeConfig[];
     skills?: SkillConfig[];
   },
 ): Promise<string> {
   const config: Record<string, unknown> = {
-    source: options?.source ?? TEST_SOURCE,
+    marketplace: options?.marketplace ?? TEST_SOURCE,
   };
 
-  if (options?.marketplace) {
-    config.marketplace = options.marketplace;
+  if (options?.marketplaceName) {
+    config.marketplaceName = options.marketplaceName;
   }
 
   if (options?.extraSources) {
@@ -210,6 +220,27 @@ async function createProjectSkillsDir(projectDir: string): Promise<string> {
   const skillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
   await mkdir(skillsDir, { recursive: true });
   return skillsDir;
+}
+
+/**
+ * Writes one agent file into `<projectDir>/.claude/agents/` and returns its path.
+ * `compiled` stamps it with the provenance marker the compiler emits — the only thing
+ * that says this CLI produced the file once the configuration naming it is gone.
+ */
+async function createAgentFile(
+  projectDir: string,
+  agentName: string,
+  options: { compiled: boolean },
+): Promise<string> {
+  const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+  await mkdir(agentsDir, { recursive: true });
+
+  const rendered = renderAgentMd(agentName);
+  const content = options.compiled ? stampProvenanceMarker(rendered, await cliVersion()) : rendered;
+
+  const agentPath = path.join(agentsDir, `${agentName}.md`);
+  await writeFile(agentPath, content);
+  return agentPath;
 }
 
 describe("uninstall command", () => {
@@ -428,7 +459,7 @@ describe("uninstall command", () => {
       // in which the plan may promise it.
       expect(stdout).toContain(PLAN_CLI_MANAGED_SECTION);
       expect(stdout).toContain(PLAN_AGENTS_ITEM);
-      expect(stdout).not.toContain(PLAN_AGENTS_KEPT);
+      expect(stdout).not.toContain(PLAN_AGENTS_KEPT_ONE);
     });
 
     it("should keep an unidentifiable agents directory and report nothing to uninstall", async () => {
@@ -463,11 +494,14 @@ describe("uninstall command", () => {
       const skillsDir = await createProjectSkillsDir(projectDir);
       const cliSkillDir = await createCLISkill(skillsDir, "web-framework-react");
 
-      const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      await mkdir(agentsDir, { recursive: true });
-      const agentPath = path.join(agentsDir, `${AGENT_DEFS.webDev.name}.md`);
-      await writeFile(agentPath, `# ${AGENT_DEFS.webDev.title}`);
-      const agentBefore = await readFile(agentPath, "utf-8");
+      // Neither file carries the marker, so neither is this CLI's to delete — including the one
+      // whose basename is an agent the CLI itself compiles.
+      const builtInNamed = await createAgentFile(projectDir, AGENT_DEFS.webDev.name, {
+        compiled: false,
+      });
+      const userNamed = await createAgentFile(projectDir, "my-custom-agent", { compiled: false });
+      const builtInNamedBefore = await readFile(builtInNamed, "utf-8");
+      const userNamedBefore = await readFile(userNamed, "utf-8");
 
       const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
       const output = stdout + stderr;
@@ -478,13 +512,43 @@ describe("uninstall command", () => {
       expect(output).toContain(PLAN_PREVIEW_HEADING);
       expect(output).toContain(PLAN_CLI_MANAGED_SECTION);
       expect(output).not.toContain(PLAN_AGENTS_ITEM);
-      expect(output).toContain(PLAN_AGENTS_KEPT);
+      expect(output).toContain(PLAN_AGENTS_KEPT_TWO);
       expect(output).toContain(PLAN_AGENTS_KEPT_REASON);
 
       // The plan and the run are one decision: what it promised is gone, what it named as kept is
-      // byte-identical — even though this basename is one the CLI itself compiles.
+      // byte-identical.
       expect(await directoryExists(cliSkillDir)).toBe(false);
-      expect(await readFile(agentPath, "utf-8")).toBe(agentBefore);
+      expect(await readFile(builtInNamed, "utf-8")).toBe(builtInNamedBefore);
+      expect(await readFile(userNamed, "utf-8")).toBe(userNamedBefore);
+    });
+
+    /**
+     * The marker is what lets a run with no configuration tell its own output from the user's.
+     * One file carries it and goes; the other does not and stays — and the plan the user reads
+     * before pressing `y` says both, as does the summary printed after.
+     */
+    it("should sweep the marked agents and keep the unmarked ones when no config can name them", async () => {
+      const compiled = await createAgentFile(projectDir, AGENT_DEFS.webDev.name, {
+        compiled: true,
+      });
+      const handWritten = await createAgentFile(projectDir, AGENT_DEFS.apiDev.name, {
+        compiled: false,
+      });
+      const handWrittenBefore = await readFile(handWritten, "utf-8");
+
+      const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+      const output = stdout + stderr;
+
+      expect(output).toContain(PLAN_PREVIEW_HEADING);
+      expect(output).toContain(PLAN_CLI_MANAGED_SECTION);
+      expect(output).toContain(PLAN_AGENTS_ITEM);
+      expect(output).toContain(PLAN_AGENTS_KEPT_ONE);
+      expect(output).toContain(PLAN_AGENTS_KEPT_REASON);
+      expect(output).toContain("Removed 1 compiled agent");
+      expect(output).toContain(UNINSTALL_COMPLETE);
+
+      expect(await fileExists(compiled)).toBe(false);
+      expect(await readFile(handWritten, "utf-8")).toBe(handWrittenBefore);
     });
 
     it("should only remove agents listed in config and preserve others", async () => {
@@ -555,7 +619,7 @@ describe("uninstall command", () => {
   describe("plugin removal", () => {
     it("should remove plugin directory", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -569,7 +633,7 @@ describe("uninstall command", () => {
 
     it("should show what will be removed", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
       });
       await createPluginDir(projectDir, fakeHome);
 
@@ -581,7 +645,7 @@ describe("uninstall command", () => {
 
     it("should show uninstall complete message", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
       });
       await createPluginDir(projectDir, fakeHome);
 
@@ -594,12 +658,12 @@ describe("uninstall command", () => {
 
   describe("re-scoped plugin handling", () => {
     it("should match plugin keys using marketplace fallback when skill source differs", async () => {
-      // Config has skill.source = "re-scoped-source" but config.marketplace = "marketplace"
+      // Config has skill.origin = "re-scoped-source" but config.marketplaceName = "marketplace"
       // Plugin key in settings.json is "test-plugin@marketplace"
       // Without the marketplace fallback, the key won't match
       await createProjectConfig(projectDir, {
-        marketplace: "marketplace",
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "re-scoped-source" }],
+        marketplaceName: "marketplace",
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "re-scoped-source" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -613,11 +677,11 @@ describe("uninstall command", () => {
 
     it("should include marketplace variant keys for non-eject skills", () => {
       const config: Partial<ProjectConfig> = {
-        marketplace: "agents-inc",
+        marketplaceName: "agents-inc",
         skills: [
-          firstElement(buildSkillConfigs(["web-framework-react"], { source: "custom-source" })),
+          firstElement(buildSkillConfigs(["web-framework-react"], { origin: "custom-source" })),
           firstElement(buildSkillConfigs(["web-state-zustand"], { scope: "global" })),
-          firstElement(buildSkillConfigs(["api-framework-hono"], { source: "agents-inc" })),
+          firstElement(buildSkillConfigs(["api-framework-hono"], { origin: "agents-inc" })),
         ],
       };
 
@@ -628,15 +692,37 @@ describe("uninstall command", () => {
       expect(keys.has("web-state-zustand@eject")).toBe(true);
       expect(keys.has("api-framework-hono@agents-inc")).toBe(true);
 
-      // Marketplace variant for non-eject skill whose source differs from marketplace
+      // Marketplace variant for non-eject skill whose origin differs from the marketplace name
       expect(keys.has("web-framework-react@agents-inc")).toBe(true);
 
       // No marketplace variant for eject skills
       expect(keys.has("web-state-zustand@agents-inc")).toBe(false);
 
-      // No marketplace variant when source already matches marketplace
+      // No marketplace variant when the origin already matches the marketplace name
       // (only the primary key "api-framework-hono@agents-inc" exists, no duplicate)
       expect(keys.size).toBe(4);
+    });
+
+    /**
+     * The registry key is `<id>@<marketplace NAME>` — the identity Claude Code registered the
+     * plugin under. Once the ref moves onto `marketplace`, reading that field here would build
+     * a key spelling a repository URL, which matches nothing and leaves the plugin installed.
+     */
+    it("builds the marketplace variant key from the marketplace name, not the ref", () => {
+      const config = buildProjectConfig({
+        marketplace: TEST_SOURCE_URL,
+        marketplaceName: MARKETPLACE_NAME,
+        skills: buildSkillConfigs(["web-framework-react"], { origin: OTHER_MARKETPLACE_NAME }),
+      });
+
+      const keys = getCliInstalledPluginKeys(config);
+
+      expect(keys.has(`web-framework-react@${OTHER_MARKETPLACE_NAME}`)).toBe(true);
+      expect(keys.has(`web-framework-react@${MARKETPLACE_NAME}`)).toBe(true);
+      expect(
+        keys.has(`web-framework-react@${TEST_SOURCE_URL}`),
+        "a repository ref is not an identity the plugin registry knows",
+      ).toBe(false);
     });
 
     it("should uninstall re-scoped plugins by trying both scopes", async () => {
@@ -653,7 +739,7 @@ describe("uninstall command", () => {
       await mkdir(pluginPath, { recursive: true });
 
       const config = buildProjectConfig({
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
       });
 
       const result = await uninstallPluginsFn(
@@ -674,10 +760,10 @@ describe("uninstall command", () => {
     it("should uninstall project-scoped plugin that was re-scoped from global during init", async () => {
       // Scenario: skill was originally global, re-scoped to project during init
       // Config says scope: "project" but plugin registry may have "user" scope entry
-      // The marketplace name in config differs from the skill source
+      // The marketplace name in config differs from the skill origin
       await createProjectConfig(projectDir, {
-        marketplace: "marketplace",
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "custom-source" }],
+        marketplaceName: "marketplace",
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "custom-source" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -705,7 +791,7 @@ describe("uninstall command", () => {
       await mkdir(pluginPath, { recursive: true });
 
       const config = buildProjectConfig({
-        skills: [{ id: "test-plugin" as SkillId, scope: "global", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "global", origin: "marketplace" }],
       });
 
       const result = await uninstallPluginsFn(
@@ -803,7 +889,7 @@ describe("uninstall command", () => {
   describe("combined plugin and local removal", () => {
     it("should remove both plugins and CLI-managed local artifacts", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", source: "marketplace" }],
+        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
       const claudeDir = path.join(projectDir, CLAUDE_DIR);

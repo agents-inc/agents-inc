@@ -4,7 +4,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
-import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
+import {
+  createTestSource,
+  cleanupTestSource,
+  inTestMarketplace,
+  type TestDirs,
+} from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { renderMetadataYaml, renderSkillMd } from "../content-generators";
 import { SKILLS } from "../test-fixtures";
@@ -62,13 +67,13 @@ describe("search command", () => {
     );
 
     it("should accept the query positional", { timeout: COMMAND_TIMEOUT }, async () => {
-      const sourceDirs = await createTestSource({ skills: DEFAULT_TEST_SKILLS });
+      const sourceDirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
       try {
         await writeTestTsConfig(projectDir, {
           name: "test-project",
           skills: [],
           agents: [],
-          source: sourceDirs.sourceDir,
+          marketplace: sourceDirs.sourceDir,
         });
 
         const { stdout, error } = await runCliCommand(["search", "react"]);
@@ -76,7 +81,7 @@ describe("search command", () => {
         expect(error).toBeUndefined();
         // The table prints headers when there are matches
         expect(stdout).toContain("ID");
-        expect(stdout).toContain("Source");
+        expect(stdout).toContain("Origin");
         expect(stdout).toContain("Category");
         expect(stdout).toContain("Description");
       } finally {
@@ -98,12 +103,12 @@ describe("search command", () => {
     let sourceDirs: TestDirs;
 
     beforeEach(async () => {
-      sourceDirs = await createTestSource({ skills: DEFAULT_TEST_SKILLS });
+      sourceDirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: [],
         agents: [],
-        source: sourceDirs.sourceDir,
+        marketplace: sourceDirs.sourceDir,
       });
     });
 
@@ -150,12 +155,12 @@ describe("search command", () => {
     let sourceDirs: TestDirs;
 
     beforeEach(async () => {
-      sourceDirs = await createTestSource({ skills: DEFAULT_TEST_SKILLS });
+      sourceDirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: [],
         agents: [],
-        source: sourceDirs.sourceDir,
+        marketplace: sourceDirs.sourceDir,
       });
       await ejectSkillIntoProject();
     });

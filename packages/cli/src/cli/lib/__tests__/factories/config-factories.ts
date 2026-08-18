@@ -14,14 +14,17 @@ import type { TestProjectConfig } from "../fixtures/create-test-source";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { NO_CHANGES } from "../../config-gate/classify.js";
 import { NOTHING_RECOMPILED } from "../../config-gate/recompile.js";
+import { EJECT_SOURCE } from "../../../consts";
+import { TEST_CUSTOM_SOURCE_URL } from "../test-constants.js";
 import { buildSkillConfigs, FACTORY_DEFAULT_SCOPE } from "../helpers/wizard-simulation.js";
+import type { FixtureProjectConfig } from "../helpers/wizard-simulation.js";
 
 export function buildSourceConfig(
   overrides?: Partial<ResolvedConfig> & Record<string, unknown>,
 ): Record<string, unknown> {
   // Record return kept: source config is parse-boundary data callers vary with arbitrary fields.
   return {
-    source: "github:test-org/skills",
+    marketplace: "github:test-org/skills",
     ...overrides,
   };
 }
@@ -44,12 +47,51 @@ export function buildGateReport(
   };
 }
 
-export function buildProjectConfig(overrides?: Partial<ProjectConfig>): ProjectConfig {
+/**
+ * Overloaded rather than widened outright: a caller that names catalogue skills
+ * still gets a `ProjectConfig` back, and only one that names ids outside the
+ * generated union — a fixture marketplace's, see {@link FixtureProjectConfig} —
+ * gets the widened shape. Widening the single signature made every unit caller
+ * that feeds the result to a production function fail instead.
+ */
+export function buildProjectConfig(overrides?: Partial<ProjectConfig>): ProjectConfig;
+export function buildProjectConfig(overrides: Partial<FixtureProjectConfig>): FixtureProjectConfig;
+export function buildProjectConfig(
+  overrides?: Partial<FixtureProjectConfig>,
+): FixtureProjectConfig {
   return {
     name: "test-project",
     agents: buildAgentConfigs(["web-developer"]),
     skills: buildSkillConfigs(["web-framework-react"]),
     ...overrides,
+  };
+}
+
+/**
+ * A saved config whose PROJECT-LEVEL source ref still sits under the field name it carried
+ * before the rename. Deliberately-invalid parse-boundary data — the shape the loader has to
+ * refuse rather than pass through — so it is a plain record: `ProjectConfig` has no place to
+ * put the key any more. One definition because the schema, the loader and `resolveSource`
+ * all have to refuse the same file.
+ *
+ * The ref is deliberately NOT the default public one: a loader that ignores the stale key
+ * falls through to `DEFAULT_SOURCE`, and if the two were the same string nothing could tell
+ * a silent repoint from a correct read.
+ */
+export function buildPreRenameProjectConfig(): Record<string, unknown> {
+  return { ...buildProjectConfig(), source: TEST_CUSTOM_SOURCE_URL };
+}
+
+/**
+ * A saved config one of whose SKILL ENTRIES still carries its provenance under the field
+ * name it had before the rename. The entry is spelled out rather than taken from
+ * `buildSkillConfigs`, which follows the type and therefore stops producing the old shape
+ * the moment the rename lands.
+ */
+export function buildPreRenameSkillEntryConfig(): Record<string, unknown> {
+  return {
+    ...buildProjectConfig(),
+    skills: [{ id: "web-framework-react", scope: FACTORY_DEFAULT_SCOPE, source: EJECT_SOURCE }],
   };
 }
 

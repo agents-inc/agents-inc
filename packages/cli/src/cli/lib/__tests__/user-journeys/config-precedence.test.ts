@@ -16,10 +16,18 @@ import {
   fileExists,
   type TestDirs,
 } from "../fixtures/create-test-source";
+import {
+  buildPreRenameProjectConfig,
+  buildPreRenameSkillEntryConfig,
+} from "../factories/config-factories.js";
 import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
+import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../test-constants.js";
 import { renderConfigTs } from "../content-generators";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
+
+/** A third ref, distinct from the flag's and the config's, so each rung is identifiable. */
+const ENV_SOURCE_REF = "github:env-named/skills";
 
 async function createProjectConfig(
   projectDir: string,
@@ -61,7 +69,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
     it("should use --source flag value over project config", async () => {
       await createProjectConfig(projectDir, {
-        source: "github:project/source",
+        marketplace: "github:project/source",
       });
 
       const result = await resolveSource({
@@ -78,7 +86,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       // Set up all layers
       process.env[SOURCE_ENV_VAR] = "github:env/source";
       await createProjectConfig(projectDir, {
-        source: "github:project/source",
+        marketplace: "github:project/source",
       });
 
       const result = await resolveSource({
@@ -93,13 +101,13 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
     it("should reject empty flag value", async () => {
       await expect(resolveSource({ caller: "init", flag: "", projectDir })).rejects.toThrow(
-        /The source cannot be empty/,
+        /The marketplace cannot be empty/,
       );
     });
 
     it("should reject whitespace-only flag value", async () => {
       await expect(resolveSource({ caller: "init", flag: "   ", projectDir })).rejects.toThrow(
-        /The source cannot be empty/,
+        /The marketplace cannot be empty/,
       );
     });
   });
@@ -117,7 +125,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     it("should use CC_SOURCE over project config", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
       await createProjectConfig(projectDir, {
-        source: "github:project/source",
+        marketplace: "github:project/source",
       });
 
       const result = await resolveSource({ caller: "init", projectDir });
@@ -129,7 +137,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     it("should ignore CC_SOURCE for every command after init", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
       await createProjectConfig(projectDir, {
-        source: "github:project/source",
+        marketplace: "github:project/source",
       });
 
       const result = await resolveSource({ caller: "stored", projectDir });
@@ -163,7 +171,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
   describe("project config precedence", () => {
     it("should use project config when no flag or env", async () => {
       await createProjectConfig(projectDir, {
-        source: "github:project/custom-source",
+        marketplace: "github:project/custom-source",
       });
 
       const result = await resolveSource({ caller: "stored", projectDir });
@@ -174,27 +182,27 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
     it("should load project config from .claude-src/config.ts", async () => {
       const configPath = await createProjectConfig(projectDir, {
-        source: "github:my-company/internal-skills",
+        marketplace: "github:my-company/internal-skills",
       });
 
       // Verify file exists where expected
       expect(await fileExists(configPath)).toBe(true);
 
       const config = await loadProjectSourceConfig(projectDir);
-      expect(config?.source).toBe("github:my-company/internal-skills");
+      expect(config?.marketplace).toBe("github:my-company/internal-skills");
     });
 
     it("should handle project config with multiple fields", async () => {
       await createProjectConfig(projectDir, {
-        source: "github:project/source",
-        marketplace: "https://marketplace.example.com",
+        marketplace: "github:project/source",
+        marketplaceName: "https://marketplace.example.com",
         agentsSource: "https://agents.example.com",
       });
 
       const config = await loadProjectSourceConfig(projectDir);
 
-      expect(config?.source).toBe("github:project/source");
-      expect(config?.marketplace).toBe("https://marketplace.example.com");
+      expect(config?.marketplace).toBe("github:project/source");
+      expect(config?.marketplaceName).toBe("https://marketplace.example.com");
       expect(config?.agentsSource).toBe("https://agents.example.com");
     });
 
@@ -237,7 +245,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
   describe("marketplace resolution", () => {
     it("should resolve marketplace from project config", async () => {
       await createProjectConfig(projectDir, {
-        marketplace: "https://enterprise.example.com/plugins",
+        marketplaceName: "https://enterprise.example.com/plugins",
       });
 
       const result = await resolveSource({ caller: "stored", projectDir });
@@ -247,8 +255,8 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
     it("should include marketplace alongside source", async () => {
       await createProjectConfig(projectDir, {
-        source: "github:myorg/skills",
-        marketplace: "https://marketplace.example.com",
+        marketplace: "github:myorg/skills",
+        marketplaceName: "https://marketplace.example.com",
       });
 
       const result = await resolveSource({ caller: "stored", projectDir });
@@ -266,8 +274,8 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
     it("should preserve marketplace when using flag source", async () => {
       await createProjectConfig(projectDir, {
-        source: "github:project/source",
-        marketplace: "https://marketplace.example.com",
+        marketplace: "github:project/source",
+        marketplaceName: "https://marketplace.example.com",
       });
 
       // Flag overrides source but marketplace from config is preserved
@@ -280,6 +288,74 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       expect(result.source).toBe("github:flag/source");
       expect(result.sourceOrigin).toBe("flag");
       expect(result.marketplace).toBe("https://marketplace.example.com");
+    });
+  });
+
+  describe("the renamed marketplace fields", () => {
+    it("keeps the ladder flag > env > project with the stored ref read from marketplace", async () => {
+      await createProjectConfig(projectDir, { marketplace: TEST_SOURCE_URL });
+
+      const flagged = await resolveSource({
+        caller: "init",
+        flag: TEST_CUSTOM_SOURCE_URL,
+        projectDir,
+      });
+      expect(flagged.source).toBe(TEST_CUSTOM_SOURCE_URL);
+      expect(flagged.sourceOrigin).toBe("flag");
+
+      process.env[SOURCE_ENV_VAR] = ENV_SOURCE_REF;
+      const fromEnv = await resolveSource({ caller: "init", projectDir });
+      expect(fromEnv.source).toBe(ENV_SOURCE_REF);
+      expect(fromEnv.sourceOrigin).toBe("env");
+
+      delete process.env[SOURCE_ENV_VAR];
+      const stored = await resolveSource({ caller: "stored", projectDir });
+      expect(stored.source).toBe(TEST_SOURCE_URL);
+      expect(stored.sourceOrigin).toBe("project");
+    });
+
+    it("takes the ref from marketplace and the label from marketplaceName", async () => {
+      await createProjectConfig(projectDir, {
+        marketplace: TEST_SOURCE_URL,
+        marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
+      });
+
+      const result = await resolveSource({ caller: "stored", projectDir });
+
+      expect(result.source, "the ref is what the run fetches from").toBe(TEST_SOURCE_URL);
+      expect(result.marketplace, "the name is what plugins are registered under").toBe(
+        DEFAULT_PUBLIC_SOURCE_NAME,
+      );
+    });
+  });
+
+  /**
+   * The install-repointing trap, closed. `loadSourceConfig` once turned EVERY load failure into
+   * `null`, so a refusal raised in the Zod schema alone arrived here as "no config" — and
+   * `resolveSource` reads the return value alone, so it walked past that rung to the public
+   * marketplace instead of the one the config named. It now re-raises `ConfigSchemaError` and
+   * `ConfigDefaultExportError`: a file that EVALUATED and said something the schema refuses is a
+   * statement about this install, and only a file that could not be evaluated at all is still
+   * reported as absence. These two hold the refusal at the caller — both assert that
+   * `resolveSource` rejects, which is the shape a silent `null` could never produce.
+   */
+  describe("a config carrying a field name from before the rename", () => {
+    it("refuses to resolve rather than repointing at the default marketplace", async () => {
+      await writeTestTsConfig(projectDir, buildPreRenameProjectConfig());
+
+      const resolution = resolveSource({ caller: "stored", projectDir });
+
+      await expect(resolution).rejects.toThrow(/source/);
+      await expect(resolution).rejects.toThrow(/marketplace/);
+    });
+
+    it("refuses to resolve when a skill entry's provenance sits under the old key", async () => {
+      await writeTestTsConfig(projectDir, buildPreRenameSkillEntryConfig());
+
+      const resolution = resolveSource({ caller: "stored", projectDir });
+
+      await expect(resolution).rejects.toThrow(/source/);
+      await expect(resolution).rejects.toThrow(/origin/);
     });
   });
 });
@@ -309,7 +385,7 @@ describe("User Journey: Project Config Save and Load", () => {
     fallbackName: string,
   ): Promise<void> {
     const existing = (await loadProjectSourceConfig(dir)) ?? {};
-    await writeProjectPartial(dir, { ...existing, source }, { fallbackName });
+    await writeProjectPartial(dir, { ...existing, marketplace: source }, { fallbackName });
   }
 
   describe("saveSourceToProjectConfig", () => {
@@ -321,7 +397,7 @@ describe("User Journey: Project Config Save and Load", () => {
 
       // Boundary cast: config parse returns `unknown`
       const config = await readTestTsConfig<ProjectConfig>(configPath);
-      expect(config.source).toBe("github:test/repo");
+      expect(config.marketplace).toBe("github:test/repo");
     });
 
     it("should overwrite existing source", async () => {
@@ -332,7 +408,7 @@ describe("User Journey: Project Config Save and Load", () => {
       // Boundary cast: config parse returns `unknown`
       const config = await readTestTsConfig<ProjectConfig>(configPath);
 
-      expect(config.source).toBe("github:second/repo");
+      expect(config.marketplace).toBe("github:second/repo");
     });
   });
 
@@ -343,15 +419,15 @@ describe("User Journey: Project Config Save and Load", () => {
       await writeFile(
         path.join(configDir, STANDARD_FILES.CONFIG_TS),
         renderConfigTs({
-          source: "github:company/private-skills",
-          marketplace: "https://internal-marketplace.company.com",
+          marketplace: "github:company/private-skills",
+          marketplaceName: "https://internal-marketplace.company.com",
         }),
       );
 
       const config = await loadProjectSourceConfig(projectDir);
 
-      expect(config?.source).toBe("github:company/private-skills");
-      expect(config?.marketplace).toBe("https://internal-marketplace.company.com");
+      expect(config?.marketplace).toBe("github:company/private-skills");
+      expect(config?.marketplaceName).toBe("https://internal-marketplace.company.com");
     });
 
     it("should return config path from getProjectConfigPath", () => {
@@ -389,12 +465,12 @@ describe("User Journey: Config Precedence with CLI", () => {
 
     // Create project-level config with custom source
     await createProjectConfig(dirs.projectDir, {
-      source: "github:my-company/internal-skills",
+      marketplace: "github:my-company/internal-skills",
     });
 
     // Verify project config was created
     const config = await loadProjectSourceConfig(dirs.projectDir);
-    expect(config?.source).toBe("github:my-company/internal-skills");
+    expect(config?.marketplace).toBe("github:my-company/internal-skills");
   });
 
   it("should allow environment variable to override project config", async () => {
@@ -407,7 +483,7 @@ describe("User Journey: Config Precedence with CLI", () => {
     process.chdir(dirs.projectDir);
 
     await createProjectConfig(dirs.projectDir, {
-      source: "github:project/source",
+      marketplace: "github:project/source",
     });
 
     // Set environment variable
@@ -439,13 +515,13 @@ describe("User Journey: Config Edge Cases", () => {
     await mkdir(projectDir, { recursive: true });
 
     await createProjectConfig(projectDir, {
-      marketplace: "https://marketplace.example.com",
-      // No source field
+      marketplaceName: "https://marketplace.example.com",
+      // No marketplace ref field
     });
 
     const config = await loadProjectSourceConfig(projectDir);
-    expect(config?.source).toBeUndefined();
-    expect(config?.marketplace).toBe("https://marketplace.example.com");
+    expect(config?.marketplace).toBeUndefined();
+    expect(config?.marketplaceName).toBe("https://marketplace.example.com");
 
     // Resolve should fall back to default for source
     const result = await resolveSource({ caller: "stored", projectDir });
@@ -476,14 +552,14 @@ describe("User Journey: Config Edge Cases", () => {
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
       renderConfigTs({
-        source: "github:valid/source",
+        marketplace: "github:valid/source",
         unknown_field: "should_be_ignored",
         another_unknown: "also_ignored",
       }),
     );
 
     const config = await loadProjectSourceConfig(projectDir);
-    expect(config?.source).toBe("github:valid/source");
+    expect(config?.marketplace).toBe("github:valid/source");
   });
 
   it("should support local file paths as source", async () => {

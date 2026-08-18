@@ -15,6 +15,9 @@ import { SKILLS, TEST_CATEGORIES } from "../test-fixtures.js";
 import { FRAMEWORK_CATEGORY, MULTI_SOURCE_CATEGORIES } from "./mock-categories.js";
 import {
   CATEGORY_GRID_SKILLS,
+  CUSTOM_HOUSE_TOOLING_SKILL,
+  LOCAL_SKILL_SOURCE,
+  PUBLIC_MARKETPLACE_SOURCE,
   HEALTH_ALL_REFS_RESOLVED_SKILL,
   HEALTH_AUDIT_APPLIED_DISPOSITION_SKILL,
   HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_SKILL,
@@ -97,8 +100,8 @@ export const CATEGORY_EXCLUSIVITY_MATRIX = createMockMatrix(
 );
 
 export const CATEGORY_GRID_MATRIX = createMockMatrix(
-  ...CATEGORY_GRID_SKILLS.map(({ id, displayName, category }) =>
-    createMockSkill(id, { displayName, category }),
+  ...CATEGORY_GRID_SKILLS.map(({ id, slug, displayName, category }) =>
+    createMockSkill(id, { slug, displayName, category }),
   ),
 );
 
@@ -110,6 +113,26 @@ export const CATALOGUE_WITH_LOCAL_SKILL_MATRIX: MergedSkillsMatrix = {
   ...BUILT_IN_MATRIX,
   skills: { ...BUILT_IN_MATRIX.skills, [LOCAL_HOUSE_STYLE_SKILL.id]: LOCAL_HOUSE_STYLE_SKILL },
 };
+
+/**
+ * The two install-mode shapes the Sources step must tell apart, with the tagging pass
+ * already run over both: a catalogue skill the marketplace carries, and a custom skill
+ * whose only copy is the one on disk.
+ */
+export const MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX = createMockMatrix(
+  { ...SKILLS.react, availableSources: [PUBLIC_MARKETPLACE_SOURCE] },
+  {
+    ...CUSTOM_HOUSE_TOOLING_SKILL,
+    availableSources: [LOCAL_SKILL_SOURCE],
+    activeSource: LOCAL_SKILL_SOURCE,
+  },
+  {
+    categories: buildCategoryMap({
+      "web-framework": { domain: "web", exclusive: true },
+      "web-tooling": { domain: "web", exclusive: false },
+    }),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // All-skills matrices with category overrides — for wizard store tests
@@ -200,6 +223,25 @@ export const REACT_HONO_WEB_API_DOMAINS_MATRIX = createMockMatrix(SKILLS.react, 
     "api-api": { ...TEST_CATEGORIES.api, domain: "api" },
   }),
 });
+
+/**
+ * REACT_HONO_WEB_API_DOMAINS_MATRIX with Zustand alongside React on the `web` domain and NO
+ * rule binding the two. Three skills over two domains, every category defined, and nothing
+ * the catalogue objects to — so a selection may drop either web skill and keep the other, and
+ * whether a domain survives is decided by what is selected rather than by a requirement.
+ */
+export const REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX = createMockMatrix(
+  SKILLS.react,
+  SKILLS.zustand,
+  SKILLS.hono,
+  {
+    categories: buildCategoryMap({
+      "web-framework": TEST_CATEGORIES.framework,
+      "web-client-state": TEST_CATEGORIES.clientState,
+      "api-api": { ...TEST_CATEGORIES.api, domain: "api" },
+    }),
+  },
+);
 
 /**
  * REACT_HONO_WEB_API_DOMAINS_MATRIX with React bound to Zustand by a catalog rule, and Zustand
@@ -296,6 +338,27 @@ export const METHODOLOGY_MATRIX = createMockMatrix(SKILLS.antiOverEng);
 export const CUSTOM_SKILL_MATRIX = createMockMatrix(
   // Boundary cast: fictional skill ID outside the generated union
   createMockSkill("web-framework-arbitrary" as SkillId),
+);
+
+/**
+ * A marketplace's own skill as the namespace rule has it: an id carrying the
+ * marketplace's prefix — so a member of no catalog-keyed table — in a category
+ * this matrix places in a domain. That domain is the difference from
+ * CUSTOM_SKILL_MATRIX, which declares no categories at all and therefore leaves
+ * its skill with no taxonomy to be targeted on.
+ */
+export const NAMESPACED_SKILL_MATRIX = createMockMatrix(
+  // Boundary cast: a marketplace-namespaced id is outside the generated union
+  createMockSkill("acme-web-state-zustand" as SkillId, {
+    category: "web-client-state",
+    // Boundary cast: a marketplace's own slug is outside the generated union
+    slug: "acme-zustand" as SkillSlug,
+  }),
+  {
+    categories: buildCategoryMap({
+      "web-client-state": { ...TEST_CATEGORIES.clientState, domain: "web" },
+    }),
+  },
 );
 
 export const VITEST_MATRIX = createMockMatrix(SKILLS.vitest);
@@ -445,15 +508,96 @@ export const FRAMEWORK_AND_TESTING_CONFIG = createMockMatrixConfig(
 
 export const EMPTY_MATRIX_CONFIG = createMockMatrixConfig({});
 
+/**
+ * The slug every rule below reaches for and no fixture skill carries — a
+ * marketplace author's typo, stated once so a spec asserting on it and the rule
+ * naming it cannot drift apart.
+ */
+// Boundary cast: deliberately invalid slug, outside the generated union
+export const UNRESOLVABLE_SLUG = "nonexistent" as SkillSlug;
+
 export const UNRESOLVED_CONFLICT_MATRIX = createMockMatrixConfig(
   {},
   {
     relationships: {
       conflicts: [
         {
-          // Boundary cast: deliberately invalid slug to test unresolved reference handling
-          skills: ["react", "nonexistent" as SkillSlug],
+          skills: ["react", UNRESOLVABLE_SLUG],
           reason: "Conflict with missing skill",
+        },
+      ],
+    },
+  },
+);
+
+/**
+ * A requirement over one slug the skills carry and one nothing does, under AND
+ * semantics — the shape whose surviving half used to be applied as though its
+ * author had written the smaller rule.
+ */
+export const PARTIAL_REQUIRES_ALL_MATRIX = createMockMatrixConfig(
+  {},
+  {
+    relationships: {
+      requires: [
+        {
+          skill: "zustand",
+          needs: ["react", UNRESOLVABLE_SLUG],
+          reason: "Zustand needs React and the one nothing carries",
+        },
+      ],
+    },
+  },
+);
+
+/** The same partial requirement under OR semantics — an either-or over fewer alternatives. */
+export const PARTIAL_REQUIRES_ANY_MATRIX = createMockMatrixConfig(
+  {},
+  {
+    relationships: {
+      requires: [
+        {
+          skill: "zustand",
+          needs: ["react", UNRESOLVABLE_SLUG],
+          needsAny: true,
+          reason: "Zustand needs either React or the one nothing carries",
+        },
+      ],
+    },
+  },
+);
+
+/** A requirement over two slugs the skills both carry — nothing for resolution to drop. */
+export const RESOLVED_REQUIRES_ALL_MATRIX = createMockMatrixConfig(
+  {},
+  {
+    relationships: {
+      requires: [
+        {
+          skill: "zustand",
+          needs: ["react", "vitest"],
+          reason: "Zustand needs React and Vitest",
+        },
+      ],
+    },
+  },
+);
+
+/**
+ * A requirement no present skill declares, over a need no present skill carries
+ * — a rule resolution never walks, because the skill it is written about is not
+ * in the matrix to walk it.
+ */
+export const UNREACHABLE_REQUIRES_MATRIX = createMockMatrixConfig(
+  {},
+  {
+    relationships: {
+      requires: [
+        {
+          // Boundary casts: both slugs are deliberately outside the generated union
+          skill: "ghost" as SkillSlug,
+          needs: ["phantom" as SkillSlug],
+          reason: "A rule about a skill this source does not ship",
         },
       ],
     },
@@ -563,6 +707,18 @@ export const HEALTH_PARTIAL_UNRESOLVED_REQUIRES_MATRIX = createMockMatrix(
     },
   },
 );
+
+/**
+ * A matrix whose merge could not resolve one of the slugs its relationship
+ * rules name — what `mergeMatrixWithSkills` hands the health check when a
+ * source's own `skill-rules.ts` carries a typo.
+ */
+export const HEALTH_UNRESOLVED_RULE_SLUG_MATRIX = createMockMatrix(SKILLS.react, {
+  categories: {
+    "web-framework": TEST_CATEGORIES.framework,
+  },
+  unresolvedSlugs: [UNRESOLVABLE_SLUG],
+});
 
 export const HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX = createMockMatrix(SKILLS.tailwind, {
   categories: {

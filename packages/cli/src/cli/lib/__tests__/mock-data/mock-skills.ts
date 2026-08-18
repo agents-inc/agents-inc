@@ -7,9 +7,10 @@ import type {
   Skill,
   SkillId,
   SkillSlug,
+  SkillSource,
 } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
-import { LOCAL_PSEUDO_CATEGORY } from "../../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, LOCAL_PSEUDO_CATEGORY } from "../../../consts";
 import {
   createMockSkill,
   createMockSkillEntry,
@@ -283,6 +284,7 @@ export const HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_SKILL = createMockSkill("web-s
 /** The applied state: sse left the exclusive `web-realtime` radio for the open `web-streaming`. */
 export const HEALTH_AUDIT_APPLIED_DISPOSITION_SKILL = createMockSkill("web-realtime-sse", {
   category: "web-streaming",
+  slug: "sse",
 });
 
 // ---------------------------------------------------------------------------
@@ -291,51 +293,145 @@ export const HEALTH_AUDIT_APPLIED_DISPOSITION_SKILL = createMockSkill("web-realt
 
 export const CATEGORY_GRID_SKILLS: {
   id: SkillId;
+  slug: SkillSlug;
   displayName: string;
   category: CategoryPath;
 }[] = [
-  { id: "web-framework-react", displayName: "React", category: "web-framework" },
-  { id: "web-framework-vue-composition-api", displayName: "Vue", category: "web-framework" },
-  { id: "web-framework-angular-standalone", displayName: "Angular", category: "web-framework" },
-  { id: "web-framework-solidjs", displayName: "SolidJS", category: "web-framework" },
-  { id: "web-meta-framework-nuxt", displayName: "Nuxt", category: "web-meta-framework" },
-  { id: "web-meta-framework-remix", displayName: "Remix", category: "web-meta-framework" },
-  { id: "web-meta-framework-nextjs", displayName: "Next.js", category: "web-meta-framework" },
-  { id: "web-styling-scss-modules", displayName: "SCSS Modules", category: "web-styling" },
-  { id: "web-styling-tailwind", displayName: "Tailwind", category: "web-styling" },
-  { id: "web-styling-cva", displayName: "CVA", category: "web-styling" },
-  { id: "web-state-zustand", displayName: "Zustand", category: "web-client-state" },
-  { id: "web-state-jotai", displayName: "Jotai", category: "web-client-state" },
-  { id: "web-state-redux-toolkit", displayName: "Redux", category: "web-client-state" },
-  { id: "web-state-mobx", displayName: "MobX", category: "web-client-state" },
-  { id: "web-server-state-react-query", displayName: "React Query", category: "web-server-state" },
-  { id: "web-data-fetching-swr", displayName: "SWR", category: "web-server-state" },
+  { id: "web-framework-react", slug: "react", displayName: "React", category: "web-framework" },
+  {
+    id: "web-framework-vue-composition-api",
+    slug: "vue-composition-api",
+    displayName: "Vue",
+    category: "web-framework",
+  },
+  {
+    id: "web-framework-angular-standalone",
+    slug: "angular-standalone",
+    displayName: "Angular",
+    category: "web-framework",
+  },
+  {
+    id: "web-framework-solidjs",
+    slug: "solidjs",
+    displayName: "SolidJS",
+    category: "web-framework",
+  },
+  {
+    id: "web-meta-framework-nuxt",
+    slug: "nuxt",
+    displayName: "Nuxt",
+    category: "web-meta-framework",
+  },
+  {
+    id: "web-meta-framework-remix",
+    slug: "remix",
+    displayName: "Remix",
+    category: "web-meta-framework",
+  },
+  {
+    id: "web-meta-framework-nextjs",
+    slug: "nextjs",
+    displayName: "Next.js",
+    category: "web-meta-framework",
+  },
+  {
+    id: "web-styling-scss-modules",
+    slug: "scss-modules",
+    displayName: "SCSS Modules",
+    category: "web-styling",
+  },
+  {
+    id: "web-styling-tailwind",
+    slug: "tailwind",
+    displayName: "Tailwind",
+    category: "web-styling",
+  },
+  { id: "web-styling-cva", slug: "cva", displayName: "CVA", category: "web-styling" },
+  {
+    id: "web-state-zustand",
+    slug: "zustand",
+    displayName: "Zustand",
+    category: "web-client-state",
+  },
+  { id: "web-state-jotai", slug: "jotai", displayName: "Jotai", category: "web-client-state" },
+  {
+    id: "web-state-redux-toolkit",
+    slug: "redux-toolkit",
+    displayName: "Redux",
+    category: "web-client-state",
+  },
+  { id: "web-state-mobx", slug: "mobx", displayName: "MobX", category: "web-client-state" },
+  {
+    id: "web-server-state-react-query",
+    slug: "react-query",
+    displayName: "React Query",
+    category: "web-server-state",
+  },
+  { id: "web-data-fetching-swr", slug: "swr", displayName: "SWR", category: "web-server-state" },
   {
     id: "web-data-fetching-graphql-apollo",
+    slug: "graphql-apollo",
     displayName: "Apollo",
     category: "web-graphql-client",
   },
-  { id: "api-analytics-posthog-analytics", displayName: "PostHog", category: "api-analytics" },
+  {
+    id: "api-analytics-posthog-analytics",
+    slug: "posthog-analytics",
+    displayName: "PostHog",
+    category: "api-analytics",
+  },
   {
     id: "web-forms-react-hook-form",
+    slug: "react-hook-form",
     displayName: "React Hook Form",
     category: "web-form-library",
   },
-  { id: "web-forms-vee-validate", displayName: "Vee Validate", category: "web-form-library" },
-  { id: "web-forms-zod-validation", displayName: "Zod Validation", category: "web-forms" },
-  { id: "web-testing-vitest", displayName: "Vitest", category: "web-testing" },
-  { id: "web-testing-playwright-e2e", displayName: "Playwright", category: "web-e2e" },
-  { id: "web-testing-cypress-e2e", displayName: "Cypress", category: "web-e2e" },
-  { id: "web-mocks-msw", displayName: "MSW", category: "web-mocking" },
+  {
+    id: "web-forms-vee-validate",
+    slug: "vee-validate",
+    displayName: "Vee Validate",
+    category: "web-form-library",
+  },
+  {
+    id: "web-forms-zod-validation",
+    slug: "zod-validation",
+    displayName: "Zod Validation",
+    category: "web-forms",
+  },
+  { id: "web-testing-vitest", slug: "vitest", displayName: "Vitest", category: "web-testing" },
+  {
+    id: "web-testing-playwright-e2e",
+    slug: "playwright-e2e",
+    displayName: "Playwright",
+    category: "web-e2e",
+  },
+  {
+    id: "web-testing-cypress-e2e",
+    slug: "cypress-e2e",
+    displayName: "Cypress",
+    category: "web-e2e",
+  },
+  { id: "web-mocks-msw", slug: "msw", displayName: "MSW", category: "web-mocking" },
   {
     id: "web-testing-react-testing-library",
+    slug: "react-testing-library",
     displayName: "React Testing Library",
     category: "web-testing",
   },
-  { id: "web-testing-vue-test-utils", displayName: "Vue Test Utils", category: "web-testing" },
-  { id: "web-i18n-next-intl", displayName: "Next Intl", category: "web-i18n" },
-  { id: "web-i18n-react-intl", displayName: "React Intl", category: "web-i18n" },
-  { id: "web-i18n-vue-i18n", displayName: "Vue I18n", category: "web-i18n" },
+  {
+    id: "web-testing-vue-test-utils",
+    slug: "vue-test-utils",
+    displayName: "Vue Test Utils",
+    category: "web-testing",
+  },
+  { id: "web-i18n-next-intl", slug: "next-intl", displayName: "Next Intl", category: "web-i18n" },
+  {
+    id: "web-i18n-react-intl",
+    slug: "react-intl",
+    displayName: "React Intl",
+    category: "web-i18n",
+  },
+  { id: "web-i18n-vue-i18n", slug: "vue-i18n", displayName: "Vue I18n", category: "web-i18n" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -525,6 +621,43 @@ export const LOCAL_HOUSE_STYLE_ID = "local-house-style" as SkillId;
 /** A local skill the shipped catalogue has never heard of — merged in as source-loader does. */
 export const LOCAL_HOUSE_STYLE_SKILL = createMockSkill(LOCAL_HOUSE_STYLE_ID, {
   category: LOCAL_PSEUDO_CATEGORY,
+  // Boundary cast: a local skill's slug is outside the generated union, as its id is
+  slug: "house-style" as SkillSlug,
   local: true,
   custom: true,
 });
+
+// Boundary cast: a custom skill's id names a directory the user wrote, so it is outside
+// the generated union by construction. The `external-` prefix is the namespace a skill
+// answering to no marketplace takes.
+export const CUSTOM_HOUSE_TOOLING_ID = "external-web-tooling-house" as SkillId;
+
+/**
+ * A skill the user wrote themselves, carrying a REAL domain and category rather than the
+ * `local` pseudo-category — the shape every custom skill is meant to take. As the loader
+ * sees it before the install-mode tagging pass runs: no `availableSources` yet.
+ */
+export const CUSTOM_HOUSE_TOOLING_SKILL = createMockSkill(CUSTOM_HOUSE_TOOLING_ID, {
+  category: "web-tooling",
+  // Boundary cast: a custom skill's slug is outside the generated union, as its id is
+  slug: "house-tooling" as SkillSlug,
+  displayName: "House Tooling",
+  local: true,
+  custom: true,
+});
+
+/** The local copy the tagging pass gives a skill discovered under `.claude/skills/`. */
+export const LOCAL_SKILL_SOURCE: SkillSource = {
+  name: EJECT_SOURCE,
+  type: "local",
+  installed: true,
+  installMode: "eject",
+};
+
+/** The marketplace entry the tagging pass gives a skill the loaded source carries. */
+export const PUBLIC_MARKETPLACE_SOURCE: SkillSource = {
+  name: DEFAULT_PUBLIC_SOURCE_NAME,
+  type: "public",
+  installed: false,
+  primary: true,
+};

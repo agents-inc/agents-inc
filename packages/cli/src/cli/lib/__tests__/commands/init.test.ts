@@ -100,7 +100,7 @@ describe("init command", () => {
         renderConfigTs({
           name: "test-project",
           skills: [],
-          source: TEST_SOURCE_URL,
+          marketplace: TEST_SOURCE_URL,
         }),
       );
 

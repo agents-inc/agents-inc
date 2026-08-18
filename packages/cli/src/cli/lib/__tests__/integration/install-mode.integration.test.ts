@@ -30,9 +30,9 @@ const INIT_TEST_MATRIX = FULLSTACK_TRIO_MATRIX;
 
 /** Mixed-source skill set: react local (eject), hono plugin, vitest local. */
 const MIXED_SOURCE_SKILLS: SkillConfig[] = [
-  { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-  { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
-  { id: VITEST_SKILL_ID, scope: "project", source: "eject" },
+  { id: REACT_SKILL_ID, scope: "project", origin: "eject" },
+  { id: HONO_SKILL_ID, scope: "project", origin: "agents-inc" },
+  { id: VITEST_SKILL_ID, scope: "project", origin: "eject" },
 ];
 
 // Shared per-test source setup for the install-mode suites (the
@@ -51,7 +51,7 @@ afterEach(async () => {
 
 describe("Integration: Install Mode Persistence", () => {
   it("should persist skills with 'local' source in config after install", async () => {
-    const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "eject" });
+    const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result = await installEject({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
@@ -65,7 +65,7 @@ describe("Integration: Install Mode Persistence", () => {
   });
 
   it("should persist skills with 'plugin' source in config after install", async () => {
-    const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "agents-inc" });
+    const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const result = await installEject({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
@@ -81,7 +81,7 @@ describe("Integration: Install Mode Persistence", () => {
   it("should persist skills with 'mixed' sources in config after install", async () => {
     const skills: SkillConfig[] = [
       ...MIXED_SOURCE_SKILLS.slice(0, 2),
-      { id: VITEST_SKILL_ID, scope: "project", source: "agents-inc" },
+      { id: VITEST_SKILL_ID, scope: "project", origin: "agents-inc" },
     ];
     const result = await installEject({
       wizardResult: buildWizardResult(skills, {
@@ -110,13 +110,13 @@ describe("Integration: Install Mode Persistence", () => {
     const reactConfig = config.skills.find((s) => s.id === REACT_SKILL_ID);
     const honoConfig = config.skills.find((s) => s.id === HONO_SKILL_ID);
     const vitestConfig = config.skills.find((s) => s.id === VITEST_SKILL_ID);
-    expect(reactConfig?.source).toBe("eject");
-    expect(honoConfig?.source).toBe("agents-inc");
-    expect(vitestConfig?.source).toBe("eject");
+    expect(reactConfig?.origin).toBe("eject");
+    expect(honoConfig?.origin).toBe("agents-inc");
+    expect(vitestConfig?.origin).toBe("eject");
   });
 
   it("should have all skills as local when no explicit source set", async () => {
-    const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "eject" });
+    const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result = await installEject({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
@@ -127,7 +127,7 @@ describe("Integration: Install Mode Persistence", () => {
 
     const config = await readTestTsConfig<ProjectConfig>(result.configPath);
     for (const skill of config.skills) {
-      expect(skill.source).toBe("eject");
+      expect(skill.origin).toBe("eject");
     }
   });
 });
@@ -135,7 +135,7 @@ describe("Integration: Install Mode Persistence", () => {
 describe("Integration: Install Mode Config Round-Trip", () => {
   it("should round-trip install mode through config write and read", async () => {
     // First install with "eject" sources
-    const localSkills = buildSkillConfigs(INIT_SKILL_IDS, { source: "eject" });
+    const localSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result1 = await installEject({
       wizardResult: buildWizardResult(localSkills, {
         selectedAgents: ["web-developer"],
@@ -148,7 +148,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
     expect(deriveInstallMode(config1.skills)).toBe("eject");
 
     // Second install with "plugin" sources — config gets overwritten
-    const pluginSkills = buildSkillConfigs(INIT_SKILL_IDS, { source: "agents-inc" });
+    const pluginSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const result2 = await installEject({
       wizardResult: buildWizardResult(pluginSkills, {
         selectedAgents: ["web-developer"],
@@ -175,14 +175,14 @@ describe("Integration: Install Mode Config Round-Trip", () => {
     const config = await readTestTsConfig<ProjectConfig>(result.configPath);
     const reactConfig = config.skills.find((s) => s.id === REACT_SKILL_ID);
     const honoConfig = config.skills.find((s) => s.id === HONO_SKILL_ID);
-    expect(reactConfig?.source).toBe("eject");
-    expect(honoConfig?.source).toBe("agents-inc");
+    expect(reactConfig?.origin).toBe("eject");
+    expect(honoConfig?.origin).toBe("agents-inc");
   });
 });
 
 describe("Integration: buildAndMergeConfig Install Mode", () => {
   it("should derive installMode from skills in merged config", async () => {
-    const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "agents-inc" });
+    const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const wizardResult = buildWizardResult(skills, {
       selectedAgents: ["web-developer"],
     });
@@ -203,12 +203,12 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
 
     const reactConfig = mergeResult.config.skills.find((s) => s.id === REACT_SKILL_ID);
     const honoConfig = mergeResult.config.skills.find((s) => s.id === HONO_SKILL_ID);
-    expect(reactConfig?.source).toBe("eject");
-    expect(honoConfig?.source).toBe("agents-inc");
+    expect(reactConfig?.origin).toBe("eject");
+    expect(honoConfig?.origin).toBe("agents-inc");
   });
 
   it("should have all-local skills in merged config when all sources are local", async () => {
-    const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "eject" });
+    const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const wizardResult = buildWizardResult(skills, {
       selectedAgents: ["web-developer"],
     });
@@ -216,7 +216,7 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
     const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, dirs.projectDir);
 
     for (const skill of mergeResult.config.skills) {
-      expect(skill.source).toBe("eject");
+      expect(skill.origin).toBe("eject");
     }
   });
 
@@ -230,7 +230,7 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
     );
 
     // Build wizard result with "plugin" source skills
-    const skills = buildSkillConfigs(INIT_SKILL_IDS, { source: "agents-inc" });
+    const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const wizardResult = buildWizardResult(skills, {
       selectedAgents: ["web-developer"],
     });
@@ -261,8 +261,8 @@ describe("Integration: writeConfigFile Round-Trip", () => {
   it("should write and read back skills with derived installMode", async () => {
     const config = buildProjectConfig({
       skills: [
-        { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-        { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
+        { id: REACT_SKILL_ID, scope: "project", origin: "eject" },
+        { id: HONO_SKILL_ID, scope: "project", origin: "agents-inc" },
       ],
     });
 
@@ -276,8 +276,8 @@ describe("Integration: writeConfigFile Round-Trip", () => {
   it("should write and read back per-skill source", async () => {
     const config = buildProjectConfig({
       skills: [
-        { id: REACT_SKILL_ID, scope: "project", source: "eject" },
-        { id: HONO_SKILL_ID, scope: "project", source: "agents-inc" },
+        { id: REACT_SKILL_ID, scope: "project", origin: "eject" },
+        { id: HONO_SKILL_ID, scope: "project", origin: "agents-inc" },
       ],
     });
 
@@ -286,13 +286,13 @@ describe("Integration: writeConfigFile Round-Trip", () => {
     const readBack = await readTestTsConfig<ProjectConfig>(configPath);
     const reactConfig = readBack.skills.find((s) => s.id === REACT_SKILL_ID);
     const honoConfig = readBack.skills.find((s) => s.id === HONO_SKILL_ID);
-    expect(reactConfig?.source).toBe("eject");
-    expect(honoConfig?.source).toBe("agents-inc");
+    expect(reactConfig?.origin).toBe("eject");
+    expect(honoConfig?.origin).toBe("agents-inc");
   });
 
   it("should write config with all-local skills correctly", async () => {
     const config = buildProjectConfig({
-      skills: [{ id: REACT_SKILL_ID, scope: "project", source: "eject" }],
+      skills: [{ id: REACT_SKILL_ID, scope: "project", origin: "eject" }],
     });
 
     await writeConfigFile(config, configPath);

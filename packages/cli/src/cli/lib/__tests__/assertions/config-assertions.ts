@@ -48,7 +48,7 @@ export function expectAgentConfigs(config: ProjectConfig, expected: AgentScopeCo
 /** Verify complete config shape in one call */
 export function expectFullConfig(config: ProjectConfig, expected: ExpectedConfig): void {
   if (expected.name) expect(config.name).toBe(expected.name);
-  if (expected.source) expect(config.source).toBe(expected.source);
+  if (expected.source) expect(config.marketplace).toBe(expected.source);
 
   expect(config.skills.map((s) => s.id).sort()).toStrictEqual([...expected.skillIds].sort());
   expect(config.agents.map((a) => a.name).sort()).toStrictEqual([...expected.agentNames].sort());

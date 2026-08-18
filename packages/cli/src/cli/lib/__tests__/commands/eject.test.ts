@@ -646,7 +646,7 @@ describe("eject in plugin mode", () => {
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
     await installPluginConfig({
       wizardResult: buildWizardResult(
-        buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS, { source: "agents-inc" }),
+        buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS, { origin: "agents-inc" }),
       ),
       sourceResult: installSource,
       projectDir: dirs.projectDir,
@@ -664,7 +664,7 @@ describe("eject in plugin mode", () => {
 
     const config = await readTestTsConfig<ProjectConfig>(configPath);
     // installMode is derived at runtime from skills; all skills should have non-local source
-    expect(config.skills.every((s) => s.source !== "eject")).toBe(true);
+    expect(config.skills.every((s) => s.origin !== "eject")).toBe(true);
   });
 
   it("should copy all skill directories to output in plugin mode", async () => {

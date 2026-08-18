@@ -211,7 +211,7 @@ describe("init --from: plugin install spine", () => {
   it("hands every plugin skill to the Claude CLI once, at the scope its entry names", async () => {
     stubSeedFetch(buildTwoScopePluginPayload());
 
-    await Init.run(["--from", SEED_ID, "--source", tempDir], { root: CLI_ROOT });
+    await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
     // Exhaustive, not "contains": a second call for the same skill would install
     // it twice, and a call for a skill the payload never named would install
@@ -230,7 +230,7 @@ describe("init --from: plugin install spine", () => {
   it("writes the config only after every plugin install has succeeded", async () => {
     stubSeedFetch(buildTwoScopePluginPayload());
 
-    await Init.run(["--from", SEED_ID, "--source", tempDir], { root: CLI_ROOT });
+    await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
     expect(mockWriteProjectConfig).toHaveBeenCalledTimes(1);
     const [installOrder] = mockClaudePluginInstall.mock.invocationCallOrder.slice(-1);
@@ -241,6 +241,30 @@ describe("init --from: plugin install spine", () => {
     ).toBeLessThan(writeOrder ?? 0);
   });
 
+  it("reaches neither the Claude CLI nor the config write when run at the global root", async () => {
+    // Same payload, run from HOME instead of the project. There the two scopes collapse onto one
+    // directory, so a project-scoped entry would be registered against `$HOME` as a project and
+    // recorded in the global config — and no layer below this one re-reads the scope to notice.
+    // The refusal has to land before BOTH seams, which is what the two negatives below say.
+    stubSeedFetch(buildTwoScopePluginPayload());
+    process.chdir(tempDir);
+
+    const error = await Init.run(["--from", SEED_ID, "--marketplace", tempDir], {
+      root: CLI_ROOT,
+    }).then(
+      () => undefined,
+      (e: Error & { oclif?: { exit?: number } }) => e,
+    );
+
+    expect(
+      error,
+      "a project-scoped payload at the global root must not exit successfully",
+    ).toBeDefined();
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(mockClaudePluginInstall).not.toHaveBeenCalled();
+    expect(mockWriteProjectConfig).not.toHaveBeenCalled();
+  });
+
   it("never reaches the config write when a plugin install fails, and exits non-zero", async () => {
     stubSeedFetch(buildTwoScopePluginPayload());
     // The first skill installs, the second does not — the partial-failure shape.
@@ -249,7 +273,7 @@ describe("init --from: plugin install spine", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error(CLAUDE_INSTALL_FAILURE));
 
-    const error = await Init.run(["--from", SEED_ID, "--source", tempDir], {
+    const error = await Init.run(["--from", SEED_ID, "--marketplace", tempDir], {
       root: CLI_ROOT,
     }).then(
       () => undefined,

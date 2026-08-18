@@ -22,7 +22,7 @@ const ALL_SKILL_NAMES = INSTALL_MODE_SKILLS.map((s) => s.id) as SkillId[];
 /** Re-runs the eject install for every skill (the re-copy path). */
 async function reinstallAllSkills(dirs: TestDirs) {
   const matrix = createMatrixFromTestSkills(INSTALL_MODE_SKILLS);
-  const wizardResult = buildWizardResult(buildSkillConfigs(ALL_SKILL_NAMES, { source: "eject" }), {
+  const wizardResult = buildWizardResult(buildSkillConfigs(ALL_SKILL_NAMES, { origin: "eject" }), {
     selectedAgents: ["web-developer"],
   });
   const sourceResult = initMatrixAndSource(matrix, dirs.sourceDir);
@@ -119,7 +119,7 @@ describe("Integration: install-mode round trip with delete and re-copy", () => {
       // Verify config generated with exact skill list
       expect(await fileExists(installResult.configPath)).toBe(true);
       const config = await readTestTsConfig<ProjectConfig>(installResult.configPath);
-      expectSkillConfigs(config, buildSkillConfigs(ALL_SKILL_NAMES, { source: "eject" }));
+      expectSkillConfigs(config, buildSkillConfigs(ALL_SKILL_NAMES, { origin: "eject" }));
 
       // Verify NO _archived directory exists
       const archivedDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, "_archived");

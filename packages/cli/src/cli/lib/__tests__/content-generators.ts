@@ -138,6 +138,17 @@ export function renderIncompleteMetadataYaml(
   return emitMetadataYaml(omit(completeMetadata(fields), [...omitted]));
 }
 
+/**
+ * Renders a metadata.yaml no YAML parser can read — the other half of the class
+ * {@link renderIncompleteMetadataYaml} covers. `readSkillMetadata` refuses both
+ * ways of describing nothing, a file nothing parses out of and a file that
+ * parses without the required fields, and an error-path fixture asks for either
+ * by name rather than hand-rolling a broken string per spec.
+ */
+export function renderUnparseableMetadataYaml(): string {
+  return `{{{ this is not: valid: yaml: "at all\n`;
+}
+
 function emitMetadataYaml(fields: SkillMetadataFields): string {
   const lines = [
     ...(fields.custom ? ["custom: true"] : []),
