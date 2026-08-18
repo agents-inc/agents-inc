@@ -1,6 +1,11 @@
 import { setupServer } from "msw/node"
 
-import { configHandlers, skillIndexHandlers } from "./handlers"
+import {
+  catalogHandlers,
+  configHandlers,
+  skillContentsHandlers,
+  skillIndexHandlers,
+} from "./handlers"
 
 // The one place `msw/node` is named. Node's server and the browser's worker are
 // not interchangeable, so which one a suite gets is decided by the entry point
@@ -12,5 +17,7 @@ import { configHandlers, skillIndexHandlers } from "./handlers"
 // started.
 export const configMockServer = setupServer(
   ...configHandlers,
-  ...skillIndexHandlers
+  ...skillIndexHandlers,
+  ...catalogHandlers,
+  ...skillContentsHandlers
 )

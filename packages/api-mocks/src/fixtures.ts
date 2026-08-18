@@ -1,3 +1,4 @@
+import { matrixSchema } from "@workspace/matrix/matrix-schema"
 import { seedPayloadSchema } from "@workspace/matrix/seed"
 import { skillIndexSchema } from "@workspace/matrix/skill-index"
 
@@ -5,6 +6,11 @@ import { skillIndexSchema } from "@workspace/matrix/skill-index"
 // intercepts it. This module names no mocking library on purpose: the
 // Playwright suite keeps its own `page.route` interception and wants only these
 // values, so importing them must not drag msw into its runner.
+//
+// GitHub is the exception to "the worker": a marketplace's `catalog.json` is
+// fetched browser-direct so org content never transits our worker, which makes
+// api.github.com a second origin this app really talks to — and the only one
+// whose answers a token changes.
 
 // Where the worker answers in local development — the same origin
 // `apps/editor/src/env.schema.ts` defaults `VITE_API_URL` to, which is what
@@ -47,7 +53,7 @@ export const STORE_REFUSED_BODY = "Could not store this config"
 // from the contract fails at import in every consumer rather than in whichever
 // assertion happens to read the changed field.
 export const STORED_PAYLOAD = seedPayloadSchema.parse({
-  v: 3,
+  v: 5,
   matrixVersion: "1.0.0",
   stackId: null,
   skills: {
@@ -70,7 +76,13 @@ export const STORED_PAYLOAD = seedPayloadSchema.parse({
 //
 // Small on purpose. The route serves the whole index and the dialog filters it
 // in the browser, so what a test needs is enough entries to filter BETWEEN, not
-// the sixty-odd the real repositories hold.
+// the fifty-eight the real repositories hold.
+//
+// `bytes` is each directory's real weight, measured against the live git trees
+// on 2026-08-18 — so `docx` really is past `MAX_EXTERNAL_SKILL_BYTES` and the
+// other three really are inside it. Five of the fifty-eight indexed skills are
+// past that cap, and an index of uniformly small ones would let a dialog that
+// never checks look correct.
 //
 // Parsed rather than asserted, for the same reason `STORED_PAYLOAD` is.
 export const SKILL_INDEX = skillIndexSchema.parse({
@@ -83,7 +95,11 @@ export const SKILL_INDEX = skillIndexSchema.parse({
       repo: "obra/superpowers",
       path: "skills/brainstorming",
       stars: 268868,
+      bytes: 80159,
     },
+    // A code library wearing a SKILL.md: 1.1 MB across sixty-one files, almost
+    // all of it XML schemas. The one entry here that can never be added, which
+    // is what makes the mark on the search row testable at all.
     {
       name: "docx",
       description:
@@ -91,6 +107,7 @@ export const SKILL_INDEX = skillIndexSchema.parse({
       repo: "anthropics/skills",
       path: "skills/docx",
       stars: 166923,
+      bytes: 1128695,
     },
     {
       name: "code-review-and-quality",
@@ -99,6 +116,20 @@ export const SKILL_INDEX = skillIndexSchema.parse({
       repo: "addyosmani/agent-skills",
       path: "skills/code-review-and-quality",
       stars: 84036,
+      bytes: 20555,
+    },
+    // Addable by weight, and from a repository the CONTENT stub does not serve
+    // — which is the pair a spec needs to reach the late refusal on its merits.
+    // `docx` used to play that part and no longer can, now that the dialog
+    // refuses it before anything is staged.
+    {
+      name: "webapp-testing",
+      description:
+        "Toolkit for interacting with and testing local web applications using Playwright.",
+      repo: "anthropics/skills",
+      path: "skills/webapp-testing",
+      stars: 166923,
+      bytes: 22394,
     },
   ],
 })
@@ -116,3 +147,185 @@ export const STALE_SKILL_INDEX = skillIndexSchema.parse({
 // AND an upstream that will not answer.
 export const SKILL_INDEX_UNAVAILABLE_BODY =
   "The skill index is not available yet"
+
+// Where GitHub's REST API answers. Named once because it is the origin the
+// editor reaches DIRECTLY — the whole point of fetching a catalogue this way is
+// that org content never passes through anything of ours.
+export const GITHUB_API_ORIGIN = "https://api.github.com"
+
+// The marketplace the specs load, in the form the dialog accepts.
+export const MARKETPLACE_REF = "acme/skills"
+
+// A marketplace nobody can read: GitHub answers 404 for a repository that does
+// not exist AND for a private one an unauthorized caller asked about, which is
+// exactly why a 404 has to offer the token rather than declare the name wrong.
+export const PRIVATE_MARKETPLACE_REF = "acme/private-skills"
+
+// The token the private marketplace accepts. A real PAT shape, because the
+// header is built from whatever the user pasted and a fixture that could not be
+// pasted proves nothing.
+export const MARKETPLACE_TOKEN = "ghp_000000000000000000000000000000000000"
+
+// A marketplace's `catalog.json` exactly as `build marketplace` emits it: the
+// matrix, as JSON, with `generatedAt` stamped. No transform sits between this
+// and the editor's `safeParse`, which is what makes the fixture faithful rather
+// than a convenience.
+//
+// Every skill id carries the marketplace's name as a prefix (CLI-498), so these
+// ids can never collide with the public catalogue's unprefixed ones — which is
+// what makes "the grid swapped" observable rather than a matter of counting.
+//
+// Parsed rather than asserted, for the reason `STORED_PAYLOAD` is: a fixture
+// that drifts from the shared contract fails at import in every consumer.
+export const MARKETPLACE_CATALOG = matrixSchema.parse({
+  version: "9.9.9-acme",
+  generatedAt: "build",
+  categories: {
+    "acme-web-framework": {
+      id: "acme-web-framework",
+      displayName: "Acme Framework",
+      description: "The frameworks Acme builds on.",
+      domain: "web",
+      exclusive: true,
+      required: false,
+      order: 1,
+    },
+    "acme-api-runtime": {
+      id: "acme-api-runtime",
+      displayName: "Acme Runtime",
+      description: "Where Acme services run.",
+      domain: "api",
+      exclusive: false,
+      required: false,
+      order: 2,
+    },
+  },
+  skills: {
+    "acme-web-widgets": {
+      id: "acme-web-widgets",
+      slug: "acme-web-widgets",
+      displayName: "Acme Widgets",
+      description: "Acme's in-house component library.",
+      category: "acme-web-framework",
+      conflictsWith: [],
+      discourages: [],
+      requires: [],
+    },
+    "acme-web-legacy-widgets": {
+      id: "acme-web-legacy-widgets",
+      slug: "acme-web-legacy-widgets",
+      displayName: "Acme Legacy Widgets",
+      description: "The library Acme Widgets replaced.",
+      category: "acme-web-framework",
+      conflictsWith: [
+        { skillId: "acme-web-widgets", reason: "Two component libraries" },
+      ],
+      discourages: [],
+      requires: [],
+    },
+    "acme-api-gateway": {
+      id: "acme-api-gateway",
+      slug: "acme-api-gateway",
+      displayName: "Acme Gateway",
+      description: "Acme's edge runtime.",
+      category: "acme-api-runtime",
+      conflictsWith: [],
+      discourages: [],
+      requires: [],
+    },
+  },
+  suggestedStacks: [
+    {
+      id: "acme-house-stack",
+      name: "Acme House Stack",
+      description: "What every Acme service starts from.",
+      skills: {
+        "web-developer": { "acme-web-framework": ["acme-web-widgets"] },
+        "api-developer": { "acme-api-runtime": ["acme-api-gateway"] },
+      },
+      allSkillIds: ["acme-web-widgets", "acme-api-gateway"],
+      philosophy: "One way to build a service.",
+    },
+  ],
+})
+
+// Where GitHub serves a file's own bytes. A second origin rather than a path on
+// the first, and that is the point: it is a CDN with `access-control-allow-
+// origin: *` and no API rate limit, so a skill's files cost none of the sixty
+// requests an hour an unauthenticated caller gets. Only the tree listing does.
+export const GITHUB_RAW_ORIGIN = "https://raw.githubusercontent.com"
+
+/**
+ * The name the SKILL.md below would put on `window` if any of it were ever
+ * EXECUTED rather than shown.
+ *
+ * Named here rather than written out twice, so the fixture and the assertion
+ * that reads it back off the page cannot drift apart — a sentinel the spec
+ * spells differently from the file is a test that can only pass.
+ */
+export const XSS_SENTINEL = "__agentsIncSkillContentsRan"
+
+// One external skill, as its repository really holds it: a SKILL.md, the
+// metadata beside it, and a nested `reference/` file. Three entries because the
+// ruling is that "contents" is the whole DIRECTORY — a fixture of SKILL.md
+// alone would let an implementation that carries one file pass.
+//
+// Its SKILL.md carries live markup on purpose (EDITOR-33). A skills index is
+// user-generated content out of repositories nobody here controls, and markdown
+// carries raw HTML perfectly legally, so a `<script>` and an inline handler in
+// a SKILL.md are not an exotic case — a skill ABOUT web security would hold
+// exactly these lines. The preview claims two things at once about content like
+// this: that none of it runs, and that none of it is lost, because what the CLI
+// writes to disk has to be what was on screen when someone decided to trust it.
+// Harmless prose can prove neither half — it renders identically whether it is
+// escaped, sanitised or handed to a markdown renderer.
+export const EXTERNAL_SKILL = {
+  repo: "obra/superpowers",
+  path: "skills/brainstorming",
+  files: {
+    "SKILL.md":
+      "---\nname: brainstorming\n---\n\nExplores user intent before implementation.\n\n" +
+      "Never put a stranger's markup on a page: both\n" +
+      `<script>window.${XSS_SENTINEL} = true</script> and\n` +
+      `<img src=x onerror="window.${XSS_SENTINEL} = true"> run the moment one is parsed.\n`,
+    "metadata.yaml": "slug: brainstorming\ndomain: shared\n",
+    "reference/prompts.md": "# Prompts\n\nThe questions to ask first.\n",
+  },
+} as const
+
+// A second one, so a spec can stage two and assert on the pair.
+export const OTHER_EXTERNAL_SKILL = {
+  repo: "addyosmani/agent-skills",
+  path: "skills/code-review-and-quality",
+  files: {
+    "SKILL.md":
+      "---\nname: code-review-and-quality\n---\n\nMulti-axis review.\n",
+  },
+} as const
+
+// A repository whose skill directory is a code library wearing a SKILL.md.
+// Measured from the real `anthropics/skills/skills/docx`, which is 1.1 MB and
+// almost all XML schemas — the case the per-skill cap exists to refuse.
+export const OVERSIZED_EXTERNAL_SKILL = {
+  repo: "anthropics/skills",
+  path: "skills/docx",
+} as const
+
+// A file that is not text at all. PNG's magic bytes, which are invalid UTF-8 —
+// so a decoder asked to be strict refuses them rather than substituting
+// replacement characters into a file the CLI would later write to disk.
+export const BINARY_FILE_BYTES = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe,
+])
+
+// A `catalog.json` that is JSON and is not a catalogue — the case a byte
+// comparison cannot catch and a `safeParse` can. `skills` is an array where the
+// contract says a record, so the failure names a path rather than being a bare
+// "invalid": what the dialog shows has to say WHICH field, or an author cannot
+// fix their own build.
+export const MALFORMED_CATALOG = {
+  version: "9.9.9-acme",
+  categories: {},
+  skills: [],
+  suggestedStacks: [],
+}

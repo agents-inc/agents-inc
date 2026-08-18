@@ -23,7 +23,7 @@ const BASE = "https://api.test"
 // since that is the same widening that would let a fixture drift from the
 // contract and only say so as a 400 at runtime.
 const payload = (): SeedPayload => ({
-  v: 3,
+  v: 5,
   matrixVersion: "1.0.0",
   stackId: "next",
   skills: {
@@ -67,18 +67,45 @@ describe("POST /configs", () => {
   })
 
   it("rejects a body that is not a seed payload", async () => {
-    const response = await post({ v: 3, skills: "not-a-record" })
+    const response = await post({ v: 5, skills: "not-a-record" })
     expect(response.status).toBe(400)
   })
+
+  // Well past `MAX_BODY_BYTES`, which is sized for a payload carrying several
+  // external skills' whole directories — the largest real one measures 84 KB.
+  const OVERSIZED_FIELD_CHARS = 1_200_000
 
   it("refuses an oversized body before parsing it", async () => {
     const oversized = {
       ...payload(),
-      matrixVersion: "x".repeat(40_000),
+      matrixVersion: "x".repeat(OVERSIZED_FIELD_CHARS),
     }
 
     const response = await post(oversized)
     expect(response.status).toBe(413)
+  })
+
+  // The reason the cap moved. A skill added from outside the catalogue travels
+  // its whole directory inline, which is tens of KB against the ~2 KB the rest
+  // of a payload weighs — so the old 32 KB cap refused one external skill.
+  it("stores a payload carrying an external skill's directory", async () => {
+    const withContent: SeedPayload = {
+      ...payload(),
+      external: {
+        "external-web-framework-house": {
+          displayName: "House",
+          description: "The house framework skill.",
+          categoryId: "web-framework",
+          repo: "acme/skills",
+          path: "skills/house",
+          files: { "SKILL.md": "# House\n".repeat(4000) },
+        },
+      },
+    }
+
+    const response = await post(withContent)
+
+    expect(response.status).toBe(201)
   })
 })
 
@@ -105,7 +132,7 @@ describe("GET /configs/:id", () => {
   // the route serves arbitrary stored bytes on a response its OpenAPI contract
   // declares to be a seed payload.
   it("500s rather than serving a stored payload that no longer validates", async () => {
-    await env.CONFIGS.put("corrupt1", JSON.stringify({ v: 3, skills: "no" }))
+    await env.CONFIGS.put("corrupt1", JSON.stringify({ v: 5, skills: "no" }))
 
     const response = await SELF.fetch(`${BASE}/configs/corrupt1`)
 

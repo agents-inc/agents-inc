@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { MAX_EXTERNAL_SKILL_BYTES } from "@workspace/matrix/seed"
 import { skillIndexSchema } from "@workspace/matrix/skill-index"
 
 import { INDEXED_REPOS, crawlSkillIndex } from "./crawl"
@@ -25,11 +26,26 @@ const MORE_SKILLS_THAN_A_REQUEST_COULD_VERIFY = 60
 
 const TOKEN = "ghs-not-a-real-token"
 
+// The sizes the stand-in git tree reports, far enough apart that a sum can only
+// come out right one way. They are the tree's numbers rather than the files' —
+// the crawl weighs a skill from the listing and never downloads it to check.
+const MANIFEST_BYTES = 1_024
+const REFERENCE_BYTES = 30_000
+const SIBLING_BYTES = 500_000
+const README_BYTES = 12
+
+// A SKILL.md with no frontmatter, named so the weight the crawl reports for its
+// directory can be checked against the one thing in it.
+const GAMMA_MANIFEST = "# Gamma Skill\n\nSome prose.\n"
+
+/** One entry of the git tree, in the three fields the crawl reads. */
+type TreeEntry = { path: string; type: string; size?: number }
+
 type FakeRepo = {
   stars: number
   defaultBranch: string
-  /** Blob paths, exactly as the git tree API reports them. */
-  tree: readonly string[]
+  /** The git tree, exactly as the API reports it. */
+  tree: readonly TreeEntry[]
   /** Path → what raw.githubusercontent serves. A tree path absent here 404s. */
   files: Readonly<Record<string, string>>
 }
@@ -47,13 +63,27 @@ const skillMd = (name: string, description: string) =>
     "",
   ].join("\n")
 
+// A file, weighed the way the crawl weighs one: the tree's own reported size,
+// never the bytes raw.githubusercontent goes on to serve.
+const blob = (path: string, size: number): TreeEntry => ({
+  path,
+  type: "blob",
+  size,
+})
+
+// A directory. GitHub reports no size for one, which is why the entry's TYPE is
+// what tells a file from a directory rather than the presence of a number.
+const directory = (path: string): TreeEntry => ({ path, type: "tree" })
+
 const fakeRepo = (
   files: Record<string, string>,
-  tree?: readonly string[]
+  tree?: readonly TreeEntry[]
 ): FakeRepo => ({
   stars: STARS,
   defaultBranch: "main",
-  tree: tree ?? Object.keys(files),
+  tree:
+    tree ??
+    Object.entries(files).map(([path, text]) => blob(path, text.length)),
   files,
 })
 
@@ -93,10 +123,7 @@ const answerApi = (repos: Record<string, FakeRepo>, rest: string): Response => {
     })
   }
 
-  return Response.json({
-    truncated: false,
-    tree: repo.tree.map((path) => ({ path, type: "blob" })),
-  })
+  return Response.json({ truncated: false, tree: repo.tree })
 }
 
 // `{owner}/{name}/{branch}/{path...}`.
@@ -159,11 +186,11 @@ describe("crawlSkillIndex", () => {
           "SKILL.md": skillMd("the-repo-itself", "Not a skill"),
         },
         [
-          "README.md",
-          "SKILL.md",
-          "skills/alpha/SKILL.md",
-          "skills/alpha/reference.md",
-          "skills/beta/README.md",
+          blob("README.md", README_BYTES),
+          blob("SKILL.md", MANIFEST_BYTES),
+          blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+          blob("skills/alpha/reference.md", REFERENCE_BYTES),
+          blob("skills/beta/README.md", README_BYTES),
         ]
       ),
     })
@@ -177,6 +204,7 @@ describe("crawlSkillIndex", () => {
         repo: FIRST_REPO,
         path: "skills/alpha",
         stars: STARS,
+        bytes: MANIFEST_BYTES + REFERENCE_BYTES,
       },
     ])
   })
@@ -185,7 +213,10 @@ describe("crawlSkillIndex", () => {
     stubGitHub({
       [FIRST_REPO]: fakeRepo(
         { "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things") },
-        ["skills/alpha/SKILL.md", "skills/vanished/SKILL.md"]
+        [
+          blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+          blob("skills/vanished/SKILL.md", MANIFEST_BYTES),
+        ]
       ),
     })
 
@@ -214,9 +245,7 @@ describe("crawlSkillIndex", () => {
 
   it("falls back to the directory name and first heading without frontmatter", async () => {
     stubGitHub({
-      [FIRST_REPO]: fakeRepo({
-        "skills/gamma/SKILL.md": "# Gamma Skill\n\nSome prose.\n",
-      }),
+      [FIRST_REPO]: fakeRepo({ "skills/gamma/SKILL.md": GAMMA_MANIFEST }),
     })
 
     const index = await crawled([FIRST_REPO])
@@ -228,8 +257,104 @@ describe("crawlSkillIndex", () => {
         repo: FIRST_REPO,
         path: "skills/gamma",
         stars: STARS,
+        bytes: GAMMA_MANIFEST.length,
       },
     ])
+  })
+
+  // The weight is why the size came into the contract at all. The editor's own
+  // listing already reads these numbers off the same endpoint — see
+  // `apps/editor/src/lib/api/skill-contents.ts` — but only at confirm, so a
+  // skill nothing could ever carry was refused at the end of the funnel. The
+  // tree the crawl already fetched holds the answer, and summing it costs no
+  // request at all.
+  it("weighs the whole skill directory rather than its SKILL.md alone", async () => {
+    stubGitHub({
+      [FIRST_REPO]: fakeRepo(
+        { "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things") },
+        [
+          blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+          directory("skills/alpha/reference"),
+          blob("skills/alpha/reference/api.md", REFERENCE_BYTES),
+        ]
+      ),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.bytes)).toStrictEqual([
+      MANIFEST_BYTES + REFERENCE_BYTES,
+    ])
+  })
+
+  // The separator is the whole of it: without it `skills/alpha` would also
+  // swallow `skills/alpha-legacy`, and a skill would be refused for the weight
+  // of a neighbour that merely starts the same way.
+  it("weighs a skill without its neighbours, however alike their paths", async () => {
+    stubGitHub({
+      [FIRST_REPO]: fakeRepo(
+        {
+          "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things"),
+          "skills/alpha-legacy/SKILL.md": skillMd(
+            "alpha-legacy",
+            "The old one"
+          ),
+        },
+        [
+          blob("README.md", README_BYTES),
+          blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+          blob("skills/alpha-legacy/SKILL.md", MANIFEST_BYTES),
+          blob("skills/alpha-legacy/schema.xml", SIBLING_BYTES),
+        ]
+      ),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(
+      Object.fromEntries(index.skills.map((skill) => [skill.name, skill.bytes]))
+    ).toStrictEqual({
+      alpha: MANIFEST_BYTES,
+      "alpha-legacy": MANIFEST_BYTES + SIBLING_BYTES,
+    })
+  })
+
+  // Zero, and indexed anyway. GitHub reports a size for every blob, so this is
+  // the case that should not arise — and if it ever does, the honest answer is
+  // the same number the editor's own listing computes from the same response,
+  // which still refuses the skill at confirm. A producer and its backstop
+  // disagreeing about a weight would be worse than either.
+  it("weighs a directory GitHub reports no sizes for as nothing", async () => {
+    stubGitHub({
+      [FIRST_REPO]: fakeRepo(
+        { "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things") },
+        [{ path: "skills/alpha/SKILL.md", type: "blob" }]
+      ),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.bytes)).toStrictEqual([0])
+  })
+
+  // The index carries what the repositories hold, cap or no cap. Dropping an
+  // oversized skill here would leave the dialog unable to say why it is not
+  // offering one — which is the same silence, moved.
+  it("indexes a skill far past the per-skill cap rather than dropping it", async () => {
+    stubGitHub({
+      [FIRST_REPO]: fakeRepo(
+        { "skills/docx/SKILL.md": skillMd("docx", "Word documents") },
+        [
+          blob("skills/docx/SKILL.md", MANIFEST_BYTES),
+          blob("skills/docx/schema.xml", SIBLING_BYTES),
+        ]
+      ),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.name)).toStrictEqual(["docx"])
+    expect(index.skills[0]?.bytes).toBeGreaterThan(MAX_EXTERNAL_SKILL_BYTES)
   })
 
   // What replaced the incremental fill. The Action has no subrequest budget to
@@ -277,8 +402,8 @@ describe("crawlSkillIndex", () => {
   it("fails when a repository's skills could not be read at all", async () => {
     stubGitHub({
       [FIRST_REPO]: fakeRepo({}, [
-        "skills/alpha/SKILL.md",
-        "skills/beta/SKILL.md",
+        blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+        blob("skills/beta/SKILL.md", MANIFEST_BYTES),
       ]),
     })
 

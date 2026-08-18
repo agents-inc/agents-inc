@@ -17,9 +17,21 @@ import type { Context } from "hono"
 // need, and spelling that wrapper out four times is four places to get wrong.
 type WorkerEnv = { Bindings: Env }
 
-// A realistic payload is a few KB; anything bigger is not an editor
-// config, so it is refused before JSON parsing spends memory on it.
-const MAX_BODY_BYTES = 32_768
+// Sized on measured payloads rather than on a guess, and raised from 32 KB when
+// the payload started carrying skill CONTENT (seed v5).
+//
+// A catalogue-only configuration is 1.9 KB — twenty skills, their assignments
+// and an agent map — which is what the old cap was set against. An external
+// skill travels its whole directory inline, and those are 20-84 KB each in the
+// allowlisted repositories, so one of them alone outgrew that cap: three
+// together measure 161 KB raw and 48 KB gzipped.
+//
+// 1 MB therefore holds a dozen typical external skills or six at the per-skill
+// cap `seedPayloadSchema` enforces, which is far past any configuration anyone
+// has built. It is 4% of KV's 25 MiB value limit and nothing against a Worker's
+// 128 MB, so the refusal is about what a share link should reasonably be rather
+// than about what this can hold.
+const MAX_BODY_BYTES = 1_048_576
 
 // 8 base64url chars = 48 bits. Content-addressing makes collisions a birthday
 // problem (~16M configs before one is likely), far beyond this store's scale.

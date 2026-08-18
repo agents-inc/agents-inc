@@ -61,10 +61,26 @@ const CONCURRENT_READS = 6
 
 const SKILL_FILE_SUFFIX = "/SKILL.md"
 
-// Only the two fields the tree call is for. GitHub sends far more.
+// Only what the tree call is for. GitHub sends far more.
+//
+// `size` is the reason this narrowing grew: it is GitHub's own byte count for a
+// blob, arriving in the response the paths already arrive in, so weighing a
+// skill costs no request at all. It is absent for a `tree` entry — a directory
+// has no size — which is why the entry's TYPE is what tells a file from a
+// directory rather than the presence of a number.
+//
+// `apps/editor/src/lib/api/skill-contents.ts` narrows this same endpoint the
+// same way, and the two agreeing is load-bearing: what the index marks and what
+// the editor then refuses have to be the same arithmetic over the same fields.
 const treeSchema = z.object({
   truncated: z.boolean(),
-  tree: z.array(z.object({ path: z.string() })),
+  tree: z.array(
+    z.object({
+      path: z.string(),
+      type: z.string(),
+      size: z.number().optional(),
+    })
+  ),
 })
 
 const repoFactsSchema = z.object({
@@ -85,6 +101,11 @@ const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
 const FIRST_HEADING_PATTERN = /^#\s+(.+)$/m
 
 type RepoFacts = { stars: number; defaultBranch: string }
+
+type TreeEntry = z.infer<typeof treeSchema>["tree"][number]
+
+/** A skill's directory and what everything in it weighs. */
+type SkillDirectory = { path: string; bytes: number }
 
 type Headers = Readonly<Record<string, string>>
 
@@ -164,12 +185,13 @@ const fetchRepoFacts = async (
 
 // One recursive call per repository, which is what makes layout irrelevant:
 // nothing here assumes a `skills/` directory, and a repository that nests its
-// skills anywhere is indexed the same way.
+// skills anywhere is indexed the same way. It is also the only listing the
+// index is built from, weights included — no skill costs a second request.
 const fetchSkillDirectories = async (
   repo: string,
   branch: string,
   headers: Headers
-) => {
+): Promise<SkillDirectory[]> => {
   const tree = treeSchema.parse(
     await fetchJson(
       `${GITHUB_API}/repos/${repo}/git/trees/${branch}?recursive=1`,
@@ -182,7 +204,7 @@ const fetchSkillDirectories = async (
       "the git tree came back truncated; some skills may be missing"
     )
   }
-  return skillDirectoriesIn(tree.tree.map((entry) => entry.path))
+  return skillDirectoriesIn(tree.tree)
 }
 
 // A skill is a directory whose SKILL.md exists, so the file's parent is the
@@ -192,15 +214,38 @@ const fetchSkillDirectories = async (
 // Blob-versus-directory is left to the fetch: a directory somehow named
 // SKILL.md answers 404 on raw.githubusercontent and drops out with everything
 // else that could not be read.
-const skillDirectoriesIn = (paths: readonly string[]) =>
-  paths
-    .filter((path) => path.endsWith(SKILL_FILE_SUFFIX))
-    .map((path) => path.slice(0, -SKILL_FILE_SUFFIX.length))
+const skillDirectoriesIn = (entries: readonly TreeEntry[]): SkillDirectory[] =>
+  entries
+    .filter((entry) => entry.path.endsWith(SKILL_FILE_SUFFIX))
+    .map((entry) => directoryHolding(entry.path))
+    .map((path) => ({ path, bytes: bytesUnder(entries, path) }))
+
+const directoryHolding = (manifestPath: string) =>
+  manifestPath.slice(0, -SKILL_FILE_SUFFIX.length)
+
+// Everything under the skill's own directory and nothing beside it. The
+// separator is what keeps `skills/docx` from also weighing `skills/docx-legacy`
+// — a skill refused for a neighbour's weight would be a refusal nobody could
+// act on.
+//
+// A blob GitHub reported no size for counts as nothing, and so does a directory
+// whose blobs report none at all: the entry is published weighing zero, reads
+// as addable, and the consumer's own listing at install time remains the
+// backstop. Zero rather than a third "unknown" state, because that is the
+// number `skill-contents.ts` computes from the same response — a producer and
+// its backstop disagreeing about a weight would be worse than either.
+const bytesUnder = (entries: readonly TreeEntry[], directory: string) =>
+  entries
+    .filter((entry) => isBlobUnder(entry, directory))
+    .reduce((total, entry) => total + (entry.size ?? 0), 0)
+
+const isBlobUnder = (entry: TreeEntry, directory: string) =>
+  entry.type === "blob" && entry.path.startsWith(`${directory}/`)
 
 const readSkills = async (
   repo: string,
   facts: RepoFacts,
-  directories: readonly string[]
+  directories: readonly SkillDirectory[]
 ): Promise<SkillIndexEntry[]> => {
   const entries: SkillIndexEntry[] = []
   for (let start = 0; start < directories.length; start += CONCURRENT_READS) {
@@ -216,9 +261,9 @@ const readSkills = async (
 const readSkill = async (
   repo: string,
   facts: RepoFacts,
-  directory: string
+  directory: SkillDirectory
 ): Promise<SkillIndexEntry | null> => {
-  const url = `${RAW_CONTENT}/${repo}/${facts.defaultBranch}/${directory}${SKILL_FILE_SUFFIX}`
+  const url = `${RAW_CONTENT}/${repo}/${facts.defaultBranch}/${directory.path}${SKILL_FILE_SUFFIX}`
 
   let content: string
   try {
@@ -232,10 +277,16 @@ const readSkill = async (
     return null
   }
 
-  const described = describeSkill(content, directory)
+  const described = describeSkill(content, directory.path)
   if (described === null) return null
 
-  return { ...described, repo, path: directory, stars: facts.stars }
+  return {
+    ...described,
+    repo,
+    path: directory.path,
+    stars: facts.stars,
+    bytes: directory.bytes,
+  }
 }
 
 type SkillDescription = { name: string; description: string }

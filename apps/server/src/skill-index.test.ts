@@ -32,6 +32,12 @@ const LONG_ENOUGH_AGO_TO_BE_STALE = 30 * DAY_MS
 
 const someTimeAgo = (ms: number) => new Date(Date.now() - ms).toISOString()
 
+// One entry within the per-skill cap and one far past it, because the weight is
+// now part of what an entry IS: an index of uniformly small skills would let a
+// route that dropped the field on the way out still look right.
+const CARRIABLE_BYTES = 80_159
+const OVERSIZED_BYTES = 1_128_695
+
 const indexBuiltAt = (builtAt: string): SkillIndex => ({
   builtAt,
   skills: [
@@ -41,6 +47,7 @@ const indexBuiltAt = (builtAt: string): SkillIndex => ({
       repo: "obra/superpowers",
       path: "skills/brainstorming",
       stars: STARS,
+      bytes: CARRIABLE_BYTES,
     },
     {
       name: "docx",
@@ -48,6 +55,7 @@ const indexBuiltAt = (builtAt: string): SkillIndex => ({
       repo: "anthropics/skills",
       path: "skills/docx",
       stars: STARS,
+      bytes: OVERSIZED_BYTES,
     },
   ],
 })
@@ -126,12 +134,44 @@ describe("GET /skills", () => {
     expect(response.status).toBe(503)
   })
 
+  // The shape change that brought `bytes` in is handled by bumping the key, as
+  // this module has always said it would be. What that buys is exactly this: an
+  // index written by the crawl that predates the field is not read as a current
+  // one and then rejected — it is not read at all, so the worker is never
+  // serving a contract it has already outgrown.
+  it("does not read an index published under the superseded key", async () => {
+    const retired = "skill-index:v1"
+    expect(SKILL_INDEX_KEY).not.toBe(retired)
+    await env.CONFIGS.put(
+      retired,
+      JSON.stringify(indexBuiltAt(someTimeAgo(RECENTLY)))
+    )
+
+    const response = await getIndex()
+
+    expect(response.status).toBe(503)
+    await env.CONFIGS.delete(retired)
+  })
+
   it("503s when the stored bytes are not JSON at all", async () => {
     await env.CONFIGS.put(SKILL_INDEX_KEY, "half a jso")
 
     const response = await getIndex()
 
     expect(response.status).toBe(503)
+  })
+
+  // The number the dialog refuses on. It is carried through untouched, which is
+  // the only reason the refusal can arrive before a visitor stages anything.
+  it("serves each entry's weight, which is what a caller refuses on", async () => {
+    await publish(indexBuiltAt(someTimeAgo(RECENTLY)))
+
+    const index = await readIndex(await getIndex())
+
+    expect(index.skills.map((skill) => skill.bytes)).toStrictEqual([
+      CARRIABLE_BYTES,
+      OVERSIZED_BYTES,
+    ])
   })
 
   it("calls a recently built index fresh, and says how long that lasts", async () => {

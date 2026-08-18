@@ -36,9 +36,14 @@ const STALE_AFTER_SECONDS = 3 * DAY_SECONDS
 // old design wrote under `skill-index:v1:<owner>/<name>`, which carry a
 // segment this key does not and expire on their own seven-day retention.
 //
+// `v2` because the entry gained `bytes` (EDITOR-46), which is required: what
+// `v1` holds was written by a crawl that had no such field, so a worker still
+// reading that key would refuse every request until the next daily build — and
+// bumping is what this file has always said a shape change would do.
+//
 // Exported because the build script names the same key when it publishes, and
 // a key that two files spell separately is a key they can disagree about.
-export const SKILL_INDEX_KEY = "skill-index:v1"
+export const SKILL_INDEX_KEY = "skill-index:v2"
 
 export type SkillIndexOutcome =
   { served: true; index: SkillIndex } | { served: false }
