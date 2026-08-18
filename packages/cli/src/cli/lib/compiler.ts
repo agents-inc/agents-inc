@@ -24,6 +24,7 @@ import {
   STANDARD_DIRS,
 } from "../consts";
 import { resolveClaudeMd } from "./resolver";
+import { cliVersion, stampProvenanceMarker } from "./agents/agent-provenance";
 import { validateCompiledAgent, printOutputValidationResult } from "./output-validator";
 import type {
   AgentConfig,
@@ -187,6 +188,22 @@ export function buildAgentTemplateContext(
 }
 
 /**
+ * Renders the agent template and stamps the result with the provenance marker.
+ *
+ * Both compile entry points render through here, so there is no path that writes a compiled
+ * agent this CLI cannot later recognise as its own — which is what `uninstall` reads back
+ * when the configuration naming the agents is gone. The stamp replaces rather than inserts,
+ * so a template that emits the marker itself still produces exactly one.
+ */
+async function renderCompiledAgent(engine: Liquid, data: CompiledAgentData): Promise<string> {
+  // Boundary cast: liquidjs types renderFile as `Promise<any>` because a template
+  // can render to any value. The agent template renders a markdown file, and both
+  // callers have declared `Promise<string>` since they were written.
+  const rendered = (await engine.renderFile("agent", sanitizeCompiledAgentData(data))) as string;
+  return stampProvenanceMarker(rendered, await cliVersion());
+}
+
+/**
  * Compiles a single agent into a rendered Markdown prompt by reading its
  * constituent files (identity, playbook, output, critical requirements/reminders)
  * and rendering them through a Liquid template.
@@ -213,10 +230,7 @@ async function compileAgent(
   const data = buildAgentTemplateContext(name, agent, files);
 
   verbose(`Rendering template for ${name}...`);
-  // Boundary cast: liquidjs types renderFile as `Promise<any>` because a template
-  // can render to any value. The agent template renders a markdown file, and this
-  // function has declared `Promise<string>` since it was written.
-  return engine.renderFile("agent", sanitizeCompiledAgentData(data)) as Promise<string>;
+  return renderCompiledAgent(engine, data);
 }
 
 /**
@@ -483,8 +497,5 @@ export async function compileAgentForPlugin(
     ...pluginRefFor(skill),
   }));
 
-  // Boundary cast: liquidjs types renderFile as `Promise<any>` because a template
-  // can render to any value. The agent template renders a markdown file, and this
-  // function has declared `Promise<string>` since it was written.
-  return engine.renderFile("agent", sanitizeCompiledAgentData(data)) as Promise<string>;
+  return renderCompiledAgent(engine, data);
 }

@@ -20,4 +20,9 @@ export {
   printAgentCompilationSummary,
 } from "./agent-plugin-compiler";
 
-export { listAgentMdFiles, listCompiledAgentNames } from "./list-compiled-agents";
+export {
+  type AgentProvenanceSplit,
+  listAgentMdFiles,
+  listCompiledAgentNames,
+  splitAgentsByProvenance,
+} from "./list-compiled-agents";

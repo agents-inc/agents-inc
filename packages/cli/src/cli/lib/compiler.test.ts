@@ -54,6 +54,7 @@ vi.mock("../utils/logger", async (importOriginal) => ({
 }));
 
 import {
+  compileAgentForPlugin,
   compileAllAgents,
   compileAllSkills,
   copyClaudeMdToOutput,
@@ -64,6 +65,11 @@ import {
   sanitizeCompiledAgentData,
   buildAgentTemplateContext,
 } from "./compiler";
+import {
+  cliVersion,
+  hasProvenanceMarker,
+  stampProvenanceMarker,
+} from "./agents/agent-provenance.js";
 import { validateCompiledAgent } from "./output-validator";
 import { warn } from "../utils/logger";
 import type { CompiledAgentData } from "../types";
@@ -210,7 +216,9 @@ describe("compiler", () => {
         expect(dirStat.isDirectory()).toBe(true);
       });
 
-      it("when compiling agents, should write compiled agent to output file", async () => {
+      // The render is what the template produced; the file is what the compiler wrote, and
+      // between them sits the provenance stamp every compiled agent carries.
+      it("when compiling agents, should write the stamped compiled agent to the output file", async () => {
         const engine = { renderFile: vi.fn().mockResolvedValue(COMPILED_OUTPUT) };
 
         const ctx = contextForProject(projectDir);
@@ -218,7 +226,7 @@ describe("compiler", () => {
 
         const outputPath = path.join(ctx.outputDir, "agents/web-developer.md");
         const content = await fsReadFile(outputPath, "utf-8");
-        expect(content).toBe(COMPILED_OUTPUT);
+        expect(content).toBe(stampProvenanceMarker(COMPILED_OUTPUT, await cliVersion()));
       });
     });
 
@@ -279,7 +287,10 @@ describe("compiler", () => {
 
         await compileAllAgents(WEB_DEV_NO_SKILLS, contextForProject(projectDir), engine as never);
 
-        expect(validateCompiledAgent).toHaveBeenCalledWith(STUB_OUTPUT);
+        // Validation sees the bytes that were written, stamp included — not the raw render.
+        expect(validateCompiledAgent).toHaveBeenCalledWith(
+          stampProvenanceMarker(STUB_OUTPUT, await cliVersion()),
+        );
       });
 
       it("when validation has warnings, should print validation result", async () => {
@@ -575,6 +586,40 @@ describe("compiler", () => {
 
       expect(String(result.agent.model)).not.toContain("{{");
       expect(String(result.agent.permissionMode)).not.toContain("{%");
+    });
+  });
+
+  describe("compileAgentForPlugin", () => {
+    it("stamps the compiled agent with the provenance marker", async () => {
+      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine as never,
+      );
+
+      expect(hasProvenanceMarker(output)).toBe(true);
+      expect(output).toBe(stampProvenanceMarker(STUB_OUTPUT, await cliVersion()));
+    });
+
+    /**
+     * A project-local template override may emit the marker itself. Compiling such an
+     * agent must leave one marker, not two — the same fixed point a re-emit relies on.
+     */
+    it("does not stack a second marker when the render already carries one", async () => {
+      const alreadyStamped = stampProvenanceMarker(STUB_OUTPUT, await cliVersion());
+      const engine = { renderFile: vi.fn().mockResolvedValue(alreadyStamped) };
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine as never,
+      );
+
+      expect(output).toBe(alreadyStamped);
     });
   });
 

@@ -255,7 +255,7 @@ describe("agent-fetcher", () => {
 
       // Source config exists but without agentsDir
       mockLoadProjectSourceConfig.mockResolvedValue({
-        source: "github:myorg/skills",
+        marketplace: "github:myorg/skills",
       });
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
