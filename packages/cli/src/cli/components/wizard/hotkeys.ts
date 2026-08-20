@@ -27,7 +27,7 @@ export const HOTKEY_TOGGLE_LABELS = { key: "d", label: "D" } as const;
 // ---------------------------------------------------------------------------
 
 // None. The step's two bulk install-mode keys — `l` (set all local) and `p` (set
-// all plugin) — are withdrawn. They rewrote `source` on every active skill config
+// all plugin) — are withdrawn. They rewrote `origin` on every active skill config
 // with no scope authority behind them, so from a project edit they reached the
 // inherited global rows the same step renders locked and non-focusable: the bulk
 // key could do what the per-row control provably cannot. Per-row SPACE on the

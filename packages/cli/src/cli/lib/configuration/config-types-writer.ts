@@ -25,6 +25,7 @@ import {
 } from "../../consts";
 import { directoryExists, fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
+import { bytewise } from "../../utils/string";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { EFFORT_NAMES, MODEL_NAMES } from "../../types/matrix";
 
@@ -234,7 +235,9 @@ function generateStackAgentConfig(
   }
 
   const properties = [...skillsByCategory.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    // A project commits its config-types.ts, so the key order has to be the comparator's rather
+    // than the collation of whichever machine last ran the CLI.
+    .sort(([a], [b]) => bytewise(a, b))
     .map(([category, skills]) => {
       const arraySuffix = matrix.categories[category]?.exclusive === true ? "" : "[]";
       return `  "${category}"?: SkillAssignment<${formatSkillUnion(skills)}>${arraySuffix};`;

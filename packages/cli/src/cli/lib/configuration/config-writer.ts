@@ -3,7 +3,7 @@ import path from "path";
 import type { Category, ProjectConfig, SkillAssignment } from "../../types";
 import { CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, GLOBAL_CONFIG_NAME } from "../../consts";
 import { isSkillAssignment } from "../../utils/type-guards";
-import { matrix } from "../matrix/matrix-provider";
+import { byCategoryDeclarationOrder, matrix } from "../matrix/matrix-provider";
 import { assembleConfigTypesSource, STACK_AGENT_CONFIG_LOOSE_LINE } from "./config-types-writer";
 
 /**
@@ -68,6 +68,49 @@ function canonicalizeFieldOrder(cleaned: Record<string, unknown>): Record<string
   return Object.fromEntries([...inSchemaOrder, ...passthrough]);
 }
 
+/** A record rebuilt with its keys reordered; the values themselves are untouched. */
+function withKeysOrderedBy<T>(
+  record: Record<string, T>,
+  compareKeys: (a: string, b: string) => number,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => compareKeys(a, b)));
+}
+
+/**
+ * Code-unit order over two names — what a bare `.sort()` gives, and so what
+ * `generateProjectConfigFromSkills` already emits its sub-agent keys in.
+ * `localeCompare` is deliberately not used: it orders the same two names
+ * differently under different locales, which would make the emitted bytes a
+ * property of the machine.
+ */
+function compareNamesInCodeUnitOrder(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * The stack's key order, decided by the roster rather than by whoever assembled
+ * the stack: sub-agents by name, and each sub-agent's categories in the matrix's
+ * declaration order — the two orders the generator already builds a stack in.
+ *
+ * The generator is not the only producer. The seed decode assembles a stack from
+ * a shared payload, in the order that payload lists its skills, so the same
+ * curation reached disk as different bytes depending on which end of a share
+ * round trip wrote it. That is not merely a noisy diff: a compiled sub-agent
+ * lists its dynamic skills in the order its stack entry carries them, so the two
+ * ends compiled different files from identical configuration.
+ */
+function canonicalizeStackOrder(
+  stack: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> {
+  const byDeclaration = byCategoryDeclarationOrder();
+  const withCategoriesInOrder = Object.entries(stack).map(
+    ([agent, categories]) => [agent, withKeysOrderedBy(categories, byDeclaration)] as const,
+  );
+
+  return withKeysOrderedBy(Object.fromEntries(withCategoriesInOrder), compareNamesInCodeUnitOrder);
+}
+
 /** One config entry as an indented array-element line. */
 function renderEntryLine(entry: unknown): string {
   return `  ${JSON.stringify(entry)},`;
@@ -111,8 +154,9 @@ function extractConfigArrays(cleaned: Record<string, unknown>): ConfigArrays {
  * Shared pre-emission cleanup: JSON round-trip (drops undefined values), optional
  * `projects` removal (project configs never emit the global tracking list),
  * stack compaction (strip flag-less assignments to bare strings while preserving
- * SkillAssignment[] arrays), and canonical field ordering so the emitted bytes
- * are decided by the config's values alone.
+ * SkillAssignment[] arrays), and canonical ordering of both the top-level fields
+ * and the stack's own keys, so the emitted bytes are decided by the config's
+ * values alone.
  */
 function cleanForEmission(
   config: ProjectConfig,
@@ -127,9 +171,10 @@ function cleanForEmission(
   if (cleaned.stack) {
     // Boundary cast: cleaned comes from JSON.parse(JSON.stringify(...)), so the stack
     // is a plain JSON record of agent -> category -> assignment arrays
-    cleaned.stack = compactStackAssignments(
+    const compacted = compactStackAssignments(
       cleaned.stack as Record<string, Record<string, unknown[]>>,
     );
+    cleaned.stack = canonicalizeStackOrder(compacted);
   }
   return canonicalizeFieldOrder(cleaned);
 }

@@ -1,4 +1,3 @@
-import os from "os";
 import React from "react";
 
 import { Flags, type Interfaces } from "@oclif/core";
@@ -28,11 +27,7 @@ import {
 } from "../lib/seed/external-skills.js";
 import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
-import {
-  loadProjectConfig,
-  loadProjectConfigFromDir,
-} from "../lib/configuration/project-config.js";
-import { activeAgentNames } from "../lib/configuration/scope-predicates.js";
+import { loadProjectConfig } from "../lib/configuration/project-config.js";
 import {
   type InstallMode,
   detectInstallation,
@@ -61,7 +56,7 @@ import { promptValue } from "../components/common/prompt-confirm.js";
 import { Spinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
-import type { AgentName, MergedSkillsMatrix, ProjectConfig, SkillScope } from "../types/index.js";
+import type { AgentName, MergedSkillsMatrix, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   SUCCESS_MESSAGES,
@@ -347,16 +342,9 @@ export default class Init extends BaseCommand {
     // artifact that the next run could mistake for an existing installation.
     const isGlobalRoot = isHomeDirectory(projectDir);
 
-    const { sourceResult, startupMessages, globalConfig } =
-      await this.loadWizardInputsUnderSpinner(flags);
+    const { sourceResult, startupMessages } = await this.loadWizardInputsUnderSpinner(flags);
 
-    const result = await this.runWizard(
-      sourceResult,
-      startupMessages,
-      projectDir,
-      globalConfig,
-      isGlobalRoot,
-    );
+    const result = await this.runWizard(startupMessages, isGlobalRoot);
     if (!result) return null;
 
     return {
@@ -381,17 +369,12 @@ export default class Init extends BaseCommand {
   private async loadWizardInputsUnderSpinner(flags: SourceFlags): Promise<{
     sourceResult: SourceLoadResult;
     startupMessages: StartupMessage[];
-    globalConfig: ProjectConfig | null;
   }> {
     const { unmount, clear: clearSpinner } = render(
       <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
     );
     try {
-      const [source, globalConfig] = await Promise.all([
-        this.loadSourceOrFail(flags),
-        this.loadGlobalConfigIfExists(),
-      ]);
-      return { ...source, globalConfig };
+      return await this.loadSourceOrFail(flags);
     } finally {
       clearSpinner();
       unmount();
@@ -547,13 +530,6 @@ export default class Init extends BaseCommand {
     return runDashboardFlow(projectDir, this.config, "init", (msg) => this.log(msg));
   }
 
-  private async loadGlobalConfigIfExists(): Promise<ProjectConfig | null> {
-    const globalInstall = await detectGlobalInstallation();
-    if (!globalInstall) return null;
-    const loaded = await loadProjectConfigFromDir(os.homedir());
-    return loaded?.config ?? null;
-  }
-
   private async loadSourceOrFail(
     flags: SourceFlags,
   ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
@@ -573,31 +549,22 @@ export default class Init extends BaseCommand {
     }
   }
 
+  /**
+   * `init`'s wizard opens on an empty selection, and can open on nothing else: it is reached
+   * only once {@link showDashboardIfInitialized} has found no installation, and that check
+   * falls back to the home directory — so a global roster to hydrate from would have diverted
+   * this run to the dashboard before the wizard was built. Hydrating a saved selection is
+   * `edit`'s job, and `Edit.runEditWizard` is where it happens.
+   */
   private async runWizard(
-    sourceResult: SourceLoadResult,
     startupMessages: StartupMessage[],
-    projectDir: string,
-    globalConfig: ProjectConfig | null,
     isGlobalRoot: boolean,
   ): Promise<WizardResultV2 | null> {
-    const selectedAgents = globalConfig?.agents && activeAgentNames(globalConfig.agents);
-    const globalSkills = globalConfig?.skills;
-
     return runWizardSession({
-      hydrate: {
-        ...(selectedAgents !== undefined && { initialAgents: selectedAgents }),
-        ...(globalSkills !== undefined && {
-          installedSkillIds: globalSkills.map((s) => s.id),
-          installedSkillConfigs: globalSkills,
-        }),
-        ...(globalConfig?.agents !== undefined && { installedAgentConfigs: globalConfig.agents }),
-        isEditingFromGlobalScope: isGlobalRoot,
-      },
+      hydrate: { isEditingFromGlobalScope: isGlobalRoot },
       props: {
         version: this.config.version,
         logo: ASCII_LOGO,
-        initialAgents: selectedAgents,
-        installedSkillIds: globalConfig?.skills.map((s) => s.id),
         startupMessages,
       },
       onCancel: () => this.log("Setup cancelled"),

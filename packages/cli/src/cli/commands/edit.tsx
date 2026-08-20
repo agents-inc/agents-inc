@@ -35,8 +35,10 @@ import {
 import { Spinner } from "../components/common/spinner.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import {
+  type EjectCopyResult,
   type Installation,
   detectMigrations,
+  ejectCopyFailureError,
   executeMigration,
   isHomeDirectory,
   installBaseDir,
@@ -944,7 +946,7 @@ export default class Edit extends BaseCommand {
    * source contradict the filesystem and the plugin registry.
    *
    * So authority follows the work actually performed, and no further: only ids
-   * `executeMigration` acted on this run are rewritten, and only their `source` field. Global
+   * `executeMigration` acted on this run are rewritten, and only their `origin` field. Global
    * entries this session merely displayed, re-scoped or deselected are untouched, as are
    * `marketplace`, `stack`, `agents` and every other registered project's view of them.
    *
@@ -964,7 +966,7 @@ export default class Edit extends BaseCommand {
    * classifies as a no-op against what this one left on disk, so the fan-out below
    * happens once.
    *
-   * The migrated `source` decides the reference form a compiled agent emits, so every
+   * The migrated `origin` decides the reference form a compiled agent emits, so every
    * OTHER registered project's config and agents are stale until this write fans out —
    * which is why it goes through the gate rather than straight to the file.
    */
@@ -993,7 +995,7 @@ export default class Edit extends BaseCommand {
           // matrix in hand already.
           // eslint-disable-next-line @typescript-eslint/require-await -- deps contract
           loadMatrix: async () => context.sourceResult.matrix,
-          loadAgents: async () => (await loadAgentDefs({ projectDir: cwd })).agents,
+          loadAgents: async () => (await loadAgentDefs()).agents,
         },
       );
       this.reportPropagatedRecompile(report);
@@ -1105,25 +1107,47 @@ export default class Edit extends BaseCommand {
       this.warn(warning);
     }
 
-    // The eject direction's own account of what it did. `executeMigration` copies each
-    // skill before it attempts the plugin uninstall, so the count is the work that
-    // landed; the uninstall is best-effort and diagnostic-only, and its successes stay
-    // at verbose level while its failures are already in `warnings` above.
+    // Reports what was copied and hard-errors on any failure, for the reason the plugin
+    // direction does below: a skill whose local copy could not be written must not reach
+    // `recordGlobalSourceMigrations` or `writeConfigAndCompile`, either of which would
+    // persist `origin: "eject"` for a skill that has no copy on disk.
     if (migrationPlan.toEject.length > 0) {
-      this.log(
-        chalk.hex(CLI_COLORS.NEUTRAL)(localSkillsCopied(migrationResult.ejectedSkills.length)),
-      );
+      this.reportEjectCopies(migrationResult.ejectCopies);
     }
 
     // Reports what was installed and hard-errors on any failure: a migration whose
     // plugin could not be installed must not reach `recordGlobalSourceMigrations` or
-    // `writeConfigAndCompile`, either of which would persist a marketplace `source`
+    // `writeConfigAndCompile`, either of which would persist a marketplace `origin`
     // for a skill with no plugin registration.
     if (migrationPlan.toPlugin.length > 0) {
       this.reportPluginInstalls(migrationResult.pluginInstalls);
     }
 
     return migratedSkillIds;
+  }
+
+  /**
+   * What the plugin→eject half copied, what it could not, and the refusal to continue past
+   * a failure.
+   *
+   * The shape of `BaseCommand.reportPluginInstalls`, deliberately: the two directions of one
+   * mode switch owe the user the same account, and the eject half having no structured
+   * failure at all is what let a config record `origin: "eject"` for a skill whose copy was
+   * refused. It stays private because `edit` is the only command that migrates a mode —
+   * `init` installs, and has no old state to move.
+   *
+   * The count line is the same one `copyNewLocalSkills` prints, and names no destination:
+   * the migration splits its copies between the project and $HOME by each skill's own scope,
+   * so one directory would misname the other half.
+   */
+  private reportEjectCopies(result: EjectCopyResult): void {
+    for (const item of result.failed) {
+      this.warn(`Failed to copy ${item.id} for eject: ${item.error}`);
+    }
+    if (result.failed.length > 0) {
+      this.error(ejectCopyFailureError(result.failed.length), { exit: EXIT_CODES.ERROR });
+    }
+    this.log(chalk.hex(CLI_COLORS.NEUTRAL)(localSkillsCopied(result.copied.length)));
   }
 
   /** Names what this run is switching, in the words `init` describes an install mode with. */
@@ -1202,7 +1226,7 @@ export default class Edit extends BaseCommand {
   ): Promise<void> {
     const { addedSkills, removedSkills } = changes;
 
-    // Compute plugin-intent lists per-skill (ungated) — per-skill `source` drives install mode.
+    // Compute plugin-intent lists per-skill (ungated) — per-skill `origin` drives install mode.
     const addedPluginSkills = filteredResult.skills.filter(
       (s) => addedSkills.includes(s.id) && s.origin !== EJECT_SOURCE,
     );
@@ -1292,13 +1316,20 @@ export default class Edit extends BaseCommand {
     // Load agent definitions — needed for both config-types.ts and recompilation
     let agentDefsResult: AgentDefs;
     try {
-      agentDefsResult = await loadAgentDefs({});
+      agentDefsResult = await loadAgentDefs();
     } catch (error) {
       this.handleError(error);
     }
 
     // Persist wizard result to config.ts and config-types.ts (split by scope when in project context)
-    let configResult: ConfigWriteResult | undefined;
+    //
+    // A failed write is fatal, not a warning. Every mutation this run made — plugin
+    // registrations, ejected copies, deleted working copies — has already landed on disk,
+    // and config.ts is the only record of what they were for. Continuing past it into the
+    // agent recompile left the registry, the config and `.claude/agents/` mutually
+    // inconsistent and still reported success, which is the same silent-substitution defect
+    // the plugin install path refuses.
+    let configResult: ConfigWriteResult;
     try {
       configResult = await writeProjectConfig({
         wizardResult: result,
@@ -1312,12 +1343,12 @@ export default class Edit extends BaseCommand {
         authoritativeScope: authority,
       });
     } catch (error) {
-      this.warn(`Could not update config: ${getErrorMessage(error)}`);
+      this.error(`Could not update config: ${getErrorMessage(error)}`, {
+        exit: EXIT_CODES.ERROR,
+      });
     }
 
-    if (configResult) {
-      this.reportUnassignedSkills(configResult.config);
-    }
+    this.reportUnassignedSkills(configResult.config);
 
     try {
       const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
@@ -1354,9 +1385,7 @@ export default class Edit extends BaseCommand {
       this.log(`You can manually recompile with '${CLI_INVOKE_COMMAND} compile'.`);
     }
 
-    if (configResult) {
-      this.reportPropagatedRecompile(configResult.propagation);
-    }
+    this.reportPropagatedRecompile(configResult.propagation);
   }
 
   private async cleanupStaleAgentFiles(

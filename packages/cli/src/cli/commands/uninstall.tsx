@@ -404,7 +404,7 @@ export default class Uninstall extends BaseCommand {
           skipExtraSources: true,
           matrixOnly: true,
         }),
-        loadAgentDefs({ projectDir }),
+        loadAgentDefs(),
       ]);
       return { globalConfig, matrix: sourceResult.matrix, agents: agentDefs.agents };
     } catch (error) {

@@ -3,7 +3,7 @@
   "$id": "schemas/project-config.schema.json",
   "title": "Project Configuration",
   "description": "Schema for .claude-src/config.yaml consumer project files (name, agents, stack, skills).",
-  "$comment": "HAND-MAINTAINED. scripts/generate-json-schemas.ts does NOT emit this file (nor project-source-config.schema.json) — its SCHEMA_ENTRIES list has no entry for either, so `generate:schemas` only reformats them with prettier on its way past. Edit this file by hand and keep it prettier-clean, or `generate:schemas:check` fails on the reformat. Three vocabularies below are copied out of src/cli/types/generated/source-types.ts and drift silently, because no generator and no check re-derives any of them: the stack category enum is the CATEGORIES tuple, verbatim and in that tuple's order; the selectedDomains enum is the DOMAINS tuple; and the skill-id pattern's leading alternation is that same DOMAINS tuple, since a skill id is `<domain>-<category>-<name>`. Re-derive all three whenever a category or domain is added, renamed or removed — a missing domain silently rejects every skill id under it.",
+  "$comment": "HAND-MAINTAINED. scripts/generate-json-schemas.ts does NOT emit this file (nor project-source-config.schema.json) — its SCHEMA_ENTRIES list has no entry for either, so `generate:schemas` neither emits nor judges them and writes nothing here. Edit this file by hand and keep it prettier-clean — .ai-docs/reference/features/code-generation.md names the gate that enforces that. Three vocabularies below are copied out of src/cli/types/generated/source-types.ts and drift silently, because no generator and no check re-derives any of them: the stack category enum is the CATEGORIES tuple, verbatim and in that tuple's order; the selectedDomains enum is the DOMAINS tuple; and the skill-id pattern's leading alternation is that same DOMAINS tuple, since a skill id is `<domain>-<category>-<name>`. Re-derive all three whenever a category or domain is added, renamed or removed — a missing domain silently rejects every skill id under it.",
   "type": "object",
   "properties": {
     "version": {
@@ -31,10 +31,6 @@
     },
     "author": {
       "type": "string"
-    },
-    "installMode": {
-      "type": "string",
-      "enum": ["eject", "plugin"]
     },
     "selectedDomains": {
       "type": "array",
@@ -230,6 +226,6 @@
       "type": "string"
     }
   },
-  "required": ["name", "agents", "skills", "installMode", "stack", "marketplace"],
+  "required": ["name", "agents", "skills", "stack", "marketplace"],
   "additionalProperties": false
 }

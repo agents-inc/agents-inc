@@ -22,7 +22,7 @@ import {
 } from "../lib/configuration";
 import { getStackSkillIds, resolveAgentConfigToSkills } from "../lib/stacks";
 import { loadSkillsMatrixFromSource, type UnusableSkillMetadata } from "../lib/loading";
-import { CLI_INVOKE_COMMAND, STANDARD_FILES } from "../consts";
+import { STANDARD_FILES } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { getErrorMessage } from "../utils/errors";
 import {
@@ -75,7 +75,7 @@ export default class Compile extends BaseCommand {
 
     const installations = await this.detectInstallations(cwd);
     await this.resolveAndLogSource(cwd);
-    const agentDefs = await this.loadAgentDefsOrFail(cwd);
+    const agentDefs = await this.loadAgentDefsOrFail();
     await this.runCompilePasses(installations, agentDefs, cwd);
   }
 
@@ -119,13 +119,12 @@ export default class Compile extends BaseCommand {
     }
   }
 
-  private async loadAgentDefsOrFail(cwd: string): Promise<AgentDefs> {
+  private async loadAgentDefsOrFail(): Promise<AgentDefs> {
     this.log(STATUS_MESSAGES.LOADING_AGENT_PARTIALS);
     try {
-      const defs = await loadAgentDefs({ projectDir: cwd });
+      const defs = await loadAgentDefs();
       this.log("Agent partials loaded");
       verbose(`  Agents: ${defs.agentSourcePaths.agentsDir}`);
-      verbose(`  Templates: ${defs.agentSourcePaths.templatesDir}`);
       return defs;
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_LOAD_AGENT_PARTIALS);
@@ -147,10 +146,7 @@ export default class Compile extends BaseCommand {
     }
 
     if (totalPassesWithSkills === 0) {
-      this.error(
-        `No skills found. Add skills with '${CLI_INVOKE_COMMAND} add <skill>' or create in .claude/skills/.`,
-        { exit: EXIT_CODES.ERROR },
-      );
+      this.error(ERROR_MESSAGES.NO_SKILLS_TO_COMPILE, { exit: EXIT_CODES.ERROR });
     }
   }
 

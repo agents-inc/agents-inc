@@ -371,7 +371,7 @@ export const INSTALL_MODES = ["eject", "plugin"] as const satisfies readonly Exc
  * How the Sources grid captions each of its two cells.
  *
  * Deliberately not `INSTALL_MODE_LABELS` (`Eject`/`Plugin`), which names a mode by what it does
- * to the files, nor `SOURCE_DISPLAY_NAMES`, which labels a `SkillConfig.source` VALUE on the
+ * to the files, nor `SOURCE_DISPLAY_NAMES`, which labels a `SkillConfig.origin` VALUE on the
  * summary surfaces. The grid asks where the skill should LIVE, and the two answers are the
  * project's own copy or the marketplace plugin — so the cells read `Local` and `Plugin`, which
  * is also the two-state badge the editor settled on (`.claude-design/DECISIONS.md`).

@@ -28,19 +28,33 @@ export type ResolvedPlugin = {
 
 const pluginSettingsSchema = z
   .object({
-    enabledPlugins: z.record(z.string(), z.unknown()).optional(),
+    // The one genuine optional here: a settings.json with no plugin enabled omits the
+    // key entirely, and `getEnabledPluginKeys` says so in its own diagnostic rather than
+    // defaulting it away. `lastUpdated` and `gitCommitSha` used to sit beside the fields
+    // below on the same footing and were decoration — declared, never read, and stripped
+    // by `z.object` either way.
+    enabledPlugins: z.record(z.string(), z.unknown()).exactOptional(),
   })
   .passthrough();
 
-const pluginInstallationSchema = z.object({
-  scope: z.enum(["user", "project", "local"]),
-  projectPath: z.string().optional(),
+/** The fields every installation record carries, whatever scope it was registered at. */
+const installationFields = {
   installPath: z.string(),
   version: z.string(),
   installedAt: z.string(),
-  lastUpdated: z.string().optional(),
-  gitCommitSha: z.string().optional(),
-});
+};
+
+/**
+ * Discriminated on `scope` rather than carrying an optional `projectPath`, because which
+ * project a record belongs to is a question only a project-scoped record has: a
+ * user-scoped one has no answer, and a project-scoped one without a path is a malformed
+ * record that `pickInstallation` would silently decline to match.
+ */
+const pluginInstallationSchema = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("project"), projectPath: z.string(), ...installationFields }),
+  z.object({ scope: z.literal("user"), ...installationFields }),
+  z.object({ scope: z.literal("local"), ...installationFields }),
+]);
 
 const installedPluginsSchema = z
   .object({
@@ -124,10 +138,7 @@ export async function getEnabledPluginKeys(projectDir: string): Promise<PluginKe
   }
 }
 
-type RegisteredInstallation = Pick<
-  z.infer<typeof pluginInstallationSchema>,
-  "scope" | "projectPath" | "installPath"
->;
+type RegisteredInstallation = z.infer<typeof pluginInstallationSchema>;
 
 /** This project's own project-scoped installation wins; otherwise the user-scoped one. */
 function pickInstallation(

@@ -22,7 +22,6 @@ import {
   isTerminalLargeEnough,
 } from "./utils/terminal.js";
 import { EXIT_CODES } from "./lib/exit-codes.js";
-import type { ResolvedConfig } from "./lib/configuration/index.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { isHomeDirectory } from "./lib/installation/index.js";
 import type { WizardResultV2 } from "./components/wizard/wizard.js";
@@ -47,11 +46,6 @@ import {
 } from "./lib/operations/skills/install-plugin-skills.js";
 import type { GateReport } from "./lib/config-gate/index.js";
 import type { SourceLoadResult } from "./lib/loading/source-loader.js";
-
-/** Narrow interface for the sourceConfig we attach to oclif's Config in the init hook. */
-export interface ConfigWithSource {
-  sourceConfig?: ResolvedConfig;
-}
 
 /**
  * How often the size gate re-reads the terminal while it is blocked. `resize` is what normally
@@ -154,11 +148,6 @@ export abstract class BaseCommand extends Command {
   async init(): Promise<void> {
     await super.init();
     await this.ensureTerminalSize();
-  }
-
-  public get sourceConfig(): ResolvedConfig | undefined {
-    // Boundary cast: oclif Config is a class (not augmentable); we attach sourceConfig in the init hook
-    return (this.config as unknown as ConfigWithSource).sourceConfig;
   }
 
   /**
@@ -281,7 +270,7 @@ export abstract class BaseCommand extends Command {
    * The hard-error is part of the report rather than each caller's own postscript
    * because it is the same rule everywhere — plugin install intent is inviolable, so
    * a run that could not honor it must stop BEFORE any config records a marketplace
-   * `source` for a skill with no plugin registration.
+   * `origin` for a skill with no plugin registration.
    */
   protected reportPluginInstalls(result: PluginInstallResult): void {
     for (const item of result.installed) {

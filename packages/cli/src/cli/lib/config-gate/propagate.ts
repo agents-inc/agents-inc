@@ -180,9 +180,10 @@ export function mergeGlobalConfigs(
   const mergedMarketplaceName = existing.marketplaceName ?? incoming.marketplaceName;
   const mergedMarketplace = existing.marketplace ?? incoming.marketplace;
 
-  // Newly-filled marketplace identity must mark the merge dirty: `needsGlobalWrite` is gated on
-  // this flag, so a run whose only delta is the now-known marketplace would otherwise skip
-  // the global write entirely and drop the field again.
+  // Newly-filled marketplace identity must mark the merge dirty: this flag becomes
+  // `resolveEffectiveGlobalConfig`'s `changed`, which is the condition `writeFromProjectContext`
+  // (lib/config-gate/index.ts) tests before calling `writeGlobalPair`, so a run whose only delta
+  // is the now-known marketplace would otherwise skip the global write and drop the field again.
   const changed =
     newSkills.length > 0 ||
     newAgents.length > 0 ||
@@ -350,9 +351,10 @@ function categoryOfSkill(id: SkillId, matrix: MergedSkillsMatrix): Category | un
  * category overrides are honoured.
  *
  * A category the matrix does not declare is deliberately NOT treated as exclusive.
- * The wizard's renderer defaults an undeclared category to exclusive
- * (`build-step-logic.ts` uses `cat.exclusive ?? true`), but a rule that MASKS
- * persisted entries must only fire on a flag the data actually carries.
+ * The wizard's toggle handler defaults an undeclared one to exclusive
+ * (`use-build-step-props.ts` uses `matrix.categories[categoryId]?.exclusive ?? true`),
+ * but a rule that MASKS persisted entries must only fire on a flag the data
+ * actually carries.
  */
 function isExclusiveCategory(category: Category, matrix: MergedSkillsMatrix): boolean {
   return matrix.categories[category]?.exclusive === true;
@@ -457,7 +459,7 @@ function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): 
  * project state. Letting global win would silently uninstall the user's own skill.
  *
  * Tombstones are spread from the global entry so they carry the global install's
- * `source`. A skill the project merely inherits (no active project-scope entry, no
+ * `origin`. A skill the project merely inherits (no active project-scope entry, no
  * exclusive-category collision) is skipped — it stays a single active global entry.
  * A skill the project already tombstones is skipped so re-running is idempotent.
  */

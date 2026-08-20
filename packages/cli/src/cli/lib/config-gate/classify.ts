@@ -24,8 +24,9 @@ export type GlobalChangeSet = {
     added: SkillId[];
     removed: SkillId[];
     /**
-     * Ids whose `source` moved. Separate from `otherChanged` because the
-     * per-skill source decides the reference form a compiled agent emits
+     * Ids whose `origin` moved — the field's name on `SkillConfig`; this one keeps the
+     * older word. Separate from `otherChanged` because the per-skill value decides the
+     * reference form a compiled agent emits
      * (`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected
      * one), so a source change that skipped the recompile leaves every
      * registered project's agents naming a reference that no longer resolves.

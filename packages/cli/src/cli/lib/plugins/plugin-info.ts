@@ -37,7 +37,6 @@ export type InstallationInfo = {
   configPath: string;
   /** Every directory that actually holds compiled agents; empty when no scope has any. */
   agentDirs: string[];
-  skillsDir: string;
 };
 
 export async function getPluginInfo(projectDir?: string): Promise<PluginInfo | null> {
@@ -86,7 +85,6 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
     agentCount: sumCounts(agentDirCounts),
     configPath: installation.configPath,
     agentDirs: agentDirCounts.filter(hasEntries).map((scopeCount) => scopeCount.dir),
-    skillsDir: installation.skillsDir,
   };
 }
 

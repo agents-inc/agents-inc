@@ -167,7 +167,7 @@ export function lazyGateDeps(projectDir: string): GateDeps {
     },
     loadAgents: async () => {
       const { loadAgentDefs } = await import("../operations/project/load-agent-defs.js");
-      return (await loadAgentDefs({ projectDir })).agents;
+      return (await loadAgentDefs()).agents;
     },
   };
 }

@@ -28,6 +28,7 @@ import {
 } from "../lib/config-gate/index.js";
 import { isHomeDirectory } from "../lib/installation/index.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
+import { INFO_MESSAGES } from "../utils/messages.js";
 import type { MergedSkillsMatrix, SkillId } from "../types/index.js";
 import { typedKeys } from "../utils/typed-object.js";
 
@@ -85,7 +86,12 @@ export default class Eject extends BaseCommand {
     }),
     output: Flags.string({
       char: "o",
-      description: "Output directory (default: .claude/ in current directory)",
+      // No `default:`, and no default named here either: each eject type has its own
+      // destination and this flag replaces all three at once. The reference page carries
+      // the table; a one-line description that picked one of the three would be wrong
+      // about the other two, which is what it was.
+      description:
+        "Write everything into this directory instead of each eject type's own destination",
     }),
   };
 
@@ -246,7 +252,7 @@ export default class Eject extends BaseCommand {
     this.log(
       templatesOnly
         ? "You can now customize agent templates locally."
-        : "You can now customize templates, agent intro, workflow, and examples locally.",
+        : INFO_MESSAGES.AGENT_PARTIALS_CUSTOMIZABLE,
     );
   }
 

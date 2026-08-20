@@ -7,18 +7,21 @@ export type AgentDefs = {
   agents: Partial<Record<AgentName, AgentDefinition>>;
   /** The sourcePath used to load agent partials (for compilation). */
   sourcePath: string;
-  /** Full agent source paths (agentsDir, templatesDir, sourcePath). */
+  /** Full agent source paths (agentsDir, sourcePath). */
   agentSourcePaths: AgentSourcePaths;
 };
 
 /**
- * Loads agent definitions from the CLI and optionally from a remote source.
+ * Loads agent definitions from the CLI's own installation.
  *
  * Merges CLI built-in agents with source repository agents (source overrides CLI).
  * Returns the merged definitions plus the source path for compilation.
+ *
+ * It takes no arguments because there is nothing here for a caller to vary: agent partials
+ * ship with the CLI, so {@link getAgentDefinitions} is always asked for its local branch.
  */
-export async function loadAgentDefs(options?: { projectDir?: string }): Promise<AgentDefs> {
-  const agentSourcePaths = await getAgentDefinitions(undefined, options);
+export async function loadAgentDefs(): Promise<AgentDefs> {
+  const agentSourcePaths = await getAgentDefinitions();
   const agents = await loadMergedAgents(agentSourcePaths.sourcePath);
 
   return {

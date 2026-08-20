@@ -43,8 +43,8 @@ const SOURCE_GRID_MIN_VIEWPORT_ROWS = 1;
 
 /**
  * One cell of a row's install-mode control. There is no `id`: the two cells ARE the choice, and
- * the `SkillConfig.source` each one writes is the store's to resolve — which is what stops this
- * surface from writing a source value nothing installs from (CLI-450).
+ * the `SkillConfig.origin` each one writes is the store's to resolve — which is what stops this
+ * surface from writing an origin value nothing installs from.
  */
 export type SourceOption = {
   mode: Exclude<InstallMode, "mixed">;

@@ -30,7 +30,7 @@ export async function recompileRegisteredProjectAgents(
   projectDir: string,
 ): Promise<CompilationResult> {
   const { allSkills } = await discoverInstalledSkills(projectDir);
-  const { sourcePath } = await loadAgentDefs({ projectDir });
+  const { sourcePath } = await loadAgentDefs();
 
   return compileAgents({
     projectDir,
