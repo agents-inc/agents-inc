@@ -377,8 +377,13 @@ describe("config-generator", () => {
         agentConfigs: buildAgentConfigs(selectedAgents),
       });
 
-      // Output should be alphabetically sorted regardless of input order
-      expectAgentConfigs(config, buildAgentConfigs(["api-developer", "web-developer", "reviewer"]));
+      // Order IS the subject here, so the comparison has to be order-sensitive.
+      // `expectAgentConfigs` sorts both sides — right for its other callers, who
+      // ask about membership, and blind here: this `it` passed unchanged with the
+      // producer's own `.sort()` removed.
+      expect(config.agents).toStrictEqual(
+        buildAgentConfigs(["api-developer", "reviewer", "web-developer"]),
+      );
     });
 
     it("assigns each selected skill to its own domain's agents plus the reviewer", () => {

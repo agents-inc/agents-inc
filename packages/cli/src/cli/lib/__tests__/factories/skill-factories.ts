@@ -131,6 +131,12 @@ function getCanonicalSkillTaxonomy(): Record<string, CanonicalTaxonomy> {
         slug: "github-actions",
       },
       "infra-ci-cd-gitlab-ci": { domain: "infra", category: "infra-ci-cd", slug: "cd-gitlab-ci" },
+      "mobile-storage-mmkv": { domain: "mobile", category: "mobile-storage", slug: "mmkv" },
+      "mobile-styling-nativewind": {
+        domain: "mobile",
+        category: "mobile-styling",
+        slug: "nativewind",
+      },
       "web-accessibility-a11y": { domain: "web", category: "web-accessibility", slug: "a11y" },
       "web-animation-framer": { domain: "web", category: "web-animation", slug: "framer" },
       "meta-methodology-investigation": {

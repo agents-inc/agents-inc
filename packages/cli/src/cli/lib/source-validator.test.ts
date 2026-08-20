@@ -18,7 +18,12 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../consts";
-import { renderConfigTs, renderAgentYaml, renderSkillMd } from "./__tests__/content-generators";
+import {
+  renderConfigTs,
+  renderAgentYaml,
+  renderSkillMd,
+  renderUnparseableMetadataYaml,
+} from "./__tests__/content-generators";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
   VALID_SKILL_CATEGORIES_FILE,
@@ -26,6 +31,9 @@ import {
   VALID_STACK_CONFIG_FILE,
   VALID_STACKS_CONFIG_FILE,
 } from "./__tests__/mock-data/mock-source-files.js";
+
+/** The yaml parser's own words for what renderUnparseableMetadataYaml() writes. */
+const PARSER_REASON = "Nested mappings are not allowed";
 
 describe("source-validator", () => {
   describe("isSnakeCase", () => {
@@ -458,6 +466,39 @@ describe("source-validator", () => {
         );
         expect(authorErrors.length).toBeGreaterThan(0);
         expect(authorErrors[0]?.severity).toBe("error");
+      });
+
+      it("should name the parser's reason when an embedded-skill metadata.yaml is unparseable", async () => {
+        const stackDir = path.join(sourceDir, DIRS.stacks, "test-stack");
+        await mkdir(stackDir, { recursive: true });
+        await writeFile(
+          path.join(stackDir, STANDARD_FILES.CONFIG_YAML),
+          stringifyYaml(VALID_STACK_CONFIG_FILE),
+        );
+
+        const embeddedSkillDir = path.join(stackDir, "skills", "react");
+        await mkdir(embeddedSkillDir, { recursive: true });
+        await writeFile(
+          path.join(embeddedSkillDir, STANDARD_FILES.METADATA_YAML),
+          renderUnparseableMetadataYaml(),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        const metadataPath = path.join(
+          DIRS.stacks,
+          "test-stack",
+          "skills",
+          "react",
+          STANDARD_FILES.METADATA_YAML,
+        );
+        const parseErrors = result.issues.filter((i) => i.file === metadataPath);
+        expect(parseErrors).toHaveLength(1);
+        expect(parseErrors[0]?.severity).toBe("error");
+        expect(
+          parseErrors[0]?.message,
+          "a parse refusal that names no cause leaves the author nothing to act on",
+        ).toContain(PARSER_REASON);
       });
     });
 

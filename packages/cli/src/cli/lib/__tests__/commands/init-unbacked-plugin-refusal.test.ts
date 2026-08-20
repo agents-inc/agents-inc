@@ -116,7 +116,7 @@ describe("init --from: a plugin install nothing backs", () => {
     mockLoadAgentDefs.mockResolvedValue({
       agents: {},
       sourcePath: tempDir,
-      agentSourcePaths: { agentsDir: tempDir, templatesDir: tempDir, sourcePath: tempDir },
+      agentSourcePaths: { agentsDir: tempDir, sourcePath: tempDir },
     });
     mockDiscoverInstalledSkills.mockResolvedValue({
       allSkills: {},

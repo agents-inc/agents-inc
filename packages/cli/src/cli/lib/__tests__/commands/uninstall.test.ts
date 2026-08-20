@@ -3,7 +3,7 @@ import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import fs from "fs";
 import { mkdir, writeFile, readFile } from "fs/promises";
-import { runCliCommand } from "../helpers/cli-runner.js";
+import { missingArgsRefusal, parseRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { writeTestSkill, writeTestPluginManifest } from "../helpers/disk-writers.js";
@@ -275,22 +275,24 @@ describe("uninstall command", () => {
       const { error } = await runCliCommand(["uninstall"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("missing required arg");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(
+        output,
+        "uninstall detects its target from the cwd and declares no positional",
+      ).not.toContain(missingArgsRefusal(1));
     });
 
     it("should accept --yes flag", async () => {
       const { error } = await runCliCommand(["uninstall", "--yes"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--yes"));
     });
 
     it("should accept -y shorthand for yes", async () => {
       const { error } = await runCliCommand(["uninstall", "-y"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-y"));
     });
   });
 

@@ -35,6 +35,7 @@ import {
 } from "../../__tests__/mock-data/mock-matrices";
 import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND, STANDARD_FILES } from "../../../consts";
 import { generateConfigSource } from "../config-writer";
+import { bytewise } from "../../../utils/string";
 
 import type {
   AgentName,
@@ -56,6 +57,22 @@ function makeBackgroundData(
     customAgentNames,
   });
 }
+
+/**
+ * A locale whose collation orders two categories the catalogue actually ships against their code
+ * units. Lithuanian places `y` immediately after `i`, so it puts `mobile-styling` before
+ * `mobile-storage` where code units put it after — and `localeCompare` called with no locale
+ * reads the process default, which Node takes from LC_ALL/LANG. So this is not a hypothetical
+ * alphabet: it is what a project's committed config-types.ts becomes the first time it is
+ * regenerated on a Lithuanian desktop.
+ */
+const DIVERGENT_COLLATION_LOCALE = "lt";
+
+/** Skills in the two categories that locale reverses, stated in code-unit order. */
+const COLLATION_DIVERGENT_SKILLS = {
+  storage: createMockSkill("mobile-storage-mmkv"),
+  styling: createMockSkill("mobile-styling-nativewind"),
+};
 
 describe("generateConfigTypesSource", () => {
   it("includes auto-generated header comment", () => {
@@ -202,6 +219,46 @@ describe("generateConfigTypesSource", () => {
     expect(source).toContain('  "api-api"?: SkillAssignment<"api-framework-hono">;');
     expect(source).toContain('  "web-framework"?: SkillAssignment<"web-framework-react">;');
     expect(source).toContain('  "web-styling"?: SkillAssignment<"web-styling-scss-modules">[];');
+  });
+
+  it("names a category pair that locale's collation orders against their code units", () => {
+    const lithuanian = new Intl.Collator(DIVERGENT_COLLATION_LOCALE);
+    const { storage, styling } = COLLATION_DIVERGENT_SKILLS;
+
+    expect(bytewise(storage.category, styling.category)).toBe(-1);
+    expect(Math.sign(lithuanian.compare(storage.category, styling.category))).toBe(1);
+  });
+
+  it("orders StackAgentConfig keys by code unit, whatever collation the machine defaults to", () => {
+    const { storage, styling } = COLLATION_DIVERGENT_SKILLS;
+    const matrix = createMockMatrix(storage, styling);
+    const config = buildProjectConfig({ skills: buildSkillConfigs([storage.id, styling.id]) });
+
+    // Stands in for a machine whose default collation is Lithuanian, which is the only thing
+    // `localeCompare` with no locale argument consults.
+    const lithuanian = new Intl.Collator(DIVERGENT_COLLATION_LOCALE);
+    const defaultCollation = vi
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(function (this: string, that: string) {
+        return lithuanian.compare(String(this), that);
+      });
+
+    const collationInForce = Math.sign(storage.category.localeCompare(styling.category));
+    const source = generateConfigTypesSource(matrix, [], [], undefined, config);
+    defaultCollation.mockRestore();
+
+    expect(
+      collationInForce,
+      "the stand-in must actually answer for the process default, or this spec proves nothing",
+    ).toBe(1);
+    expect(source).toContain(
+      [
+        "export type StackAgentConfig = {",
+        `  "${storage.category}"?: SkillAssignment<"${storage.id}">[];`,
+        `  "${styling.category}"?: SkillAssignment<"${styling.id}">[];`,
+        "};",
+      ].join("\n"),
+    );
   });
 
   it("generates multi-line union for categories with more than 3 skills", () => {

@@ -8,6 +8,7 @@ import {
   DEFAULT_VERSION,
   LOCAL_SKILLS_PATH,
   PLUGIN_MANIFEST_DIR,
+  PLUGINS_DIST_PATH,
   SKILL_CATEGORIES_PATH,
   SKILLS_DIR_PATH,
   STACKS_FILE_PATH,
@@ -17,7 +18,7 @@ import { renderConfigTs } from "../../content-generators.js";
 import { createTestSkill } from "../../factories/skill-factories.js";
 import { runCliCommand } from "../../helpers/cli-runner.js";
 import { readTestJson, writeTestPackageJson } from "../../helpers/config-io.js";
-import { writeSourceSkill } from "../../helpers/disk-writers.js";
+import { writeSourceSkill, writeTestPluginManifest } from "../../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { firstElement } from "../../helpers/element-at.js";
 import { readTestFile, type TestSkill } from "../../fixtures/create-test-source.js";
@@ -51,6 +52,9 @@ const PUBLIC_CATALOGUE_NAME = "agents-inc";
  * built-in stacks.
  */
 const CATALOGUE_LOOKALIKE_PACKAGE = `${PUBLIC_CATALOGUE_PACKAGE}-extra`;
+
+/** A publishable name for that lookalike, since its scoped npm name is not one. */
+const LOOKALIKE_MARKETPLACE_NAME = "acme";
 
 /**
  * The catalogue skill a fixture borrows its taxonomy from.
@@ -107,9 +111,22 @@ function localOnlySkill(): TestSkill {
   });
 }
 
-/** Writes one skill into the marketplace's own `src/skills/<id>/`. */
-async function writeMarketplaceSkill(marketplaceDir: string, skill: TestSkill): Promise<void> {
+/**
+ * Writes one skill into the marketplace's own `src/skills/<id>/`, and the built plugin that
+ * publishes it.
+ *
+ * Both halves, because `build marketplace` refuses a manifest with no plugins in it — the schema it
+ * would be read back with is `plugins: z.array(...).min(1)` — so a marketplace holding a skill it
+ * has not built is not a state this command produces an artefact from, and every catalog assertion
+ * below needs an artefact.
+ */
+async function publishMarketplaceSkill(marketplaceDir: string, skill: TestSkill): Promise<void> {
   await writeSourceSkill(path.join(marketplaceDir, SKILLS_DIR_PATH), skill.id, skill);
+  await writeTestPluginManifest(path.join(marketplaceDir, PLUGINS_DIST_PATH, skill.id), {
+    name: skill.id,
+    version: DEFAULT_VERSION,
+    description: skill.description,
+  });
 }
 
 /** Writes one skill into `<baseDir>/.claude/skills/<id>/` — a local skill. */
@@ -172,9 +189,11 @@ describe("build:marketplace catalog emission", () => {
 
   beforeEach(async () => {
     ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("build-marketplace-catalog-"));
-    // `loadSkillsMatrixFromSource` reaches the home directory through `os.homedir()`,
-    // which ignores HOME. Pointing the spy at the same fake home is what makes the
-    // absence assertions below assertions rather than accidents.
+    // `loadSkillsMatrixFromSource` reaches the home directory through `os.homedir()`.
+    // Node re-reads `$HOME` on every call, so the env var alone would carry there; bun
+    // resolves it once at startup and ignores the mutation, and this package runs both.
+    // Pointing the spy at the same fake home is what makes the absence assertions below
+    // assertions rather than accidents.
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
     catalogPath = path.join(projectDir, PLUGIN_MANIFEST_DIR, CATALOG_JSON);
   });
@@ -188,7 +207,7 @@ describe("build:marketplace catalog emission", () => {
     beforeEach(async () => {
       await writeTestPackageJson(projectDir, { name: MARKETPLACE_NAME });
       await writeMarketplaceCategories(projectDir);
-      await writeMarketplaceSkill(projectDir, marketplaceSkill());
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
     });
 
     it("emits a catalog beside the marketplace manifest", async () => {
@@ -252,7 +271,7 @@ describe("build:marketplace catalog emission", () => {
     beforeEach(async () => {
       await writeTestPackageJson(projectDir, { name: MARKETPLACE_NAME });
       await writeMarketplaceCategories(projectDir);
-      await writeMarketplaceSkill(projectDir, marketplaceSkill());
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
     });
 
     it("leaves a skill in the author's home directory out of the published catalog", async () => {
@@ -281,7 +300,7 @@ describe("build:marketplace catalog emission", () => {
     it("carries a marketplace's own stack, and none of the built-ins", async () => {
       await writeTestPackageJson(projectDir, { name: MARKETPLACE_NAME });
       await writeMarketplaceCategories(projectDir);
-      await writeMarketplaceSkill(projectDir, marketplaceSkill());
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
       await writeMarketplaceStacks(projectDir);
 
       await runCliCommand(["build:marketplace"]);
@@ -298,7 +317,7 @@ describe("build:marketplace catalog emission", () => {
     it("carries no stacks for a marketplace that ships none", async () => {
       await writeTestPackageJson(projectDir, { name: MARKETPLACE_NAME });
       await writeMarketplaceCategories(projectDir);
-      await writeMarketplaceSkill(projectDir, marketplaceSkill());
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
 
       await runCliCommand(["build:marketplace"]);
 
@@ -312,7 +331,7 @@ describe("build:marketplace catalog emission", () => {
     it("carries the built-in stacks for the public catalogue's own package", async () => {
       await writeTestPackageJson(projectDir, { name: PUBLIC_CATALOGUE_PACKAGE });
       await writeMarketplaceCategories(projectDir);
-      await writeMarketplaceSkill(projectDir, marketplaceSkill());
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
 
       await runCliCommand(["build:marketplace", "--name", PUBLIC_CATALOGUE_NAME]);
 
@@ -327,9 +346,13 @@ describe("build:marketplace catalog emission", () => {
     it("withholds the built-in stacks from a package that merely resembles the catalogue", async () => {
       await writeTestPackageJson(projectDir, { name: CATALOGUE_LOOKALIKE_PACKAGE });
       await writeMarketplaceCategories(projectDir);
-      await writeMarketplaceSkill(projectDir, marketplaceSkill());
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
 
-      await runCliCommand(["build:marketplace"]);
+      // A scoped npm name is not publishable as a marketplace name, so the build is
+      // refused without one — the same flag the sibling case above needs, and for the
+      // same reason. It does not touch the claim: `offersBuiltInStacks` answers off
+      // `isPublicCatalogueCheckout`, which reads the package identity from disk.
+      await runCliCommand(["build:marketplace", "--name", LOOKALIKE_MARKETPLACE_NAME]);
 
       const catalog = await readTestJson<Matrix>(catalogPath);
       expect(

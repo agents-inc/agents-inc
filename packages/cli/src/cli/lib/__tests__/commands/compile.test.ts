@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { mkdir, readdir, readFile } from "fs/promises";
-import { runCliCommand } from "../helpers/cli-runner.js";
-import { createTempDir, cleanupTempDir, directoryExists, fileExists } from "../test-fs-utils";
+import { readdir, readFile } from "fs/promises";
+import { missingArgsRefusal, parseRefusal, runCliCommand } from "../helpers/cli-runner.js";
+import { setupIsolatedHome } from "../helpers/isolated-home.js";
+import { directoryExists, fileExists } from "../test-fs-utils";
 import { buildTestProjectConfig } from "../factories/config-factories.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
@@ -15,21 +16,14 @@ import { CLAUDE_DIR } from "../../../consts";
 import { expectValidAgentMarkdown } from "../assertions";
 
 describe("compile command", () => {
-  let tempDir: string;
-  let projectDir: string;
-  let originalCwd: string;
+  let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    originalCwd = process.cwd();
-    tempDir = await createTempDir("cc-compile-test-");
-    projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-    process.chdir(projectDir);
+    ({ cleanup } = await setupIsolatedHome("cc-compile-test-"));
   });
 
   afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTempDir(tempDir);
+    await cleanup();
   });
 
   describe("basic execution", () => {
@@ -37,8 +31,10 @@ describe("compile command", () => {
       const { error } = await runCliCommand(["compile"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("missing required arg");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(
+        output,
+        "a recompile takes its target from the config, never from a positional",
+      ).not.toContain(missingArgsRefusal(1));
     });
 
     it("should fail when no plugin exists", async () => {
@@ -53,35 +49,34 @@ describe("compile command", () => {
       const { error } = await runCliCommand(["compile", "--verbose"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(parseRefusal("--verbose"));
     });
 
     it("should accept -v shorthand for verbose", async () => {
       const { error } = await runCliCommand(["compile", "-v"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-v"));
     });
 
     it("rejects --source — a recompile reads the source its config records", async () => {
       const { error } = await runCliCommand(["compile", "--source", "/some/path"]);
 
-      expect(error?.message).toContain("Nonexistent flag: --source");
+      expect(error?.message).toContain(parseRefusal("--source"));
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
     it("rejects the -s shorthand for the same reason", async () => {
       const { error } = await runCliCommand(["compile", "-s", "/some/path"]);
 
-      expect(error?.message).toContain("Nonexistent flag: -s");
+      expect(error?.message).toContain(parseRefusal("-s"));
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
     it("rejects --refresh, which no command carries any more", async () => {
       const { error } = await runCliCommand(["compile", "--refresh"]);
 
-      expect(error?.message).toContain("Nonexistent flag: --refresh");
+      expect(error?.message).toContain(parseRefusal("--refresh"));
     });
   });
 

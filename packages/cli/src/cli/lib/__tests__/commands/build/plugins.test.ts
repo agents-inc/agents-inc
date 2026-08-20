@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { runCliCommand } from "../../helpers/cli-runner.js";
+import { missingArgsRefusal, parseRefusal, runCliCommand } from "../../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../../test-fs-utils";
 import { renderSkillMd } from "../../content-generators";
@@ -32,20 +32,20 @@ describe("build:plugins command", () => {
     it("should run without arguments", async () => {
       const { error } = await runCliCommand(["build:plugins"]);
 
-      // Should not have argument parsing errors
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("missing required arg");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(
+        output,
+        "every skill is compiled unless --skill narrows it, so no positional is required",
+      ).not.toContain(missingArgsRefusal(1));
     });
 
     it("should complete with 0 skills when no skills directory exists", async () => {
       // projectDir has no skills directory - command still runs
       const { stdout, error } = await runCliCommand(["build:plugins"]);
 
-      // Command completes (may succeed with 0 skills or error gracefully)
-      // The key is it doesn't crash with argument errors
-      const output = stdout + (error?.message || "");
-      expect(output.toLowerCase()).not.toContain("missing required arg");
+      expect(error).toBeUndefined();
+      expect(stdout).toContain("Compiled 0 skill plugins");
+      expect(stdout).toContain("Plugin compilation complete!");
     });
   });
 
@@ -57,8 +57,7 @@ describe("build:plugins command", () => {
 
       // Should not error on --output-dir flag
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(parseRefusal("--output-dir"));
     });
 
     it("should accept -o shorthand for output-dir", async () => {
@@ -68,7 +67,7 @@ describe("build:plugins command", () => {
 
       // Should accept -o shorthand
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-o"));
     });
 
     it("should accept --skill flag", async () => {
@@ -76,7 +75,7 @@ describe("build:plugins command", () => {
 
       // Should not error on --skill flag
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--skill"));
     });
 
     it("should accept --verbose flag", async () => {
@@ -84,7 +83,7 @@ describe("build:plugins command", () => {
 
       // Should not error on --verbose flag
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--verbose"));
     });
 
     it("should accept -v shorthand for verbose", async () => {
@@ -92,7 +91,7 @@ describe("build:plugins command", () => {
 
       // Should accept -v shorthand
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-v"));
     });
   });
 
@@ -109,7 +108,8 @@ describe("build:plugins command", () => {
 
       // Should accept all flags
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--output-dir"));
+      expect(output).not.toContain(parseRefusal("--verbose"));
     });
 
     it("should accept shorthand flags together", async () => {
@@ -119,7 +119,8 @@ describe("build:plugins command", () => {
 
       // Should accept all shorthand flags
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-o"));
+      expect(output).not.toContain(parseRefusal("-v"));
     });
 
     it("should accept --skill with --output-dir", async () => {
@@ -135,7 +136,8 @@ describe("build:plugins command", () => {
 
       // Should accept both flags
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--skill"));
+      expect(output).not.toContain(parseRefusal("--output-dir"));
     });
 
     it("should accept --skill with --verbose", async () => {
@@ -143,7 +145,8 @@ describe("build:plugins command", () => {
 
       // Should accept both flags
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--skill"));
+      expect(output).not.toContain(parseRefusal("--verbose"));
     });
   });
 

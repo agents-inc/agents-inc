@@ -182,7 +182,7 @@ describe("init --from: plugin install spine", () => {
     mockLoadAgentDefs.mockResolvedValue({
       agents: {},
       sourcePath: tempDir,
-      agentSourcePaths: { agentsDir: tempDir, templatesDir: tempDir, sourcePath: tempDir },
+      agentSourcePaths: { agentsDir: tempDir, sourcePath: tempDir },
     });
     mockDiscoverInstalledSkills.mockResolvedValue({
       allSkills: {},

@@ -3,7 +3,7 @@ import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
-import { createTempDir, cleanupTempDir } from "../test-fs-utils";
+import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { getDashboardData, formatDashboardText } from "../../../commands/init";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
@@ -11,21 +11,15 @@ import { renderConfigTs } from "../content-generators";
 import { EXPECTED_SKILLS } from "../expected-values";
 
 describe("init command", () => {
-  let tempDir: string;
   let projectDir: string;
-  let originalCwd: string;
+  let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    originalCwd = process.cwd();
-    tempDir = await createTempDir("cc-init-test-");
-    projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-    process.chdir(projectDir);
+    ({ projectDir, cleanup } = await setupIsolatedHome("cc-init-test-"));
   });
 
   afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTempDir(tempDir);
+    await cleanup();
   });
 
   describe("already initialized — dashboard", () => {

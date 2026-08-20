@@ -363,7 +363,7 @@ describe("config-gate enforcement", () => {
   });
 
   /**
-   * D-309 — the residual bypass, closed at RUNTIME.
+   * The residual bypass, closed at RUNTIME.
    *
    * `pair-writer.ts` is private, and a static or dynamic import of it is caught
    * by eslint and by the source scanner below. Both are STATIC layers, and a

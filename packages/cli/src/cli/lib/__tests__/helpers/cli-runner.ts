@@ -8,6 +8,49 @@ const __dirname = path.dirname(__filename);
 
 export const CLI_ROOT = path.resolve(__dirname, "../../../../..");
 
+/**
+ * The refusal oclif's parser prints for a flag a command has not declared, for the
+ * given spelling — long or short. A spec proving a flag IS declared negates this;
+ * one proving a flag was withdrawn asserts it.
+ *
+ * Built here rather than spelled at each call site because the space after the
+ * colon is load-bearing: a site that loses it negates a string the parser can
+ * never print, and the assertion goes silently vacuous again. `e2e/pages/
+ * terminal-screen.ts` carries the same string as `PARSE_REFUSAL` for the PTY
+ * harness, which cannot import from this tree.
+ */
+export function parseRefusal(flag: string): string {
+  return `Nonexistent flag: ${flag}`;
+}
+
+/**
+ * The refusal oclif's parser prints when a command is invoked without a positional
+ * argument it declares `required` — `Missing 1 required arg:`. A spec proving a
+ * command declares NO required positional negates the one-arg spelling, which is
+ * what a first required argument would produce.
+ *
+ * The count sits inside the message rather than after it, so a call site spelling
+ * the string by hand elides it — `missing required arg` is not a substring of
+ * anything the parser prints, and the negative it feeds can never fail.
+ */
+export function missingArgsRefusal(count: number): string {
+  return `Missing ${count} required arg`;
+}
+
+/**
+ * The refusal oclif's parser prints for a positional argument outside the `options`
+ * its command declares — `Expected config to be one of: agent-partials, templates,
+ * skills, all`. A spec proving a value IS a declared option negates it.
+ *
+ * This is the argument-side counterpart of {@link parseRefusal}: the value is named
+ * inside the message, so it is the only form of the refusal that distinguishes one
+ * rejected option from another. `eject` is the only command declaring `options`
+ * today, and the string lives here beside its sibling so the next one finds it.
+ */
+export function argOptionRefusal(value: string): string {
+  return `Expected ${value} to be one of:`;
+}
+
 function makeCapturingWrite(buf: string[]): typeof process.stdout.write {
   return function (str: unknown, encoding?: unknown, cb?: unknown): boolean {
     buf.push(String(str));

@@ -1,13 +1,9 @@
 export {
   expectConfigSkills,
   expectConfigAgents,
-  expectFullConfig,
   expectSkillConfigs,
   expectAgentConfigs,
-  expectConfigOnDisk,
-  assertConfigIntegrity,
 } from "./config-assertions.js";
-export type { ExpectedConfig } from "./config-assertions.js";
 
 export {
   parseCompiledAgent,

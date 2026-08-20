@@ -412,9 +412,11 @@ describe("WizardLayout logo", () => {
  * THE SUBTITLE IS A SCREEN SENTINEL. `e2e/pages/constants.ts` `STEP_TEXT.SOURCES`
  * duplicates this exact string and every E2E step page object waits on it to know the
  * screen arrived — so a subtitle that moves without it does not fail an assertion, it
- * hangs each wizard spec for the full `TIMEOUTS.WIZARD_LOAD` budget. This test is the
- * fast half of that pair: it goes red in under a second and names the string, which is
- * the signal `STEP_TEXT.SOURCES` has to be moved to match.
+ * hangs each wizard spec for the full `TIMEOUTS.WIZARD_LOAD` budget. This test goes red
+ * in under a second and names the string when THE PRODUCT moves; it reads no `e2e/`
+ * file, so it cannot see the mirror move, and that half sat drifted while the whole unit
+ * suite stayed green. `scripts/check-screen-sentinels.ts` is what compares the two
+ * literals to each other — it reads both as source, in both directions.
  *
  * The wording is the step's own subject — where each skill comes from — and NOT the config
  * field the step writes, which is `SkillConfig.origin`. Heading it with that field's noun was

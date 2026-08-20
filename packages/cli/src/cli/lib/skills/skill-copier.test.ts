@@ -351,6 +351,52 @@ describe("skill-copier", () => {
       ).rejects.toThrow("Skill not found: web-unknown-skill");
     });
 
+    /**
+     * A skill the catalogue names and the fetched source does not carry. It happens whenever the
+     * vendored matrix and the marketplace it was generated from disagree — a user whose CLI
+     * predates a marketplace change meets it with no way to make them agree — and what the run
+     * printed was a bare `ENOENT` naming a path inside the source cache, which names neither the
+     * skill nor anything the reader can act on.
+     */
+    it("names the skill whose files the source does not carry, and the fault beneath it", async () => {
+      await writeRemoteSkillOnDisk(projectDir, "skills/web/framework/web-framework-react/", {
+        name: "web-framework-react",
+      });
+      const sourceResult = initSourceResult(
+        createMockMatrix(SKILLS.react, SKILLS.tailwind),
+        projectDir,
+      );
+
+      await expect(
+        copySkillsToPluginFromSource(
+          ["web-framework-react", "web-styling-tailwind"],
+          pluginDir,
+          sourceResult,
+        ),
+        "an ENOENT names a path inside the source cache, which the reader can neither place nor act on",
+      ).rejects.toThrow("web-styling-tailwind: ENOENT");
+    });
+
+    it("names every skill that failed, not only the first to reject", async () => {
+      const sourceResult = initSourceResult(
+        createMockMatrix(SKILLS.react, SKILLS.tailwind, SKILLS.vitest),
+        projectDir,
+      );
+
+      const failure = await copySkillsToPluginFromSource(
+        ["web-framework-react", "web-styling-tailwind", "web-testing-vitest"],
+        pluginDir,
+        sourceResult,
+      ).catch((error: unknown) => String(error));
+
+      expect(
+        failure,
+        "one Promise.all rejection discards its siblings' errors, so the second missing skill is only met on the next run",
+      ).toContain("web-framework-react: ENOENT");
+      expect(failure).toContain("web-styling-tailwind: ENOENT");
+      expect(failure).toContain("web-testing-vitest: ENOENT");
+    });
+
     it("handles empty skill selection", async () => {
       const sourceResult = initSourceResult(EMPTY_MATRIX, projectDir);
 
@@ -436,6 +482,31 @@ describe("skill-copier", () => {
   });
 
   describe("copySkillsToLocalFlattened", () => {
+    /**
+     * The eject path meets the same disagreement the plugin path does, and it is where it was
+     * first met: `eject skills` against the default marketplace reads `BUILT_IN_MATRIX` while
+     * copying out of the fetched checkout, so the first id the vendored catalogue holds and the
+     * repository does not aborts the whole run.
+     */
+    it("names the skill whose files the source does not carry, and writes none of the rest", async () => {
+      const remoteSkillRelPath = "skills/web/client-state-management/web-state-zustand/";
+      await writeRemoteSkillOnDisk(projectDir, remoteSkillRelPath, { name: "web-state-zustand" });
+      const localSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      await mkdir(localSkillsDir, { recursive: true });
+      const sourceResult = initSourceResult(
+        createMockMatrix({ ...SKILLS.zustand, path: remoteSkillRelPath }, SKILLS.drizzle),
+        projectDir,
+      );
+
+      await expect(
+        copySkillsToLocalFlattened(
+          ["web-state-zustand", "api-database-drizzle"],
+          localSkillsDir,
+          sourceResult,
+        ),
+      ).rejects.toThrow("api-database-drizzle: ENOENT");
+    });
+
     it("copies skills to flattened structure using normalized ID", async () => {
       // Create remote skill in source location
       const remoteSkillRelPath = "skills/web/client-state-management/web-state-zustand/";

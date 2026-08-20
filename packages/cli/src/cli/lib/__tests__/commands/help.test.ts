@@ -1,7 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import { runCliCommand } from "../helpers/cli-runner.js";
+import { setupIsolatedHome } from "../helpers/isolated-home.js";
 
 describe("help command", () => {
+  let cleanup: () => Promise<void>;
+
+  // Every in-process run goes through the oclif `init` hook, which calls
+  // `resolveSource` and walks to the home root — so even `help` reads whatever
+  // `~/.claude-src/config.ts` and cwd the developer's machine happens to have.
+  beforeEach(async () => {
+    ({ cleanup } = await setupIsolatedHome("cc-help-test-"));
+  });
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
   describe("top-level help", () => {
     it("should show command listing", async () => {
       const { stdout } = await runCliCommand(["help"]);

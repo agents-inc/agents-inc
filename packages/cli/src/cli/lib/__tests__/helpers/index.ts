@@ -9,7 +9,12 @@ export {
   writeTestTsConfig,
   writeTestPackageJson,
 } from "./config-io.js";
-export { normalizeGlobalConfig } from "./config-comparison.js";
+// Both, never one. The two normalisers are a single substitution apart and the weaker one
+// leaves a reordering assertion green, so a door offering only `normalizeGlobalConfig` steers
+// an author who meant the order-sensitive comparison into exactly the swap
+// `config-comparison.js` documents. Neither is imported through this barrel today, which is
+// what makes carrying one of the pair a trap rather than a preference.
+export { normalizeGlobalConfig, normalizeConfigPreservingOrder } from "./config-comparison.js";
 export {
   writeTestSkill,
   writeSourceSkill,

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
-import { createTempDir, cleanupTempDir } from "../test-fs-utils";
+import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { writeTestSkill } from "../helpers/disk-writers.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
 import { initializeMatrix } from "../../matrix/matrix-provider";
@@ -11,24 +11,17 @@ import { renderConfigTs } from "../content-generators";
 import { VITEST_MATRIX } from "../mock-data/mock-matrices";
 
 describe("list command", () => {
-  let tempDir: string;
   let projectDir: string;
-  let originalCwd: string;
+  let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    originalCwd = process.cwd();
-
-    tempDir = await createTempDir("cc-list-test-");
-    projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-    process.chdir(projectDir);
+    ({ projectDir, cleanup } = await setupIsolatedHome("cc-list-test-"));
 
     initializeMatrix(VITEST_MATRIX);
   });
 
   afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTempDir(tempDir);
+    await cleanup();
   });
 
   describe("command behavior", () => {

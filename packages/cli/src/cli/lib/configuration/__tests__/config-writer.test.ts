@@ -22,7 +22,7 @@ import {
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
 import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../../consts";
-import type { SkillId } from "../../../types";
+import type { ProjectConfig, SkillId } from "../../../types";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
 import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
 import {
@@ -1407,6 +1407,101 @@ describe("generateConfigSource", () => {
         afterRoundTrip,
         "the inlined scalar union must be one ordered sequence, not a global block then a project block",
       ).toBe(beforeRoundTrip);
+    });
+  });
+
+  /**
+   * The stack's own keys are the same claim one level down, and they reach further
+   * than a diff: a compiled sub-agent lists its dynamic skills in the order its
+   * stack entry carries them, so a stack assembled in a different order compiles to
+   * a different file. Two producers assemble one — the wizard, from the current
+   * selection in the roster's order, and the seed decode, from a shared payload in
+   * whatever order that payload listed its skills — and the same curation must reach
+   * disk as the same bytes whichever built it.
+   */
+  describe("stack key order follows the roster, not the producer's insertion order", () => {
+    /** Both sub-agents' curation, with every key in the order the roster declares it. */
+    const IN_ROSTER_ORDER = {
+      "api-developer": {
+        "api-api": [{ id: "api-framework-hono", preloaded: true }],
+        "api-orm": [{ id: "api-database-drizzle", preloaded: false }],
+      },
+      "web-developer": {
+        "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        "web-client-state": [{ id: "web-state-zustand", preloaded: false }],
+        "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+      },
+    } satisfies NonNullable<ProjectConfig["stack"]>;
+
+    /**
+     * The identical curation, keyed in the order a shared payload's skill list
+     * produces: the sub-agent each payload row first names, and within it the
+     * category that row belongs to.
+     */
+    const IN_PAYLOAD_ORDER = {
+      "web-developer": {
+        "web-framework": [{ id: "web-framework-react", preloaded: true }],
+        "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+        "web-client-state": [{ id: "web-state-zustand", preloaded: false }],
+      },
+      "api-developer": {
+        "api-orm": [{ id: "api-database-drizzle", preloaded: false }],
+        "api-api": [{ id: "api-framework-hono", preloaded: true }],
+      },
+    } satisfies NonNullable<ProjectConfig["stack"]>;
+
+    function configWithStack(stack: NonNullable<ProjectConfig["stack"]>): ProjectConfig {
+      return buildProjectConfig({
+        name: "stack-key-order",
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"]),
+          ...buildSkillConfigs(["web-state-zustand"]),
+          ...buildSkillConfigs(["web-testing-vitest"]),
+          ...buildSkillConfigs(["api-framework-hono"]),
+          ...buildSkillConfigs(["api-database-drizzle"]),
+        ],
+        agents: [...buildAgentConfigs(["web-developer"]), ...buildAgentConfigs(["api-developer"])],
+        stack,
+      });
+    }
+
+    it("emits the same bytes for two stacks that differ only in key insertion order", () => {
+      const fromRoster = generateConfigSource(configWithStack(IN_ROSTER_ORDER));
+      const fromPayload = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER));
+
+      // Subject guard: both really carry the whole curation, so the equality below
+      // is not comparing two configs that emitted no stack at all.
+      expect(fromRoster).toContain(
+        "const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>",
+      );
+      expect(fromRoster).toContain('"web-client-state"');
+      expect(fromPayload, "config.ts bytes must be decided by the stack's content alone").toBe(
+        fromRoster,
+      );
+    });
+
+    it("emits each sub-agent in name order, and its categories in the matrix's declaration order", () => {
+      const source = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER));
+
+      expect(source).toContain(`const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
+  "api-developer": {
+    "api-api": {
+      "id": "api-framework-hono",
+      "preloaded": true
+    },
+    "api-orm": "api-database-drizzle"
+  },
+  "web-developer": {
+    "web-framework": {
+      "id": "web-framework-react",
+      "preloaded": true
+    },
+    "web-client-state": "web-state-zustand",
+    "web-testing": [
+      "web-testing-vitest"
+    ]
+  }
+};`);
     });
   });
 });

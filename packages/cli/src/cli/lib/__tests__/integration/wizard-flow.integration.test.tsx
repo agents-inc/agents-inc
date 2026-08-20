@@ -5,7 +5,7 @@ import { hydrateWizardStore, useWizardStore } from "../../../stores/wizard-store
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import * as wizardLib from "../../wizard/index.js";
 import { createComprehensiveMatrix, createBasicMatrix } from "../factories/matrix-factories.js";
-import type { AgentName, SkillId } from "../../../types";
+import type { AgentName, Domain, SkillId } from "../../../types";
 import { firstElement } from "../helpers/element-at.js";
 import {
   ARROW_DOWN,
@@ -56,6 +56,13 @@ const completeStackFlowFromStart = async (stdin: { write: (data: string) => void
   stdin.write(ENTER); // Confirm -> complete
   await delay(STEP_TRANSITION_DELAY_MS);
 };
+
+/**
+ * `DEFAULT_SCRATCH_DOMAINS` from `consts.ts`, spelled rather than imported: an assertion
+ * built from the very constant the store selects with moves whenever that constant moves,
+ * so it cannot fail on a change to the scratch roster — the one change it exists to catch.
+ */
+const EXPECTED_SCRATCH_DOMAINS: Domain[] = ["web", "api", "mobile"];
 
 describe("Wizard integration", () => {
   let cleanup: (() => void) | undefined;
@@ -268,6 +275,34 @@ describe("Wizard integration", () => {
       expect(lastFrame()).toContain("Web");
     });
 
+    it("should pre-select the scratch domains when the scratch row is chosen", async () => {
+      initializeMatrix(createComprehensiveMatrix());
+      const onComplete = vi.fn();
+      const onCancel = vi.fn();
+
+      const { stdin, unmount } = render(
+        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
+      );
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+
+      // Navigate to scratch (past 2 stacks)
+      stdin.write(ARROW_DOWN); // Vue Stack
+      await delay(STEP_TRANSITION_DELAY_MS);
+      stdin.write(ARROW_DOWN); // Start from scratch
+      await delay(STEP_TRANSITION_DELAY_MS);
+      stdin.write(ENTER);
+      await delay(STEP_TRANSITION_DELAY_MS);
+
+      const state = useWizardStore.getState();
+      expect(state.approach).toBe("scratch");
+      expect(
+        state.selectedDomains,
+        "the scratch row must arrive on the domains step with every scratch domain on",
+      ).toStrictEqual(EXPECTED_SCRATCH_DOMAINS);
+    });
+
     it("should navigate through multi-domain build with pre-selected domains", async () => {
       initializeMatrix(createComprehensiveMatrix());
       const onComplete = vi.fn();
@@ -426,34 +461,6 @@ describe("Wizard integration", () => {
       expect(state.step).toBe("domains");
       // Stack selection should be preserved
       expect(state.selectedStackId).toBe("react-fullstack");
-    });
-
-    it("should preserve domain selections when navigating back in scratch flow", async () => {
-      initializeMatrix(createComprehensiveMatrix());
-      const onComplete = vi.fn();
-      const onCancel = vi.fn();
-
-      const { stdin, unmount } = render(
-        <Wizard onComplete={onComplete} onCancel={onCancel} version="0.0.0" />,
-      );
-      cleanup = unmount;
-
-      await delay(RENDER_DELAY_MS);
-
-      // Navigate to scratch (past 2 stacks)
-      stdin.write(ARROW_DOWN); // Vue Stack
-      await delay(STEP_TRANSITION_DELAY_MS);
-      stdin.write(ARROW_DOWN); // Start from scratch
-      await delay(STEP_TRANSITION_DELAY_MS);
-      stdin.write(ENTER);
-      await delay(STEP_TRANSITION_DELAY_MS);
-
-      // Now at domain selection - verify domains were pre-selected
-      const state = useWizardStore.getState();
-      expect(state.approach).toBe("scratch");
-      // Scratch pre-selects web, api, mobile
-      expect(state.selectedDomains).toContain("web");
-      expect(state.selectedDomains).toContain("api");
     });
   });
 

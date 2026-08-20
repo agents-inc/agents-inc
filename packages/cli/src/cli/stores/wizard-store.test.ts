@@ -10,17 +10,25 @@ import {
   ALL_SKILLS_TEST_CATEGORIES_MATRIX,
   ALL_SKILLS_FULLSTACK_CATEGORIES_MATRIX,
   ALL_SKILLS_WEB_AND_API_MATRIX,
+  HONO_CATEGORY_UNPLACEABLE_MATRIX,
   MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX,
   REACT_HONO_FRAMEWORK_API_MATRIX,
   REACT_HONO_ONE_STACK_MATRIX,
   REACT_HONO_WEB_API_DOMAINS_MATRIX,
 } from "../lib/__tests__/mock-data/mock-matrices";
 import { CUSTOM_HOUSE_TOOLING_ID } from "../lib/__tests__/mock-data/mock-skills";
-import type { AgentScopeConfig, Category, SkillConfig } from "../types";
+import type { AgentScopeConfig, Category, SkillConfig, SkillId } from "../types";
 import { EXPECTED_AGENTS } from "../lib/__tests__/expected-values";
 import { BUILT_IN_MATRIX } from "../types/generated/matrix";
 import { getIncompatibleReason, validateSelection } from "../lib/matrix";
-import { DEFAULT_PUBLIC_SOURCE_NAME, DEFAULT_SCRATCH_DOMAINS, EJECT_SOURCE } from "../consts";
+import {
+  CLI_INVOKE_COMMAND,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  DEFAULT_SCRATCH_DOMAINS,
+  EJECT_SOURCE,
+  SKILL_CATEGORIES_PATH,
+} from "../consts";
+import { disableBuffering, drainBuffer, enableBuffering } from "../utils/logger";
 import { elementAt, firstElement } from "../lib/__tests__/helpers/element-at.js";
 
 /**
@@ -33,6 +41,22 @@ const categoryIsExclusive = (category: Category): boolean =>
 
 /** A provenance that is neither `eject` nor the public marketplace, so the decode is unambiguous. */
 const PRIVATE_MARKETPLACE_NAME = "Acme Corp";
+
+/**
+ * What a population said, read the way the wizard reads it: `init` and `edit` buffer `warn()`
+ * so Ink's `clearTerminal` cannot wipe it, and paint the drained lines as a band above the
+ * first step. Draining the buffer is therefore asking what the user is shown, not what stderr
+ * happened to receive.
+ */
+function populateWithWarnings(skillIds: SkillId[]): string[] {
+  enableBuffering();
+  try {
+    useWizardStore.getState().populateFromSkillIds(skillIds);
+    return drainBuffer().map((message) => message.text);
+  } finally {
+    disableBuffering();
+  }
+}
 
 describe("WizardStore", () => {
   beforeEach(() => {
@@ -852,6 +876,43 @@ describe("WizardStore", () => {
     });
   });
 
+  describe("seedFocusedAgent", () => {
+    it("seeds focusedAgentId to the agents grid's first row on step entry", () => {
+      const store = useWizardStore.getState();
+
+      // The grid highlights its first row from the first frame, so a keystroke
+      // buffered ahead of that frame must already find the same agent in the
+      // store — the `s` scope toggle reads it synchronously.
+      store.setStep("agents");
+
+      expect(useWizardStore.getState().focusedAgentId).toBe("web-developer");
+    });
+
+    it("re-seeds focusedAgentId on return to the agents step when focus was cleared", () => {
+      const store = useWizardStore.getState();
+      store.setStep("agents");
+      // Focusing the continue row clears the id — the state the step is left in
+      // whenever the user continues from that row.
+      store.setFocusedAgentId(null);
+      store.setStep("confirm");
+
+      store.goBack();
+
+      expect(useWizardStore.getState().focusedAgentId).toBe("web-developer");
+    });
+
+    it("keeps the focused agent on return to the agents step", () => {
+      const store = useWizardStore.getState();
+      store.setStep("agents");
+      store.setFocusedAgentId("cli-developer");
+      store.setStep("confirm");
+
+      store.goBack();
+
+      expect(useWizardStore.getState().focusedAgentId).toBe("cli-developer");
+    });
+  });
+
   describe("mode toggles", () => {
     it("should toggle show labels", () => {
       const store = useWizardStore.getState();
@@ -1614,6 +1675,32 @@ describe("WizardStore", () => {
       expect(state.unresolvableSkillIds).toStrictEqual(["web-styling-tailwind"]);
       // The resolvable skill is still selected.
       expect(state.skillConfigs.map((sc) => sc.id)).toStrictEqual(["web-framework-react"]);
+    });
+
+    it("tells the user what to do about a skill the loaded source does not carry", () => {
+      initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
+
+      const warnings = populateWithWarnings(["web-framework-react", "web-styling-tailwind"]);
+
+      expect(warnings, "an unplaceable skill's warning must name a way out").toStrictEqual([
+        "Installed skill 'web-styling-tailwind' is not present in the loaded source — it may " +
+          "have been removed or renamed. It is left out of this session's selection. Run " +
+          `'${CLI_INVOKE_COMMAND} update' to refresh the marketplace if you expect it to still ` +
+          "be carried there.",
+      ]);
+    });
+
+    it("tells the user what to do about a skill whose category no domain claims", () => {
+      initializeMatrix(HONO_CATEGORY_UNPLACEABLE_MATRIX);
+
+      const warnings = populateWithWarnings(["web-framework-react", "api-framework-hono"]);
+
+      expect(warnings, "an unplaceable category's warning must name a way out").toStrictEqual([
+        "Installed skill 'api-framework-hono' has unknown category 'api-api' — skipping. No " +
+          "domain in this source claims that category, so the wizard has no screen to place " +
+          `the skill on. Declare it with a 'domain' in the source's '${SKILL_CATEGORIES_PATH}', ` +
+          `or run '${CLI_INVOKE_COMMAND} update' to refresh the marketplace.`,
+      ]);
     });
 
     it("should preserve excluded entries from saved configs in populateFromSkillIds", () => {

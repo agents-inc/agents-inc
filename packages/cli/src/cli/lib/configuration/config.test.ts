@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "fs/promises";
+import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
@@ -1131,6 +1132,28 @@ describe("config", () => {
   });
 
   describe("resolveBranding", () => {
+    // `resolveBranding` falls through a project config to the GLOBAL one, which
+    // `loadGlobalSourceConfig` locates with `os.homedir()`. Without both halves of
+    // this stub these cases read the developer's own `~/.claude-src/config.ts` and
+    // pass only for as long as nobody puts a `branding` block in it. The env var
+    // alone is not enough: `os.homedir()` re-reads `$HOME` under node but is fixed
+    // at startup under bun, and this suite runs under both.
+    let savedHome: string;
+    let homeDir: string;
+
+    beforeEach(async () => {
+      savedHome = process.env.HOME ?? "";
+      homeDir = path.join(tempDir, "branding-home");
+      await mkdir(homeDir, { recursive: true });
+      process.env.HOME = homeDir;
+      vi.spyOn(os, "homedir").mockReturnValue(homeDir);
+    });
+
+    afterEach(() => {
+      process.env.HOME = savedHome;
+      vi.mocked(os.homedir).mockRestore();
+    });
+
     it("should return default branding when no config exists", async () => {
       const branding = await resolveBranding(tempDir);
       expect(branding.name).toBe(DEFAULT_BRANDING.NAME);

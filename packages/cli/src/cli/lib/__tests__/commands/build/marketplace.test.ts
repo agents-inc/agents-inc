@@ -1,18 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, writeFile, readFile } from "fs/promises";
-import { runCliCommand } from "../../helpers/cli-runner.js";
+import { parseRefusal, runCliCommand } from "../../helpers/cli-runner.js";
 import { readTestJson, writeTestPackageJson } from "../../helpers/config-io.js";
 import { writeTestPluginManifest } from "../../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists } from "../../test-fs-utils";
-import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../../../consts";
+import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, PLUGINS_DIST_PATH } from "../../../../consts";
+import { EXIT_CODES } from "../../../exit-codes";
 import { VALID_PACKAGE_JSON_FILE } from "../../mock-data/mock-source-files.js";
 import type { Marketplace, PluginManifest } from "../../../../types";
 import { firstElement } from "../../helpers/element-at.js";
 
 /** The marketplace name every build here publishes under unless it overrides it. */
 const MARKETPLACE_NAME = VALID_PACKAGE_JSON_FILE.name;
+
+/** The valid fixture's identity fields, minus the `author` the refusal cases vary. */
+const { author: _fixtureAuthor, ...PACKAGE_IDENTITY_WITHOUT_AUTHOR } = VALID_PACKAGE_JSON_FILE;
 
 /**
  * The names no marketplace may publish under. Spelled out rather than imported:
@@ -125,6 +129,9 @@ describe("build:marketplace command", () => {
       pluginsDir = path.join(projectDir, "dist", "plugins");
       outputPath = path.join(projectDir, "marketplace.json");
       await mkdir(pluginsDir, { recursive: true });
+      // One plugin, because a build with none is refused before an owner is ever written and
+      // every case below is about the owner the manifest carries.
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework");
     });
 
     it('should parse string-form author "Name <email>"', async () => {
@@ -143,7 +150,7 @@ describe("build:marketplace command", () => {
     it("should parse object-form author { name, email }", async () => {
       await writeTestPackageJson(projectDir, {
         // Object-form author; the schema accepts strings or objects
-        author: { name: "Jane Doe", email: "jane@example.com" } as unknown as string,
+        author: { name: "Jane Doe", email: "jane@example.com" },
       });
 
       const { error } = await runBuildMarketplace(pluginsDir, outputPath);
@@ -154,39 +161,55 @@ describe("build:marketplace command", () => {
       expect(marketplace.owner.email).toBe("jane@example.com");
     });
 
-    it("should warn and proceed when author is missing", async () => {
-      // Remove author entirely from package.json
-      await writeFile(
-        path.join(projectDir, "package.json"),
-        JSON.stringify({
-          name: "no-author-mp",
-          version: "0.1.0",
-          description: "Marketplace without an author",
-        }),
-      );
+    /**
+     * Three spellings of an `author` that yields no owner name. They were three specs
+     * asserting three different warnings over a manifest the command wrote anyway; the
+     * command now refuses all three identically, so they are one condition with one
+     * outcome and one case table.
+     *
+     * Written as whole package.json objects rather than as overrides because the first
+     * case is the ABSENCE of the key, which an overrides object cannot spell under
+     * `exactOptionalPropertyTypes`.
+     */
+    it.each([
+      ["absent", PACKAGE_IDENTITY_WITHOUT_AUTHOR],
+      [
+        "an email with no name in front of it",
+        { ...PACKAGE_IDENTITY_WITHOUT_AUTHOR, author: "<solo@example.com>" },
+      ],
+      ["empty", { ...PACKAGE_IDENTITY_WITHOUT_AUTHOR, author: "" }],
+    ])("refuses to write a marketplace whose author is %s", async (_spelling, packageJson) => {
+      await writeFile(path.join(projectDir, "package.json"), JSON.stringify(packageJson));
 
-      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
-      expect(error).toBeUndefined();
-      expect(stderr).toContain("author");
-      const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.owner.name).toBe("");
-      expect(marketplace.owner.email).toBeUndefined();
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain("no name could be read from 'author' in");
+      expect(
+        await fileExists(outputPath),
+        "a refused build must leave no marketplace.json behind",
+      ).toBe(false);
     });
 
-    it('should parse email-only string author "<email>"', async () => {
-      await writeTestPackageJson(projectDir, {
-        author: "<solo@example.com>",
-      });
+    /**
+     * The fourth field `marketplaceSchema` constrains, and the one that was not guarded.
+     *
+     * `packageJsonSchema` types `version` as a bare `z.string()`, and `generateMarketplace`
+     * defaults it with `??`, which `""` is not — so an empty version passed straight through into
+     * a manifest whose own reader requires `min(1)`. Written and then refused on read, which is
+     * the shape the zero-plugin refusal closed for `plugins`.
+     */
+    it("refuses to write a marketplace whose version is empty", async () => {
+      await writeTestPackageJson(projectDir, { version: "" });
 
-      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
-      expect(error).toBeUndefined();
-      // Warns because name is empty
-      expect(stderr).toContain("no parseable name");
-      const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.owner.name).toBe("");
-      expect(marketplace.owner.email).toBe("solo@example.com");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain("must have a version");
+      expect(
+        await fileExists(outputPath),
+        "a manifest this CLI refuses to read back is one it must not write",
+      ).toBe(false);
     });
 
     it('should parse plain-name string author "Name" with no email', async () => {
@@ -201,21 +224,6 @@ describe("build:marketplace command", () => {
       expect(stderr).toContain("no parseable email");
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.owner.name).toBe("Solo Name");
-      expect(marketplace.owner.email).toBeUndefined();
-    });
-
-    it("should warn when author is an empty string", async () => {
-      await writeTestPackageJson(projectDir, {
-        author: "",
-      });
-
-      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
-
-      expect(error).toBeUndefined();
-      // Empty string is treated as missing author
-      expect(stderr).toContain("is missing 'author' field");
-      const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.owner.name).toBe("");
       expect(marketplace.owner.email).toBeUndefined();
     });
 
@@ -239,7 +247,7 @@ describe("build:marketplace command", () => {
           name: "Jane Doe",
           email: "jane@example.com",
           url: "https://jane.example.com",
-        } as unknown as string,
+        },
       });
 
       const { error } = await runBuildMarketplace(pluginsDir, outputPath);
@@ -252,14 +260,14 @@ describe("build:marketplace command", () => {
   });
 
   describe("basic execution", () => {
-    it("should complete with zero plugins when no plugins directory exists", async () => {
+    it("should refuse a build with no plugins directory at all, naming the path it scanned", async () => {
       await writeTestPackageJson(projectDir);
+      const defaultPluginsDir = path.join(projectDir, PLUGINS_DIST_PATH);
 
-      const { stdout, error } = await runCliCommand(["build:marketplace"]);
+      const { error } = await runCliCommand(["build:marketplace"]);
 
-      expect(error).toBeUndefined();
-      const output = stdout + (error?.message || "");
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain(`No plugins found in ${defaultPluginsDir}`);
     });
   });
 
@@ -274,8 +282,7 @@ describe("build:marketplace command", () => {
       const { error } = await runCliCommand(["build:marketplace", "--plugins-dir", pluginsPath]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(parseRefusal("--plugins-dir"));
     });
 
     it("should accept -p shorthand for plugins-dir", async () => {
@@ -284,7 +291,7 @@ describe("build:marketplace command", () => {
       const { error } = await runCliCommand(["build:marketplace", "-p", pluginsPath]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-p"));
     });
 
     it("should accept --output flag with path", async () => {
@@ -293,8 +300,7 @@ describe("build:marketplace command", () => {
       const { error } = await runCliCommand(["build:marketplace", "--output", outputPath]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(parseRefusal("--output"));
     });
 
     it("should accept -o shorthand for output", async () => {
@@ -303,21 +309,21 @@ describe("build:marketplace command", () => {
       const { error } = await runCliCommand(["build:marketplace", "-o", outputPath]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-o"));
     });
 
     it("should accept --verbose flag", async () => {
       const { error } = await runCliCommand(["build:marketplace", "--verbose"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--verbose"));
     });
 
     it("should accept -v shorthand for verbose", async () => {
       const { error } = await runCliCommand(["build:marketplace", "-v"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-v"));
     });
   });
 
@@ -326,29 +332,24 @@ describe("build:marketplace command", () => {
       await writeTestPackageJson(projectDir);
     });
 
-    it("should handle missing plugins directory gracefully", async () => {
-      const { stdout, error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        "/definitely/not/real/path/xyz",
-      ]);
+    /**
+     * The two ways to reach a marketplace with nothing in it: a `--plugins-dir` that names no
+     * directory, and one that names an empty directory. Both are the same mistake to make — the
+     * flag points somewhere the plugins are not — and the refusal names the flag either way, since
+     * neither a missing nor an empty directory is distinguishable from having built nothing yet.
+     */
+    it.each([
+      ["names no directory at all", "/definitely/not/real/path/xyz"],
+      ["names an empty directory", undefined],
+    ])("should refuse when --plugins-dir %s", async (_spelling, absentDir) => {
+      const pluginsPath = absentDir ?? path.join(projectDir, "empty-plugins");
+      if (absentDir === undefined) await mkdir(pluginsPath, { recursive: true });
 
-      const output = stdout + (error?.message || "");
-      expect(output.toLowerCase()).not.toContain("unknown flag");
-    });
+      const { error } = await runCliCommand(["build:marketplace", "--plugins-dir", pluginsPath]);
 
-    it("should handle empty plugins directory gracefully", async () => {
-      const emptyPluginsDir = path.join(projectDir, "empty-plugins");
-      await mkdir(emptyPluginsDir, { recursive: true });
-
-      const { error } = await runCliCommand([
-        "build:marketplace",
-        "--plugins-dir",
-        emptyPluginsDir,
-      ]);
-
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain(`No plugins found in ${pluginsPath}`);
+      expect(error?.message).toContain("--plugins-dir");
     });
 
     it("should skip plugins with invalid plugin.json and not crash", async () => {
@@ -611,18 +612,17 @@ describe("build:marketplace command", () => {
       expect(firstElement(marketplace.plugins).name).toBe(skillId("web-framework-react"));
     });
 
-    it("should generate marketplace.json with 0 plugins for empty plugins directory", async () => {
+    it("should write nothing at all when the plugins directory is empty", async () => {
       // pluginsDir exists but is empty
       await writeTestPackageJson(projectDir, { name: "empty-marketplace" });
 
       const { error } = await runBuildMarketplace(pluginsDir, outputPath);
 
-      expect(error).toBeUndefined();
-      expect(await fileExists(outputPath)).toBe(true);
-
-      const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.name).toBe("empty-marketplace");
-      expect(marketplace.plugins).toHaveLength(0);
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(
+        await fileExists(outputPath),
+        "`marketplaceSchema.plugins` is `.min(1)`, so a manifest with none is one this CLI refuses to read back",
+      ).toBe(false);
     });
 
     it("should write valid JSON with 2-space indentation and trailing newline", async () => {

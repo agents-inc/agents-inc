@@ -221,7 +221,6 @@ describe("plugin-info", () => {
         agentCount: 1,
         configPath,
         agentDirs: [agentsDir],
-        skillsDir,
       });
     });
 
@@ -465,7 +464,6 @@ describe("plugin-info", () => {
         agentCount: 2,
         configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         agentDirs: [agentsDir],
-        skillsDir: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
       });
     });
 
@@ -709,7 +707,6 @@ describe("plugin-info", () => {
         name: "my-plugin",
         skillCount: 10,
         agentCount: 5,
-        skillsDir: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
       });
 
       const result = formatInstallationDisplay(info);
@@ -761,7 +758,6 @@ function buildInstallationInfo(overrides: Partial<InstallationInfo> = {}): Insta
     agentCount: 3,
     configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
     agentDirs: [path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS)],
-    skillsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS),
     ...overrides,
   };
 }

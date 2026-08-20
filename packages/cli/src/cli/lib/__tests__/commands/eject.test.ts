@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, readFile, readdir, writeFile } from "fs/promises";
-import { runCliCommand } from "../helpers/cli-runner.js";
-import { createTempDir, cleanupTempDir, fileExists, directoryExists } from "../test-fs-utils";
+import { argOptionRefusal, parseRefusal, runCliCommand } from "../helpers/cli-runner.js";
+import { setupIsolatedHome } from "../helpers/isolated-home.js";
+import { fileExists, directoryExists } from "../test-fs-utils";
 import { readTestYaml, readTestTsConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
@@ -13,7 +14,9 @@ import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { installEject, installPluginConfig } from "../../installation/local-installer";
 import { copySkillsToLocalFlattened } from "../../skills/skill-copier";
+import Eject from "../../../commands/eject";
 import {
+  CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   DIRS,
   LOCAL_SKILLS_PATH,
@@ -21,6 +24,7 @@ import {
   STANDARD_FILES,
 } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
+import { glob } from "../../../utils/fs";
 import { typedKeys } from "../../../utils/typed-object";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import type { MergedSkillsMatrix, ProjectConfig, SkillId } from "../../../types";
@@ -43,22 +47,42 @@ const EJECTED_AGENT_DIRS = [
   "tester",
 ].sort();
 
+/**
+ * The partials `readAgentFiles` compiles each sub-agent out of, and therefore the
+ * files `eject agent-partials` puts under the reader's control. The success log used
+ * to promise "templates, agent intro, workflow, and examples" — four nouns, not one
+ * of them a file the command wrote — so the log is asserted against this list AND
+ * this list against the ejected tree.
+ */
+const EJECTED_AGENT_PARTIAL_FILES = [
+  STANDARD_FILES.IDENTITY_MD,
+  STANDARD_FILES.PLAYBOOK_MD,
+  STANDARD_FILES.CRITICAL_REQUIREMENTS_MD,
+  STANDARD_FILES.CRITICAL_REMINDERS_MD,
+  STANDARD_FILES.OUTPUT_MD,
+];
+
+/**
+ * Everything `eject templates` copies out of `src/agents/_templates/` — the template
+ * itself and the methodology partials directory beside it. Named rather than counted:
+ * a count is green whichever two entries land there.
+ */
+const EJECTED_TEMPLATE_ENTRIES = ["agent.liquid", "methodologies"].sort();
+
+/** A promise of a default, in a help text belonging to a flag that has none. */
+const DEFAULT_PROMISE = /\bdefaults?\b/i;
+
 describe("eject command", () => {
   let tempDir: string;
   let projectDir: string;
-  let originalCwd: string;
+  let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    originalCwd = process.cwd();
-    tempDir = await createTempDir("cc-eject-test-");
-    projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-    process.chdir(projectDir);
+    ({ tempDir, projectDir, cleanup } = await setupIsolatedHome("cc-eject-test-"));
   });
 
   afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTempDir(tempDir);
+    await cleanup();
   });
 
   describe("argument validation", () => {
@@ -78,28 +102,28 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "agent-partials"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(argOptionRefusal("agent-partials"));
     });
 
     it("should accept 'skills' as type", async () => {
       const { error } = await runCliCommand(["eject", "skills"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown eject type");
+      expect(output).not.toContain(argOptionRefusal("skills"));
     });
 
     it("should accept 'all' as type", async () => {
       const { error } = await runCliCommand(["eject", "all"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(argOptionRefusal("all"));
     });
 
     it("should accept 'templates' as type", async () => {
       const { error } = await runCliCommand(["eject", "templates"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(output).not.toContain(argOptionRefusal("templates"));
     });
 
     it("should reject old type 'config'", async () => {
@@ -120,14 +144,14 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "agent-partials", "--force"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--force"));
     });
 
     it("should accept -f shorthand for force", async () => {
       const { error } = await runCliCommand(["eject", "agent-partials", "-f"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-f"));
     });
 
     it("should accept --output flag", async () => {
@@ -136,7 +160,7 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "agent-partials", "--output", outputDir]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--output"));
     });
 
     it("should accept -o shorthand for output", async () => {
@@ -145,25 +169,54 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "agent-partials", "-o", outputDir]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("-o"));
     });
 
     it("rejects --refresh — every load revalidates, so there is nothing to force", async () => {
       const { error } = await runCliCommand(["eject", "skills", "--refresh"]);
 
-      expect(error?.message).toContain("Nonexistent flag: --refresh");
+      expect(error?.message).toContain(parseRefusal("--refresh"));
+    });
+  });
+
+  /**
+   * The help text is the surface a user reads before running anything, and this one
+   * promised a default the flag does not declare, at a destination nothing writes to.
+   */
+  describe("the --output flag's own description", () => {
+    it("promises no default, because the flag declares none", () => {
+      expect(Eject.flags.output.default).toBeUndefined();
+      expect(Eject.flags.output.description).not.toMatch(DEFAULT_PROMISE);
+    });
+
+    it("names no destination, because the three eject types have three", () => {
+      // Every destination this command writes to without `--output` — `.claude-src/agents`,
+      // `.claude-src/agents/_templates` and `.claude/skills` — starts with this directory
+      // name, so a description that spells one of them out spells this out first.
+      expect(Eject.flags.output.description).not.toContain(CLAUDE_DIR);
     });
   });
 
   describe("eject agent-partials", () => {
     it("should eject agent partials to .claude/agents/_partials by default", async () => {
-      const { error } = await runCliCommand(["eject", "agent-partials"]);
+      const { stdout } = await runCliCommand(["eject", "agent-partials"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(stdout).toContain("Agent partials ejected");
 
       const partialsDir = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
       expect(await directoryExists(partialsDir)).toBe(true);
+    });
+
+    it("should name in its success log only partials it put on disk", async () => {
+      const { stdout } = await runCliCommand(["eject", "agent-partials"]);
+
+      const partialsDir = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+      const ejectedNames = (await glob("**/*.md", partialsDir)).map((file) => path.basename(file));
+
+      for (const partial of EJECTED_AGENT_PARTIAL_FILES) {
+        expect(stdout, `the success log must name ${partial}`).toContain(partial);
+        expect(ejectedNames, `${partial} must be on disk to be named`).toContain(partial);
+      }
     });
 
     it("should create config.ts if it does not exist", async () => {
@@ -207,19 +260,23 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "agent-partials", "--output", outputDir]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--output"));
     });
 
-    it("should warn when partials already exist without --force", async () => {
-      // First eject
+    /**
+     * Named for what the second run does rather than for the skip branch it does NOT
+     * take: the first eject leaves `_templates` beside the partial directories, and
+     * `ejectAgentPartials` only refuses outright when the destination holds partials
+     * WITHOUT templates. That refusal is covered by "should block agent-partials eject
+     * when agents/ contains actual agent dirs" below.
+     */
+    it("should skip templates and re-eject partials on a second run without --force", async () => {
       await runCliCommand(["eject", "agent-partials"]);
 
-      // Second eject without --force should warn (not error)
-      const { error } = await runCliCommand(["eject", "agent-partials"]);
+      const { stdout, stderr } = await runCliCommand(["eject", "agent-partials"]);
 
-      // Should not crash, may warn
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("crash");
+      expect(stderr).toContain("Agent templates already exist");
+      expect(stdout).toContain("Agent partials ejected");
     });
 
     it("should overwrite partials when --force is used", async () => {
@@ -230,7 +287,7 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "agent-partials", "--force"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--force"));
     });
 
     it("should preserve existing templates when ejecting agent-partials", async () => {
@@ -282,9 +339,10 @@ describe("eject command", () => {
       );
       expect(await directoryExists(templatesDir)).toBe(true);
 
-      const entries = await readdir(templatesDir);
-      expect(entries).toHaveLength(2);
-      expect(entries).toContain("agent.liquid");
+      expect(
+        [...(await readdir(templatesDir))].sort(),
+        "the templates directory the CLI ships, by name — a count cannot tell a swap from a match",
+      ).toStrictEqual(EJECTED_TEMPLATE_ENTRIES);
     });
 
     it("should not eject other agent partials", async () => {
@@ -368,12 +426,13 @@ describe("eject command", () => {
 
   describe("eject skills", () => {
     it("should load skills from source", async () => {
-      const { error } = await runCliCommand(["eject", "skills"]);
+      const { stdout, error } = await runCliCommand(["eject", "skills"]);
 
-      // May warn about no skills found if source not configured, but should not crash
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("crash");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(error).toBeUndefined();
+      // The count and the source label both belong to whichever marketplace answered,
+      // so the assertion names the clause that says the skills came from one at all.
+      expect(stdout).toMatch(/skills ejected to .+ from \S+/);
+      expect(await directoryExists(path.join(projectDir, LOCAL_SKILLS_PATH))).toBe(true);
     });
 
     it("should accept --output flag for skills", async () => {
@@ -382,7 +441,7 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "skills", "--output", outputDir]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--output"));
     });
 
     it("should refuse a --source flag — it reads the configured source", async () => {
@@ -397,17 +456,21 @@ describe("eject command", () => {
 
   describe("eject all", () => {
     it("should eject all content types", async () => {
-      const { error } = await runCliCommand(["eject", "all"]);
+      const { stdout, error } = await runCliCommand(["eject", "all"]);
 
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(error).toBeUndefined();
+      expect(stdout).toContain("Agent partials ejected");
+      expect(stdout).toContain("Agent templates ejected");
+      // The third type, which "should eject both agent-partials and templates" below
+      // does not reach — `all` is the only invocation that ejects all three.
+      expect(stdout).toMatch(/skills ejected to .+ from \S+/);
     });
 
     it("should accept --force flag for all", async () => {
       const { error } = await runCliCommand(["eject", "all", "--force"]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--force"));
     });
 
     it("should accept --output flag for all", async () => {
@@ -416,7 +479,7 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "all", "--output", outputDir]);
 
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unknown flag");
+      expect(output).not.toContain(parseRefusal("--output"));
     });
 
     it("should eject both agent-partials and templates", async () => {

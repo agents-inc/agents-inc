@@ -175,7 +175,7 @@ describe("init and edit report a rejected selection identically", () => {
     mockLoadAgentDefs.mockResolvedValue({
       agents: {},
       sourcePath: tempDir,
-      agentSourcePaths: { agentsDir: tempDir, templatesDir: tempDir, sourcePath: tempDir },
+      agentSourcePaths: { agentsDir: tempDir, sourcePath: tempDir },
     });
     mockWriteProjectConfig.mockResolvedValue({
       config: { name: PROJECT_NAME, skills: [], agents: [] },

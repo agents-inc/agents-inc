@@ -1,6 +1,6 @@
 // Shared matrix configs and compile configs for test files.
 
-import { groupBy, mapValues } from "remeda";
+import { groupBy, indexBy, mapValues } from "remeda";
 
 import { createMockMultiSourceSkill, createMockSkill } from "../factories/skill-factories.js";
 import { createMockCategory } from "../factories/category-factories.js";
@@ -42,8 +42,6 @@ import type { MultiSourceSkillEntry } from "./mock-skills.js";
 import { BUILT_IN_MATRIX } from "../../../types/generated/matrix.js";
 import { PUBLIC_SOURCE, ACME_SOURCE, INTERNAL_SOURCE } from "./mock-sources.js";
 import type {
-  Category,
-  CategoryDefinition,
   CategoryPath,
   MergedSkillsMatrix,
   SkillId,
@@ -139,10 +137,11 @@ export const MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX = createMockMatrix(
 // ---------------------------------------------------------------------------
 
 export const ALL_SKILLS_TEST_CATEGORIES_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  // Owner-decision cast (NOT buildCategoryMap): TEST_CATEGORIES is keyed by fixture
-  // names (framework/clientState/…), NOT Category ids — a genuine key-shape mismatch
-  // that these tests rely on. Documented; behavior-reviewed follow-up only.
-  categories: TEST_CATEGORIES as unknown as Record<Category, CategoryDefinition>,
+  // `TEST_CATEGORIES` is keyed by fixture name (framework/clientState/…) for its
+  // callers' convenience; a matrix is keyed by Category id. Re-keying on each
+  // definition's own `id` is the whole of the difference, and it is what the map
+  // has to be keyed by for a category lookup to find anything.
+  categories: indexBy(Object.values(TEST_CATEGORIES), (category) => category.id),
 });
 
 export const ALL_SKILLS_WEB_FRAMEWORK_MATRIX = createMockMatrix(...Object.values(SKILLS), {
@@ -197,6 +196,20 @@ export const REACT_HONO_FRAMEWORK_API_MATRIX = createMockMatrix(SKILLS.react, SK
   categories: buildCategoryMap({
     "web-framework": TEST_CATEGORIES.framework,
     "api-api": TEST_CATEGORIES.api,
+  }),
+});
+
+/**
+ * REACT_HONO_FRAMEWORK_API_MATRIX with Hono's `api-api` category left out of the map, so no
+ * domain claims it. This is the one way a skill the catalogue DOES carry still reaches no
+ * screen: `getCategoryDomain` reads `categories[category]?.domain`, so an undeclared category
+ * and one declared without a `domain` are the same answer to the wizard, and the sibling above
+ * — where both categories are declared — is what says the difference is the category rather
+ * than the skill.
+ */
+export const HONO_CATEGORY_UNPLACEABLE_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
+  categories: buildCategoryMap({
+    "web-framework": TEST_CATEGORIES.framework,
   }),
 });
 
@@ -840,14 +853,6 @@ export const BUILD_STEP_FRAMEWORK_NON_EXCLUSIVE_MATRIX = createMockMatrix(SKILLS
   }),
 });
 
-/** React with required/exclusive omitted from framework — tests ?? defaults */
-const { required: _r, exclusive: _e, ...FRAMEWORK_WITHOUT_FLAGS } = TEST_CATEGORIES.framework;
-export const BUILD_STEP_FRAMEWORK_NO_FLAGS_MATRIX = createMockMatrix(SKILLS.react, {
-  categories: buildCategoryMap({
-    "web-framework": FRAMEWORK_WITHOUT_FLAGS,
-  }),
-});
-
 /** React + Hono with framework (required) + api categories — tests domain filtering */
 export const BUILD_STEP_FRAMEWORK_API_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
   categories: buildCategoryMap({
@@ -908,19 +913,6 @@ export const BUILD_STEP_SORTING_MATRIX = createMockMatrix(
     }),
   },
 );
-
-/** React + Zustand with one category missing order — tests undefined order defaults to 0 */
-const { order: _o, ...FRAMEWORK_WITHOUT_ORDER } = TEST_CATEGORIES.framework;
-export const BUILD_STEP_UNDEFINED_ORDER_MATRIX = createMockMatrix(SKILLS.react, SKILLS.zustand, {
-  categories: buildCategoryMap({
-    "web-client-state": {
-      ...TEST_CATEGORIES.clientState,
-      displayName: "State Management",
-      order: 1,
-    },
-    "web-framework": FRAMEWORK_WITHOUT_ORDER,
-  }),
-});
 
 /** React/Vue conflicts in exclusive framework category — tests incompatible suppression */
 export const BUILD_STEP_CONFLICTS_EXCLUSIVE_MATRIX = createMockMatrix(

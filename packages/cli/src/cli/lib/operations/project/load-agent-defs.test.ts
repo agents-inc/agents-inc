@@ -26,7 +26,6 @@ const mockLoadMergedAgents = vi.mocked(loadMergedAgents);
 
 const MOCK_AGENT_SOURCE_PATHS: AgentSourcePaths = {
   agentsDir: "/tmp/source/src/agents",
-  templatesDir: "/tmp/source/src/agents/_templates",
   sourcePath: "/tmp/source",
 };
 
@@ -68,15 +67,26 @@ describe("loadAgentDefs", () => {
     expect(mockLoadMergedAgents).toHaveBeenCalledTimes(1);
     expect(mockLoadMergedAgents).toHaveBeenCalledWith("/tmp/source");
 
-    // Source overrides CLI for "web-developer"
+    // loadMergedAgents is mocked, so what is pinned here is FORWARDING, not merge
+    // precedence: whatever it returns must reach result.agents entry-for-entry and
+    // unchanged. Precedence belongs to loadMergedAgents' own spec.
     expect(result.agents["web-developer"]).toStrictEqual(SOURCE_AGENT);
-    // CLI-only agent preserved
     expect(result.agents["reviewer"]).toStrictEqual(CLI_ONLY_AGENT);
-    // Full merged result
     expect(result.agents).toStrictEqual({
       "web-developer": SOURCE_AGENT,
       reviewer: CLI_ONLY_AGENT,
     });
+  });
+
+  it("asks for agent partials with no arguments at all", async () => {
+    mockLoadMergedAgents.mockResolvedValue({});
+
+    await loadAgentDefs();
+
+    // Agent partials always come from the CLI's own installation, so there is nothing for a
+    // caller to vary: no remote source, and no options. Passing either would take
+    // getAgentDefinitions' remote branch or hand it a field it does not read.
+    expect(mockGetAgentDefinitions).toHaveBeenCalledWith();
   });
 
   it("should return sourcePath from agentSourcePaths", async () => {

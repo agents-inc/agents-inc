@@ -1,3 +1,5 @@
+import os from "os";
+import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceLoadResult } from "../loading/source-loader";
 import type { MigrationPlan } from "./mode-migrator";
@@ -192,7 +194,7 @@ describe("mode-migrator", () => {
         "project",
         tempDir,
       );
-      expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
+      expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
       expect(result.warnings).toStrictEqual([]);
     });
 
@@ -243,7 +245,7 @@ describe("mode-migrator", () => {
       expect(claudePluginInstall).not.toHaveBeenCalled();
       expect(claudePluginUninstall).not.toHaveBeenCalled();
       expect(claudePluginUninstallBestEffort).not.toHaveBeenCalled();
-      expect(result.ejectedSkills).toStrictEqual([]);
+      expect(result.ejectCopies.copied).toStrictEqual([]);
       expect(result.pluginInstalls.installed).toStrictEqual([]);
       expect(result.warnings).toStrictEqual([]);
     });
@@ -405,7 +407,7 @@ describe("mode-migrator", () => {
         expect(copySkillsToLocalFlattened).toHaveBeenCalled();
         expect(claudePluginUninstall).not.toHaveBeenCalled();
         expect(claudePluginUninstallBestEffort).not.toHaveBeenCalled();
-        expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
+        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
         expect(result.warnings).toStrictEqual([]);
       });
 
@@ -471,7 +473,7 @@ describe("mode-migrator", () => {
           "project",
           tempDir,
         );
-        expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
+        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
       });
 
       it("should uninstall global plugin when ejecting to global scope", async () => {
@@ -500,7 +502,7 @@ describe("mode-migrator", () => {
           "user",
           tempDir,
         );
-        expect(result.ejectedSkills).toStrictEqual(["web-framework-react"]);
+        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
       });
 
       it("should delete project local skill when switching to project plugin", async () => {
@@ -528,6 +530,148 @@ describe("mode-migrator", () => {
             id: "web-state-zustand",
             ref: "web-state-zustand@https://marketplace.example.com",
           },
+        ]);
+      });
+    });
+
+    /**
+     * The copy pass is the WORK of a plugin→eject migration, so a destination that refuses
+     * it is the eject twin of a rejected `claude plugin install`. These pin the three things
+     * that made the old shape unreportable: the failure had no structure, it took the whole
+     * scope down with it, and the plugin uninstall shared its sentence.
+     */
+    describe("a copy the destination refused", () => {
+      const UNWRITABLE = "EACCES: permission denied, mkdir";
+
+      afterEach(() => {
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([]);
+        vi.mocked(claudePluginUninstall).mockResolvedValue(undefined);
+      });
+
+      it("reports the failure structurally rather than as a warning nobody can act on", async () => {
+        vi.mocked(copySkillsToLocalFlattened).mockRejectedValue(new Error(UNWRITABLE));
+
+        const plan: MigrationPlan = {
+          toEject: [
+            {
+              id: "web-framework-react",
+              oldSource: "agents-inc",
+              newSource: "eject",
+              oldScope: "project",
+              newScope: "project",
+            },
+          ],
+          toPlugin: [],
+          scopeChanges: [],
+        };
+
+        const result = await executeMigration(plan, tempDir, sourceResult);
+
+        expect(
+          result.ejectCopies.failed,
+          "a failed copy must be reported structurally so the caller can hard-error before any config records the eject",
+        ).toStrictEqual([{ id: "web-framework-react", error: UNWRITABLE }]);
+        expect(result.ejectCopies.copied).toStrictEqual([]);
+        expect(result.warnings).toStrictEqual([]);
+      });
+
+      it("leaves the plugin registered for a skill whose copy never landed", async () => {
+        vi.mocked(copySkillsToLocalFlattened).mockRejectedValue(new Error(UNWRITABLE));
+
+        const plan: MigrationPlan = {
+          toEject: [
+            {
+              id: "web-framework-react",
+              oldSource: "agents-inc",
+              newSource: "eject",
+              oldScope: "project",
+              newScope: "project",
+            },
+          ],
+          toPlugin: [],
+          scopeChanges: [],
+        };
+
+        await executeMigration(plan, tempDir, sourceResult);
+
+        expect(
+          claudePluginUninstall,
+          "a skill whose local copy failed is still only installed as a plugin — dropping that registration would leave it installed nowhere",
+        ).not.toHaveBeenCalled();
+      });
+
+      it("still copies the global-scoped skill when the project-scoped one fails", async () => {
+        vi.mocked(copySkillsToLocalFlattened).mockImplementation(async (skillIds) => {
+          if (skillIds.includes("web-framework-react")) throw new Error(UNWRITABLE);
+          return skillIds.map((id) => createMockCopiedSkill(id));
+        });
+
+        const plan: MigrationPlan = {
+          toEject: [
+            {
+              id: "web-framework-react",
+              oldSource: "agents-inc",
+              newSource: "eject",
+              oldScope: "project",
+              newScope: "project",
+            },
+            {
+              id: "web-state-zustand",
+              oldSource: "agents-inc",
+              newSource: "eject",
+              oldScope: "global",
+              newScope: "global",
+            },
+          ],
+          toPlugin: [],
+          scopeChanges: [],
+        };
+
+        const result = await executeMigration(plan, tempDir, sourceResult);
+
+        // Read inside the test, not at describe time: vitest.setup.ts installs the
+        // isolated-home spy per test, so a value captured during collection is the
+        // developer's real home and matches nothing.
+        const globalSkillsDir = path.join(os.homedir(), ".claude", "skills");
+        expect(
+          copySkillsToLocalFlattened,
+          "the global destination must still be attempted after a project-scope refusal — they are separate directories",
+        ).toHaveBeenCalledWith(["web-state-zustand"], globalSkillsDir, sourceResult);
+        expect(result.ejectCopies.copied).toStrictEqual(["web-state-zustand"]);
+        expect(result.ejectCopies.failed).toStrictEqual([
+          { id: "web-framework-react", error: UNWRITABLE },
+        ]);
+      });
+
+      it("names a failed plugin uninstall as an uninstall, not as a failed copy", async () => {
+        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
+          createMockCopiedSkill("web-framework-react"),
+        ]);
+        vi.mocked(claudePluginUninstall).mockRejectedValue(new Error("spawn claude ENOENT"));
+
+        const plan: MigrationPlan = {
+          toEject: [
+            {
+              id: "web-framework-react",
+              oldSource: "agents-inc",
+              newSource: "eject",
+              oldScope: "project",
+              newScope: "project",
+            },
+          ],
+          toPlugin: [],
+          scopeChanges: [],
+        };
+
+        const result = await executeMigration(plan, tempDir, sourceResult);
+
+        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
+        expect(
+          result.ejectCopies.failed,
+          "an uninstall is diagnostic-only and must never be reported as work the migration failed to do",
+        ).toStrictEqual([]);
+        expect(result.warnings).toStrictEqual([
+          "Could not uninstall plugin for web-framework-react: spawn claude ENOENT",
         ]);
       });
     });

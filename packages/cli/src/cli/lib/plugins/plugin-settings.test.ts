@@ -500,6 +500,32 @@ describe("plugin-settings", () => {
       );
     });
 
+    it("should refuse a project-scoped record that names no project", async () => {
+      mockReadFileSafe.mockResolvedValue(
+        JSON.stringify({
+          version: 2,
+          plugins: {
+            "web-framework-react@my-marketplace": [
+              {
+                scope: "project",
+                installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
+                version: "1.0.0",
+                installedAt: "2024-01-01",
+              },
+            ],
+          },
+        }),
+      );
+
+      // Which project the record belongs to is the only question a project-scoped
+      // installation exists to answer. Unanswered, `pickInstallation` declines to match
+      // it and the plugin reads as not installed anywhere — a silence the parse boundary
+      // is where to break.
+      await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow(
+        /Invalid installed_plugins\.json/,
+      );
+    });
+
     it("should throw when reading the registry fails", async () => {
       mockReadFileSafe.mockRejectedValue(new Error("Read error"));
 

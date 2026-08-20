@@ -4,7 +4,7 @@ import os from "os";
 import path from "path";
 import { mkdir } from "fs/promises";
 import type { Errors } from "@oclif/core";
-import { runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
+import { parseRefusal, runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { useFakeHome } from "../helpers/isolated-home.js";
 import { writeCorruptTestConfig } from "../helpers/config-io.js";
@@ -55,12 +55,16 @@ const {
   mockLoadSkillsMatrixFromSource: vi.fn(),
   mockLoadProjectConfig: vi.fn().mockResolvedValue(null),
   mockDiscoverAllPluginSkills: vi.fn().mockResolvedValue({}),
-  mockCopySkillsToLocalFlattened: vi.fn().mockResolvedValue(undefined),
+  // `copySkillsToLocalFlattened` resolves `CopiedSkill[]`, never `undefined` — the empty
+  // array is the shape of a copy that did nothing. It read `undefined` while the eject
+  // migration wrapped its whole pass in one `try`, which turned the resulting TypeError
+  // into a warning and let the run continue; the migration now reports a failed copy
+  // structurally and hard-errors on it, so a mock of the wrong shape stops the command.
+  mockCopySkillsToLocalFlattened: vi.fn().mockResolvedValue([]),
   mockDeleteLocalSkill: vi.fn().mockResolvedValue(undefined),
   mockEnsureDir: vi.fn().mockResolvedValue(undefined),
   mockGetAgentDefinitions: vi.fn().mockResolvedValue({
     agentsDir: "/mock/agents",
-    templatesDir: "/mock/templates",
     sourcePath: "/mock/source",
   }),
 }));
@@ -260,20 +264,20 @@ describe("edit command", () => {
     it("rejects --refresh — every load revalidates, so there is nothing to force", async () => {
       const { error } = await runCliCommand(["edit", "--refresh"]);
 
-      expect(error?.message).toContain("Nonexistent flag: --refresh");
+      expect(error?.message).toContain(parseRefusal("--refresh"));
     });
 
     it("rejects --source — the wizard opens on the catalogue config.ts names", async () => {
       const { error } = await runCliCommand(["edit", "--source", "/some/path"]);
 
-      expect(error?.message).toContain("Nonexistent flag: --source");
+      expect(error?.message).toContain(parseRefusal("--source"));
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
     it("rejects the -s shorthand for the same reason", async () => {
       const { error } = await runCliCommand(["edit", "-s", "/some/path"]);
 
-      expect(error?.message).toContain("Nonexistent flag: -s");
+      expect(error?.message).toContain(parseRefusal("-s"));
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
   });

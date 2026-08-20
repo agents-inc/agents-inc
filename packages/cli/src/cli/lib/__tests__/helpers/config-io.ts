@@ -77,6 +77,19 @@ export async function writeCorruptTestConfig(projectDir: string, source: string)
 }
 
 /**
+ * The overrides `writeTestPackageJson` accepts. `author` is declared rather than
+ * inferred from {@link VALID_PACKAGE_JSON_FILE}: npm and `build marketplace`'s own
+ * `packageJsonSchema` both accept the object form, and inferring the field from one
+ * string-form example narrows it to `string`, which is what three specs were paying
+ * for with an `as unknown as string` cast on the exact input they exist to prove.
+ */
+type TestPackageJsonOverrides = Partial<
+  Omit<typeof VALID_PACKAGE_JSON_FILE, "author"> & {
+    author: string | { name: string; email?: string; url?: string };
+  }
+>;
+
+/**
  * Writes a package.json at the given directory.
  *
  * Used by `build marketplace` tests (unit + E2E) which read marketplace
@@ -85,7 +98,7 @@ export async function writeCorruptTestConfig(projectDir: string, source: string)
  */
 export async function writeTestPackageJson(
   dir: string,
-  overrides: Partial<typeof VALID_PACKAGE_JSON_FILE> = {},
+  overrides: TestPackageJsonOverrides = {},
 ): Promise<void> {
   const pkg = { ...VALID_PACKAGE_JSON_FILE, ...overrides };
   await writeFile(path.join(dir, "package.json"), JSON.stringify(pkg, null, 2));

@@ -1847,8 +1847,9 @@ describe("local-installer", () => {
 
       expect(config.marketplaceName).toBe("e2e-test-marketplace");
       expect(config.marketplace).toBe("/path/to/skills");
-      // Newly-filled source identity must mark the merge dirty — `needsGlobalWrite` is gated
-      // on this flag, so a false here would skip the global write and drop the fields again.
+      // Newly-filled source identity must mark the merge dirty — this flag becomes
+      // `resolveEffectiveGlobalConfig`'s `changed`, which gates the global write, so a false
+      // here would skip that write and drop the fields again.
       expect(changed, "newly recorded source identity must trigger the global write").toBe(true);
     });
 

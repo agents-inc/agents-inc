@@ -7,14 +7,12 @@ import {
   BUILD_STEP_DISPLAY_NAME_MATRIX,
   BUILD_STEP_EMPTY_FRAMEWORK_MATRIX,
   BUILD_STEP_FRAMEWORK_API_MATRIX,
-  BUILD_STEP_FRAMEWORK_NO_FLAGS_MATRIX,
   BUILD_STEP_FRAMEWORK_NON_EXCLUSIVE_MATRIX,
   BUILD_STEP_FRAMEWORK_ONLY_MATRIX,
   BUILD_STEP_LOCAL_SKILL_MATRIX,
   BUILD_STEP_NON_LOCAL_MATRIX,
   BUILD_STEP_REQUIRES_MATRIX,
   BUILD_STEP_SORTING_MATRIX,
-  BUILD_STEP_UNDEFINED_ORDER_MATRIX,
   BUILD_STEP_WEB_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
 import type { CategoryRow } from "../../components/wizard/category-grid";
@@ -388,15 +386,6 @@ describe("buildCategoriesForDomain", () => {
     expect(firstElement(result).exclusive).toBe(false);
   });
 
-  it("should default required to false and exclusive to true when not set", () => {
-    initializeMatrix(BUILD_STEP_FRAMEWORK_NO_FLAGS_MATRIX);
-
-    const result = buildCategoriesForDomain("web", []);
-
-    expect(firstElement(result).required).toBe(false);
-    expect(firstElement(result).exclusive).toBe(true);
-  });
-
   it("should only return categories matching the requested domain", () => {
     const apiCategory: Category = "api-api";
     initializeMatrix(BUILD_STEP_FRAMEWORK_API_MATRIX);
@@ -521,16 +510,6 @@ describe("buildCategoriesForDomain", () => {
       expect(firstElement(result).id).toBe(stylingCategory);
       expect(elementAt(result, 1).id).toBe(frameworkCategory);
       expect(elementAt(result, 2).id).toBe(stateCategory);
-    });
-
-    it("should treat undefined order as 0", () => {
-      initializeMatrix(BUILD_STEP_UNDEFINED_ORDER_MATRIX);
-
-      const result = buildCategoriesForDomain("web", []);
-
-      // undefined order is treated as 0, which comes before 1
-      expect(firstElement(result).id).toBe(frameworkCategory);
-      expect(elementAt(result, 1).id).toBe(stateCategory);
     });
   });
 

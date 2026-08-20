@@ -20,10 +20,12 @@ export type IsolatedHome = {
  * Call in `beforeEach` and invoke `cleanup` in `afterEach`.
  *
  * Isolation mechanism: this and {@link useFakeHome} isolate production code that
- * reads the home directory via `process.env.HOME`. They do NOT isolate code that
- * calls `os.homedir()` — that path reads the OS-level home and ignores
- * `process.env.HOME`, so it requires a `vi.spyOn(os, "homedir")` spy instead
- * (see the homedir-spy test files). The two mechanisms are NOT interchangeable.
+ * reads the home directory via `process.env.HOME`. They do NOT reliably isolate code
+ * that calls `os.homedir()`: node re-reads `$HOME` on every call, so a mutated env var
+ * is picked up there, but bun resolves it once at startup and ignores later mutation —
+ * and this package runs its tests under both. Any path reaching `os.homedir()` needs a
+ * `vi.spyOn(os, "homedir")` spy beside the env var (see the homedir-spy test files).
+ * The two mechanisms are NOT interchangeable.
  */
 export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   const tempDir = await createTempDir(prefix);
@@ -55,9 +57,10 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
  * view of the fake home dir.
  *
  * Isolation mechanism: like {@link setupIsolatedHome}, this isolates production
- * code that reads the home directory via `process.env.HOME` — NOT code that calls
- * `os.homedir()` (which requires a `vi.spyOn(os, "homedir")` spy). The two are
- * NOT interchangeable.
+ * code that reads the home directory via `process.env.HOME`. Code that calls
+ * `os.homedir()` needs a `vi.spyOn(os, "homedir")` spy beside it — node re-reads
+ * `$HOME` there and bun does not, and this package runs both. The two are NOT
+ * interchangeable.
  */
 export function useFakeHome(
   getTempDir: () => string,

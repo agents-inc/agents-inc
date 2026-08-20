@@ -1,6 +1,27 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
+import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+
+/**
+ * The source root `loadFromLocal` reads when the DEFAULT source is resolved from disk.
+ * Unset for every spec but the one that drives that path, which points it at a root the
+ * test owns — otherwise the load reads this checkout, including its gitignored
+ * `.claude-src/config.ts`, whose `skillsDir` and `stacksFile` keys decide the answer.
+ */
+const { projectRootOverride } = vi.hoisted(() => ({
+  projectRootOverride: { value: undefined as string | undefined },
+}));
+
+vi.mock("../../consts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../consts")>();
+  return {
+    ...actual,
+    get PROJECT_ROOT() {
+      return projectRootOverride.value ?? actual.PROJECT_ROOT;
+    },
+  };
+});
 import {
   loadSkillsMatrixFromSource,
   convertStackToResolvedStack,
@@ -25,6 +46,7 @@ import {
   CLAUDE_DIR,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
+  MARKETPLACE_JSON,
   SKILL_RULES_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
@@ -51,11 +73,17 @@ import type {
 } from "../../types";
 import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
 import { getErrorMessage } from "../../utils/errors";
-import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logger";
+import { disableBuffering, drainBuffer, enableBuffering, setVerbose } from "../../utils/logger";
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { getSkillBySlug, initializeMatrix } from "../matrix/matrix-provider";
+// The env rung is cleared THROUGH the constant the resolver reads, not through a literal:
+// these hooks assert nothing, so there is no "both sides move together" hazard here, and a
+// literal is what let the suite go on deleting the withdrawn `CC_SOURCE` after the rename.
+// `config.test.ts` spells its names as literals for the opposite and equally correct reason —
+// there they are the subject of assertions about what a user exports.
+import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
@@ -99,6 +127,65 @@ const LOCAL_DISK_SKILL_SLUG = LOCAL_ONLY_SLUG;
 
 /** A slug the test source does ship — read off the fixture so it cannot drift from it. */
 const SLUG_THE_TEST_SOURCE_SHIPS: SkillSlug = firstElement(FIXTURE_SKILLS).slug;
+
+/**
+ * The manifest `build marketplace` wrote when package.json declared no author: a file
+ * that is unmistakably present and that `marketplaceSchema` refuses, because
+ * `owner.name` may not be empty.
+ */
+const MANIFEST_WITH_UNNAMED_OWNER = {
+  ...createMockMarketplace([createMockMarketplacePlugin("web-framework-react")]),
+  owner: { name: "" },
+};
+
+/** The field {@link MANIFEST_WITH_UNNAMED_OWNER} breaks, which the diagnostic has to name. */
+const UNREADABLE_MANIFEST_FIELD = "owner.name";
+
+/**
+ * What a load said about a marketplace's manifest, split by the channel it said it on.
+ * The two states pinned below are told apart by the channel as much as by the words, so
+ * a capture reading one channel cannot see the difference.
+ */
+type ManifestReport = {
+  diagnostics: string[];
+  warnings: string[];
+};
+
+/** {@link ManifestReport} for one load of `sourceFlag`. */
+async function reportOnManifest(sourceFlag: string, projectDir: string): Promise<ManifestReport> {
+  const logged: string[] = [];
+  const logSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+    logged.push(args.map(String).join(" "));
+  });
+  setVerbose(true);
+  enableBuffering();
+  try {
+    await loadSkillsMatrixFromSource({ sourceFlag, projectDir, skipExtraSources: true });
+    const warnings = drainBuffer().map((message) => message.text);
+    return {
+      diagnostics: [...logged, ...warnings].filter(mentionsManifest),
+      warnings: warnings.filter(mentionsManifest),
+    };
+  } finally {
+    disableBuffering();
+    setVerbose(false);
+    logSpy.mockRestore();
+  }
+}
+
+function mentionsManifest(text: string): boolean {
+  return text.includes(MARKETPLACE_JSON);
+}
+
+/** A marketplace on disk whose manifest is present and refused by the loader's own schema. */
+async function writeMarketplaceWithUnreadableManifest(tempDir: string): Promise<string> {
+  const sourceDir = path.join(tempDir, "unreadable-manifest-marketplace");
+  await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, JSON.stringify(MANIFEST_WITH_UNNAMED_OWNER));
+  return sourceDir;
+}
 
 /**
  * What the load produced and what it said, read the way `init` and `edit` read
@@ -170,18 +257,42 @@ afterAll(async () => {
   await cleanupTestSource(fixtureDirs);
 });
 
+/**
+ * Every `loadSkillsMatrixFromSource` here walks to the home root twice — `resolveSource`
+ * falls through to `~/.claude-src/config.ts`, and the local-skill merge reads
+ * `~/.claude/skills` — so without this the suite loads whatever the developer has
+ * installed. The env var alone is not enough: `os.homedir()` re-reads `$HOME` under node
+ * but fixes it at startup under bun, and this package runs its tests under both.
+ */
+let fakeHome: string;
+let savedHome: string | undefined;
+
+beforeEach(async () => {
+  fakeHome = await createTempDir("cc-source-loader-home-");
+  savedHome = process.env.HOME;
+  process.env.HOME = fakeHome;
+  vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
+});
+
+afterEach(async () => {
+  vi.mocked(os.homedir).mockRestore();
+  if (savedHome === undefined) delete process.env.HOME;
+  else process.env.HOME = savedHome;
+  projectRootOverride.value = undefined;
+  await cleanupTempDir(fakeHome);
+});
+
 describe("source-loader", () => {
   let tempDir: string;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-source-loader-test-");
-    // Clear environment
-    delete process.env.CC_SOURCE;
+    delete process.env[SOURCE_ENV_VAR];
   });
 
   afterEach(async () => {
     await cleanupTempDir(tempDir);
-    delete process.env.CC_SOURCE;
+    delete process.env[SOURCE_ENV_VAR];
   });
 
   describe("loadSkillsMatrixFromSource", () => {
@@ -280,6 +391,29 @@ describe("source-loader", () => {
         });
 
         expect(result.marketplace).toBeUndefined();
+      });
+    });
+
+    describe("a marketplace.json that is absent and one that cannot be read", () => {
+      it("should not describe a manifest it could not read the way it describes an absent one", async () => {
+        const absent = await reportOnManifest(fixtureDirs.sourceDir, tempDir);
+        const unreadable = await reportOnManifest(
+          await writeMarketplaceWithUnreadableManifest(tempDir),
+          tempDir,
+        );
+
+        expect(unreadable.diagnostics).not.toStrictEqual(absent.diagnostics);
+      });
+
+      it("should warn, naming the field that failed, only when the manifest is there and invalid", async () => {
+        const absent = await reportOnManifest(fixtureDirs.sourceDir, tempDir);
+        const unreadable = await reportOnManifest(
+          await writeMarketplaceWithUnreadableManifest(tempDir),
+          tempDir,
+        );
+
+        expect(absent.warnings).toStrictEqual([]);
+        expect(firstElement(unreadable.warnings)).toContain(UNREADABLE_MANIFEST_FIELD);
       });
     });
 
@@ -1024,7 +1158,13 @@ describe("source-loader integration", () => {
     // The default source's stacks normally come pre-resolved on BUILT_IN_MATRIX,
     // which `resolveBaseResult` short-circuits to. Dev mode is the one runtime
     // path that resolves the default source from disk instead, so it is where
-    // the stand-in itself is observable.
+    // the stand-in itself is observable — and the disk it reads is PROJECT_ROOT,
+    // so the spec supplies a stackless source root of its own rather than letting
+    // the answer come off this checkout.
+    const sourceRoot = path.join(tempDir, "stackless-source-root");
+    await mkdir(path.join(sourceRoot, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+    projectRootOverride.value = sourceRoot;
+
     const result = await loadSkillsMatrixFromSource({
       projectDir: tempDir,
       devMode: true,
@@ -1793,7 +1933,7 @@ describe("source-loader public catalogue collision guard", () => {
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-catalogue-collision-");
-    delete process.env.CC_SOURCE;
+    delete process.env[SOURCE_ENV_VAR];
   });
 
   afterEach(async () => {
@@ -1802,7 +1942,7 @@ describe("source-loader public catalogue collision guard", () => {
       await cleanupTestSource(sourceDirs);
       sourceDirs = undefined;
     }
-    delete process.env.CC_SOURCE;
+    delete process.env[SOURCE_ENV_VAR];
   });
 
   it("refuses a marketplace whose skill ids the public catalogue already owns", async () => {

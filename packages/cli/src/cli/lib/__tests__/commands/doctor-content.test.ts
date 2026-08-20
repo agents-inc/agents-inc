@@ -23,6 +23,8 @@ import {
   PUBLIC_CATALOGUE_PACKAGE,
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
+  SKILL_CATEGORIES_PATH,
+  SKILL_RULES_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../../consts";
@@ -110,6 +112,13 @@ const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
     },
   ],
 };
+
+/**
+ * Where the audit manifest lives, as a reader of the report has to type it. It is this CLI's own
+ * file rather than anything in the marketplace under validation, which is the point: a verdict the
+ * matrix contradicts is recorded there and nowhere else.
+ */
+const AUDIT_MANIFEST_FILE = "src/cli/lib/configuration/skill-audit.ts";
 
 /**
  * A skill the built-in audit manifest records as `universal`. Placed in an exclusive category it
@@ -247,10 +256,14 @@ async function writeValidSourceSkill(
   await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), stringifyYaml(metadata));
 }
 
-/** Creates minimal skill-categories.ts and skill-rules.ts with the given categories */
+/**
+ * Creates minimal skill-categories.ts and skill-rules.ts with the given categories.
+ * A category may omit its `domain` — the field is optional in the schema, and leaving it out is
+ * the shape the matrix health check reports as `category-missing-domain`.
+ */
 async function writeTestMatrix(
   configDir: string,
-  categories: Record<string, { domain: string; displayName: string }>,
+  categories: Record<string, { domain?: string; displayName: string }>,
   relationships?: Partial<RelationshipDefinitions>,
 ): Promise<void> {
   const matrixCategories: Record<string, Record<string, unknown>> = Object.fromEntries(
@@ -1743,6 +1756,72 @@ describe("source validation (validateSource)", () => {
         "only the unresolved-slug finding is under the ruling",
       ).toBe("error");
       expect(result.errorCount).toBe(1);
+    });
+  });
+
+  /**
+   * `doctor` prints a finding as `- [ERROR] <file>: <message>`, so the path is the file the reader
+   * opens. Each health finding has to name the file its own defect is written in — a family of
+   * findings sharing one path is only correct when every member lives there, and these do not.
+   */
+  describe("the file a cross-reference finding sends the reader to", () => {
+    it("names the rules file for a slug the marketplace's rules dangle", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingRuleSlug(sourceDir);
+
+      const result = await validateSource(sourceDir, "author");
+
+      const slugIssues = result.issues.filter((i) => i.message.includes(DANGLING_RULE_SLUG));
+      expect(
+        firstElement(slugIssues).file,
+        "the typo is written in the rules file — the categories file does not contain the slug",
+      ).toBe(SKILL_RULES_PATH);
+    });
+
+    it("names the rules file for a consumer of that marketplace too", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingRuleSlug(sourceDir);
+
+      const result = await validateSource(sourceDir, "consumer");
+
+      const slugIssues = result.issues.filter((i) => i.message.includes(DANGLING_RULE_SLUG));
+      expect(
+        firstElement(slugIssues).file,
+        "the reader changes the severity and the wording, never which file holds the defect",
+      ).toBe(SKILL_RULES_PATH);
+    });
+
+    it("names the audit manifest for a verdict the matrix contradicts", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      await buildSourceWithDanglingSlugAndAuditContradiction(sourceDir);
+
+      const result = await validateSource(sourceDir, "author");
+
+      const auditIssues = result.issues.filter((i) =>
+        i.message.includes(UNIVERSAL_VERDICT_SKILL.id),
+      );
+      expect(
+        firstElement(auditIssues).file,
+        "the verdict is recorded in the audit manifest, not in the marketplace being validated",
+      ).toBe(AUDIT_MANIFEST_FILE);
+    });
+
+    it("names the categories file for a category that declares no domain", async () => {
+      const sourceDir = path.join(tempDir, "source");
+      const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
+      const configDir = path.join(sourceDir, "config");
+      await mkdir(configDir, { recursive: true });
+
+      await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
+      await writeTestMatrix(configDir, { "web-framework": { displayName: "Framework" } });
+
+      const result = await validateSource(sourceDir, "author");
+
+      const domainIssues = result.issues.filter((i) => i.message.includes("has no domain"));
+      expect(
+        firstElement(domainIssues).file,
+        "the category is declared in the categories file, so this one was already right",
+      ).toBe(SKILL_CATEGORIES_PATH);
     });
   });
 });

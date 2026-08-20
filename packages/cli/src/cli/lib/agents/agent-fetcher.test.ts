@@ -31,7 +31,6 @@ vi.mock("../../consts", async (importOriginal) => {
   };
 });
 
-import { CLAUDE_DIR } from "../../consts";
 import {
   getAgentDefinitions,
   getLocalAgentDefinitions,
@@ -49,10 +48,7 @@ const REMOTE_SOURCE = "github:my-org/agents";
  * Creates a fetched-source dir containing `agentsSubdir` and points the
  * fetchFromSource mock at it. Returns the fetched dir.
  */
-async function mockFetchedRemote(
-  tempDir: string,
-  agentsSubdir = "src/agents/_templates",
-): Promise<string> {
+async function mockFetchedRemote(tempDir: string, agentsSubdir = "src/agents"): Promise<string> {
   const fetchedDir = path.join(tempDir, "fetched");
   await mkdir(path.join(fetchedDir, agentsSubdir), { recursive: true });
   mockFetchFromSource.mockResolvedValue({
@@ -63,17 +59,8 @@ async function mockFetchedRemote(
   return fetchedDir;
 }
 
-async function createAgentDirStructure(
-  root: string,
-  options: { agents?: boolean; templates?: boolean } = {},
-): Promise<void> {
-  const { agents = true, templates = true } = options;
-  if (agents) {
-    await mkdir(path.join(root, "src/agents"), { recursive: true });
-  }
-  if (templates) {
-    await mkdir(path.join(root, "src/agents/_templates"), { recursive: true });
-  }
+async function createAgentDirStructure(root: string): Promise<void> {
+  await mkdir(path.join(root, "src/agents"), { recursive: true });
 }
 
 describe("agent-fetcher", () => {
@@ -98,7 +85,6 @@ describe("agent-fetcher", () => {
 
       expect(result).toStrictEqual({
         agentsDir: path.join(tempDir, "src/agents"),
-        templatesDir: path.join(tempDir, "src/agents/_templates"),
         sourcePath: tempDir,
       });
     });
@@ -106,41 +92,6 @@ describe("agent-fetcher", () => {
     it("should throw when agents directory does not exist", async () => {
       // Empty temp dir — no agents directory
       await expect(getLocalAgentDefinitions()).rejects.toThrow("Agent partials not found at '");
-    });
-
-    it("should use local templates when projectDir is provided and local templates exist", async () => {
-      await createAgentDirStructure(tempDir);
-
-      // Create local templates in a separate project dir
-      const projectDir = path.join(tempDir, "my-project");
-      await mkdir(path.join(projectDir, CLAUDE_DIR, "templates"), { recursive: true });
-
-      const result = await getLocalAgentDefinitions({ projectDir });
-
-      expect(result.templatesDir).toBe(path.join(projectDir, CLAUDE_DIR, "templates"));
-      expect(result.agentsDir).toBe(path.join(tempDir, "src/agents"));
-      expect(result.sourcePath).toBe(tempDir);
-    });
-
-    it("should fall back to default templates when local templates directory does not exist", async () => {
-      await createAgentDirStructure(tempDir);
-
-      // Project dir without local templates
-      const projectDir = path.join(tempDir, "my-project");
-      await mkdir(projectDir, { recursive: true });
-
-      const result = await getLocalAgentDefinitions({ projectDir });
-
-      expect(result.templatesDir).toBe(path.join(tempDir, "src/agents/_templates"));
-    });
-
-    it("should still succeed when templates directory does not exist", async () => {
-      // Create agents dir but NOT templates dir
-      await createAgentDirStructure(tempDir, { templates: false });
-
-      const result = await getLocalAgentDefinitions();
-      expect(result.agentsDir).toBe(path.join(tempDir, "src/agents"));
-      expect(result.templatesDir).toBe(path.join(tempDir, "src/agents/_templates"));
     });
   });
 
@@ -154,7 +105,6 @@ describe("agent-fetcher", () => {
       expect(mockFetchFromSource).toHaveBeenCalledWith(REMOTE_SOURCE, { subdir: "" });
       expect(result).toStrictEqual({
         agentsDir: path.join(fetchedDir, "src", "agents"),
-        templatesDir: path.join(fetchedDir, "src", "agents", "_templates"),
         sourcePath: fetchedDir,
       });
     });
@@ -186,14 +136,13 @@ describe("agent-fetcher", () => {
     });
 
     it("should use custom agentsDir when provided", async () => {
-      const fetchedDir = await mockFetchedRemote(tempDir, "lib/agents/_templates");
+      const fetchedDir = await mockFetchedRemote(tempDir, "lib/agents");
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE, {
         agentsDir: "lib/agents",
       });
 
       expect(result.agentsDir).toBe(path.join(fetchedDir, "lib/agents"));
-      expect(result.templatesDir).toBe(path.join(fetchedDir, "lib/agents", "_templates"));
     });
 
     it("should use default DIRS.agents when agentsDir is not provided", async () => {
@@ -204,26 +153,9 @@ describe("agent-fetcher", () => {
       expect(result.agentsDir).toBe(path.join(fetchedDir, "src/agents"));
     });
 
-    it("should succeed even when remote templates directory does not exist", async () => {
-      const fetchedDir = path.join(tempDir, "fetched");
-      // Create agents dir but NOT templates dir
-      await mkdir(path.join(fetchedDir, "src/agents"), { recursive: true });
-
-      mockFetchFromSource.mockResolvedValue({
-        path: fetchedDir,
-        fromCache: false,
-        source: REMOTE_SOURCE,
-      });
-
-      const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
-
-      expect(result.agentsDir).toBe(path.join(fetchedDir, "src", "agents"));
-      expect(result.templatesDir).toBe(path.join(fetchedDir, "src", "agents", "_templates"));
-    });
-
     it("should use agentsDir from source project config when set", async () => {
       const fetchedDir = path.join(tempDir, "fetched-config");
-      await mkdir(path.join(fetchedDir, "lib/agents/_templates"), { recursive: true });
+      await mkdir(path.join(fetchedDir, "lib/agents"), { recursive: true });
 
       mockFetchFromSource.mockResolvedValue({
         path: fetchedDir,
@@ -240,12 +172,11 @@ describe("agent-fetcher", () => {
 
       expect(mockLoadProjectSourceConfig).toHaveBeenCalledWith(fetchedDir);
       expect(result.agentsDir).toBe(path.join(fetchedDir, "lib/agents"));
-      expect(result.templatesDir).toBe(path.join(fetchedDir, "lib/agents", "_templates"));
     });
 
     it("should fall back to default agents dir when source config has no agentsDir", async () => {
       const fetchedDir = path.join(tempDir, "fetched-no-agents-dir");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
+      await mkdir(path.join(fetchedDir, "src/agents"), { recursive: true });
 
       mockFetchFromSource.mockResolvedValue({
         path: fetchedDir,
@@ -265,7 +196,7 @@ describe("agent-fetcher", () => {
 
     it("should fall back to default when source has no config at all", async () => {
       const fetchedDir = path.join(tempDir, "fetched-no-config");
-      await mkdir(path.join(fetchedDir, "src/agents/_templates"), { recursive: true });
+      await mkdir(path.join(fetchedDir, "src/agents"), { recursive: true });
 
       mockFetchFromSource.mockResolvedValue({
         path: fetchedDir,
@@ -283,7 +214,7 @@ describe("agent-fetcher", () => {
 
     it("should prefer explicit agentsDir option over source config agentsDir", async () => {
       const fetchedDir = path.join(tempDir, "fetched-override");
-      await mkdir(path.join(fetchedDir, "custom/agents/_templates"), { recursive: true });
+      await mkdir(path.join(fetchedDir, "custom/agents"), { recursive: true });
 
       mockFetchFromSource.mockResolvedValue({
         path: fetchedDir,
@@ -352,18 +283,6 @@ describe("agent-fetcher", () => {
 
       expect(mockFetchFromSource).not.toHaveBeenCalled();
       expect(result.sourcePath).toBe(tempDir);
-    });
-
-    it("should pass projectDir option through to getLocalAgentDefinitions", async () => {
-      await createAgentDirStructure(tempDir);
-
-      // Create local templates in project dir
-      const projectDir = path.join(tempDir, "my-project");
-      await mkdir(path.join(projectDir, CLAUDE_DIR, "templates"), { recursive: true });
-
-      const result = await getAgentDefinitions(undefined, { projectDir });
-
-      expect(result.templatesDir).toBe(path.join(projectDir, CLAUDE_DIR, "templates"));
     });
   });
 });

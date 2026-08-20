@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { runCliCommand } from "../helpers/cli-runner.js";
+import { missingArgsRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
@@ -64,10 +64,11 @@ describe("doctor command", () => {
     it("should run without arguments", { timeout: 30_000 }, async () => {
       const { error } = await runCliCommand(["doctor"]);
 
-      // Should not have argument parsing errors
       const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("missing required arg");
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      expect(
+        output,
+        "doctor reads the project at the cwd and declares no positional",
+      ).not.toContain(missingArgsRefusal(1));
     });
 
     it("should fail when no config exists", async () => {
@@ -158,43 +159,46 @@ describe("doctor command", () => {
   });
 
   describe("agents check", () => {
+    /** The one agent both cases below configure — compiled in the first, missing in the second. */
+    const CONFIGURED_AGENT_NAME = "web-developer";
+
     it("should pass when agents are compiled", async () => {
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
       const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
-      // Create config with one agent
       await writeTestTsConfig(projectDir, {
         name: "test-project",
-        agents: ["web-developer"],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
       });
 
       // Create the compiled agent file
       await writeFile(
-        path.join(agentsDir, "web-developer.md"),
-        "# Web Developer Agent\n\nAgent content here.",
+        path.join(agentsDir, `${CONFIGURED_AGENT_NAME}.md`),
+        renderAgentMd(CONFIGURED_AGENT_NAME, "Agent content here."),
       );
 
-      const { error } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
-      // Should not mention missing agents
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("recompilation");
+      const output = stdout + (error?.message || "");
+      expect(output).toContain("1/1 agents compiled");
+      expect(output, "an agent whose file is on disk is not missing").not.toContain(
+        `- ${CONFIGURED_AGENT_NAME} (missing)`,
+      );
     });
 
     it("should warn when agents need recompilation", async () => {
       // Create config with agent but no compiled .md file
       await writeTestTsConfig(projectDir, {
         name: "test-project",
-        agents: ["web-developer"],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
       });
 
-      const { error } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
-      // Doctor should complete (warnings don't cause exit error)
-      // but may exit with error due to source being unreachable
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("argument");
+      const output = stdout + (error?.message || "");
+      expect(output).toContain("1 agent needs recompilation");
+      expect(output).toContain(`- ${CONFIGURED_AGENT_NAME} (missing)`);
     });
   });
 
@@ -216,11 +220,11 @@ describe("doctor command", () => {
         "# Orphaned Agent\n\nThis agent is not in config.",
       );
 
-      const { error } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
-      // Command should run (orphans are warnings, not errors)
-      const output = error?.message || "";
-      expect(output.toLowerCase()).not.toContain("unexpected argument");
+      const output = stdout + (error?.message || "");
+      expect(output).toContain("1 orphaned agent file");
+      expect(output).toContain("- orphaned-agent.md (not in config)");
     });
 
     it("should flag excluded project agent .md file as orphan", async () => {
