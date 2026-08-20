@@ -23,6 +23,21 @@ dist-ssr
 .cache
 *.tsbuildinfo
 
+# The reserved prefix for scratch material — a verification harness, a throwaway
+# probe, anything a run writes into a workspace rather than anything anyone
+# authored. No slash, so it holds at every level, and the trailing wildcard lets a
+# harness name itself (`.scratch-plugin-verify/`). Reserved because untracked
+# scratch material is not inert: it joins `eslint .` and `prettier --check .` and
+# fails them for the whole package until someone deletes it, and the ESLint half
+# reports a syntax error against a file whose syntax is fine. Naming the prefix
+# once means the next harness only has to be put in the right place rather than
+# added to three lists. The matching entries are `globalIgnores` in
+# packages/cli/eslint.config.js — not derived from this file — and that package's
+# .prettierignore, since Prettier reads only the .gitignore in its own working
+# directory and there is none there. The mechanism is written out beside the
+# `files:` list in that ESLint config.
+.scratch*
+
 # env files (can opt-in for committing if needed)
 .env*
 # ...but the templates are the documentation for what each one is.

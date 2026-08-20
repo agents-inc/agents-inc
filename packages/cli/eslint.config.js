@@ -154,6 +154,13 @@ export default defineConfig(
     ".claude_backup/**",
     // Gitignored working material that happens to contain .js template assets.
     "todo/**",
+    // The reserved prefix for scratch material — a verification harness or a
+    // throwaway probe written into the package during a run. Without this entry a
+    // scratch file whose name ends `.test.ts` or `.test.tsx` is linted wherever it
+    // lands and reported as a syntax error; the `files:` note below is why. Reserved
+    // in the repository-root .gitignore, with a matching .prettierignore entry.
+    ".scratch*",
+    ".scratch*/**",
     // Emitted by `npm run generate:types` — fix the generator, not the output.
     "src/cli/types/generated/**",
     // Emitted by `scripts/handrun.mjs`, which bundles the hand-run and its whole
@@ -176,6 +183,22 @@ export default defineConfig(
     // three source trees, which is what keeps tsup.config.ts, vitest.config.ts and
     // vitest.setup.ts — the root-level tool configs, in no tsconfig of this package — out of a
     // type-aware run they would fail to parse under.
+    //
+    // What the narrowing does NOT do is exclude everything else, and the difference is
+    // worth knowing before it costs someone a session. Two of the TEST_FILES patterns
+    // below — `**/*.test.ts` and `**/*.test.tsx` — name an extension and carry no
+    // anchor, so they reach any depth of this package, a scratch directory nobody
+    // meant to lint included. The blocks holding them set rules and no parser, so such
+    // a file is read by espree as JavaScript: an annotation reports `Unexpected token
+    // :`, an interface reports `Unexpected token interface`, and lint fails for the
+    // whole package having named a syntax error in a file whose syntax is fine. The
+    // report points nowhere, because the defect is the file's LOCATION. Anything else
+    // out here is skipped instead ("File ignored because no matching configuration was
+    // supplied"), and TEST_FILES' three directory-shaped patterns name no extension so
+    // they pull nothing into a directory scan — which makes the trap specific to the
+    // test-file NAMES, exactly what a throwaway verification harness writes. Measured
+    // under ESLint 10.8.0; `.scratch*` in globalIgnores above is the reserved home
+    // that keeps such a harness out of the run.
     //
     // Extending rather than restating is the point of this block: composing
     // `recommendedTypeChecked` here by hand is what left `no-unnecessary-condition` — a shared

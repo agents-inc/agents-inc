@@ -21,6 +21,14 @@ coverage/
 # globalIgnores carries the matching entry.
 e2e/helpers/*.gen.mjs
 
+# The reserved prefix for scratch material — a verification harness or throwaway
+# probe written into this package during a run. Gitignored at the repository root,
+# and restated here for the same reason the private working files below are: a
+# `prettier --check .` started from this directory never reads that file, so
+# without this line an untracked harness fails the format gate for the whole
+# package. The ESLint globalIgnores carries the matching entry.
+.scratch*
+
 # Backup files
 .claude_backup/
 
