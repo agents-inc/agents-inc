@@ -42,7 +42,7 @@ All utilities in `src/cli/utils/`.
 | `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
 | `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders    |
 | `open-url.ts`     | `src/cli/utils/open-url.ts`     | Hand a link to the platform's link opener   |
-| `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`               |
+| `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`, `bytewise`   |
 | `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear screen/scrollback + size-gate helpers |
 | `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
 | `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys/values        |
@@ -237,18 +237,11 @@ directory back onto the wire.
 
 ### `WarnOptions` type (`src/cli/utils/logger.ts`)
 
-```typescript
-export type WarnOptions = {
-  /** When true, suppresses this warning in test environments (VITEST=true). */
-  suppressInTest?: boolean;
-};
-```
-
 The `warn()` function accepts an optional second parameter. When `suppressInTest: true` is set and `process.env.VITEST` is truthy, the warning is silently dropped. This prevents noisy test output for expected warnings.
 
 ### Startup Message Buffering
 
-Before Ink takes over the terminal, `warn()` output written to the console would be cleared by Ink's screen reset. Buffer mode captures those messages into an in-memory `StartupMessage[]` array instead of writing to stderr, so the caller can hand them to the wizard.
+Before Ink takes over the terminal, `warn()` output written to the console would be cleared by Ink's screen reset. Buffer mode captures those messages into an in-memory `StartupMessage[]` array instead of writing to stderr, so the caller can hand them to the wizard. **Buffer mode is process-wide**, so a throw while it is on swallows every later `warn()` in the run. Both production windows close on the throwing path as well as the returning one — `hydrateIntoStartupBand` with a `finally`, `loadSource` with a `catch` that disables and rethrows.
 
 | Function              | Purpose                                   |
 | --------------------- | ----------------------------------------- |
@@ -259,7 +252,12 @@ Before Ink takes over the terminal, `warn()` output written to the console would
 
 **Type:** `StartupMessage = { level: "info" | "warn" | "error"; text: string }`
 
-**Used by:** `src/cli/lib/operations/source/load-source.ts` (when its `captureStartupMessages` option is set) calls `enableBuffering()` to capture `warn()` output during skill loading, then `drainBuffer()` + `disableBuffering()` to return the captured messages as `startupMessages: StartupMessage[]`. `src/cli/commands/init.tsx` and `src/cli/commands/edit.tsx` receive that array and thread it through `src/cli/components/wizard/wizard.tsx` to the `WizardLayout` `startupMessages` prop (`src/cli/components/wizard/wizard-layout.tsx`), which paints it as a band between the tab bar and the step — see [component-patterns.md](./component-patterns.md#wizardlayout-startup-message-band). There is no Ink `<Static>` block; the band is in the live frame. `pushBufferMessage()` has no production callers (test-only).
+**Used by — two windows, in sequence, both feeding one band.**
+
+1. `src/cli/lib/operations/source/load-source.ts` (when its `captureStartupMessages` option is set) calls `enableBuffering()` to capture `warn()` output during skill loading, then `drainBuffer()` + `disableBuffering()` to return the captured messages as `startupMessages: StartupMessage[]`. `src/cli/commands/init.tsx` and `src/cli/commands/edit.tsx` receive that array.
+2. `hydrateIntoStartupBand()` in `src/cli/components/wizard/run-wizard-session.tsx` opens a second window around `hydrateWizardStore()` and returns `[...loaded, ...drained]`. It is a second window rather than the first one held open because `enableBuffering()` resets the buffer, and because one window spanning both modules could not carry a `finally` over the command's own `this.error()` paths. The store warns during hydration (`resolveSkillForPopulation` in `src/cli/stores/wizard-store.ts`), and by then the load's buffer is drained, so a warning raised there has no surface but this band.
+
+The concatenated array is threaded through `src/cli/components/wizard/wizard.tsx` to the `WizardLayout` `startupMessages` prop (`src/cli/components/wizard/wizard-layout.tsx`), which paints it as a band between the tab bar and the step — see [component-patterns.md](./component-patterns.md#wizardlayout-startup-message-band). There is no Ink `<Static>` block; the band is in the live frame. `pushBufferMessage()` has no production callers (test-only).
 
 **Style guide** (from logger.ts comments):
 
@@ -296,6 +294,22 @@ Converts a kebab-case string to a space-separated Title Case string (`"web-frame
 
 - `src/cli/lib/matrix/skill-resolution.ts`
 - `src/cli/components/wizard/step-agents.tsx`
+
+### `bytewise()` (`src/cli/utils/string.ts`)
+
+```typescript
+function bytewise(a: string, b: string): number;
+```
+
+Compares two strings by UTF-16 code unit, returning `-1`, `0` or `1`. It is the ordering every generator whose output somebody commits must sort by, per `standards/clean-code-standards.md` -> 17.3.
+
+`localeCompare` called with no locale argument reads the process's default collation, and Node takes that from `LC_ALL` / `LANG`. Real locales disagree with code units over ordinary kebab-case names: Lithuanian and Latvian place `y` immediately after `i`, so both order the shipped categories `mobile-styling` before `mobile-storage` where code units order them the other way. A generated file sorted with `localeCompare` therefore regenerates to different bytes on a contributor's machine whose desktop locale differs, producing a pure-reordering diff.
+
+**Used by:**
+
+- `scripts/generate-source-types.ts` -- `src/cli/types/generated/` (skills, agents, grouped maps)
+- `scripts/generate-matrix-package.ts` -- the `AGENT_DEFINITIONS` entries vendored into `packages/matrix`
+- `src/cli/lib/configuration/config-types-writer.ts` -- the `StackAgentConfig` category keys in a project's `config-types.ts`
 
 ## Terminal
 
@@ -397,14 +411,14 @@ Each row below lists every key in that object, exhaustive and in source order. A
 source by `scripts/check-enumeration-drift.ts`, so a key added or renamed fails the `scripts/` suite
 rather than sitting here uncontested.
 
-| Object                | Keys                                                                                                                                                                                                                                                                                                                   |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ERROR_MESSAGES`      | `UNKNOWN_ERROR`, `UNKNOWN_ERROR_SHORT`, `NO_INSTALLATION`, `NO_SKILLS_FOUND`, `VALIDATION_FAILED`, `FAILED_RESOLVE_SOURCE`, `FAILED_LOAD_AGENT_PARTIALS`, `FAILED_COMPILE_AGENTS`, `CLAUDE_CLI_NOT_FOUND`                                                                                                              |
-| `SUCCESS_MESSAGES`    | `UNINSTALL_COMPLETE`, `INIT_SUCCESS`, `PLUGIN_COMPILE_COMPLETE`                                                                                                                                                                                                                                                        |
-| `STATUS_MESSAGES`     | `INSTALLING_PLUGINS`, `LOADING_SKILLS`, `LOADING_MARKETPLACE_SOURCE`, `RECOMPILING_AGENTS`, `COMPILING_AGENTS`, `DISCOVERING_SKILLS`, `RESOLVING_SOURCE`, `RESOLVING_MARKETPLACE_SOURCE`, `LOADING_AGENT_PARTIALS`, `FETCHING_REPOSITORY`, `COPYING_SKILLS`, `UPDATING_PLUGIN_SKILLS`, `MARKETPLACE_HAS_NEWER_CONTENT` |
-| `INFO_MESSAGES`       | `NO_CHANGES_MADE`, `RUN_COMPILE`, `NO_AGENTS_TO_RECOMPILE`, `NO_PLUGIN_INSTALLATION`, `NO_LOCAL_INSTALLATION`, `NOT_INSTALLED`, `CONFIG_TYPES_REFRESHED`, `EJECTED_SKILLS_USER_OWNED`, `NO_PLUGIN_MARKETPLACES`                                                                                                        |
-| `SHARED_CONFIG_APPLY` | `PREVIEW_HEADING`, `SKILLS_HEADING`, `AGENTS_HEADING`, `GLOBAL_SKILLS_HEADING`, `GLOBAL_AGENTS_HEADING`, `NOTHING_REMOVED`, `CONFIRM` — the fixed text of `edit --from`'s removal plan                                                                                                                                 |
-| `UNINSTALL_PLAN`      | `PREVIEW_HEADING`, `PLUGINS_HEADING`, `CLI_MANAGED_FILES_HEADING`, `CONFIG_HEADING` — read by BOTH uninstall renderers (`--yes` printer and confirm UI), so the preview a user approves and a `--yes` run's list cannot drift                                                                                          |
+| Object                | Keys                                                                                                                                                                                                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERROR_MESSAGES`      | `UNKNOWN_ERROR`, `UNKNOWN_ERROR_SHORT`, `NO_INSTALLATION`, `FAILED_RESOLVE_SOURCE`, `FAILED_LOAD_AGENT_PARTIALS`, `FAILED_COMPILE_AGENTS`, `CLAUDE_CLI_NOT_FOUND`, `NO_SKILLS_TO_COMPILE`                                                                                                    |
+| `SUCCESS_MESSAGES`    | `UNINSTALL_COMPLETE`, `INIT_SUCCESS`, `PLUGIN_COMPILE_COMPLETE`                                                                                                                                                                                                                              |
+| `STATUS_MESSAGES`     | `INSTALLING_PLUGINS`, `LOADING_SKILLS`, `LOADING_MARKETPLACE_SOURCE`, `RECOMPILING_AGENTS`, `COMPILING_AGENTS`, `DISCOVERING_SKILLS`, `RESOLVING_SOURCE`, `RESOLVING_MARKETPLACE_SOURCE`, `LOADING_AGENT_PARTIALS`, `FETCHING_REPOSITORY`, `COPYING_SKILLS`, `MARKETPLACE_HAS_NEWER_CONTENT` |
+| `INFO_MESSAGES`       | `NO_CHANGES_MADE`, `RUN_COMPILE`, `NO_AGENTS_TO_RECOMPILE`, `NO_PLUGIN_INSTALLATION`, `NO_LOCAL_INSTALLATION`, `NOT_INSTALLED`, `CONFIG_TYPES_REFRESHED`, `EJECTED_SKILLS_USER_OWNED`, `NO_PLUGIN_MARKETPLACES`, `AGENT_PARTIALS_CUSTOMIZABLE`                                               |
+| `SHARED_CONFIG_APPLY` | `PREVIEW_HEADING`, `SKILLS_HEADING`, `AGENTS_HEADING`, `GLOBAL_SKILLS_HEADING`, `GLOBAL_AGENTS_HEADING`, `NOTHING_REMOVED`, `CONFIRM` — the fixed text of `edit --from`'s removal plan                                                                                                       |
+| `UNINSTALL_PLAN`      | `PREVIEW_HEADING`, `PLUGINS_HEADING`, `CLI_MANAGED_FILES_HEADING`, `CONFIG_HEADING` — read by BOTH uninstall renderers (`--yes` printer and confirm UI), so the preview a user approves and a `--yes` run's list cannot drift                                                                |
 
 **The two `GLOBAL_*` headings on `SHARED_CONFIG_APPLY` are what a PROJECT run prints instead**, for
 entries that live at global scope. They exist only there: at the home directory every entry is
@@ -445,6 +459,9 @@ multi-line string (`\n`-joined) or a `string[]`, because oclif hard-wraps a sing
 | `marketplaceRefreshFailed(marketplace, reason)`            | `(string, string) => string`                           | `update` — one marketplace the Claude CLI could not refresh                                                                                                                                                                                                                            |
 | `sourceUnreachableUsingCache(source)`                      | `(string) => string`                                   | A remote source could not be reached to revalidate and the cached copy was used anyway. The load SUCCEEDS, so the line's whole job is to name what the user got                                                                                                                        |
 | `marketplacesRefreshFailed(marketplaces)`                  | `(string[]) => string`                                 | `update` fatal summary; each cause was already warned individually, this is what makes the run exit non-zero                                                                                                                                                                           |
+| `marketplaceOwnerHasNoName(packageJsonPath)`               | `(string) => string`                                   | `build marketplace`'s refusal when package.json names no author. Refused rather than warned: `marketplaceOwnerSchema` requires `owner.name`, so a manifest written without one is a file this CLI's own reader rejects                                                                 |
+| `marketplaceHasNoVersion(packageJsonPath)`                 | `(string) => string`                                   | `build marketplace`'s refusal when `version` in package.json is empty. `marketplaceSchema` requires `min(1)` and nothing upstream did, so `""` reached the manifest and the build exited 0 on a file its own reader refuses                                                            |
+| `marketplaceNameNotPublishable(name, packageJsonPath)`     | `(string, string) => string`                           | `build marketplace`'s refusal when the name read from package.json is not kebab-case. Names every offending character, because an npm scoped name gives an author two edits to make and the rule alone gives them none; the way out is `--name`, not a package rename                  |
 | `configTypesRefreshFailed(reason)`                         | `(string) => string`                                   | `Compile.refreshConfigTypes` catch — compiled agents are written, only the type unions may be stale                                                                                                                                                                                    |
 | `registeredProjectsUpdated(count)`                         | `(number) => string`                                   | `uninstall` — summary after a global uninstall pruned inlined global entries. Singular/plural aware                                                                                                                                                                                    |
 | `registeredProjectUpdateSkipped(projectPath)`              | `(string) => string`                                   | `uninstall` — one registered project was unreachable; the uninstall continues                                                                                                                                                                                                          |
@@ -585,7 +602,7 @@ site's subject unreadable.
 | `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc` (= `DEFAULT_PLUGIN_NAME`)                             | Fallback marketplace/source name                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `SOURCE_DISPLAY_NAMES`       | `{ public: "Public", eject: "Eject", "agents-inc": "Agents Inc" }` | Inline human-readable source type labels                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `INSTALL_MODES`              | `["eject", "plugin"]`                                              | The two install modes a Sources row offers, in the order the grid renders them                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `INSTALL_MODE_CELL_LABELS`   | `{ eject: "Local", plugin: "Plugin" }`                             | How the Sources grid captions its two cells — where the skill will LIVE, not what the mode does to the files (`INSTALL_MODE_LABELS`) nor what a `source` VALUE is called (`SOURCE_DISPLAY_NAMES`)                                                                                                                                                                                                                                                                               |
+| `INSTALL_MODE_CELL_LABELS`   | `{ eject: "Local", plugin: "Plugin" }`                             | How the Sources grid captions its two cells — where the skill will LIVE, not what the mode does to the files (`INSTALL_MODE_LABELS`) nor what an `origin` VALUE is called (`SOURCE_DISPLAY_NAMES`)                                                                                                                                                                                                                                                                              |
 | `DEFAULT_VERSION`            | `1.0.0`                                                            | Default skill version                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `DEFAULT_DISPLAY_VERSION`    | `0.0.0`                                                            | Indicates no version explicitly set                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `ALL_SKILLS_EJECTED_LABEL`   | `All skills ejected`                                               | Summary-panel `Marketplace` row when no skill has a marketplace source (distinct state from an empty set, which falls back to the public default)                                                                                                                                                                                                                                                                                                                               |
@@ -597,10 +614,10 @@ Helper: `editorConfigUrl(id: string): string` -> `` `${EDITOR_URL}/?fromId=${enc
 | Input                            | Output                                                |
 | -------------------------------- | ----------------------------------------------------- |
 | `skillConfigs.length === 0`      | `formatSourceDisplayName(DEFAULT_PUBLIC_SOURCE_NAME)` |
-| every `source` is `EJECT_SOURCE` | `ALL_SKILLS_EJECTED_LABEL`                            |
+| every `origin` is `EJECT_SOURCE` | `ALL_SKILLS_EJECTED_LABEL`                            |
 | any marketplace-sourced skill    | its marketplace name(s), sorted, joined with `" · "`  |
 
-The label derives from `SkillConfig.source`, not from a store field. A `Marketplace` row reading a store field no code ever writes prints the hardcoded public default instead — do not reintroduce one. Tombstoned (`excluded`) entries count toward the marketplace names, because one still records a real global install.
+The label derives from `SkillConfig.origin`, not from a store field. A `Marketplace` row reading a store field no code ever writes prints the hardcoded public default instead — do not reintroduce one. Tombstoned (`excluded`) entries count toward the marketplace names, because one still records a real global install.
 
 Helper: `formatSourceDisplayName(source: string): string` resolves a source name to its `SOURCE_DISPLAY_NAMES` label, falling back to the raw name.
 

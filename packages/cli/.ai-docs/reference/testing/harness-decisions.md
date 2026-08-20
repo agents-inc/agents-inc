@@ -108,7 +108,7 @@ public marketplace**, and any other source offers `[]`.
 Either/or, decided by whether the source shipped any. This is what lets `createE2ESource()` control
 the stack step completely: it writes one stack (`E2E_STACK_NAME`, `E2E_STACK_ID`), so the wizard
 offers one instead of the real catalogue's dozen — faster and deterministic. Its
-`withoutStacks: true` option writes no stacks file at all, and a `--source` fixture built that way
+`withoutStacks: true` option writes no stacks file at all, and a `--marketplace` fixture built that way
 gets no stack step: the wizard opens on DOMAINS, which is why `InitWizard.launchOnDomainsInProject`
 exists. The precedence table for every other kind of source override is
 [`features/built-in-catalogue.md`](../features/built-in-catalogue.md)'s.
@@ -125,8 +125,8 @@ returns. Both are worth a spec of their own, and neither needs setup.
 
 ### 1.6 `search` is a zero-flag command
 
-`static flags = {}`, and there is no inherited flag left to drop: `--source` is `init`'s alone.
-A test cannot select a source for `search` with a flag OR with `CC_SOURCE` (`SOURCE_ENV_VAR` in
+`static flags = {}`, and there is no inherited flag left to drop: `--marketplace` is `init`'s alone.
+A test cannot select a source for `search` with a flag OR with `CC_MARKETPLACE` (`SOURCE_ENV_VAR` in
 `lib/configuration/config.ts`, read for `init` only) — it records the source in the install's
 config, which is what `recordInstallSource()` in `e2e/helpers/test-utils.ts` is for. The flag inventory is
 [`commands/index.md`](../commands/index.md)'s and the resolution order is
@@ -168,11 +168,11 @@ green at `0`. [`e2e-infrastructure.md`](./e2e-infrastructure.md) owns that value
 Recorded rather than dropped, because each was believed for long enough to be designed around, and
 two of them describe a gate an agent would otherwise write tests to satisfy.
 
-| Retired claim                                                                         | Current source                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Required categories block wizard advancement; select a Framework skill before Enter" | **False.** `StepBuild`'s `useInput` calls `onContinue()` unconditionally, and `useBuildStepProps`'s `onContinue` is `if (!store.nextDomain()) store.setStep("sources")`. There is no validation on the path                                                                                                    |
-| "A styling skill must be pre-selected or the edit wizard cannot advance past build"   | **False**, same mechanism                                                                                                                                                                                                                                                                                      |
-| "The `search` interactive path ignores `--source`, so use `CC_SOURCE`"                | **False twice over.** `search` is no longer interactive and has no flags at all, so `--source` is rejected rather than ignored; and `CC_SOURCE` is read for `init` alone since CLI-466, so it steers nothing here either. A spec records the source in the install's config — `search-static.e2e.test.ts` does |
+| Retired claim                                                                         | Current source                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Required categories block wizard advancement; select a Framework skill before Enter" | **False.** `StepBuild`'s `useInput` calls `onContinue()` unconditionally, and `useBuildStepProps`'s `onContinue` is `if (!store.nextDomain()) store.setStep("sources")`. There is no validation on the path                                                                                                                                                                                                                        |
+| "A styling skill must be pre-selected or the edit wizard cannot advance past build"   | **False**, same mechanism                                                                                                                                                                                                                                                                                                                                                                                                          |
+| "The `search` interactive path ignores `--source`, so use `CC_SOURCE`"                | **False three times over.** `search` is no longer interactive and has `static flags = {}`, so any flag is rejected rather than ignored; `--source` / `CC_SOURCE` are withdrawn spellings that nothing reads under any command; and the surviving `CC_MARKETPLACE` is read for `init` alone, so it steers nothing here either. A spec records the source in the install's config — `e2e/interactive/search-static.e2e.test.ts` does |
 
 `validateBuildStep` (`lib/wizard/build-step-logic.ts`) does compute the required-category message,
 and its behaviour is tested — but **it has no production caller**, so nothing renders or enforces it.

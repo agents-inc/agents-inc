@@ -32,7 +32,7 @@ last_validated: 2026-08-18
 - **`InstallationInfo.version` removed** — the field only ever held the install mode, and the formatter prefixed it with `v` (`Installation: agents-inc vplugin`). Documented in `features/plugin-system.md`, cross-referenced from `types/core-types.md` (Installation).
 - **Shared base types** — `SkillCore`, `BaseAgentFields`, and `SkillGroupRule` are intersection bases; their derivatives are written `Base & { extras }`. See `types/core-types.md` (Shared Base Types).
 - `ProjectConfig.version` and `projectConfigLoaderSchema.version` removed. `.claude-src/config.ts` is a TypeScript module, not a versioned schema. See `types/core-types.md` (ProjectConfig) and `types/zod-schemas.md` (Recent changes).
-- Per-skill `source` field on `SkillConfig`, `SkillReference`, and resolved `Skill`. Drives plugin-reference rendering (`source !== "eject"` → `${id}:${id}`). See `types/core-types.md` (SkillConfig, SkillReference, Skill).
+- Per-skill provenance under two names: `SkillConfig.origin` on the config side, `source` on `SkillReference` and resolved `Skill` on the compile side. Drives plugin-reference rendering (`source !== "eject"` → `${id}:${id}`). See `types/core-types.md` (SkillConfig, SkillReference, Skill).
 - `PluginInstallResult.failed` is a hard-error contract; consumers must not proceed to config write. See `types/operations-types.md` (PluginInstallResult).
 
 ## Counts (verified against generated source)
@@ -46,15 +46,15 @@ last_validated: 2026-08-18
 | `AgentName` | 18      | `AGENT_NAMES`                            |
 
 **Only `AGENT_NAMES` of the five is bound to source by `scripts/check-enumeration-drift.ts`**, and
-the reason is mechanical rather than a choice about which matters. `SKILL_IDS` and `SKILL_SLUGS` are
-declared `as const satisfies readonly SkillSlug[]`, and the checker reads through `as` and
-parentheses but not through `satisfies` — a `satisfies`-wrapped declaration enumerates nothing to it
-and is a hard failure by design. `CATEGORIES` (102) and `DOMAINS` (9) are plain `as const` arrays and
-so are readable, but neither is enumerated in a table anywhere in `reference/`, and the checker binds
-a source symbol to a **section that names its members** — there is nothing here for it to judge.
+the reason is that nothing enumerates the other four — not anything about how they are declared. All
+four read fine: `CATEGORIES` (102) and `DOMAINS` (9) are plain `as const` arrays, and `SKILL_IDS` and
+`SKILL_SLUGS` carry an `as const satisfies` annotation that the checker reads through exactly as it
+reads through `as`. What none of them has is a **section that names its members** — this document
+owns their sizes, and a count is a claim about quantity rather than the membership list a row judges.
 `DOMAINS` is reproduced verbatim as a fenced code block in
-[`types/core-types.md`](./types/core-types.md), which neither of the checker's two readers
-(`code-spans`, `table-rows`) can parse.
+[`types/core-types.md`](./types/core-types.md), which none of the checker's readers can parse — each
+of the four wants either backticked constant-shaped names or a markdown table — and a table with a
+row per skill is not a thing to write so that either skill union can be bound.
 
 `AGENT_NAMES` in full — exhaustive, in source order:
 

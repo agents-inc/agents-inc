@@ -41,7 +41,7 @@ Entry points that spawn a `TerminalSession` and return the first step object.
 | `cols`            | `number`                              | Terminal default       | Terminal width                                                                                          |
 | `rows`            | `number`                              | Terminal default       | Terminal height                                                                                         |
 | `env`             | `Record<string, string \| undefined>` | `{}`                   | Extra env vars (merged with defaults)                                                                   |
-| `noSource`        | `boolean`                             | `false`                | Launch without `--source` flag (uses default source / `BUILT_IN_MATRIX`)                                |
+| `noSource`        | `boolean`                             | `false`                | Launch without the `--marketplace` flag (uses default source / `BUILT_IN_MATRIX`)                       |
 | `skipPermissions` | `boolean`                             | `false`                | Skip creating permissions file                                                                          |
 | `loadTimeout`     | `number`                              | `TIMEOUTS.WIZARD_LOAD` | Override the initial `StackStep.waitForReady` timeout                                                   |
 | `defaultTimeout`  | `number`                              | Session CI-aware       | Override the underlying `TerminalSession` default timeout                                               |
@@ -68,9 +68,13 @@ For a multi-phase test where a later wizard must see an earlier phase's global c
 | `completeWithDefaults(stackName?)` | Stack -> Domain -> Build (all domains) -> Sources -> Agents -> Confirm   | `WizardResult` |
 | `acceptStackDefaults()`            | Stack -> Domain -> Build -> "a" hotkey -> Confirm (unknown domain count) | `WizardResult` |
 
-**Instance members:** `get globalHome`, `getOutput()`, `getScreen()`, `getRawOutput()`, `waitForExit(timeout?)`, `abort()`, `abortAndDestroy(timeout?)`, `escape()`, `destroy()`.
+**Instance members:** `get globalHome`, `getOutput()`, `getScreen()`, `getRawOutput()`, `waitForExit(timeout?)`, `abort()`, `abortAndDestroy(timeout?)`, `destroy()`. There is no `escape()` — it was deleted once its last caller went, and a `wizard.escape()` in an older spec or doc is a reference to a method that no longer exists. `dashboard.escape()` is a different method on a different class and is live.
 
-`abortAndDestroy(timeout?)` is the standard read-only-scenario teardown: Ctrl+C -> `waitForExit(timeout)` -> `destroy()`, returning the exit code. `timeout` passes through verbatim, so omitting it falls back to the session default exactly as a bare `waitForExit()` does.
+`abortAndDestroy(timeout?)` is the standard read-only-scenario teardown: Ctrl+C -> `waitForExit(timeout)` -> `destroy()`, returning the exit code. `timeout` passes through verbatim, so omitting it falls back to the session default exactly as a bare `waitForExit()` does. **Prefer it over `abort()` in anything new** — one call covers the abort, the exit wait and the cleanup, and a spec that stops at `abort()` has to own the other two.
+
+`abort()` on both wizards is **`async`** and must be awaited: it writes Ctrl+C and then waits `INTERNAL_DELAYS.KEYSTROKE`, for the reason every keypress wrapper in this framework carries a delay — a bare synchronous write races the handler the frame currently on screen registered. It does NOT call `waitForWizardFooter()` first, and should not: a wizard abort is valid from any screen, including ones that paint no footer, where that wait would hang for the full `TIMEOUTS.WIZARD_LOAD` instead of settling. This is a wizard-level method and is unrelated to `BaseStep.abort()`, which is a step-level method on a `WizardLayout` screen and does take the footer wait — see the `BaseStep` tables below.
+
+**One spec calls `abort()` directly rather than `abortAndDestroy()`, deliberately.** `init-wizard-sources-added-markers.e2e.test.ts` asserts that aborting a Sources-tab preview wrote nothing to `wizard.globalHome`, and `destroy()` deletes that directory — so folding the teardown in would delete the subject before the assertions read it. Its `afterEach` destroys the wizard instead. Any other spec reaching for a bare `abort()` should say why in the same shape, or use `abortAndDestroy()`.
 
 **Cleanup:** `destroy()` tears down the PTY session and every dir in `cleanupDirs` — an internally-created source, an internally-created project dir, and a `launchInProject`-allocated global HOME. A caller-supplied `globalHome` is never in that list.
 
@@ -80,7 +84,7 @@ For a multi-phase test where a later wizard must see an earlier phase's global c
 
 The edit wizard opens directly to the `BuildStep` (no stack or domain selection), exposed as `readonly build`.
 
-`edit` carries no `--source` and reads no `CC_SOURCE` — both belong to `init` (CLI-466) — so the
+`edit` carries no `--marketplace` and reads no `CC_MARKETPLACE` — both belong to `init` — so the
 `source` option below is RECORDED in the install's config.ts by `recordInstallSource()` before the
 session spawns. An install that already names a source (anything a wizard produced) is untouched.
 
@@ -117,7 +121,7 @@ session spawns. An install that already names a source (anything a wizard produc
 | `passThrough()`       | Build (all domains) -> Sources -> Agents -> Confirm, with no mutation | `WizardResult` |
 | `completeFromBuild()` | Single-domain path via `build.saveFromBuild("edit")`                  | `WizardResult` |
 
-**Instance members:** `get globalHome`, `getOutput()`, `getRawOutput()`, `waitForExit(timeout?)`, `abort()`, `abortAndDestroy(timeout?)`, `destroy()`. Note there is no `getScreen()` on `EditWizard` (there is on `InitWizard`); reach the viewport through `wizard.build.getScreen()`.
+**Instance members:** `get globalHome`, `getOutput()`, `getRawOutput()`, `waitForExit(timeout?)`, `abort()`, `abortAndDestroy(timeout?)`, `destroy()`. `abort()` and `abortAndDestroy()` are identical to `InitWizard`'s, including `abort()` being `async` and carrying the keystroke delay — see the note under `InitWizard` above. Note there is no `getScreen()` on `EditWizard` (there is on `InitWizard`); reach the current frame through `wizard.build.getScreen()`, which returns scrollback plus viewport rather than the viewport alone.
 
 ---
 
@@ -172,7 +176,6 @@ Each step class models the user actions available on one wizard screen. Methods 
 | `toggleLabels()`                          | `void`              | Press "d" to toggle compatibility labels                                                                                                                    |
 | `pressFilterIncompatibleHotkey()`         | `void`              | Press "f", which the build step binds to nothing — for specs that assert the withdrawn hotkey is inert                                                      |
 | `toggleInfoPanel()`                       | `void`              | Press "i" — renders a `SkillAgentSummary` overlay                                                                                                           |
-| `openSearch()`                            | `SearchModal`       | Press "/" to open search                                                                                                                                    |
 | `goBack()`                                | `void`              | Press Escape                                                                                                                                                |
 | `getScopeBadgesForSkill(label)`           | `Array<"P" \| "G">` | Read-only: rendered scope badges for a skill — `[]`, `["P"]`, `["G"]`, `["P","G"]`, or `["G","P"]`                                                          |
 | `getExclusiveCategorySelectedCount(name)` | `number`            | Read-only: the `(N of M)` counter an exclusive category header renders. Under `NO_COLOR` this is the ONLY text-observable signal of in-grid selected state. |
@@ -201,7 +204,7 @@ The algorithm: parse the current viewport into categories -> Tab-walk, re-readin
 
 The one residual open-loop spot is a single-category grid with multiple cells: Tab is a guarded no-op there, so the walk cannot reset the column, and it falls back to a tracked column hint using the grid's real cyclic-wrap arithmetic. Single-category domains in the standard E2E source are all single-cell, so the fallback is effectively unreachable.
 
-See `.ai-docs/agent-findings/2026-07-29-e2e-grid-focus-unobservable-under-no-color-closed-loop-tab-walk.md`.
+**Horizontal navigation skips nothing, and that is what makes the RIGHT half safe.** `CategoryGrid`'s `findValidCol` is a plain cyclic `wrapOptionIndex` over the focused row's own `options` — the same array the row renders — so arrow-RIGHT visits every painted cell, incompatible ones included, and the column index read off the screen is the column index the keystrokes address. The screen parse and the navigation cannot disagree. A navigator written on the opposite assumption drifts from the screen at the first row carrying such a cell.
 
 ### SourcesStep
 
@@ -253,19 +256,6 @@ Constructed with a `WizardType` (`"init" | "edit"`), which decides which success
 | `goBack()`                              | `void`         | Press Escape                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `goBackToAgents()`                      | `AgentsStep`   | Press Escape, wait for agents step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
-### SearchModal
-
-**File:** `e2e/pages/steps/search-modal.ts`
-
-An overlay opened from `BuildStep`. Known to be buggy -- tests for search should use `it.fails()`.
-
-| Method                | Returns  | Action                        |
-| --------------------- | -------- | ----------------------------- |
-| `type(query)`         | `void`   | Type characters one at a time |
-| `selectResult(label)` | `void`   | Scroll to result, press Enter |
-| `close()`             | `void`   | Press Escape                  |
-| `getResults()`        | `string` | Get current screen content    |
-
 ---
 
 ## BaseStep Internals
@@ -288,7 +278,7 @@ All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot 
 | `pressCtrlC()`                                | Ctrl+C + KEYSTROKE delay                                                                                                                                                                                                                                                                                                                                                |
 | `waitForStep(text, t?)`                       | Wait for step identification text anywhere in full output                                                                                                                                                                                                                                                                                                               |
 | `waitForStepAfter(text, cursor, t?)`          | Cursor-anchored variant — waits for `text` in RAW output after `cursor`. Use when a prior step left identical scrollback text (e.g. the "API" / "Methodology" tab labels every build-step frame renders).                                                                                                                                                               |
-| `waitForWizardFooter(t?)`                     | Wait for the wizard footer sentinel `"select"`. `WizardLayout` screens ONLY.                                                                                                                                                                                                                                                                                            |
+| `waitForWizardFooter(t?)`                     | Wait for the wizard footer sentinel `"select"`, then assert the painted frame is wholly on screen (see below). `WizardLayout` screens ONLY.                                                                                                                                                                                                                             |
 | `waitForWizardFooterAfter(cursor, t?)`        | Cursor-anchored footer wait. Required at step transitions: the footer is present in EVERY wizard step, so the non-anchored variant returns instantly on scrollback residue.                                                                                                                                                                                             |
 | `getRawCursor()`                              | Raw-output offset snapshot, for pairing with the `*After` waits                                                                                                                                                                                                                                                                                                         |
 | `waitForItemVisible(label, maxAttempts=30)`   | Scroll down until label is on screen (VISIBILITY only — does not confirm cursor position)                                                                                                                                                                                                                                                                               |
@@ -296,12 +286,33 @@ All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot 
 | `pressEnterAndWaitFor(nextStepText)`          | Footer wait, then closed-loop `retryEnterUntil` — snapshot cursor, press Enter, poll for `nextStepText` after cursor, re-press up to `INTERNAL_RETRIES.MAX_ATTEMPTS` (5). **The sentinel must be unique to the next step's first frame**; text also present in the current footer (e.g. `"select"`) returns instantly on the Enter's own repaint and defeats the retry. |
 | `delay(ms)`                                   | Internal delay (wraps `test-utils.delay`)                                                                                                                                                                                                                                                                                                                               |
 
+### `waitForWizardFooter()` also asserts the frame is wholly on screen
+
+After the sentinel settles it calls the private `assertWizardScreenIsWhollyVisible()`, which throws
+when `TerminalSession.linesAboveViewport()` is non-empty — one entry per buffer row driven above the
+top of the viewport. **Every interactive spec inherits this at every keypress**, because the keypress
+rule already routes every press through this one method: it is the only place in the suite that knows
+a wizard frame is painted, so the obligation hangs off it rather than off one spec.
+
+Zero is the floor on wizard screens and nowhere else. `WizardLayout` sizes its root box to the
+terminal height, and a load that opens a wizard prints nothing on the way there (`init` and `edit`
+pass `captureStartupMessages`, and the buffered lines are painted as a band inside the frame) — so a
+correct frame fills the viewport with nothing above it. A non-wizard screen is entitled to scroll,
+which is one more reason this rule lives on `BaseStep` alone.
+
+**Do not write a per-spec version of this check, and do not weaken it to a baseline comparison.**
+Recording the viewport at the first frame and demanding it not GROW is measured to be blind to the
+defect worth catching: a layout that overflows by a constant overflows the FIRST frame too, so the
+baseline absorbs it. What the check cannot see is a frame that overflowed and has already been
+replaced by one that fits — read it while the frame is on screen. Mechanics:
+[reference/testing/e2e-infrastructure.md](../../reference/testing/e2e-infrastructure.md).
+
 **Public methods** available to tests via any step:
 
 | Method                               | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `getOutput()`                        | xterm's PROCESSED buffer — current screen plus genuine scrollback. **Not a frame log** (Ink repaints overwrite in place).                                                                                                                                                                                                                                                                                                                 |
-| `getScreen()`                        | **Scrollback + viewport — NOT viewport-only**, despite the name and the doc comment on `TerminalSession.getScreen()`. It reads absolute buffer lines `0 .. viewportY + rows`. Safe for POSITIVE assertions about current content; never use it for `not.toContain` on text the session once legitimately drew. See [assertions.md § Negative Assertions](./assertions.md).                                                                |
+| `getScreen()`                        | **Scrollback + viewport — NOT viewport-only**, despite the name. It reads absolute buffer lines `0 .. viewportY + rows`. Safe for POSITIVE assertions about current content; never use it for `not.toContain` on text the session once legitimately drew. See [assertions.md § Negative Assertions](./assertions.md).                                                                                                                     |
 | `resizeBelowMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForTextAfter(STEP_TEXT.RESIZE_PROMPT, cursor)`. Drives the `WizardLayout` mid-session size guard. Use `TERMINAL_SIZE.BELOW_MINIMUM`; never LAUNCH a session at that geometry (the pre-Ink startup gate blocks and the session hangs to timeout).                                                                                                                                    |
 | `resizeAboveMinimum(cols, rows)`     | Snapshot raw cursor → resize PTY **and** xterm → `waitForWizardFooterAfter(cursor)`. Anchored on the footer emitted AFTER the resize, not the copy already in scrollback from before the shrink. Selections survive the round trip.                                                                                                                                                                                                       |
 | `getSummaryDiffEntries(displayName)` | Parses the rendered `SkillAgentSummary` panel (confirm step or build-step info overlay — same component) into `{ prefix, scope }[]`, where prefix is `+` new / `-` removed / `~` mode-changed / `•` unchanged and scope is `Project` or `Global`. Splits on the `│` column divider and tracks scope PER COLUMN, because Skills and Agents transition to Global at different vertical positions. Pass a display name unique to one column. |
@@ -320,18 +331,48 @@ Wraps `TerminalSession` with auto-retrying text matchers. Used internally by ste
 
 All `waitFor*` methods delegate to the shared `pollUntil` skeleton (50ms interval, predicate evaluated BEFORE the first delay) and press no keys. Every one takes an explicit `timeoutMs` — there is no built-in default at this layer.
 
-| Method                                        | Surface                       | Purpose                                                                 |
-| --------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------- |
-| `waitForText(text, timeoutMs)`                | full output (xterm buffer)    | Poll until text appears anywhere                                        |
-| `waitForTextAfter(text, cursor, timeoutMs)`   | raw output sliced at `cursor` | Poll append-only raw output past a `getRawCursor()` snapshot            |
-| `waitForRawText(text, timeoutMs)`             | raw PTY output                | Poll raw output (bypasses xterm buffer limits and in-place repaints)    |
-| `waitForEither(textA, textB, timeoutMs)`      | full output                   | Poll until either text appears                                          |
-| `waitForWizardFooter(timeoutMs)`              | full output                   | Wait for the "select" wizard footer text. `WizardLayout` only.          |
-| `waitForWizardFooterAfter(cursor, timeoutMs)` | raw output after `cursor`     | Cursor-anchored footer wait. `WizardLayout` only.                       |
-| `getRawCursor()`                              | —                             | Current raw-output length, for pairing with the `*After` waits          |
-| `getScreen()`                                 | —                             | Current visible viewport                                                |
-| `getFullOutput()`                             | —                             | Processed buffer: screen + genuine scrollback                           |
-| `getRawOutput()`                              | —                             | Raw PTY output with ANSI stripped — the only frame-accumulating surface |
+| Method                                        | Surface                       | Purpose                                                                     |
+| --------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------- |
+| `waitForText(text, timeoutMs)`                | full output (xterm buffer)    | Poll until text appears anywhere                                            |
+| `waitForTextAfter(text, cursor, timeoutMs)`   | raw output sliced at `cursor` | Poll append-only raw output past a `getRawCursor()` snapshot                |
+| `waitForRawText(text, timeoutMs)`             | raw PTY output                | Poll raw output (bypasses xterm buffer limits and in-place repaints)        |
+| `waitForEither(textA, textB, timeoutMs)`      | full output                   | Poll until either text appears                                              |
+| `waitForWizardFooter(timeoutMs)`              | full output                   | Wait for the "select" wizard footer text. `WizardLayout` only.              |
+| `waitForWizardFooterAfter(cursor, timeoutMs)` | raw output after `cursor`     | Cursor-anchored footer wait. `WizardLayout` only.                           |
+| `getRawCursor()`                              | —                             | Current raw-output length, for pairing with the `*After` waits              |
+| `getScreen()`                                 | —                             | **Scrollback + viewport, NOT viewport-only** — see the `BaseStep` row above |
+| `getFullOutput()`                             | —                             | Processed buffer: screen + genuine scrollback                               |
+| `getRawOutput()`                              | —                             | Raw PTY output with ANSI stripped — the only frame-accumulating surface     |
+
+### An unanchored `waitForText` sentinel must be a string only the awaited screen can paint
+
+`waitForText` reads the whole buffer, so it settles on any frame the session has drawn — including
+one drawn by the step BEFORE the one you are waiting for. **`STEP_TEXT` members are step LABELS, not
+proofs of step identity**, and several are substrings of another step's body copy. The live one:
+`STEP_TEXT.DOMAINS` is `"Select domains"`, and the STACK step paints it too — `SCRATCH_DESCRIPTION`
+in `src/cli/components/wizard/stack-selection.tsx` is `"Select domains and skills manually"`, the
+body copy of its `SCRATCH_LABEL` row. A wait for `STEP_TEXT.DOMAINS` therefore settles on a frame of
+the stack step.
+
+```
+grep -rn 'Select domains' src/cli/components src/cli/consts.ts --include='*.tsx' --include='*.ts' | grep -v '\.test\.'
+```
+
+Two hits, one of them `stack-selection.tsx`. Run the same grep for any string you are about to make
+a sentinel; more than one painting file means it is not one.
+
+**Most waits survive the collision by accident of anchoring, which is why it is worth stating
+rather than assuming.** `pressEnterAndWaitFor`, and everything built on it, is cursor-anchored on
+append-only raw output, so the earlier step's frame sits before the cursor and cannot match. The
+collision bites only a wait with no cursor to anchor to — a launcher waiting for the wizard's FIRST
+frame is the whole of that class. `InitWizard.launchOnDomainsInProject` is the live one, and it
+carries the note at the wait.
+
+Where no unique string exists, the sentinel is product copy and changing it to suit a test is the
+wrong direction: document the collision at the wait and keep the discriminating assertion in the
+spec. That is what turned this into a good failure rather than a silent one — the launcher returned
+on the stack step's frame and the spec failed one line later on `not.toContain("Choose a stack")`.
+A spec that only drove the wizard onward from there would have driven the wrong step.
 
 ---
 
@@ -367,9 +408,9 @@ Exposes `readonly projectDir`. **The dashboard paints no wizard footer**, so its
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `waitForText(text, timeoutMs)` | Wait for text to appear                                                                                                                                                                                                                        |
 | `getOutput()`                  | Full output                                                                                                                                                                                                                                    |
-| `getScreen()`                  | Visible screen                                                                                                                                                                                                                                 |
-| `escape()`                     | Press Escape (synchronous)                                                                                                                                                                                                                     |
-| `ctrlC()`                      | Press Ctrl+C (synchronous)                                                                                                                                                                                                                     |
+| `getScreen()`                  | **Scrollback + viewport, NOT viewport-only** — see the `BaseStep` row above                                                                                                                                                                    |
+| `escape()`                     | `async` — Escape + `INTERNAL_DELAYS.KEYSTROKE`. **Await it.** It does not wait on a sentinel first (the dashboard paints no wizard footer); the delay is what stops a bare synchronous write racing the handler the current frame registered.  |
+| `ctrlC()`                      | `async` — Ctrl+C + `INTERNAL_DELAYS.KEYSTROKE`, same reasoning as `escape()`                                                                                                                                                                   |
 | `arrowDown()`                  | Navigate down (with `INTERNAL_DELAYS.KEYSTROKE`)                                                                                                                                                                                               |
 | `arrowUp()`                    | Navigate up (with `INTERNAL_DELAYS.KEYSTROKE`)                                                                                                                                                                                                 |
 | `selectEdit()`                 | Enter on the default-focused "Edit" option via the shared closed-loop `retryEnterUntil` (waits `BUILD_FOOTER` after cursor, then the footer, then `BUILD` after cursor); launches the edit wizard in the SAME PTY and returns its `BuildStep`. |
@@ -415,7 +456,7 @@ This is an architectural boundary -- it uses index-based navigation methods (`ar
 ### Adding a New Wizard Method
 
 1. Add the method to the step class (e.g., `BuildStep.toggleLabel()`)
-2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForWizardFooter`, etc.). **Never call `pressKey` / `pressSpace` / `pressEnter` / `pressEscape` / `pressArrowX` / `session.*` without a preceding `await this.waitForWizardFooter()` in the same method** — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute; the race sits upstream of the keystroke. The wait is a one-string match on the footer text `"select"` that only `WizardLayout` paints, so it is valid on `BaseStep` subclasses only — a non-wizard page object (e.g. `DashboardSession`) must wait on its own screen-specific sentinel instead, or it hangs for the full timeout. See `.ai-docs/agent-findings/2026-04-21-e2e-build-step-keypress-missing-stable-render.md`.
+2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForWizardFooter`, etc.). **Never call `pressKey` / `pressSpace` / `pressEnter` / `pressEscape` / `pressArrowX` / `session.*` without a preceding `await this.waitForWizardFooter()` in the same method** — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute; the race sits upstream of the keystroke. The wait is a one-string match on the footer text `"select"` that only `WizardLayout` paints, so it is valid on `BaseStep` subclasses only — a non-wizard page object (e.g. `DashboardSession`) must wait on its own screen-specific sentinel instead, or it hangs for the full timeout. The rule reads absolutely because its qualified form is what let it drift: while it said "if it's the first interaction after a launch or step transition", seven `BuildStep` methods sat unguarded, two of them holding a wait AFTER the press, where it cannot close a race that has already been lost.
 3. If the method transitions to a new step, return the new step object
 
 **Self-check before committing a new step method:** grep the method body for `this.session.` and `this.press*`. Every hit MUST be immediately preceded by `await this.waitForWizardFooter()` in the same method. A `waitForWizardFooter` elsewhere in the method (after the press, in a loop body) does not count — the wait must sit upstream of every PTY write. Helpers that loop over keypresses (arrow-down walks, per-character typing) need the wait inside the loop body before each press, or refactored to walk via a single `waitForItemVisible` + keypress call. Coverage audit: `.ai-docs/reference/testing/e2e-infrastructure.md` § "Page-Object Keypress Rule" tracks the per-method state of every step file.

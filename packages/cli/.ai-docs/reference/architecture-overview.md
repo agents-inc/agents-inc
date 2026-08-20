@@ -15,8 +15,8 @@ keywords:
     writer-selection,
   ]
 related:
-  - reference/architecture/dependency-graph.md
-  - reference/architecture/boundary-map.md
+  - reference/dependency-graph.md
+  - reference/boundary-map.md
   - reference/features/configuration.md
   - reference/features/operations-layer.md
   - reference/config/config-writer.md
@@ -157,7 +157,7 @@ src/cli/
     schema-validator.ts     # Zod error formatting (formatZodErrors, formatZodIssue)
     schemas.ts              # ALL Zod schemas + validateSkillMetadata(), splitMetadataValidationIssues(), validateNestingDepth()
     source-validator.ts     # Source directory validation (incl. checkDirNameMatchesSkillId — directory name vs SKILL.md machine id)
-    validate-kebab-name.ts  # Kebab-case entity name validation (validateKebabCaseName)
+    validate-kebab-name.ts  # Kebab-case entity name validation
     validation-result.ts    # ValidationResult factories (validResult, invalidResult, mergeValidationResults)
     versioning.ts           # Content hashing for versioning
     __tests__/              # Integration + journey tests + shared factories / helpers / fixtures / mock-data
@@ -203,6 +203,8 @@ oclif init hook (hooks/init.ts)
 Command.run() (commands/init.tsx)
   -> loadSource() operation (wraps loadSkillsMatrixFromSource()) -> SourceLoadResult (matrix + sourceConfig)
   -> runWizardSession({ hydrate, props }) (components/wizard/run-wizard-session.tsx)
+       -> hydrateIntoStartupBand() -- hydrates the store inside a logger buffering
+          window, appending what hydration warned to what the load said
        -> render(<Wizard version logo installedSkillIds initialAgents startupMessages />)
   |
   v
@@ -244,7 +246,7 @@ Every command extends `BaseCommand` in `src/cli/base-command.ts`.
 
 ```
 BaseCommand provides:
-  - no flags: it declares no baseFlags. --source belongs to `init` alone
+  - no flags: it declares no baseFlags. --marketplace belongs to `init` alone
     (owner ruling 2026-08-09) and is declared in commands/init.tsx
   - init() lifecycle -> super.init() + ensureTerminalSize()
       (blocks until the terminal meets MIN_TERMINAL_SIZE, 80x20 in consts.ts.
@@ -263,13 +265,13 @@ Commands are discovered via oclif pattern strategy from `dist/commands/`.
 
 File: `src/cli/hooks/init.ts`
 
-Runs before every command. For `init` alone it extracts `--source` / `-s` from raw argv (before oclif parses); it then calls `resolveSource()` with the caller identity (`"init"` for the init command, `"stored"` for every other) and attaches `ResolvedConfig` to the oclif config object.
+Runs before every command. For `init` alone it extracts `--marketplace` / `-m` from raw argv (before oclif parses); it then calls `resolveSource()` with the caller identity (`"init"` for the init command, `"stored"` for every other) and attaches `ResolvedConfig` to the oclif config object.
 
 ### 3. Source Resolution Precedence
 
 ```
---source flag > CC_SOURCE env var > .claude-src/config.ts (project) > ~/.claude-src/config.ts (global) > default (github:agents-inc/skills)
-      \________________________/
+--marketplace flag > CC_MARKETPLACE env var > .claude-src/config.ts (project) > ~/.claude-src/config.ts (global) > default (github:agents-inc/skills)
+\_________________________________________/
         init only — the flag is declared by `init` and nothing else, and the env
         var is read only for `caller: "init"`. Every later command starts at the
         project config.
@@ -407,9 +409,9 @@ When a project needs to override (disable) a globally-installed skill or agent w
 
 The authoritative plugin-reference format is **per-skill**, not per-agent.
 
-- `SkillConfig.source: string` in `src/cli/types/config.ts` is the source of truth: `"eject"` means local filesystem; any other value is a marketplace name (e.g., `"agents-inc"`).
-- Compiled agent skill refs are derived per-skill by `derivePluginRef()` (an internal function in `src/cli/lib/compiler.ts`) as `${id}:${id}`, emitted only when the skill's own `source` is a marketplace name (not `undefined` and not `"eject"`). The per-skill `source` gates whether a plugin ref is emitted — it is not part of the ref string. There is no whole-agent `installMode`.
-- Mixed installs are expressed by different `source` values across the skills of a single agent.
+- `SkillConfig.origin: string` in `src/cli/types/config.ts` is the source of truth: `"eject"` means local filesystem; any other value is a marketplace name (e.g., `"agents-inc"`). The compile side spells the same value `SkillReference.source` / `Skill.source` — `buildCompileAgents` threads one onto the other, so a grep for either name misses half the sites.
+- Compiled agent skill refs are derived per-skill by `pluginRefFor()` (a module-private function in `src/cli/lib/compiler.ts`) as `${id}:${id}`, emitted only when the skill's own `Skill.source` is a marketplace name (not `undefined` and not `"eject"`). The per-skill value gates whether a plugin ref is emitted — it is not part of the ref string. There is no whole-agent `installMode`.
+- Mixed installs are expressed by different `Skill.source` values across the skills of a single agent.
 - Plugin install shell commands still use the registration form `{skillId}@{marketplace}`; the compiled-agent body uses the `${id}:${id}` pluginRef form.
 - Hard-error contract: if `installPluginSkills` returns non-empty `failed`, the command MUST hard-error before writing config (`init.tsx::installPluginsStep`, `edit.tsx::applyPluginChanges`) — no silent plugin→eject fallback.
 
@@ -468,7 +470,7 @@ Two production call sites write a project `config.ts` with the global config inl
 
 **Contracts:**
 
-- `isExclusiveCategory()` reads `exclusive` from the **merged matrix** passed in (not `defaultCategories`), so a source repo's category overrides are honoured. An **undeclared** flag is treated as non-exclusive — deliberately unlike the wizard renderer's `cat.exclusive ?? true` default, because a rule that masks persisted entries must only fire on a flag the data actually carries.
+- `isExclusiveCategory()` reads `exclusive` from the **merged matrix** passed in (not `defaultCategories`), so a source repo's category overrides are honoured. A category the matrix does not carry is treated as non-exclusive — deliberately unlike the wizard toggle handler's `matrix.categories[categoryId]?.exclusive ?? true` default in `components/hooks/use-build-step-props.ts`, because a rule that masks persisted entries must only fire on a category the data actually carries. Both read an absent **category**, not an absent **field**: `exclusive` is a non-optional `boolean` at every producer and at both parse boundaries.
 - `categoryOfSkill()` returns `undefined` for a skill absent from the matrix or sitting in the `local` pseudo-category — a custom skill never throws and never participates in category rules.
 - Masking is **project-local**: the global config passed in is read, never rewritten. A tombstone never lands in `~/.claude-src/config.ts`.
 - Idempotent: a skill the project already tombstones is skipped.

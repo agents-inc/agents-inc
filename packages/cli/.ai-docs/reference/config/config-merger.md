@@ -19,7 +19,7 @@ keywords:
     cross-scope-reconciliation,
   ]
 related:
-  - reference/config/configuration.md
+  - reference/features/configuration.md
   - reference/config/config-writer.md
   - reference/config/scope-split.md
   - reference/concepts/tombstone-pattern.md
@@ -186,7 +186,7 @@ Invoked from `writeScopedFromWizard`'s project branch after `splitConfigByScope(
 
 **Excluded entries are ignored on the incoming side.** Tombstones are project-local state; they live in the PROJECT config via `splitConfigByScope`, not in the global one. The global-scope-with-excluded pattern (a project suppressing a shared global item) is expressed by the project config's tombstone row, not by rewriting the global config.
 
-**`changed` is `true` iff** at least one new skill, new agent, or appended stack triple landed, the deduplicated `selectedDomains` union differs from `existing.selectedDomains` (compared with remeda's `isDeepEqual`), OR either of `marketplaceName` / `marketplace` was newly filled — the two are separate terms, `mergedMarketplaceName !== existing.marketplaceName` and `mergedMarketplace !== existing.marketplace`. The `marketplace`/`source` term is load-bearing: `needsGlobalWrite` is gated on `changed`, so a run whose only delta is a now-known marketplace must still write (otherwise the field would be dropped again). The caller uses this flag to decide whether to rewrite `~/.claude-src/config.ts` and whether to propagate to other registered projects.
+**`changed` is `true` iff** at least one new skill, new agent, or appended stack triple landed, the deduplicated `selectedDomains` union differs from `existing.selectedDomains` (compared with remeda's `isDeepEqual`), OR either of `marketplaceName` / `marketplace` was newly filled — the two are separate terms, `mergedMarketplaceName !== existing.marketplaceName` and `mergedMarketplace !== existing.marketplace`. The caller uses this flag to decide whether to rewrite `~/.claude-src/config.ts` and whether to propagate to other registered projects.
 
 Rationale: the April-2026 agent-merge-key-mismatch and per-agent-update-loss findings, plus `2026-07-20-config-merge-functions-disagree-on-source-identity.md` (source-identity fill-only rule).
 

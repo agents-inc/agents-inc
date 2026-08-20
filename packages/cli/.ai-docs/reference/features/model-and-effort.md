@@ -341,7 +341,7 @@ export const modelNameSchema = z.enum(MODEL_NAMES) as z.ZodType<ModelName>;
 export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 ```
 
-`effortLevelSchema` has **four** consumers, all `.optional()`:
+`effortLevelSchema` has **four** consumers, all `.exactOptional()`:
 
 | Consumer                           | Validates                                       |
 | ---------------------------------- | ----------------------------------------------- |
@@ -350,11 +350,14 @@ export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 | `agentYamlGenerationSchema`        | strict metadata.yaml output (`.strict()`)       |
 | `agentFrontmatterValidationSchema` | strict compiled-agent frontmatter (`.strict()`) |
 
-`modelNameSchema` covers exactly those four.
+`modelNameSchema` covers those four **and two more**: `skillFrontmatterLoaderSchema` and
+`skillFrontmatterValidationSchema`, the lenient and strict readers of a `SKILL.md` frontmatter
+block, where a **skill** may declare its own model. Six call sites against `effortLevelSchema`'s
+four — `effort` is an agent-only field and `model` is not, which is the one place the two
+otherwise-parallel bridges diverge.
 
-> `types/zod-schemas.md`'s Bridge Schemas table lists four bridge schemas and omits
-> `effortLevelSchema`, while declaring its inventory exhaustive. See [Known drift in other
-> docs](#known-drift-in-other-docs).
+`types/zod-schemas.md`'s Bridge Schemas table carries all five bridges including `effortLevelSchema`,
+and states the same four-consumer count as the table above.
 
 ### Generated JSON Schemas
 
@@ -363,8 +366,9 @@ five-member `model` enum and a five-member `effort` enum. **They are generated, 
 `scripts/generate-json-schemas.ts` emits them from `agentYamlGenerationSchema` and
 `agentFrontmatterValidationSchema` respectively, so they inherit the const arrays transitively.
 
-`npm run generate:schemas:check` runs the generator and then `git diff --exit-code src/schemas/`. A
-union edit that does not regenerate fails that gate.
+`npm run generate:schemas:check` emits the ten schemas into memory and compares them against the
+bytes in `src/schemas/`, naming any that differ. A union edit that does not regenerate fails that
+gate — and the gate is runnable by whoever made the edit, since it reads no git state.
 
 ### Generated `config-types.ts`
 

@@ -162,7 +162,8 @@ Per-function inventory for `skill-fetcher.ts`, `skill-metadata.ts`, `skill-copie
 7. Combined Pipeline
    loadSkillsMatrixFromSource() (source-loader.ts)
    -> resolveBaseResult():
-      - Default source (and not devMode): uses pre-computed BUILT_IN_MATRIX.
+      - Default source (and not devMode): copyOfBuiltInMatrix() — a per-load COPY of
+        the pre-computed BUILT_IN_MATRIX, never the constant itself (see below).
         Still calls fetchFromSource() to resolve sourcePath UNLESS matrixOnly is
         set, in which case the fetch is skipped and sourcePath is "" (see
         Source Load Options below)
@@ -176,6 +177,18 @@ Per-function inventory for `skill-fetcher.ts`, `skill-metadata.ts`, `skill-copie
    -> Calls checkMatrixHealth(), then initializeMatrix() to set the singleton
    -> Returns SourceLoadResult
 ```
+
+**The default-source branch hands back a copy, and the copy is the whole point.**
+`copyOfBuiltInMatrix` in `src/cli/lib/loading/source-loader.ts` rebuilds `skills`, `categories`,
+`suggestedStacks` and BOTH records of `slugMap` (`slugToId` and `idToSlug`) fresh on every load,
+because the local-skill merge that runs next writes into them: it assigns into `matrix.skills` and
+calls `claimSlug(matrix.slugMap, slug, id)`. `BUILT_IN_MATRIX` is a module constant, so a shared
+reference would leave one project's local skill in the catalogue every later load reads.
+
+**A new mutable collection added to `MergedSkillsMatrix` must be copied in that helper in the same
+change.** The `...BUILT_IN_MATRIX` spread carries anything not named there by reference, and nothing
+fails at the point of the omission — the first load looks correct, and only a second load in the
+same process sees the first one's writes.
 
 ## Matrix Provider (`src/cli/lib/matrix/matrix-provider.ts`)
 
@@ -193,34 +206,32 @@ Singleton module holding the current `MergedSkillsMatrix` instance. Starts as `B
 - `getCategoryDomain(category: string): Domain | undefined` - Look up category's domain
 - `hasSkill(id: string): boolean` - Check if a skill ID exists in the matrix
 - `findStack(stackId: string): ResolvedStack | undefined` - Optional stack lookup by ID
+- `byCategoryDeclarationOrder(): (a: string, b: string) => number` - A comparator putting categories in the order the matrix declares them; an undeclared category sorts after every declared one and keeps the order it arrived in. Built per call, not memoised, because `initializeMatrix` replaces the matrix after the local-skill merge. This is the single definition of that rule: `inCanonicalCategoryOrder` (`config-generator.ts`) orders a stack it BUILDS with it, and `canonicalizeStackOrder` (`config-writer.ts`) orders a stack it merely EMITS with it, so a builder and the writer cannot disagree about the key order that reaches `config.ts` — see [config/config-writer.md](../config/config-writer.md#stack-emission--the-key-order-is-the-rosters-not-the-producers)
 
-**Barrel re-exports** (from `matrix/index.ts`): `matrix`, `initializeMatrix`, `getSkillById`, `getSkillBySlug`, `findStack`. Note: `getSkillDisplayName`, `allSkills`, `getCustomSkillIds`, `getCategoryDomain`, `hasSkill` are exported from `matrix-provider.ts` but NOT re-exported from the barrel. Import them directly from `matrix-provider.ts`.
+**Barrel re-exports** (from `matrix/index.ts`): `matrix`, `initializeMatrix`, `getSkillById`, `getSkillBySlug`, `findStack`. Note: `getSkillDisplayName`, `allSkills`, `getCustomSkillIds`, `getCategoryDomain`, `hasSkill`, `byCategoryDeclarationOrder` are exported from `matrix-provider.ts` but NOT re-exported from the barrel. Import them directly from `matrix-provider.ts`.
 
 ## Matrix Loader (`src/cli/lib/matrix/matrix-loader.ts`)
 
 Loads category/rule config files and extracts per-skill metadata from a skills directory.
 
-**Exported functions** (all four re-exported from `matrix/index.ts`):
+**Exported functions** (all three re-exported from `matrix/index.ts`):
 
 - `loadSkillCategories(configPath)` - Load + Zod-validate a `skill-categories.ts` file into a `CategoryMap` (throws when the file cannot be loaded or fails validation)
 - `loadSkillRules(configPath)` - Load + Zod-validate a `skill-rules.ts` file into a `SkillRulesConfig`. When the loaded module has no `relationships` key at all, the whole object is replaced with one carrying four empty lists (`conflicts`, `discourages`, `requires`, `alternatives`) — the four the type declares, none of them optional
 - `extractAllSkills(skillsDir)` - Glob `**/metadata.yaml` and build `ExtractedSkillMetadata[]` (see Data Flow step 4)
-- `loadAndMergeSkillsMatrix(categoriesPath, rulesPath, projectRoot)` - **Dead. Do not call it, and do not add the first caller.** It loads categories + rules from the given config paths, extracts skills from `{projectRoot}/src/skills` (`DIRS.skills`) — all three in parallel — and returns a merged `MergedSkillsMatrix` via `mergeMatrixWithSkills()`.
 
-**`loadAndMergeSkillsMatrix` has zero callers** — nothing in `src/`, `scripts/`, `e2e/` or the test
-suite invokes it. Its only reference outside its own definition is the re-export in
-`matrix/index.ts`, which is what keeps it visible to autocomplete and is the whole reason it is
-documented here rather than dropped: a reader will find the symbol whether or not this page names
-it, and this paragraph is the only place that says not to use it.
+The module loads; it does not compose. Merging categories with skills is
+`mergeMatrixWithSkills` (`matrix/skill-resolution.ts`), and it has exactly two production call
+sites — `loadAndMergeFromBasePath` (`loading/source-loader.ts`) and `renderMatrix`
+(`scripts/generate-source-types.ts`). The grep returns those two, the declaration, and two JSDoc
+mentions in `src/cli/types/matrix.ts`:
 
-It is documented as dead rather than deleted from the page for a second reason — it is the sole
-surviving route to a behaviour the page describes elsewhere. Unlike `loadAndMergeFromBasePath` in
-`source-loader.ts`, it does **not** merge `defaultCategories` under the loaded file's categories, so
-every category the config file omits auto-synthesizes; it is clause (b) of the reachability argument
-in Known Limitations #1, and dropping it from here would leave that limitation naming a function no
-document explains.
+```
+grep -rn 'mergeMatrixWithSkills(' src scripts --include='*.ts' --exclude='*.test.ts' --exclude-dir=__tests__
+```
 
-**Reach for one of these instead, and which depends on who is asking:**
+**Do not assemble a matrix out of these three loaders by hand. Reach for one of the two composed
+entry points, and which depends on who is asking:**
 
 | You are                                                                    | Call                                                                 | Because                                                                                                                                                                                        |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -258,7 +269,7 @@ export type SourceLoadOptions = {
 
 | Option             | Default         | Effect                                                                                                                                                                     |
 | ------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `caller`           | `"stored"`      | `"init"` unlocks the install-time rungs of `resolveSource()` (the `CC_SOURCE` env var); every other caller starts at the project config                                    |
+| `caller`           | `"stored"`      | `"init"` unlocks the install-time rungs of `resolveSource()` (the `CC_MARKETPLACE` env var); every other caller starts at the project config                               |
 | `sourceFlag`       | `undefined`     | Explicit source, passed to `resolveSource()` — only `init` gets one from a flag                                                                                            |
 | `projectDir`       | `process.cwd()` | Directory used for config resolution, local-skill discovery, and extra-source resolution                                                                                   |
 | `devMode`          | `false`         | Forces the local-load branch even for the default source (skips `BUILT_IN_MATRIX`)                                                                                         |
@@ -268,7 +279,7 @@ export type SourceLoadOptions = {
 ### `matrixOnly`
 
 Only meaningful on the `source === DEFAULT_SOURCE && !devMode` branch of `resolveBaseResult()`,
-where the matrix is the pre-computed `BUILT_IN_MATRIX` and the fetch exists solely to produce a
+where the matrix is a copy of the pre-computed `BUILT_IN_MATRIX` and the fetch exists solely to produce a
 `sourcePath` for readers of the skill files on disk (eject-mode copy). Callers that need the matrix
 but never read skill files set it; the fetch — a network clone on a cold cache — is then skipped
 entirely. Sources that must be read from disk to build the matrix ignore the flag.
@@ -388,6 +399,55 @@ paid for. It also removes the question of what the prefix derives from, since no
 
 **Separator `-`, and it stays filesystem-legal** — `:` and `/` are out, because the id is a directory
 name and has to work on Windows.
+
+### A skill's domain is its CATEGORY's domain, never its id prefix
+
+Ids read as `<domain>-<category>-<slug>` and almost always are, which is what makes deriving a
+domain from the prefix look safe. It is not: `domain` is a stated field on the category, and the
+catalogue ships a skill whose prefix contradicts it.
+
+| Skill                      | Id prefix | Declared `category` | Category's `domain` |
+| -------------------------- | --------- | ------------------- | ------------------- |
+| `meta-config-stack-detect` | `meta`    | `shared-tooling`    | `shared`            |
+
+**The two readings are not near-misses of each other.** `resolveAssignment`
+(`packages/matrix/src/read-model/assignment-defaults.ts`) branches on `skill.domainId`: a `shared`
+skill reaches `NON_META_ROSTER` — every implementation-role agent in the catalogue — while a `meta`
+skill reaches, per `metaSkillReach`, the flavors its `PRELOAD_DEFAULTS` row names **or** the flavor
+whose craft its category is. `meta-config-stack-detect` has neither: no row, and `shared-tooling` is
+in no craft list, so reading the prefix turns the whole roster into an empty list, silently, at the
+moment a user selects the skill.
+
+**The craft arm is not an edge case — it applies to every meta category the CLI ships.**
+`CRAFT_CATEGORIES_BY_FLAVOR` (same file) names all four of them, so for a skill whose domain really
+is `meta`, the row is a floor rather than the whole answer:
+
+| Craft flavor | Categories it reaches with or without a row |
+| ------------ | ------------------------------------------- |
+| `planning`   | `meta-methodology`, `meta-planning`         |
+| `reviewer`   | `meta-reviewing`, `meta-design`             |
+
+`meta-design-expressive-typescript` is the live demonstration: its row is `["developer"]`, and it
+still reaches every `reviewer`-flavor agent because `meta-design` is the reviewer's craft. Reach and
+eagerness are separate answers — a craft reach the rows never name for that flavor arrives `lazy`,
+which is `createLoadStateResolver`'s decision, not `metaSkillReach`'s.
+
+Both live readers take the catalogue's category-derived value: `resolveAssignment` reads
+`skill.domainId`, and `domainOfSkill` in `packages/matrix/src/read-model/preload-defaults.ts`
+throws rather than guess when the catalogue has no entry. On the CLI side the lookup is
+`getCategoryDomain(category)` in `src/cli/lib/matrix/matrix-provider.ts`.
+`assignment-defaults.test.ts` pins the liar by name — "places a meta-prefixed shared-category skill
+by its catalog domain".
+
+**Prefix derivation is sanctioned for AGENT ids only**, where `agentDomainOf`
+(`packages/matrix/src/read-model/domains.ts`) is the single implementation and the fall-through to
+`meta` is the intended answer for the role agents that carry no domain prefix. Do not reuse it, or
+its shape, on a skill id.
+
+Whether `meta-config-stack-detect` is still the only skill in this position is one command against
+the generated catalogue rather than a claim to trust — read each skill's `category`, look its
+`domain` up in the `categories` block of `src/cli/types/generated/matrix.ts`, and compare against
+the id's first segment.
 
 ### Reserved namespaces
 
@@ -581,6 +641,33 @@ load, so `validateSource` mutates global matrix state as a side effect.
 Internal (not exported): `checkSkillDirName`, `validateStacks`, `validateAgents`,
 `validateConfigFiles`, `validateYamlFiles`, `validateTsConfig`, `formatLoadError`, `buildResult`.
 
+### Which file a cross-reference finding names
+
+`doctor` renders every issue as `- [SEVERITY] <file>: <message>`, so `SourceValidationIssue.file` is
+the file it tells the reader to open. `toSourceIssue` asks `fileHoldingDefect` for that path — an
+exhaustive `switch` over `MatrixHealthIssue["finding"]` with a `never` default, so a seventh finding
+kind will not compile until someone decides where its defect lives.
+
+| Finding                         | File named                                 | Why                                                                                                                          |
+| ------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `category-missing-domain`       | `config/skill-categories.ts`               | The category and the `domain` it omits are both declared there                                                               |
+| `skill-unknown-category`        | `config/skill-categories.ts`               | The same file, short an entry; the skill's own `metadata.yaml` is the other half of the fix, and the message names the skill |
+| `skill-unresolved-relation-ref` | `config/skill-rules.ts`                    | `resolveRelationships` builds every `conflictsWith`/`requires` entry from the rules — no `metadata.yaml` declares one        |
+| `rule-unresolved-slug`          | `config/skill-rules.ts`                    | `collectUnresolvedSlugs` reads the rules' own slugs; this is the author's typo                                               |
+| `audit-verdict-contradiction`   | `src/cli/lib/configuration/skill-audit.ts` | The `universal` verdict the matrix contradicts is recorded in the manifest                                                   |
+| `skill-unaudited`               | `src/cli/lib/configuration/skill-audit.ts` | The entry that is missing is the manifest's                                                                                  |
+
+The last two are **this CLI's own path**, not one inside the marketplace being validated: the audit
+manifest is keyed by the built-in catalogue's ids and no marketplace holds a copy of it.
+
+The reader (`MarketplaceReader`) moves the severity and the wording of `rule-unresolved-slug` and
+never the file — which file holds a defect is not a fact about who is reading. The one issue this
+table does not cover is the phase-3 catch, which reports that the pass could not run at all
+("Cross-reference validation skipped") and carries no finding to route.
+
+Pinned by `src/cli/lib/__tests__/commands/doctor-content.test.ts` -> "the file a cross-reference
+finding sends the reader to".
+
 ### Rule: over-length `cliDescription` is advisory
 
 `validateSkillMetadata(rawMetadata)` (`src/cli/lib/schemas.ts`) picks the schema —
@@ -604,7 +691,7 @@ formatted through `formatZodIssue` and reported as an error.
 Rationale encoded in the source: `CLI_DESCRIPTION_MAX_LENGTH = 60` remains the declared contract on
 `skillMetadataBaseSchema` (`.max(CLI_DESCRIPTION_MAX_LENGTH)`), but the **runtime** load schemas
 (`matrixRawMetadataSchema`, `localRawMetadataSchema`) declare `cliDescription` as
-`z.string().optional()` with no upper bound, and the value only feeds wizard description text — so
+`z.string().exactOptional()` with no upper bound, and the value only feeds wizard description text — so
 an over-length value cannot break a load. See `reference/types/zod-schemas.md` for the full schema
 inventory.
 
@@ -730,11 +817,20 @@ placeholders any category absent from the passed `CategoryMap`, regardless of `c
 - `loadAndMergeFromBasePath` (`source-loader.ts`) passes `{ ...defaultCategories, ...sourceCategories }`,
   so a built-in category cannot fall through to synthesis on the source-load path either.
 
-Auto-synthesis is therefore reachable today only when: (a) a source ships a skill whose category is
-outside the generated union and outside its own `skill-categories.ts`; or (b) something calls
-`loadAndMergeSkillsMatrix()`, which merges no defaults — and nothing does, so (a) is the only
-route anything actually takes (see [Matrix Loader](#matrix-loader-srcclilibmatrixmatrix-loaderts)).
-Regeneration against a marketplace that adds
+Auto-synthesis is therefore reachable today by exactly one route: a source ships a skill whose
+category is outside the generated union and outside its own `skill-categories.ts`. That is
+structural rather than incidental, and the two greps that would show a second route are the ones
+that keep it so — `synthesizeCategory` has a single call site, inside `mergeMatrixWithSkills`, and
+both production callers of `mergeMatrixWithSkills` pass a map that already contains
+`defaultCategories` (see [Matrix Loader](#matrix-loader-srcclilibmatrixmatrix-loaderts)):
+
+```
+grep -rn 'synthesizeCategory(' src scripts --include='*.ts' --exclude='*.test.ts' --exclude-dir=__tests__
+grep -rn 'mergeMatrixWithSkills(' src scripts --include='*.ts' --exclude='*.test.ts' --exclude-dir=__tests__
+```
+
+A second route needs either a direct caller of `synthesizeCategory` or a third caller of
+`mergeMatrixWithSkills` that omits the defaults. Regeneration against a marketplace that adds
 a new category will synthesize it once and then fail `default-categories.test.ts` — the drift now
 surfaces as a red test rather than an `order: 999` placeholder in the wizard.
 

@@ -97,9 +97,9 @@ re-privatise any of the three.
 | `validateSkillPath()`              | `skill-copier.ts`             | internal (`resolveSkillPath`), and `writeExternalSkills` (`seed/external-skills.ts`) on every carried file                                                    |
 | `fetchSkills()`                    | `skill-fetcher.ts`            | **none** — barrel `skills/index.ts` + `skill-fetcher.test.ts`                                                                                                 |
 | `readForkedFromMetadata()`         | `skill-metadata.ts`           | `classifySkillDirs` (`commands/uninstall.tsx`)                                                                                                                |
-| `readLocalSkillMetadata()`         | `skill-metadata.ts`           | internal (`readForkedFromMetadata`), and `readCarriedSkills` (`seed/external-skills.ts`). Its JSDoc names only the uninstall command — see Traps              |
-| `injectForkedFromMetadata()`       | `skill-metadata.ts`           | `copySkillTo` (`skill-copier.ts`)                                                                                                                             |
-| `writeMetadataYaml()`              | `skill-metadata.ts`           | `injectForkedFromMetadata`, in its own file, and `readCarriedSkills` (`seed/external-skills.ts`) when it stamps a carried skill's provenance                  |
+| `readLocalSkillMetadata()`         | `skill-metadata.ts`           | internal (`readForkedFromMetadata`), and `registerSkillOnDisk` (`seed/external-skills.ts`). Its JSDoc names only the uninstall command — see Traps            |
+| `injectForkedFromMetadata()`       | `skill-metadata.ts`           | `copySkillTo` (`skill-copier.ts`), `registerSkillOnDisk` (`seed/external-skills.ts`)                                                                          |
+| `writeMetadataYaml()`              | `skill-metadata.ts`           | `injectForkedFromMetadata`, in its own file, and `registerSkillOnDisk` (`seed/external-skills.ts`) when it stamps an installed skill's provenance             |
 | `discoverLocalSkills()`            | `local-skill-loader.ts`       | `mergeDiscoveredLocalSkills` (`loading/source-loader.ts`), `checkSkillsResolved` (`commands/doctor.ts`, twice)                                                |
 | `findUnusableSavedSkillMetadata()` | `unresolved-skill-entries.ts` | `ensureSavedSkillsReadable` (`base-command.ts`), reached from `commands/edit.tsx`                                                                             |
 | `unresolvedSkillRemovalReasons()`  | `unresolved-skill-entries.ts` | `Edit.run` (`commands/edit.tsx`), for the `Changes:` block's removal rows                                                                                     |
@@ -112,11 +112,6 @@ API — their `skills/index.ts` re-export lines — so an external consumer of t
 The point of the table is the opposite one: **an agent asked to "change how a skill lands on disk"
 must edit `copySkillsToLocalFlattened`, not `copySkill`** — `copySkill` looks like the primitive and
 changing it accomplishes nothing.
-
-**Grep trap.** `grep fetchSkills` hits `commands/search.ts`, where a module-private
-`fetchSkillsFromExternalSource` is declared and called from `loadSkillsFromAllSources` — an
-unrelated function that never calls `fetchSkills`. Match on the
-word boundary or you will conclude the fetcher has a caller.
 
 ---
 
@@ -183,9 +178,11 @@ The security framing is owned by `boundary-map.md` § 5.3 — read it there, do 
 
 ### Invariants
 
-1. **Provenance is stamped by `copySkillTo` and by nothing else.** `copySkillTo` hashes the
-   source `SKILL.md`, copies the directory, then calls `injectForkedFromMetadata`. Any code
-   path that reaches disk without going through it produces a skill with **no `forkedFrom` block**.
+1. **Two production functions stamp provenance: `copySkillTo` here, and `registerSkillOnDisk` in
+   `src/cli/lib/seed/external-skills.ts`.** `copySkillTo` hashes the source `SKILL.md`, copies the
+   directory, then calls `injectForkedFromMetadata`. Any code path in this file that reaches disk
+   without going through it produces a skill with **no `forkedFrom` block**. Re-derive with
+   `grep -rn 'injectForkedFromMetadata(' src --include='*.ts' | grep -v '\.test\.'`.
 2. **Two such paths exist in this file, both in `copySkillsToLocalFlattened`.** The in-place branch
    (via `resolveLocalCopiedSkill`) and the relocate-a-local-skill branch (which calls `ensureDir` +
    `copy` directly) both return a `CopiedSkill` without stamping metadata.
@@ -440,8 +437,8 @@ read from metadata, and both matter downstream:
 - `path` = `` `${LOCAL_SKILLS_PATH}/${skillDirName}/` `` — i.e. `.claude/skills/<dir>/`,
   **not** a `skills/...` source-relative path.
 - `localPath` = the absolute directory **plus `path.sep`**. The trailing separator is deliberate;
-  `copySkillsToLocalFlattened` compares it with `path.resolve` on both sides in its `alreadyInPlace`
-  check, which normalises it away.
+  `copySkillsToLocalFlattened` compares it with `path.resolve` on both sides, which normalises it
+  away.
 - `id` comes from `SKILL.md` frontmatter `name`, never from `metadata.yaml` or the directory name.
   `description` prefers `metadata.cliDescription` over the frontmatter description, and `author` is
   forced to `LOCAL_DEFAULTS.AUTHOR` regardless of what the file says.
@@ -554,9 +551,12 @@ One `export { … } from` block per module, in this order. Everything below is i
 | `unresolved-skill-entries` | `findUnusableSavedSkillMetadata`, `unresolvedSkillRemovalReasons`                                                                             |
 | `local-skill-mover`        | `deleteLocalSkill`, `migrateLocalSkillScope`                                                                                                  |
 
-**The checker cannot bind this table to source.** `check-enumeration-drift.ts` reads a module's own
-`export const` / `export function` declarations; a re-export (`export { … } from`) is an
-`ExportDeclaration` and is invisible to it. Verify this table by reading `index.ts`, not by a green
+**The checker does not bind this table to source, and the reason is the TABLE's shape, not the
+checker's.** `check-enumeration-drift.ts` gained a `reexports: "every-name"` source shape that reads
+exactly this barrel — every export clause's own spelling, type-only clauses included. What no reader
+answers is a table keyed by MODULE with several names in one cell: `table-rows` reads the first cell
+as one member, and a cell holding more than one backticked name is refused outright. Restructured one
+export per row it would bind; as it stands, verify it by reading `index.ts`, not by a green
 `npx vitest run scripts/`.
 
 **Three exports are NOT in the barrel** and must be imported from their module directly:

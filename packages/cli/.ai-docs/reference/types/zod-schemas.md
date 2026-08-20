@@ -4,8 +4,8 @@ area: types
 keywords: [zod, schemas, validation, safeParse, bridge-pattern, loader-schemas, strict-schemas]
 related:
   - reference/types/core-types.md
-  - reference/architecture/overview.md
-  - reference/config/configuration.md
+  - reference/architecture-overview.md
+  - reference/features/configuration.md
 last_validated: 2026-08-09
 ---
 
@@ -22,6 +22,18 @@ four tables below partition them exactly; every exported schema appears in one, 
 two. **Re-derive the four sub-counts and their membership in the same pass as the total** — a total
 corrected alone over stale sub-tables is how this document drifts, because each table then reads as
 authoritative while hiding a member.
+
+**The membership half is now bound.** `scripts/check-enumeration-drift.ts` holds a row over the four
+`Schema`-keyed tables, comparing their rows against every `const` `schemas.ts` exports, in both
+directions — the partition is checked as one list, so a schema moved between tables is invisible to
+it and a schema in none is not. It is the only row in that registry reading several tables as one
+enumeration, and it keys on the `Schema` column by name rather than taking the first table it meets:
+the `Union` table under [Why slugs and categories are strict](#why-slugs-and-categories-are-strict-but-skill-ids-are-not)
+stands between the first two partitions and is **deliberately outside the binding**, because its four
+rows are type names rather than schemas and would read as four members `schemas.ts` does not export.
+Renaming either heading refuses rather than silently dropping a partition. The total and the four
+sub-counts stay hand-maintained — the row checks names, and two lists can agree on a total while
+disagreeing on every name in it.
 
 | Table                                                                        | Count  |
 | ---------------------------------------------------------------------------- | ------ |

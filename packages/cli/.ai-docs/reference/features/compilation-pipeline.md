@@ -59,7 +59,7 @@ and plugin-build flows, not here.
 2. Agent Definitions Discovery
    -> loadAgentDefs() (src/cli/lib/operations/project/load-agent-defs.ts)
    -> getAgentDefinitions() (src/cli/lib/agents/agent-fetcher.ts)
-   -> Returns AgentSourcePaths { agentsDir, templatesDir, sourcePath }
+   -> Returns AgentSourcePaths { agentsDir, sourcePath }
    -> Merges CLI built-in agents with source repository agents (source overrides CLI)
 
 3. Skill Discovery (4-way merge)
@@ -398,7 +398,7 @@ For native Claude Code plugin distribution:
 
 ### Per-Skill `pluginRef` Format
 
-Helper: `pluginRefFor(skill: Skill): { pluginRef?: PluginSkillRef }` in `src/cli/lib/compiler.ts` — module-private, and it returns a **spreadable partial**, not the ref itself, so the caller writes `{ ...skill, ...pluginRefFor(skill) }` and an ejected skill contributes no key at all. There is no `derivePluginRef`; this document named one until 2026-08-18.
+Helper: `pluginRefFor(skill: Skill): { pluginRef?: PluginSkillRef }` in `src/cli/lib/compiler.ts` — module-private, and it returns a **spreadable partial**, not the ref itself, so the caller writes `{ ...skill, ...pluginRefFor(skill) }` and an ejected skill contributes no key at all. There is no `derivePluginRef` — do not look for one.
 Constant: `EJECT_SOURCE = "eject"` in `src/cli/consts.ts`.
 
 Rule (mirrors the helper body):
@@ -431,7 +431,7 @@ Per-skill `source` (via `sourceById` -> `pluginRefFor`) is the sole authority fo
 
 ### Dual-Scope `sourceById` Collapse -- Verified Unreachable in Production
 
-The `sourceById` map in `buildCompileAgents` keys by `SkillId` alone, so a dual-scope skill (same id under `"project"` and `"global"` with different `source` values) is last-write-wins. A 2026-07-18 audit (`agent-findings/2026-07-18-sourceById-collapse-unreachable-in-production.md`) confirmed the collapse is **not reachable through any production command**:
+The `sourceById` map in `buildCompileAgents` keys by `SkillId` alone, so a dual-scope skill (same id under `"project"` and `"global"` with different `origin` values) is last-write-wins. The collapse is **not reachable through any production command**:
 
 - `init`, `edit`, and `compile` all route through `recompileAgents()`, which calls `filterExcludedEntries()` BEFORE `buildCompileAgents()`, dropping the excluded (tombstone) entry so `sourceById` never sees two entries for one id.
 - Even unfiltered, `generateProjectConfigWithInlinedGlobal()` (`config-writer.ts`) emits global entries before project entries, so the active project entry (serialized last) wins -- correct in both mixed-source directions.
@@ -582,7 +582,7 @@ recompilePropagated(updated)                  (config-gate/recompile.ts, lazy im
        for each dir (sequential):
          recompileRegisteredProjectAgents(dir)
            -> discoverInstalledSkills(dir)    // explicit: without it recompileAgents falls back
-           -> loadAgentDefs({ projectDir })   //   to discoverAllPluginSkills and strips every
+           -> loadAgentDefs()                 //   to discoverAllPluginSkills and strips every
            -> compileAgents({                 //   global-local and project-local skill
                 projectDir: dir,
                 sourcePath,

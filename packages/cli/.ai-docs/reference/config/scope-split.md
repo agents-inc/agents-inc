@@ -20,7 +20,7 @@ keywords:
 related:
   - reference/config/config-writer.md
   - reference/config/config-merger.md
-  - reference/config/configuration.md
+  - reference/features/configuration.md
   - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
 last_validated: 2026-08-18

@@ -204,7 +204,7 @@ src/cli/lib/__tests__/
     index.ts                         # Barrel re-export of all assertions
     agent-assertions.ts              # parseCompiledAgent, expectAgentCompilation, expectValidAgentMarkdown, expectCompiledAgents
     agent-assertions.test.ts         # Tests for the agent assertion helpers
-    config-assertions.ts             # expectConfigSkills, expectConfigAgents, expectFullConfig, assertConfigIntegrity, ...
+    config-assertions.ts             # expectConfigSkills, expectConfigAgents, expectSkillConfigs, expectAgentConfigs
     install-assertions.ts            # expectInstallResult
   mock-data/                         # Extracted test fixtures (shared across test files)
     mock-agents.ts                   # AGENT_DEFS, agent config maps, DEFAULT_TEST_AGENTS
@@ -273,17 +273,24 @@ Script tests run in the `unit` project through its `scripts/**/*.test.ts` includ
 ```
 scripts/check-enumeration-drift.test.ts    # The documentation-enumeration registry
 scripts/check-findings-frontmatter.test.ts # agent-findings frontmatter schema
+scripts/check-screen-sentinels.test.ts     # An E2E constant a page object waits on vs the string the product paints
 scripts/check-shared-eslint-config.test.ts # Every workspace extends the shared eslint base
 scripts/check-shared-tsconfig.test.ts      # Every workspace extends the shared tsconfig
 scripts/check-shared-vitest-config.test.ts # Every workspace extends the shared vitest config, or declares why not
+scripts/generate-json-schemas.test.ts      # The JSON Schema generator
 scripts/generate-matrix-package.test.ts    # The matrix package generator
 scripts/generate-source-types.test.ts      # The union type code generator
 ```
 
-`scripts/generate-json-schemas.ts` has **no** spec, and
-[features/code-generation.md](../features/code-generation.md) carries why it currently cannot have
-one. `scripts/handrun.mjs` has none either, and is not meant to: it is a hand-run entry point, not a
-gate — [e2e-infrastructure.md](./e2e-infrastructure.md) § The Hand-Run.
+All three generators are covered. The schema generator's spec is the newest: it was impossible while
+that file called `generate()` at module scope, since importing it rewrote the repository's schemas
+and shelled out to prettier — [features/code-generation.md](../features/code-generation.md) carries
+what changed. `scripts/handrun.mjs` has no spec and is not meant to: it is a hand-run entry point,
+not a gate — [e2e-infrastructure.md](./e2e-infrastructure.md) § The Hand-Run.
+
+The `run-generate-*.ts` runners have no specs either. They hold argv parsing, console output and the
+exit code and nothing else; the behaviour worth pinning is in the generator modules they call, which
+is why those modules export `generate` and `check` and run nothing on import.
 
 ## Code Patterns
 
@@ -365,7 +372,7 @@ The enabling pattern (see `src/cli/components/wizard/source-grid.test.tsx`, whic
 - Build the expected string with `chalk.hex(...)` / `chalk.bgHex(...)` over the `CLI_COLORS.*` constant, never a literal `\x1b[38;2;R;G;Bm` sequence. Ink applies the foreground first and the background outermost, so a `<Text color bg>` renders as `bgHex(hex(text))`. This keeps the assertion a plain `toContain` on the frame (per CLAUDE.md: never split/loop/regex-scan `lastFrame()`) and survives a palette change in `consts.ts` without editing.
 - Assert both shapes: the positive (label carries the expected colour) AND the negative (label does not fall back to `CLI_COLORS.WHITE`), so a fix that drops the focus background instead of fixing the colour cannot pass.
 
-**Colour is testable only at this layer.** The E2E harness runs with `NO_COLOR`, so every E2E spec asserts the marker, not the colour. Any contract phrased as "these two surfaces render the same colour" (e.g. `rowLabelColor` in `source-grid.tsx` vs `DIFF_COLOR` in `skill-agent-summary.tsx`) needs a component test — an E2E marker assertion does not cover it. See `.ai-docs/agent-findings/2026-07-29-ink-component-colour-assertions-need-forced-chalk-level.md`.
+**Colour is testable only at this layer.** The E2E harness runs with `NO_COLOR`, so every E2E spec asserts the marker, not the colour. Any contract phrased as "these two surfaces render the same colour" (e.g. `rowLabelColor` in `source-grid.tsx` vs `DIFF_COLOR` in `skill-agent-summary.tsx`) needs a component test — an E2E marker assertion does not cover it. That pairing is the reason this subsection exists: the palette was a stated contract that no test in the repo asserted, because the naive assertion is not merely hard but unobservable, and an agent that tries one and watches it fail is one step from quietly weakening it to a text-only assertion.
 
 ### `ink-testing-library` looks abandoned and is not — it is 95 lines over Ink's public API
 
@@ -423,7 +430,7 @@ const mountLayout = async (logo?: string) => {
 };
 ```
 
-`RENDER_DELAY_MS` and `delay` come from `src/cli/lib/__tests__/test-constants.ts`. **A frame that never changes after an interaction is this bug before it is a product bug.** See `.ai-docs/agent-findings/2026-07-31-getscreen-is-not-viewport-only-so-absence-assertions-are-unsound.md` § 3.
+`RENDER_DELAY_MS` and `delay` come from `src/cli/lib/__tests__/test-constants.ts`. **A frame that never changes after an interaction is this bug before it is a product bug.**
 
 ### Under Ink 7 the teardown frame is unconditional — read `frames`, not `lastFrame()`
 
@@ -602,33 +609,68 @@ classification is tested against a three-element spec list rather than a fixture
 
 ## Repository Checks (`scripts/*.test.ts`)
 
-Seven checks run in the `unit` project. Each is a plain module with **nothing at module scope** —
-the spec beside it is the enforcement, and the package root is a parameter so the check can be driven
-against a fixture tree.
+Each is a plain module with **nothing at module scope** — the spec beside it is the enforcement, and
+the root it reads or writes is a parameter so the check can be driven against a fixture tree. The
+roster is the spec list, and the table below names all of it:
+
+```
+ls scripts/*.test.ts
+```
+
+**Do not filter that directory with `grep -v test`.** `check-shared-vitest-config` contains the
+word, so the filter drops a live check and the roster silently comes back one short — a mistake
+already made more than once against this very table.
 
 | Check                           | What it asserts                                                                                                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `check-enumeration-drift.ts`    | Every document claiming to enumerate a source symbol exhaustively still names what that symbol holds — see below                                                                |
 | `check-findings-frontmatter.ts` | Every `agent-findings/` file carries frontmatter a YAML parser can read, against `agent-findings/TEMPLATE.md`'s schema                                                          |
+| `check-finding-citations.ts`    | Every finding cited by basename from OUTSIDE `.ai-docs/` still exists — `todo/` for all citations, `changelogs/` for bracketed links only                                       |
+| `check-screen-sentinels.ts`     | Every `e2e/pages/constants.ts` literal a step page object WAITS on still reads the string the product paints — drift there times out rather than asserting                      |
+| `check-spawn-doors.ts`          | Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK`, followed through the local declarations a spawn's env expression names                          |
 | `check-shared-eslint-config.ts` | Every workspace extends `@workspace/eslint-config` rather than restating its rules                                                                                              |
 | `check-shared-tsconfig.ts`      | Every workspace extends `@workspace/typescript-config`, or declares it holds no TypeScript                                                                                      |
 | `check-shared-vitest-config.ts` | Every workspace extends `@workspace/vitest-config`, or states in its manifest why it does not — which `packages/cli` does, in `package.json`'s `//no-shared-vitest-config` note |
+| `generate-json-schemas.ts`      | The JSON Schema generator — `check` names every file in `src/schemas/` that differs from what it emits                                                                          |
 | `generate-matrix-package.ts`    | The matrix package generator                                                                                                                                                    |
 | `generate-source-types.ts`      | The union type code generator                                                                                                                                                   |
 
 ### `check-enumeration-drift.ts`
 
-A registry of `(source symbol) → (document, section)` rows, judged as **MEMBERSHIP in both
+A registry of `(source enumeration) → (document, section)` rows, judged as **MEMBERSHIP in both
 directions** rather than as a total. Two lists can agree on a total and share no names at all, and
 the two failure directions are not the same size: a list that is SHORT sends a reader looking for a
 member, failing to find it, and writing a duplicate; a list naming a symbol the source has since
 LOST sends them grepping for nothing, after which the whole document stops being trusted.
 
-A row's source half names either one exported symbol — an object's keys, an array's strings, a
-union's literals — or a module's whole export list of one kind (`exports: "const" | "function"`).
-Its document half names a section delimited by two markers and how that section states its list:
-`code-spans` (every constant-shaped backticked name) or `table-rows` (the first cell of every row
-under the table's rule).
+A row's source half names a FILE or a DIRECTORY, and `SourceEnumeration` declares the five shapes.
+Four name a file: `symbol` (one exported symbol — an object's keys, an array's strings, a union's
+literals), `entries` (the same object read one level deeper — every key bound to the string it
+holds), `exports: "const" | "function"` (the module's whole export list of one kind), and
+`reexports: "every-name"` (its RE-EXPORT surface — what a consumer imports from it that the module
+did not write, type-only clauses and bare blocks included). The fifth names a directory:
+`enumerates: "exported-values" | "command-ids"`, for the two claims no expression in the tree holds
+— what a directory of modules exports, and the command ids under `src/cli/commands/`, which oclif's
+`pattern` strategy declares nowhere.
+
+Its document half names a section delimited by two markers and how that section states its list.
+`DocumentClaim` declares the four readers: `code-spans` (every constant-shaped backticked name),
+`table-rows` (the first cell of every row under the table's rule), `table-pairs` (two NAMED columns,
+answered as `key = value` per row), and `partitioned-tables` (every table in the section whose first
+column carries the named heading, for a list a document states as several tables rather than one).
+
+**`table-pairs` is what makes a table's VALUES checkable, and pairs rather than values is the design
+point.** A table whose key column is right and whose value column is wrong reads as clean to every
+other reader: `E2E_SKILL_TITLES` in [e2e-infrastructure.md](./e2e-infrastructure.md) answered
+`agrees` over ten members while five of its Display-title cells were wrong, because the slugs — the
+only column either half could reach — were right, and the titles are what the E2E suite matches on.
+Emitting `key = value` rather than the values alone leaves the comparison a `string[]` diff exactly
+as it was, AND catches a SWAP: two rows exchanging their values leave a values-only set identical
+and every count intact. Both sides encode through one function (`pairOf`), so a source pair and a
+document pair cannot be spelt differently. The columns are named rather than counted because a
+document is free to write a third between them, and a heading that has been renamed is REFUSED by
+name (`NO_COLUMN`) rather than read as an empty column — silently reading nothing is the failure
+this whole file exists to close.
 
 **Every guard throws rather than skipping.** A missing source file, a missing symbol, a symbol
 holding a member the reader cannot name (a spread, a computed key), a section opener that has moved
@@ -636,12 +678,30 @@ or appears twice, and an enumeration that parses to nothing are all hard failure
 that quietly reads an empty section reads exactly like a row that passed, which is how every check
 in this repository that has failed us failed.
 
-**What it cannot bind, and why.** The source reader names a module's OWN declarations and reads no
-`export … from`, so a BARREL cannot be registered: `factories/index.ts`, `helpers/index.ts` and
-`assertions/index.ts` re-export from siblings and enumerate nothing of their own. A document table
-whose rows come from several files cannot be registered either, because a row names one source file.
-That is what leaves [factories.md](./factories.md)'s three directory tables — the counts that
-document owns — checkable by hand only. Its single-file inventories are registered.
+**An annotation is read through, never read as the list.** `as const`, `satisfies` and parentheses
+are all unwrapped down to the literal underneath, so `[...] as const satisfies readonly T[]` — this
+codebase's house style for a vocabulary array — binds like any other array, and a `satisfies`
+constraint naming more than the literal holds does not add members. Before that arm landed, the
+shapes most worth binding were the ones the reader could not see.
+
+**What it cannot bind, and why.** `membersOfSymbol` reads object literals, array literals and union
+literals and nothing else, so a type alias to an object TYPE literal (`WizardState`,
+`ProjectConfig`) enumerates nothing and its field tables stay hand-derived; so does a call
+expression, which is what `new Set([...])` and `z.enum([...])` are. `stringsOf` refuses an array of
+OBJECT literals, because no member of it is a name. `entries` reads a value only where it is a
+plain string literal — a template with a substitution, an identifier naming a declaration
+elsewhere, and a shorthand, method or getter with no initializer at all are each refused
+(`UNREADABLE_VALUE`) rather than skipped, since skipping one would under-report the source by a
+member while reporting the rest as agreed. And a FILE inventory — "the files under
+`src/cli/components/wizard/`" — is not a symbol and not an export surface, so the component, hook
+and step-file listings in [component-patterns.md](../component-patterns.md) remain checkable by hand
+only.
+
+**A barrel is readable and deliberately not the subject.** `reexports: "every-name"` reads an
+`index.ts` fine; what would be wrong is binding [factories.md](./factories.md)'s tables to one.
+Those tables say what each DIRECTORY exports, and `factories/index.ts` re-exports a strict subset of
+what its directory declares — every member it omits would read as drift. All three tables are bound
+to their directory instead.
 
 The prescriptive half is `standards/documentation-bible.md` § "A Count Lives in Exactly One
 Document", which requires a new exhaustive claim to add a row here rather than a promise in prose.

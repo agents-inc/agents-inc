@@ -295,7 +295,7 @@ a key meaning what its absence already means would remint every ordinary payload
 
 | Field         | Type                                    | Notes                                                                            |
 | ------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
-| `install`     | `"plugin" \| "eject"`                   | Required. Maps to `SkillConfig.source` — see the mapping table                   |
+| `install`     | `"plugin" \| "eject"`                   | Required. Maps to `SkillConfig.origin` — see the mapping table                   |
 | `scope`       | `"project" \| "global"`                 | Required. The **skill's** scope; independent of any agent's scope                |
 | `assignments` | `Record<string, "lazy" \| "preloaded">` | Sub-agent id -> load state. **Presence is assignment.** Per `(skill, sub-agent)` |
 
@@ -353,16 +353,27 @@ install something that loads and then cannot do what it says.
 
 ### Enum alignment with the CLI's own unions
 
-| Seed enum             | CLI counterpart                                   | Relationship                                                                                                                                                |
-| --------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `seedModelSchema`     | `ModelName` (`MODEL_NAMES`, `types/matrix.ts`)    | **Strict subset.** `MODEL_NAMES` also carries `"inherit"`; the wire has no such member because absence of the key already means "keep the metadata default" |
-| `seedEffortSchema`    | `EffortLevel` (`EFFORT_NAMES`, `types/matrix.ts`) | **Exactly equal**, member for member                                                                                                                        |
-| `seedLoadStateSchema` | `SkillAssignment.preloaded` (`types/skills.ts`)   | `"preloaded"` -> `true`, `"lazy"` -> `false`. The wire spells as an enum what the stack spells as a boolean                                                 |
+| Seed enum             | CLI counterpart                                   | Relationship                                                                                                                                                                 |
+| --------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seedModelSchema`     | `ModelName` (`MODEL_NAMES`, `types/matrix.ts`)    | **Strict subset.** `MODEL_NAMES` also carries `"inherit"`, which the wire cannot state — and absence does not stand in for it, so a config pinning it is REFUSED (see below) |
+| `seedEffortSchema`    | `EffortLevel` (`EFFORT_NAMES`, `types/matrix.ts`) | **Exactly equal**, member for member                                                                                                                                         |
+| `seedLoadStateSchema` | `SkillAssignment.preloaded` (`types/skills.ts`)   | `"preloaded"` -> `true`, `"lazy"` -> `false`. The wire spells as an enum what the stack spells as a boolean                                                                  |
 
 Because the model enum is a strict subset, `SeedAgent.model` assigns to `AgentScopeConfig.model`
 without a cast. **Adding a member to `MODEL_NAMES` does not widen the wire** — the enums in
 `packages/matrix/src/seed.ts` are hand-written literals, not derived from the CLI's arrays, so they
 have to be widened there too, under a version bump.
+
+**`"inherit"` is a gap in the wire, not a redundancy, because absence is a DIFFERENT instruction.**
+Absence resolves to the sub-agent's own `metadata.yaml` model — `resolveAgents` in
+`src/cli/lib/resolver.ts` reads `agentConfig.model ?? definition.model` — while `"inherit"` overrides
+that metadata down to the main conversation's model. Every bundled agent declares a model, so the two
+differ for all of them; the precedence chain is owned by
+[`model-and-effort.md`](./model-and-effort.md). The producer therefore refuses rather than drops:
+`isSeedModel` asks `seedModelSchema` itself, and `unnameableModels` collects
+`unnameableModelMessage` for every agent pinning a value the contract has no word for — the message
+says outright that leaving it out would say "keep the sub-agent's own metadata", which is a different
+instruction. Closing the gap means widening `seedModelSchema` under a `SEED_VERSION` bump.
 
 ## `fetch-seed.ts` — the network boundary
 

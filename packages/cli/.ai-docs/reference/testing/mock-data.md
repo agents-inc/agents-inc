@@ -27,19 +27,21 @@ last_validated: 2026-07-30
 ### SKILLS Registry
 
 Single source of truth for all test ResolvedSkills. Use `SKILLS.react`, `SKILLS.hono` etc. directly.
+The declaration is keyed `Record<string, ResolvedSkill>`, so nothing about it is exhaustive and this table is the only statement of what it holds. Every key, bound to `SKILLS` in `src/cli/lib/__tests__/test-fixtures.ts` by `scripts/check-enumeration-drift.ts`:
 
-| Key           | Skill ID                            | Domain |
-| ------------- | ----------------------------------- | ------ |
-| `react`       | `web-framework-react`               | web    |
-| `vue`         | `web-framework-vue-composition-api` | web    |
-| `zustand`     | `web-state-zustand`                 | web    |
-| `pinia`       | `web-state-pinia`                   | web    |
-| `scss`        | `web-styling-scss-modules`          | web    |
-| `tailwind`    | `web-styling-tailwind`              | web    |
-| `vitest`      | `web-testing-vitest`                | web    |
-| `hono`        | `api-framework-hono`                | api    |
-| `drizzle`     | `api-database-drizzle`              | api    |
-| `antiOverEng` | `meta-reviewing-reviewing`          | meta   |
+| Key            | Skill ID                            | Domain |
+| -------------- | ----------------------------------- | ------ |
+| `react`        | `web-framework-react`               | web    |
+| `vue`          | `web-framework-vue-composition-api` | web    |
+| `zustand`      | `web-state-zustand`                 | web    |
+| `pinia`        | `web-state-pinia`                   | web    |
+| `scss`         | `web-styling-scss-modules`          | web    |
+| `tailwind`     | `web-styling-tailwind`              | web    |
+| `vitest`       | `web-testing-vitest`                | web    |
+| `hono`         | `api-framework-hono`                | api    |
+| `drizzle`      | `api-database-drizzle`              | api    |
+| `authSecurity` | `shared-security-auth-security`     | shared |
+| `antiOverEng`  | `meta-reviewing-reviewing`          | meta   |
 
 ### TEST_CATEGORIES
 
@@ -55,7 +57,7 @@ Base category fixtures for spread-based customization:
 | `animation`       | `web-animation`     | Animation         |
 | `accessibility`   | `web-accessibility` | Accessibility     |
 | `api`             | `api-api`           | Backend Framework |
-| `database`        | `api-database`      | Database          |
+| `database`        | `api-orm`           | Database          |
 | `observability`   | `api-observability` | Observability     |
 | `methodology`     | `meta-reviewing`    | Meta              |
 | `tooling`         | `shared-tooling`    | Tooling           |
@@ -69,7 +71,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 
 ### mock-agents.ts
 
-- `AGENT_DEFS` - Canonical agent metadata (webDev, apiDev, webTester, webReviewer)
+- `AGENT_DEFS` - Canonical agent metadata (webDev, apiDev, webTester, reviewer)
 - `RESOLVE_AGENTS_DEFINITIONS` - Agent definitions for resolver tests
 - `WEB_DEV_NO_SKILLS`, `API_DEV_NO_SKILLS`, `WEB_DEV_WITH_REACT`, `WEB_DEV_WITH_PRELOADED_REACT`, `WEB_DEV_WITH_VITEST`, `TWO_AGENTS_SHARED_SKILL` - Pre-built agent config maps
 - `DEFAULT_TEST_AGENTS` - TestAgent array for `createTestSource()`
@@ -91,7 +93,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 - `METHODOLOGY_MATRIX`, `VITEST_MATRIX`, `MULTI_STYLING_MATRIX` - Single-domain matrix fixtures
 - `CATEGORY_GRID_MATRIX`, `REACT_HONO_FRAMEWORK_API_MATRIX`, `REACT_HONO_WEB_API_DOMAINS_MATRIX` - Specialized matrix fixtures
 - `CATEGORY_EXCLUSIVITY_MATRIX` - The only fixture whose categories carry REAL `exclusive` / `required` flags. `createMockMatrix`'s default categories map is empty, so every category reads as "undefined flags" and exclusivity rules can never fire — use this whenever the flags must be live. Shape: two frameworks in an exclusive **and required** category (`web-framework`: react, vue), two client-state skills in an exclusive but **optional** one (`web-client-state`: zustand, pinia), two styling skills in a non-exclusive one (`web-styling`: scss, tailwind), plus a non-exclusive `web-testing` (vitest). The exclusive+optional category is the one shape that separates "exclusive" from "exclusive AND required" rules.
-- `BUILD_STEP_*_MATRIX` - Build step logic test matrices (17 constants: WEB, REQUIRES, EMPTY_FRAMEWORK, FRAMEWORK_NON_EXCLUSIVE, FRAMEWORK_NO_FLAGS, FRAMEWORK_API, FRAMEWORK_ONLY, API_DB, UNIVERSAL_COMPAT, LOCAL_SKILL, NON_LOCAL, DISPLAY_NAME, SORTING, UNDEFINED_ORDER, CONFLICTS_EXCLUSIVE, CONFLICTS_NON_EXCLUSIVE, ADVISORY_STATES)
+- `BUILD_STEP_*_MATRIX` - Build step logic test matrices
 - `WEB_AND_API_SKILLS_COMPILE_CONFIG`, `WEB_SKILLS_API_NONE_COMPILE_CONFIG`, `WEB_ONLY_COMPILE_CONFIG` - CompileConfig fixtures
 - `TOOLING_AND_FRAMEWORK_CONFIG`, `CI_CD_CONFIG`, `FRAMEWORK_AND_STYLING_CONFIG`, `OBSERVABILITY_CONFIG`, `FRAMEWORK_AND_TESTING_CONFIG`, `EMPTY_MATRIX_CONFIG`, `UNRESOLVED_CONFLICT_MATRIX` - MatrixConfig fixtures
 

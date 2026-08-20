@@ -79,21 +79,22 @@ entry it left is legitimate. Nothing in this layer inspects a skill id.
 
 ## Public surface
 
-| Export                     | Kind     | Declared in         | In `loading/index.ts` barrel? |
-| -------------------------- | -------- | ------------------- | ----------------------------- |
-| `FetchOptions`             | type     | `source-fetcher.ts` | yes                           |
-| `FetchResult`              | type     | `source-fetcher.ts` | yes                           |
-| `sanitizeSourceForCache`   | function | `source-fetcher.ts` | yes                           |
-| `fetchFromSource`          | function | `source-fetcher.ts` | yes                           |
-| `fetchMarketplace`         | function | `source-fetcher.ts` | yes                           |
-| `getGigetCacheDir`         | function | `source-fetcher.ts` | **no**                        |
-| `loadSkillsByIds`          | function | `loader.ts`         | yes                           |
-| `LoadSkillsFromDirOptions` | type     | `loader.ts`         | yes                           |
-| `loadSkillsFromDir`        | function | `loader.ts`         | yes                           |
-| `loadPluginSkills`         | function | `loader.ts`         | yes                           |
+| Export                           | Kind     | Declared in         | In `loading/index.ts` barrel? |
+| -------------------------------- | -------- | ------------------- | ----------------------------- |
+| `FetchOptions`                   | type     | `source-fetcher.ts` | yes                           |
+| `FetchResult`                    | type     | `source-fetcher.ts` | yes                           |
+| `sanitizeSourceForCache`         | function | `source-fetcher.ts` | yes                           |
+| `fetchFromSource`                | function | `source-fetcher.ts` | yes                           |
+| `fetchMarketplace`               | function | `source-fetcher.ts` | yes                           |
+| `getGigetCacheDir`               | function | `source-fetcher.ts` | **no**                        |
+| `fetchRecordPath`                | function | `source-fetcher.ts` | **no**                        |
+| `MarketplaceManifestAbsentError` | class    | `source-fetcher.ts` | **no**                        |
+| `loadSkillsByIds`                | function | `loader.ts`         | yes                           |
+| `LoadSkillsFromDirOptions`       | type     | `loader.ts`         | yes                           |
+| `loadSkillsFromDir`              | function | `loader.ts`         | yes                           |
+| `loadPluginSkills`               | function | `loader.ts`         | yes                           |
 
-**`getGigetCacheDir` is exported but not barrelled** — `src/cli/lib/loading/index.ts`'s
-`./source-fetcher` block lists the other four exports and omits it. Its only production consumer is
+**`getGigetCacheDir` is exported but not barrelled.** Its only production consumer is
 the module-private `clearGigetCache` two functions below it; the `export` exists so `source-fetcher.test.ts` can pin the
 path algorithm. Import it from `./source-fetcher` directly, or reconsider whether you need it —
 see "The replicated algorithm" below.
@@ -102,7 +103,7 @@ see "The replicated algorithm" below.
 (`fetchFromLocalSource`, `fetchFromRemoteSource`), the cache-path helper `getCacheDir`, the giget
 teardown `clearGigetCache`, the error translator `createDetailedFetchError`, and the whole
 revalidation cluster below it (`revalidateCachedCopy`, `classifyCachedCopy`, `fetchEtag`,
-`readFetchRecord`, `recordFetchedCopy`, `fetchRecordPath`, `parseJsonOrUndefined`, `announceRefetch`,
+`readFetchRecord`, `recordFetchedCopy`, `parseJsonOrUndefined`, `announceRefetch`,
 `markCopyCurrentForThisRun`). Re-derive with `grep -c '^export' src/cli/lib/loading/source-fetcher.ts`
 against the exported table above rather than trusting this sentence to have kept up — the file grows
 private helpers faster than any pass reads it.
@@ -247,12 +248,11 @@ construction — every non-alphanumeric run collapses to a single `-`, so `githu
 `source-fetcher.test.ts`'s "should avoid collisions for sources that old regex approach would
 collapse" exists specifically to pin that pair apart. Do not "simplify" this to the prefix alone.
 
-**Two functions consume it:**
+**Consumers:**
 
-| Consumer                              | Where                       | Uses                                                        |
-| ------------------------------------- | --------------------------- | ----------------------------------------------------------- |
-| `getCacheDir` (module-private)        | `source-fetcher.ts`         | `path.join(CACHE_DIR, "sources", sanitized \|\| "unknown")` |
-| `seedDefaultSourceCache` (E2E helper) | `e2e/helpers/test-utils.ts` | re-derives the same path under a fake `HOME`                |
+| Consumer                       | Where               | Uses                                                        |
+| ------------------------------ | ------------------- | ----------------------------------------------------------- |
+| `getCacheDir` (module-private) | `source-fetcher.ts` | `path.join(CACHE_DIR, "sources", sanitized \|\| "unknown")` |
 
 `getGigetCacheDir` does **not** use it — that function reproduces giget's own naming, not ours.
 
@@ -269,14 +269,6 @@ $CACHE_DIR/sources/<sanitizeSourceForCache(source)>/        ← ours, extracted 
 
 `CACHE_DIR` is owned by `reference/utilities.md`. `gigetCacheRoot` is `$XDG_CACHE_HOME/giget` when
 that variable is set, else `~/.cache/giget` (`getGigetCacheDir`'s `gigetCacheRoot`).
-
-**The `"sources"` path segment is written twice in the repo** — in `getCacheDir`
-(`source-fetcher.ts`) and as `SOURCE_CACHE_SUBDIR` in `e2e/helpers/test-utils.ts`, whose comment
-says "mirrors getCacheDir in source-fetcher.ts". The duplication exists because `getCacheDir` is
-module-private. `e2e/interactive/sources-step-duplicate-marketplace-column.e2e.test.ts` records the
-consequence in its own file header: if the two derivations drift, the seeded cache is never read,
-the public-marketplace tagging pass silently no-ops, and that spec's assertions pass **vacuously**. Its only guard is the
-`directoryExists` setup assertion on the value `seedDefaultSourceCache` returns.
 
 ## `getGigetCacheDir` — the replicated algorithm
 
@@ -467,9 +459,13 @@ What belongs to _this_ doc:
   (`src/cli/lib/agents/agent-fetcher.ts`).
 - It takes no options of its own any more: the signature is `fetchMarketplace(source)`, and the
   `subdir: ""` above is the whole of what it passes down.
-- The "marketplace not found" throw fires on a missing `.claude-plugin/` **directory**,
-  checked via `directoryExists(path.dirname(marketplacePath))` — a present directory with no
-  `marketplace.json` falls through to `readFileSafe` and surfaces as an ENOENT instead.
+- The "marketplace not found" throw fires on a missing `.claude-plugin/marketplace.json`
+  **file**, checked via `fileExists(marketplacePath)`, and it throws
+  `MarketplaceManifestAbsentError` rather than a bare `Error`. It used to check the
+  `.claude-plugin/` **directory**, which called a plugin repository shipping only `plugin.json`
+  readable and left the absence to surface from `readFileSafe` as an ENOENT. The distinct type is
+  what lets `resolveMarketplaceLabels` report a manifest that is not there apart from one that is
+  there and refused — every other throw from this function is the second kind.
 - It returns `MarketplaceFetchResult` (`src/cli/types/plugins.ts`), whose `fromCache` is forwarded
   straight from `FetchResult` in the return literal. **`FetchResult.fromCache` is a required
   `boolean`**, so there is nothing to default; the `?? false` that used to sit here is gone and must
@@ -577,10 +573,10 @@ constructed.
 
 ### `fetchMarketplace`
 
-| Caller                                                                      | File                                          | Note                 |
-| --------------------------------------------------------------------------- | --------------------------------------------- | -------------------- |
-| `resolveMarketplaceLabels` (called by `loadFromLocal` and `loadFromRemote`) | `lib/loading/source-loader.ts`                | source label lookup  |
-| `ensureMarketplace`                                                         | `lib/operations/source/ensure-marketplace.ts` | lazy name resolution |
+| Caller                                                                      | File                                          | Note                                                                                                                                                                                 |
+| --------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `resolveMarketplaceLabels` (called by `loadFromLocal` and `loadFromRemote`) | `lib/loading/source-loader.ts`                | source label lookup — classifies the throw into a three-member `ManifestState` (`absent` / `unreadable` / `named`), verbose for the first and `warn` naming the cause for the second |
+| `ensureMarketplace`                                                         | `lib/operations/source/ensure-marketplace.ts` | lazy name resolution                                                                                                                                                                 |
 
 ### `loadSkillsByIds` / `loadSkillsFromDir`
 
@@ -602,9 +598,8 @@ constructed.
    clock, env, or fs input. The same source always maps to the same directory, across processes and
    machines.
 3. **`CACHE_DIR` is resolved once, at module load of `consts.ts`, from `os.homedir()`.**
-   A subprocess with a different `HOME` gets a different cache root; that is exactly what
-   `seedDefaultSourceCache` exploits (`e2e/helpers/test-utils.ts`) and what lets E2E specs run
-   offline.
+   A subprocess with a different `HOME` gets a different cache root, which is what lets an E2E run
+   of the real binary have a cache of its own rather than the developer's.
 4. **`source-fetcher.ts` is the only module in `src/` that imports `giget`** (grep-verified).
    Any new network fetch of a source belongs behind `fetchFromSource`, not beside it.
 5. **`getGigetCacheDir` returning `undefined` is a success, not a failure** — `clearGigetCache`
@@ -644,10 +639,7 @@ returns `true` for anything without a `REMOTE_PROTOCOLS` prefix, so
 throws "Local marketplace not found". Sources must carry `github:` / `gh:` / `https://` explicitly;
 `DEFAULT_SOURCE` does (`config.ts`, `"github:agents-inc/skills"`).
 
-**Trap 5 — the E2E cache seed can fail silently.** See "Cache layout" above and the file header of
-`e2e/interactive/sources-step-duplicate-marketplace-column.e2e.test.ts`.
-
-**Trap 6 — `loadSkillsByIds` reads a directory-expanded skill twice.** `buildIdToDirectoryPathMap`
+**Trap 5 — `loadSkillsByIds` reads a directory-expanded skill twice.** `buildIdToDirectoryPathMap`
 stores two keys per skill and `expandDirectoryRef` filters on the _value_, so expanding a parent
 directory yields both the id key and the path key for each child. `unique()` cannot collapse them —
 they are different strings. The output map is still correct (both write `skills[canonicalId]`), but
@@ -685,12 +677,11 @@ true. Grep before relying on it.
 
 ## Known limitations
 
-| #   | Limitation                                                                 | Where                                                                                    | Current behaviour                                                                                                                 |
-| --- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | A cached tree is validated against the SOURCE's ETag, never against itself | `fetchFromRemoteSource`'s cache-hit guard                                                | A partial tree whose record still matches is served until the source moves. See Trap 1                                            |
-| 2   | `subdir` absent from the cache key                                         | `fetchFromRemoteSource`'s `cacheDir`                                                     | Latent collision. See Trap 2                                                                                                      |
-| 3   | giget's cache path is replicated, not queried                              | `getGigetCacheDir`                                                                       | Breaks silently on a giget upgrade; our tests pin our side only. See the drift checklist                                          |
-| 4   | Proto-less default provider disagrees with giget (`github` vs `registry`)  | `getGigetCacheDir`'s `providerName`                                                      | Unreachable via `fetchFromSource` today; see "Known divergence"                                                                   |
-| 5   | `createDetailedFetchError` discards the original error                     | `fetchFromRemoteSource`'s `catch`                                                        | Only `getErrorMessage(error)` survives; no `cause`, no stack. A non-matching giget error keeps its text via the fallback `return` |
-| 6   | Substring matching on error text                                           | `createDetailedFetchError`                                                               | A repo literally named `404` or a body containing `network` re-routes the message                                                 |
-| 7   | The `"sources"` cache segment is encoded in two places                     | `getCacheDir` (`source-fetcher.ts`), `SOURCE_CACHE_SUBDIR` (`e2e/helpers/test-utils.ts`) | `getCacheDir` is module-private, so the E2E helper re-derives it. See Trap 5                                                      |
+| #   | Limitation                                                                 | Where                                     | Current behaviour                                                                                                                 |
+| --- | -------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | A cached tree is validated against the SOURCE's ETag, never against itself | `fetchFromRemoteSource`'s cache-hit guard | A partial tree whose record still matches is served until the source moves. See Trap 1                                            |
+| 2   | `subdir` absent from the cache key                                         | `fetchFromRemoteSource`'s `cacheDir`      | Latent collision. See Trap 2                                                                                                      |
+| 3   | giget's cache path is replicated, not queried                              | `getGigetCacheDir`                        | Breaks silently on a giget upgrade; our tests pin our side only. See the drift checklist                                          |
+| 4   | Proto-less default provider disagrees with giget (`github` vs `registry`)  | `getGigetCacheDir`'s `providerName`       | Unreachable via `fetchFromSource` today; see "Known divergence"                                                                   |
+| 5   | `createDetailedFetchError` discards the original error                     | `fetchFromRemoteSource`'s `catch`         | Only `getErrorMessage(error)` survives; no `cause`, no stack. A non-matching giget error keeps its text via the fallback `return` |
+| 6   | Substring matching on error text                                           | `createDetailedFetchError`                | A repo literally named `404` or a body containing `network` re-routes the message                                                 |

@@ -166,11 +166,12 @@ type InstallationInfo = {
   configPath: string;
   /** Every directory that actually holds compiled agents; empty when no scope has any. */
   agentDirs: string[];
-  skillsDir: string;
 };
 ```
 
 **`InstallationInfo.version` was REMOVED**. It only ever held the install mode, and `formatInstallationDisplay` prefixed it with `v`, so `list` printed `Installation: agents-inc vplugin`. The mode is now rendered once from `INSTALL_MODE_LABELS[info.mode]`.
+
+**`InstallationInfo.skillsDir` was REMOVED** too, for the reason `agentsDir` became `agentDirs`: it carried the single project-scoped directory while the count beside it spanned both scopes, so the path and the number could disagree. Nothing read it — `formatInstallationDisplay` renders `agentDirs`, `mode`, `skillCount`, `agentCount` and `configPath` and never named it. A display type does not carry a single path for an artifact that is split by scope; `resolveInstallPaths(projectDir, scope)` is what answers "where do this scope's skills live".
 
 **Counting rules in `getInstallationInfo()`:**
 
@@ -243,7 +244,7 @@ and [compilation-pipeline.md](./compilation-pipeline.md).
 
 ## Stale Plugin Pruning (`build plugins`)
 
-**File:** `src/cli/commands/build/plugins.ts` (the `build plugins` command; no `--source` — it reads a local directory).
+**File:** `src/cli/commands/build/plugins.ts` (the `build plugins` command; no `--marketplace` — it reads a local directory).
 
 After a clean full-scan skill compile (`compileAllSkillPlugins`), `pruneStaleSkillPlugins(outputDir, expectedSkillPlugins)` deletes plugin directories in `outputDir` that no longer map to a compiled skill. Guards:
 
@@ -335,6 +336,41 @@ split them. The rule itself, the reserved names and the load-side half:
 [`skills-and-matrix.md` § The Skill-Id Namespace](./skills-and-matrix.md); the command's flags and
 exit codes: [`reference/commands/index.md`](../commands/index.md).
 
+### The manifest a build is allowed to write
+
+`build marketplace` refuses when what it is about to write is a manifest this CLI cannot read back,
+and every refusal lands before `writeMarketplace`, so a refused build writes nothing:
+
+| Condition                                                                           | Read from               | Where                       | Refusal                                                                                  |
+| ----------------------------------------------------------------------------------- | ----------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| `owner.name` would be empty — no `author`, or an `author` string parsing to no name | `package.json` `author` | identity, pre-scan          | `marketplaceOwnerHasNoName`, `EXIT_CODES.ERROR`                                          |
+| the name is not kebab-case — an npm scoped name such as `@scope/thing` is the case  | `package.json` `name`   | identity, pre-scan          | `marketplaceNameNotPublishable`, `EXIT_CODES.ERROR`, naming every offending character    |
+| the scan found no plugins at all                                                    | the plugins directory   | after `generateMarketplace` | `noPluginsToPublish`, `EXIT_CODES.ERROR`, naming the directory scanned and both ways out |
+
+The first two sit in `loadMarketplaceIdentity` beside the reserved-name check; the third cannot be
+known until the scan has run, which is why it sits with the scan rather than beside them. The first
+two refusal builders live in `src/cli/utils/messages.ts`; `noPluginsToPublish` is local to the
+command, having one caller and composing nothing another surface must agree with. A `--name`
+override is judged by the same `validateKebabCaseName` rule and refused separately with
+`EXIT_CODES.INVALID_ARGS`, because an argument the author typed is one they can retype while a
+derived name is a fact about their package — its way out is the flag, not a package rename.
+
+**These are producer-side enforcement of what the consumer already refuses, and the correspondence
+is close to exact.** Of the constraints `marketplaceSchema` places on a manifest — `name.min(1)`,
+`version.min(1)`, `owner.name.min(1)` (via `marketplaceOwnerSchema`) and `plugins.min(1)` — three
+have a matching pre-write refusal in the table above, so the same file cannot be written by this
+command and then thrown on by `fetchMarketplace` reading it. `claude plugin marketplace add` holds
+its own half, rejecting `/`, `\`, `.` and `..` in a marketplace name.
+
+**`version` is the one that does not correspond.** `packageJsonSchema` types it `z.string()` with no
+minimum, and `generateMarketplace` defaults it with `??`, which an empty string passes through — so
+a package.json carrying `"version": ""` produces a manifest this CLI writes and then throws on.
+
+**`marketplaceSchema.name` is deliberately still `z.string().min(1)`** rather than the stricter
+kebab-case rule the command applies — that schema parses third-party marketplaces as well as ones
+this CLI wrote, so tightening it would change what loads, which is a separate decision with a
+separate blast radius.
+
 ### Marketplace Commands (via Claude CLI)
 
 Executed through `src/cli/utils/exec.ts`:
@@ -398,7 +434,7 @@ Two distinct plugin-ref shapes exist. They are NOT interchangeable -- each is co
 
 `buildCompileAgents` (`local-installer.ts`) builds `sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.origin]))` keyed by `SkillId` alone. The config's dual-scope compound key is `(id, scope)`, so a last-write-wins map could theoretically stamp the wrong `source` onto a compiled `SkillReference` when the same id appears twice (e.g. active project-eject entry + global tombstone with a different source).
 
-**Verification (finding `2026-07-18-sourceById-collapse-unreachable-in-production.md`): the collapse is NOT reachable through any production command.** Two independent safeguards prevent it:
+**The collapse is NOT reachable through any production command.** Two independent safeguards prevent it:
 
 1. **Tombstones are filtered before `buildCompileAgents` in every live path.** `init`, `edit`, and `compile` all route through the operations-layer `compileAgents` -> `recompileAgents`, which calls `filterExcludedEntries(projectConfig)` (`agent-recompiler.ts`) -- keeping only `!s.excluded` skills -- BEFORE `buildCompileAgents`. The tombstone is dropped, so `sourceById` never sees two entries for one id.
 2. **Config ordering makes last-write-wins safe even without the filter.** `generateProjectConfigWithInlinedGlobal` (`config-writer.ts`) always emits global entries first, project (active) entries second; the active project entry (serialized last) wins the map.
@@ -420,7 +456,7 @@ Skills copied locally via eject workflow.
 
 **Function:** `installEject()` (Re-exported from `src/cli/lib/installation/index.ts`)
 
-> **Note (dead code):** `installPluginConfig()` and `installEject()` are still exported and re-exported but have NO command/operation callers (verified in finding `2026-07-18-sourceById-collapse-unreachable-in-production.md`). The live install paths run through the command steps (`installPluginsStep`/`copyEjectSkillsStep` in `init.tsx`, `applyPluginChanges` in `edit.tsx`) and the operations layer, then compile agents via `compileAgents` -> `recompileAgents`. These two wrappers are the only paths that would bypass `filterExcludedEntries` before `buildCompileAgents`.
+> **Note (dead code):** `installPluginConfig()` and `installEject()` are still exported and re-exported but have NO command/operation callers — `grep -rn 'installEject(' packages/cli/src --include='*.ts' --include='*.tsx'` returns the declaration, the barrel re-export and test files only. The live install paths run through the command steps (`installPluginsStep`/`copyEjectSkillsStep` in `init.tsx`, `applyPluginChanges` in `edit.tsx`) and the operations layer, then compile agents via `compileAgents` -> `recompileAgents`. These two wrappers are the only paths that would bypass `filterExcludedEntries` before `buildCompileAgents`.
 
 ### Scope-Aware Installation
 
@@ -571,7 +607,7 @@ Two production call sites write a project `config.ts` with the global config inl
 | `propagateGlobalChangesToProjects()` (a global change fans out) | yes — via `reconcileProjectSplitAgainstGlobal`      |
 | project branch of `writeScopedFromWizard()`                     | yes — via the SAME helper (previously: none at all) |
 
-Findings: `2026-07-29-project-config-written-by-two-paths-only-one-reconciled.md` (the asymmetry), `2026-07-29-category-exclusivity-enforced-only-in-a-keypress-handler.md` (exclusivity was enforced only in `toggleTechnology`, a keypress handler).
+The "previously: none at all" is the whole defect: that branch handed `splitConfigByScope`'s raw output straight to the inlining writer, so a project owning a skill at project scope while the same id was active globally got TWO active entries in its own `config.ts` — no propagation involved and no category rule needed. [agent-system.md](./agent-system.md) → "Global-Agent Propagation" carries the full account. The companion defect was that category exclusivity had a single enforcement point, `toggleTechnology` — a keypress handler — so any write path not driven by a keystroke could seat two skills in a category that permits one. It is enforced on the write path now, in two places: `buildProjectCollisionTest` (`config-gate/propagate.ts`) counts an occupied exclusive category as a masking collision, and `compactCategoryAssignments` (`configuration/config-writer.ts`) throws rather than emit a category the config cannot express, since dropping the extra would write a config that does not match what was selected. Both read `exclusive` from the merged matrix and deliberately treat a category the matrix does not DECLARE as non-exclusive; `use-build-step-props.ts` defaults an undeclared category to exclusive (`cat?.exclusive ?? true`) and that asymmetry is intended — a rule that masks or rejects PERSISTED entries may only fire on a flag the data actually carries.
 
 ### Entry point
 
@@ -609,7 +645,7 @@ Supporting helpers:
 | `isExclusiveCategory(category, matrix)`   | `matrix.categories[category]?.exclusive === true` — read from the MERGED matrix so a source repo's overrides are honoured          |
 | `activeProjectCategories(skills, matrix)` | Categories occupied by an active project-scoped skill                                                                              |
 
-**An undeclared `exclusive` flag is deliberately NOT treated as exclusive.** The wizard's renderer defaults an undeclared category to exclusive (`src/cli/lib/wizard/build-step-logic.ts` and `src/cli/components/hooks/use-build-step-props.ts` both use `cat.exclusive ?? true`), but a rule that MASKS persisted entries must only fire on a flag the data actually carries. A custom skill absent from the matrix therefore participates in identity collisions only, and never throws. `LOCAL_PSEUDO_CATEGORY` (`"local"`, from `src/cli/consts.ts`) is excluded from category rules entirely.
+**A category the matrix does not carry is deliberately NOT treated as exclusive.** The wizard's toggle handler defaults the same lookup the other way — `matrix.categories[categoryId]?.exclusive ?? true` in `src/cli/components/hooks/use-build-step-props.ts`, the only site left that defaults it — but a rule that MASKS persisted entries must only fire on a category the data actually carries. Neither site defaults an absent FIELD: `CategoryDefinition.exclusive` is a non-optional `boolean` at every producer and at both parse boundaries. A custom skill absent from the matrix therefore participates in identity collisions only, and never throws. `LOCAL_PSEUDO_CATEGORY` (`"local"`, from `src/cli/consts.ts`) is excluded from category rules entirely.
 
 ### Mask producers
 
@@ -631,7 +667,7 @@ Tombstones are **spread from the global entry**, so they carry the global instal
 
 A derived mask and a user-authored tombstone are byte-identical on disk (`{ id, scope: "global", excluded: true }`). The wizard cannot mint the second kind: a project-scope deselect of a globally-installed item is refused, and a domain deselect only drops what the project owns. The one remaining user route to a global tombstone is the `s` scope toggle (G->P), which always pairs it with an active project entry for the same id — an IDENTITY collision. Every **bare** mask is therefore machine-derived by construction, which is what lets the retention rule collapse to a single test.
 
-This generalised the earlier rule, which was narrowed to categories declared BOTH `exclusive` AND `required` precisely because provenance was ambiguous; that narrowing and its documented trade-off are gone. See findings `2026-07-29-derived-mask-and-user-tombstone-are-indistinguishable.md` (superseded) and `2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md`.
+This generalised the earlier rule, which was narrowed to categories declared BOTH `exclusive` AND `required` precisely because provenance was ambiguous. That narrowing bought the distinction by category class: the only-skill guard refuses to empty such a category, so a lone tombstone there could only be machine-derived — at the price of a mask persisting in an OPTIONAL exclusive category after its collision cleared, leaving the user to re-select by hand. The narrowing and that trade-off are both gone; [tombstone-pattern.md](../concepts/tombstone-pattern.md) → "Creation outside the wizard — derived conflict masks" carries the full account.
 
 ### Deliberate asymmetry with the exclusive-swap guard
 
@@ -670,15 +706,15 @@ Handles skill source and scope migrations when editing an installation:
 | `detectMigrations()`                               | Compare old/new `SkillConfig[]` to detect source/scope changes             |
 | `executeMigration(plan, projectDir, sourceResult)` | Execute per-skill migration: copy/delete locals, install/uninstall plugins |
 
-`executeMigration` takes `sourceResult` (a `SourceLoadResult`) because plugin install/uninstall needs `sourceResult.marketplace` to build qualified refs. A missing marketplace is handled asymmetrically (finding `2026-07-20-migration-path-missing-marketplace-precondition.md`): the `toEject` branch warns and skips its (diagnostic-only) plugin uninstalls, whereas the `toPlugin` branch throws before any destructive step -- plugin install intent is inviolable, so it fails while the ejected working copies are still intact rather than deleting them and demoting the failure to a warning.
+`executeMigration` takes `sourceResult` (a `SourceLoadResult`) because plugin install/uninstall needs `sourceResult.marketplace` to build qualified refs. A missing marketplace is handled asymmetrically: the `toEject` branch warns and skips its (diagnostic-only) plugin uninstalls, whereas the `toPlugin` branch throws before any destructive step -- plugin install intent is inviolable, so it fails while the ejected working copies are still intact rather than deleting them and demoting the failure to a warning.
 
 Types:
 
 - `SkillMigration` - Single skill migration with `id`, `oldSource`/`newSource`, `oldScope`/`newScope`
 - `MigrationPlan` - Contains `toEject`, `toPlugin`, `scopeChanges` arrays
-- `MigrationResult` - Contains `ejectedSkills`, `pluginizedSkills`, `failedPluginInstalls`, `warnings`
+- `MigrationResult` - `{ ejectCopies: EjectCopyResult; pluginInstalls: PluginInstallResult; warnings: string[] }`. Both halves report structurally and in the same shape: `EjectCopyResult` is `{ copied: SkillId[]; failed: Array<{ id, error }> }` and `PluginInstallResult` (`operations/skills/install-plugin-skills.ts`) is `{ installed: Array<{ id, ref }>; failed: Array<{ id, error }> }`, so one command surface can narrate a migration's plugin half exactly as it narrates a fresh install. `warnings` carries the diagnostic-only plugin-uninstall failures from the toEject direction and nothing else
 
-Migration splits skills by scope before copying (project skills to `{projectDir}/.claude/skills/`, global to `~/.claude/skills/`). Plugin refs are qualified via `buildMarketplacePluginRef(migration.id, sourceResult.marketplace)`. The toPlugin branch installs each plugin BEFORE deleting its ejected working copy (`deleteEjectedWorkingCopy()`), so a failed install destroys nothing -- per-skill failures accumulate in `MigrationResult.failedPluginInstalls` for the caller to hard-error on.
+Migration splits skills by scope before copying (project skills to `{projectDir}/.claude/skills/`, global to `~/.claude/skills/`). Plugin refs are qualified via `buildMarketplacePluginRef(migration.id, sourceResult.marketplace)`. The toPlugin branch installs each plugin BEFORE deleting its ejected working copy (`deleteEjectedWorkingCopy()`), so a failed install destroys nothing -- per-skill failures accumulate in `MigrationResult.pluginInstalls.failed` for the caller to hard-error on. The toEject branch is the mirror: `copyMigratedSkillsToLocal` writes every local copy first and names the ones it could not in `MigrationResult.ejectCopies.failed`, and only the migrations whose copy LANDED have their plugin registration dropped.
 
 **the toEject uninstall is SCOPE-PRECISE.** It calls `claudePluginUninstall(pluginRef, toClaudePluginScope(migration.oldScope), projectDir)`, targeting the migration's own registered scope, and NOT `claudePluginUninstallBestEffort()`. A both-scopes sweep would also drop a same-id plugin registered at the OTHER Claude scope — e.g. switching a project to eject would uninstall the still-registered global/user-scope plugin that other projects depend on. The registered scope is unambiguous here, so it is targeted exactly; `claudePluginUninstall` still swallows "not installed" / "not found".
 
@@ -714,7 +750,7 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **Helper:** `pluginInstallFailureError(failedCount)` (exported from the same file) returns the canonical hard-error message callers pass to `this.error()`: _"Failed to install N plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, run '<CLI_INVOKE_COMMAND> update' to refresh the marketplace, or switch affected skills to eject mode."_
 
-**Hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, callers MUST `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced at every per-skill install site: `installPluginsStep` (`init.tsx`), `applyPluginChanges` (newly-added skills, `edit.tsx`), and `applyMigrations` (eject->plugin migrations, `edit.tsx` — the same guard covers the migration path via `MigrationResult.failedPluginInstalls`). Uninstall failures are diagnostic-only (no orphan state). See the CLAUDE.md rule ("NEVER let plugin install per-skill failures silently produce orphan config entries") and finding `2026-07-20-migration-path-missing-marketplace-precondition.md`.
+**Hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, callers MUST `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced at every per-skill install site: `installPluginsStep` (`init.tsx`), `applyPluginChanges` (newly-added skills, `edit.tsx`), and `applyMigrations` (eject->plugin migrations, `edit.tsx` — the same guard covers the migration path via `MigrationResult.pluginInstalls.failed`). Uninstall failures are diagnostic-only (no orphan state). See the CLAUDE.md rule ("NEVER let plugin install per-skill failures silently produce orphan config entries").
 
 ### Uninstall Plugin Skills
 
@@ -724,7 +760,7 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **Type:** `PluginUninstallResult` -- `{ uninstalled: SkillId[], failed: Array<{ id: SkillId; error: string }> }`
 
-**Install/uninstall symmetry (finding `2026-04-22-plugin-uninstall-bare-id-asymmetry-with-install.md`):** The `marketplace` parameter was added so uninstall qualifies refs identically to install.
+**Install/uninstall symmetry.** The `marketplace` parameter was added so uninstall qualifies refs identically to install. Four call sites once passed a bare `skillId`; because the registry key IS the qualified ref, those uninstalls silently no-op'd — "not installed" is swallowed — leaving orphaned plugin registrations behind every migration, scope change and edit-time removal. Nothing caught it: both `claudePluginInstall` and `claudePluginUninstall` take the ref as a plain `string` (`pluginPath` / `pluginName`), so a bare id type-checks, and the `.mock.calls` assertions faithfully recorded the bare ids, so the tests stayed green while the product leaked.
 
 **Which uninstall helper to use:**
 
@@ -818,4 +854,4 @@ For each `config.skills` entry it emits the primary key `buildMarketplacePluginR
 | ------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **D-276** (`todo/cli.md`) | Ready for Dev | `maskCollidingGlobalSkills` / `reconcileProjectSplitAgainstGlobal` (`config-gate/propagate.ts`) vs `toggleTechnology` (`src/cli/stores/wizard-store.ts`) | The masking machinery is only reachable from ONE ordering — the project already owned the conflicting skill and a global install landed on top. The wizard cannot express the opposite intent: the exclusive-swap guard computes `wouldDropLockedSkill` from `isGloballyLockedSkill` and returns `TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED`, so a project with a global React cannot choose Angular at all. D-276 will allow the swap, default the new skill to project scope, and let the existing mask fire. It is explicitly NOT an exception to global immutability — the global entry is masked, never removed. |
 
-Two confirm-step display quirks are recorded as open in `2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`: an UNRECONCILED both-scopes config can list a skill as both unchanged and removed under Global, and a dropped mask is reported as a removal. The first is far less reachable now that such configs are masked at write time; the second cannot occur within a session.
+Two confirm-step display quirks that were open against this area are now closed inside `computeScopeDiff` (`lib/wizard/scope-diff.ts`), and both are worth knowing because the shapes that produced them still exist. An UNRECONCILED both-scopes config could list one skill under Global as both unchanged and removed — an inherited global the project claims WITHOUT a tombstone occupies no slot in current, so it was admitted as inherited and matched as removed at once; `removedGlobalSkills` and `uniqueExcludedGlobalSkills` now both dedupe against `inheritedSkillIdSet`, so the Global section renders at most one row per skill. And a dropped mask was reported as a removal — removal candidates now come from the ACTIVE baseline alone, so a baseline tombstone is never one, because it masked a global install rather than being one and its slot held nothing to delete. `scope-diff.test.ts` pins both against a control ("a global entry nothing claims any more" still reports the removal), which is what separates the guards from a diff that has stopped reporting removals at all.

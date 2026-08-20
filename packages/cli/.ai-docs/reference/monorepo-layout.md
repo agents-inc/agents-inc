@@ -40,6 +40,7 @@ keywords:
     node-floor,
     bun-install,
     version-unification,
+    vite-alias,
   ]
 related:
   - reference/architecture-overview.md
@@ -178,6 +179,38 @@ integration away, but it moves that question into a third workspace.
 The same file also records why the `docs/` segment is repeated in every Starlight slug
 (`src/content/docs/docs/…`), which reads as a typo and is Starlight's documented way to mount a
 collection at a subpath.
+
+### A Vite alias is a PREFIX match, so a subpath entry is a second alias
+
+`apps/editor/vitest.config.ts` restates `tsconfig.app.json`'s `paths` because Vitest does not read
+them, and `@workspace/matrix` appears there **twice** — a trailing-slash entry ordered ahead of the
+bare one. Deduplicating them is the change this warns against.
+
+<!-- apps/editor source, quoted verbatim — the root config formats it without semicolons. -->
+<!-- prettier-ignore -->
+```ts
+"@workspace/matrix/": resolve("../../packages/matrix/src/"),
+"@workspace/matrix": resolve("../../packages/matrix/src/index.ts"),
+```
+
+**A bare-only alias does not fail to resolve — it corrupts.** Vite matches a string alias by
+prefix and rewrites by concatenation, so with only the second entry present
+`@workspace/matrix/seed` becomes `…/packages/matrix/src/index.ts/seed` and the run dies on
+`ENOTDIR` against a path with a `.ts` file in the middle of it. That error names neither the alias
+list nor the config holding it, and it stays latent for as long as nobody imports a subpath: every
+`@workspace/matrix` import through the index kept working, and the gap surfaced the first time
+something reached for the published `@workspace/matrix/seed` entry point that `apps/server` already
+used. The trailing slash is what keeps the bare specifier out of the first entry, and the ordering
+is what makes it reachable at all.
+
+Any workspace adding a `@workspace/*` alias for a package with subpath `exports` needs the same
+pair. `apps/editor/vitest.config.ts` carries the argument inline.
+
+**A comment asserting parity between two hand-maintained lists is a claim, not parity**, and no gate
+here reads it — `deps:check`'s four axes compare each workspace's config to the SHARED package it
+extends, and have no axis for two configs inside one workspace that are meant to mirror each other.
+The alias list is exactly that shape: it exists only because Vitest does not read `tsconfig`'s
+`paths`. Diff it against the config it claims to copy whenever either moves.
 
 ### `vitest.config.mjs` at the root exists to throw
 

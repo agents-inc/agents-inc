@@ -41,7 +41,7 @@ keywords:
     normalizeProjectPath,
   ]
 related:
-  - reference/config/configuration.md
+  - reference/features/configuration.md
   - reference/config/config-merger.md
   - reference/config/scope-split.md
   - reference/concepts/scope-system.md
@@ -86,7 +86,8 @@ The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` 
 ### Stack emission — flag-less assignments compact to bare strings
 
 Every emission path runs the shared `cleanForEmission` helper (JSON round-trip, optional `projects`
-removal, stack compaction). Per assignment, `compactAssignment` applies the `carriesFlags` test —
+removal, stack compaction, stack key ordering, top-level field ordering). Per assignment,
+`compactAssignment` applies the `carriesFlags` test —
 `Boolean(assignment.preloaded || assignment.local || assignment.path)`:
 
 | Assignment in the config object    | Emitted form              |
@@ -146,6 +147,33 @@ Three consequences worth holding together:
 3. It is what `writeProjectPartial` has to normalize around — see
    [the `writeProjectPartial` note](#public-entry-points) above: a bare value reaching
    `compactCategories` on a re-emit silently drops the category.
+
+### Stack emission — the key order is the roster's, not the producer's
+
+`canonicalizeStackOrder` runs in `cleanForEmission` straight after the compaction, and rebuilds the
+stack's keys in a fixed order: **sub-agents by name**, and each sub-agent's **categories in the
+matrix's declaration order**. Sub-agent names use code-unit order (a bare `.sort()`), matching what
+`generateProjectConfigFromSkills` already applies to its agent list; `localeCompare` is deliberately
+not used, because it would make the emitted bytes a property of the machine's locale. Categories go
+through `byCategoryDeclarationOrder` in `matrix-provider.ts`, which is also what
+`inCanonicalCategoryOrder` in `config-generator.ts` calls — one definition, so the builder and the
+writer cannot disagree. A category the matrix does not declare sorts after every declared one and
+keeps the order it arrived in.
+
+**Why the writer rather than each builder.** Five modules assemble a stack — `buildAgentStack` and
+`buildStackProperty` in `config-generator.ts`, `seedToWizardResult` in `seed-to-wizard.ts`,
+`withKeptStackRows` in `seed-apply.ts`, `additiveMergeStack` in `config-gate/propagate.ts` — and only
+the first ordered anything. `init --from` writes through `seedToWizardResult`, whose `assignedStack`
+**replaces** the ownership-derived stack wholesale, so its keys arrived in the shared payload's own
+skill order. That is not only a noisy diff: `buildAgentTemplateContext` splits `agent.skills` into
+preloaded and dynamic **preserving order**, and `recompileAgents` reads `agent.skills` back off
+`config.ts` — so the stack's key order decides the order of the compiled sub-agent's dynamic skill
+activation table. A share round trip reproduced its configuration field for field and compiled a
+different `web-developer.md` until this landed.
+
+Covered by the two specs under "stack key order follows the roster, not the producer's insertion
+order" in `src/cli/lib/configuration/__tests__/config-writer.test.ts`: one pins that two stacks
+differing only in key insertion order emit identical bytes, the other pins the emitted order itself.
 
 ## Config Types Writer
 
@@ -237,12 +265,12 @@ writing `~/.claude-src/config.ts` and its `config-types.ts` sibling (together, *
 
 | Tier   | Trigger                                                                                                           | Pair halves written | Propagates | Regenerates project types | Recompiles | Loads matrix/agents |
 | ------ | ----------------------------------------------------------------------------------------------------------------- | ------------------- | ---------- | ------------------------- | ---------- | ------------------- |
-| **T1** | skills added/removed/`source`-changed/otherwise changed, agents added/removed/changed, `stack`, `selectedDomains` | both                | yes        | yes                       | yes        | yes                 |
+| **T1** | skills added/removed/`origin`-changed/otherwise changed, agents added/removed/changed, `stack`, `selectedDomains` | both                | yes        | yes                       | yes        | yes                 |
 | **T2** | scalars only (any key that is neither one of the four extracted fields nor `projects`)                            | config half         | yes        | no                        | no         | matrix only         |
 | **T3** | `projects[]` only                                                                                                 | config half         | no         | no                        | no         | no                  |
 | **T4** | nothing moved                                                                                                     | none                | no         | no                        | no         | no                  |
 
-T2 exists because project configs inline the global **scalars** verbatim — `mergeInlinedScalarFields` emits every non-extracted key of `{ ...cleanedGlobal, ...cleaned }` except `name`, so `description`, `author`, `marketplace`, `marketplaceName`, `agentsSource` and any passthrough key land in project output — while no generated union is derived from them. (There are no `source` or `sources` fields; the marketplace ref is `marketplace` and its resolved name is `marketplaceName`.) A per-skill `source` change is T1, not T2: the compiled reference form depends on it(`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected one), so a source change that skipped the recompile would leave every registered project's agents naming a reference that no longer resolves. T3 is the reason a project `uninstall` stays offline — `resolveGateDeps` never calls the lazy loaders for a tier with no consequences.
+T2 exists because project configs inline the global **scalars** verbatim — `mergeInlinedScalarFields` emits every non-extracted key of `{ ...cleanedGlobal, ...cleaned }` except `name`, so `description`, `author`, `marketplace`, `marketplaceName`, `agentsSource` and any passthrough key land in project output — while no generated union is derived from them. (There are no `source` or `sources` fields; the marketplace ref is `marketplace` and its resolved name is `marketplaceName`.) A per-skill `origin` change is T1, not T2 — `GlobalChangeSet.skills.sourceChanged` keeps the older word for the field it diffs, which is `origin`. The compiled reference form depends on it(`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected one), so a source change that skipped the recompile would leave every registered project's agents naming a reference that no longer resolves. T3 is the reason a project `uninstall` stays offline — `resolveGateDeps` never calls the lazy loaders for a tier with no consequences.
 
 ### Public entry points
 
@@ -525,14 +553,14 @@ Agents have no categories, so `maskCollidingGlobalAgents` / `dropOrphanedDerived
 
 ### Invariants
 
-| Invariant                           | How it holds                                                                                                                                                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Idempotent                          | `maskColliding*` skips ids/names already in `alreadyTombstoned`.                                                                                                                                       |
-| Honours source-repo overrides       | `isExclusiveCategory(category, matrix)` reads `matrix.categories[category]?.exclusive`, not `defaultCategories`.                                                                                       |
-| Undeclared flag is non-exclusive    | `?.exclusive === true`. A rule that masks persisted entries must only fire on a flag the data actually carries — deliberately unlike `build-step-logic.ts`'s `cat.exclusive ?? true` renderer default. |
-| Never throws on custom skills       | `categoryOfSkill` returns `undefined` for an id absent from the matrix and for `LOCAL_PSEUDO_CATEGORY`; neither participates in category rules.                                                        |
-| Never writes into the global config | Masking is applied to the project split only. The `globalConfig` argument is read, never rewritten — a tombstone never belongs in `~/.claude-src/config.ts`.                                           |
-| The mask carries the global source  | Masks are built as `{ ...globalEntry, excluded: true }`.                                                                                                                                               |
+| Invariant                           | How it holds                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Idempotent                          | `maskColliding*` skips ids/names already in `alreadyTombstoned`.                                                                                                                                                                                                                                                                                       |
+| Honours source-repo overrides       | `isExclusiveCategory(category, matrix)` reads `matrix.categories[category]?.exclusive`, not `defaultCategories`.                                                                                                                                                                                                                                       |
+| Absent category is non-exclusive    | `?.exclusive === true`. A rule that masks persisted entries must only fire on a category the data actually carries — deliberately unlike `use-build-step-props.ts`'s `matrix.categories[categoryId]?.exclusive ?? true` toggle default. Neither turns on an absent FIELD: `exclusive` is a non-optional `boolean` everywhere it is produced or parsed. |
+| Never throws on custom skills       | `categoryOfSkill` returns `undefined` for an id absent from the matrix and for `LOCAL_PSEUDO_CATEGORY`; neither participates in category rules.                                                                                                                                                                                                        |
+| Never writes into the global config | Masking is applied to the project split only. The `globalConfig` argument is read, never rewritten — a tombstone never belongs in `~/.claude-src/config.ts`.                                                                                                                                                                                           |
+| The mask carries the global source  | Masks are built as `{ ...globalEntry, excluded: true }`.                                                                                                                                                                                                                                                                                               |
 
 **The project's own skill wins locally.** Deliberately asymmetric with `toggleTechnology`'s exclusive-swap guard, which refuses a user-initiated swap over a globally locked skill: there the user is displacing a shared install, whereas here a global install landed on top of existing project state and letting it win would silently uninstall the user's own skill. Relaxing the wizard-side guard is tracked as D-276 in `todo/cli.md`.
 
@@ -581,7 +609,7 @@ normalizeProjectPath(projectDir) -> fs.realpathSync(projectDir)
 
 **Scope of the rule.** It governs the `projects[]` registry only. `isHomeDirectory` (`src/cli/lib/installation/is-home-directory.ts`) also compares symlink-resolved directories, but against `$HOME` rather than against a persisted registry, and it keeps its own plain-string `catch` fallback. Do not unify the two — nothing `isHomeDirectory` compares was ever written to disk under a normalization that must be matched later.
 
-**Single rule, no fallback tier — deliberate, not an oversight.** `normalizeProjectPath` THROWS when the directory does not exist; there is no `path.resolve` second tier. Finding `2026-07-25-register-deregister-path-normalization-asymmetry.md` proposed precisely that fallback ("normalize with `fs.realpathSync` ... falling back to `path.resolve` only if the path no longer exists on disk"), and it was **deliberately not implemented**. A two-tier resolution chain is banned by CLAUDE.md's Data Integrity rule ("NEVER build multi-tier resolution fallbacks ... Data matches on the first lookup or it's an error"), so building it would have placed the banned pattern inside the very helper written to unify the rule — the second tier is exactly where the asymmetry would grow back. Do NOT restore the fallback believing it was overlooked: see that finding's **Resolution Note** and finding `2026-07-30-finding-proposed-standard-contradicted-a-never-rule.md`.
+**Single rule, no fallback tier — deliberate, not an oversight.** `normalizeProjectPath` THROWS when the directory does not exist; there is no `path.resolve` second tier. The report that surfaced the asymmetry proposed precisely that fallback — "normalize with `fs.realpathSync` ... falling back to `path.resolve` only if the path no longer exists on disk" — and it was **deliberately not implemented**. A two-tier resolution chain is banned by CLAUDE.md's Data Integrity rule ("NEVER build multi-tier resolution fallbacks ... Data matches on the first lookup or it's an error"), so building it would have placed the banned pattern inside the very helper written to unify the rule — the second tier is exactly where the asymmetry would grow back. The one caller that must survive the throw is `uninstall`'s deregistration, and it already wraps the call in a warn-and-continue guard (see the table below). Do NOT restore the fallback believing it was overlooked: `agent-findings/README.md` → "Writing a Finding" requires a proposal to be cross-checked against the NEVER rules precisely because this one was not.
 
 **Where the throw lands.** The helper is reached late on every path, so a non-existent directory degrades rather than crashing an operation mid-write:
 
@@ -614,7 +642,7 @@ Normalization: `normalizeProjectPath(projectDir)` — `fs.realpathSync`, resolve
 
 **The invariant that now holds:** all three registry sites call the single `normalizeProjectPath` helper (see "Path normalization" above), so there is one implementation of the rule and no second one to drift against. This entry is kept rather than deleted because the constraint is invisible in the fixed code — a future edit that inlines `path.resolve` at either end reads as harmless and silently restores the defect.
 
-The general rule, still binding: **a value written to config under one normalization must be read back and filtered under the same normalization.** See `agent-findings/2026-07-25-register-deregister-path-normalization-asymmetry.md`, whose Resolution Note records the deliberately-omitted fallback tier.
+The general rule, still binding: **a value written to config under one normalization must be read back and filtered under the same normalization.** The fallback tier that was deliberately omitted from `normalizeProjectPath`, and why, is recorded under "Path normalization" above.
 
 Filter rule: removes any `projects` entry equal to the normalized path. Writes the updated global config only if the filter actually shortened the array (`applyMutation` returns `null` otherwise, and `mutateGlobal` reports a no-op). Early-returns silently if no global config exists or `projects` is empty.
 

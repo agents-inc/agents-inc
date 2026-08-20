@@ -95,8 +95,8 @@ it("should select specific stack and toggle skills", async () => {
 
   // Build -> toggle a specific skill, advance through domains.
   // The label is the EXACT rendered display title, not a substring:
-  // "React" would not match a cell whose title is "web-framework-react".
-  await build.selectSkill("web-framework-react");
+  // "React" would not match a cell whose title is "E2E React".
+  await build.selectSkill(E2E_SKILL.react.display);
   await build.advanceDomain(); // Web
   await build.advanceDomain(); // API
   const sources = await build.advanceToSources(); // Shared
@@ -257,11 +257,11 @@ The canonical pattern for moving focus in the build grid, and the model for any 
 
 ```typescript
 // Good: name-addressed, closed-loop under the hood
-await build.focusSkill("web-framework-react");
+await build.focusSkill(E2E_SKILL.react.display);
 await build.toggleScopeOnFocusedSkill();
 
 // Good: focus + toggle in one call
-await build.selectSkill("web-framework-react");
+await build.selectSkill(E2E_SKILL.react.display);
 
 // Bad: dead reckoning. The grid PRESERVES and clamps the column across
 // arrow-DOWN, so a counted walk lands on — and toggles — the wrong skill.
@@ -281,11 +281,11 @@ And the two keys behave differently: **Tab** moves to the next category AND rese
 
 Rules for callers:
 
-- **Pass the EXACT rendered display title.** Matching is `===` after stripping scope badges, diff glyphs, and compatibility annotations — `"React"` will not match a `"React Query"` cell. In the standard E2E source, most skill titles ARE the skill id (`web-framework-react`); the `meta-*` and Vue skills have humanised titles. Key off `E2E_SKILL_TITLES` rather than re-typing strings.
+- **Pass the EXACT rendered display title.** Matching is `===` after stripping scope badges, diff glyphs, and compatibility annotations — `"React"` will not match a `"React Query"` cell. No fixture title is a skill id: key off `E2E_SKILL_TITLES`, through `E2E_SKILL.<slug>.display`, rather than re-typing strings.
 - **Never assert on which cell has focus.** Assert on a consequence instead: `getExclusiveCategorySelectedCount(category)` for in-grid selected state (the only text-observable signal), or `getScopeBadgesForSkill(label)` for scope.
 - **Do not use `EditWizard.launchInProjectShort` with `focusSkill`.** That launcher skips the build-category settle wait, so the layout `focusSkill` parses may not have painted.
 
-See `.ai-docs/agent-findings/2026-07-29-e2e-grid-focus-unobservable-under-no-color-closed-loop-tab-walk.md`.
+The RIGHT half of the walk is safe for a reason worth stating: `CategoryGrid`'s `findValidCol` is a plain cyclic wrap over the focused row's own rendered `options`, so arrow-RIGHT skips nothing — not even an incompatible cell — and the column counted off the screen is the column the keystrokes address.
 
 ---
 
@@ -295,13 +295,13 @@ Toasts render in an absolutely-positioned row that Ink rewrites in place, so xte
 
 ```typescript
 // Good: the toast is waited for on the surface that retains it
-await build.selectSkillAwaiting("web-framework-react", STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
+await build.selectSkillAwaiting(E2E_SKILL.react.display, STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
 
 // Also available: toggleFocusedSkillAwaiting,
 // AgentsStep.toggleFocusedAgentAwaiting, ConfirmStep.confirmAwaiting
 
 // Bad: the toast may already be overwritten in the processed buffer
-await build.selectSkill("web-framework-react");
+await build.selectSkill(E2E_SKILL.react.display);
 expect(build.getOutput()).toContain(STEP_TEXT.GLOBAL_SKILLS_BLOCKED);
 ```
 
@@ -319,7 +319,7 @@ await wizard.stack.selectStack("E2E Test Stack");
 await agents.toggleAgent("API Developer");
 await agents.navigateCursorToAgent("API Developer");
 await domain.toggleDomain(STEP_TEXT.DOMAIN_API);
-await build.focusSkill("web-framework-react");
+await build.focusSkill(E2E_SKILL.react.display);
 
 // Bad: fragile index-based navigation
 for (let i = 0; i < 3; i++) {
@@ -339,18 +339,20 @@ await prompt.arrowDown();
 ## Cancellation and Error Pattern
 
 ```typescript
+// Preferred: one call covers the abort, the exit wait and the cleanup.
 it("should handle cancellation gracefully", async () => {
   const wizard = await InitWizard.launch();
-  wizard.abort(); // Ctrl+C
-  const exitCode = await wizard.waitForExit();
+  const exitCode = await wizard.abortAndDestroy();
   expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
 });
 
-it("should handle Escape from stack step", async () => {
-  const wizard = await InitWizard.launch();
-  wizard.escape();
-  const exitCode = await wizard.waitForExit();
-  expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+// Bare abort(), for the case where destroy() would delete the subject under
+// assertion — it is `async`, so it is awaited like every other keypress here.
+it("should leave the global home untouched when aborted", async () => {
+  const wizard = await InitWizard.launchInProject({ projectDir });
+  await wizard.abort();
+  expect(await wizard.waitForExit()).not.toBe(EXIT_CODES.SUCCESS);
+  await expect({ dir: wizard.globalHome }).toHaveNoLocalSkills();
 });
 ```
 
@@ -420,11 +422,12 @@ describe.skipIf(!claudeAvailable)("plugin mode", () => {
 When a test documents expected behavior that isn't implemented yet, use `it.fails()`. The test is expected to fail, keeping the suite green while documenting the bug.
 
 ```typescript
-// BUG: CLI exits 0 with corrupt source -- falls back to default
-// instead of reporting an error for the invalid --source directory.
-it.fails("should error on corrupt source", async () => {
-  const { exitCode } = await CLI.run(["init", "--source", "/bad"], project);
-  expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+// BUG: `list` prints skill COUNTS only. A user cannot see which skills are
+// installed, which is the question the command exists to answer.
+it.fails("should show all skill IDs in output", async () => {
+  const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
+  expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+  expect(stdout).toContain(E2E_SKILL.react.id);
 });
 ```
 

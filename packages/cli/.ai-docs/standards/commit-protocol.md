@@ -40,6 +40,44 @@ When creating multiple commits in sequence:
 2. ✅ Run tests on the **last commit** only
 3. ❌ Skip tests for intermediate commits (use `--no-verify`)
 
+## Gates
+
+**A gate an agent must run cannot depend on git state.** Every delegation prompt here forbids
+sub-agents from running a git command that writes, and the agent that regenerated an artefact is
+precisely the party who has to verify it. A check shaped as `<generator> && git diff --exit-code
+<path>` fails that twice over: it is unrunnable under the rule, and on a curated working tree it
+answers "does this differ from what is staged or committed" rather than "is this stale against its
+source" — while reporting nothing at all for a path git has never seen, so a generator that starts
+emitting a new file passes.
+
+Write the check into the generator instead: emit into memory, compare against the bytes on disk,
+name **every** drifted path, exit non-zero. `generate:types:check`, `generate:schemas:check` and
+`generate:matrix:check` are all that shape, so `prepublishOnly` can be run by whoever changed the
+generator.
+
+### The one roster no gate covers
+
+**A change to `AGENT_NAMES` updates the "Subagents" table in `packages/cli/README.md` in the same
+commit.** Every other copy of that roster is bound to source by something: `check-enumeration-drift.ts`
+holds `AGENT_NAMES` against `reference/type-system.md`, `agent-roster.test.ts` owns the grid-row
+questions, and the type system reddens a stale constant that carries its `satisfies` clause. The
+README's table is bound by nothing — no script reads `packages/cli/README.md`, and it is the file a
+prospective user reads first, so a retired sub-agent survives there in public.
+
+The two sides agree today at eighteen names in both directions, which is what makes the check cheap
+to keep true:
+
+```
+comm -3 \
+  <(sed -n '/^## Subagents/,/^Each subagent/p' README.md | grep -oE '`[a-z-]+`' | tr -d '`' | sort -u) \
+  <(sed -n '/^export const AGENT_NAMES/,/^] as const/p' src/cli/types/generated/source-types.ts \
+      | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u)
+```
+
+Empty in both directions is the passing state. The glob-shaped entries in the table's Reviewer and
+Planning rows (`meta-reviewing-*`, `meta-planning-*`) name skills rather than sub-agents and the
+first command deliberately does not match them, because a `*` is not in its character class.
+
 ## Release Checklist
 
 Every release MUST complete all steps. No exceptions.

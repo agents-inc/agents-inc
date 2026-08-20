@@ -4,9 +4,9 @@ area: architecture
 keywords:
   [scope, directory-structure, data-flow, entry-points, tombstone, stack-grouping, config-writer]
 related:
-  - reference/architecture/dependency-graph.md
-  - reference/architecture/boundary-map.md
-  - reference/config/configuration.md
+  - reference/dependency-graph.md
+  - reference/boundary-map.md
+  - reference/features/configuration.md
   - reference/features/operations-layer.md
   - reference/commands/index.md
   - reference/concepts/scope-system.md

@@ -102,14 +102,14 @@ into the bundle (`noExternal`, §7), so its source is build input — and it has
 there appears to be nothing for the root task's `^build` to hang on. It is hashed regardless: turbo
 puts a task node in the graph for a dependency that does not implement the task.
 `turbo run build --dry=json --filter=agents-inc` shows `@workspace/matrix#build` carrying
-`"command": "<NONEXISTENT>"`, all 35 of its files hashed, listed among `agents-inc#build`'s
+`"command": "<NONEXISTENT>"`, all of its files hashed, listed among `agents-inc#build`'s
 `dependencies` — and that node's hash feeds the CLI's. Measured on turbo 2.10.8 (CLI-458 was filed
 on the opposite assumption): appending one comment line to
 `packages/matrix/src/read-model/domains.ts` turns a `>>> FULL TURBO` replay of `agents-inc#build`
 into a re-run and moves `agents-inc#test`'s hash with it, while the same edit to a package the CLI
 does **not** depend on (`packages/ui`) leaves both hashes byte-identical — so it is the dependency
 edge doing this, not the global hash. `"../matrix/src/**"` in `inputs` is accepted by turbo and does
-hash the 23 files it matches, but it would hash them a second time under a second name and would
+hash the files it matches, but it would hash them a second time under a second name and would
 need another line for every workspace dependency this package gains, so it is deliberately absent.
 What turbo covers here, the `globalSetup` guard covers for the invocations turbo never sees —
 `vitest.global-setup.ts` calls `assertDistIsFresh` in `src/cli/lib/testing/dist-staleness.ts`, which

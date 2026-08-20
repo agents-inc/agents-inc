@@ -130,20 +130,23 @@ pointers whose bodies live in subdirectories. Determine direction by reading bot
 
 ## Standards
 
-Prescriptive rules for code, tests and documentation. Owned by convention-keeper.
+Prescriptive rules for code, tests and documentation. Owned by convention-keeper. Every row is
+scoped to `packages/cli` except `editor-and-worker.md`, which is the one standard written for the
+workspaces on the other side of the repository.
 
-| Doc                                   | Covers                                                                                         |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `standards/clean-code-standards.md`   | Code-quality rules, numbered by section                                                        |
-| `standards/documentation-bible.md`    | How `.ai-docs/` is written and maintained                                                      |
-| `standards/e2e/`                      | E2E sub-standards: structure, assertions, page objects, test data, patterns, anti-patterns     |
-| `standards/e2e/user-journeys.md`      | The journeys the suite must cover, the four assertion surfaces each owes, per-journey coverage |
-| `standards/typescript-types-bible.md` | Type-authoring rules                                                                           |
-| `standards/prompt-bible.md`           | Prompt phrasing, XML tags, delegation shape                                                    |
-| `standards/loop-prompts-bible.md`     | Loop cadence, iteration discipline, synthesis passes                                           |
-| `standards/skill-atomicity-bible.md`  | Skill decomposition rules                                                                      |
-| `standards/skill-atomicity-primer.md` | Short form of the above                                                                        |
-| `standards/commit-protocol.md`        | Commit message and release conventions                                                         |
+| Doc                                   | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `standards/clean-code-standards.md`   | Code-quality rules, numbered by section                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `standards/editor-and-worker.md`      | `apps/editor`, `apps/server` and the packages they share: what a published catalogue must carry for a consumer to refuse an entry, the route paths and `hc` coverage the RPC client imposes, `exposeHeaders`, bounding a request's fan-out, when a workspace is consumed as source rather than as an emitted declaration, what `persist` stores owe — hydration order, writes, foreign state, and credential keying — what a discard may report, whether reporting a loss to observability discharges the duty to tell the user, and why an act reachable through two controls belongs in a module both call |
+| `standards/documentation-bible.md`    | How `.ai-docs/` is written and maintained                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `standards/e2e/`                      | E2E sub-standards: structure, assertions, page objects, test data, patterns, anti-patterns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `standards/e2e/user-journeys.md`      | The journeys the suite must cover, the four assertion surfaces each owes, per-journey coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `standards/typescript-types-bible.md` | Type-authoring rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `standards/prompt-bible.md`           | Prompt phrasing, XML tags, delegation shape                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `standards/loop-prompts-bible.md`     | Loop cadence, iteration discipline, synthesis passes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `standards/skill-atomicity-bible.md`  | Skill decomposition rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `standards/skill-atomicity-primer.md` | Short form of the above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `standards/commit-protocol.md`        | Commit message and release conventions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -160,14 +163,29 @@ pipeline and `agent-findings/TEMPLATE.md` for the frontmatter schema.
 ## Coverage
 
 This section owns the source and E2E file totals; no other doc restates them. Re-derive with
-`find`, never carry forward.
+`find`, never carry forward — and re-derive with the invocations below rather than one of your own,
+because what a total counts is the half that drifts silently. "TypeScript files" is `.ts` **and**
+`.tsx` here, `.d.ts` included; `src/cli/` has both extensions and `e2e/` has none of the second, so
+a reader who guesses wrong is right about one of them and cannot tell which.
 
-- **`src/cli/`:** 380 TypeScript files — 151 specs (`*.test.ts(x)`), the rest production and test
+- **`src/cli/`:** 398 TypeScript files — 165 specs (`*.test.ts(x)`), the rest production and test
   support.
-- **`e2e/`:** 266 TypeScript files — 223 specs, 43 helpers/fixtures/page objects. The 223 splits
-  220 `*.e2e.test.ts` (the `e2e` project, what `test:e2e` runs) and 3 `*.smoke.test.ts` (the
+
+  ```
+  find src/cli -type f \( -name '*.ts' -o -name '*.tsx' \) | wc -l
+  find src/cli -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | wc -l
+  ```
+
+- **`e2e/`:** TypeScript files — specs, plus helpers, fixtures and page objects. The specs split
+  into `*.e2e.test.ts` (the `e2e` project, what `test:e2e` runs) and `*.smoke.test.ts` (the
   `smoke` project, run explicitly by `test:smoke`). The two `include` globs in
   `e2e/vitest.config.ts` are the only thing that separates them.
+
+  ```
+  find e2e -type f -name '*.ts' | wc -l
+  find e2e -type f -name '*.e2e.test.ts' | wc -l
+  find e2e -type f -name '*.smoke.test.ts' | wc -l
+  ```
 
 ---
 
@@ -239,4 +257,40 @@ do not "complete the pair" in `ci.yml`. (`regenerate-catalog.yml` does check the
 runs all three generators as writers; that is a different job from checking a committed artefact.) A
 stale generated artefact can therefore sit on `main` until the next CI run (schemas, matrix) or the
 next publish (types). The three write scripts compose into one, `bun run generate`, in dependency
-order. `reference/features/code-generation.md` carries the detail.
+order.
+
+**All three checks are now runnable by a sub-agent.** Each compares emitted bytes against the bytes
+on disk and names every drifted path; none reads git state. Two of them used to be
+`<generator> && git diff --exit-code <path>`, which no agent could run under the no-write-git rule
+and which answered a different question anyway on a curated working tree.
+`standards/commit-protocol.md` carries the rule and
+`reference/features/code-generation.md` the detail.
+
+**The generator checks are not the only gates under `scripts/`.** A set of `scripts/check-*.ts` sits
+beside them, and they split by whether anything but a spec can invoke them. Re-derive the split
+rather than carrying it — and do not filter with `grep -v test`, because
+`check-shared-vitest-config` contains the word:
+
+```
+ls scripts/check-*.ts | grep -v '\.test\.ts$'   # every checker
+ls scripts/run-check-*.ts                        # the ones something else can invoke
+```
+
+The three with a `run-*` entry point walk every workspace in the monorepo —
+`check-shared-tsconfig`, `check-shared-vitest-config`, `check-shared-eslint-config` — and the
+REPOSITORY-root manifest invokes all three from its `deps:check` script; `packages/cli`'s own
+manifest names none of them. `reference/monorepo-layout.md` carries them, their opt-out comments and
+who is bound. None of the rest has a runner or a manifest entry anywhere, so **the suite beside each
+one is the only way it runs**:
+
+| Checker                      | Judges                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-enumeration-drift`    | A document's list of names against the membership of the symbol, module or directory it claims to enumerate — and, where a row asks for pairs, the VALUE each named member holds                                                                                                            |
+| `check-finding-citations`    | Every finding cited by basename from `todo/` (all citations) or `changelogs/` (bracketed links only) still exists in `agent-findings/` or `agent-suggestions/`. `.ai-docs/` is deliberately out of scope, because `agent-findings/INDEX.md` names deleted findings on purpose               |
+| `check-findings-frontmatter` | Every `agent-findings/` block parses, declares a `root_cause` read out of `TEMPLATE.md`'s own frontmatter, and is not an uncross-linked duplicate                                                                                                                                           |
+| `check-screen-sentinels`     | An `e2e/pages/constants.ts` literal a page object WAITS on against the string the product paints — drift there times out rather than asserting                                                                                                                                              |
+| `check-spawn-doors`          | Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK`. Judged per DOOR, following a spawn's env expression through the local declarations it names, and recognising a door by the binary path it hands the spawn rather than by the constant it reaches it through |
+
+**A documentation edit can turn that suite red, and that is the point.** After changing any document
+that states a list, run `npx vitest run --project unit scripts/` from `packages/cli`. Which document
+sections are bound is stated in the documents themselves, not restated here.

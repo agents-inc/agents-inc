@@ -367,7 +367,7 @@ Then provide your answer in <output> tags.
 - Solves the widespread "Claude 4 is less helpful than 3.5" complaint
 
 **Case Study — What the Unconditional Form Cost:**
-Applied to every prompt regardless of task breadth, these modifiers produce the inverse defect. The reviewer agents carried them as a standing instruction and returned speculative refactors and out-of-spec recommendations — over-engineered reviews the owner stopped using, and the reason the reviewer-restraint repair pass exists. See `.ai-docs/agent-findings/2026-08-06-comprehensive-and-thorough-is-mandated-by-the-summoner-and-the-prompt-bible.md` for how the mandate reached 25 agent prompts, and `.ai-docs/agent-findings/2026-08-06-expansion-modifier-doctrine-restates-the-volume-mandate-in-other-words.md` for how this technique kept re-issuing it after those prompts were softened.
+Applied to every prompt regardless of task breadth, these modifiers produce the inverse defect. The reviewer agents carried them as a standing instruction and returned speculative refactors and out-of-spec recommendations — over-engineered reviews the owner stopped using, and the reason the reviewer-restraint repair pass exists. The mandate reached 25 agent prompts because it was prescribed rather than chosen — the summoner's playbook made it a checklist item for every `identity.md` it wrote, and this technique's own worked example supplied the wording. Softening the prompts did not stop it. That sweep retired one phrase and was verified with a zero-hit grep for it, while this technique's own modifier list and application paragraph went on prescribing the same volume in a second vocabulary — three modifiers of the shapes the "Modifiers That Backfire" list below now names, under an instruction to add one to EVERY task description and a statement that doing so was not optional. An author following the technique to the letter was compliant with this bible and reintroduced at the next agent exactly what the sweep had taken out. A phrase-level grep returning zero is evidence about one wording, never about the rule that produced it — verify a mandate's removal by reading the technique it came from.
 
 **Key Modifiers That Work:**
 
@@ -1883,7 +1883,8 @@ Self-review against CLAUDE.md before reporting.
 <task>
 <concrete task with expected deliverables>
 
-**Include all relevant edge cases; go beyond the minimum.**
+<expansion modifier — ONLY if the task is genuinely broad; see Technique #6. Omit it otherwise,
+because on a scoped task it is an instruction to exceed the scope and will be obeyed.>
 </task>
 
 <context>
@@ -1900,6 +1901,48 @@ Self-review against CLAUDE.md before reporting.
 <structured sections the parent expects, with length cap>
 </report_format>
 ```
+
+### 8.6 Built-In Agent Partials Are Product Content
+
+Everything under `src/agents/**` compiles into whatever project runs the CLI. A partial is not a
+note to ourselves — it is a prompt that will execute in a repository nobody here has seen. So **a
+partial may not name a path, file, or convention that exists only in this repository**: `.ai-docs/**`,
+`CLAUDE.md`, `todo/**`. In the installing project those do not exist, and an agent told to write a
+finding to `.ai-docs/agent-findings/` either creates an orphan directory the project never reads or
+reports that it could not comply. A `CLAUDE.md` citation is worse in kind: it points the user's
+agent at a rule it can neither read nor verify.
+
+Delegation boilerplate that belongs to _our_ workflow — the findings protocol, the git-staging
+prohibition as "per CLAUDE.md" — belongs in the delegating prompt of [Section 8.2](#82-required-boilerplate-for-every-delegation), not in the compiled agent.
+
+**Two exceptions, both narrow:**
+
+1. The `meta/` agents, whose stated job is curating an `.ai-docs/` tree. A project adopting
+   `codex-keeper` plausibly adopts the convention with it.
+2. The same rule restated in project-agnostic terms. "Never run git commands that modify the staging
+   area or working tree" is fine; "(per CLAUDE.md)" is not. "Record a finding the way this project's
+   conventions direct" is fine; naming our directory and our template file is not — including inside
+   a parenthetical that says "for this repository", which reads in the installing project as _their_
+   repository.
+
+**The check:**
+
+```bash
+grep -rn "ai-docs\|CLAUDE\.md" src/agents/ --exclude-dir=meta
+```
+
+It must return nothing. Two ways to get a false clean from it:
+
+- **Exclude by `--exclude-dir`, never by a pipe.** `grep -rn` prints `path:line:text`, so
+  `| grep -v meta` filters the **text** while looking like it filters the **path** — it drops any
+  line whose body happens to say "meta" and keeps `meta/` files whose lines do not.
+- **Do not add `agents-inc` to the pattern.** Every `metadata.yaml` opens with a
+  `# yaml-language-server: $schema=...` comment naming the GitHub org. That is editor tooling, not
+  prompt content, and including the term returns one false hit per agent and buries the real ones.
+
+This class is invisible in-repo, because every path resolves correctly here. It fails only after
+publication, in someone else's project, where nobody reports it back — which is why it needs a grep
+rather than a reviewer.
 
 ---
 

@@ -32,7 +32,7 @@ keywords:
 related:
   - reference/types/operations-types.md
   - reference/types/zod-schemas.md
-  - reference/architecture/overview.md
+  - reference/architecture-overview.md
   - reference/store-map.md
   - reference/concepts/scope-system.md
 last_validated: 2026-07-30
@@ -288,11 +288,10 @@ Unified project configuration stored at `.claude-src/config.ts`. No `version` fi
 
 - `name`, `description?`, `author?`
 - `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope, model?, effort?, excluded? }`)
-- `skills: SkillConfig[]` - Per-skill scope+source config (`{ id, scope, source, excluded? }`)
+- `skills: SkillConfig[]` - Per-skill scope+provenance config (`{ id, scope, origin, excluded? }`)
 - `stack?: Record<string, StackAgentConfig>`
-- `source?`, `marketplace?`, `agentsSource?`
+- `marketplace?`, `marketplaceName?`, `agentsSource?`
 - `selectedDomains?: Domain[]` - Selected wizard domains, omitted when empty (sparse output). There is no `selectedAgents` field — the selected-agent set is derived from non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`
-- `sources?: SourceEntry[]` - Additional skill sources
 - `branding?: BrandingConfig` - White-label overrides
 - Directory overrides: `skillsDir?`, `agentsDir?`, `stacksFile?`, `categoriesFile?`, `rulesFile?`
 - `projects?: string[]` - Tracked project installation paths (global config only)
@@ -303,7 +302,7 @@ Per-skill configuration entry used inside `ProjectConfig.skills`:
 
 - `id: SkillId`
 - `scope: "project" | "global"`
-- `source: string` — `"eject"` or marketplace name (e.g., `"agents-inc"`). Drives per-skill `pluginRef` attachment in the compiler.
+- `origin: string` — `"eject"` (the project's own copy) or a marketplace name (e.g., `"agents-inc"`). Drives per-skill `pluginRef` attachment in the compiler, which reads it under the compile-side spelling `SkillReference.source` / `Skill.source`. **A config entry spelling this key `source` is refused by name** — `RENAMED_SKILL_ENTRY_FIELDS` in `src/cli/lib/schemas.ts`.
 - `excluded?: boolean` — when true, skill is tracked in config but not installed/compiled
 
 ### AgentScopeConfig (`src/cli/types/config.ts`)
@@ -332,7 +331,7 @@ export type ClaudePluginScope = "project" | "user"; // Claude CLI --project/--us
 
 ### SourceEntry (`src/cli/types/config.ts`)
 
-An additional skills source (private marketplace / custom repo) listed in `ProjectConfig.sources`:
+An additional skills source (private marketplace / custom repo). `ProjectConfig` has no `sources` field: the only producer is `resolvePrimarySourceEntry(projectDir)` in `src/cli/lib/configuration/config.ts`, which wraps the marketplace `resolveSource` settled on, and the only consumer is `validateRegisteredSources` in `src/cli/lib/content-validator.ts`.
 
 - `name: string`
 - `url: string` — e.g. `"github:acme-corp/skills"`
@@ -357,7 +356,7 @@ Skill reference used in agent config (stack → agent → skills mapping):
 - `id: SkillId`
 - `usage: string` — context-specific description of when to use this skill (required)
 - `preloaded?: boolean`
-- `source?: string` — install source propagated from `SkillConfig.source`. Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means ejected to `.claude/skills/`; any other value (e.g., marketplace name) means plugin-installed.
+- `source?: string` — install source propagated from `SkillConfig.origin` by `buildCompileAgents`. The config field is `origin` and the compile-side field is `source`; both hold the same value. Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means ejected to `.claude/skills/`; any other value (e.g., marketplace name) means plugin-installed.
 
 ### Skill (`src/cli/types/skills.ts`)
 
@@ -440,7 +439,7 @@ Relationship fields (`conflictsWith`, `requires`, …) are **absent** here: they
 export type InstallMode = "eject" | "plugin" | "mixed";
 ```
 
-Derived at runtime from `SkillConfig.source` by `deriveInstallMode(skills)` in `src/cli/lib/installation/installation.ts`: empty skills → `"eject"`; any mix of `EJECT_SOURCE` and non-eject sources → `"mixed"`. Re-exported from the installation barrel for existing importers, and labelled for display via `INSTALL_MODE_LABELS` (same file).
+Derived at runtime from `SkillConfig.origin` by `deriveInstallMode(skills)` in `src/cli/lib/installation/installation.ts`: empty skills → `"eject"`; any mix of `EJECT_SOURCE` and non-eject sources → `"mixed"`. Re-exported from the installation barrel for existing importers, and labelled for display via `INSTALL_MODE_LABELS` (same file).
 
 ### SkillSourceType (`src/cli/types/matrix.ts`)
 
@@ -534,7 +533,7 @@ type SourceRowContext = {
 
 Steers whether a skill renders as a single editable `SourceRow`, a locked global row (`readOnly: true`) for excluded-global entries, or a locked-global + editable-project pair when a skill was re-scoped global→project this session. `SourceRow` / `SourceOption` are exported from `src/cli/components/wizard/source-grid.tsx`.
 
-**Slot keys are shared with the confirm step.** `installedSkillSlots` holds `skillSlotKey(id, scope)` strings built by `skillSlotKey` in `src/cli/lib/wizard/scope-diff.ts` — the same function `computeScopeDiff` uses for its baseline. Keying both surfaces on `(id, scope)` rather than on the id alone is what stops the Sources tab and the confirm step from disagreeing about what changed this session (D-278). Two related module-internal row helpers sit alongside it in `wizard-store.ts`: `toPendingRemovalRow`(the inert red row for a snapshot slot this session emptied) and `isSlotAlreadyRendered` (suppresses a removal row for a slot an emitted row already covers, so an inherited global install does not read as both locked and removed).
+**Slot keys are shared with the confirm step.** `installedSkillSlots` holds `skillSlotKey(id, scope)` strings built by `skillSlotKey` in `src/cli/lib/wizard/scope-diff.ts` — the same function `computeScopeDiff` uses for its baseline. Keying both surfaces on `(id, scope)` rather than on the id alone is what stops the Sources tab and the confirm step from disagreeing about what changed this session. Two related module-internal row helpers sit alongside it in `wizard-store.ts`: `toPendingRemovalRow`(the inert red row for a snapshot slot this session emptied) and `isSlotAlreadyRendered` (suppresses a removal row for a slot an emitted row already covers, so an inherited global install does not read as both locked and removed).
 
 ## Types Documented Elsewhere (cross-references, not duplicated here)
 

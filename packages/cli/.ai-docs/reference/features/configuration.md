@@ -295,18 +295,154 @@ type ResolvedConfig = {
 - `mobile-framework` is `required: true` but `exclusive: false` — the only domain-anchor "framework" category that permits multiple selections.
 - `api-api` is the one API-framework category and holds all five frameworks, Elysia included. Its id does not match the `api-framework-*` skill-id prefix its members carry; the rename that would align them is deliberately a separate item, and any `*-framework` suffix rule reads all five as something else in the meantime.
 
+### A category id is a migration surface, and splitting one is a hand edit in four places
+
+`defaultCategories` is not the only place a category id is written down. Four hand-maintained
+`Set<string>` literals classify skills BY category id, deciding what kind of thing a skill is:
+
+| Set                      | File                                                         | Decides                                                              |
+| ------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `BREADTH_CATEGORIES`     | `packages/matrix/src/read-model/assignment-defaults.test.ts` | Which categories describe what a project is BUILT WITH               |
+| `FRAMEWORK_CATEGORIES`   | `packages/matrix/src/read-model/preload-defaults.test.ts`    | The kinds a session is written IN, which earn the reviewer's prompt  |
+| `STATE_CATEGORIES`       | `packages/matrix/src/read-model/preload-defaults.test.ts`    | The planning column's other half — where the project keeps its state |
+| `AI_PLATFORM_CATEGORIES` | `packages/matrix/src/read-model/preload-defaults.test.ts`    | The AI domain's answer to the two kinds above                        |
+
+They are ids rather than a suffix rule on purpose — `api-api` is the API-framework category, so any
+`*-framework` match reads all five API frameworks as something else.
+
+**Splitting a category is a migration for every set that names the parent.** The parent id survives
+the split, so each set stays type-correct and keeps matching — it just stops matching the skills
+that moved to the successor id it has never heard of. `Set<string>` is the type, not `Set<Category>`,
+so `tsc` has nothing to say about an omission, and the assertion that eventually fails names a
+**skill**, not the category that moved: a skill whose row never changed reads as a data violation.
+Splitting `web-meta-framework` into `web-docs`, and `web-server-state` into `web-graphql-client` and
+`web-rpc`, took exactly this shape.
+
+The check is a grep for the parent id before the split lands:
+
+```
+grep -rn '"web-server-state"' packages/matrix/src packages/cli/src
+```
+
+Each set carries a comment recording that a member is there because its kind was split out of a
+parent already in the set, rather than because a new kind joined the column — the distinction the
+next reader needs to decide whether the row belongs.
+
+### The four sets encode two kinds of claim — automatic breadth vs designated breadth
+
+The four sets above classify skills by category id, but they do not all support the same test. A
+category-level invariant normally runs in both directions — every member of the category names the
+flavor, and nothing outside it does — and three of the four are exactly that:
+`BREADTH_CATEGORIES` is `FRAMEWORK_CATEGORIES` and `STATE_CATEGORIES` unioned for the resolved side,
+so it restates their claim rather than adding one. The fourth is a different kind of claim, and
+reading it as a third copy of the same rule is what quietly retires the invariant.
+
+| Kind                   | Meaning                                                           | Forward pin (every member names it) | Reverse pin (nothing else does) |
+| ---------------------- | ----------------------------------------------------------------- | ----------------------------------- | ------------------------------- |
+| **Automatic breadth**  | every skill in the category is breadth                            | on the category                     | on the category                 |
+| **Designated breadth** | the owner ruled the category eligible; not every member qualifies | on an explicit **id list**          | on the category                 |
+
+`FRAMEWORK_CATEGORIES`, `STATE_CATEGORIES` and their union `BREADTH_CATEGORIES` are automatic. A
+session is written IN those kinds, so a new skill joins the `planning` column by arriving in the
+category and both directions read the same predicate — the kind is the whole rule, and ids stay out
+of the test.
+
+`AI_PLATFORM_CATEGORIES` is designated. The AI domain has no framework category at all, and what an
+AI project is built on is the provider SDK plus the orchestration framework — but `ai-provider` also
+holds the capability skills (`ai-provider-claude-vision`, `ai-provider-elevenlabs`,
+`ai-provider-openai-whisper`), which the ruling deliberately leaves off the column: which speech model
+a feature calls is what a spec asks about when it touches that feature, not what every session opens
+with.
+
+**The reverse pin may be widened for a designated category; the forward pin may not.** Widening
+"planning nowhere but a framework or a state kind" to admit the two AI categories is correct.
+Widening "every entry in these kinds names planning" would demand a `planning` row on
+`ai-provider-elevenlabs` the moment anyone gave that skill a row for any reason.
+
+**What the widening opens is closed by id, because the catalogue carries no field separating a
+platform skill from a capability one.** `preload-defaults.test.ts` collects every AI-domain row naming
+`planning` and `toStrictEqual`s it against `AI_PLATFORM_SKILLS` — the eight ids the ruling names, five
+provider SDKs and three orchestration frameworks — so a ninth AI row gaining `planning` fails by id
+whatever category it sits in. `assignment-defaults.test.ts` pins the resolved side as the same
+hybrid: the PM's whole eager column `toStrictEqual`s the automatic categories expanded to ids plus
+those eight, and a case beside it asserts the three capability skills are reached and lazy, which is
+the counterweight that makes the exclusion a claim rather than an omission.
+
+**The trigger rule: any breadth ruling that names ids rather than a kind is a designated-breadth
+ruling and owes the id pin.** Without it the category invariant still passes and no longer says
+anything.
+
+```
+grep -rn 'AI_PLATFORM_SKILLS\|AI_PLATFORM_CATEGORIES' packages/matrix/src
+```
+
+The id list is declared once per test file, because the two suites judge different artefacts — the
+shipped table and the resolved assignment. So a new designated category owes **both** a `*_CATEGORIES`
+set for the reverse pin and an id list for the forward one; a category set arriving on its own is the
+shape this rule exists to catch.
+
+### Two boundaries parse a stack, and only one of them may reconcile it
+
+`src/cli/lib/stacks/stacks-loader.ts` exports two normalizers whose names read as a general/specific
+pair — `normalizeAgentConfig` takes one agent's block, `normalizeStackRecord` takes every agent's
+block by calling it. The pair is a **trust** distinction, not a scope one:
+
+| Entry point                                    | Normalizer             | What the category key IS                       | Reconciled |
+| ---------------------------------------------- | ---------------------- | ---------------------------------------------- | ---------- |
+| `loadStacks` — a source's `config/stacks.ts`   | `normalizeAgentConfig` | the author's heading for the agent prompt      | No         |
+| `loadProjectConfigFromDir` — a user's config   | `normalizeStackRecord` | where the CLI stored the skill's live category | Yes        |
+| `withNormalizedStack` — the config gate's door | `normalizeStackRecord` | same                                           | Yes        |
+
+**Authored data is read as written; persisted data is reconciled against the live catalogue.** A
+source's `stacks.ts` ships alongside the catalogue it references, so there is no drift to reconcile
+and nothing to overrule — and the built-in stacks and several fixtures deliberately group
+cross-category skills under one heading, because `resolveAgentConfigToSkills` turns that key into the
+compiled agent's `usage:` line. A user's `.claude-src/config.ts` was written by an older version of
+the catalogue and the user cannot be asked to migrate it, so `rekeyToLiveCategories` — applied inside
+`normalizeStackRecord` and nowhere else — re-keys each entry under the category the catalogue names
+today.
+
+**The hazard is that the two look interchangeable.** Applying a drift fix one call deeper, in
+`normalizeAgentConfig`, is the obvious place if you are reading names rather than callers; it
+compiles, type-checks, and silently rewrites every stack author's grouping. `stacks-loader.test.ts`
+is the only thing that catches it — "does not re-key a source stack's authored grouping" is the
+authored half, and the `normalizeStackRecord` cases beside it are the persisted half.
+
+```
+grep -rn 'normalizeStackRecord\|normalizeAgentConfig' src --include='*.ts' --include='*.tsx'
+```
+
+`normalizeStackRecord` has two production callers outside the loader —
+`src/cli/lib/configuration/project-config.ts` and `src/cli/lib/config-gate/index.ts` — and
+`normalizeAgentConfig` has none: its only production callers are `loadStacks` and
+`normalizeStackRecord`, both inside `stacks-loader.ts`. A third `normalizeStackRecord` caller is a new
+persisted-config door and owes the same reasoning. A first `normalizeAgentConfig` caller elsewhere is
+a claim that some other input is authored, which is the one worth arguing about.
+
+**The rule underneath both rows: a category id inside persisted user data is a storage key, not
+identity.** The skill id is identity. Any lookup keyed by category is reconciled once at load, never
+at each consumer — so a change to the category vocabulary has one place to satisfy rather than a list
+of consumers to audit. [`reference/boundary-map.md`](../boundary-map.md) § 2.2 tabulates both entry
+points as callers of one `loadConfig` mechanism and marks which posture each caller is, including the
+three that reach no normalizer at all; the normalizers, their callers and the specs holding each half
+are this table's, and that document points back here for them.
+
+A rename — `normalizeAuthoredAgentConfig` / `normalizePersistedStack` — would carry the distinction in
+the type system's nearest equivalent instead of in prose. It has not been done, so the doc comment on
+`normalizeStackRecord` naming itself "the PERSISTED-CONFIG boundary" is what a reader meets first.
+
 ### Merge and consumption
 
 `loadSkillsMatrixFromSource` in `src/cli/lib/loading/source-loader.ts` builds the matrix's `categories` as `{ ...defaultCategories, ...sourceCategories }` when the source repo ships `skill-categories.ts`, otherwise uses `defaultCategories` verbatim. **A source repo's override wins**, which is why write-time rules read `exclusive` off the merged matrix rather than off `defaultCategories` (see `isExclusiveCategory` in `src/cli/lib/config-gate/propagate.ts`).
 
 The definitions are pinned by `src/cli/lib/configuration/__tests__/default-categories.test.ts`, which asserts `EXPECTED_CATEGORY_COUNT = 102` and `typedKeys(defaultCategories).sort()` equals `CATEGORIES.sort()`, so the table and the generated union cannot drift apart again.
 
-### Undeclared `exclusive` — two different defaults
+### An unknown category's `exclusive` — two different defaults
 
-| Reader                                                                       | Undeclared `exclusive` treated as | Why                                                                                           |
-| ---------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/cli/lib/wizard/build-step-logic.ts` (`cat.exclusive ?? true`)           | `true` (radio)                    | Safer default for rendering an unknown category                                               |
-| `isExclusiveCategory` in `config-gate/propagate.ts` (`?.exclusive === true`) | `false`                           | A rule that MASKS persisted config entries must only fire on a flag the data actually carries |
+| Reader                                                                         | Undeclared `exclusive` treated as | Why                                                                                           |
+| ------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `use-build-step-props.ts` (`matrix.categories[categoryId]?.exclusive ?? true`) | `true` (radio)                    | Safer default for an unknown category                                                         |
+| `isExclusiveCategory` in `config-gate/propagate.ts` (`?.exclusive === true`)   | `false`                           | A rule that MASKS persisted config entries must only fire on a flag the data actually carries |
 
 This asymmetry is deliberate; do not "fix" one to match the other.
 
@@ -417,6 +553,45 @@ When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` un
 - **selectedDomains** carried to BOTH halves by the `...config` spread — the project half is not cleared, despite the function's own doc comment. See [scope-split.md](../config/scope-split.md) → "Scalar / Array Fields"
 
 > **Full partition rules, delta pipeline, and decision tables:** see [../config/scope-split.md](../config/scope-split.md).
+
+### Which agents a skill lands on — taxonomy, not catalogue membership
+
+`buildAgentStack` in `config-generator.ts` runs three filters over every `(agent, category, skillId)`
+triple, in this order: `isScopeCompatible`, then `shouldIncludeTriple` (D-220 curation, above), then
+`isPreservedOrRelevant`. The third is the one that decides reach for a skill arriving this session,
+and it is two-tier:
+
+- **A triple the prior save already carries rides through verbatim**, cross-domain included. That is
+  the user's curation, and the relevance rule never reclaims it — `priorLoadState` answering anything
+  at all is the whole test.
+- **A triple arriving this session lands only where the shared resolver targets it.** `isRelevantPair`
+  calls `resolveAssignment` from `@workspace/matrix` (`read-model/assignment-defaults.ts`) — the same
+  targeting the editor's default assignments read, so a pick lands on the same agents from either
+  front door.
+
+**What the resolver is told is decided by `taxonomyOrIdOf`, and this is the part worth reading before
+assuming anything about custom or marketplace skills.** When `getCategoryDomain(category)` (from
+`matrix/matrix-provider.ts`) answers a domain, the skill is handed over as
+`{ id, domainId, categoryId }` — its own stated taxonomy, out of the LOADED matrix — and the resolver
+places it on that domain's agents whatever marketplace shipped it and whether or not the vendored
+catalogue has ever heard of the id. Catalogue membership is not what decides reach.
+
+The id goes over alone in exactly one case: the category the loaded matrix carries names no domain,
+so there is no taxonomy to state. The resolver then falls back to its own catalogue lookup, and for a
+namespaced or user-written id that lookup misses, so the skill reaches nobody as a new triple —
+relevance unknown, and assignment is the user's to make rather than a broadcast's. A category with no
+domain is reported in its own right by `checkMatrixHealth` (`lib/matrix/matrix-health-check.ts`).
+
+**Eagerness is a separate question and it IS catalogue-keyed.** `mappedLoadState` guards on
+`isSkillId` before consulting `resolveLoadState`, and the preload rows are the shipped catalogue's own
+ids, so a skill outside the generated union is `"lazy"` by construction: `toStackAssignment` writes a
+bare `{ id }` for it. A non-catalogue skill can therefore be targeted exactly like a catalogue one and
+still never be preloaded.
+
+Four `it`s in `config-generator.test.ts` pin the four outcomes and are the place to read the contract
+as executable statements: a category naming no domain reaches no agent; a marketplace-namespaced
+skill reaches its own domain's agents; a custom skill in a real category does the same; and a prior
+outside-catalogue entry is kept verbatim.
 
 ### Skill Config Construction in Wizard Store
 
@@ -574,7 +749,7 @@ One shared step now runs immediately before BOTH writes:
 
 **Contract:**
 
-- **Masks** a live global entry (`{ ...globalEntry, excluded: true }`, so the mask carries the global install's `source`) on an IDENTITY collision — the project owns the same id/name at project scope — for skills AND agents (`maskCollidingGlobalSkills`, `maskCollidingGlobalAgents`).
+- **Masks** a live global entry (`{ ...globalEntry, excluded: true }`, so the mask carries the global install's `origin`) on an IDENTITY collision — the project owns the same id/name at project scope — for skills AND agents (`maskCollidingGlobalSkills`, `maskCollidingGlobalAgents`).
 - **Additionally masks** a live global skill when the project owns a DIFFERENT active skill in the same category and the merged matrix declares that category `exclusive`. Skills only: agents have no categories, so `maskCollidingGlobalAgents` is identity-only.
 - **Drops** a mask once its collision clears (`dropOrphanedDerivedMasks`, `dropOrphanedDerivedAgentMasks`). Self-heal runs BEFORE masking on both axes, so a cleared collision is removed rather than immediately re-derived, and masking's `alreadyTombstoned` guard only sees warranted tombstones.
 - **Idempotent** — an id the project already tombstones is skipped.
@@ -653,6 +828,6 @@ Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logi
 
 Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::installPluginsStep` and `edit.tsx::applyPluginChanges` emit per-skill warnings and then hard-error via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
 
-The same guard covers the eject→plugin scope-migration path: `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `failedPluginInstalls` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path.
+The same guard covers the eject→plugin scope-migration path: `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `pluginInstalls.failed` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path. `ejectCopies.failed` is the plugin→eject mirror and refuses on the same terms, through `reportEjectCopies` and `ejectCopyFailureError(...)` — a different sentence for a different remedy, but the same rule: an intent this run could not honour stops it before any config records the intent.
 
 Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. This is the "No Plugin-to-Eject Fallback" / orphan-config invariant codified in CLAUDE.md (Data Integrity).

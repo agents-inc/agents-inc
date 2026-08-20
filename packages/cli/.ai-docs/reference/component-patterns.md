@@ -118,6 +118,28 @@ export const StepBuild: React.FC<StepBuildProps> = ({ matrix }) => {
 - Store access via `useWizardStore()` selectors
 - No SCSS/CSS - all styling via Ink props
 
+## Display Lookups — When `lookup(id)?.name ?? id` Is Legitimate
+
+Both forms exist in this codebase on purpose, and the rule that separates them is **where the id
+came from**, never "it is only a label".
+
+| Form                                                           | Lives in                                | Allowed when                                                                                                          |
+| -------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `matrix.skills[id]?.displayName ?? id` (`getSkillDisplayName`) | `src/cli/lib/matrix/matrix-provider.ts` | The id may legitimately be foreign to the current matrix — a removed skill, a saved config entry, another source's id |
+| Asserting lookup that throws (`getStackName`)                  | `src/cli/components/wizard/utils.ts`    | Every writer of the id takes it from the same collection the lookup searches                                          |
+
+**Before writing the lenient form in a render path, trace every writer of the id.** If the only
+non-null writer takes it from the collection the lookup searches, and nothing rebuilds that
+collection while the component is mounted, the miss is unreachable and the fallback paints a raw id
+as though it were a display name — the silent fallback CLAUDE.md's Data Integrity rule bans. That
+trace is what `getStackName`'s doc comment records, and the comment is the artifact the rule
+requires: the constraint is invisible at the call site, so the provenance argument lives with the
+lookup rather than with either consumer.
+
+**Distinguish the two absences.** "Nothing selected" is a real state a panel must render, and it is
+not the same as "selected, but the matrix does not hold it". `getStackName` returns `undefined` for
+the first and throws for the second; collapsing them into one `??` is what hid the defect.
+
 ## Color Constants (CLI_COLORS in `src/cli/consts.ts`)
 
 The keys, exhaustive and in source order. `reference/utilities.md` carries the same list for the leaf-constant surface, so this is a SECOND writable copy — both are therefore bound to `src/cli/consts.ts` by `scripts/check-enumeration-drift.ts`, which is what stops one being repaired while the other is not.
@@ -270,7 +292,7 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 > The sibling export in that module, `validateBuildStep()`, returns `valid: true` on both branches. Its only references outside its own module are the `src/cli/lib/wizard/index.ts` barrel that re-exports it and two spec files (`build-step-logic.test.ts`, `step-build.test.tsx`) — no component and no command calls it. Re-derive with `grep -rn validateBuildStep src/`. See [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
 
-**Cell ordering:** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order ?? 0`.
+**Cell ordering:** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order`.
 
 **Focus dispatch (two writers, by design).** `focusedSkillId` is written from both the store and the grid, and the pair is what keeps store state equal to what is drawn:
 
@@ -364,7 +386,9 @@ Four character hotkeys, and each is bound on exactly the steps its row names. Be
 
 ## WizardLayout startup-message band (`src/cli/components/wizard/wizard-layout.tsx`)
 
-What the load said before Ink took the terminal. A load that opens a wizard buffers its `warn()` output instead of writing it to stderr (`lib/operations/source/load-source.ts` — stderr is what the wizard's own `clearTerminal` wipes), and the buffer arrives here as the `startupMessages` prop. **This band is the only place those lines are ever seen**, the source-unreachable warning among them; before it existed the prop was accepted and dropped.
+What the load said before Ink took the terminal, **and what store hydration said after it**. A load that opens a wizard buffers its `warn()` output instead of writing it to stderr (`lib/operations/source/load-source.ts` — stderr is what the wizard's own `clearTerminal` wipes), and the buffer arrives here as the `startupMessages` prop. **This band is the only place those lines are ever seen**, the source-unreachable warning among them; before it existed the prop was accepted and dropped.
+
+**Two windows fill it, not one.** `hydrateIntoStartupBand` in `src/cli/components/wizard/run-wizard-session.tsx` reopens buffer mode around `hydrateWizardStore()` and concatenates what it drains onto the load's own, so the prop is `[...loaded, ...drained]`. The store's own warnings (`resolveSkillForPopulation` in `src/cli/stores/wizard-store.ts` — an installed skill the source no longer carries, or one whose category no domain claims) are raised after the load's buffer is drained and before the first frame paints, so this band is their only surface too. **Order matters for what is painted**: hydration's messages are appended, so where the load already produced `MAX_PAINTED_STARTUP_MESSAGES` of them a hydration warning lands in the `... and N more` tail.
 
 **Placement.** Between `WizardTabs` and the step content, outside the `showInfo` branch — so a warning is readable whether the step or the `I` overlay is showing. It sits below the tab bar's absolutely-positioned dropdown, which floats into the bar's own `marginBottom`.
 
@@ -430,14 +454,7 @@ Two-column (skills | agents) summary component with scope labels (Project/Global
 - `~ ` (yellow, `WARNING`) -- source changed (marker only; no transition label)
 - `BULLET` (neutral) -- unchanged item
 
-**Known limitations (`computeScopeDiff`, both OPEN).** Two display quirks live in the confirm-step diff and are deliberately NOT mirrored by the Sources tab, which is the authoritative surface for both shapes:
-
-| Shape                                                                          | `computeScopeDiff` renders                                                              | Why it is wrong                                                                                                                   | Reachability                                                                                              |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Snapshot `[G active]` + live `[P active]`, **no** tombstone (inherited global) | Two Global rows for one skill: `unchanged` (from `inheritedGlobalSkills`) AND `removed` | `inheritedGlobalSkills` re-surfaces the entry while the slot-occupancy `removedSkills` filter independently classifies it as gone | Much less reachable masks such configs at write time                                                      |
-| Snapshot `[G tombstone]` + live `[]`                                           | A Global `removed` row                                                                  | A tombstone is a MASK over a global install, not an install — dropping it deletes nothing                                         | Cannot occur within a session: every path that drops a tombstone fills the same slot with an active entry |
-
-The Sources-tab equivalents avoid both: `isSlotAlreadyRendered` suppresses the duplicate, and snapshot tombstones are excluded as removal candidates. Source: `.ai-docs/agent-findings/2026-07-29-per-slot-removal-exposes-fixture-name-mismatch-and-confirm-double-row.md`.
+**One row per skill under Global, and a tombstone is never a removal.** Both properties are produced by named rules in `computeScopeDiff` rather than falling out of the baseline; `reference/features/wizard-flow.md` owns the statement of the two shapes and the rule each turns on.
 
 **Consumers:** `summary-panel.tsx` (and therefore both surfaces that render it), plus the dashboard `commands/list.tsx`
 
@@ -550,6 +567,21 @@ Test files use:
 - `ink-testing-library` for rendering
 - `createMockSkill()`, `createMockMatrix()`, `createMockCategory()` from `src/cli/lib/__tests__/factories/` (`skill-factories.ts`, `matrix-factories.ts`, `category-factories.ts`)
 - Test constants from `src/cli/lib/__tests__/test-constants.ts` (keyboard escape sequences, timing delays)
+
+**An assert inside an Ink component never escapes `render()`.** Ink wraps the tree in an internal
+error boundary, so `expect(() => render(<X />)).toThrow()` cannot pass — the render resolves and Ink
+paints its `ERROR` overview instead. Assert on the painted output, and silence `console.error` with
+`silenceConsole(["error"])` from `src/cli/lib/__tests__/helpers/silence-console.ts` for the
+boundary's own log.
+
+**Assert over `frames`, never `lastFrame()`.** Catching the throw also exits the app, and Ink 7's
+exit path writes a bare newline as its own final frame unconditionally, so the painted error is the
+frame _before_ teardown. `frames.join("\n")` reads it wherever it lands. `summary-panel.test.tsx`
+is the worked example, and it also asserts the negative — that the raw id was NOT painted as a
+label — so the test distinguishes the throw from the fallback it replaced.
+
+This is also the answer to "will an assert crash the wizard?": it does not. It replaces the panel
+with a diagnosable error screen.
 
 ## Scrolling
 

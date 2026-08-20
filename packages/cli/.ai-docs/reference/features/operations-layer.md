@@ -94,22 +94,22 @@ Commands import from `operations/index.js`. Operations import from lower-level l
 
 ### Project Types
 
-| Type                          | File                                   | Fields                                                                                                |
-| ----------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `DetectedProject`             | `project/detect-project.ts`            | `installation: Installation, config: ProjectConfig \| null, configPath: string \| null`               |
-| `BothInstallations`           | `project/detect-both-installations.ts` | `global: Installation \| null, project: Installation \| null, hasBoth: boolean`                       |
-| `CompileAgentsOptions`        | `project/compile-agents.ts`            | `projectDir, sourcePath, pluginDir?, skills?, agentScopeMap?, agents?, scopeFilter?, outputDir?`      |
-| `CompilationResult`           | `project/compile-agents.ts`            | `compiled: AgentName[], failed: AgentName[], warnings: string[]`                                      |
-| `CompileAllScopesOptions`     | `project/compile-agents-all-scopes.ts` | `projectDir, sourcePath, skills: SkillDefinitionMap, agentScopeMap: Map<AgentName, SkillScope>`       |
-| `PropagatedRecompileSummary`  | `project/recompile-project-agents.ts`  | `recompiledCount: number, failedCount: number, warnings: string[]`                                    |
-| `RemoveCompiledAgentsOptions` | `project/remove-compiled-agents.ts`    | `agentsDir: string, agents: readonly AgentName[]`                                                     |
-| `PruneCompiledAgentsOptions`  | `project/remove-compiled-agents.ts`    | `agentsDir: string, keep: ReadonlySet<AgentName>`                                                     |
-| `RemoveCompiledAgentsResult`  | `project/remove-compiled-agents.ts`    | `removed: AgentName[], failed: Array<{ name: AgentName; error: string }>`                             |
-| `ConfigWriteOptions`          | `project/write-project-config.ts`      | `wizardResult: WizardResultV2, sourceResult, projectDir, sourceFlag?, agents?, authoritativeScope?`   |
-| `ConfigWriteResult`           | `project/write-project-config.ts`      | `config: ProjectConfig, configPath, wasMerged, existingConfigPath?, filesWritten, propagatedProjects` |
-| `AgentDefs`                   | `project/load-agent-defs.ts`           | `agents: Partial<Record<AgentName, AgentDefinition>>, sourcePath, agentSourcePaths`                   |
+| Type                          | File                                   | Fields                                                                                                     |
+| ----------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `DetectedProject`             | `project/detect-project.ts`            | `installation: Installation, config: ProjectConfig \| null, configPath: string \| null`                    |
+| `BothInstallations`           | `project/detect-both-installations.ts` | `global: Installation \| null, project: Installation \| null, hasBoth: boolean`                            |
+| `CompileAgentsOptions`        | `project/compile-agents.ts`            | `projectDir, sourcePath, pluginDir?, skills?, agentScopeMap?, agents?, scopeFilter?, outputDir?`           |
+| `CompilationResult`           | `project/compile-agents.ts`            | `compiled: AgentName[], failed: AgentName[], warnings: string[]`                                           |
+| `CompileAllScopesOptions`     | `project/compile-agents-all-scopes.ts` | `projectDir, sourcePath, skills: SkillDefinitionMap, agentScopeMap: Map<AgentName, SkillScope>`            |
+| `PropagatedRecompileSummary`  | `project/recompile-project-agents.ts`  | `recompiledCount: number, failedCount: number, warnings: string[]`                                         |
+| `RemoveCompiledAgentsOptions` | `project/remove-compiled-agents.ts`    | `agentsDir: string, agents: readonly AgentName[]`                                                          |
+| `PruneCompiledAgentsOptions`  | `project/remove-compiled-agents.ts`    | `agentsDir: string, keep: ReadonlySet<AgentName>`                                                          |
+| `RemoveCompiledAgentsResult`  | `project/remove-compiled-agents.ts`    | `removed: AgentName[], failed: Array<{ name: AgentName; error: string }>`                                  |
+| `ConfigWriteOptions`          | `project/write-project-config.ts`      | `wizardResult: WizardResultV2, sourceResult, projectDir, sourceFlag?, agents?, authoritativeScope?`        |
+| `ConfigWriteResult`           | `project/write-project-config.ts`      | `config: ProjectConfig, configPath, wasMerged, existingConfigPath?, filesWritten, propagation: GateReport` |
+| `AgentDefs`                   | `project/load-agent-defs.ts`           | `agents: Partial<Record<AgentName, AgentDefinition>>, sourcePath, agentSourcePaths`                        |
 
-`ConfigWriteResult` carries **no** `globalConfigPath`. The field was declared optional, never populated by `writeProjectConfig` and never read by any caller, so it was deleted rather than left as dead surface a future reader could reach for.
+`ConfigWriteResult` carries **no** `globalConfigPath` and **no** `propagatedProjects`. The propagation outcome is one field, `propagation: GateReport`; the project list a caller wants is `propagation.propagated.updated`. Anything naming either removed field is stale — see "Result fields must have a producer" under Design Conventions.
 
 ## Exported Functions
 
@@ -202,7 +202,7 @@ compile.run()
   |     -> detectGlobalInstallation() + detectProjectInstallation()
   |     -> ConfigLoadError => this.error(...) with EXIT_CODES.ERROR, before any write
   |-> resolveSource({ caller: "stored", projectDir })  // logged, not an operation
-  |-> loadAgentDefs({ projectDir })
+  |-> loadAgentDefs()
   |     -> getAgentDefinitions() + loadMergedAgents()
   |-> buildCompilePasses()  // scopeFilter set only when hasBoth
   |-> per pass:
@@ -266,6 +266,7 @@ edit.run()
 ## Design Conventions
 
 - **Pure options/result types** -- Every operation defines explicit option and result types. No raw primitives or tuples.
+- **Result fields must have a producer.** Every field on an operation's result type is assigned on at least one code path in that operation. An optional field no branch populates is dead surface with the worst possible failure mode: it type-checks, it reads as an available value, and it hands `undefined` to the first caller that trusts it. Where a result genuinely varies by branch, prefer a REQUIRED field with an explicit empty value (`[]`, `null`, an empty report) over an optional one — that forces every branch to answer for it. `propagation: GateReport` on `ConfigWriteResult` is the shape that does; the deleted `globalConfigPath` beside it was the shape that did not, and the since-removed `InstallationInfo.version` before it rendered as `agents-inc vplugin` in `list` for the same reason. Adding a field to an existing result type means re-checking the OTHER optional fields for a producer as well: result types accrete, the new field is reviewed and the old ones are not.
 - **Silent by default** -- Operations use `verbose()` for diagnostics. Commands decide what to log to the user based on result fields.
 - **Scope-aware** -- Operations that touch the filesystem split by `"project" | "global"` scope. See `copyLocalSkills`, `installPluginSkills`, `uninstallPluginSkills`.
 - **Non-throwing where possible -- but the choice is per-operation, not per-layer** -- `detectProject` returns `null` instead of throwing(including for a corrupt config). `ensureMarketplace` catches fetch failures gracefully. Plugin install/uninstall collect failures into result arrays. `detectBothInstallations` deliberately does the opposite and lets `ConfigLoadError` escape, because its caller must hard-error rather than proceed config-less. When two operations wrap the same lower-level call with different error policies, say so at both sites — the difference IS the contract.

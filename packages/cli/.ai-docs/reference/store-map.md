@@ -267,6 +267,8 @@ Removal is keyed per **slot**, not per id, using the same `skillSlotKey` the con
 
 Called through `runWizardSession()` in `components/wizard/run-wizard-session.tsx` (used by `commands/init.tsx` — no `initialStep` → init flow — and `commands/edit.tsx`'s `runEditWizard()` — with `initialStep`, `installedSkillIds`, etc. → edit flow), and directly by `commands/list.tsx` (dashboard view, snapshot-only). It delegates to the non-exported `hydrateForEdit` / `hydrateForInit`.
 
+**Hydration WARNS, and the wizard route buffers those warnings.** `populateFromSkillIds` reaches `resolveSkillForPopulation`, which calls `warn()` once for an installed skill the loaded source no longer carries and once for one whose category no domain claims. On the wizard route `runWizardSession()` does not call `hydrateWizardStore()` directly — it calls `hydrateIntoStartupBand()`, which reopens logger buffer mode around it and concatenates the drained messages onto the load's own, so those lines reach the `WizardLayout` startup band instead of stderr under a frame about to fill the terminal. `commands/list.tsx` calls `hydrateWizardStore()` bare and needs no window: it passes no `initialStep` and no `installedSkillIds`, so hydration takes the init path, `populateFromSkillIds` never runs, and neither warning is reachable from it.
+
 ```typescript
 type HydrateOptions = {
   initialStep?: WizardStep; // When absent → init mode (isInitMode=true, stays on "stack")

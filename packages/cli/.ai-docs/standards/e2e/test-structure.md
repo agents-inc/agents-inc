@@ -123,6 +123,17 @@ afterAll(async () => {
 
 **Exception:** Extracted lifecycle helpers (like `initGlobal()` in `dual-scope-helpers.ts`) may use `try/catch` internally because they manage sessions within a single function scope and need to destroy on error before re-throwing.
 
+### Session ownership
+
+The `afterEach` above is the convention where the TEST owns the session. A shared helper that launches its own wizard is the other convention, and the two cannot be mixed silently — adopting a helper-owned session at a test-owned call site leaves the outer `let wizard` pointing at an already-destroyed session, and the `afterEach` then double-destroys. Five near-identical "open a wizard, read rendered state, abort without saving" blocks sat one extraction apart from each other, byte-similar enough that consolidating them reads as pure copy-paste dedup, which is exactly why it is easy to get wrong.
+
+Four rules, and `e2e/fixtures/dual-scope-helpers.ts` carries all four on its two shared helpers:
+
+1. **A shared helper in `e2e/fixtures/` or `e2e/helpers/` that launches a wizard fully owns that session** — `destroy()` in a `finally` — **and states the ownership contract in its doc comment.** `readSkillBadgesViaEdit` says it: _"Owns the whole session — it launches, aborts, waits for exit and destroys, so callers must NOT also track the wizard for afterEach cleanup."_ A contract nobody can read at the call site is not a contract.
+2. **A call site adopting such a helper drops its own `let wizard` tracking and the matching `afterEach` destroy for that session.** Never leave both. `dual-scope-collapse-and-restore-via-s.e2e.test.ts` and `edit-wizard-dual-scope-indicator.e2e.test.ts` are the adopted sites.
+3. **A helper returning wizard output names which accessor it read.** `rawOutput` and `output` are different surfaces — raw PTY output is append-only, the processed buffer overwrites in place — and the choice is invisible at the call site. Neither is the suite's default: `e2e/` currently holds roughly as many `result.output` reads as `result.rawOutput` ones, so a shared extractor returning one of them is a drop-in at only about half the sites it looks interchangeable with. `finishWizard` says which it reads and tells callers needing the sanitized form to take it **before** destroying; `edit-global-source-toggle-propagation-compiled-ref.e2e.test.ts` does exactly that, and says so at the call.
+4. **A shared finalize helper does not assert the exit code.** Failure-path flows return non-success codes and must be able to use the same helper, so the assertion stays at the call site. `finishWizard` returns the code and states that it deliberately does not judge it.
+
 **The `tempDir = undefined!` pattern:** Variables are declared as `let tempDir: string` (not `string | undefined`) and assigned in setup before use. After cleanup, they are reset with `tempDir = undefined!`. The non-null assertion is intentional -- TypeScript sees it as `string`, which is correct during test execution. The `undefined!` in cleanup prevents stale references.
 
 ```typescript
@@ -195,7 +206,7 @@ it("should complete init with defaults and produce config", async () => {
 
 // Bad: implementation details obscure the intent
 it("should work", async () => {
-  session = new TerminalSession(["init", "--source", dir], tempDir, {});
+  session = new TerminalSession(["init", "--marketplace", dir], tempDir, {});
   await session.waitForText("Choose a stack", 10000);
   await delay(500);
   session.enter();

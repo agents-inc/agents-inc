@@ -36,12 +36,12 @@ keywords:
 related:
   - reference/features/seed-contract.md
   - reference/commands/edit.md
-  - reference/architecture/overview.md
-  - reference/wizard/flow.md
+  - reference/architecture-overview.md
+  - reference/features/wizard-flow.md
   - reference/wizard/state-transitions.md
-  - reference/config/configuration.md
+  - reference/features/configuration.md
   - reference/config/scope-split.md
-  - reference/wizard/component-patterns.md
+  - reference/component-patterns.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
   - reference/types/core-types.md
@@ -123,27 +123,42 @@ A shared seed payload carries **per-agent scope independently of skill scope**; 
 type ScopedEntry = { scope?: SkillScope; excluded?: boolean };
 ```
 
-| Export                        | Signature                                                                          | Meaning                                                                                                                                 |
-| ----------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `isActiveAt`                  | `(entry: ScopedEntry, scope: SkillScope) => boolean`                               | `entry.scope === scope && !entry.excluded` — active (non-excluded) entry at the given scope.                                            |
-| `isGlobalTombstone`           | `(entry: ScopedEntry) => boolean`                                                  | `scope === "global"` AND `excluded` — a project-level directive masking a shared global install.                                        |
-| `isProjectOwned`              | `(entry: ScopedEntry) => boolean`                                                  | Project-scoped OR a global tombstone. Inherited global-active entries belong to the global config, not the project.                     |
-| `activeProjectAgentNames`     | `(agents: readonly AgentScopeConfig[]) => AgentName[]`                             | Names of agents active at `"project"` scope.                                                                                            |
-| `activeSkillScopeMap`         | `(skills: readonly SkillConfig[] \| undefined) => Map<SkillId, SkillScope>`        | Scope of each non-excluded skill, keyed by id.                                                                                          |
-| `activeAgentScopeMap`         | `(agents: readonly AgentScopeConfig[] \| undefined) => Map<AgentName, SkillScope>` | Scope of each non-excluded agent, keyed by name.                                                                                        |
-| `effectivelyExcludedSkillIds` | `(skills: readonly SkillConfig[]) => Set<SkillId>`                                 | Ids with an excluded entry that no same-id active entry rescues (an excluded-global + active-project pair is NOT effectively excluded). |
+| Export                        | Signature                                                                          | Meaning                                                                                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isActiveAt`                  | `(entry: ScopedEntry, scope: SkillScope) => boolean`                               | `entry.scope === scope && !entry.excluded` — active (non-excluded) entry at the given scope.                                                   |
+| `isGlobalTombstone`           | `(entry: ScopedEntry) => boolean`                                                  | `scope === "global"` AND `excluded` — a project-level directive masking a shared global install.                                               |
+| `isProjectOwned`              | `(entry: ScopedEntry) => boolean`                                                  | Project-scoped OR a global tombstone. Inherited global-active entries belong to the global config, not the project.                            |
+| `activeProjectAgentNames`     | `(agents: readonly AgentScopeConfig[]) => AgentName[]`                             | Names of agents active at `"project"` scope.                                                                                                   |
+| `activeAgentNames`            | `(agents: readonly AgentScopeConfig[]) => AgentName[]`                             | Names of every non-excluded agent at EITHER scope — the config's own record of who is selected, no flat `selectedAgents` list being persisted. |
+| `activeSkillScopeMap`         | `(skills: readonly SkillConfig[] \| undefined) => Map<SkillId, SkillScope>`        | Scope of each non-excluded skill, keyed by id.                                                                                                 |
+| `activeAgentScopeMap`         | `(agents: readonly AgentScopeConfig[] \| undefined) => Map<AgentName, SkillScope>` | Scope of each non-excluded agent, keyed by name.                                                                                               |
+| `effectivelyExcludedSkillIds` | `(skills: readonly SkillConfig[]) => Set<SkillId>`                                 | Ids with an excluded entry that no same-id active entry rescues (an excluded-global + active-project pair is NOT effectively excluded).        |
 
-**Consumers:**
+The full export list is owned and **drift-bound** by
+[features/configuration.md](../features/configuration.md), whose table
+`scripts/check-enumeration-drift.ts` diffs against this module row by row. This one is a second copy
+with nothing binding it — check it against the owner before trusting it.
 
-| File                       | Predicates used                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `config-generator.ts`      | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`  |
-| `local-installer.ts`       | `isActiveAt`, `activeSkillScopeMap`, `activeAgentScopeMap`, `effectivelyExcludedSkillIds` (prior-vs-next delta) |
-| `config-gate/propagate.ts` | `isActiveAt`, `isGlobalTombstone`, `activeProjectAgentNames`, `ScopedEntry`                                     |
-| `config-merger.ts`         | `isGlobalTombstone`, `isProjectOwned`, `ScopedEntry`                                                            |
-| `config-types-writer.ts`   | `activeProjectAgentNames`                                                                                       |
+**Consumers — every non-test importer, not a selection.** Re-derive with
+`grep -rln scope-predicates src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'`:
 
-Re-exported from `src/cli/lib/configuration/index.ts`.
+| File                                               | Predicates used                                                                                                                                                            |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/base-command.ts`                          | `isActiveAt`                                                                                                                                                               |
+| `src/cli/commands/init.tsx`                        | `activeAgentNames`                                                                                                                                                         |
+| `src/cli/commands/edit.tsx`                        | `activeAgentNames`, `activeAgentScopeMap`, `isActiveAt`                                                                                                                    |
+| `src/cli/stores/wizard-store.ts`                   | `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`                                                                                                                        |
+| `src/cli/lib/config-gate/index.ts`                 | `isActiveAt`                                                                                                                                                               |
+| `src/cli/lib/config-gate/propagate.ts`             | `isActiveAt`, `isGlobalTombstone`, `activeProjectAgentNames`, `ScopedEntry`                                                                                                |
+| `src/cli/lib/configuration/config-generator.ts`    | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`                                                             |
+| `src/cli/lib/configuration/config-merger.ts`       | `isGlobalTombstone`, `isProjectOwned`, `ScopedEntry`                                                                                                                       |
+| `src/cli/lib/configuration/config-types-writer.ts` | `activeAgentNames`, `activeProjectAgentNames`                                                                                                                              |
+| `src/cli/lib/installation/local-installer.ts`      | `isActiveAt`, `activeSkillScopeMap`, `activeAgentScopeMap`, `effectivelyExcludedSkillIds` (prior-vs-next delta)                                                            |
+| `src/cli/lib/configuration/index.ts`               | Barrel — re-exports `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds`. The other three are import-by-path only |
+
+Specs, `e2e/fixtures/dual-scope-helpers.ts` and `scripts/check-enumeration-drift.ts` also name the
+module and are deliberately outside the table — the drift script names it as a SOURCE to diff, not
+as a caller.
 
 ## Config Splitting
 
@@ -247,7 +262,7 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **Invariant:** no active entry and tombstone coexist at the same `(id, scope)` — an active entry at global scope always supersedes any tombstone at the same scope.
 
-> **Known limitation(resolved by side effect):** preselection can still transiently violate this same-scope invariant. When the ONLY saved entry for a name/id is a global-scope excluded tombstone and preselection then re-includes it, `buildSkillConfigForId`/`buildAgentConfigForName` emits a fresh `{ scope: "global" }` active entry while the tombstone is also preserved — a same-scope active + tombstone pair. `config-merger.ts`'s compound key (`${id}:${scope}${excluded ? ":excluded" : ""}`) keys them distinctly, so both reach the writer. The generalised self-heal (`dropOrphanedDerivedMasks` / `dropOrphanedDerivedAgentMasks` in `config-gate/propagate.ts`) now collapses the pair on the next reconciled project write, because a same-scope active entry is not a _project_-scope collision. Tracked in `.ai-docs/agent-findings/2026-07-17-d227-same-scope-active-tombstone-duplicate.md`.
+Preselection upholds this too: a saved tombstone is preserved only when the rebuilt active entries leave its slot free — `(id, scope)` for skills, `(name, scope)` for agents — at all three sites that rebuild them: `survivesRosterRebuild`, `agentTombstonesOutsideRebuild` and `skillTombstonesOutsideRebuild` in `src/cli/stores/wizard-store.ts`. The slot test is load-bearing rather than tidy-up, because nothing downstream would collapse the pair: `config-merger.ts` keys an active and an excluded entry apart (`${id}:${scope}${excluded ? ":excluded" : ""}`), so both would reach the writer.
 
 **Scope of installed-config lookups:** `wasInstalledGlobally` reads `installedSkillConfigs`/`installedAgentConfigs` (the persisted prior state), NOT `skillConfigs`/`agentConfigs` (the current wizard state). Tombstone presence in `skillConfigs` is checked separately.
 
@@ -307,7 +322,7 @@ Four paths reach a removal, and each is scoped to what the project owns:
 | Toggling an agent off               | `applyAgentToggle`'s deselect branch is a plain removal of what the project owns.                                                                 |
 | Deselecting a domain                | A **view filter**: hides the domain's skills and drops only what the project owns; global entries survive untouched — neither dropped nor masked. |
 
-**The store-level guarantee holds independently of whether a keypress path can reach it, and no keypress path can.** `Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds an install, so `isInitMode === true` implies `installedSkillConfigs === null` — a real `cc init` never sees a global preselection. `toggleDomain` has exactly two callers, `domain-selection.tsx` (the DOMAINS step) and `stack-selection.tsx` (the init-only "start from scratch" branch), and `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step. The guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E, precisely because it has no reachable UI surface. See `.ai-docs/agent-findings/2026-07-30-domain-deselect-has-no-reachable-ui-surface-in-edit.md`.
+**The store-level guarantee holds independently of whether a keypress path can reach it, and no keypress path can.** `Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds an install, so `isInitMode === true` implies `installedSkillConfigs === null` — a real `cc init` never sees a global preselection. `toggleDomain` has exactly one component caller, `domain-selection.tsx` (the DOMAINS step); its only other caller is the store's own `startFromScratch`, which seeds `DEFAULT_SCRATCH_DOMAINS` and is reached solely from the init-only "start from scratch" branch of `stack-selection.tsx`. And `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step. The guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E, precisely because it has no reachable UI surface — a spec driving the flow would have to invent a path no user can perform.
 
 **Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `npx agents-inc edit` from the home directory.
 

@@ -61,17 +61,17 @@ The operations layer defines focused option/result types per operation:
 
 ### Project Operations
 
-| Type                         | File                                              | Purpose                                                          |
-| ---------------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
-| `DetectedProject`            | `operations/project/detect-project.ts`            | Detected project installation state                              |
-| `BothInstallations`          | `operations/project/detect-both-installations.ts` | Combined project + global installation                           |
-| `ConfigWriteOptions`         | `operations/project/write-project-config.ts`      | Options for writing project config                               |
-| `ConfigWriteResult`          | `operations/project/write-project-config.ts`      | Result of config write operation (incl. `propagatedProjects`)    |
-| `CompileAgentsOptions`       | `operations/project/compile-agents.ts`            | Options for agent compilation                                    |
-| `CompilationResult`          | `operations/project/compile-agents.ts`            | Result of agent compilation                                      |
-| `CompileAllScopesOptions`    | `operations/project/compile-agents-all-scopes.ts` | Options for the home/project multi-pass driver (`index.js` only) |
-| `PropagatedRecompileSummary` | `operations/project/recompile-project-agents.ts`  | Registered-project recompile summary (`index.js` only)           |
-| `AgentDefs`                  | `operations/project/load-agent-defs.ts`           | Loaded agent definitions with source paths                       |
+| Type                         | File                                              | Purpose                                                            |
+| ---------------------------- | ------------------------------------------------- | ------------------------------------------------------------------ |
+| `DetectedProject`            | `operations/project/detect-project.ts`            | Detected project installation state                                |
+| `BothInstallations`          | `operations/project/detect-both-installations.ts` | Combined project + global installation                             |
+| `ConfigWriteOptions`         | `operations/project/write-project-config.ts`      | Options for writing project config                                 |
+| `ConfigWriteResult`          | `operations/project/write-project-config.ts`      | Result of config write operation (incl. `propagation: GateReport`) |
+| `CompileAgentsOptions`       | `operations/project/compile-agents.ts`            | Options for agent compilation                                      |
+| `CompilationResult`          | `operations/project/compile-agents.ts`            | Result of agent compilation                                        |
+| `CompileAllScopesOptions`    | `operations/project/compile-agents-all-scopes.ts` | Options for the home/project multi-pass driver (`index.js` only)   |
+| `PropagatedRecompileSummary` | `operations/project/recompile-project-agents.ts`  | Registered-project recompile summary (`index.js` only)             |
+| `AgentDefs`                  | `operations/project/load-agent-defs.ts`           | Loaded agent definitions with source paths                         |
 
 ## Key Type Shapes
 
@@ -173,7 +173,7 @@ type PropagatedRecompileSummary = {
 };
 ```
 
-Returned by `recompilePropagatedProjectAgents(projectDirs)`, which loops `recompileRegisteredProjectAgents(dir)` over the dirs in `ConfigWriteResult.propagatedProjects`.
+Returned by `recompilePropagatedProjectAgents(projectDirs)`, which loops `recompileRegisteredProjectAgents(dir)` over the dirs in `GateReport.propagated.updated`.
 
 **Failure-isolation contract:**
 
@@ -200,13 +200,20 @@ type LoadedSource = {
 
 ```typescript
 type LoadSourceOptions = {
+  caller?: SourceCaller; // "init" | "stored" — whether this load may reach the init-time source rungs
   sourceFlag?: string;
   projectDir: string;
-  captureStartupMessages?: boolean; // wraps load in buffer mode for Wizard <Static>
+  captureStartupMessages?: boolean; // wraps load in buffer mode for the WizardLayout startup band
 };
 ```
 
-`LoadSourceOptions` is a strict subset of the loader's own `SourceLoadOptions` (`src/cli/lib/loading/source-loader.ts`) — it does NOT expose `devMode`, `skipExtraSources` or `matrixOnly`. Callers that need the offline matrix-only load (`compile`'s `refreshConfigTypes`, `uninstall`) bypass this operation and call `loadSkillsMatrixFromSource` directly.
+**It is not a subset of the loader's own `SourceLoadOptions`** (`src/cli/lib/loading/source-loader.ts`), and the three differences run in both directions. It does NOT expose `devMode`, `skipExtraSources` or `matrixOnly`. It REQUIRES `projectDir`, which the loader takes optionally. And `captureStartupMessages` is this operation's own field — the loader has no notion of it, because buffer mode is the operation's job and not the load's. Only `caller` and `sourceFlag` are carried through unchanged.
+
+Callers that need the offline matrix-only load bypass this operation and call `loadSkillsMatrixFromSource` directly:
+
+```
+grep -rn 'matrixOnly: true' src/cli --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
+```
 
 ### `ConfigWriteOptions`
 
@@ -233,11 +240,11 @@ type ConfigWriteResult = {
   existingConfigPath?: string;
   filesWritten: number; // 2 (global context) or 4 (project context: config + types × 2 scopes)
   /**
-   * Registered project directories whose config was rewritten by propagation of
-   * this write's global changes. Their compiled agents are now stale — the
-   * caller recompiles them with `recompileRegisteredProjectAgents`.
+   * What the gated write did: what moved in the global config, which registered
+   * projects it fanned out to, and the recompile it drove in them. The caller
+   * renders it; the work is already done.
    */
-  propagatedProjects: string[];
+  propagation: GateReport;
 };
 ```
 
@@ -246,7 +253,7 @@ type ConfigWriteResult = {
 - the home branch's config declares no `projects` (a home write is always a global write, so there is no change gate on that branch), or
 - the project branch's global data did not change (`globalDataChanged === false`), or the effective global config has no `projects`.
 
-`init.tsx` and `edit.tsx` each early-return on an empty list before calling `recompilePropagatedProjectAgents`.
+No command calls `recompilePropagatedProjectAgents` — the gate already did, through the lazy import in `src/cli/lib/config-gate/recompile.ts`. `init.tsx` and `edit.tsx` each pass `configResult.propagation` to `reportPropagatedRecompile` on `BaseCommand`, which returns without printing when `propagated.updated` is empty.
 
 **There is no `globalConfigPath` on this result.** It was declared optional, never assigned by `writeProjectConfig` and never read by any caller, so it was deleted. The global config path is derived at the write site via `getProjectConfigPath(os.homedir())` inside `writeScopedFromWizard`.
 
@@ -299,7 +306,7 @@ Unlike `detectProject`, this operation **lets `ConfigLoadError` propagate**. Its
 type AgentDefs = {
   agents: Partial<Record<AgentName, AgentDefinition>>; // CLI defaults + source overrides (source wins)
   sourcePath: string;
-  agentSourcePaths: AgentSourcePaths; // { agentsDir, templatesDir, sourcePath }
+  agentSourcePaths: AgentSourcePaths; // { agentsDir, sourcePath }
 };
 ```
 

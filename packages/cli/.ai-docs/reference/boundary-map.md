@@ -20,8 +20,8 @@ last_validated: 2026-07-30
 | File                                               | Purpose                                                                                                                                 |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/cli/base-command.ts`                          | Shared command behaviour (error handling, terminal-geometry startup gate) — no flags: it declares no `baseFlags`                        |
-| `src/cli/commands/init.tsx`                        | `--source` flag definition — the one command that carries it                                                                            |
-| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--source` before oclif parsing (for the `init` command alone)                                                   |
+| `src/cli/commands/init.tsx`                        | `--marketplace` flag definition — the one command that carries it                                                                       |
+| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--marketplace` before oclif parsing (for the `init` command alone)                                              |
 | `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                           |
 | `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                              |
 | `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                    |
@@ -34,7 +34,7 @@ last_validated: 2026-07-30
 | `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                         |
 | `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                           |
 | `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                               |
-| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation(`derivePluginRef`)                                           |
+| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation(`pluginRefFor`)                                              |
 | `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                                                               |
 | `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                                                            |
 | `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                                                            |
@@ -47,7 +47,7 @@ last_validated: 2026-07-30
 
 ## 1. CLI Input Boundaries
 
-### 1.1 `init`'s Flag: `--source`
+### 1.1 `init`'s Flag: `--marketplace`
 
 | Property       | Value                                                                                     |
 | -------------- | ----------------------------------------------------------------------------------------- |
@@ -57,33 +57,47 @@ last_validated: 2026-07-30
 | **Validation** | oclif `Flags.string()` (accepts any string), then `validateSourceFormat()` in `config.ts` |
 | **Schema**     | None (string flag); validated by `validateSourceFormat()`                                 |
 
-**`init` is the only command that declares `--source` / `-s`** (owner ruling 2026-08-09). Naming a
-source is an install-time decision; every later command resolves the source that install recorded
-(project config → global config → default), so the flag is declared in `init.tsx` and nowhere else.
-`BaseCommand` declares no `baseFlags` at all, and the `NO_BASE_FLAGS` opt-out cast it used to export
-went with the flag — the re-derivation is `grep -rn "source: Flags" src/cli/commands`, which reports
-exactly one line.
+**`init` is the only command that declares `--marketplace` / `-m`** (owner ruling 2026-08-09).
+Naming a marketplace is an install-time decision; every later command resolves the marketplace that
+install recorded (project config → global config → default), so the flag is declared in `init.tsx`
+and nowhere else. `BaseCommand` declares no `baseFlags` at all. The re-derivation is
+`grep -rn "marketplace: Flags" src/cli/commands`, which reports exactly one line.
 
-Passing `--source` to any other command is refused by the parser (`Nonexistent flag: --source`,
-exit 2), pinned by `e2e/commands/source-flag-is-init-only.e2e.test.ts`.
+Passing `--marketplace` to any other command is refused by the parser (`Nonexistent flag:
+--marketplace`, exit 2). The withdrawn `--source` / `-s` spellings are refused by **every** command,
+`init` included — see the callout in [commands/index.md](./commands/index.md#command-architecture). Both
+halves are pinned by `e2e/commands/source-flag-is-init-only.e2e.test.ts`, which asserts the refused
+commands as a set rather than one specimen.
 
 ### 1.2 Init Hook: Raw argv Extraction
 
-| Property       | Value                                                                                  |
-| -------------- | -------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/hooks/init.ts`                                                                |
-| **Direction**  | IN                                                                                     |
-| **Data**       | `--source` and `-s` flags extracted from raw `options.argv` when the command is `init` |
-| **Validation** | Manual string extraction (indexOf + split), then passed to `resolveSource()`           |
-| **Schema**     | None at extraction point; downstream `validateSourceFormat()` validates                |
+| Property       | Value                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/hooks/init.ts`                                                                     |
+| **Direction**  | IN                                                                                          |
+| **Data**       | `--marketplace` and `-m` flags extracted from raw `options.argv` when the command is `init` |
+| **Validation** | Manual string extraction (indexOf + split), then passed to `resolveSource()`                |
+| **Schema**     | None at extraction point; downstream `validateSourceFormat()` validates                     |
 
-The init hook runs before oclif parses flags. It manually extracts `--source` / `--source=value` /
-`-s` from `options.argv` to pre-resolve the source config. This is a raw CLI input boundary with no
-validation at extraction -- validation happens in `resolveSource()` in `config.ts`.
+> **This section is stale and is not safe to follow.** `src/cli/hooks/init.ts` no longer resolves a
+> marketplace: it runs the bare-`cc` dashboard and nothing else, so there is no pre-parse argv
+> extraction and no `sourceConfig` on `BaseCommand`. `init` now reads `flags.marketplace` from
+> oclif's own parse and passes it to `loadSkillsMatrixFromSource` as `sourceFlag`, which is where
+> `resolveSource()` is called. Re-derive before relying on any of it:
+>
+> ```
+> grep -rn 'resolveSource(' src --include='*.ts' --include='*.tsx' --exclude='*.test.ts'
+> ```
+
+The boundary this section described was a raw CLI input with no validation at extraction --
+validation happened in `resolveSource()` in `config.ts`. Validation still does; the extraction step
+does not exist.
 
 The extraction is gated on `options.id === "init"`, and so is the caller identity the hook passes
-(`caller: "init" | "stored"`): `init` is the one command that may name a source, so it is the one
-command whose argv can carry the flag and the one caller `resolveSource` reads `CC_SOURCE` for.
+(`caller: "init" | "stored"`): `init` is the one command that may name a marketplace, so it is the
+one command whose argv can carry the flag and the one caller `resolveSource` reads `CC_MARKETPLACE`
+for (`SOURCE_ENV_VAR` in `configuration/config.ts` — the identifier kept the old word, its value did
+not).
 
 ### 1.3 Per-Command Flag Definitions
 
@@ -91,7 +105,7 @@ Every command extends `BaseCommand` and defines `static flags`. oclif handles ty
 
 | Command             | File                            | Flags                                                                                                                                   |
 | ------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`              | `commands/init.tsx`             | `--source` / `-s` (string, the only command that has it), `--from` (string)                                                             |
+| `init`              | `commands/init.tsx`             | `--marketplace` / `-m` (string, the only command that has it), `--from` (string)                                                        |
 | `edit`              | `commands/edit.tsx`             | `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                                                             |
 | `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                                                   |
 | `list`              | `commands/list.tsx`             | (none); alias `ls`                                                                                                                      |
@@ -154,16 +168,31 @@ Default size limit: `MAX_CONFIG_FILE_SIZE` (1 MB, in `consts.ts`).
 | **Validation** | Optional Zod schema via `schema.safeParse()`                                                                                                                                                                                                                                                                                                                   |
 | **Mechanism**  | jiti dynamic import with module cache disabled, alias for `agents-inc/config` (and the pre-0.150.0 `@agents-inc/cli/config`)                                                                                                                                                                                                                                   |
 
-Callers:
+Callers. **The `Wrote it` column is a trust boundary, not a provenance note** — see the split below
+the table:
 
-| Caller                       | File                              | Schema Used                                            |
-| ---------------------------- | --------------------------------- | ------------------------------------------------------ |
-| `loadProjectConfigFromDir()` | `configuration/project-config.ts` | `projectConfigLoaderSchema` (via raw load + safeParse) |
-| `loadGlobalSourceConfig()`   | `configuration/config.ts`         | `projectSourceConfigSchema`                            |
-| `validateTsConfig()`         | `source-validator.ts` (internal)  | Passed by caller for each config file                  |
-| `loadSkillCategories()`      | `matrix/matrix-loader.ts`         | `skillCategoriesFileSchema`                            |
-| `loadSkillRules()`           | `matrix/matrix-loader.ts`         | `skillRulesFileSchema`                                 |
-| `loadStacks()`               | `stacks/stacks-loader.ts`         | `stacksConfigSchema`                                   |
+| Caller                       | File                              | Schema Used                                            | Wrote it        |
+| ---------------------------- | --------------------------------- | ------------------------------------------------------ | --------------- |
+| `loadProjectConfigFromDir()` | `configuration/project-config.ts` | `projectConfigLoaderSchema` (via raw load + safeParse) | The CLI         |
+| `loadGlobalSourceConfig()`   | `configuration/config.ts`         | `projectSourceConfigSchema`                            | The CLI         |
+| `validateTsConfig()`         | `source-validator.ts` (internal)  | Passed by caller for each config file                  | A source author |
+| `loadSkillCategories()`      | `matrix/matrix-loader.ts`         | `skillCategoriesFileSchema`                            | A source author |
+| `loadSkillRules()`           | `matrix/matrix-loader.ts`         | `skillRulesFileSchema`                                 | A source author |
+| `loadStacks()`               | `stacks/stacks-loader.ts`         | `stacksConfigSchema`                                   | A source author |
+
+**This is one mechanism with two trust postures, and the column above is which.** Data a source
+AUTHOR wrote is read as written; data the CLI PERSISTED is reconciled against the live catalogue
+before any consumer sees it. A source repo's `config/*.ts` ships alongside the catalogue it
+references, so a stack author who groups cross-category skills under one heading meant that heading;
+a user's `.claude-src/config.ts` was written by an older catalogue and cannot be asked to migrate, so
+its category keys are re-keyed to what the catalogue names today. Treating the two alike is not a
+type error and not a test failure — it compiles, and it silently rewrites every stack author's
+grouping.
+
+The two normalizers that carry the split, their callers and the specs holding each half are owned by
+[`features/configuration.md`](./features/configuration.md) § the persisted/authored table. This
+document states only that the boundary divides here, so § 3.4a's config-gate door and
+`loadProjectConfigFromDir` above are the same posture and `loadStacks` is not.
 
 **Missing vs corrupt:** `loadProjectConfigFromDir()` returns `null` **only** when the config file does not exist. Once the file exists, three failure modes throw `ConfigLoadError(configPath, reason)` instead of degrading to `null`:
 
@@ -179,14 +208,14 @@ Caller handling of `ConfigLoadError` is tabulated in `architecture-overview.md` 
 
 ### 2.3 Direct YAML Parse + Zod safeParse (Production Call Sites)
 
-| File                              | What Is Parsed                           | Schema Used                                                                                                   |
-| --------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `matrix/matrix-loader.ts`         | `metadata.yaml` per skill                | `rawMetadataSchema` (local schema, stricter than `skillMetadataLoaderSchema` — requires `author`, `category`) |
-| `skills/skill-plugin-compiler.ts` | `metadata.yaml` for skill compilation    | `skillMetadataLoaderSchema`                                                                                   |
-| `skills/skill-metadata.ts`        | `metadata.yaml` for local skill metadata | `localSkillMetadataSchema`                                                                                    |
-| `skills/skill-metadata.ts`        | `metadata.yaml` for fork injection       | `localSkillMetadataSchema`                                                                                    |
-| `source-validator.ts`             | `metadata.yaml` for strict validation    | `metadataValidationSchema` / `customMetadataValidationSchema`                                                 |
-| `agents/agent-plugin-compiler.ts` | Agent `.md` frontmatter                  | `agentFrontmatterValidationSchema`                                                                            |
+| File                              | What Is Parsed                           | Schema Used                                                                                                             |
+| --------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `matrix/matrix-loader.ts`         | `metadata.yaml` per skill                | `matrixRawMetadataSchema` (`lib/schemas.ts`; stricter than `skillMetadataLoaderSchema` — requires `author`, `category`) |
+| `skills/skill-plugin-compiler.ts` | `metadata.yaml` for skill compilation    | `skillMetadataLoaderSchema`                                                                                             |
+| `skills/skill-metadata.ts`        | `metadata.yaml` for local skill metadata | `localSkillMetadataSchema`                                                                                              |
+| `skills/skill-metadata.ts`        | `metadata.yaml` for fork injection       | `localSkillMetadataSchema`                                                                                              |
+| `source-validator.ts`             | `metadata.yaml` for strict validation    | `metadataValidationSchema` / `customMetadataValidationSchema`                                                           |
+| `agents/agent-plugin-compiler.ts` | Agent `.md` frontmatter                  | `agentFrontmatterValidationSchema`                                                                                      |
 
 ### 2.4 JSON Parse Boundaries (Production)
 
@@ -347,12 +376,12 @@ Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks loca
 
 ### 3.6 Per-Skill Source Propagation
 
-| Function                     | File                                   | Input                            | Output                                     |
-| ---------------------------- | -------------------------------------- | -------------------------------- | ------------------------------------------ |
-| `derivePluginRef()`          | `compiler.ts` (internal, non-exported) | `Skill.source` (per-skill field) | `${id}:${id}` when non-eject/non-undefined |
-| `buildSkillRefsFromConfig()` | `resolver.ts`                          | `SkillConfig.source` per entry   | `SkillReference` with `source` propagated  |
+| Function               | File                              | Input                            | Output                                                                                                   |
+| ---------------------- | --------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pluginRefFor()`       | `compiler.ts` (module-private)    | `Skill.source` (per-skill field) | a spreadable partial: `{ pluginRef }` holding `${id}:${id}` when non-eject/non-undefined, `{}` otherwise |
+| `buildCompileAgents()` | `installation/local-installer.ts` | `SkillConfig.origin` per entry   | `SkillReference.source` carrying the same value                                                          |
 
-**Contract:** `SkillConfig.source` on each skill config entry is authoritative for that skill's install mode. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` source (user-authored local skills) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override.
+**Contract:** `SkillConfig.origin` on each skill config entry is authoritative for that skill's install mode; the compile side reads the same value as `Skill.source`, which `buildCompileAgents` puts there. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` (user-authored local skills, which have no `SkillConfig` entry) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override.
 
 ### 3.7 Skill Metadata Injection
 
@@ -382,14 +411,14 @@ A **write-time invariant boundary**, distinct from the schema boundaries above: 
 **Boundary contracts:**
 
 - **Read the merged matrix, not `defaultCategories`** — `isExclusiveCategory()` honours a source repo's category overrides.
-- **An undeclared `exclusive` flag is NOT exclusive.** The wizard renderer defaults undeclared categories to exclusive (`cat.exclusive ?? true` in `lib/wizard/build-step-logic.ts`); a rule that masks _persisted_ entries deliberately does not.
+- **A category the matrix does not carry is NOT exclusive.** The wizard's toggle handler defaults the same absent-category lookup the other way (`matrix.categories[categoryId]?.exclusive ?? true` in `components/hooks/use-build-step-props.ts`); a rule that masks _persisted_ entries deliberately does not. Both defaults turn on an absent **category**, never on an absent **field** — `CategoryDefinition.exclusive` is a non-optional `boolean` at every producer and at both parse boundaries, so there is no such thing as a category that carries no flag.
 - **Never throws on a custom skill.** `categoryOfSkill()` returns `undefined` for an id absent from the matrix or sitting in the `local` pseudo-category.
 - **Global config is read-only here.** Masks are applied to the project split only — a tombstone is never written into `~/.claude-src/config.ts`.
 - **Idempotent**, and self-healing: `dropOrphanedDerivedMasks()` / `dropOrphanedDerivedAgentMasks()` run BEFORE masking so a mask whose collision cleared is removed rather than re-derived.
 
 ### 3.9 Filesystem Delete Boundary (`uninstall`)
 
-`src/cli/commands/uninstall.tsx` is the only command that removes CLI-managed content. Everything it deletes is enumerated up-front by `detectUninstallTarget(projectDir)` and rendered by the shared pure builder `buildRemovalPlan(target)`, which both the `--yes` plain-text plan (`printRemovalPlan`) and the Ink `UninstallConfirm` component consume, so the two renderings stay byte-identical.
+`src/cli/commands/uninstall.tsx` removes CLI-managed content. Everything it deletes is enumerated up-front by `detectUninstallTarget(projectDir)` and rendered by the shared pure builder `buildRemovalPlan(target)`, which both the `--yes` plain-text plan (`printRemovalPlan`) and the Ink `UninstallConfirm` component consume, so the two renderings stay byte-identical.
 
 | Section header       | What is deleted                                                                                                                  | Matching rule                                                                      |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -443,11 +472,11 @@ All three validate: non-empty, length limit, no control characters (`[\x00-\x08\
 
 ### 5.1 Source Format Validation
 
-| Property         | Value                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------- |
-| **Location**     | `src/cli/lib/configuration/config.ts`                                                              |
-| **Entry points** | `resolveSource()`, `resolvePrimarySourceEntry()`                                                   |
-| **Applied to**   | `--source` flag, `CC_SOURCE` env var (`SOURCE_ENV_VAR` in `config.ts`), config file `source` field |
+| Property         | Value                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Location**     | `src/cli/lib/configuration/config.ts`                                                                                  |
+| **Entry points** | `resolveSource()`, `resolvePrimarySourceEntry()`                                                                       |
+| **Applied to**   | `init --marketplace` flag, `CC_MARKETPLACE` env var (`SOURCE_ENV_VAR` in `config.ts`), config file `marketplace` field |
 
 **Checks performed:**
 

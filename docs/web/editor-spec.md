@@ -30,7 +30,8 @@ not author (vendored CLI types, generated icon map), and tsc has no per-director
 
 ```
 BUILT_IN_MATRIX + AGENT_DEFINITIONS       (packages/matrix/src/{vendor,generated})
-  └─ packages/matrix/src/schema              MatrixSchema.parse once, in read-model/source.ts
+  ├─ packages/matrix/src/built-in-matrix     builtInMatrixSchema.parse once, in read-model/source.ts
+  └─ packages/matrix/src/built-in-agents     agentDefinitionsSchema.parse, in read-model/sub-agents.ts
       └─ packages/matrix/src/read-model      catalog · stacks · sub-agents · selection semantics
           │                                  · assignment defaults · preload defaults
           └─ export from "@workspace/matrix"

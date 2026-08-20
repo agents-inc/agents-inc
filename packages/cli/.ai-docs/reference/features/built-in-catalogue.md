@@ -143,13 +143,65 @@ Listed rather than counted, so the claim self-checks against `grep '^    id: "'`
 | 14  | `nextjs-ai-saas`             |                                              |
 | 15  | `nextjs-saas-starter`        |                                              |
 | 16  | `expo-mobile-fullstack`      |                                              |
-| 17  | `cli-ink-oclif`              | Only CLI-shaped stack; 10 agents             |
+| 17  | `cli-ink-oclif`              | Only CLI-shaped stack; 9 agents              |
 
 **17 stacks.** `default-stacks.test.ts` pins that number in `EXPECTED_STACK_COUNT`, so adding or
 removing a stack fails the unit suite (and therefore the `pre-commit` hook, which runs
 `bun run test`) until the constant is updated deliberately.
 
+**The two agent counts in the Notes column are hand-maintained and nothing holds them.** No spec
+asserts a per-stack agent count, so either can go wrong without a gate noticing. Re-derive each by
+counting the keys of that stack's `agents` object.
+
 ### Structural invariants
+
+**`src/cli/lib/configuration/__tests__/default-stacks.test.ts` now holds most of what follows**, and
+holds it as this document's own quantities — its constants carry a docblock naming this section and
+the count-ownership rule, so a number that moves here reddens the unit suite rather than sitting
+wrong. What it pins: the stack count (`EXPECTED_STACK_COUNT`), the assignment total
+(`EXPECTED_ASSIGNMENT_TOTAL`, invariant 2), the aliased-slot count and the MEMBERS of each hoisted
+array (`EXPECTED_SHARED_ALIAS_SLOTS`, `SHARED_ALIAS_MEMBERS`, invariant 3), the sub-agent roster by
+NAME rather than by count (`EXPECTED_STACK_AGENT_NAMES`, invariant 4), and that no assignment
+anywhere states a load. Two of those are held as MEMBERSHIP rather than as the count this document
+states — the agent roster and the hoisted arrays' contents — because a count cannot tell a retired
+agent from a swapped one, and a swap inside a hoisted array leaves every count in that file green.
+
+**Four claims in this section are held by nothing**, and are the ones to re-derive: the
+**35 distinct categories** and **53 distinct skill ids** in invariant 4 — the suite reads
+`BUILT_IN_MATRIX` but asserts nothing about either total — the **per-stack agent counts** (8, 9, 10
+or 12), and the **which-agents-appear-in-how-many-stacks** sentence in the same invariant. Invariant
+1 is a claim about a type and a render branch rather than a quantity, so nothing here can hold it.
+
+Re-derive all four with this, from `packages/cli`, rather than with a reading of your own — what a
+total counts is the half that drifts silently, and every figure below is over the module's `agents`
+records, keyed distinctly, with every stack included:
+
+```
+npx tsx -e '
+import { defaultStacks } from "./src/cli/lib/configuration/default-stacks.ts";
+const cats = new Set(), ids = new Set(), perStack = [], byAgent = new Map();
+for (const s of defaultStacks) {
+  const names = Object.keys(s.agents);
+  perStack.push(names.length);
+  for (const a of names) {
+    byAgent.set(a, (byAgent.get(a) ?? 0) + 1);
+    for (const [c, xs] of Object.entries(s.agents[a])) { cats.add(c); for (const x of xs) ids.add(x.id); }
+  }
+}
+console.log({ stacks: defaultStacks.length, agents: byAgent.size, categories: cats.size, skillIds: ids.size });
+console.log([...new Set(perStack)].sort((a, b) => a - b), [...byAgent].sort((a, b) => b[1] - a[1]));
+'
+```
+
+**These stay written even though nothing binds them, and the reason is what they are.** The corpus
+declines to store a count whose correct end state is ZERO — a worklist is wrong the moment anyone
+acts on it, and wrong in the direction that reads as work still owed (the `.optional()` census in
+`typescript-types-bible.md`, and `agent-findings/INDEX.md`, both decline for that reason). These are
+the opposite: totals over a catalogue whose correct end state is whatever the catalogue holds, so a
+stored value is right until the catalogue moves and is exactly the thing a reader needs to notice
+that it did.
+The invocation is what makes the check cheap; it does not replace the number, because a document
+with no number to collide against cannot be found stale.
 
 Stated as facts, each verified by evaluating the module:
 
@@ -220,6 +272,39 @@ take**:
 Declaration order in the object literal is `conflicts`, `discourages`, `requires`,
 `alternatives` — it does **not** match the field order in `RelationshipDefinitions`. Every field on
 that type is required, and `defaultRules` supplies all four.
+
+**The four Built-in entries are held, but not by a constant that points here.**
+`default-rules.test.ts` pins a length for `conflicts`, `requires` and `alternatives` and asserts
+`discourages` `toStrictEqual([])` — with its own literals, carrying no reference to this document,
+unlike the `defaultStacks` suite whose constants name this page in their docblock. So a rule added
+or removed reddens the unit suite, and **repairing that suite is exactly the change that leaves
+this table wrong**: the spec goes green on its own literal, nothing points the person repairing it
+at this page, and the two numbers then live in different files under different readings. Until a
+constant here names this section the way `EXPECTED_STACK_COUNT` does, treat a red
+`default-rules.test.ts` as an instruction to re-derive this table in the same pass.
+
+**The `needsAny` count and the distinct slug total in the next section are held by nothing at all.**
+Re-derive all six figures — the four above and those two — with this, from `packages/cli`. The slug
+total is over every kind at once, `requires` contributing its `skill` as well as its `needs`, which
+is the reading the narrowing pass in the next section depends on:
+
+```
+npx tsx -e '
+import { defaultRules } from "./src/cli/lib/configuration/default-rules.ts";
+const { conflicts, discourages, requires, alternatives } = defaultRules.relationships;
+const slugs = new Set([
+  ...conflicts.flatMap((c) => c.skills),
+  ...discourages.flatMap((d) => d.skills),
+  ...requires.flatMap((q) => [q.skill, ...q.needs]),
+  ...alternatives.flatMap((a) => a.skills),
+]);
+console.log({
+  conflicts: conflicts.length, discourages: discourages.length,
+  requires: requires.length, alternatives: alternatives.length,
+  needsAny: requires.filter((q) => q.needsAny === true).length, slugs: slugs.size,
+});
+'
+```
 
 ### Invariants and dead fields
 
@@ -300,18 +385,18 @@ source rule makes the union stricter, never looser.
 `resolveOfferedStacks` (`source-loader.ts`) answers "what stacks does this source offer the
 wizard", and the built-in catalogue stands in for **the default public marketplace only**:
 
-| Source                                                | Ships `config/stacks.ts` | What the wizard is offered                                                  |
-| ----------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
-| Default public marketplace                            | —                        | Its own stacks, else all 17 built-ins                                       |
-| Custom (`init --source`, `CC_SOURCE` at init, config) | Yes                      | Its own stacks, and only those                                              |
-| Custom                                                | No                       | **Nothing** — `suggestedStacks` is `[]` and the wizard skips its stack step |
+| Source                                                          | Ships `config/stacks.ts` | What the wizard is offered                                                  |
+| --------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
+| Default public marketplace                                      | —                        | Its own stacks, else all 17 built-ins                                       |
+| Custom (`init --marketplace`, `CC_MARKETPLACE` at init, config) | Yes                      | Its own stacks, and only those                                              |
+| Custom                                                          | No                       | **Nothing** — `suggestedStacks` is `[]` and the wizard skips its stack step |
 
 The identity is `isDefaultSource(source)` in `lib/configuration/config.ts` — one exported predicate
 over `DEFAULT_SOURCE`, shared with `multi-source-loader.ts`'s public/private marketplace labelling
 so the two surfaces cannot disagree. It is a question about the source STRING: a local checkout of
-the public marketplace passed as `--source /path/to/skills` is a custom source, because nothing in a
+the public marketplace passed as `--marketplace /path/to/skills` is a custom source, because nothing in a
 path says which repository it holds. Both install-time spellings belong to `init` alone
-(`--source` is its flag, `CC_SOURCE` is read only for `caller: "init"`); a later command reads the
+(`--marketplace` is its flag, `CC_MARKETPLACE` is read only for `caller: "init"`); a later command reads the
 source the install recorded, so the row above is the same row for it.
 
 `hydrateForInit` in `stores/wizard-store.ts` is what "skips its stack step" means: an empty
@@ -352,7 +437,7 @@ scripts/generate-source-types.ts
        matrix.suggestedStacks = defaultStacks.map(stack => resolveStack(stack, skillIdSet))
 ```
 
-Run by `npm run generate:types` (`bun scripts/generate-source-types.ts`).
+Run by `npm run generate:types` (`bun scripts/run-generate-source-types.ts`).
 
 `source-loader.ts::resolveBaseResult` short-circuits to `BUILT_IN_MATRIX` whenever
 `isDefaultSource(source) && !devMode`. **`devMode` has no production writer** — grep finds it only
@@ -436,11 +521,15 @@ executes.
 
 **One gap, closeable and currently passing if closed:**
 
-1. **Nothing cross-checks either file against the generated matrix.** `default-categories.test.ts`
-   has exactly that assertion (`keys` vs `CATEGORIES`); its two siblings do not. No spec asserts
-   that every `defaultStacks` skill id exists in `BUILT_IN_MATRIX.skills`, or that every rule slug
-   resolves through `BUILT_IN_MATRIX.slugMap`. Both properties hold, so the assertions would pass on
-   the day they are written.
+1. **Neither file's MEMBERSHIP is cross-checked against the generated matrix.**
+   `default-categories.test.ts` has exactly that assertion (`keys` vs `CATEGORIES`).
+   `default-stacks.test.ts` reads `BUILT_IN_MATRIX` but asks a different question — it asserts every
+   assignment sits under the category the matrix says its skill belongs to, and its lookup
+   deliberately `filter`s out an id the matrix does not carry, so a stale id passes through that
+   spec rather than failing it. `default-rules.test.ts` does not read the matrix at all. No spec
+   asserts that every `defaultStacks` skill id exists in `BUILT_IN_MATRIX.skills`, or that every
+   rule slug resolves through `BUILT_IN_MATRIX.slugMap`. Both properties hold, so the assertions
+   would pass on the day they are written.
 
    **Re-derive before relying on this.** It is an assertion of ABSENCE, which
    `scripts/check-enumeration-drift.ts` cannot falsify — writing either spec moves no symbol name,
@@ -512,6 +601,24 @@ rather than this list, which no check can bind to source.
 resolution, so it never reaches `unresolvedSlugs`. And the severity a reader sees turns on who they
 are: `error` for the marketplace's author, `warning` for someone consuming it — see
 [`reference/commands/index.md`](../commands/index.md) § `doctor`.
+
+**The copy is the one place staleness is loud, and it is loud per skill.** `copyEachSkill` in
+`src/cli/lib/skills/skill-copier.ts` walks the MATRIX and reads from the FETCHED directory, so every
+disagreement between the two lands there — it attempts all of them, collects one outcome each, and
+throws a single message naming the failed count against the attempted count with one line per skill
+carrying the id and the reason. A bare `Promise.all` rejects with whichever error arrived first and
+discards the rest, and that error is the filesystem's: an `ENOENT` naming a path inside the source
+cache, which is an address the user did not choose and cannot act on. It still throws rather than
+copying what it can, because a partial copy leaves an installation missing skills its config
+records — the orphan-entry state the plugin-install path already refuses.
+
+**Read the vendored matrix and the marketplace it was generated from as ONE artefact.**
+`src/cli/types/generated/matrix.ts` is baked from a `skills` checkout at generation time and shipped
+inside the CLI, and `source-loader.ts::resolveBaseResult` serves it to every default-source user
+without executing `defaultStacks` or `defaultRules` at all. So a published CLI pins a marketplace
+revision by implication, and a user whose CLI predates a marketplace change has no way to make the
+two agree — which is why the id is the only actionable thing the copy failure above can carry, and
+why regenerating and publishing are one decision rather than two.
 
 ### Trap 4 — do not restate `preloaded` semantics here
 

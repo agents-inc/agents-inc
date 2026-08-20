@@ -17,7 +17,7 @@ related:
   - reference/config/config-merger.md
   - reference/config/scope-split.md
   - reference/concepts/scope-system.md
-  - reference/architecture/overview.md
+  - reference/architecture-overview.md
   - reference/types/core-types.md
 last_validated: 2026-08-18
 ---
@@ -50,7 +50,7 @@ destination is the defect, and the redirect table is the only content this file 
 | `writeScopedFromWizard` branches, `propagateGlobalChangesToProjects`, the `projects` registry lifecycle                     | [config-writer.md](./config-writer.md)                                                               |
 | `config-types.ts` writer selection, `reconcileTypesFromDisk`, the config-gate and its enforcement                           | [config-writer.md](./config-writer.md)                                                               |
 | Merge semantics: `mergeConfigs`, `mergeGlobalConfigs`, `additiveMergeStack`, `mergeAgentCategories`                         | [config-merger.md](./config-merger.md)                                                               |
-| Scope partitioning: `splitConfigByScope`, the D-220 delta pipeline                                                          | [scope-split.md](./scope-split.md)                                                                   |
+| Scope partitioning: `splitConfigByScope`, the per-agent curation delta pipeline                                             | [scope-split.md](./scope-split.md)                                                                   |
 | Cross-cutting scope model (project vs global paths, install-path resolution)                                                | [../concepts/scope-system.md](../concepts/scope-system.md)                                           |
 | Tombstone / derived-mask lifecycle                                                                                          | [../concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md)                                 |
 

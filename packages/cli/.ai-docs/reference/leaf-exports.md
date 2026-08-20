@@ -7,7 +7,6 @@ keywords:
     SkillRelation,
     SkillRequirement,
     MarketplaceRemoteSource,
-    AgentDefinitionOptions,
     fetchAgentDefinitionsFromRemote,
     AgentPluginOptions,
     PROJECT_CONFIG_TYPES_BEFORE,
@@ -38,15 +37,15 @@ last_validated: 2026-08-02
 
 ## What this file is
 
-**Twelve named exports** across seven sections, each sitting inside an area whose doc is otherwise
-thorough. Ten appear nowhere else under `.ai-docs/reference/`; the remaining two
+**Eleven named exports** across seven sections, each sitting inside an area whose doc is otherwise
+thorough. Nine appear nowhere else under `.ai-docs/reference/`; the remaining two
 (`fetchAgentDefinitionsFromRemote`, `PROJECT_CONFIG_TYPES_BEFORE`) are partially covered elsewhere
 and this file carries only the remainder, saying so in place. Individually none justifies a file.
 
 **Every one is small. Most are not boring.** Two validators whose `valid` flag is a constant; a
-constants module whose only consumer reads a raw string instead of the constant it exports; an
-options type silently dropped at the branch it names; a type declared twice under the same name.
-Those are the entries worth reading. The rest are shape tables.
+constants module whose only consumer reads a raw string instead of the constant it exports; a
+fetch branch no shipped code path can reach; a type declared twice under the same name. Those are
+the entries worth reading. The rest are shape tables.
 
 ### Already covered elsewhere — do not re-document here
 
@@ -78,7 +77,7 @@ its owning doc was out of scope for whoever found it.
 | 1   | `METADATA_KEYS`                                                                              | `lib/metadata-keys.ts`                     | [utilities.md](./utilities.md) — constants region                                       |
 | 2   | `SkillRelation`, `SkillRequirement`                                                          | `types/matrix.ts`                          | [types/core-types.md](./types/core-types.md)                                            |
 | 3   | `MarketplaceRemoteSource`                                                                    | `types/plugins.ts`                         | [types/core-types.md](./types/core-types.md)                                            |
-| 4   | `AgentDefinitionOptions`, `fetchAgentDefinitionsFromRemote`                                  | `lib/agents/agent-fetcher.ts`              | [features/agent-system.md](./features/agent-system.md)                                  |
+| 4   | `fetchAgentDefinitionsFromRemote`                                                            | `lib/agents/agent-fetcher.ts`              | [features/agent-system.md](./features/agent-system.md)                                  |
 | 5   | `AgentPluginOptions`                                                                         | `lib/agents/agent-plugin-compiler.ts`      | [features/compilation-pipeline.md](./features/compilation-pipeline.md)                  |
 | 6   | `PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`, `ProjectConfigTypesOptions` | `lib/configuration/config-types-writer.ts` | [config/config-writer.md](./config/config-writer.md)                                    |
 | 7   | `ValidationPartial`                                                                          | `lib/matrix/matrix-resolver.ts`            | [features/skills-and-matrix.md](./features/skills-and-matrix.md) — Selection Validation |
@@ -213,7 +212,7 @@ It is the object half of `MarketplacePlugin.source`, whose declared type is
 `ref` **all optional**, so `{ source: "github" }` with neither `repo` nor `url` validates.
 [types/zod-schemas.md](./types/zod-schemas.md) `:145` records the schema's place in the dependency
 chain but not this leniency. It is deliberate and consistent with the rest of
-`marketplacePluginSchema` (`category` is a bare `z.string().optional()` for the same reason) —
+`marketplacePluginSchema` (`category` is a bare `z.string().exactOptional()` for the same reason) —
 external marketplace JSON is not the CLI's to reject on shape. The consequence is that the malformed
 case is caught at **use** time, not parse time.
 
@@ -231,80 +230,54 @@ silently ignores `repo`, and `ref` is appended **only** on the `repo` arm — so
 
 ---
 
-## 4. `AgentDefinitionOptions` and the remote branch of `getAgentDefinitions`
+## 4. The remote branch of `getAgentDefinitions`
 
-**File:** `src/cli/lib/agents/agent-fetcher.ts`. Barrel: `lib/agents/index.ts` re-exports the type
-and all three functions from `./agent-fetcher`.
+**File:** `src/cli/lib/agents/agent-fetcher.ts`. Barrel: `lib/agents/index.ts` re-exports all three
+functions from `./agent-fetcher`, and no type — the module declares none.
+`getAgentDefinitions(remoteSource?: string)` carries no options parameter, and
+`AgentSourcePaths` (`types/agents.ts`) is `{ agentsDir, sourcePath }`: neither branch resolves a
+templates directory, and the Liquid roots are `createLiquidEngine`'s subject in
+[features/compilation-pipeline.md](./features/compilation-pipeline.md) rather than this module's.
 
 [features/agent-system.md](./features/agent-system.md) documents `getAgentDefinitions()` in its
-export table (`:531`) with the signature `(remoteSource?, options?) => Promise<AgentSourcePaths>`.
-[features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) records the one row this
-module contributes to the `fetchFromSource` call-site table in its § "Call sites" (options
-`{ subdir: "" }`), and notes under that table that `fetchAgentDefinitionsFromRemote`'s
+export table. [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md) records the
+one row this module contributes to the `fetchFromSource` call-site table in its § "Call sites"
+(options `{ subdir: "" }`), and notes under that table that `fetchAgentDefinitionsFromRemote`'s
 parameter type is **the only place `FetchOptions` is extended rather than constructed**. Neither
-describes the options type, the branch asymmetries, or the reachability. That is this section.
+describes the remote branch's own options, its precedence ladder or its reachability. That is this
+section.
 
-```typescript
-export type AgentDefinitionOptions = FetchOptions & {
-  projectDir?: string;
-};
-```
+`fetchAgentDefinitionsFromRemote`'s parameter type is `FetchOptions & { agentsDir?: string }`, and
+`FetchOptions` is `{ subdir?: string }` (declared in `lib/loading/source-fetcher.ts`), so the full
+field set is `{ subdir?, agentsDir? }`. `subdir` is inert: the `fetchFromSource` call overrides it
+with `""` — see source-fetch-and-cache.md on why `""` is intent rather than behaviour.
 
-`FetchOptions` is `{ subdir?: string }` (declared in
-`lib/loading/source-fetcher.ts`), so the full field set is `{ subdir?, projectDir? }`. **Every field is inert on at
-least one branch:**
-
-| Field        | Local branch (`getLocalAgentDefinitions`)                                                  | Remote branch (`fetchAgentDefinitionsFromRemote`)                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `projectDir` | **Read** via `localTemplatesDir` — selects `<projectDir>/.claude/templates` when it exists | **Never read.** Not in the parameter type at all                                                                        |
-| `subdir`     | Ignored                                                                                    | Overridden with `""` in the `fetchFromSource` call — see source-fetch-and-cache.md on why `""` is intent, not behaviour |
-
-**Invariant — `fetchAgentDefinitionsFromRemote` does not take `AgentDefinitionOptions`.** Its own
-parameter type is `FetchOptions & { agentsDir?: string }`, a _different_ intersection.
-`getAgentDefinitions` forwards its `options` straight into it, and because that argument is
-a variable rather than an object literal TypeScript applies no excess-property check. The mismatch
-runs both ways:
-
-- **`projectDir` is silently dropped** when a remote source is supplied. A caller passing
-  `{ projectDir }` alongside a `remoteSource` gets no local-templates preference and no diagnostic.
-- **`agentsDir` is unreachable through `getAgentDefinitions`.** It is not in
-  `AgentDefinitionOptions`, so only a direct call to `fetchAgentDefinitionsFromRemote` can set it.
-  That matters because `agentsDir` doubles as the flag that **suppresses** the source-config lookup:
-  the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote` skips
-  `loadProjectSourceConfig(result.path)` entirely when it is set.
+**`agentsDir` is unreachable through `getAgentDefinitions`.** That function's only parameter is the
+source string, so nothing but a direct call to `fetchAgentDefinitionsFromRemote` can set it — and it
+matters because `agentsDir` doubles as the flag that **suppresses** the source-config lookup: the
+`sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote` skips
+`loadProjectSourceConfig(result.path)` entirely when it is set.
 
 **Remote agents-dir precedence (`agentsDirRelPath` in `fetchAgentDefinitionsFromRemote`):**
 `options.agentsDir` → the fetched source's own `agentsDir` from its project source config →
 `DIRS.agents` (`"src/agents"`).
 
-**The two branches derive `templatesDir` differently, and the difference is deliberate.** Locally
-(`getLocalAgentDefinitions`' `templatesDir`) it is the full independent constant
-`PROJECT_ROOT + DIRS.templates` (`"src/agents/_templates"`). Remotely
-(`fetchAgentDefinitionsFromRemote`'s `templatesDir`) it is `agentsDir + basename(DIRS.templates)` —
-only the **basename** `_templates` is taken, so the templates dir is re-nested under whatever
-agents dir was resolved. With the default relative path the two agree; they diverge exactly when a source
-config relocates `agentsDir`, which is the case the basename exists to handle. The local
-`.claude/templates` override has **no remote equivalent** — a remote source cannot be given project
-templates.
-
-**Failure asymmetry, both branches.** A missing agents dir **throws** — each branch guards on
-`directoryExists(agentsDir)`. A missing templates dir only `verbose()`-logs — each branch guards on
-`directoryExists(templatesDir)` — and the path is returned anyway, so a downstream Liquid render is
-what actually fails.
+**A missing agents dir throws on both branches** — each guards on `directoryExists(agentsDir)` and
+raises rather than returning a path with nothing at it. It is the only guard either branch carries,
+so every other way a fetch can come back unusable surfaces downstream, at the Liquid render.
 
 ### The remote branch is production-unreachable today
 
-| Caller                                                        | `remoteSource` passed                |
-| ------------------------------------------------------------- | ------------------------------------ |
-| `loadAgentDefs` (`lib/operations/project/load-agent-defs.ts`) | hardcoded `undefined` — always local |
+| Caller                                                        | `remoteSource` passed                                    |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| `loadAgentDefs` (`lib/operations/project/load-agent-defs.ts`) | none — it calls `getAgentDefinitions()` with no argument |
 
-`loadAgentDefs` is now the only caller, and it never passes a remote source — the one site that
-could went with the `new agent` command when that command was deleted.
-**No shipped code path reaches `fetchAgentDefinitionsFromRemote`.** Its
-behaviour is held up entirely by `agent-fetcher.test.ts` (**22 specs**, verified by running the
-file; a `fetchAgentDefinitionsFromRemote` describe block plus blocks for the local resolver and the
-dispatcher). Treat it as tested-but-dormant: changing it will not break a user today, and no E2E
-will catch it either.
+`loadAgentDefs` is now the only caller, and it has no parameter of its own to forward — the one site
+that could pass a remote source went with the `new agent` command when that command was deleted.
+**No shipped code path reaches `fetchAgentDefinitionsFromRemote`.** Its behaviour is held up
+entirely by `agent-fetcher.test.ts` (**15 specs** — ten in the `fetchAgentDefinitionsFromRemote`
+block, two for the local resolver, three for the dispatcher). Treat it as tested-but-dormant:
+changing it will not break a user today, and no E2E will catch it either.
 
 ---
 
@@ -534,7 +507,7 @@ wrong.
 
 | File                                                              | Specs | Covers                                                                                        |
 | ----------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------- |
-| `src/cli/lib/agents/agent-fetcher.test.ts`                        | 22    | `getLocalAgentDefinitions`, `fetchAgentDefinitionsFromRemote`, `getAgentDefinitions` dispatch |
+| `src/cli/lib/agents/agent-fetcher.test.ts`                        | 15    | `getLocalAgentDefinitions`, `fetchAgentDefinitionsFromRemote`, `getAgentDefinitions` dispatch |
 | `src/cli/lib/wizard/build-step-logic.test.ts`                     | 50    | `validateBuildStep`, `buildCategoriesForDomain`                                               |
 | `src/cli/lib/configuration/__tests__/config-types-writer.test.ts` | 62    | emitted source of both generators                                                             |
 | `src/cli/lib/matrix/matrix-resolver.test.ts`                      | 127   | the four `ValidationPartial` passes plus the rest of the resolver                             |
@@ -547,19 +520,17 @@ Those three are covered only transitively.
 
 ## Traps, collected
 
-| #   | Trap                                                                                                              | Anchor                                                                                           |
-| --- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 1   | Editing `METADATA_KEYS.DISPLAY_NAME` changes the error text, not the field the loader reads                       | `extractAllSkills` (`matrix-loader.ts`)                                                          |
-| 2   | `SkillRequirement` is declared twice — the private alias in `matrix-resolver.ts` is not the one to edit           | the module-private `SkillRequirement` alias (`matrix-resolver.ts`)                               |
-| 3   | `{ source: "github" }` with no `repo` and no `url` passes schema validation and throws at use time                | `marketplaceRemoteSourceSchema` (`schemas.ts`)                                                   |
-| 4   | A remote source carrying both `url` and `repo` ignores `repo`; `ref` is dropped unless the `repo` arm is taken    | `resolvePluginSource` (`skill-fetcher.ts`)                                                       |
-| 5   | `projectDir` is silently dropped whenever `getAgentDefinitions` takes a `remoteSource`                            | `getAgentDefinitions` vs `fetchAgentDefinitionsFromRemote` (`agent-fetcher.ts`)                  |
-| 6   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup  | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`                           |
-| 7   | `templatesDir` is an independent constant locally but re-nested under `agentsDir` remotely                        | the `templatesDir` binding in `getLocalAgentDefinitions` vs in `fetchAgentDefinitionsFromRemote` |
-| 8   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                                           |
-| 9   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource`                       |
-| 10  | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                                       |
-| 11  | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                                      |
+| #   | Trap                                                                                                              | Anchor                                                                     |
+| --- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | Editing `METADATA_KEYS.DISPLAY_NAME` changes the error text, not the field the loader reads                       | `extractAllSkills` (`matrix-loader.ts`)                                    |
+| 2   | `SkillRequirement` is declared twice — the private alias in `matrix-resolver.ts` is not the one to edit           | the module-private `SkillRequirement` alias (`matrix-resolver.ts`)         |
+| 3   | `{ source: "github" }` with no `repo` and no `url` passes schema validation and throws at use time                | `marketplaceRemoteSourceSchema` (`schemas.ts`)                             |
+| 4   | A remote source carrying both `url` and `repo` ignores `repo`; `ref` is dropped unless the `repo` arm is taken    | `resolvePluginSource` (`skill-fetcher.ts`)                                 |
+| 5   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup  | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`     |
+| 6   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                     |
+| 7   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource` |
+| 8   | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                 |
+| 9   | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                |
 
 ---
 
