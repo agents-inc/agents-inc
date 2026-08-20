@@ -8,7 +8,7 @@ import type {
   SkillId,
   SkillSlug,
 } from "../../types";
-import { typedEntries, typedValues } from "../../utils/typed-object";
+import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
 export let matrix: MergedSkillsMatrix = BUILT_IN_MATRIX;
@@ -71,4 +71,25 @@ export function hasSkill(id: string): boolean {
 /** Optional stack lookup by ID. */
 export function findStack(stackId: string): ResolvedStack | undefined {
   return matrix.suggestedStacks.find((s) => s.id === stackId);
+}
+
+/**
+ * A comparator putting categories in the order the matrix declares them, so any
+ * surface that emits categories emits them in an order decided by the roster
+ * rather than by the order it happened to build them in. A category the matrix
+ * does not declare sorts after every declared one, keeping the order it arrived
+ * in — `Array.prototype.sort` is stable.
+ *
+ * Built per call rather than once at module load because `initializeMatrix`
+ * replaces the matrix after the local-skill merge, which is where a custom
+ * skill's synthesized category first appears.
+ */
+export function byCategoryDeclarationOrder(): (a: string, b: string) => number {
+  const declarationRank = new Map<string, number>(
+    typedKeys<Category>(matrix.categories).map((category, rank) => [category, rank]),
+  );
+  const afterEveryDeclared = declarationRank.size;
+  const rankOf = (category: string): number => declarationRank.get(category) ?? afterEveryDeclared;
+
+  return (a, b) => rankOf(a) - rankOf(b);
 }

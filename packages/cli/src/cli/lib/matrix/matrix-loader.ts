@@ -3,7 +3,7 @@ import path from "path";
 import { getErrorMessage } from "../../utils/errors";
 import { glob, readFile, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { DIRS, STANDARD_FILES } from "../../consts";
+import { STANDARD_FILES } from "../../consts";
 import { loadConfig } from "../configuration/config-loader";
 import { METADATA_KEYS } from "../metadata-keys";
 import { parseFrontmatter } from "../loading";
@@ -13,13 +13,7 @@ import {
   formatZodIssues,
   matrixRawMetadataSchema,
 } from "../schemas";
-import { mergeMatrixWithSkills } from "./skill-resolution";
-import type {
-  CategoryMap,
-  ExtractedSkillMetadata,
-  MergedSkillsMatrix,
-  SkillRulesConfig,
-} from "../../types";
+import type { CategoryMap, ExtractedSkillMetadata, SkillRulesConfig } from "../../types";
 
 /**
  * Loads and validates a skill-categories.ts configuration file.
@@ -159,28 +153,4 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
   }
 
   return skills;
-}
-
-/**
- * Convenience function that loads categories and rules from standalone files,
- * extracts all skills from the project's skills directory, and merges them
- * into a MergedSkillsMatrix.
- *
- * @param categoriesPath - Path to the skill-categories.ts config file
- * @param rulesPath - Path to the skill-rules.ts config file
- * @param projectRoot - Project root directory (skills are scanned from `{root}/src/skills`)
- * @returns Fully resolved and merged skills matrix
- */
-export async function loadAndMergeSkillsMatrix(
-  categoriesPath: string,
-  rulesPath: string,
-  projectRoot: string,
-): Promise<MergedSkillsMatrix> {
-  const skillsDir = path.join(projectRoot, DIRS.skills);
-  const [categories, rules, skills] = await Promise.all([
-    loadSkillCategories(categoriesPath),
-    loadSkillRules(rulesPath),
-    extractAllSkills(skillsDir),
-  ]);
-  return mergeMatrixWithSkills(categories, rules.relationships, skills);
 }

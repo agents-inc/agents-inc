@@ -2,6 +2,7 @@ import os from "os";
 import { unique } from "remeda";
 import path from "path";
 import {
+  MARKETPLACE_JSON,
   PROJECT_ROOT,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
@@ -10,7 +11,6 @@ import {
   STANDARD_FILES,
 } from "../../consts";
 import { defaultCategories } from "../configuration/default-categories";
-import { defaultRules } from "../configuration/default-rules";
 import { defaultStacks } from "../configuration/default-stacks";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
@@ -21,18 +21,15 @@ import type {
   CategoryPath,
   ExtractedSkillMetadata,
   MergedSkillsMatrix,
-  RelationshipDefinitions,
-  RequireRule,
   ResolvedSkill,
   ResolvedStack,
   SkillAssignment,
   SkillId,
-  SkillRulesConfig,
   SkillScope,
-  SkillSlug,
   Stack,
   Category,
 } from "../../types";
+import { getErrorMessage } from "../../utils/errors";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
@@ -54,9 +51,14 @@ import {
   loadSkillCategories,
   loadSkillRules,
   mergeMatrixWithSkills,
+  relationshipsForSource,
 } from "../matrix";
 import { loadAllAgents } from "./loader";
-import { fetchFromSource, fetchMarketplace } from "./source-fetcher";
+import {
+  fetchFromSource,
+  fetchMarketplace,
+  MarketplaceManifestAbsentError,
+} from "./source-fetcher";
 import { loadSkillsFromAllSources } from "./multi-source-loader";
 import { loadStacks, resolveAgentConfigToSkills } from "../stacks";
 import { initializeMatrix, matrix as currentMatrix } from "../matrix/matrix-provider";
@@ -204,100 +206,69 @@ async function resolveBaseResult(
 type MarketplaceLabels = Pick<SourceLoadResult, "marketplace">;
 
 /**
+ * Which state a marketplace's manifest is in, as far as naming the marketplace goes.
+ *
+ * Three states rather than two because the two failures are not the same event: a
+ * marketplace with no manifest is an ordinary local directory, while one whose manifest
+ * is there and refused is a broken publication, and the author is the only person who
+ * can repair it. Collapsing them reported every schema violation in that file as an
+ * absent file, and a reader who checked found it exactly where the message said it was
+ * not. `doctor`'s `ConfigState` splits its own three the same way and for the same reason.
+ */
+type ManifestState =
+  { kind: "absent" } | { kind: "unreadable"; reason: string } | { kind: "named"; name: string };
+
+/**
+ * {@link ManifestState} for one marketplace. Absence is read off the throw's TYPE rather
+ * than its text: `fetchMarketplace` is the only thing that can tell a file it never found
+ * from one it found and refused, so it says which, and nothing here matches on a sentence.
+ */
+async function readManifestState(source: string): Promise<ManifestState> {
+  try {
+    const { marketplace } = await fetchMarketplace(source);
+    return { kind: "named", name: marketplace.name };
+  } catch (error) {
+    if (error instanceof MarketplaceManifestAbsentError) return { kind: "absent" };
+    return { kind: "unreadable", reason: getErrorMessage(error) };
+  }
+}
+
+/** The label a config already recorded, which outlives a manifest this load could not name. */
+function configuredLabel(sourceConfig: ResolvedConfig): MarketplaceLabels {
+  return sourceConfig.marketplace === undefined ? {} : { marketplace: sourceConfig.marketplace };
+}
+
+/**
  * Resolves the marketplace name from the source's
  * `.claude-plugin/marketplace.json`. A `marketplace` already recorded in the
- * project config wins; sources without a marketplace.json keep whatever the
- * config had (possibly nothing) and are labelled by their source name.
+ * project config wins; sources this load cannot name keep whatever the config had
+ * (possibly nothing) and are labelled by their source name.
  */
 async function resolveMarketplaceLabels(
   source: string,
   sourceConfig: ResolvedConfig,
 ): Promise<MarketplaceLabels> {
-  try {
-    const marketplaceResult = await fetchMarketplace(source);
-    const marketplace = sourceConfig.marketplace ?? marketplaceResult.marketplace.name;
-    verbose(`Using marketplace name from marketplace.json: ${marketplace}`);
-    return { marketplace };
-  } catch {
-    verbose(`Marketplace has no marketplace.json — using its ref as the label`);
-    return sourceConfig.marketplace === undefined ? {} : { marketplace: sourceConfig.marketplace };
+  const state = await readManifestState(source);
+
+  switch (state.kind) {
+    case "named": {
+      const marketplace = sourceConfig.marketplace ?? state.name;
+      verbose(`Using marketplace name from ${MARKETPLACE_JSON}: ${marketplace}`);
+      return { marketplace };
+    }
+    case "absent":
+      verbose(`Marketplace has no ${MARKETPLACE_JSON} — using its ref as the label`);
+      return configuredLabel(sourceConfig);
+    case "unreadable":
+      warn(
+        `Marketplace has a ${MARKETPLACE_JSON} this CLI cannot read, so its ref is the label instead:\n${state.reason}`,
+      );
+      return configuredLabel(sourceConfig);
+    default: {
+      const exhaustive: never = state;
+      return exhaustive;
+    }
   }
-}
-
-/** Merges relationship rule sets: source rules first, so they win first-match lookups. */
-function mergeRelationships(
-  source: RelationshipDefinitions,
-  defaults: RelationshipDefinitions,
-): RelationshipDefinitions {
-  return {
-    conflicts: [...source.conflicts, ...defaults.conflicts],
-    discourages: [...source.discourages, ...defaults.discourages],
-    requires: [...source.requires, ...defaults.requires],
-    alternatives: [...source.alternatives, ...defaults.alternatives],
-  };
-}
-
-/** Below two present members a group rule relates nothing, so it is dropped whole. */
-const MIN_RELATABLE_GROUP_MEMBERS = 2;
-
-/** Group rules — conflicts, discourages, alternatives — keeping only present slugs. */
-function narrowGroupsToSlugs<Rule extends { skills: SkillSlug[] }>(
-  rules: Rule[],
-  shipped: ReadonlySet<SkillSlug>,
-): Rule[] {
-  return rules
-    .map((rule) => ({ ...rule, skills: rule.skills.filter((slug) => shipped.has(slug)) }))
-    .filter((rule) => rule.skills.length >= MIN_RELATABLE_GROUP_MEMBERS);
-}
-
-/**
- * Requirements, keeping only those a present skill declares over present skills.
- * A rule left needing nothing states no requirement — resolution already treats it
- * that way — so it goes rather than resolving to an empty `needs`.
- */
-function narrowRequirementsToSlugs(
-  rules: RequireRule[],
-  shipped: ReadonlySet<SkillSlug>,
-): RequireRule[] {
-  return rules
-    .filter((rule) => shipped.has(rule.skill))
-    .map((rule) => ({ ...rule, needs: rule.needs.filter((slug) => shipped.has(slug)) }))
-    .filter((rule) => rule.needs.length > 0);
-}
-
-function narrowToShippedSlugs(
-  rules: RelationshipDefinitions,
-  shipped: ReadonlySet<SkillSlug>,
-): RelationshipDefinitions {
-  return {
-    conflicts: narrowGroupsToSlugs(rules.conflicts, shipped),
-    discourages: narrowGroupsToSlugs(rules.discourages, shipped),
-    requires: narrowRequirementsToSlugs(rules.requires, shipped),
-    alternatives: narrowGroupsToSlugs(rules.alternatives, shipped),
-  };
-}
-
-/**
- * The relationships a source's skills can actually express: the source's own rules
- * verbatim, plus the built-ins narrowed to the slugs this source ships.
- *
- * The built-in rules are written against the whole public catalogue — 176 slugs — so
- * a source shipping ten of them left the rest dangling. Resolution dropped those
- * references either way; what it ALSO did was warn once per reference per skill, and
- * since the startup band those warnings are painted over the wizard's step. Narrowing
- * first removes the noise and nothing else: a member that resolves to no skill
- * contributed nothing to the resolved matrix to begin with.
- *
- * A source's OWN rules are never narrowed. A slug its author typed and its skills do
- * not carry is that source's defect, and the warning is the only place it is reported.
- */
-function relationshipsForSource(
-  sourceRules: SkillRulesConfig | undefined,
-  skills: ExtractedSkillMetadata[],
-): RelationshipDefinitions {
-  const shipped = new Set(skills.map((skill) => skill.slug));
-  const builtIn = narrowToShippedSlugs(defaultRules.relationships, shipped);
-  return sourceRules ? mergeRelationships(sourceRules.relationships, builtIn) : builtIn;
 }
 
 /** Merges any discovered local skills for `dir` into the matrix, logging the find. */
@@ -429,7 +400,7 @@ async function loadAndMergeFromBasePath(
   const skills = await extractAllSkills(skillsDir);
   await refuseCatalogueCollisions(basePath, source, skills);
 
-  const relationships = relationshipsForSource(sourceRules, skills);
+  const relationships = relationshipsForSource(skills, sourceRules);
   const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
   initializeMatrix(mergedMatrix);
 

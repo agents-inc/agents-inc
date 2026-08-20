@@ -1,11 +1,11 @@
-export {
-  loadSkillCategories,
-  loadSkillRules,
-  extractAllSkills,
-  loadAndMergeSkillsMatrix,
-} from "./matrix-loader";
+export { loadSkillCategories, loadSkillRules, extractAllSkills } from "./matrix-loader";
 
-export { claimSlug, mergeMatrixWithSkills, synthesizeCategory } from "./skill-resolution";
+export {
+  claimSlug,
+  mergeMatrixWithSkills,
+  relationshipsForSource,
+  synthesizeCategory,
+} from "./skill-resolution";
 
 export {
   getDependentSkills,

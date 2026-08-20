@@ -19,6 +19,7 @@ import { getErrorMessage } from "../../utils/errors";
 import {
   ensureDir,
   directoryExists,
+  fileExists,
   readFileOptional,
   readFileSafe,
   remove,
@@ -320,7 +321,13 @@ async function fetchEtag(tar: string): Promise<string | undefined> {
   return response.headers.get("etag") ?? undefined;
 }
 
-function fetchRecordPath(cacheDir: string): string {
+/**
+ * Where the record for a cached copy lives — exported because a second surface has to agree with
+ * this one on the address: `e2e/fixtures/default-source-cache.ts` seeds a copy of the DEFAULT
+ * source, and a run over a seeded copy with no record here re-downloads it over the network, which
+ * is the one thing that fixture exists to avoid.
+ */
+export function fetchRecordPath(cacheDir: string): string {
   return `${cacheDir}${FETCH_RECORD_SUFFIX}`;
 }
 
@@ -417,6 +424,17 @@ function createDetailedFetchError(error: unknown, source: string): Error {
   return new Error(`Failed to fetch ${source}: ${message}`);
 }
 
+/**
+ * Thrown when a marketplace has no manifest at all, which every other failure in
+ * {@link fetchMarketplace} is not.
+ *
+ * A type rather than a sentence a caller matches on: absent and unreadable have
+ * different remedies — add the file, versus repair the file that is already there —
+ * and the only way a caller can report them apart is if the throw says which it is.
+ * A caller that does not care still catches an ordinary `Error`.
+ */
+export class MarketplaceManifestAbsentError extends Error {}
+
 export async function fetchMarketplace(source: string): Promise<MarketplaceFetchResult> {
   const result = await fetchFromSource(source, {
     subdir: "", // Root of repo
@@ -424,8 +442,11 @@ export async function fetchMarketplace(source: string): Promise<MarketplaceFetch
 
   const marketplacePath = marketplaceManifestPath(result.path);
 
-  if (!(await directoryExists(path.dirname(marketplacePath)))) {
-    throw new Error(
+  // The FILE, not its directory: a plugin repository ships `.claude-plugin/plugin.json`
+  // with no marketplace beside it, and a directory check calls that manifest readable
+  // and leaves the absence to surface as a read error two statements later.
+  if (!(await fileExists(marketplacePath))) {
+    throw new MarketplaceManifestAbsentError(
       `Marketplace not found at: ${source}\n\n` +
         `The .claude-plugin/marketplace.json file is missing from this repository.\n\n` +
         `Possible causes:\n` +

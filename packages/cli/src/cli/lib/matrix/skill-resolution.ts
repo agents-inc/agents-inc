@@ -2,6 +2,7 @@ import { verbose, warn } from "../../utils/logger";
 import { unique, uniqueBy } from "remeda";
 import { toTitleCase } from "../../utils/string";
 import { DEFAULT_VERSION, LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { defaultRules } from "../configuration/default-rules";
 import type {
   CategoryDefinition,
   CategoryMap,
@@ -9,11 +10,13 @@ import type {
   ExtractedSkillMetadata,
   MergedSkillsMatrix,
   RelationshipDefinitions,
+  RequireRule,
   ResolvedSkill,
   SkillAlternative,
   SkillId,
   SkillRelation,
   SkillRequirement,
+  SkillRulesConfig,
   SkillSlug,
   SkillSlugMap,
   Category,
@@ -144,6 +147,82 @@ function collectUnresolvedSlugs(
   slugToId: SkillSlugMap["slugToId"],
 ): SkillSlug[] {
   return unique(slugsNamedByRules(relationships).filter((slug) => slugToId[slug] === undefined));
+}
+
+/** Merges relationship rule sets: source rules first, so they win first-match lookups. */
+function mergeRelationships(
+  source: RelationshipDefinitions,
+  defaults: RelationshipDefinitions,
+): RelationshipDefinitions {
+  return {
+    conflicts: [...source.conflicts, ...defaults.conflicts],
+    discourages: [...source.discourages, ...defaults.discourages],
+    requires: [...source.requires, ...defaults.requires],
+    alternatives: [...source.alternatives, ...defaults.alternatives],
+  };
+}
+
+/** Below two present members a group rule relates nothing, so it is dropped whole. */
+const MIN_RELATABLE_GROUP_MEMBERS = 2;
+
+/** Group rules — conflicts, discourages, alternatives — keeping only present slugs. */
+function narrowGroupsToSlugs<Rule extends { skills: SkillSlug[] }>(
+  rules: Rule[],
+  shipped: ReadonlySet<SkillSlug>,
+): Rule[] {
+  return rules
+    .map((rule) => ({ ...rule, skills: rule.skills.filter((slug) => shipped.has(slug)) }))
+    .filter((rule) => rule.skills.length >= MIN_RELATABLE_GROUP_MEMBERS);
+}
+
+/**
+ * Requirements, keeping only those a present skill declares over present skills.
+ * A rule left needing nothing states no requirement — resolution already treats it
+ * that way — so it goes rather than resolving to an empty `needs`.
+ */
+function narrowRequirementsToSlugs(
+  rules: RequireRule[],
+  shipped: ReadonlySet<SkillSlug>,
+): RequireRule[] {
+  return rules
+    .filter((rule) => shipped.has(rule.skill))
+    .map((rule) => ({ ...rule, needs: rule.needs.filter((slug) => shipped.has(slug)) }))
+    .filter((rule) => rule.needs.length > 0);
+}
+
+function narrowToShippedSlugs(
+  rules: RelationshipDefinitions,
+  shipped: ReadonlySet<SkillSlug>,
+): RelationshipDefinitions {
+  return {
+    conflicts: narrowGroupsToSlugs(rules.conflicts, shipped),
+    discourages: narrowGroupsToSlugs(rules.discourages, shipped),
+    requires: narrowRequirementsToSlugs(rules.requires, shipped),
+    alternatives: narrowGroupsToSlugs(rules.alternatives, shipped),
+  };
+}
+
+/**
+ * The relationships a source's skills can actually express: the source's own rules
+ * verbatim, plus the built-ins narrowed to the slugs this source ships.
+ *
+ * The built-in rules are written against the whole public catalogue — 176 slugs — so
+ * a source shipping ten of them left the rest dangling. Resolution dropped those
+ * references either way; what it ALSO did was warn once per reference per skill, and
+ * since the startup band those warnings are painted over the wizard's step. Narrowing
+ * first removes the noise and nothing else: a member that resolves to no skill
+ * contributed nothing to the resolved matrix to begin with.
+ *
+ * A source's OWN rules are never narrowed. A slug its author typed and its skills do
+ * not carry is that source's defect, and the warning is the only place it is reported.
+ */
+export function relationshipsForSource(
+  skills: ExtractedSkillMetadata[],
+  sourceRules?: SkillRulesConfig,
+): RelationshipDefinitions {
+  const shipped = new Set(skills.map((skill) => skill.slug));
+  const builtIn = narrowToShippedSlugs(defaultRules.relationships, shipped);
+  return sourceRules ? mergeRelationships(sourceRules.relationships, builtIn) : builtIn;
 }
 
 /**
