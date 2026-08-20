@@ -161,6 +161,22 @@ export const MARKETPLACE_REF = "acme/skills"
 // exactly why a 404 has to offer the token rather than declare the name wrong.
 export const PRIVATE_MARKETPLACE_REF = "acme/private-skills"
 
+// The same two marketplaces as `--marketplace` takes them, which is what the
+// editor stores and what it mints.
+//
+// Written out rather than derived from the two above, because a fixture is a
+// statement OF the wire value: one built by calling the app's own formatter
+// could only ever agree with it.
+//
+// The prefix is the whole of the difference and it is not cosmetic. The CLI
+// routes a ref on its protocol, and one carrying none is a LOCAL DIRECTORY — so
+// a payload naming a bare `owner/repo` sends its receiver looking for
+// `<cwd>/acme/skills`, which fails in the worst way available: by resolving to
+// something rather than to nothing. Two constants because they are two forms
+// with two meanings, not one string doing two jobs.
+export const MARKETPLACE_CANONICAL_REF = "github:acme/skills"
+export const PRIVATE_MARKETPLACE_CANONICAL_REF = "github:acme/private-skills"
+
 // The token the private marketplace accepts. A real PAT shape, because the
 // header is built from whatever the user pasted and a fixture that could not be
 // pasted proves nothing.

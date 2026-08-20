@@ -11,6 +11,23 @@ import { mergeConfig } from "vitest/config"
 // takes exactly what `poolOptions.workers` used to hold. The package ships a
 // codemod for the move: `./codemods/vitest-v3-to-v4`.
 //
+// The same release dropped two things the Workers testing docs still lead with,
+// and both losses are silent:
+//
+//   - `isolatedStorage` is gone, so KV STATE LEAKS BETWEEN TESTS IN A FILE. A
+//     test that needs a cold binding must clear its own keys in `beforeEach` —
+//     see `src/skill-index.test.ts`, which says why it deletes one key rather
+//     than reaching for `reset()`.
+//   - `fetchMock` is gone. Intercept a Worker's OUTBOUND requests with
+//     `vi.stubGlobal("fetch", ...)`, paired with `vi.unstubAllGlobals()` in
+//     `afterEach` — `clearMocks: true` from the shared config clears mock
+//     CALLS, not stubbed globals. This works because the `main` worker runs in
+//     the same isolate as the tests, while `SELF.fetch` is a `Fetcher` method
+//     rather than the global, so dispatching INTO the worker still works.
+//     The undici `MockAgent` types remain in the package's
+//     `types/cloudflare-test.d.ts`, describing an API `cloudflare:test` no
+//     longer exports, so the old approach type-checks and fails at import.
+//
 // Everything under `test` comes from the shared config. The include,
 // `globals: false` and `clearMocks: true` were restated here by hand until
 // 2026-08-07, which is the drift the third axis of `deps:check` exists to
