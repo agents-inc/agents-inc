@@ -21,6 +21,7 @@ import path from "path";
 import { parse as parseYaml } from "yaml";
 
 import { STANDARD_FILES } from "../src/cli/consts.ts";
+import { bytewise } from "../src/cli/utils/string.ts";
 import { typedEntries } from "../src/cli/utils/typed-object.ts";
 
 import type { AgentYamlConfig } from "../src/cli/types/index.ts";
@@ -160,7 +161,9 @@ function serializeAgentDefinition(definition: GeneratedAgentDefinition): string 
 function agentDefinitionsFile(cliRoot: string): EmittedFile {
   const definitions = findAgentSources(cliRoot)
     .map(toAgentDefinition)
-    .sort((a, b) => a.id.localeCompare(b.id));
+    // Committed output, byte-compared by `check` — so the order has to be the comparator's
+    // rather than the collation of whichever machine ran the generator.
+    .sort((a, b) => bytewise(a.id, b.id));
 
   return {
     path: AGENTS_FILE,

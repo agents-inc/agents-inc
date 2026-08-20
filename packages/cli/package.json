@@ -88,13 +88,13 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit && tsc -p e2e/tsconfig.json --noEmit && echo '✓ No TypeScript errors'",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
     "generate": "bun run generate:types && bun run generate:schemas && bun run generate:matrix",
-    "generate:types": "bun scripts/generate-source-types.ts",
+    "generate:types": "bun scripts/run-generate-source-types.ts",
+    "generate:types:check": "bun scripts/run-generate-source-types.ts --check",
+    "generate:schemas": "bun scripts/run-generate-json-schemas.ts",
+    "generate:schemas:check": "bun scripts/run-generate-json-schemas.ts --check",
     "generate:matrix": "bun scripts/run-generate-matrix-package.ts",
     "generate:matrix:check": "bun scripts/run-generate-matrix-package.ts --check",
-    "generate:schemas": "bun scripts/generate-json-schemas.ts",
-    "generate:schemas:check": "bun run generate:schemas && git diff --exit-code src/schemas/",
-    "prepublishOnly": "bun run format:check && bun run lint && bun run typecheck && bun run generate:schemas:check && bun run generate:types:check && bun run build && bun run test",
-    "generate:types:check": "bun run generate:types && git diff --exit-code src/cli/types/generated/"
+    "prepublishOnly": "bun run format:check && bun run lint && bun run typecheck && bun run generate:schemas:check && bun run generate:types:check && bun run build && bun run test"
   },
   "repository": {
     "type": "git",

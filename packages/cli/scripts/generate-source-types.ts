@@ -1,35 +1,65 @@
 /**
- * Generates TypeScript types from skills source and agent metadata.
- * Run: bun run generate:types [skills-source-path]
+ * Generates TypeScript types from skills source and agent metadata — the writer of both files in
+ * `src/cli/types/generated/`.
  *
- * Phase 1: Write source-types.ts (unions, SKILL_MAP, const arrays)
- * Phase 2: Write matrix.ts (full MergedSkillsMatrix + derived lookup maps)
+ * Phase 1: source-types.ts (unions, SKILL_MAP, const arrays)
+ * Phase 2: matrix.ts (full MergedSkillsMatrix + derived lookup maps)
+ *
+ * Run: bun run generate:types [skills-source-path] — or generate:types:check, which reports drift
+ * and writes nothing. Both go through scripts/run-generate-source-types.ts: nothing runs at module
+ * scope here, so importing this file writes no files.
+ *
+ * Unlike its two siblings this generator reads a checkout outside the repository, which is why its
+ * check runs at publish and in the catalogue-regeneration workflow rather than in ci.yml.
  */
-import { execSync } from "child_process";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
 import path from "path";
+import { format, resolveConfig } from "prettier";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 // Phase 2 imports — pure logic, no circular dependencies
 import { GENERATED_AT_BUILD } from "../src/cli/consts";
 import { defaultCategories } from "../src/cli/lib/configuration/default-categories";
-import { defaultRules } from "../src/cli/lib/configuration/default-rules";
 import { defaultStacks } from "../src/cli/lib/configuration/default-stacks";
-import { mergeMatrixWithSkills } from "../src/cli/lib/matrix/skill-resolution";
+import {
+  mergeMatrixWithSkills,
+  relationshipsForSource,
+} from "../src/cli/lib/matrix/skill-resolution";
+import { bytewise } from "../src/cli/utils/string";
 
 import type { ExtractedSkillMetadata, ResolvedStack, SkillId } from "../src/cli/types";
+import type { Options as PrettierOptions } from "prettier";
 
-const cliRoot = path.resolve(import.meta.dirname, "..");
-const monorepoRoot = path.resolve(cliRoot, "../..");
+/** Where the generator reads agent metadata from when no other root is given. */
+const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 
-// Accept skills source path as CLI arg (default: skills repo sibling to the monorepo root)
-const skillsSource = process.argv[2] || path.resolve(monorepoRoot, "../skills");
+/** Prettier's parser for the `.ts` files this generator emits. */
+const TYPESCRIPT_PARSER = "typescript";
+
+/** Emitted paths, relative to the output directory and in emission order. */
+const SOURCE_TYPES_FILE = "source-types.ts";
+const MATRIX_FILE = "matrix.ts";
 
 export type AgentEntry = {
   id: string;
   domain?: string;
 };
+
+/** One file the generator owns. `path` is relative to the output directory. */
+type EmittedFile = { path: string; content: string };
+
+/** Where the generator reads. Both are parameters so the suite can drive it against fixtures. */
+type SourceRoots = { skillsSource: string; cliRoot?: string };
+
+/** Where it reads, plus where it writes or compares. */
+type GeneratorRoots = SourceRoots & { outDir: string };
+
+/** What one generation round read, for the runner to report. */
+type CatalogueCounts = { skills: number; categories: number; domains: number; agents: number };
+
+/** Everything one round produces: the files to write or compare, and what it read to build them. */
+type Emission = { files: EmittedFile[]; counts: CatalogueCounts };
 
 /**
  * What this generator reads is hand-authored in the skills repository, so it is
@@ -38,16 +68,23 @@ export type AgentEntry = {
  * boundary: deliberately loose, because the generator's own `throw`s already
  * name the two fields a skill cannot ship without, and the id-shaped fields are
  * cast to their unions further down where the vocabulary is known.
+ *
+ * Loose about which fields must be PRESENT, that is — not about a present key
+ * holding `undefined`, which is why every field below is `.exactOptional()`
+ * rather than the plain spelling `typescript-types-bible.md` § 4a rules out at
+ * a parse boundary. It costs the loose reading nothing: YAML cannot express
+ * `undefined` at all, and an empty value parses as `null`, which both
+ * spellings reject alike.
  */
 const skillMetadataSchema = z.object({
-  custom: z.boolean().optional(),
-  slug: z.string().optional(),
-  category: z.string().optional(),
-  domain: z.string().optional(),
-  displayName: z.string().optional(),
-  cliDescription: z.string().optional(),
-  usageGuidance: z.string().optional(),
-  author: z.string().optional(),
+  custom: z.boolean().exactOptional(),
+  slug: z.string().exactOptional(),
+  category: z.string().exactOptional(),
+  domain: z.string().exactOptional(),
+  displayName: z.string().exactOptional(),
+  cliDescription: z.string().exactOptional(),
+  usageGuidance: z.string().exactOptional(),
+  author: z.string().exactOptional(),
 });
 
 /** `name` is required: a SKILL.md without one has no id, and an id of
@@ -56,9 +93,9 @@ const skillMetadataSchema = z.object({
 const skillFrontmatterSchema = z.object({ name: z.string() });
 
 const agentMetadataSchema = z.object({
-  custom: z.boolean().optional(),
-  id: z.string().optional(),
-  domain: z.string().optional(),
+  custom: z.boolean().exactOptional(),
+  id: z.string().exactOptional(),
+  domain: z.string().exactOptional(),
 });
 
 /** Parses YAML against a schema, naming the directory the bad file is in —
@@ -187,14 +224,11 @@ function assertUnique(values: string[], label: string): void {
 /** One quoted-and-comma'd line per value — the body of an emitted `[...]` or `{...}` literal. */
 const quotedLines = (values: readonly string[]) => values.map((value) => `"${value}",`);
 
-export function generatePhase1(
+/** The TypeScript source of `source-types.ts`, before Prettier. */
+export function renderSourceTypes(
   skills: ExtractedSkillMetadata[],
   agentEntries: AgentEntry[],
-  outDir: string,
-): {
-  outPath: string;
-  skillIdSet: Set<string>;
-} {
+): string {
   assertUnique(
     skills.map((s) => s.slug),
     "slugs",
@@ -260,28 +294,10 @@ export function generatePhase1(
     "",
   ];
 
-  mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, "source-types.ts");
-  writeFileSync(outPath, lines.join("\n"));
-
-  console.log(`  ✓ ${outPath}`);
-  console.log(
-    `\n  Generated: ${skills.length} skills, ${categories.length} categories, ${domains.length} domains, ${agentNames.length} agents\n`,
-  );
-
-  return { outPath, skillIdSet: new Set(skills.map((s) => s.id)) };
+  return lines.join("\n");
 }
 
 // -- Helpers ------------------------------------------------------------------
-
-/**
- * Locale-free string ordering for everything the generators emit. localeCompare
- * reads the process's ICU tailoring, so two machines can disagree about one
- * catalog; `<` compares code units and cannot.
- */
-export function bytewise(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
 
 /** Groups entries by a derived key, sorting both outer keys and inner value arrays. */
 export function sortedGroupBy<T>(
@@ -302,26 +318,31 @@ export function sortedGroupBy<T>(
 
 // -- Phase 2: Generate matrix.ts ---------------------------------------------
 
-export function generatePhase2(
+/** The TypeScript source of `matrix.ts`, before Prettier. */
+export function renderMatrix(
   skills: ExtractedSkillMetadata[],
   agentEntries: AgentEntry[],
   skillIdSet: Set<string>,
-  outDir: string,
-): void {
-  console.log("Generating matrix...\n");
-
+): string {
   // Emission order is a promise, not an accident. matrix.skills and
   // agentDefinedDomains take their key order from these arrays, and the arrays
   // arrive in readdirSync order — a property of the filesystem, not of the
   // marketplace. The first live CI regeneration proved it: same skills commit,
   // byte-different matrix.ts, 17,300-line pull request of pure reordering.
-  // Byte-wise comparison rather than localeCompare, deliberately — a
-  // locale-sensitive sort is the same defect one ICU build later.
+  // Byte-wise comparison rather than localeCompare, deliberately: localeCompare
+  // with no locale argument reads the process's default collation from LC_ALL /
+  // LANG, not the ICU build, so a contributor whose desktop language orders
+  // these ids differently regenerates this file in a different order.
   const sortedSkills = [...skills].sort((a, b) => bytewise(a.id, b.id));
   const sortedAgentEntries = [...agentEntries].sort((a, b) => bytewise(a.id, b.id));
 
-  // Call the pure resolution function
-  const matrix = mergeMatrixWithSkills(defaultCategories, defaultRules.relationships, sortedSkills);
+  // Through the same arrangement the CLI's own loader makes of these three inputs: the
+  // built-in rules narrowed to the slugs this catalogue ships, then merged. Reaching
+  // `defaultRules` directly instead left every rule the catalogue cannot express in the
+  // emitted matrix, so a smaller catalogue than the public one generated a file recording
+  // dangling slugs that the CLI, loading the very same directory, would never see.
+  const relationships = relationshipsForSource(sortedSkills);
+  const matrix = mergeMatrixWithSkills(defaultCategories, relationships, sortedSkills);
 
   // A written matrix records a build, not a moment — see GENERATED_AT_BUILD
   matrix.generatedAt = GENERATED_AT_BUILD;
@@ -379,15 +400,7 @@ export function generatePhase2(
     "",
   ];
 
-  const outPath = path.join(outDir, "matrix.ts");
-  writeFileSync(outPath, lines.join("\n"));
-
-  const skillCount = Object.keys(matrix.skills).length;
-  const catCount = Object.keys(matrix.categories).length;
-  const stackCount = matrix.suggestedStacks.length;
-
-  console.log(`  ✓ ${outPath}`);
-  console.log(`\n  Matrix: ${skillCount} skills, ${catCount} categories, ${stackCount} stacks\n`);
+  return lines.join("\n");
 }
 
 // -- Stack resolution --------------------------------------------------------
@@ -438,28 +451,101 @@ export function resolveStack(
   };
 }
 
-// -- Main --------------------------------------------------------------------
+// -- Emission ----------------------------------------------------------------
 
-function generate(): void {
-  console.log("Generating source types...\n");
-
-  const skills = extractSkills(skillsSource);
-  const agentEntries = extractAgents(cliRoot);
-  const outDir = path.join(cliRoot, "src/cli/types/generated");
-
-  // Phase 1: Generate source-types.ts
-  const { skillIdSet } = generatePhase1(skills, agentEntries, outDir);
-
-  // Phase 2: Generate matrix.ts
-  generatePhase2(skills, agentEntries, skillIdSet, outDir);
-
-  // Format generated files with prettier
-  console.log("Formatting generated files...\n");
-  execSync(`bunx prettier --write "${outDir}/"`, { stdio: "inherit" });
+/**
+ * This package's own Prettier settings, resolved from this file rather than from the destination.
+ *
+ * The emitted bytes are a property of the generator, not of where they land: resolving from the
+ * output directory would give a fixture in `os.tmpdir()` a different config — or none — and the
+ * check would then compare formatted committed files against unformatted emitted ones.
+ */
+async function packagePrettierOptions(): Promise<PrettierOptions> {
+  const options = await resolveConfig(import.meta.filename);
+  if (options === null) {
+    throw new Error(
+      `No Prettier config resolved from ${import.meta.filename} — the emitted bytes would not ` +
+        "match the committed types.",
+    );
+  }
+  return options;
 }
 
-// Only run when executed directly (not when imported by tests)
-const isDirectRun = process.argv[1] && import.meta.filename === process.argv[1];
-if (isDirectRun) {
-  generate();
+async function formatEmitted(files: EmittedFile[]): Promise<EmittedFile[]> {
+  const options = await packagePrettierOptions();
+
+  return Promise.all(
+    files.map(async (file) => ({
+      path: file.path,
+      content: await format(file.content, { ...options, parser: TYPESCRIPT_PARSER }),
+    })),
+  );
+}
+
+/** Every file the generator owns, formatted exactly as it is committed. */
+async function emittedFiles({ skillsSource, cliRoot = CLI_ROOT }: SourceRoots): Promise<Emission> {
+  const skills = extractSkills(skillsSource);
+  const agentEntries = extractAgents(cliRoot);
+
+  // Phase 1 first: it is where duplicate slugs and ids throw, and phase 2 below builds the matrix
+  // out of the same list.
+  const sourceTypes = renderSourceTypes(skills, agentEntries);
+  const skillIds = new Set(skills.map((skill) => skill.id));
+  const matrix = renderMatrix(skills, agentEntries, skillIds);
+
+  return {
+    files: await formatEmitted([
+      { path: SOURCE_TYPES_FILE, content: sourceTypes },
+      { path: MATRIX_FILE, content: matrix },
+    ]),
+    counts: catalogueCounts(skills, agentEntries),
+  };
+}
+
+function catalogueCounts(
+  skills: ExtractedSkillMetadata[],
+  agentEntries: AgentEntry[],
+): CatalogueCounts {
+  return {
+    skills: skills.length,
+    categories: new Set(skills.map((skill) => skill.category)).size,
+    domains: new Set(skills.map((skill) => skill.domain)).size,
+    agents: new Set(agentEntries.map((agent) => agent.id)).size,
+  };
+}
+
+function writeEmittedFile(outDir: string, file: EmittedFile): void {
+  writeFileSync(path.join(outDir, file.path), file.content);
+}
+
+/** A file that does not exist counts as drifted — the committed set is incomplete. */
+function matchesCommitted(outDir: string, file: EmittedFile): boolean {
+  const target = path.join(outDir, file.path);
+  return existsSync(target) && readFileSync(target, "utf-8") === file.content;
+}
+
+// -- Entry points ------------------------------------------------------------
+
+export async function generate({ outDir, ...roots }: GeneratorRoots): Promise<{
+  written: string[];
+  counts: CatalogueCounts;
+}> {
+  const { files, counts } = await emittedFiles(roots);
+
+  mkdirSync(outDir, { recursive: true });
+  for (const file of files) {
+    writeEmittedFile(outDir, file);
+  }
+
+  return { written: files.map((file) => file.path), counts };
+}
+
+export async function check({ outDir, ...roots }: GeneratorRoots): Promise<{
+  clean: boolean;
+  drifted: string[];
+}> {
+  const { files } = await emittedFiles(roots);
+  const drifted = files.filter((file) => !matchesCommitted(outDir, file)).map((file) => file.path);
+
+  return { clean: drifted.length === 0, drifted };
 }

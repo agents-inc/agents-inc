@@ -14,6 +14,7 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { STANDARD_FILES } from "../src/cli/consts.js";
+import { bytewise } from "../src/cli/utils/string.js";
 import { renderAgentYaml } from "../src/cli/lib/__tests__/content-generators.js";
 import { AGENT_DEFS } from "../src/cli/lib/__tests__/mock-data/mock-agents.js";
 import { SKILLS } from "../src/cli/lib/__tests__/test-fixtures.js";
@@ -87,7 +88,13 @@ const readEmitted = (root: string, relativePaths: string[]): Record<string, stri
 
 const fixtureTypeSource = (relativePath: string): string => `// fixture stub for ${relativePath}\n`;
 
-type FixtureAgent = (typeof AGENT_DEFS)[keyof typeof AGENT_DEFS];
+/**
+ * `name` is widened off `AGENT_DEFS`: it is written straight into the fixture's metadata.yaml as
+ * `id` and read back unvalidated, so a fixture may carry an id the current AgentName union does
+ * not hold — which is what lets this suite state an ordering the eighteen ids shipped today
+ * cannot, none of them making a collation and its code units disagree.
+ */
+type FixtureAgent = Omit<(typeof AGENT_DEFS)[keyof typeof AGENT_DEFS], "name"> & { name: string };
 
 function writeFixtureAgent(cliRoot: string, flavor: string, agent: FixtureAgent): void {
   const agentDir = path.join(cliRoot, CLI_AGENTS_DIR, flavor, agent.name);
@@ -269,6 +276,89 @@ describe("generating from a fixture cli root", () => {
       agentsContent,
       "agents outside the cli root passed in must not appear in the output",
     ).not.toContain("agent-summoner");
+  });
+});
+
+// -- Ordering ----------------------------------------------------------------
+
+/**
+ * A locale whose collation orders a pair of ordinary kebab-case ids against their code units.
+ * Lithuanian places `y` immediately after `i`, so it puts `styling-agent` before `storage-agent`
+ * where code units put it after — and `localeCompare` called with no locale reads the process
+ * default, which Node takes from LC_ALL/LANG. So this is not a hypothetical alphabet: it is what
+ * the committed file becomes when the contributor who regenerated it runs a Lithuanian desktop.
+ */
+const DIVERGENT_COLLATION_LOCALE = "lt";
+
+/** The pair that locale reverses, stated in code-unit order. */
+const COLLATION_DIVERGENT_AGENT_IDS = { first: "storage-agent", second: "styling-agent" } as const;
+
+describe("ordering the emitted agent definitions", () => {
+  let fixtureCliRoot: string;
+  let outputRoot: string;
+  let agentsContent: string;
+  let collationInForce: number;
+
+  beforeAll(async () => {
+    fixtureCliRoot = await createTempDir("matrix-order-cli-");
+    outputRoot = await createTempDir("matrix-order-out-");
+
+    writeFixtureTypes(fixtureCliRoot, listFilesRecursive(VENDOR_DIR));
+    writeFixtureAgent(fixtureCliRoot, DEVELOPER_FLAVOR, {
+      ...AGENT_DEFS.webDev,
+      name: COLLATION_DIVERGENT_AGENT_IDS.first,
+    });
+    writeFixtureAgent(fixtureCliRoot, DEVELOPER_FLAVOR, {
+      ...AGENT_DEFS.apiDev,
+      name: COLLATION_DIVERGENT_AGENT_IDS.second,
+    });
+
+    // Stands in for a machine whose default collation is Lithuanian, which is the only thing
+    // `localeCompare` with no locale argument consults.
+    const lithuanian = new Intl.Collator(DIVERGENT_COLLATION_LOCALE);
+    const defaultCollation = vi
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(function (this: string, that: string) {
+        return lithuanian.compare(String(this), that);
+      });
+
+    collationInForce = Math.sign(
+      COLLATION_DIVERGENT_AGENT_IDS.first.localeCompare(COLLATION_DIVERGENT_AGENT_IDS.second),
+    );
+    generate({ matrixRoot: outputRoot, cliRoot: fixtureCliRoot });
+    defaultCollation.mockRestore();
+
+    agentsContent = readFileSync(path.join(outputRoot, AGENTS_FILE), "utf-8");
+  });
+
+  afterAll(async () => {
+    await cleanupTempDir(fixtureCliRoot);
+    await cleanupTempDir(outputRoot);
+  });
+
+  it("names a pair that locale's collation orders against their code units", () => {
+    const lithuanian = new Intl.Collator(DIVERGENT_COLLATION_LOCALE);
+    const { first, second } = COLLATION_DIVERGENT_AGENT_IDS;
+
+    expect(bytewise(first, second)).toBe(-1);
+    expect(Math.sign(lithuanian.compare(first, second))).toBe(1);
+  });
+
+  it("emits that pair in code-unit order", () => {
+    const { first, second } = COLLATION_DIVERGENT_AGENT_IDS;
+    const firstAt = agentsContent.indexOf(`\n  "${first}": {\n`);
+    const secondAt = agentsContent.indexOf(`\n  "${second}": {\n`);
+
+    expect(
+      collationInForce,
+      "the stand-in must have answered for the process default while the generator ran, or this spec proves nothing",
+    ).toBe(1);
+    expect(firstAt).not.toBe(-1);
+    expect(secondAt).not.toBe(-1);
+    expect(
+      firstAt,
+      "the emission order must be the comparator's, not the collation of whichever machine ran the generator",
+    ).toBeLessThan(secondAt);
   });
 });
 
