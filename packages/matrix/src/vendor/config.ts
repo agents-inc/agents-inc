@@ -1,3 +1,7 @@
+// Vendored byte-for-byte into packages/matrix/src/vendor/ by scripts/generate-matrix-package.ts.
+// ANY edit here — a comment-only one included — obliges `bun run generate:matrix` in packages/cli;
+// `generate:matrix:check` is the gate.
+
 import type { AgentName } from "./agents";
 import type { Domain, EffortLevel, ModelName } from "./matrix";
 import type { SkillId, SkillReference } from "./skills";

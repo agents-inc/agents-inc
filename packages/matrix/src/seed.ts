@@ -81,14 +81,14 @@ export const seedSkillSchema = z.object({
 // skills was unshareable. An entry naming only a model does *not* switch the
 // agent on — absent means "the assignments decide".
 export const seedAgentSchema = z.object({
-  on: z.boolean().optional(),
-  model: seedModelSchema.optional(),
-  effort: seedEffortSchema.optional(),
+  on: z.boolean().exactOptional(),
+  model: seedModelSchema.exactOptional(),
+  effort: seedEffortSchema.exactOptional(),
   // Where this agent's front-matter is written: the project, or the user's own
   // ~/.claude. Absent means the shared selection default — `global`, spelled
   // once in `DEFAULT_SELECTION_OPTIONS` — so the resting choice never travels,
   // exactly as a resting model does not.
-  scope: z.enum(["project", "global"]).optional(),
+  scope: z.enum(["project", "global"]).exactOptional(),
 })
 
 // ── External skills ──────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ export const seedPayloadSchema = z.object({
   // carrying that too would let a payload disagree with the repository it
   // names. Absent is the default public catalogue, which is why a payload that
   // installs from it looks exactly as it did before this field existed.
-  marketplace: z.string().optional(),
+  marketplace: z.string().exactOptional(),
   // Sparse — presence is selection, exactly like the web store. `remembered`
   // is deliberately absent: deselected setup never leaves the browser.
   skills: z.record(z.string(), seedSkillSchema),
@@ -193,7 +193,7 @@ export const seedPayloadSchema = z.object({
   // built from the catalogue alone — which is why one looks exactly as it did
   // before content travelled. Content is the expensive part of a payload, so an
   // added skill nobody selected has no entry here either.
-  external: z.record(z.string(), seedExternalSkillSchema).optional(),
+  external: z.record(z.string(), seedExternalSkillSchema).exactOptional(),
   // Sparse for the same reason: an agent resting on its own catalogue model
   // with no pin has nothing to say, so it has no entry. Presence is a
   // statement, not an install: what installs is decided by assignments and

@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  AgentDefinitionSchema,
-  AgentDefinitionsSchema,
-  CategoryDefinitionSchema,
-  MatrixSchema,
-  ResolvedSkillSchema,
-  ResolvedStackSchema,
-} from "./schema"
-import { AGENT_DEFINITIONS } from "./generated/agents"
+  builtInMatrixSchema,
+  categoryDefinitionSchema,
+  resolvedSkillSchema,
+  resolvedStackSchema,
+} from "./built-in-matrix"
 import { BUILT_IN_MATRIX } from "./vendor/generated/matrix"
 
 // The schema is the validation boundary between the vendored CLI data and
@@ -20,15 +17,12 @@ import { BUILT_IN_MATRIX } from "./vendor/generated/matrix"
 const KNOWN_SKILL = "web-framework-react"
 const KNOWN_CATEGORY = "web-framework"
 const KNOWN_AGENT = "web-developer"
-const KNOWN_MODEL = "opus"
-const KNOWN_FLAVOR = "developer"
 
 // What a rename or a drop looks like from in here: a plausible id that the
 // generated vocabulary does not carry.
 const RENAMED_SKILL = "web-framework-reactjs"
 const RENAMED_CATEGORY = "web-frameworks"
 const RETIRED_AGENT = "web-engineer"
-const RETIRED_MODEL = "sonnet-3-5"
 
 const VALID_SKILL = {
   id: KNOWN_SKILL,
@@ -60,15 +54,6 @@ const VALID_STACK = {
   philosophy: "Nothing but the framework",
 }
 
-const VALID_AGENT = {
-  id: KNOWN_AGENT,
-  title: "Web Developer Agent",
-  description: "Implements web features from specs",
-  model: KNOWN_MODEL,
-  tools: ["Read"],
-  flavor: KNOWN_FLAVOR,
-}
-
 const VALID_MATRIX = {
   version: "0.0.0-test",
   categories: { [KNOWN_CATEGORY]: VALID_CATEGORY },
@@ -76,21 +61,21 @@ const VALID_MATRIX = {
   suggestedStacks: [VALID_STACK],
 }
 
-describe("ResolvedSkillSchema", () => {
+describe("resolvedSkillSchema", () => {
   it("accepts a skill the generated vocabulary carries", () => {
-    expect(ResolvedSkillSchema.safeParse(VALID_SKILL).success).toBe(true)
+    expect(resolvedSkillSchema.safeParse(VALID_SKILL).success).toBe(true)
   })
 
   it("rejects a renamed skill id", () => {
     expect(
-      ResolvedSkillSchema.safeParse({ ...VALID_SKILL, id: RENAMED_SKILL })
+      resolvedSkillSchema.safeParse({ ...VALID_SKILL, id: RENAMED_SKILL })
         .success
     ).toBe(false)
   })
 
   it("rejects a renamed category", () => {
     expect(
-      ResolvedSkillSchema.safeParse({
+      resolvedSkillSchema.safeParse({
         ...VALID_SKILL,
         category: RENAMED_CATEGORY,
       }).success
@@ -99,7 +84,7 @@ describe("ResolvedSkillSchema", () => {
 
   it("rejects a renamed id inside a conflict", () => {
     expect(
-      ResolvedSkillSchema.safeParse({
+      resolvedSkillSchema.safeParse({
         ...VALID_SKILL,
         conflictsWith: [{ skillId: RENAMED_SKILL, reason: "gone" }],
       }).success
@@ -108,7 +93,7 @@ describe("ResolvedSkillSchema", () => {
 
   it("rejects a renamed id inside a requirement", () => {
     expect(
-      ResolvedSkillSchema.safeParse({
+      resolvedSkillSchema.safeParse({
         ...VALID_SKILL,
         requires: [
           { skillIds: [RENAMED_SKILL], needsAny: false, reason: "gone" },
@@ -118,16 +103,16 @@ describe("ResolvedSkillSchema", () => {
   })
 })
 
-describe("CategoryDefinitionSchema", () => {
+describe("categoryDefinitionSchema", () => {
   it("accepts a category the generated vocabulary carries", () => {
-    expect(CategoryDefinitionSchema.safeParse(VALID_CATEGORY).success).toBe(
+    expect(categoryDefinitionSchema.safeParse(VALID_CATEGORY).success).toBe(
       true
     )
   })
 
   it("rejects a renamed category id", () => {
     expect(
-      CategoryDefinitionSchema.safeParse({
+      categoryDefinitionSchema.safeParse({
         ...VALID_CATEGORY,
         id: RENAMED_CATEGORY,
       }).success
@@ -135,14 +120,14 @@ describe("CategoryDefinitionSchema", () => {
   })
 })
 
-describe("ResolvedStackSchema", () => {
+describe("resolvedStackSchema", () => {
   it("accepts a stack naming ids the vocabulary carries", () => {
-    expect(ResolvedStackSchema.safeParse(VALID_STACK).success).toBe(true)
+    expect(resolvedStackSchema.safeParse(VALID_STACK).success).toBe(true)
   })
 
   it("rejects a renamed id in the flat skill list", () => {
     expect(
-      ResolvedStackSchema.safeParse({
+      resolvedStackSchema.safeParse({
         ...VALID_STACK,
         allSkillIds: [RENAMED_SKILL],
       }).success
@@ -151,7 +136,7 @@ describe("ResolvedStackSchema", () => {
 
   it("rejects a retired agent carrying the skills", () => {
     expect(
-      ResolvedStackSchema.safeParse({
+      resolvedStackSchema.safeParse({
         ...VALID_STACK,
         skills: { [RETIRED_AGENT]: { [KNOWN_CATEGORY]: [KNOWN_SKILL] } },
       }).success
@@ -160,7 +145,7 @@ describe("ResolvedStackSchema", () => {
 
   it("rejects a renamed id in an agent's assignments", () => {
     expect(
-      ResolvedStackSchema.safeParse({
+      resolvedStackSchema.safeParse({
         ...VALID_STACK,
         skills: { [KNOWN_AGENT]: { [KNOWN_CATEGORY]: [RENAMED_SKILL] } },
       }).success
@@ -168,38 +153,14 @@ describe("ResolvedStackSchema", () => {
   })
 })
 
-describe("AgentDefinitionSchema", () => {
-  it("accepts an agent the roster carries", () => {
-    expect(AgentDefinitionSchema.safeParse(VALID_AGENT).success).toBe(true)
-  })
-
-  it("rejects a retired agent id", () => {
-    expect(
-      AgentDefinitionSchema.safeParse({ ...VALID_AGENT, id: RETIRED_AGENT })
-        .success
-    ).toBe(false)
-  })
-
-  it("rejects a model the CLI no longer offers", () => {
-    expect(
-      AgentDefinitionSchema.safeParse({ ...VALID_AGENT, model: RETIRED_MODEL })
-        .success
-    ).toBe(false)
-  })
-
-  // `flavor` is deliberately not narrowed here — which roles are sayable is
-  // authored in the read model's preload table, and `preload-defaults.test.ts`
-  // holds it to the roster ("names exactly the flavors the roster carries").
-})
-
-describe("MatrixSchema", () => {
+describe("builtInMatrixSchema", () => {
   it("accepts a matrix built from the generated vocabulary", () => {
-    expect(MatrixSchema.safeParse(VALID_MATRIX).success).toBe(true)
+    expect(builtInMatrixSchema.safeParse(VALID_MATRIX).success).toBe(true)
   })
 
   it("rejects a renamed skill anywhere in the catalogue", () => {
     expect(
-      MatrixSchema.safeParse({
+      builtInMatrixSchema.safeParse({
         ...VALID_MATRIX,
         skills: { [RENAMED_SKILL]: { ...VALID_SKILL, id: RENAMED_SKILL } },
       }).success
@@ -210,14 +171,51 @@ describe("MatrixSchema", () => {
   // vocabulary that drifted from it fails every module in the package at once.
   // Asserted here so that failure has one legible place to land.
   it("accepts the vendored catalogue it ships with", () => {
-    expect(MatrixSchema.safeParse(BUILT_IN_MATRIX).success).toBe(true)
+    expect(builtInMatrixSchema.safeParse(BUILT_IN_MATRIX).success).toBe(true)
   })
 })
 
-describe("AgentDefinitionsSchema", () => {
-  it("accepts the generated agent roster it ships with", () => {
-    expect(AgentDefinitionsSchema.safeParse(AGENT_DEFINITIONS).success).toBe(
-      true
-    )
+// An optional field on this boundary means the vendored catalogue said nothing:
+// a category with no domain, a stack with no group. Only an ABSENT key says
+// that. A key present holding `undefined` is a generator that assembled the
+// entry and then failed to leave the field out, and it reads downstream as the
+// same absence while being a different object — `Object.keys` counts it, a
+// spread carries it, and `"domain" in category` answers true for a category
+// that has none. Each refusal below is paired with the absence it is there to
+// keep permitted, since a boundary that turned both away would have made the
+// field mandatory instead. `built-in-agents.test.ts` holds the same pair for
+// the one optional field on a sub-agent.
+describe("optional fields, absent rather than undefined", () => {
+  it("refuses a category whose domain is present holding undefined", () => {
+    expect(
+      categoryDefinitionSchema.safeParse({
+        ...VALID_CATEGORY,
+        domain: undefined,
+      }).success
+    ).toBe(false)
+  })
+
+  it("accepts a category with no domain at all", () => {
+    const { domain: _dropped, ...withoutDomain } = VALID_CATEGORY
+
+    expect(categoryDefinitionSchema.safeParse(withoutDomain).success).toBe(true)
+  })
+
+  it("refuses a stack whose group is present holding undefined", () => {
+    expect(
+      resolvedStackSchema.safeParse({ ...VALID_STACK, group: undefined })
+        .success
+    ).toBe(false)
+  })
+
+  // `VALID_STACK` carries no group — which is every stack the CLI emits today,
+  // and what the describe above already pins. The unpinned half is the other
+  // one: the field still has to accept a real value, or the tightening would
+  // have retired it rather than narrowed it.
+  it("accepts a stack that names a group", () => {
+    expect(
+      resolvedStackSchema.safeParse({ ...VALID_STACK, group: "Frontend" })
+        .success
+    ).toBe(true)
   })
 })

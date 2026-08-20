@@ -5,7 +5,10 @@ import {
   type Domain,
 } from "../vendor/generated/source-types"
 import type { ModelName } from "../vendor/matrix"
-import { AgentDefinitionsSchema, type ParsedAgentDefinition } from "../schema"
+import {
+  agentDefinitionsSchema,
+  type ParsedAgentDefinition,
+} from "../built-in-agents"
 import { groupBy, indexById } from "./collections"
 import { DOMAIN_LABELS, agentDomainOf, compareDomains } from "./domains"
 import { flavorOf, type RoleFlavor } from "./preload-defaults"
@@ -73,7 +76,7 @@ const toSubAgentGroup = (
 
 const buildSubAgentGroups = (): SubAgentGroup[] => {
   const agents = Object.values(
-    AgentDefinitionsSchema.parse(AGENT_DEFINITIONS)
+    agentDefinitionsSchema.parse(AGENT_DEFINITIONS)
   ).map(toSubAgent)
 
   return [...groupBy(agents, (agent) => agent.domainId)]

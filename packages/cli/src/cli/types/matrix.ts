@@ -1,3 +1,7 @@
+// Vendored byte-for-byte into packages/matrix/src/vendor/ by scripts/generate-matrix-package.ts.
+// ANY edit here — a comment-only one included — obliges `bun run generate:matrix` in packages/cli;
+// `generate:matrix:check` is the gate.
+
 import type { CategoryPath, SkillSlug, SkillId } from "./skills";
 import type { AgentName } from "./agents";
 
@@ -51,9 +55,9 @@ export type CategoryDefinition = {
   description: string;
   /** Domain for wizard domain filtering */
   domain?: Domain;
-  /** If true, only one skill can be selected in this category (radio behavior). @default true */
+  /** If true, only one skill can be selected in this category (radio behavior). */
   exclusive: boolean;
-  /** If true, the user must select at least one skill before proceeding. @default false */
+  /** If true, the user must select at least one skill before proceeding. */
   required: boolean;
   /** Display order within domain (lower = earlier) */
   order: number;
@@ -206,7 +210,11 @@ export type SkillRequirement = {
   /**
    * If true, only ONE of skillIds is needed (OR).
    * If false, ALL are needed (AND).
-   * @default false
+   *
+   * Always present. The absence this field could have carried is resolved one step upstream:
+   * `resolveRelationships` in `lib/matrix/skill-resolution.ts` writes
+   * `rule.needsAny ?? false` from the optional {@link RequireRule.needsAny}, so nothing
+   * downstream of resolution ever meets an unset value.
    */
   needsAny: boolean;
   reason: string;
@@ -241,7 +249,7 @@ export type SkillSourceType = (typeof SKILL_SOURCE_TYPES)[number];
 
 /**
  * How a project's skills are installed: fully ejected, fully plugin-based, or a
- * mix of both. Derived at runtime from SkillConfig.source (see deriveInstallMode).
+ * mix of both. Derived at runtime from SkillConfig.origin (see deriveInstallMode).
  */
 export type InstallMode = "eject" | "plugin" | "mixed";
 

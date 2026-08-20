@@ -1,3 +1,7 @@
+// Vendored byte-for-byte into packages/matrix/src/vendor/ by scripts/generate-matrix-package.ts.
+// ANY edit here — a comment-only one included — obliges `bun run generate:matrix` in packages/cli;
+// `generate:matrix:check` is the gate.
+
 import type { Category, ModelName } from "./matrix";
 import type { SkillId } from "./generated/source-types";
 
@@ -59,8 +63,9 @@ export type SkillReference = {
   usage: string;
   preloaded?: boolean;
   /**
-   * Install source for this skill, threaded from `SkillConfig.source` so the
-   * compiler can decide per-skill between `pluginRef` format and bare id.
+   * Install source for this skill, threaded from `SkillConfig.origin` so the
+   * compiler can decide per-skill between `pluginRef` format and bare id. The config side
+   * spells it `origin` and this side spells it `source`; both hold the same value.
    * `"eject"` means ejected to `.claude/skills/`; any other value (e.g. a
    * marketplace name) means plugin-installed. Absent when no `SkillConfig`
    * entry exists (e.g. user-authored local skills).

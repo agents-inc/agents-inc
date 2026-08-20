@@ -18,8 +18,8 @@ import {
 // marketplace's `catalog.json` and builds these same read models over it, and a
 // marketplace's ids are its own — `SkillId` would reject every one of them by
 // construction. The vendored unions still narrow what the VENDORED artefact is
-// allowed to contain, in `schema.ts`, which is the boundary that question
-// belongs to.
+// allowed to contain, in `built-in-matrix.ts`, which is the boundary that
+// question belongs to.
 //
 // `Domain` is the exception and stays closed, because it is not the
 // catalogue's vocabulary — it is the UI's. Nine domains have labels, an order

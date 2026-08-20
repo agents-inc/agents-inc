@@ -10,18 +10,19 @@ import { z } from "zod"
 // asks it whether the artefact it is about to vendor is still a matrix at all,
 // which byte-comparison against the CLI's own copy cannot answer.
 //
-// NOT to be confused with `schema.ts`'s `MatrixSchema`. That one narrows every
-// id to the vendored vocabulary — `SKILL_IDS`, `CATEGORIES`, `AGENT_NAMES` — so
-// it catches a regenerated catalogue that renamed something the read models
-// index by. It is the right boundary for the catalogue this package ships and
-// the wrong one for every other: a marketplace's ids are its own, and parsing a
-// fetched `catalog.json` with it would reject all of them by construction.
+// NOT to be confused with `builtInMatrixSchema` in `built-in-matrix.ts`. That
+// one narrows every id to the vendored vocabulary — `SKILL_IDS`, `CATEGORIES`,
+// `AGENT_NAMES` — so it catches a regenerated catalogue that renamed something
+// the read models index by. It is the right boundary for the catalogue this
+// package ships and the wrong one for every other: a marketplace's ids are its
+// own, and parsing a fetched `catalog.json` with it would reject all of them by
+// construction.
 //
 // Ids are therefore `z.string().min(1)` here, and unknown keys are stripped, so
 // a matrix may grow fields without this file moving. What it does hold is the
-// fields a consumer reads — the same surface `schema.ts` models, for the same
-// reason: a catalogue that dropped one fails here, loudly, rather than rendering
-// a blank grid.
+// fields a consumer reads — the same surface `built-in-matrix.ts` models, for
+// the same reason: a catalogue that dropped one fails here, loudly, rather than
+// rendering a blank grid.
 
 const idSchema = z.string().min(1)
 
@@ -31,7 +32,7 @@ const matrixCategorySchema = z.object({
   description: z.string(),
   // Optional in the CLI's type. A category without one cannot be placed in the
   // UI, so a consumer drops it rather than failing the whole catalogue.
-  domain: z.string().optional(),
+  domain: z.string().exactOptional(),
   exclusive: z.boolean(),
   required: z.boolean(),
   order: z.number(),
@@ -70,7 +71,7 @@ const matrixStackSchema = z.object({
   allSkillIds: z.array(idSchema),
   philosophy: z.string(),
   // Never populated by the CLI today; a stack rail groups by it when it appears.
-  group: z.string().optional(),
+  group: z.string().exactOptional(),
 })
 
 export const matrixSchema = z.object({

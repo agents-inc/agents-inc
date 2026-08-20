@@ -6,12 +6,13 @@ The skill catalog — every skill, category, domain, stack and sub-agent the edi
 
 Copied out of `packages/cli`, the CLI package next door in this repository. Nothing here is authored by hand.
 
-| Path             | What                                                                       |
-| ---------------- | -------------------------------------------------------------------------- |
-| `src/vendor/`    | Verbatim copies of the CLI's `src/cli/types/`. **Never edit.**             |
-| `src/generated/` | `AGENT_DEFINITIONS`, derived from the CLI's per-agent `metadata.yaml`      |
-| `src/schema/`    | Zod schemas — the validation boundary between the raw data and the app     |
-| `src/index.ts`   | The public API. `apps/editor` imports from here only, never from `vendor/` |
+| Path                     | What                                                                       |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `src/vendor/`            | Verbatim copies of the CLI's `src/cli/types/`. **Never edit.**             |
+| `src/generated/`         | `AGENT_DEFINITIONS`, derived from the CLI's per-agent `metadata.yaml`      |
+| `src/built-in-matrix.ts` | Zod boundary for `BUILT_IN_MATRIX`, the vendored catalogue                 |
+| `src/built-in-agents.ts` | Zod boundary for `AGENT_DEFINITIONS`, the built-in sub-agent roster        |
+| `src/index.ts`           | The public API. `apps/editor` imports from here only, never from `vendor/` |
 
 Regenerate after the CLI's catalog changes:
 

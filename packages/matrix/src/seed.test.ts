@@ -168,3 +168,86 @@ describe("the version", () => {
     expect(result.success).toBe(false)
   })
 })
+
+// A payload's optional fields are how the sharer says nothing: no marketplace
+// means the default public catalogue, no `external` means a selection built
+// from the catalogue alone, and a sub-agent's absent `model` means it rests on
+// whatever its own metadata says. Only an ABSENT key says that.
+//
+// A key present holding `undefined` is a producer that assembled the object and
+// then failed to leave the field out. It cannot survive the trip — the payload
+// is stored as JSON, which has no `undefined` — so the sharer would mint one
+// object and the receiver decode another, with the id in between hashed over
+// whichever of the two the encoder happened to see. The boundary refuses it at
+// the point where both ends still agree.
+describe("the payload's optional fields", () => {
+  it("refuses a marketplace present holding undefined", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ marketplace: undefined })).success
+    ).toBe(false)
+  })
+
+  it("refuses an external map present holding undefined", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ external: undefined })).success
+    ).toBe(false)
+  })
+
+  // The other half of each pair. Absence is pinned by the describe above — the
+  // payload naming nothing external parses there — so what is left to say is
+  // that a real ref still goes through, which no test in this file held.
+  it("accepts a payload naming the marketplace its skills come from", () => {
+    expect(
+      seedPayloadSchema.safeParse(
+        payload({ marketplace: "github:acme/skills" })
+      ).success
+    ).toBe(true)
+  })
+})
+
+const AGENT_ID = "web-developer"
+
+/** One sub-agent with a real value in every slot it has. */
+const FULLY_SPOKEN_AGENT = {
+  on: true,
+  model: "opus",
+  effort: "high",
+  scope: "global",
+}
+
+// Every field a sub-agent has is optional, so this is where an explicitly-
+// undefined key is easiest to produce and hardest to see: an entry holding four
+// of them reads as the resting agent it is meant to describe, while the
+// editor's encoder — which decides whether an agent has anything to say by
+// counting its keys — puts it on the wire as one that does.
+//
+// Each case starts from a complete entry and empties one slot, so a refusal can
+// only be about the field it names.
+describe("a sub-agent's optional fields", () => {
+  it.each(["on", "model", "effort", "scope"])(
+    "refuses `%s` present holding undefined",
+    (field) => {
+      const agent = { ...FULLY_SPOKEN_AGENT, [field]: undefined }
+
+      expect(
+        seedPayloadSchema.safeParse(payload({ agents: { [AGENT_ID]: agent } }))
+          .success
+      ).toBe(false)
+    }
+  )
+
+  it("accepts a sub-agent that says all four", () => {
+    expect(
+      seedPayloadSchema.safeParse(
+        payload({ agents: { [AGENT_ID]: FULLY_SPOKEN_AGENT } })
+      ).success
+    ).toBe(true)
+  })
+
+  it("accepts a sub-agent that says nothing at all", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ agents: { [AGENT_ID]: {} } }))
+        .success
+    ).toBe(true)
+  })
+})

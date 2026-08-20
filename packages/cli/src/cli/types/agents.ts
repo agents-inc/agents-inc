@@ -1,3 +1,7 @@
+// Vendored byte-for-byte into packages/matrix/src/vendor/ by scripts/generate-matrix-package.ts.
+// ANY edit here — a comment-only one included — obliges `bun run generate:matrix` in packages/cli;
+// `generate:matrix:check` is the gate.
+
 import type { Domain, EffortLevel, ModelName, PermissionMode } from "./matrix";
 import type { PluginSkillRef, Skill, SkillId } from "./skills";
 import type { AgentName } from "./generated/source-types";
@@ -110,6 +114,5 @@ export type CompiledAgentData = {
 /** Paths to fetched agent definition sources (directory paths, not agent data) */
 export type AgentSourcePaths = {
   agentsDir: string;
-  templatesDir: string;
   sourcePath: string;
 };
