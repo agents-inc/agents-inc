@@ -202,11 +202,11 @@ those strings would be asserting an `init`-only contract.
 
 ## Findings filed
 
-Three, one per failure, all `status: open` with no `Fix Applied` section, in
-`packages/cli/.ai-docs/agent-findings/`:
+Three, one per failure. **Two have since been fixed and their findings deleted:** the stack roster
+now wins over the domain roster (`preselectAgentsFromDomains` returns early when a stack is selected,
+and `default-stacks.ts` states that its `agents` keys are binding), and a fresh pick in a project edit
+respects the scope override. The third is still open, in `packages/cli/.ai-docs/agent-findings/`:
 
-- `2026-08-08-a-stacks-sub-agent-roster-is-overwritten-by-the-domain-roster-before-install.md`
-- `2026-08-08-a-new-skill-picked-in-a-project-edit-is-written-into-the-global-install.md`
 - `2026-08-08-a-project-edit-cannot-remove-a-skill-it-owns-when-a-global-install-backs-it.md`
 
 ## Cleanup

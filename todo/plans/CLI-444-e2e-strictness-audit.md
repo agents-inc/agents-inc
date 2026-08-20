@@ -265,7 +265,7 @@ command ships, is documented in `--help`, and no E2E proves it can import anythi
 | sources-grid-scope-row-headers                | (1 it)                                                                                                                        | SOUND                | Scope group headers asserted positionally.                                                                                                                                                                                            |
 | sources-inert-row-selection-check             | (1 it)                                                                                                                        | SOUND                | Inert-row behaviour proved by a press that must change nothing.                                                                                                                                                                       |
 | sources-overflow-pending-removal              | (4 its)                                                                                                                       | SOUND                | Scrolls the subject on-screen before the negative, with a positive guard — the prescribed shape.                                                                                                                                      |
-| sources-step-duplicate-marketplace-column     | (1 it)                                                                                                                        | SOUND                | Duplicate-column negative with the column proved painted.                                                                                                                                                                             |
+| sources-step-duplicate-marketplace-column     | **spec deleted since this audit**                                                                                             | n/a                  | Duplicate-column negative with the column proved painted.                                                                                                                                                                             |
 | uninstall (interactive)                       | (10 its)                                                                                                                      | SOUND                | Prompt-driven uninstall with index navigation documented.                                                                                                                                                                             |
 | wizard-overflow-affordance                    | (2 its)                                                                                                                       | CAN-BE-STRICTER      | Asserts the `SCROLL_MORE_*` affordance moved. `anti-patterns.md § A counter is not its content` states this exact assertion stayed green with scrolling disabled; the rule prescribes asserting a revealed row instead.               |
 | wizard-terminal-resize-guard                  | (1 it)                                                                                                                        | SOUND                | Proves the negative by order (`toMatch(/…$/)`) rather than by `not.toContain`, exactly as the rule requires.                                                                                                                          |
@@ -559,8 +559,7 @@ claims**, and the product was restored and re-verified green.
 ## Batch 1 — `import skill` journey — DROPPED (owner ruling, mid-flight)
 
 Started, completed, then reverted in full on the owner's ruling above. What was learned before the
-revert is recorded in
-`packages/cli/.ai-docs/agent-findings/2026-08-08-import-skill-rejects-local-paths-root-cause-confirmed.md`:
+revert:
 the audit's one-liner is correct but incomplete — `parseGitHubSource`'s shorthand branch mangles
 local paths, **and** the existing specs point at `createE2ESource()`, whose `src/skills/` layout the
 command does not read. Both were fixed and all five `it.fails` were driven green on the real binary,
@@ -582,7 +581,7 @@ Four of the seven rewritten. Three left alone with reasons.
 | `compile` → "should include custom skill in compiled agent frontmatter"                | **REWRITTEN.** `toHaveAgentFrontmatter({ name, exactSkills: [CUSTOM_PROJECT_SKILL_ID] })` — parsed frontmatter, exact preload list. `contains` over the whole file could not tell frontmatter from body, so "frontmatter" was untested. `ProjectBuilder.withCustomSkill` now derives its skill id from the new exported constant. **Mutation:** `buildAgentTemplateContext`'s `preloadedSkillIds` emptied → red.                                                                                                                              |
 | `interactive/init-wizard-ui` → "skills grouped by domain"                              | **REWRITTEN, and the name was wrong.** The confirm step groups by **scope**, not by domain — no domain heading is painted anywhere. Renamed to what it pins and given the assertions: the `Stack none` row, the `Global` scope heading, both selected skills with the added marker, and a negated meta-domain skill that the scratch flow does not select. **Mutation:** `skill-agent-summary.tsx` truncated to one row per column → red.                                                                                                     |
 | `lifecycle/config-scope-integrity` → config-types `Domain` type                        | **REWRITTEN.** The `expect(match?.[0] ?? "").not.toContain(x)` fixture check is now `loadConfigOrFail` + a structural `skills.map(id)` negative, so a format change cannot satisfy it for free. The `Domain` positives now loop over the config's own `selectedDomains` and are joined by `not.toContain('"mobile"')` — a domain no config under test declares. **Mutation:** the domain union rebuilt from the whole matrix instead of the config → red on the `"mobile"` negative, which the old `toContain('"api"')` trio could not catch. |
-| `compile-edge-cases` → malformed `metadata.yaml`                                       | **LEFT — needs a ruling.** The name says skip, the body comment says not-skipped, and the product's two passes disagree with each other in one run. Recorded in `2026-08-08-two-compile-specs-pin-behaviour-no-ruling-establishes.md`. See batch 6.                                                                                                                                                                                                                                                                                           |
+| `compile-edge-cases` → malformed `metadata.yaml`                                       | **RULED since.** The name said skip, the body comment said not-skipped, and the product's two passes disagreed with each other in one run. `compile-malformed-skill-metadata` now covers it, and the two rules the disagreement produced are in `assertions.md` — an expected value is derived, never observed, and a spec whose name and whose body comment disagree is a defect report rather than a test.                                                                                                                                  |
 | `compile` → `Compiling global agents` over an all-`project` config (8 sites)           | **LEFT — needs a ruling.** Same finding. See batch 6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `new-agent` → `--force` (`not.toBe(INVALID_ARGS)`)                                     | **EXCLUDED** — parked command.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
@@ -652,9 +651,9 @@ repaired in batch 2; the two below need a decision, and one is out of scope by r
 | 3   | `commands/new-agent` (15 dormant its, incl. `--force` → `not.toBe(INVALID_ARGS)`)                                                                                   | The flagged-off error exits.                                                                                                                                                                                 | **None needed** — the owner's 2026-08-08 ruling makes these the correct pinning of the parked state. Listed only so the six are accounted for.                                                                                                                                                                                                                                                   |
 | 4–6 | `compile` → content after frontmatter; `compile` → custom skill in frontmatter; `init-wizard-ui` → skills grouped by domain; `config-scope-integrity` → Domain type | —                                                                                                                                                                                                            | Repaired in batch 2 without a ruling: each had an expected value derivable from the input fixture or a definition file. Recorded here so the audit's count of six reconciles.                                                                                                                                                                                                                    |
 
-Both open rulings are written up in
-`packages/cli/.ai-docs/agent-findings/2026-08-08-two-compile-specs-pin-behaviour-no-ruling-establishes.md`,
-status `open`, no fix.
+Both rulings have since landed. `readSkillMetadata` is exported from `lib/loading` and is the single
+metadata read shared by `content-validator.ts` and `external-skills.ts`, and
+`compile-malformed-skill-metadata` covers the malformed case end to end.
 
 ## Owner rulings (2026-08-08) — the two compile questions
 
@@ -733,8 +732,7 @@ JSDoc that names the assertion and the cause.
    the source's nine skills and the two it leaves out are the exclusive-category alternates of two
    it installed. Observed identically for a blind `navigateDown()`, an already-selected named
    skill, and an unselected-but-exclusive named skill. Both fixture bugs are fixed here (the spec
-   now reaches its own subject); the third needs a fixture redesign and is left. Finding:
-   `2026-08-08-init-then-edit-merge-cannot-add-a-skill.md`.
+   now reaches its own subject); the third needs a fixture redesign and is left.
 
 2. **`lifecycle/init-edit-error-guards`' two `--source` guards were green on an Ink crash.**
    `combined.length > 0` was satisfied by a React stack trace: `init --source <nonexistent>` does
@@ -743,8 +741,7 @@ JSDoc that names the assertion and the cause.
    Reproduced by hand outside the harness. Both specs now assert `Local source not found:` plus the
    offending path and are `it.fails`. Which of the two behaviours is intended — validate the flag
    before the wizard mounts, or fail non-TTY interactive commands with an argument error rather than
-   a reconciler trace — is an owner call. Finding:
-   `2026-08-08-init-edit-invalid-source-flag-unreported.md`.
+   a reconciler trace — is an owner call.
 
 ### Still not reached
 
@@ -840,8 +837,9 @@ No fix. The spec is renamed to what it pins, is `it.fails`, and its JSDoc names 
 the Changes-block negative, anchored on the `[P]` scope tag because the confirm step's summary
 paints the same `- <name>` row without one. Everything above it passes, including the
 `toStrictEqual` establishing the preservation is real. Verified by running it as a plain `it` and
-confirming the failure lands on that line. Finding:
-`2026-08-08-edit-reports-an-unresolvable-skill-as-removed-while-preserving-it.md`, status `open`.
+confirming the failure lands on that line. **Since closed** — see the CLI-450 removal map, which
+settles it by a third route neither the audit nor the finding listed: make the removal real, so the
+`Changes:` block, `config.ts` and the compiled agent all agree.
 
 ### Left alone, deliberately
 

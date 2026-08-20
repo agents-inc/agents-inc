@@ -85,4 +85,4 @@ The split is no longer only about wrong advice: **Better Auth + BullMQ is now un
 the built-in matrix** — better-auth requires drizzle and bullmq requires redis-or-upstash, and
 satisfying both needs two picks in the one exclusive `api-database` radio. Verified directly by
 the wave-2 apply. The six-category split resolves it (drizzle lands in the ORM radio, redis in
-KV). Finding: `2026-08-07-two-requires-rules-now-need-two-members-of-one-exclusive-category.md`.
+KV).

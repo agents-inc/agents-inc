@@ -174,8 +174,6 @@ correctly project-scoped instead of leaking into the global install. Both follow
 None. Every first-pass failure is closed and no new issue surfaced, so there is nothing to file. The
 three open findings from the first pass are the ones this run clears:
 
-- `2026-08-08-a-stacks-sub-agent-roster-is-overwritten-by-the-domain-roster-before-install.md`
-- `2026-08-08-a-new-skill-picked-in-a-project-edit-is-written-into-the-global-install.md`
 - `2026-08-08-a-project-edit-cannot-remove-a-skill-it-owns-when-a-global-install-backs-it.md`
 
 ## Cleanup

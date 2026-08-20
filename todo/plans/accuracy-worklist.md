@@ -4,6 +4,12 @@
 
 ### D1 — `SkillConfig.source` was renamed to `origin`; seven documents and seven comments never moved
 
+**Executed and complete (2026-08-19).** This file is now a record of what was done rather than a
+plan. The abbreviated finding names in each item's parentheses are **provenance**: they say which
+findings motivated the work. Many of those files no longer exist — a finding is deleted as it closes
+and its row in `agent-findings/INDEX.md` becomes the surviving record — so a name here that resolves
+to nothing is the protocol working, not a broken reference.
+
 _Findings: 08-16 marketplace-rename-stopped-at-typed-positions; 08-18 wizard-docs-still-describe-a-skillconfig-field._ **Effort: hour.**
 
 - **Docs say:** `core-types.md` ("install source propagated from `SkillConfig.source`", "Derived at runtime from `SkillConfig.source` by `deriveInstallMode`"), `architecture-overview.md` ("`SkillConfig.source: string` … is the source of truth"), `boundary-map.md`, `utilities.md`, `features/seed-contract.md`. Same page: `core-types.md` says `SourceEntry` is "listed in `ProjectConfig.sources`".

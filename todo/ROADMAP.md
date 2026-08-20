@@ -13,7 +13,7 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Where we are — 2026-08-17
+## Where we are — 2026-08-19 (CLI rows re-measured; the editor rows are the 2026-08-17 figures and have not been re-run since)
 
 **The Go-Live program is COMPLETE. All three legs are done and every gate is green.** Nothing is
 committed: the working tree carries the whole programme plus the day's fixes, uncommitted, by the
@@ -21,8 +21,8 @@ owner's standing instruction that commits are authorised one round at a time.
 
 | Suite                                  | State                                        |
 | -------------------------------------- | -------------------------------------------- |
-| CLI unit                               | 155 files / 6671 passed / 0 failed           |
-| CLI e2e                                | 217 files / 790 passed / 0 failed            |
+| CLI unit                               | 6,993 passed / 0 failed                      |
+| CLI e2e                                | 842 passed / 0 failed                        |
 | Editor unit                            | 13 files / 293 passed                        |
 | Editor playwright                      | 259 passed (was 193 at the start of the day) |
 | tsc / eslint / prettier / matrix:check | clean across every workspace                 |
@@ -121,17 +121,45 @@ Two rows came out of it: **EDITOR-48** (no network guard on the editor's Playwri
 **CLI-533** (a one-sentence owner ruling on what `seed-contract.md`'s "Refusals it carries" row
 counts).
 
-### Phase 2c — the accuracy programme — **SCOPED 2026-08-18, not started**
+### Phase 2c — the accuracy programme — **COMPLETE 2026-08-19**
+
+A fourth phase followed the first three, on an owner ruling that **a guard is not a feature**: 54 of
+the 58 findings parked as "new work" were returned to scope and executed. See `archive.md` under this
+date. It found nine live defects and left the registry at 62 bound rows (counted inside the `REGISTRY` array; the file holds 90 occurrences of `claim:`, and the difference is type declarations, return literals and `claim: string` parameters).
 
 The documentation was re-derived from source across 51 documents on the assumption that all of it was
-wrong, and the 382-finding corpus was graded, re-audited and pruned to 316. Both are in `archive.md`
-under this date. What came out of them is **CLI-545**, pointing at
-[`plans/accuracy-worklist.md`](./plans/accuracy-worklist.md).
+wrong, and the 382-finding corpus was graded, re-audited and pruned. Both are in `archive.md` under
+those dates. The programme then ran in three phases:
 
-**This does not block Phase 3.** Everything in the worklist is a correction or a guard; nothing in it
-is required before committing what the tree already holds. Two entries are worth doing first either
-way, because both are wrong in the tree right now: **D1** (the docs describe a config the CLI
-refuses) and **D2** (`compile` tells the user to run a command that exits 127).
+- **Phase A — the worklist.** D1–D8 and M1–M20 from [`plans/accuracy-worklist.md`](./plans/accuracy-worklist.md),
+  executed across sixteen briefs. **Every one of the sixteen executing agents corrected something in
+  its own brief**, which is the single most useful measurement the programme produced.
+- **Phase B — all 39 user journeys, walked by hand.** Thirty-six through the CLI harness, two in the
+  browser, one closed by construction. It found **two shipped defects that 6,777 unit, 810 e2e and
+  297 Playwright tests were all blind to**: a `share` → `init --from` round trip that produced an
+  identical config but a different compiled agent, and every editor-minted custom-marketplace id
+  being uninstallable (**EDITOR-49**). Neither suite could see either one, for the same reason in
+  both cases — each test built both ends of the comparison with the same producer.
+- **Phase C — the remaining findings.** 294 triaged with 33 classifications refuted on re-check.
+  Fixes landed in seven groups; 131 findings were deleted; the rest are parked as **CLI-554**
+  (3 features, after the guards-are-not-features ruling returned 54 of the original 58 to scope), **EDITOR-50** (7), and **CLI-555** (12 open rulings).
+
+- **Phase D — the session's own output audited, then verified, then fixed.** Three audits (docs,
+  tests, journeys) against the assumption that the session's own changes were wrong, on the same
+  principle the programme had just applied to everything else. Every finding was then re-verified by
+  an agent that was not allowed to fix it, which refuted five and saved two wrong actions. It closed
+  with two guards — the drift checker learned to read a table's VALUES (CLI-585), and every wizard
+  keypress now asserts the frame is wholly on screen (CLI-586). **The second guard immediately found
+  a shipped defect the owner had reported and the orchestrator had failed to reproduce**: a warning
+  raised during store hydration went to stderr under a painted frame and was pushed off the top. Nine
+  e2e specs across five files were losing the same three lines. Fixed at the buffering window rather
+  than at the call sites, so both warning arms and both `init` and `edit` are covered by
+  construction. All 36 CLI-drivable user journeys were then re-run by hand: 163 verdicts, none
+  failed.
+
+**None of it blocks Phase 3.** Everything was a correction, a guard or a deletion. Every gate in the
+repository is green and nothing is committed — the tree carries the whole programme, by the owner's
+standing instruction that commits are authorised one round at a time.
 
 ### Phase 3 — the commit round
 
