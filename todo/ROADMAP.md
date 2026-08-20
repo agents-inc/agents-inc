@@ -13,7 +13,7 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Where we are — 2026-08-19 (CLI rows re-measured; the editor rows are the 2026-08-17 figures and have not been re-run since)
+## Where we are — 2026-08-20 (CLI e2e re-measured; CLI unit, tsc/eslint/prettier re-run 2026-08-20; the editor rows are the 2026-08-17 figures and have not been re-run since)
 
 **The Go-Live program is COMPLETE. All three legs are done and every gate is green.** Nothing is
 committed: the working tree carries the whole programme plus the day's fixes, uncommitted, by the
@@ -22,7 +22,7 @@ owner's standing instruction that commits are authorised one round at a time.
 | Suite                                  | State                                        |
 | -------------------------------------- | -------------------------------------------- |
 | CLI unit                               | 6,993 passed / 0 failed                      |
-| CLI e2e                                | 842 passed / 0 failed                        |
+| CLI e2e                                | 844 passed / 0 failed                        |
 | Editor unit                            | 13 files / 293 passed                        |
 | Editor playwright                      | 259 passed (was 193 at the start of the day) |
 | tsc / eslint / prettier / matrix:check | clean across every workspace                 |
@@ -248,6 +248,11 @@ and CLI-425 are not, and stay here.
   count 139 → 149).
 - **CLI-497** — `SOURCE_ROW_WALK_LENGTH` is fixture-sized (12); a larger source under-walks and
   passes vacuously.
+- **CLI-595** — ruling wanted on the two page-object rules the focus-walk finding proposes
+  (observe before acting; a press budget is not a search bound). The code half landed 2026-08-20.
+- **CLI-596** — all ten E2E fixture skill slugs are already claimed by the default catalogue, so a
+  fixture skill has no slug identity in the ~14 mixed-configuration specs. Inert today (no product
+  reader of `getSkillBySlug` or `idToSlug`); armed for the first one.
 - **D-235** (uncovered `buildProjectTypesExtras` branch) · **D-219** (fixture-default ergonomics) ·
   **D-168** (E2E setup via CLI commands, not hand-built files) · **D-111** (stable test identifiers)
   · **D-64** (a CLI E2E testing skill).

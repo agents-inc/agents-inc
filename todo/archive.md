@@ -3475,3 +3475,23 @@ Playwright 302 (297 baseline + 5), editor unit 341, tsc and eslint clean.
 - **CLI-565 — a document can now bind a module's re-export surface, landed 2026-08-19.** `check-enumeration-drift.ts` gained `reexports: "every-name"`, reading both forms the row said were unreachable: the re-exports carrying a `moduleSpecifier` and those in a bare `export { … }` block. The design question the row demanded a ruling on is ruled and written into the reader's own doc comment — a locally-imported-then-re-exported name resolves to **the export clause's own spelling, with nothing followed**. Two refusals rather than a silent skip: `WHOLE_MODULE_REEXPORT` and `REEXPORTS_A_DECLARATION`. All three `e2e/helpers/test-utils.ts` tables are registered and agree — constants, functions, and the re-export table at the exact 31 members the row named. **Verified independently 2026-08-19 by an agent that was not allowed to fix anything**, which also corrected the claim that first reported it: `reexports: "every-name"` binds exactly one registry row, and it is this one — the three barrel tables in CLI-535 are bound by the _directory_ reader instead, and that is the correct choice, because binding `factories/index.ts` through the barrel surface against its real table drifts 8 named-but-absent and 1 present-but-unnamed. **Not closed by this row**: the 2-declared-types table in `reference/testing/e2e-infrastructure.md` remains unbound, and the document itself argues against building a fifth reader for it. Say so out loud rather than leave it implied.
 
 - **CLI-535 — four of its five gaps closed 2026-08-19; the row survives narrowed to the fifth.** Landed: the command roster as a filesystem walk (`directory` + `enumerates: "command-ids"`, agreeing over 13 members, which is the gap that had let a live command be documented as deleted); `unwrap()` reading through `satisfies` (one line, `ts.isSatisfiesExpression`, and it is load-bearing for three registry rows — proved by applying HEAD's `unwrap` and the working tree's to the same sources, where HEAD yields `SatisfiesExpression` and the tree yields the array literal underneath); the multi-table split (`partitioned-tables`, agreeing over the 34-schema partition the row named); and the three barrel tables, bound through the directory reader rather than through a barrel read — `exportedNames` still does not follow `export … from`, so the row's literal sentence stays true while the lists it blocked are all bound. One caveat recorded rather than buried: `SKILL_IDS` and `SKILL_SLUGS` are readable now but are still not registry rows, because no document enumerates their members — a documentation-side reason the checker cannot fix. Still open as CLI-535: `static` class members, so no command's flag list is registerable.
+
+- **2026-08-20 — CLI-595** (cli.md, new, found while investigating a red CI run) — `focusSkill`
+  looks at the screen before it presses, and confirms every Tab against the frame before the next
+  one. The old walk pressed first and read after, inside a 50-press budget: against the default
+  catalogue's 33-category web grid, a target in category 1 — the one focused on entry — cost a full
+  lap to return to, and a repaint observed late let the walk pass its own target unseen, needing a
+  second lap the budget could not fund. That is CI run 32338714325, where
+  `edit-wizard-navigation.e2e.test.ts > should toggle focused skill scope with S key` lost both
+  attempts; the arithmetic is exact, 50 presses from category 1 landing on category 18, which is the
+  `Error Handling` header highlighted in the failure dump. **Not reproducible locally** across the
+  test solo ×5, `CI=true`, Node 22 to match the runner's pin, the full 229-file suite pinned to the
+  runner's 4 cores, the same under 8 CPU hogs, and `e2e/interactive` pinned to 2 — all green; a
+  re-run of the same commit (32347127769) passed with that test still losing its first attempt, so
+  `retry: 1` had been absorbing roughly a 3-in-4 failure rate. The walk now ends on having observed
+  a category twice — a real lap, each category looked at once — and raises `CategoryWalkError`
+  carrying what it walked, so a miss reads as a fact rather than a press count. `MAX_FOCUS_ATTEMPTS`
+  is deleted; it was never the mechanism, only the thing that ran out. Pinned by
+  `e2e/interactive/build-step-focus-walk-cost.e2e.test.ts`, which asserts what the helper SPENDS —
+  the observable that did not exist, and the reason every existing focus assertion was blind to
+  this. Finding: `.ai-docs/agent-findings/2026-08-20-focus-walk-presses-before-it-looks.md`.

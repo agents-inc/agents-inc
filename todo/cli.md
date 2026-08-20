@@ -146,28 +146,30 @@ and three unreferenced `agent-findings`.
 
 ## Testing & E2E coverage
 
-| ID      | Task                                                                                                             | Status        | Type     | Complexity |
-| ------- | ---------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
-| D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                        | Ready for Dev | refactor | easy       |
-| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                   | Done          | refactor | complex    |
-| D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                         | Ready for Dev | refactor | complex    |
-| D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                            | Ready for Dev | refactor | complex    |
-| D-111   | Replace E2E text anchors with stable test identifiers.                                                           | Investigate   | refactor | complex    |
-| D-64    | Create CLI E2E testing skill + update `cli-framework-oclif-ink`.                                                 | Ready for Dev | feature  | complex    |
-| CLI-321 | (was P4-18) Test multiple skill/agent creation — depends on CLI-320.                                             | Deferred      | refactor | complex    |
-| CLI-328 | (was expressive-ts decision 6) `e2e/pages/constants.ts` re-declares production constants inconsistently.         | Investigate   | refactor | easy       |
-| CLI-335 | `e2e/interactive/init-wizard-filter-incompatible.e2e.test.ts` — 1 test, gated on `FILTER_INCOMPATIBLE`.          | Ready for Dev | refactor | easy       |
-| CLI-336 | `e2e/lifecycle/global-skill-filter-incompatible-guard.e2e.test.ts` — 1 test, same flag.                          | Ready for Dev | refactor | easy       |
-| CLI-337 | `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts` — 1 test, gated on the settings overlay.       | Ready for Dev | refactor | easy       |
-| CLI-338 | E2E: `build plugins` on the E2E source → initial compile produces `plugin.json` at version `1.0.0`.              | Done          | refactor | easy       |
-| CLI-339 | E2E: `build plugins` after editing a skill's SKILL.md → version bumps to `2.0.0` for that skill only.            | Done          | refactor | easy       |
-| CLI-340 | E2E: `build plugins` with no change → version stays at `2.0.0` (idempotent).                                     | Done          | refactor | easy       |
-| CLI-341 | E2E: `build plugins` with multiple skills → only the modified skill's version increments.                        | Done          | refactor | easy       |
-| CLI-342 | E2E: `build plugins` then `build marketplace` → `marketplace.json` lists all skills at correct versions.         | Done          | refactor | easy       |
-| CLI-343 | E2E: `build marketplace` after a bump → `marketplace.json` reflects the updated version.                         | Done          | refactor | easy       |
-| CLI-344 | E2E: `build marketplace` output structure — each entry has `name`, `version`, `source`, `category`.              | Done          | refactor | easy       |
-| CLI-346 | E2E: `update` distinguishes globally-scoped skills from project-scoped ones — `globalResults` is never asserted. | Done          | refactor | complex    |
-| CLI-546 | `e2e/handrun-journeys.ts` hardcodes `/home/vince/dev/skills`, so journey 28a skips for everyone else.            | Ready for Dev | refactor | easy       |
+| ID      | Task                                                                                                                        | Status        | Type     | Complexity |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- | ---------- |
+| D-235   | E2E gap: `buildProjectTypesExtras` new-domain/category path is uncovered.                                                   | Ready for Dev | refactor | easy       |
+| D-234   | E2E config inspection via `loadProjectConfig` instead of regex-on-`config.ts`.                                              | Done          | refactor | complex    |
+| D-219   | E2E fixture-default ergonomics. [Plan](./plans/D-219-wizard-launcher-default-fixture.md)                                    | Ready for Dev | refactor | complex    |
+| D-168   | Audit E2E tests — replace manual file construction with CLI commands.                                                       | Ready for Dev | refactor | complex    |
+| D-111   | Replace E2E text anchors with stable test identifiers.                                                                      | Investigate   | refactor | complex    |
+| D-64    | Create CLI E2E testing skill + update `cli-framework-oclif-ink`.                                                            | Ready for Dev | feature  | complex    |
+| CLI-321 | (was P4-18) Test multiple skill/agent creation — depends on CLI-320.                                                        | Deferred      | refactor | complex    |
+| CLI-328 | (was expressive-ts decision 6) `e2e/pages/constants.ts` re-declares production constants inconsistently.                    | Investigate   | refactor | easy       |
+| CLI-335 | `e2e/interactive/init-wizard-filter-incompatible.e2e.test.ts` — 1 test, gated on `FILTER_INCOMPATIBLE`.                     | Ready for Dev | refactor | easy       |
+| CLI-336 | `e2e/lifecycle/global-skill-filter-incompatible-guard.e2e.test.ts` — 1 test, same flag.                                     | Ready for Dev | refactor | easy       |
+| CLI-337 | `e2e/interactive/init-wizard-sources-cancel-persists.e2e.test.ts` — 1 test, gated on the settings overlay.                  | Ready for Dev | refactor | easy       |
+| CLI-338 | E2E: `build plugins` on the E2E source → initial compile produces `plugin.json` at version `1.0.0`.                         | Done          | refactor | easy       |
+| CLI-339 | E2E: `build plugins` after editing a skill's SKILL.md → version bumps to `2.0.0` for that skill only.                       | Done          | refactor | easy       |
+| CLI-340 | E2E: `build plugins` with no change → version stays at `2.0.0` (idempotent).                                                | Done          | refactor | easy       |
+| CLI-341 | E2E: `build plugins` with multiple skills → only the modified skill's version increments.                                   | Done          | refactor | easy       |
+| CLI-342 | E2E: `build plugins` then `build marketplace` → `marketplace.json` lists all skills at correct versions.                    | Done          | refactor | easy       |
+| CLI-343 | E2E: `build marketplace` after a bump → `marketplace.json` reflects the updated version.                                    | Done          | refactor | easy       |
+| CLI-344 | E2E: `build marketplace` output structure — each entry has `name`, `version`, `source`, `category`.                         | Done          | refactor | easy       |
+| CLI-346 | E2E: `update` distinguishes globally-scoped skills from project-scoped ones — `globalResults` is never asserted.            | Done          | refactor | complex    |
+| CLI-546 | `e2e/handrun-journeys.ts` hardcodes `/home/vince/dev/skills`, so journey 28a skips for everyone else.                       | Ready for Dev | refactor | easy       |
+| CLI-595 | Ruling wanted: write the focus-walk finding's two page-object rules into `standards/e2e/page-objects.md`.                   | Ruling wanted | docs     | small      |
+| CLI-596 | All ten E2E fixture skill slugs are already claimed by the default catalogue; inert today, armed for the first slug lookup. | Ready for Dev | fix      | small      |
 
 ## Tooling, gates & code generation
 
@@ -1201,6 +1203,75 @@ stated rule is not applied consistently.
 
 _Open question:_ consolidating reverses an explicit, documented design decision. Either honour it
 everywhere or drop it.
+
+---
+
+#### CLI-595: two proposed page-object rules live only in a finding
+
+`.ai-docs/agent-findings/2026-08-20-focus-walk-presses-before-it-looks.md` proposes two rules for
+`.ai-docs/standards/e2e/page-objects.md`. The code half has landed; these are proposals and want a
+ruling before they become rules.
+
+1. **A navigation helper observes before it acts, and confirms each move before the next one.** A
+   helper that presses and then reads cannot tell "the key did not land" from "the repaint has not
+   arrived", and it silently walks past what it was sent to find. This extends CLAUDE.md's existing
+   "NEVER add a key-press method to an E2E step page object without calling `waitForWizardFooter()`
+   first" from _a frame is painted_ to _the frame says the press took effect_, and conflicts with
+   nothing there.
+2. **A press budget is not a search bound.** A `for (attempt = 0; attempt < N; attempt++)` walk
+   reports the number it gave up at, which says nothing about what it looked at. Terminate on the
+   structure being walked — a lap, a repeat, an exhausted list — and raise an error naming what was
+   observed. `MAX_FOCUS_ATTEMPTS` is the cautionary case: raised 30 → 50 when the taxonomy reached
+   33 web categories, and still too thin, because one missed observation costs a second lap.
+
+Both came out of CI run 32338714325, where `focusSkill` pressed Tab before looking at the screen and
+paid a 33-category lap to return to the category it opened on. The re-run of the same commit passed
+with the test still losing its first attempt, so `retry: 1` had been absorbing roughly a 3-in-4
+failure rate on the runner. Not reproducible locally under any condition tried, including the full
+suite pinned to the runner's 4 cores and `e2e/interactive` pinned to 2.
+
+---
+
+#### CLI-596: every E2E fixture slug collides with the default catalogue
+
+`createE2ESource` namespaces its skill IDS (`e2e-test-fixture-web-framework-react`) but writes the
+BARE slug into each `metadata.yaml` (`slug: react`). Against the default catalogue all ten collide —
+a census, read out of `slugToId` in `src/cli/types/generated/matrix.ts` with whole-key matching:
+`react`/`web-framework-react`, `vitest`/`web-testing-vitest`, `zustand`/`web-state-zustand`,
+`hono`/`api-framework-hono`, `research-methodology`, `reviewing`/`meta-reviewing-reviewing`,
+`cli-reviewing`, `vue-composition-api`, `pinia`, `visual-regression`. Each collides with its
+NAMESAKE — the fixture borrowed the catalogue's slugs, it does not shadow unrelated skills.
+
+`claimSlug` is first-claim-wins and refuses BOTH directions on a collision, so in the mixed
+configuration the fixture skill ends up with `slugToId[slug]` pointing at the catalogue's skill and
+**no `idToSlug` entry at all**. The skill object itself is unaffected: `mergeLocalSkillsIntoMatrix`
+writes `matrix.skills[id]` before and independently of the claim, so the grid cell still paints and
+the wizard — which works by id throughout — is unaffected.
+
+**Why nothing fails today, which is also why this is worth filing rather than fixing in passing.**
+Of the 43 specs using `ProjectBuilder.editable`, 29 also load an E2E source as the marketplace, and
+`copyOfBuiltInMatrix()` is only reached on the default-source path — a custom source builds its slug
+map from scratch, so there is no catalogue in the matrix to collide with. That leaves ~14 specs
+where the collision fires, and in those nothing reads the losing side: `getSkillBySlug` has **zero
+product call sites** (three test call sites and the barrel re-export), `idToSlug` has **zero readers
+anywhere**, and the one live consumer of `slugToId` is rule resolution
+(`resolveToCanonicalId`/`collectUnresolvedSlugs`), which resolves the LOADED source's own
+`skill-rules` — in the mixed configuration those rules are the catalogue's, so mapping `react` to
+`web-framework-react` is correct there.
+
+**The two costs.** Real today: three lines of output above the grid (`Duplicate slug …`,
+`Loaded 239 skills (default)`, `Found 2 installed skills`) in exactly the configuration where the
+frame is tightest — that block is in the CLI-595 CI failure dump. It does not overflow at
+`rows: 40`, since `assertWizardScreenIsWhollyVisible` would have thrown instead. Latent: the trap is
+armed. `getSkillBySlug` is an ASSERTING lookup, so the first product caller to resolve a skill by
+slug makes those ~14 specs a configuration where a fixture skill is invisible to slug lookups and
+the catalogue's skill answers in its place — silently, because both are real skills with plausible
+names.
+
+Fix direction: namespace the slug the way the id already is (`e2e-test-fixture-react`), which is one
+edit in `E2E_SKILLS` plus `E2E_SKILL_TITLES`' key type. Check `E2E_SKILL.*.slug` call sites first —
+the titles map is keyed by slug, and `e2e/fixtures/project-builder.ts`'s `SKILL_IDENTITY_FIELDS`
+reads through it.
 
 ---
 
