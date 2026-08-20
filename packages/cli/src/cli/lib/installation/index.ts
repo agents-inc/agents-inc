@@ -33,10 +33,12 @@ export { isHomeDirectory } from "./is-home-directory";
 export { installBaseDir, resolveInstallPaths, type InstallPaths } from "./install-base-dir";
 
 export {
+  type EjectCopyResult,
   type SkillMigration,
   type MigrationPlan,
   type MigrationResult,
   detectMigrations,
+  ejectCopyFailureError,
   executeMigration,
 } from "./mode-migrator";
 

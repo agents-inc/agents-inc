@@ -1,6 +1,7 @@
 import path from "path";
 
 import { copy, ensureDir, isPathWithin } from "../../utils/fs";
+import { getErrorMessage } from "../../utils/errors";
 import { computeFileHash } from "../versioning";
 import { EJECT_SOURCE, SOURCE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import type { ResolvedSkill, SkillId } from "../../types";
@@ -134,6 +135,66 @@ async function resolveLocalCopiedSkill(
 
 export type CopyProgressCallback = (completed: number, total: number) => void;
 
+/**
+ * Copies every selected skill, and reports the ones that could not be copied BY ID.
+ *
+ * `Promise.all` alone rejects with whichever error arrived first and discards its siblings', and
+ * that error is the filesystem's: an `ENOENT` naming a path inside the source cache. The reader is
+ * told a file is missing at an address they did not choose, cannot place, and cannot act on — and
+ * they learn about the second missing skill only by fixing the first and running again.
+ *
+ * The condition is ordinary rather than exotic: the copy walks the MATRIX and reads from the
+ * FETCHED directory, so any disagreement between the two lands here. A user whose CLI predates a
+ * marketplace change has no way to make them agree, which makes the id the only actionable thing
+ * the failure can carry.
+ *
+ * It still throws. A partial copy would leave an installation missing skills its config records,
+ * which is the orphan-entry state the plugin-install path already refuses.
+ */
+async function copyEachSkill(
+  selectedSkillIds: SkillId[],
+  copyOne: (skillId: SkillId) => Promise<CopiedSkill>,
+): Promise<CopiedSkill[]> {
+  const outcomes = await Promise.all(
+    selectedSkillIds.map(async (skillId) => attemptCopy(skillId, copyOne)),
+  );
+  const failures = outcomes.filter(isCopyFailure);
+
+  if (failures.length > 0) throw new Error(copyFailureMessage(failures, selectedSkillIds.length));
+
+  return outcomes.filter(isCopySuccess).map((outcome) => outcome.copied);
+}
+
+type CopySuccess = { skillId: SkillId; copied: CopiedSkill };
+type CopyFailure = { skillId: SkillId; problem: string };
+type CopyOutcome = CopySuccess | CopyFailure;
+
+async function attemptCopy(
+  skillId: SkillId,
+  copyOne: (skillId: SkillId) => Promise<CopiedSkill>,
+): Promise<CopyOutcome> {
+  try {
+    return { skillId, copied: await copyOne(skillId) };
+  } catch (error) {
+    return { skillId, problem: getErrorMessage(error) };
+  }
+}
+
+function isCopyFailure(outcome: CopyOutcome): outcome is CopyFailure {
+  return "problem" in outcome;
+}
+
+function isCopySuccess(outcome: CopyOutcome): outcome is CopySuccess {
+  return "copied" in outcome;
+}
+
+/** One line per skill that failed, so both what failed and why are named for every one of them. */
+function copyFailureMessage(failures: CopyFailure[], attempted: number): string {
+  const lines = failures.map((failure) => `  ${failure.skillId}: ${failure.problem}`);
+
+  return `Could not copy ${failures.length} of ${attempted} skills:\n${lines.join("\n")}`;
+}
+
 export async function copySkillsToPluginFromSource(
   selectedSkillIds: SkillId[],
   pluginDir: string,
@@ -143,27 +204,23 @@ export async function copySkillsToPluginFromSource(
 ): Promise<CopiedSkill[]> {
   const total = selectedSkillIds.length;
   let completed = 0;
-  const results = await Promise.all(
-    selectedSkillIds.map(async (skillId): Promise<CopiedSkill> => {
-      const skill = getSkillById(skillId);
 
-      const selectedSource = sourceSelections?.[skillId];
-      const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
+  return copyEachSkill(selectedSkillIds, async (skillId) => {
+    const skill = getSkillById(skillId);
 
-      let result: CopiedSkill;
-      if (skill.local && skill.localPath && !userSelectedRemote) {
-        result = await resolveLocalCopiedSkill(skill, skill.localPath);
-      } else {
-        result = await copySkillFromSource(skill, pluginDir, sourceResult);
-      }
+    const selectedSource = sourceSelections?.[skillId];
+    const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
 
-      completed++;
-      onProgress?.(completed, total);
-      return result;
-    }),
-  );
+    const result =
+      skill.local && skill.localPath && !userSelectedRemote
+        ? await resolveLocalCopiedSkill(skill, skill.localPath)
+        : await copySkillFromSource(skill, pluginDir, sourceResult);
 
-  return results;
+    completed++;
+    onProgress?.(completed, total);
+
+    return result;
+  });
 }
 
 function getFlattenedSkillDestPath(skill: ResolvedSkill, localSkillsDir: string): string {
@@ -189,30 +246,24 @@ export async function copySkillsToLocalFlattened(
   sourceResult: SourceLoadResult,
   sourceSelections?: Partial<Record<SkillId, string>>,
 ): Promise<CopiedSkill[]> {
-  const results = await Promise.all(
-    selectedSkillIds.map(async (skillId): Promise<CopiedSkill> => {
-      const skill = getSkillById(skillId);
+  return copyEachSkill(selectedSkillIds, async (skillId) => {
+    const skill = getSkillById(skillId);
 
-      const selectedSource = sourceSelections?.[skillId];
-      const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
-
-      if (skill.local && skill.localPath && !userSelectedRemote) {
-        const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);
-        const alreadyInPlace = path.resolve(skill.localPath) === path.resolve(destPath);
-
-        if (alreadyInPlace) {
-          return resolveLocalCopiedSkill(skill, skill.localPath);
-        }
-
-        const contentHash = await generateSkillHash(skill.localPath);
-        await ensureDir(path.dirname(destPath));
-        await copy(skill.localPath, destPath);
-        return { skillId: skill.id, sourcePath: skill.localPath, destPath, contentHash };
-      }
-
+    const selectedSource = sourceSelections?.[skillId];
+    const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
+    if (!skill.local || !skill.localPath || userSelectedRemote) {
       return copySkillToLocalFlattened(skill, localSkillsDir, sourceResult);
-    }),
-  );
+    }
 
-  return results;
+    const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);
+    if (path.resolve(skill.localPath) === path.resolve(destPath)) {
+      return resolveLocalCopiedSkill(skill, skill.localPath);
+    }
+
+    const contentHash = await generateSkillHash(skill.localPath);
+    await ensureDir(path.dirname(destPath));
+    await copy(skill.localPath, destPath);
+
+    return { skillId: skill.id, sourcePath: skill.localPath, destPath, contentHash };
+  });
 }
