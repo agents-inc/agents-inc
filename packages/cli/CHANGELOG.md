@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.156.1] - 2026-08-20
+
+**A test helper that walked the long way round, and the standard that had blessed the number it walked to**
+
+- `BuildStep.focusSkill` looks at the screen before it presses Tab and confirms every press against the frame, so it no longer pays a 33-category lap to reach the category the grid opened on, nor passes its own target while a repaint is in flight (CLI-595)
+- `MAX_FOCUS_ATTEMPTS` is deleted — the walk terminates on a real lap and raises `CategoryWalkError` naming the categories it observed, because a press budget reports the number it gave up at
+- No shipped code changed: the published tarball is identical to 0.156.0's
+
+See [changelogs/0.156.1.md](./changelogs/0.156.1.md) for full details.
+
 ## [0.156.0] - 2026-08-20
 
 **The programme audits its own output, and a guard finds the defect every suite was blind to**

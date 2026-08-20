@@ -1,6 +1,6 @@
 {
   "name": "agents-inc",
-  "version": "0.156.0",
+  "version": "0.156.1",
   "description": "CLI for managing Agents Inc. skills, stacks, and agents for Claude Code",
   "//generate": "The write path for all three generators, in dependency order: generate:types reads the skills marketplace and writes src/cli/types/generated/, then generate:schemas copies SKILL_SLUGS and CATEGORIES out of it into metadata.schema.json's enums, then generate:matrix vendors the same directory into packages/matrix. A marketplace change drifts all three, so every caller runs all three — .github/workflows/regenerate-catalog.yml spells the sequence out step by step and could call this instead. It replaces the write path only: the :check variants stay separate because CI deliberately runs different subsets of them in different jobs.",
   "//no-shared-vitest-config": "A three-project suite — unit, integration and commands, each with its own include and the retry that separates them — behind one root config that also carries vitest.setup.ts, disableConsoleIntercept for @oclif/test and ink-testing-library, and its own timeouts. @workspace/vitest-config is a single-project node config that turns globals off, which this suite needs on, so merging it in would contradict as much as it contributed. e2e/vitest.config.ts stands under the same decision. Read by scripts/check-shared-vitest-config.ts in packages/cli.",
