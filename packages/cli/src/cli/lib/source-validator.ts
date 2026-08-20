@@ -259,6 +259,16 @@ export async function validateSource(
 }
 
 /**
+ * Why a YAML file could not be read, in the parser's own words. Two phases refuse the same
+ * way — the skill-pair scan and the stack/agent scan — and they printed different sentences
+ * for a while, one carrying the cause and one dropping it; naming the message once is what
+ * stops them diverging again.
+ */
+function yamlParseFailure(error: unknown): string {
+  return `Failed to parse YAML: ${getErrorMessage(error)}`;
+}
+
+/**
  * One complete skill pair, judged four ways: its metadata.yaml parses, its keys are camelCase,
  * it satisfies the strict published-skill schema, and its directory is named after the id its
  * SKILL.md declares. A file nothing can be parsed out of reports that and stops — every check
@@ -275,13 +285,7 @@ async function validateOneSkill(
   try {
     rawMetadata = parseYaml(await readFile(path.join(skillsDir, metadataFile)));
   } catch (error) {
-    return [
-      {
-        severity: "error",
-        file: relPath,
-        message: `Failed to parse YAML: ${getErrorMessage(error)}`,
-      },
-    ];
+    return [{ severity: "error", file: relPath, message: yamlParseFailure(error) }];
   }
 
   return [
@@ -333,27 +337,73 @@ async function checkCrossReferences(
 }
 
 /**
+ * The audit manifest, as a path a reader can open. It is this CLI's own file rather than anything
+ * in the marketplace being validated, and it has to be: the verdict a matrix contradicts is
+ * recorded there and the marketplace holds no copy of it.
+ */
+const SKILL_AUDIT_PATH = "src/cli/lib/configuration/skill-audit.ts";
+
+/**
+ * The file a finding's defect is written in — the one `doctor` renders as the location half of the
+ * line, and therefore the one the reader opens.
+ *
+ * Each answer is the file the check actually reads, which is not always the file its name suggests:
+ *
+ * - a category and the `domain` it omits are both declared in the categories file, and a skill
+ *   naming a category nothing defines is the same file short an entry (its own metadata.yaml is
+ *   the other half of that fix, and the message already names the skill);
+ * - every relation a resolved skill carries comes from the rules file — no metadata.yaml declares
+ *   one — so an unresolved reference and the dangling slug behind it are both written there;
+ * - a verdict, recorded or missing, is the audit manifest's.
+ *
+ * Exhaustive on purpose: a seventh finding kind will not compile until someone decides where its
+ * defect lives, which is the property one path shared by all six had already lost.
+ */
+function fileHoldingDefect(finding: MatrixHealthIssue["finding"]): string {
+  switch (finding) {
+    case "category-missing-domain":
+    case "skill-unknown-category":
+      return SKILL_CATEGORIES_PATH;
+    case "skill-unresolved-relation-ref":
+    case "rule-unresolved-slug":
+      return SKILL_RULES_PATH;
+    case "audit-verdict-contradiction":
+    case "skill-unaudited":
+      return SKILL_AUDIT_PATH;
+    default: {
+      const exhaustive: never = finding;
+      return exhaustive;
+    }
+  }
+}
+
+/**
  * One health finding as this reader should hear it. Every kind but one is reported at the
  * severity the health check gave it — that severity is a property of the defect. The exception
  * is the slug a marketplace's own rules dangle, which is a property of the defect AND of who is
  * looking: a typo the author can fix, and a file the consumer cannot open.
+ *
+ * The reader moves the severity and the wording; it never moves the file, because which file holds
+ * the defect is not a fact about who is reading.
  */
 function toSourceIssue(
   healthIssue: MatrixHealthIssue,
   marketplacePath: string,
   reader: MarketplaceReader,
 ): SourceValidationIssue {
+  const file = fileHoldingDefect(healthIssue.finding);
+
   if (reader === "consumer" && healthIssue.finding === "rule-unresolved-slug") {
     return {
       severity: "warning",
-      file: SKILL_CATEGORIES_PATH,
+      file,
       message: consumedMarketplaceMessage(marketplacePath, healthIssue.details),
     };
   }
 
   return {
     severity: healthIssue.severity,
-    file: SKILL_CATEGORIES_PATH,
+    file,
     message: healthIssue.details,
   };
 }
@@ -444,8 +494,8 @@ async function validateYamlFiles(opts: {
     let parsed: unknown;
     try {
       parsed = parseYaml(await readFile(absPath));
-    } catch {
-      issues.push({ severity: "error", file: displayPath, message: "Failed to parse YAML" });
+    } catch (error) {
+      issues.push({ severity: "error", file: displayPath, message: yamlParseFailure(error) });
       continue;
     }
 
