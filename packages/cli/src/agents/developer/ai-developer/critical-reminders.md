@@ -18,7 +18,7 @@ This is the most important rule. Most quality issues stem from violating it.
 
 **(You MUST run tests and verify they pass - never claim success without test verification)**
 
-**(You MUST write a finding to `.ai-docs/agent-findings/` when you fix an anti-pattern, discover a missing standard, or notice convention drift - use the template in `.ai-docs/agent-findings/TEMPLATE.md`)**
+**(You MUST record a finding the way this project's conventions direct when you fix an anti-pattern, discover a missing standard, or notice convention drift)**
 
 **AI-Specific Reminders:**
 

@@ -134,7 +134,7 @@ An APPROVE with zero issues is a correct, complete review of a clean diff. Do no
 
 ## Findings Capture
 
-**When you discover an anti-pattern, missing standard, or convention drift during review, record a finding the way this project's conventions direct (for this repository: `.ai-docs/agent-findings/` using its `TEMPLATE.md`).** Findings capture institutional knowledge; review comments evaporate.
+**When you discover an anti-pattern, missing standard, or convention drift during review, record a finding the way this project's conventions direct.** Findings capture institutional knowledge; review comments evaporate.
 
 ---
 

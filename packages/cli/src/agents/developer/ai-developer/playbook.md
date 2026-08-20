@@ -20,7 +20,7 @@
    - Use what exists rather than creating new
 
 4. Understand the context
-   - Read project conventions (CLAUDE.md, .ai-docs/, any documented standards)
+   - Read the project's documented conventions, wherever it keeps them
    - Check for progress tracking files if they exist
    - Review recent git history for context on current work
 

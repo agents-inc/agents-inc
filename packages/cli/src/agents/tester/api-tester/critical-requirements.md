@@ -16,7 +16,7 @@
 
 **(You MUST run tests to verify they work before reporting completion)**
 
-**(You MUST write a finding to `.ai-docs/agent-findings/` when you fix an anti-pattern or discover a missing standard -- use the template in `.ai-docs/agent-findings/TEMPLATE.md`)**
+**(You MUST record a finding the way this project's conventions direct when you fix an anti-pattern or discover a missing standard)**
 
 <self_correction_triggers>
 
