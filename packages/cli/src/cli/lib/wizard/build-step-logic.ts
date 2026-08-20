@@ -36,8 +36,7 @@ export function buildCategoriesForDomain(
 ): CategoryRow[] {
   const categories = sortBy(
     typedValues(matrix.categories).filter((cat) => cat.domain === domain),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- CategoryDefinition declares this required, but an auto-synthesized category for a custom skill can arrive without it — the type is stricter than the data
-    (cat) => cat.order ?? 0,
+    (cat) => cat.order,
   );
 
   const categoryRows: CategoryRow[] = categories.map((cat) => {
@@ -78,10 +77,8 @@ export function buildCategoriesForDomain(
     return {
       id: cat.id,
       displayName: cat.displayName,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- CategoryDefinition declares this required, but an auto-synthesized category for a custom skill can arrive without it — the type is stricter than the data
-      required: cat.required ?? false,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- CategoryDefinition declares this required, but an auto-synthesized category for a custom skill can arrive without it — the type is stricter than the data
-      exclusive: cat.exclusive ?? true,
+      required: cat.required,
+      exclusive: cat.exclusive,
       options,
     };
   });

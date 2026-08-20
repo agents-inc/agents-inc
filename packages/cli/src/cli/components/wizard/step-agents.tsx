@@ -1,6 +1,12 @@
 import { groupBy, unique } from "remeda";
 import { Box, Text, useInput } from "ink";
-import { deriveScopeBadges, formatScopeTag } from "../../lib/wizard/index.js";
+import {
+  BUILT_IN_AGENT_GROUPS,
+  BUILT_IN_AGENT_IDS,
+  deriveScopeBadges,
+  formatScopeTag,
+} from "../../lib/wizard/index.js";
+import type { AgentGroup, AgentItem } from "../../lib/wizard/index.js";
 import React, { useMemo, useState } from "react";
 import { CLI_COLORS, UI_SYMBOLS } from "../../consts.js";
 import { matrix } from "../../lib/matrix/matrix-provider.js";
@@ -11,114 +17,8 @@ import { typedKeys } from "../../utils/typed-object.js";
 import { toTitleCase } from "../../utils/string.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { useRowScroll } from "../hooks/use-row-scroll.js";
-import { type CheckboxItem } from "./checkbox-grid.js";
 import { KEY_SPACE } from "./hotkeys.js";
 import { getDomainDisplayName } from "./utils.js";
-
-type AgentItem = CheckboxItem<AgentName>;
-
-type AgentGroup = {
-  label: string;
-  items: AgentItem[];
-};
-
-const BUILT_IN_AGENT_GROUPS: AgentGroup[] = [
-  {
-    label: "Web",
-    items: [
-      {
-        id: "web-developer",
-        label: "Web Developer",
-        description: "Frontend features, components, TypeScript",
-      },
-      { id: "web-researcher", label: "Web Researcher", description: "Frontend pattern discovery" },
-      {
-        id: "web-tester",
-        label: "Web Tester",
-        description: "Frontend tests, E2E, component tests",
-      },
-    ],
-  },
-  {
-    label: "API",
-    items: [
-      {
-        id: "api-developer",
-        label: "API Developer",
-        description: "Backend routes, database, middleware",
-      },
-      { id: "api-researcher", label: "API Researcher", description: "Backend pattern discovery" },
-      {
-        id: "api-tester",
-        label: "API Tester",
-        description: "Endpoint, database, and auth flow tests",
-      },
-    ],
-  },
-  {
-    label: "AI",
-    items: [
-      {
-        id: "ai-developer",
-        label: "AI Developer",
-        description: "RAG pipelines, agent loops, tool calling",
-      },
-      {
-        id: "ai-researcher",
-        label: "AI Researcher",
-        description: "Prompt, model, and RAG pipeline discovery",
-      },
-      {
-        id: "ai-tester",
-        label: "AI Tester",
-        description: "LLM mocking, prompt regression, eval harnesses",
-      },
-    ],
-  },
-  {
-    label: "CLI",
-    items: [
-      {
-        id: "cli-developer",
-        label: "CLI Developer",
-        description: "CLI commands, interactive prompts",
-      },
-      { id: "cli-tester", label: "CLI Tester", description: "CLI application tests" },
-      {
-        id: "cli-researcher",
-        label: "CLI Researcher",
-        description: "CLI command and config pattern discovery",
-      },
-    ],
-  },
-  {
-    label: "Meta",
-    items: [
-      {
-        id: "pm",
-        label: "PM",
-        description: "Cross-domain implementation specs; domain frameworks via skills",
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        description: "Cross-domain code review; domain knowledge via skills",
-      },
-      { id: "agent-summoner", label: "Agent Summoner", description: "Create and improve agents" },
-      {
-        id: "skill-summoner",
-        label: "Skill Summoner",
-        description: "Create technology-specific skills",
-      },
-      { id: "codex-keeper", label: "Codex Keeper", description: "AI-focused documentation" },
-    ],
-  },
-];
-
-/** IDs of all built-in agents for fast lookup. */
-const BUILT_IN_AGENT_IDS = new Set<string>(
-  BUILT_IN_AGENT_GROUPS.flatMap((group) => group.items.map((a) => a.id)),
-);
 
 type FocusId = AgentName | "continue";
 

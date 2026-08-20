@@ -17,3 +17,10 @@ export {
   skillSlotKey,
 } from "./scope-diff";
 export { orderDomains } from "./domain-order";
+export {
+  type AgentGroup,
+  type AgentItem,
+  BUILT_IN_AGENT_GROUPS,
+  BUILT_IN_AGENT_IDS,
+  firstFocusableAgent,
+} from "./agent-roster";
