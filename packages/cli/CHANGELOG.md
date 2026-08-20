@@ -7,6 +7,20 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.156.0] - 2026-08-20
+
+**The programme audits its own output, and a guard finds the defect every suite was blind to**
+
+- Every wizard keypress now asserts the painted frame fits the terminal — and the guard immediately found a warning that had been shipping invisibly (CLI-586)
+- The enumeration-drift checker reads a table's values as well as its keys, so a swapped pair is detectable (CLI-585)
+- A document can bind a module's re-export surface (CLI-565)
+- Four of the drift checker's five binding gaps are closed; the registry went from 6 rows to 62 (CLI-535)
+- The editor's Playwright suite refuses the network by default, and installing that found four more live instances (EDITOR-48)
+- The accuracy programme: 51 documents re-derived from source, 131 findings deleted, all 39 user journeys walked by hand (CLI-545)
+- The vendored catalogue says which matrix it is, and the built-in agent roster became data (CLI-550)
+- The ten findings blocked on unwritten standards are discharged (CLI-539)
+- `build marketplace` refuses a manifest its own loader would — no plugins, or an empty version (CLI-548)
+
 ## [0.155.0] - 2026-08-18
 
 **The editor and the CLI share one configuration**
