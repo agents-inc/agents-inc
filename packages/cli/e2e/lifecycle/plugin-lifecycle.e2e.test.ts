@@ -78,7 +78,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
           E2E_SKILL.hono.id,
         ],
         agents: ["web-developer", "api-developer"],
-        source: fixture.marketplaceName,
+        origin: fixture.marketplaceName,
       });
 
       const initOutput = initResult.output;

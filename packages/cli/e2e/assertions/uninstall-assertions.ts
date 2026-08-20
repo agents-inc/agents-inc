@@ -8,10 +8,7 @@ export async function expectCleanUninstall(
   dir: string,
   options?: {
     removeConfig?: boolean;
-    // NOT widened to `readonly string[]`: this flows into `toHaveLocalSkills`,
-    // whose spec-facing declaration in matchers/setup.ts is still `string[]`.
-    // Widen that declaration first, then this.
-    preservedSkills?: string[];
+    preservedSkills?: readonly string[];
     preservedAgentFiles?: readonly string[];
   },
 ): Promise<void> {

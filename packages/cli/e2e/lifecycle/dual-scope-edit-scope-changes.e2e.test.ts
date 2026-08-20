@@ -11,11 +11,16 @@ import {
   directoryExists,
   ensureBinaryExists,
   fileExists,
+  readAgentEntriesFor,
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
-import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
+import {
+  createTestEnvironment,
+  readSkillEntries,
+  setupDualScopeWithEject,
+} from "../fixtures/dual-scope-helpers.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 
 /**
@@ -69,7 +74,6 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       // project override while the global install survives.
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
-      const projectConfigPath = configTsPath(projectDir);
 
       const wizard = await EditWizard.launch({
         projectDir,
@@ -103,22 +107,11 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
         "api-framework-hono must be removed from project scope after the `s` collapse",
       ).toBe(false);
 
-      // D-2: Project config no longer carries a project-scope entry or a tombstone for hono.
-      const projectConfigAfter = await readTestFile(projectConfigPath);
-      const honoProjectLines = projectConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
+      // Project config no longer carries a project-scope entry or a tombstone for hono.
       expect(
-        honoProjectLines,
-        "the collapsed pair must leave no project-scope api-framework-hono entry",
-      ).toStrictEqual([]);
-      const honoTombstoneLines = projectConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"excluded":true'));
-      expect(
-        honoTombstoneLines,
-        "the collapsed pair must leave no api-framework-hono tombstone",
-      ).toStrictEqual([]);
+        await readSkillEntries(projectDir, E2E_SKILL.hono.id),
+        "the collapse must leave the inherited-global entry alone — no project entry, no tombstone",
+      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
 
       // D-3: Agent files at both scopes still exist (unchanged)
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
@@ -183,11 +176,10 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
     expect(globalConfig).toContain('"scope":"global"');
 
     // D-5: Project config does NOT have api-developer at project scope
-    const projectConfig = await readTestFile(configTsPath(projectDir));
-    const apiDevProjectLines = projectConfig
-      .split("\n")
-      .filter((l: string) => l.includes("api-developer") && l.includes('"scope":"project"'));
-    expect(apiDevProjectLines).toStrictEqual([]);
+    expect(
+      await readAgentEntriesFor(projectDir, "api-developer"),
+      "the P->G collapse must leave one global entry and no project-scope override",
+    ).toStrictEqual([{ name: "api-developer", scope: "global" }]);
 
     // D-6: web-developer.md still at global scope (unchanged — collateral damage check)
     await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
@@ -271,8 +263,8 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle web-framework-react scope to project
-      // (focus it explicitly — the first-alphabetical cell is Vue, not react).
+      // Build step -- Web domain: toggle web-framework-react scope to project,
+      // focused explicitly rather than relying on where the grid opens.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();

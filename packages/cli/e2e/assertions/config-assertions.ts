@@ -20,22 +20,3 @@ export function expectNoDuplicates(arr: string[], label: string, context?: strin
     `Duplicate ${label} found: ${totalsPerDuplicate.join(", ")}${contextLine}`,
   ).toStrictEqual([]);
 }
-
-/**
- * Normalize a serialized `config.ts` for order-SENSITIVE equality comparison.
- *
- * Strips only the machine-specific projects-tracking line and leaves every
- * remaining line in its original position, so a comparison built on this still
- * fails when entries are reordered.
- *
- * Deliberately distinct from `normalizeGlobalConfig`
- * (src/cli/lib/__tests__/helpers/config-comparison.ts), which additionally
- * sorts the lines. Sorting here would stop reordering from being detected,
- * which is the exact regression class the round-trip caller guards.
- */
-export function normalizeConfigPreservingOrder(config: string): string {
-  return config
-    .split("\n")
-    .filter((line) => !line.includes('"projects"'))
-    .join("\n");
-}

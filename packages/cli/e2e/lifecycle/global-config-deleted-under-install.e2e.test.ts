@@ -30,8 +30,10 @@ import { UI_SYMBOLS } from "../../src/cli/consts.js";
  *
  * What every command does with it is pinned below rather than argued about,
  * because the recovery advice they print is the only thing standing between the
- * user and deleting directories by hand. The one place the report goes quiet
- * when it should not is carried by the `it.fails` at the bottom.
+ * user and deleting directories by hand. The last case is the one that names the
+ * leftovers themselves: `doctor`'s orphan row is the only report that lists each
+ * stranded file, and it is an error rather than a warning because no command
+ * repairs this state.
  */
 
 /** The config the deletion leaves behind — nothing removes or refreshes it. */

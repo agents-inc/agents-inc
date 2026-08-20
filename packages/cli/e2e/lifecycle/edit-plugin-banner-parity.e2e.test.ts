@@ -82,7 +82,7 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       const pluginInitResult = await pluginInit.completeWithDefaults();
       await expectPhaseSuccess(pluginInitResult, {
         skillIds: [E2E_SKILL.react.id],
-        source: fixture.marketplaceName,
+        origin: fixture.marketplaceName,
       });
       const initOutput = pluginInitResult.output;
       await pluginInitResult.destroy();
@@ -102,7 +102,7 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       const ejectInitResult = await completeWithLocalSources(ejectInit);
       await expectPhaseSuccess(ejectInitResult, {
         skillIds: [E2E_SKILL.react.id],
-        source: "eject",
+        origin: "eject",
         copiedSkills: [E2E_SKILL.react.id],
       });
       await ejectInitResult.destroy();
@@ -120,7 +120,7 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
 
       await expectPhaseSuccess(editResult, {
         skillIds: [E2E_SKILL.react.id],
-        source: fixture.marketplaceName,
+        origin: fixture.marketplaceName,
       });
       const editOutput = editResult.rawOutput;
 

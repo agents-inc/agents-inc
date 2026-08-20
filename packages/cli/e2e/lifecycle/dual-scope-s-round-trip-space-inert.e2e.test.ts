@@ -98,8 +98,8 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
       });
 
       try {
-        // Focus react explicitly — the grid's first-alphabetical cell is Vue, and
-        // every `s`/space below acts on the focused skill (focus persists across them).
+        // Focus react explicitly rather than relying on where the grid opens: every
+        // `s`/space below acts on the focused skill (focus persists across them).
         await wizard.build.focusSkill(E2E_SKILL.react.display);
 
         // Baseline: the persisted pair renders both badges and the skill is the

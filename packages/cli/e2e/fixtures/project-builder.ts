@@ -57,6 +57,19 @@ export type EditableOptions = {
    */
   globalSkills?: string[];
   /**
+   * The `origin` recorded for the `globalSkills` entries above. Defaults to `"eject"`, which
+   * matches the project half and is the shape most specs want.
+   *
+   * It exists because one scenario is UNREACHABLE at that default: the `s` collapse of a
+   * `[P][G]` pair back to `[G]`. `wouldOverwriteGlobalEject` refuses a project→global press
+   * exactly when the live entry is a project eject, the snapshot holds an ACTIVE global eject
+   * and no tombstone exists — so the press returns a toast and changes nothing, and a spec built
+   * on the default fails on a swallowed keystroke while reading as the render bug it meant to
+   * test. Naming a marketplace for the global half is what makes the collapse reachable, and
+   * every such spec still owes a scope-badge proof (`["P"]` → `["G"]`) that the press landed.
+   */
+  globalSkillsSource?: string;
+  /**
    * Skills recorded in the project config with NO files written for them. A skill
    * the session's source does not carry AND the install has no copy of is one the
    * wizard cannot resolve: it drops the skill from its roster, and the run reports
@@ -90,10 +103,10 @@ export type PluginProjectOptions = {
   agents?: AgentName[];
   domains?: Domain[];
   /**
-   * When true, skips writing the `marketplace` field into config.ts even
-   * though the skills carry plugin-sourced `source` values. Simulates legacy
-   * installs where marketplace was never persisted — the scenario that
-   * triggered the silent plugin-install skip regression (see
+   * When true, skips writing the `marketplaceName` field into config.ts even
+   * though every skill entry carries that marketplace as its `origin`. Simulates
+   * legacy installs where the marketplace's name was never persisted — the scenario
+   * that triggered the silent plugin-install skip regression (see
    * feedback_no_plugin_to_eject_fallback.md).
    */
   omitMarketplaceField?: boolean;
@@ -168,7 +181,13 @@ const SKILL_IDENTITY_FIELDS: Record<string, SkillIdentityFields> = {
   },
 };
 
-function metadataFieldsFor(skillId: string): SkillIdentityFields {
+/**
+ * The stated `category` / `slug` / `displayName` of a fixture skill, from the one table
+ * above. Exported because a second caller exists: nothing may derive these three from an
+ * id or a directory name, so every fixture that writes a `metadata.yaml` has to read them
+ * from here and take the throw when the table has no row.
+ */
+export function metadataFieldsFor(skillId: string): SkillIdentityFields {
   const entry = SKILL_IDENTITY_FIELDS[skillId];
   if (!entry) {
     throw new Error(
@@ -278,7 +297,7 @@ export class ProjectBuilder {
     const globalSkillConfigs = globalSkills.map((id) => ({
       id,
       scope: "global" as const,
-      origin: "eject",
+      origin: options?.globalSkillsSource ?? "eject",
     }));
     const skillConfigs = [...projectSkillConfigs, ...globalSkillConfigs];
     const agentConfigs = agents.map((name) => ({ name, scope: "project" as const }));

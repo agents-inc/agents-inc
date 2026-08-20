@@ -6,6 +6,7 @@ import {
   cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
+  loadConfigOrFail,
   normalizeGlobalConfig,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -165,15 +166,7 @@ describe("scope change deselect integrity", () => {
       await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
 
       // Snapshot global skills before edit
-      const globalConfigPath = configTsPath(fakeHome);
-      const globalConfigBefore = await readTestFile(globalConfigPath);
-      const globalSkillsBefore = globalConfigBefore
-        .split("\n")
-        .filter(
-          (l: string) =>
-            l.includes('"id"') && l.includes('"scope":"global"') && !l.includes('"excluded"'),
-        )
-        .sort();
+      const globalSkillsBefore = (await loadConfigOrFail(fakeHome)).skills;
 
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
@@ -196,15 +189,13 @@ describe("scope change deselect integrity", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Assert: global config skills array is identical (no skills lost or gained)
-      const globalConfigAfter = await readTestFile(globalConfigPath);
-      const globalSkillsAfter = globalConfigAfter
-        .split("\n")
-        .filter(
-          (l: string) =>
-            l.includes('"id"') && l.includes('"scope":"global"') && !l.includes('"excluded"'),
-        )
-        .sort();
-      expect(globalSkillsAfter).toStrictEqual(globalSkillsBefore);
+      await expect({ dir: fakeHome }).toHaveConfig({
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
+      });
+      expect(
+        (await loadConfigOrFail(fakeHome)).skills,
+        "a project-scope deselect must leave every global entry — tombstones included — as it found them",
+      ).toStrictEqual(globalSkillsBefore);
 
       // Assert: global agent files still exist on disk
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");

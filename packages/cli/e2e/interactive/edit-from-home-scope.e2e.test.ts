@@ -177,11 +177,17 @@ describe("edit --from <id> at the global root", () => {
       publishProjectScoped();
 
       prompt = launchAtHome(PROJECT_SCOPED_ID, home);
-      await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
+      // The exit code and the refusal's own sentence, on the same capture the negative is
+      // read from: without them a run that never reached the command at all satisfies the
+      // `not.toContain` below, and nothing here would notice.
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      const said = prompt.getOutput();
+      expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
       // The confirm is this command's one gate, and a plan shown for a run that is about to be
       // refused describes removals it never intended to make.
-      expect(prompt.getOutput()).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+      expect(said).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
     });
 
     it("leaves the global installation byte-identical", async () => {
@@ -190,8 +196,12 @@ describe("edit --from <id> at the global root", () => {
       const before = await installedTrees(home);
 
       prompt = launchAtHome(PROJECT_SCOPED_ID, home);
-      await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
+      // Same subject guard as the sibling above: an untouched tree is also what a run that
+      // never started leaves behind, so the refusal has to be observed before it is read.
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(prompt.getOutput()).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
       // The refusal's whole claim, and the one `init --from` never had to make: this command
       // deletes, so a refusal that arrived late would be a refusal after a removal.
       expect(await installedTrees(home)).toStrictEqual(before);

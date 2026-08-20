@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import pty from "@lydell/node-pty";
 import { Terminal } from "@xterm/headless";
 import treeKill from "tree-kill";
-import { BIN_RUN, cleanupTempDir, pollUntil } from "./test-utils.js";
+import { BIN_RUN, NO_BACKGROUND_VERSION_CHECK, cleanupTempDir, pollUntil } from "./test-utils.js";
 import { TIMEOUTS } from "../pages/constants.js";
 
 const DEFAULT_COLS = 120;
@@ -41,7 +41,8 @@ export type TerminalSessionOptions = {
  *
  * PTY output is piped into a headless xterm terminal emulator, which processes
  * all ANSI escape sequences (cursor movement, clearing, etc.) and maintains a
- * proper screen buffer. getScreen() returns exactly what the user would see.
+ * proper screen buffer. Read it through getScreen() or getFullOutput() — neither
+ * is viewport-only; see getScreen()'s own comment for what each range covers.
  *
  * HOME defaults to a freshly-created sibling temp directory, distinct from
  * cwd/projectDir, so os.homedir() never collapses onto the project directory —
@@ -91,6 +92,23 @@ export class TerminalSession {
     // HOME is resolved last so the auto-allocated (or explicit) value always wins.
     const rawEnv: Record<string, string | undefined> = {
       ...process.env,
+      // Stops oclif's update plugin spawning the detached child that writes into this
+      // session's fake HOME after the process has exited. See its own doc for the mechanism;
+      // ahead of options.env so a session that needs the warning can still drop it.
+      ...NO_BACKGROUND_VERSION_CHECK,
+      // The CLI's own overrides — every variable `src/cli/` reads by name that is not the
+      // harness's. Each is a knob a developer's shell may legitimately carry for their own use,
+      // and the spread above hands all of them to the spawned binary: an exported marketplace
+      // points `init` somewhere no spec declares, an exported seed API answers `--from`, a
+      // shared giget cache serves a source this run never fetched, and a token authenticates a
+      // fetch that should have failed. Ahead of `options.env`, so a session that needs a value
+      // still names its own — `InteractivePrompt` passes `AGENTS_INC_API_URL` that way.
+      // `src/cli/lib/__tests__/e2e-runner-environment.test.ts` keeps this list and `CLI.run`'s
+      // copy of it complete.
+      CC_MARKETPLACE: undefined,
+      AGENTS_INC_API_URL: undefined,
+      XDG_CACHE_HOME: undefined,
+      GIGET_AUTH: undefined,
       ...options?.env,
       HOME: home,
       NO_COLOR: "1",
@@ -131,17 +149,31 @@ export class TerminalSession {
     });
   }
 
-  /** Reads the first `lineCount` xterm buffer lines as trimmed text. */
-  private readBufferLines(lineCount: number): string {
+  /** Reads absolute buffer rows `startRow` (inclusive) to `endRow` (exclusive) as trimmed text. */
+  private readBufferRange(startRow: number, endRow: number): string[] {
     const buffer = this.xterm.buffer.active;
-    return Array.from({ length: lineCount }, (_, i) => buffer.getLine(i))
+    return Array.from({ length: Math.max(0, endRow - startRow) }, (_, i) =>
+      buffer.getLine(startRow + i),
+    )
       .filter((line) => line !== undefined)
-      .map((line) => line.translateToString(true))
-      .join("\n")
-      .trimEnd();
+      .map((line) => line.translateToString(true));
   }
 
-  /** Reads the visible screen area (viewport only, no scrollback). */
+  /** Reads the first `lineCount` xterm buffer lines as trimmed text. */
+  private readBufferLines(lineCount: number): string {
+    return this.readBufferRange(0, lineCount).join("\n").trimEnd();
+  }
+
+  /**
+   * Reads absolute buffer lines `0 .. viewportY + rows` — scrollback PLUS the viewport, never the
+   * visible area alone. `viewportY` is the absolute row of the TOP of the viewport, so everything
+   * above it is included. The two coincide only while a session has produced no scrollback
+   * (`viewportY === 0`), which is why the name reads as harmless.
+   *
+   * Consequence: `not.toContain(...)` on this string matches anything the session ever drew, so it
+   * is safe for POSITIVE assertions about current content and unsound for absence. Prove a negative
+   * by ORDER (`toMatch(/…$/)`) or by BEHAVIOUR — see `.ai-docs/standards/e2e/assertions.md`.
+   */
   getScreen(): string {
     return this.readBufferLines(this.xterm.buffer.active.viewportY + this.xterm.rows);
   }
@@ -149,6 +181,26 @@ export class TerminalSession {
   /** Reads ALL output including scrollback above the viewport. */
   getFullOutput(): string {
     return this.readBufferLines(this.xterm.buffer.active.length);
+  }
+
+  /**
+   * The lines sitting ABOVE the top of the viewport right now — empty while everything the
+   * emulator holds is on screen, one entry per row that has been driven out of sight.
+   *
+   * `viewportY` is the absolute buffer row of the TOP of the viewport, so it counts those rows
+   * exactly. Reading it says nothing on its own about whether they SHOULD be off screen: an
+   * ordinary command is entitled to scroll. It becomes an assertion only under a caller that
+   * knows a full-screen frame is painted — `BaseStep.waitForWizardFooter` is the one, and it
+   * carries the reason zero is the floor there.
+   *
+   * Measured, because Ink reprints an overflowing frame behind its own `clearTerminal` (which
+   * empties the emulator's scrollback as well as its screen), so the count is a gauge of the
+   * frame painted NOW rather than a running total: it falls back to zero the moment a frame
+   * that fits replaces one that did not. A frame that overflowed and has since been replaced is
+   * not retrievable here — read it while the frame is on screen.
+   */
+  linesAboveViewport(): readonly string[] {
+    return this.readBufferRange(0, this.xterm.buffer.active.viewportY);
   }
 
   /**

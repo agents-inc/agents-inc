@@ -13,6 +13,7 @@ import {
   listFiles,
   readMarketplaceJson,
   writeTestPackageJson,
+  writeTestPluginManifest,
   type E2ESource,
 } from "../helpers/test-utils.js";
 import { E2E_MARKETPLACE_NAME, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
@@ -36,6 +37,36 @@ const FOREIGN_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}other-marketplace`;
  * two cannot drift apart into a test that reserves a name nothing else uses.
  */
 const RESERVED_MARKETPLACE_NAME = DEFAULT_PUBLIC_SOURCE_NAME;
+
+/**
+ * The name the flag and identity specs below publish under, and the namespace their one plugin
+ * therefore carries: `validateSkillIdNamespace` refuses a plugin id outside its marketplace's
+ * namespace, which is a different refusal from the ones those specs are about.
+ */
+const FIXTURE_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}build-marketplace`;
+const FIXTURE_PLUGIN_NAME = `${FIXTURE_MARKETPLACE_NAME}-web-framework-react`;
+
+/** The success line, which the command only reaches with at least one plugin to publish. */
+const MARKETPLACE_GENERATED_LINE = "Marketplace generated with 1 plugins!";
+
+/**
+ * One built plugin in the default `dist/plugins` tree — the least a marketplace may hold, since
+ * `marketplaceSchema` refuses an empty `plugins` array and `build marketplace` refuses to write one.
+ *
+ * Hand-written rather than compiled through `build plugins`: every spec that uses it is about a
+ * flag or a package.json field, and running the compiler for those would make each of them wait on
+ * a fixture source it does not otherwise need.
+ */
+async function writeMarketplacePlugin(projectDir: string): Promise<void> {
+  await writeTestPluginManifest(
+    path.join(projectDir, SOURCE_PATHS.PLUGINS_DIST, FIXTURE_PLUGIN_NAME),
+    {
+      name: FIXTURE_PLUGIN_NAME,
+      version: "1.0.0",
+      description: "A plugin, so the marketplace has one",
+    },
+  );
+}
 
 describe("build commands", () => {
   let tempDir: string;
@@ -158,21 +189,28 @@ describe("build commands", () => {
       expect(output).toContain("Missing package.json");
     });
 
-    it("should complete with zero plugins when no plugins directory exists", async () => {
+    it("should refuse to write a marketplace with no plugins, naming the directory it scanned", async () => {
       tempDir = await createTempDir();
       await writeTestPackageJson(tempDir);
+      const outputPath = path.join(tempDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, "marketplace.json");
 
-      const { exitCode, stdout } = await CLI.run(["build", "marketplace"], { dir: tempDir });
+      const { exitCode, output } = await CLI.run(["build", "marketplace"], { dir: tempDir });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Generating marketplace.json");
-      expect(stdout).toContain("Found 0 plugins");
-      expect(stdout).toContain("Marketplace generated with 0 plugins!");
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
+      expect(collapsed).toContain("No plugins found in");
+      expect(collapsed).toContain(path.join(tempDir, SOURCE_PATHS.PLUGINS_DIST));
+      expect(collapsed).toContain("--plugins-dir");
+      expect(
+        await fileExists(outputPath),
+        "the schema this CLI reads with refuses an empty plugins array, so a file it would reject is not written",
+      ).toBe(false);
     });
 
     it("should write output to a custom path with --output", async () => {
       tempDir = await createTempDir();
-      await writeTestPackageJson(tempDir);
+      await writeTestPackageJson(tempDir, { name: FIXTURE_MARKETPLACE_NAME });
+      await writeMarketplacePlugin(tempDir);
       const customOutput = path.join(tempDir, "custom-marketplace.json");
 
       const { exitCode, stdout } = await CLI.run(
@@ -182,20 +220,20 @@ describe("build commands", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(customOutput);
-      expect(stdout).toContain("Marketplace generated with 0 plugins!");
+      expect(stdout).toContain(MARKETPLACE_GENERATED_LINE);
       expect(await fileExists(customOutput)).toBe(true);
 
       const marketplace = await readMarketplaceJson(customOutput);
-      expect(marketplace).toHaveProperty("plugins");
+      expect(marketplace.plugins.map((plugin) => plugin.name)).toStrictEqual([FIXTURE_PLUGIN_NAME]);
     });
 
     it("should use marketplace name from package.json", async () => {
       tempDir = await createTempDir();
-      const customName = "my-custom-marketplace";
       await writeTestPackageJson(tempDir, {
-        name: customName,
+        name: FIXTURE_MARKETPLACE_NAME,
         description: "Named marketplace",
       });
+      await writeMarketplacePlugin(tempDir);
       const defaultOutputPath = path.join(
         tempDir,
         SOURCE_PATHS.PLUGIN_MANIFEST_DIR,
@@ -205,37 +243,39 @@ describe("build commands", () => {
       const { exitCode, stdout } = await CLI.run(["build", "marketplace"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Marketplace generated with 0 plugins!");
+      expect(stdout).toContain(MARKETPLACE_GENERATED_LINE);
 
       const marketplace = await readMarketplaceJson(defaultOutputPath);
-      expect(marketplace.name).toBe(customName);
+      expect(marketplace.name).toBe(FIXTURE_MARKETPLACE_NAME);
     });
 
-    it("should parse email-only string author and emit empty owner.name with email", async () => {
+    it("should refuse an email-only author, which yields no owner name", async () => {
       tempDir = await createTempDir();
       await writeTestPackageJson(tempDir, { author: "<solo@example.com>" });
       const outputPath = path.join(tempDir, "marketplace.json");
 
-      const { exitCode } = await CLI.run(["build", "marketplace", "--output", outputPath], {
+      const { exitCode, output } = await CLI.run(["build", "marketplace", "--output", outputPath], {
         dir: tempDir,
       });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      const marketplace = await readMarketplaceJson(outputPath);
-      expect(marketplace.owner.name).toBe("");
-      expect(marketplace.owner.email).toBe("solo@example.com");
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
+      expect(collapsed).toContain("no name could be read from 'author' in");
+      expect(await fileExists(outputPath)).toBe(false);
     });
 
     it("should parse object-form author with name+email+url", async () => {
       tempDir = await createTempDir();
       await writeTestPackageJson(tempDir, {
+        name: FIXTURE_MARKETPLACE_NAME,
         // Object-form author with URL; the schema accepts strings or objects
         author: {
           name: "Jane Doe",
           email: "jane@example.com",
           url: "https://jane.example.com",
-        } as unknown as string,
+        },
       });
+      await writeMarketplacePlugin(tempDir);
       const outputPath = path.join(tempDir, "marketplace.json");
 
       const { exitCode } = await CLI.run(["build", "marketplace", "--output", outputPath], {

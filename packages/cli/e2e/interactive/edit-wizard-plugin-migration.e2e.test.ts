@@ -52,7 +52,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
           domains: ["web"],
         });
 
-        wizard = await EditWizard.launch({
+        wizard = await EditWizard.launchInProject({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
@@ -82,8 +82,17 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
 
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
         });
+
+        // The config and the install are written by different code, and the orphan-entry
+        // class is exactly the case where the first happened and the second did not — this
+        // spec certified that state for as long as the install failed on every run.
+        const reactPluginRef = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
+        await expect(result.project).toHavePlugin(reactPluginRef);
+        // The Claude CLI keeps its own bookkeeping under HOME whatever scope it enabled
+        // the plugin at, so the registry half is asserted against the wizard's global home.
+        await expect({ dir: wizard.globalHome }).toHavePluginInRegistry(reactPluginRef);
 
         await expect(result.project).toHaveCompiledAgent("web-developer");
       },
@@ -102,7 +111,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
           domains: ["web"],
         });
 
-        wizard = await EditWizard.launch({
+        wizard = await EditWizard.launchInProject({
           projectDir: project.dir,
           source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
         });
@@ -140,7 +149,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
         await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
-          source: "eject",
+          origin: "eject",
         });
 
         await expect(result.project).toHaveCompiledAgent("web-developer");

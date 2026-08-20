@@ -92,7 +92,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
         {
           skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: "eject",
+          origin: "eject",
           copiedSkills: [E2E_SKILL.react.id],
         },
       );
@@ -142,7 +142,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
         {
           skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: "eject",
+          origin: "eject",
           copiedSkills: [E2E_SKILL.react.id],
         },
       );
@@ -233,7 +233,7 @@ describe.skipIf(!claudeAvailable)(
           {
             skillIds: [E2E_SKILL.react.id],
             agents: E2E_AGENTS.WEB_AND_API,
-            source: fixture.marketplaceName,
+            origin: fixture.marketplaceName,
           },
         );
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
@@ -283,7 +283,7 @@ describe.skipIf(!claudeAvailable)(
           {
             skillIds: [E2E_SKILL.react.id],
             agents: E2E_AGENTS.WEB_AND_API,
-            source: fixture.marketplaceName,
+            origin: fixture.marketplaceName,
           },
         );
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {

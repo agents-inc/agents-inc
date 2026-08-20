@@ -12,7 +12,11 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
+import {
+  createTestEnvironment,
+  readSkillEntries,
+  setupDualScopeWithEject,
+} from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 
@@ -69,8 +73,8 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle web-framework-react scope (G->P). Focus it
-      // explicitly — the first-alphabetical cell is Vue, not react.
+      // Build step -- Web domain: toggle web-framework-react scope (G->P), focused
+      // explicitly rather than relying on where the grid opens.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
@@ -201,15 +205,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         "api-framework-hono must remain at global scope",
       ).toBe(true);
 
-      // D-2: Project config no longer carries api-framework-hono at project scope
-      const projectConfig = await readTestFile(configTsPath(projectDir));
-      const honoProjectLines = projectConfig
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
+      // D-2: the collapse drops the project override and leaves the global half.
+      // Asserted on the whole entry list rather than on an absence: an entry list
+      // that lost BOTH halves also has no project entry, and a scan of the emitted
+      // text answers a question about the writer's line breaking instead.
       expect(
-        honoProjectLines,
-        "the collapsed pair must leave no project-scope api-framework-hono entry",
-      ).toStrictEqual([]);
+        await readSkillEntries(projectDir, E2E_SKILL.hono.id),
+        "the collapsed pair must leave the inherited global api-framework-hono entry and nothing else",
+      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
 
       // D-3: web-developer G->P worked — compiled at project scope AND still at global (additive)
       await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
@@ -224,7 +227,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
 
       // D-6: The project config genuinely changed (web-developer G->P was applied)
-      expect(projectConfig).not.toBe(projectConfigBefore);
+      expect(await readTestFile(configTsPath(projectDir))).not.toBe(projectConfigBefore);
 
       await result.destroy();
     },

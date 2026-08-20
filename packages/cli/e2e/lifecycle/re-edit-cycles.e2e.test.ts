@@ -108,7 +108,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
-          source: "eject",
+          origin: "eject",
         });
         await expect(globalProject).toHaveCompiledAgent("web-developer");
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
@@ -140,7 +140,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
-          source: "eject",
+          origin: "eject",
         });
         await expect(globalProject).toHaveCompiledAgent("web-developer");
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
@@ -175,7 +175,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
-          source: "eject",
+          origin: "eject",
         });
         await expect(globalProject).toHaveCompiledAgent("web-developer");
         await expect(globalProject).toHaveAgentFrontmatter("web-developer", {
@@ -253,7 +253,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
-          source: "eject",
+          origin: "eject",
         });
         const beforeArrays = await readConfigArrays(projectDir);
 
@@ -291,7 +291,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           {
             skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
-            source: "eject",
+            origin: "eject",
           },
         );
         await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
@@ -340,7 +340,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           {
             skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
-            source: "eject",
+            origin: "eject",
           },
         );
         await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {

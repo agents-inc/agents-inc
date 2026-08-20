@@ -1,4 +1,3 @@
-import os from "os";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
@@ -12,14 +11,12 @@ import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
-  agentsPath,
   cleanupFixture,
   cleanupTempDir,
   completeWithLocalSources,
   createTempDir,
   directoryExists,
   ensureBinaryExists,
-  fileExists,
   skillsPath,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
@@ -90,7 +87,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
         await expectPhaseSuccess(initResult, {
           skillIds: [E2E_SKILL.react.id],
-          source: "eject",
+          origin: "eject",
           copiedSkills: [E2E_SKILL.react.id],
         });
         await initResult.destroy();
@@ -112,7 +109,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
         await expectPhaseSuccess(editResult, {
           skillIds: [E2E_SKILL.react.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
           compiledAgents: E2E_AGENTS.WEB_AND_API,
         });
 
@@ -153,7 +150,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
         await expectPhaseSuccess(initResult, {
           skillIds: [E2E_SKILL.react.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
           compiledAgents: E2E_AGENTS.WEB_AND_API,
         });
         await initResult.destroy();
@@ -172,7 +169,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
         await expectPhaseSuccess(editResult, {
           skillIds: [E2E_SKILL.react.id],
-          source: "eject",
+          origin: "eject",
           copiedSkills: [E2E_SKILL.react.id],
         });
 
@@ -185,10 +182,11 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect({ dir: projectDir }).toHaveNoPlugins();
 
-        // Agent may be compiled at project or global scope
-        const projectAgentPath = path.join(agentsPath(projectDir), "web-developer.md");
-        const checkDir = (await fileExists(projectAgentPath)) ? projectDir : os.homedir();
-        await expect({ dir: checkDir }).toHaveCompiledAgent("web-developer");
+        // `launchInGlobal` collapses HOME, cwd and the install onto projectDir (see the
+        // file header), so that is where the recompile has to land. The `os.homedir()`
+        // fallback this replaces read the DEVELOPER'S OWN installation on any machine
+        // with one, and passed there whatever the run under test compiled.
+        await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
 
         await editResult.destroy();
       },

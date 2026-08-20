@@ -14,6 +14,7 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * E2E tests for edit wizard skill detection (Gap 6).
@@ -189,15 +190,10 @@ describe("edit wizard — skill detection across sources and scopes", () => {
 
         // Create local skill files for all 3
         for (const skill of [E2E_SKILL.react, E2E_SKILL.vitest, E2E_SKILL.zustand] as const) {
-          const parts = skill.id.split("-");
-          const category = parts.slice(0, 2).join("-");
-          const slug = parts.slice(2).join("-");
           await createLocalSkill(projectDir, skill.id, {
             description: `Test skill`,
             metadata: renderMetadataYaml({
-              displayName: skill.display,
-              category,
-              slug,
+              ...metadataFieldsFor(skill.id),
               cliDescription: "Test",
               usageGuidance: "Test",
               contentHash: "e2e-hash",

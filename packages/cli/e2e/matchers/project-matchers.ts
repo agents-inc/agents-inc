@@ -1,7 +1,7 @@
 import path from "path";
 import { readFile, readdir } from "fs/promises";
 import { DIRS, FILES } from "../pages/constants.js";
-import { directoryExists, fileExists } from "../helpers/test-utils.js";
+import { directoryExists, fileExists, loadConfigOrFail } from "../helpers/test-utils.js";
 
 export type PluginScope = "project" | "user";
 
@@ -11,8 +11,33 @@ export type AgentContentExpectations = {
 };
 
 export type ConfigExpectations = {
+  /**
+   * Skill ids the config must carry an ACTIVE entry for — read off the loaded
+   * `skills` array, so a tombstone (`excluded: true`) recording the id's removal
+   * does not answer for it and neither does an id appearing anywhere else in the
+   * file's text.
+   */
   skillIds?: readonly string[];
-  source?: string;
+  /**
+   * The config's own top-level `marketplace` — the address every unflagged load resolves
+   * from. Keyed to that field rather than searched for in the file, because a marketplace
+   * name is also every plugin-installed skill's `origin` and frequently a path segment
+   * besides: an unkeyed `includes` was answered by whichever occurrence came first.
+   */
+  marketplace?: string;
+  /**
+   * The `origin` the named skills must carry — `"eject"` for a local-copy install, the
+   * marketplace's name for a plugin one. A separate expectation from `marketplace`
+   * because they answer different questions and only one of them is ever `"eject"`.
+   * Judged over `skillIds` when that is given, and over every entry when it is not.
+   */
+  origin?: string;
+  /**
+   * Sub-agent names the config must carry an ACTIVE entry for, read off the loaded
+   * `agents` array on the same terms as {@link ConfigExpectations.skillIds} — a
+   * name that survives only as a tombstone, or only as a `stack` key, is not one
+   * this installation has.
+   */
   agents?: readonly string[];
 };
 
@@ -20,6 +45,9 @@ export type SettingsExpectations = {
   hasKey?: string;
   keyValue?: unknown;
 };
+
+/** The skill ids `toHaveLocalSkills` requires to be present; omitted means "any entries". */
+export type LocalSkillIds = readonly string[];
 
 /**
  * Boundary shapes for the JSON artifacts these matchers read.
@@ -111,30 +139,66 @@ export const projectMatchers = {
     }
 
     const content = await readFile(configPath, "utf-8");
+    // Every field is judged on the LOADED config, never on the file's text. An
+    // unkeyed `includes` is answered by whichever occurrence comes first: an id
+    // inside a comment, inside a longer id that contains it, or inside a tombstone
+    // recording that the entry was REMOVED. Measured against a config built by the
+    // real writer: `agents: ["web-developer"]` and `skillIds: [react]` both passed
+    // for entries carrying `excluded: true`.
+    const config = await loadConfigOrFail(received.dir);
 
-    const missingSkill = expectations.skillIds?.find((id) => !content.includes(id));
+    const activeSkills = config.skills.filter((skill) => !skill.excluded);
+    // `string[]`, not `SkillId[]`: a fixture marketplace's ids are namespaced and are
+    // not members of the public catalogue's union, which is why the expectations are
+    // `readonly string[]` too.
+    const activeSkillIds: string[] = activeSkills.map((skill) => skill.id);
+    const missingSkill = expectations.skillIds?.find((id) => !activeSkillIds.includes(id));
     if (missingSkill) {
       return {
         pass: false,
         message: () =>
-          `Expected config.ts to contain skill "${missingSkill}" but it does not.\nContent:\n${content}`,
+          `Expected config.ts to carry an active entry for skill "${missingSkill}" but its active skills are [${activeSkillIds.join(", ")}].\nContent:\n${content}`,
       };
     }
 
-    if (expectations.source && !content.includes(expectations.source)) {
+    if (expectations.marketplace !== undefined && config.marketplace !== expectations.marketplace) {
       return {
         pass: false,
         message: () =>
-          `Expected config.ts to contain source "${expectations.source}" but it does not.\nContent:\n${content}`,
+          `Expected config.ts to name marketplace "${expectations.marketplace}" but it names "${String(config.marketplace)}".\nContent:\n${content}`,
       };
     }
 
-    const missingAgent = expectations.agents?.find((agent) => !content.includes(agent));
+    // Scoped twice, because a project config inlines the global install it inherits.
+    // To the ids the same expectation names, since an install is routinely mixed and
+    // "every entry in the file" would be a claim about skills the expectation never
+    // mentioned; and to the ACTIVE entries, since a tombstone (`excluded: true`) records
+    // the masked global row rather than anything this config installed. With no
+    // `skillIds`, the expectation is about the whole config and every active entry answers.
+    const judged = activeSkills.filter(
+      (skill) => expectations.skillIds?.includes(skill.id) ?? true,
+    );
+    const foreignOrigin =
+      expectations.origin === undefined
+        ? undefined
+        : judged.find((skill) => skill.origin !== expectations.origin);
+    if (foreignOrigin) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected the named skills in config.ts to carry origin "${expectations.origin}" but "${foreignOrigin.id}" carries "${String(foreignOrigin.origin)}".\nContent:\n${content}`,
+      };
+    }
+
+    const activeAgents: string[] = config.agents
+      .filter((agent) => !agent.excluded)
+      .map((agent) => agent.name);
+    const missingAgent = expectations.agents?.find((agent) => !activeAgents.includes(agent));
     if (missingAgent) {
       return {
         pass: false,
         message: () =>
-          `Expected config.ts to contain agent "${missingAgent}" but it does not.\nContent:\n${content}`,
+          `Expected config.ts to carry an active entry for agent "${missingAgent}" but its active agents are [${activeAgents.join(", ")}].\nContent:\n${content}`,
       };
     }
 
@@ -412,7 +476,7 @@ export const projectMatchers = {
    * Checks that the .claude/skills/ directory has the expected number of entries,
    * or optionally that specific skill IDs exist.
    */
-  async toHaveLocalSkills(received: { dir: string }, expectedSkillIds?: readonly string[]) {
+  async toHaveLocalSkills(received: { dir: string }, expectedSkillIds?: LocalSkillIds) {
     const skillsDir = path.join(received.dir, DIRS.CLAUDE, DIRS.SKILLS);
     const exists = await directoryExists(skillsDir);
 

@@ -75,8 +75,7 @@ describe("init cancelled from a project directory", () => {
       });
       firstRun = cancelled;
 
-      cancelled.abort();
-      const cancelledExitCode = await cancelled.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const cancelledExitCode = await cancelled.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
       expect(cancelledExitCode, "aborting the stack step must exit as cancelled").toBe(
         EXIT_CODES.CANCELLED,
       );

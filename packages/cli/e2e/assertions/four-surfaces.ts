@@ -128,6 +128,21 @@ export async function inspectFourSurfaces(
       ]
     : [
         {
+          // The floor. Six of the claims below are `length === 0` over collections read
+          // off this installation, so a scope that owns nothing satisfies every one of
+          // them — measured: all eight held over a config whose `skills` and `agents`
+          // were empty, generated pair included. `expectEmpty: true` is the explicit way
+          // to claim that state, so on this branch a populated scope is part of what is
+          // being asserted.
+          //
+          // Skills OR compiled agents, because a scope legitimately holds one without the
+          // other: `commands/init-from-agent-scope` splits a sub-agent to global scope and
+          // leaves every skill in the project, so the global side owns one compiled agent
+          // and no skills at all and is read here on purpose.
+          claim: "this scope owns at least one skill or compiled agent",
+          held: skills.length > 0 || compiledFiles.length > 0,
+        },
+        {
           claim: "every ejected skill sits at the scope its entry claims",
           held: misplaced.length === 0,
           ...(misplaced.length > 0 && { detail: misplaced.join(", ") }),

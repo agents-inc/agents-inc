@@ -17,7 +17,6 @@ import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.js";
 
 /**
  * Two related init -> dashboard -> Edit plugin scenarios:
@@ -35,7 +34,10 @@ import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/index.
  *    Verifying both config.ts AND settings.json enabledPlugins is the only way to
  *    detect the original regression; the pre-fix code silently skipped the install.
  *
- * Finding: .ai-docs/agent-findings/2026-04-16-silent-plugin-install-skip-on-missing-marketplace.md
+ * The fix is written up in changelogs/0.133.0.md under the `cc edit` silent-skip entry —
+ * a release note records what a version closed and is not rewritten afterwards, so it keeps
+ * resolving where a finding file may not.
+ *
  * User memory: feedback_no_plugin_to_eject_fallback.md
  *
  * The entire suite is skipped when the Claude CLI is not available.
@@ -69,7 +71,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
    *
    * Before this test set an explicit HOME it never actually exercised project
    * scope: TerminalSession's `HOME=cwd` default collapsed HOME onto projectDir
-   * (see todo/D-226-sandbox-home-cwd-collapse.md), forcing
+   * — the sandbox's HOME/cwd collapse, since withdrawn — forcing
    * isEditingFromGlobalScope=true — so the scenario silently ran as a GLOBAL
    * edit (where swapping the framework is legitimately allowed, dropping React)
    * while being labelled project-scope coverage.
@@ -156,10 +158,13 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         await expect({ dir: fakeHome }).not.toHavePlugin(addedPluginKey);
         await expect({ dir: projectDir }).not.toHavePlugin(addedPluginKey);
 
-        // Vue must not leak into the project config either.
-        const projectConfig = await loadProjectConfigFromDir(projectDir);
-        const projectSkillIds = projectConfig?.config.skills.map((s) => s.id) ?? [];
-        expect(projectSkillIds).not.toContain(E2E_SKILL["vue-composition-api"].id);
+        // Vue must not leak into the project config either. Loaded through the
+        // asserting reader: an absent project config is the failure this block
+        // exists to catch, and an empty id list would satisfy the negative below.
+        const projectConfig = await loadConfigOrFail(projectDir);
+        expect(projectConfig.skills.map((s) => s.id)).not.toContain(
+          E2E_SKILL["vue-composition-api"].id,
+        );
 
         // The blocked selection must not have triggered a failed plugin install.
         expect(editResult.rawOutput).not.toContain("Failed to install plugin");
@@ -212,7 +217,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
 
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id, E2E_SKILL.pinia.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
         });
 
         await expect(result.project).toHavePlugin(addedPluginKey);

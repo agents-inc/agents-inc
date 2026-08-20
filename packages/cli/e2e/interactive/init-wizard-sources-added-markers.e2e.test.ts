@@ -124,9 +124,10 @@ describe("init wizard — Sources tab marks every skill added on a first-time in
         );
       }
 
-      // Abort BEFORE destroy: InitWizard.destroy() deletes the global HOME it allocated, which
-      // would make the "nothing was written there" assertions below vacuous.
-      wizard.abort();
+      // `abort()` and not `abortAndDestroy()`, the ritual every other read-only spec uses:
+      // InitWizard.destroy() deletes the global HOME it allocated, which would make the
+      // "nothing was written there" assertions below vacuous. The afterEach destroys it.
+      await wizard.abort();
       await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       // Abort saved nothing at either scope: no config.ts and no installed skills.

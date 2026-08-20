@@ -70,13 +70,6 @@ describe("scope toggle config snapshot", () => {
       const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
-      // Capture global skill IDs before the toggle
-      const globalSkillIdsBefore = globalConfigBefore
-        .split("\n")
-        .filter((l: string) => l.includes('"id"'))
-        .map((l: string) => l.match(/"id":"([^"]+)"/)?.[1])
-        .filter(Boolean);
-
       // ACTION: Launch EditWizard, toggle web-framework-react scope (S on first domain)
       const wizard = await EditWizard.launch({
         projectDir,
@@ -86,8 +79,8 @@ describe("scope toggle config snapshot", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle web-framework-react scope (focus it
-      // explicitly — the first-alphabetical cell is Vue, not react).
+      // Build step -- Web domain: toggle web-framework-react scope, focused
+      // explicitly rather than relying on where the grid opens.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
@@ -124,19 +117,14 @@ describe("scope toggle config snapshot", () => {
         { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
       ]);
 
-      const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
-
-      // Global config skill IDs unchanged from BEFORE snapshot
-      const globalSkillIdsAfter = globalConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes('"id"'))
-        .map((l: string) => l.match(/"id":"([^"]+)"/)?.[1])
-        .filter(Boolean);
-      expect(globalSkillIdsAfter).toStrictEqual(globalSkillIdsBefore);
-
-      // Global config must be byte-identical (G->P should not modify global config)
-      const globalConfigAfter2 = await readTestFile(configTsPath(fakeHome));
-      expect(globalConfigAfter2).toStrictEqual(globalConfigBefore);
+      // Global config must be byte-identical (G->P should not modify global config).
+      // Byte equality subsumes the id-by-id comparison a line scan over the same text
+      // used to make here, and it is a claim about the config rather than about how
+      // the writer happened to break its lines.
+      expect(
+        await readTestFile(configTsPath(fakeHome)),
+        "a G->P toggle is a project-scope edit and may not rewrite the global config",
+      ).toBe(globalConfigBefore);
 
       // Project .claude/skills/web-framework-react/SKILL.md exists
       const projectSkillMdPath = path.join(
@@ -200,13 +188,10 @@ describe("scope toggle config snapshot", () => {
       expect(projectConfigAfter, "project config.ts must record the collapsed pair").not.toBe(
         projectConfigBefore,
       );
-      const honoProjectLines = projectConfigAfter
-        .split("\n")
-        .filter((l: string) => l.includes(E2E_SKILL.hono.id) && l.includes('"scope":"project"'));
       expect(
-        honoProjectLines,
-        "the collapsed pair must leave no project-scope api-framework-hono entry",
-      ).toStrictEqual([]);
+        await readSkillEntries(projectDir, E2E_SKILL.hono.id),
+        "the collapse must leave the inherited-global entry alone — no project entry, no tombstone",
+      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
 
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
       expect(globalConfigAfter, "global config.ts must be unchanged by a project-scope edit").toBe(

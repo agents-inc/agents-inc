@@ -74,8 +74,10 @@ describe("uninstall-reinit lifecycle", () => {
       expect(await directoryExists(globalSkillsDir), "Skills dir must exist after init").toBe(true);
       expect(await directoryExists(globalAgentsDir), "Agents dir must exist after init").toBe(true);
 
-      // Snapshot Phase A config for later comparison
-      const configAfterFirstInit = await readTestFile(globalConfigPath);
+      // Snapshot Phase A config for later comparison, loaded structurally: the
+      // claim is about the entries a re-init produces, not about how the writer
+      // broke them across lines.
+      const configAfterFirstInit = await loadConfigOrFail(fakeHome);
 
       // Phase B: Uninstall (the config manifest is removed by default)
       const uninstall = await runCLI(["uninstall", "--yes"], fakeHome, {
@@ -113,26 +115,16 @@ describe("uninstall-reinit lifecycle", () => {
       );
 
       // Verify config contents are equivalent to Phase A
-      const configAfterReinit = await readTestFile(globalConfigPath);
+      const configAfterReinit = await loadConfigOrFail(fakeHome);
 
-      // Extract skill IDs from both configs
-      const extractSkillIds = (config: string): string[] => {
-        const matches = config.match(/"id"\s*:\s*"([^"]+)"/g) ?? [];
-        return matches.map((m) => m.replace(/"id"\s*:\s*"([^"]+)"/, "$1")).sort();
-      };
-
-      // Extract agent names from both configs
-      const extractAgentNames = (config: string): string[] => {
-        const matches = config.match(/"name"\s*:\s*"([^"]+)"/g) ?? [];
-        return matches.map((m) => m.replace(/"name"\s*:\s*"([^"]+)"/, "$1")).sort();
-      };
-
-      expect(extractSkillIds(configAfterReinit)).toStrictEqual(
-        extractSkillIds(configAfterFirstInit),
-      );
-      expect(extractAgentNames(configAfterReinit)).toStrictEqual(
-        extractAgentNames(configAfterFirstInit),
-      );
+      expect(
+        configAfterReinit.skills,
+        "a re-init must reproduce every skill entry the first init wrote",
+      ).toStrictEqual(configAfterFirstInit.skills);
+      expect(
+        configAfterReinit.agents,
+        "a re-init must reproduce every agent entry the first init wrote",
+      ).toStrictEqual(configAfterFirstInit.agents);
     },
   );
 });

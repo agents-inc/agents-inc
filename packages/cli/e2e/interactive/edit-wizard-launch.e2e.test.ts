@@ -155,10 +155,10 @@ describe("edit wizard — launch and display", () => {
 
       const output = wizard.build.getOutput();
       // The E2E source includes web-framework-react — the build step should show
-      // skills from the custom source
+      // skills from the custom source, by the TITLE that source gives them. A
+      // fragment of the id would be painted by any grid carrying the id at all.
       expect(output).toContain(STEP_TEXT.BUILD);
-      // E2E source uses skill IDs as displayNames (e.g. web-framework-react)
-      expect(output).toContain("react");
+      expect(output).toContain(E2E_SKILL.react.display);
     });
   });
 

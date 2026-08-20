@@ -8,7 +8,11 @@ import "../matchers/setup.js";
 /**
  * Partial-state prevention for `cc init` when marketplace resolution fails.
  *
- * Finding: .ai-docs/agent-findings/2026-04-17-init-partial-state-on-plugin-hard-error.md
+ * The rule this pins: a command performs every failable resolution BEFORE its first filesystem
+ * mutation. Where it cannot, it owes either a rollback or a re-run that recognises and recovers the
+ * partial state — and `init` has neither, because `detectInstallation` keys off a `config.ts` that
+ * a run dying mid-install never wrote. That is why the assertions below read the DISK rather than
+ * settling for the exit code: an error message is not evidence that nothing was left behind.
  *
  * `init.tsx::handleInstallation` previously ordered steps so that
  * `copyEjectSkillsStep` ran BEFORE `installPluginsStep`. In mixed mode, an

@@ -32,8 +32,14 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  * plugin resolver when the agent reaches into a plugin-installed skill but
  * the frontmatter says bare id.
  *
- * Companion finding: `.ai-docs/agent-findings/2026-04-16-silent-plugin-install-skip-on-missing-marketplace.md`
- * documents the canonical `s.source !== "eject"` predicate.
+ * Install intent is PER SKILL, and `origin !== EJECT_SOURCE` on a `SkillConfig` is the one
+ * predicate that reads it — never a project-level truthiness check on the resolved marketplace.
+ * Three commands once gated the whole plugin block on that project-level signal, so a config with
+ * no `marketplace:` field wrote plugin-origin entries and invoked no install at all, and `init`
+ * went further and copied the plugin-intended skills as local eject copies. Nothing may fall back
+ * from plugin to eject: a source that cannot supply a marketplace is a hard error. This suite is
+ * the mixed case that predicate exists for, which is why it asserts BOTH ref formats in one
+ * compiled agent rather than the file being uniformly one or the other.
  *
  * This suite is skipped without the Claude CLI because per-skill install
  * routing requires `claude plugin install` for the plugin-side skill.
@@ -76,7 +82,7 @@ describe.skipIf(!claudeAvailable)(
         { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
         async () => {
           // Phase 1: init with the plugin source using defaults — every
-          // skill ends at `source: "<marketplaceName>"` (plugin). This is
+          // skill ends at `origin: "<marketplaceName>"` (plugin). This is
           // the same path covered by `init-wizard-stack.e2e.test.ts:71-93`,
           // which confirms react renders as `web-framework-react:web-framework-react`
           // in pure plugin mode.
@@ -171,10 +177,10 @@ describe.skipIf(!claudeAvailable)(
           );
 
           // Phase 4: assert the compiled web-developer.md honors per-skill
-          // source for frontmatter emission — the D-217 contract.
+          // source for frontmatter emission — the per-skill-format contract.
           //
           // The fixture mirrors the real CLI stack shape: only the framework
-          // skill is preloaded on `web-developer`. Pre-D-217 the install
+          // skill is preloaded on `web-developer`. Before per-skill format the install
           // path applied installMode at the whole-agent level; the single
           // preloaded skill would render as `id:id` even after its source
           // was toggled to eject, because a single plugin skill elsewhere
@@ -195,7 +201,7 @@ describe.skipIf(!claudeAvailable)(
           });
 
           // The compiled agent body must NOT contain react in pluginRef
-          // form — this is the D-217 negative invariant. Pre-D-217 with the
+          // form — the negative half of the same invariant. Before per-skill format, with the
           // whole-agent installMode gate, ANY skill in a plugin-mode agent
           // would have rendered as `id:id` everywhere it appeared. Post-fix,
           // each skill's emission is governed by its own source.
@@ -220,7 +226,7 @@ describe.skipIf(!claudeAvailable)(
           // depends on which skills the migrator considers "newly plugin"
           // vs "already plugin". The settings.json shape is verified by
           // dedicated tests (e.g. init-dashboard-edit-plugin-install.e2e).
-          // D-217 is strictly about the COMPILED-AGENT format-per-skill
+          // The contract is strictly about the COMPILED-AGENT format-per-skill
           // contract; the install-side routing is covered separately.
           await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
         },

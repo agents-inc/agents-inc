@@ -189,8 +189,8 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Web domain -- toggle web-framework-react to project scope (focus it
-      // explicitly — the first-alphabetical cell is Vue, not react).
+      // Web domain -- toggle web-framework-react to project scope, focused
+      // explicitly rather than relying on where the grid opens.
       await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
       await build.advanceDomain();

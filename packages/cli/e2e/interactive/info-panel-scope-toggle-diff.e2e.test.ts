@@ -107,7 +107,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
     async () => {
       // Baseline: global-only install, then G→P to seat react at project scope
       // — the saved config carries `[{react, project}, {react, global,
-      // excluded: true}]` (D-223 dual-scope shape). In this session the user
+      // excluded: true}]`, the persisted dual-scope shape. In this session the user
       // toggles P→G: the store drops the project entry and strips the
       // tombstone. The global install was always live (the tombstone was the
       // dual-scope indicator, not a removal) — so restoring it renders as
@@ -131,7 +131,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
       // Web domain: react is a persisted [P][G] pair — `s` is the sole dual-scope
       // toggle and collapses it to [G], the P→G restoration end-state. Focus react
-      // explicitly: the grid's first-alphabetical cell is Vue, not react.
+      // explicitly rather than relying on where the grid opens.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
@@ -157,8 +157,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         `P→G restoration must NOT tag the pre-existing global as newly added.\nScreen:\n${confirm.getScreen()}`,
       ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -168,8 +167,8 @@ describe("info panel — scope-toggle diff symmetry", () => {
     async () => {
       // Baseline: global-only install — react starts at global scope. User
       // toggles G→P: the store emits dual-scope state `[{react, project},
-      // {react, global, excluded: true}]` — the tombstone is a D-223
-      // dual-scope indicator, NOT a removal. The global install survives on
+      // {react, global, excluded: true}]` — the tombstone is the dual-scope
+      // indicator, NOT a removal. The global install survives on
       // disk. The info panel must render Global as `•` (unchanged), not `-`
       // (which would falsely suggest the global install was removed).
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
@@ -182,8 +181,8 @@ describe("info panel — scope-toggle diff symmetry", () => {
         ...TERMINAL_SIZE.TALL,
       });
 
-      // Web domain: react is at global — toggle G→P. Focus react explicitly:
-      // the grid's first-alphabetical cell is Vue, not react.
+      // Web domain: react is at global — toggle G→P. Focus react explicitly rather
+      // than relying on where the grid opens.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();
@@ -208,8 +207,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         `G→P toggle must NOT render Global as -.\nScreen:\n${confirm.getScreen()}`,
       ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "-" }]));
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -222,7 +220,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // shape `[{web-developer, project}, {web-developer, global, excluded:
       // true}]` mirroring the skill case. In this session the user toggles
       // P→G which strips the tombstone — the global agent was always live,
-      // so Global must render `•`, not `+` (D-230 agent symmetry).
+      // so Global must render `•`, not `+` — the agent mirror of Scenario A.
       env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
       const { fakeHome, projectDir } = env;
       await performAgentGlobalToProjectToggle(projectDir, fakeHome);
@@ -259,8 +257,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         `Agent P→G restoration must NOT tag the pre-existing global agent as newly added.\nScreen:\n${confirm.getScreen()}`,
       ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -269,7 +266,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Setup seeds react at project scope with a live global install (the
-      // D-223 dual-scope shape). Opening the wizard, toggling P→G restores
+      // persisted dual-scope shape). Opening the wizard, toggling P→G restores
       // the original global install — the tombstone is stripped but the
       // global install was already there. Global must render `•`, not `+`
       // (which would falsely tag a long-installed global as newly added).
@@ -288,7 +285,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
       // Web domain: react is a persisted [P][G] pair — `s` collapses it to [G],
       // the P→G restoration end-state (tombstone stripped, global goes active).
-      // Focus react explicitly: the grid's first-alphabetical cell is Vue, not react.
+      // Focus react explicitly rather than relying on where the grid opens.
       // Open the info panel overlay (`i`) to inspect the live-diff path.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
@@ -308,8 +305,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         `P→G restoration must NOT render Global as +.\nScreen:\n${wizard.build.getScreen()}`,
       ).not.toStrictEqual(expect.arrayContaining([{ scope: "Global", prefix: "+" }]));
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -317,7 +313,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
     "Scenario E: re-open with saved dual-scope shape shows no + or - for the dual-scope skill",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // D-232: after a G→P toggle is saved, the config carries `[{react,
+      // After a G→P toggle is saved, the config carries `[{react,
       // project}, {react, global, excluded: true}]`. On NEXT `cc edit`, the
       // diff must be a no-op — react is not newly added at either scope.
       // The Global row (rendered from the tombstone) must show `•`, not `+`.
@@ -345,7 +341,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
 
       const skillEntries = await confirm.getSummaryDiffEntries(E2E_SKILL.react.display);
 
-      // Under D-232 a tombstone re-read from config must render as • on both
+      // A tombstone re-read from config must render as • on both
       // rows — the Project row (from the active project-scoped entry) and the
       // Global row (from the tombstone). No prefix drift (+/-/~) is allowed
       // because this session made no changes. diffRowPattern at
@@ -371,8 +367,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
         `Re-open with saved dual-scope must NOT tag react as newly added at project scope.\nScreen:\n${confirm.getScreen()}`,
       ).not.toStrictEqual(expect.arrayContaining([{ scope: "Project", prefix: "+" }]));
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 });

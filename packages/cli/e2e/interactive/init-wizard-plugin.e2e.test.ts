@@ -92,7 +92,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
         await expectPhaseSuccess(result, {
           skillIds: [E2E_SKILL.react.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
           compiledAgents: [],
         });
 
@@ -272,8 +272,8 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const domain = await wizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
 
-        // Toggle web-framework-react to project scope (focus it explicitly — the
-        // first-alphabetical cell is Vue, not react).
+        // Toggle web-framework-react to project scope, focused explicitly rather
+        // than relying on where the grid opens.
         await build.focusSkill(E2E_SKILL.react.display);
         await build.toggleScopeOnFocusedSkill();
         const sources = await build.passThroughAllDomains();

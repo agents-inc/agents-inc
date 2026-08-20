@@ -8,6 +8,7 @@ import type {
 import type {
   AgentContentExpectations,
   ConfigExpectations,
+  LocalSkillIds,
   PluginScope,
   SettingsExpectations,
 } from "./project-matchers.js";
@@ -33,7 +34,7 @@ declare module "vitest" {
       expectations: AgentContentExpectations,
     ): Promise<void>;
     toHaveSkillCopied(skillId: string): Promise<void>;
-    toHaveLocalSkills(expectedSkillIds?: string[]): Promise<void>;
+    toHaveLocalSkills(expectedSkillIds?: LocalSkillIds): Promise<void>;
     toHaveNoLocalSkills(): Promise<void>;
     toHaveNoPlugins(): Promise<void>;
     toHavePlugin(pluginKey: string): Promise<void>;
@@ -55,7 +56,7 @@ declare module "vitest" {
     toHaveCompiledAgent(agentName: string): void;
     toHaveCompiledAgentContent(agentName: string, expectations: AgentContentExpectations): void;
     toHaveSkillCopied(skillId: string): void;
-    toHaveLocalSkills(expectedSkillIds?: string[]): void;
+    toHaveLocalSkills(expectedSkillIds?: LocalSkillIds): void;
     toHaveNoLocalSkills(): void;
     toHaveNoPlugins(): void;
     toHavePlugin(pluginKey: string): void;

@@ -82,7 +82,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
       await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
       await expect(result.project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
-        source: "eject",
+        origin: "eject",
       });
     },
   );

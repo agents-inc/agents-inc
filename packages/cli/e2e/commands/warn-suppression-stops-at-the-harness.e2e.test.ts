@@ -13,6 +13,7 @@ import {
   ensureBinaryExists,
   readTestFile,
   renderMetadataYaml,
+  runCLI,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -24,10 +25,12 @@ import "../matchers/setup.js";
  * to print what a user would be shown, or a spec asserting one of these lines passes by
  * not looking.
  *
- * Both runners build the child's environment themselves and are therefore proved
- * separately — `CLI.run` through execa, and every PTY page object through
+ * Each door builds the child's environment itself and is therefore proved separately —
+ * `CLI.run` and `runCLI` through execa, and every PTY page object through
  * `TerminalSession`, reached here via `InteractivePrompt`, the sanctioned non-wizard
- * entry point.
+ * entry point. `runCLI` was the door nothing proved: it cleared none of the roster, so
+ * every command it spawned ran with the harness's `VITEST` and answered a spec about a
+ * warning it had been told not to print.
  *
  * The subject is the stack advisory `resolveAgentConfigToSkills`
  * (`src/cli/lib/stacks/stacks-loader.ts`) prints for a stack id no loaded catalogue
@@ -124,8 +127,20 @@ describe("a warning the unit suite suppresses still reaches the user through the
     }
   });
 
+  it("prints it when the command is spawned through runCLI", async () => {
+    const { projectDir, configBefore } = await projectWithStackSkillAbsentFromMatrix();
+
+    const { exitCode, combined } = await runCLI(["compile"], projectDir);
+
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(combined).toContain(E2E_SKILL.vitest.id);
+    expect(combined).toContain(STEP_TEXT.STACK_SKILL_ABSENT_FROM_MATRIX);
+    expect(combined).not.toContain(STEP_TEXT.SKILL_NOT_FOUND_WARNING);
+    await expectCompileTouchedOnlyWhatItOwns(projectDir, configBefore);
+  });
+
   /**
-   * The control for both cases above. Re-injecting `VITEST` for one child proves the gate
+   * The control for the three cases above. Re-injecting `VITEST` for one child proves the gate
    * in `warn()` is still live and still reads that variable — so a green run above is the
    * runners having stopped forwarding it, not the suppression having been deleted from
    * the product.

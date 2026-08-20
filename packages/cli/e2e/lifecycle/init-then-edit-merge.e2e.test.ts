@@ -108,7 +108,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           {
             skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
-            source: "eject",
+            origin: "eject",
           },
         );
 
@@ -180,7 +180,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           {
             skillIds: [E2E_SKILL.react.id],
             agents: ["web-developer"],
-            source: "eject",
+            origin: "eject",
           },
         );
 

@@ -38,8 +38,11 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  * build/agents steps in wizard-layout.tsx), the tab bar reads Stack/Domains/Skills/Sources/Agents/
  * Confirm, and the step's dropdown card reads "Customize skill sources". The info panel — the other
  * surface that heads per-scope blocks with these words — is toggled off by default. Asserted
- * against `getScreen()` (the viewport) rather than `getOutput()` precisely because the build step's
- * footer DOES paint `Scope`, and that frame is still in scrollback.
+ * against `getScreen()`, which is scrollback PLUS the viewport rather than the visible area alone
+ * (`TerminalSession.getScreen`). The two coincide here: `waitForWizardFooter` has just asserted
+ * nothing sits above the viewport (`assertWizardScreenIsWhollyVisible` in `e2e/pages/base-step.ts`),
+ * so `viewportY` is 0 and the build step's frame — whose footer DOES paint `Scope` — is no longer
+ * in the range. `getOutput()` would read the same rows.
  *
  * Read-only session: the wizard is aborted, so config.ts and the project skills directory must come
  * out byte-for-byte unchanged.

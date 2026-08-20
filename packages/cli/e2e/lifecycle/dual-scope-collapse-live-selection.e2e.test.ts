@@ -80,8 +80,8 @@ describe("dual-scope `s` collapse — live in-session selected state", () => {
       });
 
       try {
-        // Focus react explicitly — the grid's first-alphabetical cell is Vue, and
-        // the `s` collapse below acts on the focused skill.
+        // Focus react explicitly rather than relying on where the grid opens: the
+        // `s` collapse below acts on the focused skill.
         await wizard.build.focusSkill(E2E_SKILL.react.display);
 
         // Baseline: the persisted dual-scope row renders both badges and counts

@@ -112,8 +112,7 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
       ).toStrictEqual(["G", "P"]);
 
       // Read-only check — abort without writing anything.
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
 
       // The persisted `[P][G]` pair the setup wrote, read at four-surface strength on both
       // sides. Run after the abort so the probe touches a settled tree.

@@ -1,6 +1,5 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { normalizeConfigPreservingOrder } from "../assertions/config-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, DIRS, TERMINAL_SIZE } from "../pages/constants.js";
@@ -11,6 +10,7 @@ import {
   configTsPath,
   directoryExists,
   ensureBinaryExists,
+  normalizeConfigPreservingOrder,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
@@ -69,8 +69,8 @@ describe("scope toggle roundtrip", () => {
       });
       testWizard = wizardC;
 
-      // Build step -- Web domain: toggle web-framework-react scope (focus it
-      // explicitly — the first-alphabetical cell is Vue, not react).
+      // Build step -- Web domain: toggle web-framework-react scope, focused
+      // explicitly rather than relying on where the grid opens.
       await wizardC.build.focusSkill(E2E_SKILL.react.display);
       await wizardC.build.toggleScopeOnFocusedSkill();
       await wizardC.build.advanceDomain();

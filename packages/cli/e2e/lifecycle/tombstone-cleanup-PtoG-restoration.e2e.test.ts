@@ -82,10 +82,10 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       const { fakeHome, projectDir } = env;
 
       // Phase 2: toggle react G→P via real `cc edit`. Produces the dual-scope
-      // state in project config (D-223 territory — validated by its own suite).
+      // state in project config (the dual-scope shape, validated by its own suite).
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
-      // Phase 3: toggle react P→G. D-224's failure point — must remove the
+      // Phase 3: toggle react P→G. The failure point this suite guards — must remove the
       // tombstone and collapse to a single global entry.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
@@ -176,7 +176,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(await directoryExists(projectSkillDir)).toBe(true);
 
       // Phase 3: toggle P→G. Assert ONLY global active, no tombstone, no
-      // project entry. This is the D-224 failure point.
+      // project entry. This is the failure point this suite guards.
       await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
 
       const entriesPhase3 = await readSkillEntries(projectDir, E2E_SKILL.react.id);

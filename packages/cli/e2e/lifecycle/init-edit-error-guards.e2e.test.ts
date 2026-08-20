@@ -15,7 +15,7 @@ import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { flattenCliOutput } from "../fixtures/seed-config-store.js";
 
 /** The `source-fetcher` message for a marketplace path that is not a directory. */
-const LOCAL_SOURCE_NOT_FOUND = "Local marketplace not found:";
+const LOCAL_MARKETPLACE_NOT_FOUND = "Local marketplace not found:";
 /** The two paths these guards name, so the message is proved to be ABOUT them. */
 const MISSING_INIT_SOURCE_PATH = "/tmp/not-a-real-source-path-xyz";
 const MISSING_EDIT_SOURCE_PATH = "/nonexistent/path/xyz";
@@ -74,7 +74,7 @@ describe("init/edit error guards", () => {
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
       // The loader names the path it could not find. `combined.length > 0` stood
       // here and was satisfied by any output at all, including a different error.
-      expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
       expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
     },
   );
@@ -95,7 +95,7 @@ describe("init/edit error guards", () => {
       // not answer to falls through to the default marketplace and this run would
       // reach a wizard instead of a refusal about this path.
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
       expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
     },
   );
@@ -119,7 +119,7 @@ describe("init/edit error guards", () => {
         flattenCliOutput(combined),
         "the parser refuses the name, so the loader is never handed the path",
       ).toContain("Nonexistent flag: --source");
-      expect(flattenCliOutput(combined)).not.toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(flattenCliOutput(combined)).not.toContain(LOCAL_MARKETPLACE_NOT_FOUND);
     },
   );
 
@@ -204,7 +204,7 @@ describe("init/edit error guards", () => {
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
       // Same reasoning as the init guard above: name the failure, not its length.
-      expect(flattenCliOutput(combined)).toContain(LOCAL_SOURCE_NOT_FOUND);
+      expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
       expect(combined).toContain(MISSING_EDIT_SOURCE_PATH);
     },
   );

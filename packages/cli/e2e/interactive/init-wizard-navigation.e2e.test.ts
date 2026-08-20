@@ -17,9 +17,7 @@ describe("init wizard — navigation", () => {
     it("should exit the wizard without creating files", async () => {
       wizard = await InitWizard.launch();
 
-      wizard.abort();
-
-      const exitCode = await wizard.waitForExit();
+      const exitCode = await wizard.abortAndDestroy();
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
     });
   });

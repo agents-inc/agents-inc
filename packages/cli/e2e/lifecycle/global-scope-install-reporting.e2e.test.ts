@@ -28,14 +28,37 @@ import "../matchers/setup.js";
  */
 
 /** Stack skills selected by the E2E Test Stack, all at the default global scope. */
-const GLOBAL_STACK_SKILL_IDS: string[] = [
-  E2E_SKILL.react.id,
-  E2E_SKILL.vitest.id,
-  E2E_SKILL.zustand.id,
-  E2E_SKILL.hono.id,
-  E2E_SKILL["research-methodology"].id,
-  E2E_SKILL.reviewing.id,
-  E2E_SKILL["cli-reviewing"].id,
+const GLOBAL_STACK_SKILLS = [
+  E2E_SKILL.react,
+  E2E_SKILL.vitest,
+  E2E_SKILL.zustand,
+  E2E_SKILL.hono,
+  E2E_SKILL["research-methodology"],
+  E2E_SKILL.reviewing,
+  E2E_SKILL["cli-reviewing"],
+];
+
+const GLOBAL_STACK_SKILL_IDS: string[] = GLOBAL_STACK_SKILLS.map((skill) => skill.id);
+
+/**
+ * The title the wizard paints for each of those skills — and, for every one of them, a
+ * directory name that does not exist: every fixture title is prose where its directory is
+ * a namespaced id.
+ *
+ * Written out rather than only derived, because this list is the subject guard for the
+ * negative half of the listing assertion below. A fixture whose titles happened to equal its
+ * directory names would satisfy that negative for free while proving nothing, and a count
+ * would not notice — which is what four of these were until 2026-08-19, when they read
+ * `web-framework-react` and friends. Ordered as {@link GLOBAL_STACK_SKILLS} carries them.
+ */
+const TITLES_THAT_NAME_NO_DIRECTORY = [
+  "E2E React",
+  "E2E Vitest",
+  "E2E Zustand",
+  "E2E Hono",
+  "Research Methodology",
+  "Reviewing",
+  "CLI Reviewing",
 ];
 
 /**
@@ -111,6 +134,38 @@ describe("default init from a project dir — global scope reporting", () => {
     expect(initOutput).toContain(STEP_TEXT.SKILLS_COPIED_TO);
     expect(initOutput).toContain(skillsPath(fakeHome));
     expect(initOutput).not.toContain(skillsPath(projectDir));
+  });
+
+  /**
+   * The directory line above was already asserted; its CONTENTS never were, and they are the
+   * half that once named directories nobody could open. `reportSkillsCopied` rendered every
+   * entry through `displayName`, so an install carrying these three printed `Reviewing/`,
+   * `CLI Reviewing/` and `Research Methodology/` under a header that claims to describe the
+   * filesystem, while the directories on disk were the skill ids.
+   *
+   * Both halves are asserted because either alone is satisfiable: the ids could be printed
+   * alongside the titles, and the titles could be absent because the block was never painted.
+   */
+  it("lists the directory each skill was copied into, not the title the wizard paints", () => {
+    expect(initOutput).toContain(STEP_TEXT.SKILLS_COPIED_TO);
+
+    expect(
+      GLOBAL_STACK_SKILLS.map((skill) => skill.display),
+      "a title that is already its skill's directory name makes the negative below unfailable",
+    ).toStrictEqual(TITLES_THAT_NAME_NO_DIRECTORY);
+
+    for (const skillId of GLOBAL_STACK_SKILL_IDS) {
+      expect(
+        initOutput,
+        "every entry under the skills header is a directory a reader must be able to cd into",
+      ).toContain(`    ${skillId}/`);
+    }
+    for (const title of TITLES_THAT_NAME_NO_DIRECTORY) {
+      expect(
+        initOutput,
+        "a display title under the skills header names a directory that does not exist",
+      ).not.toContain(`    ${title}/`);
+    }
   });
 
   it("reports the agents directory the agents were actually compiled to", () => {

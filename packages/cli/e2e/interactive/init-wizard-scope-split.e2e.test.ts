@@ -79,8 +79,8 @@ describe("init wizard — mixed scope config split", () => {
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Focus and toggle web-framework-react to project scope (the grid's
-      // first-alphabetical cell is Vue, not react).
+      // Focus and toggle web-framework-react to project scope, focused explicitly
+      // rather than relying on where the grid opens.
       await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
 
@@ -167,8 +167,8 @@ describe("init wizard — mixed scope config split", () => {
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Web domain: toggle web-framework-react to project scope, then advance
-      // (focus it explicitly — the first-alphabetical cell is Vue).
+      // Web domain: toggle web-framework-react to project scope, then advance.
+      // Focused explicitly rather than relying on where the grid opens.
       await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
       await build.advanceDomain();

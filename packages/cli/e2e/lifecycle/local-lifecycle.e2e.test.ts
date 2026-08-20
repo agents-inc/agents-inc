@@ -73,7 +73,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         {
           skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: "eject",
+          origin: "eject",
           copiedSkills: [E2E_SKILL.react.id],
         },
       );
@@ -117,7 +117,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         {
           skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: "eject",
+          origin: "eject",
         },
       );
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {

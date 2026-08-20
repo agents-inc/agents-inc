@@ -70,7 +70,7 @@ describe("doctor layered output", () => {
         stdout,
         "a clean install must reach the operational layer, not just report clean content",
       ).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
-      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONFIG_ERROR);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_SUMMARY);
     },
   );
@@ -131,7 +131,7 @@ describe("doctor layered output", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
       expect(stdout).toContain(FILES.METADATA_YAML);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION);
-      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONFIG_ERROR);
       expect(
         stdout,
         "the config row reads config.ts and nothing an installed skill holds",
@@ -141,6 +141,13 @@ describe("doctor layered output", () => {
         "the orphan row compares file names against the config and opens none of them",
       ).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
       expect(stdout).toMatch(new RegExp(`${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+-\\s+Skipped`));
+      // The three negatives above and in the specs beside this one only say the BLANKET skip did
+      // not happen, and a row stood down by the wrong pass prints neither string — so nothing at
+      // this layer could tell the two skips apart without a positive naming the blocking pass.
+      expect(
+        stdout,
+        "the row must name the pass that blocked it, not merely report itself skipped",
+      ).toContain(STEP_TEXT.DOCTOR_SKIP_RESTATING_SKILL_ERRORS);
     },
   );
 
@@ -165,7 +172,7 @@ describe("doctor layered output", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
       expect(stdout).toContain("75 characters");
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
-      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONTENT_ERRORS);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONFIG_ERROR);
     },
   );
 });

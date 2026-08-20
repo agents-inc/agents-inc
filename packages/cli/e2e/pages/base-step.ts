@@ -124,9 +124,74 @@ export abstract class BaseStep {
    * rendered by WizardLayout — which every BaseStep subclass is. Non-wizard
    * page objects (the dashboard, plain SelectList menus) must NOT use this;
    * the sentinel never appears there and the wait burns the full timeout.
+   *
+   * Then check that the wizard screen the footer belongs to IS ALL ON SCREEN —
+   * see {@link assertWizardScreenIsWhollyVisible}. This is the one place in the
+   * suite that knows a wizard frame is painted AND is called before every
+   * keypress on every step, so the whole interactive suite inherits the check
+   * from here rather than one spec carrying it.
    */
   protected async waitForWizardFooter(timeout?: number): Promise<void> {
     await this.screen.waitForWizardFooter(timeout ?? this.defaultTimeout);
+    this.assertWizardScreenIsWhollyVisible();
+  }
+
+  /**
+   * Nothing may sit above the top of the viewport while a wizard frame is
+   * painted. The wizard owns the whole terminal — it sizes its root box to the
+   * terminal height — so a line above the fold is a line the user has lost, and
+   * no other assertion in this suite looks at where the frame ends. The overflow
+   * specs pin the SCROLL MECHANISM (`SCROLL_MORE_BELOW`, and that scrolling
+   * reveals the row it counted), never the height of anything.
+   *
+   * TWO MECHANISMS PUT A LINE UP THERE and the check deliberately does not try
+   * to tell them apart, because the user cannot either. The frame can be taller
+   * than the terminal, which drives its own header off the top. Or something can
+   * print AFTER the mount and be pushed off by a frame that fits perfectly well —
+   * which is what `warn()` does from `stores/wizard-store.ts`, since those
+   * warnings are raised while the wizard renders, long after the startup buffer
+   * that exists to paint them inside the frame was drained.
+   *
+   * ZERO IS THE FLOOR HERE AND NOWHERE ELSE, and that is measured rather than
+   * assumed. A command is entitled to scroll and `search` and `list` do; what
+   * makes a wizard different is that `WizardLayout` sizes its root box to
+   * `terminalHeight` and nothing has printed above it by the time it mounts: the
+   * load's messages and hydration's warnings are buffered into the startup band
+   * instead (`runWizardSession` in
+   * `src/cli/components/wizard/run-wizard-session.tsx`), and the loading spinner
+   * clears before it unmounts. No clear is involved — `clearTerminalScreen()` in
+   * `src/cli/utils/terminal.ts` runs after a render RESOLVES, never before a
+   * mount. Which is why the rule can be absolute, and why it is confined to
+   * `BaseStep`, the only page object that drives `WizardLayout` screens.
+   *
+   * THE TOLERANT VERSION OF THIS RULE WAS WRITTEN FIRST AND MEASURED BLIND.
+   * Recording the viewport at the first frame and demanding it not GROW reads as
+   * the safer invariant, and it cannot see the defect worth catching: a layout
+   * that overflows by a constant — the shape a mis-measured terminal height
+   * produces, and the shape a user reports as "the header is gone" — overflows
+   * the FIRST frame too, so the baseline absorbs it and every later comparison
+   * agrees with it. Measured against a `WizardLayout` root box built at
+   * `terminalHeight + 4`: the frame ran four rows past the terminal and the
+   * header sat off the top of every screen, while the baseline form passed all
+   * 13 tests it was run against.
+   *
+   * What this cannot see: a frame that overflowed and has already been replaced
+   * by one that fits — {@link TerminalSession.linesAboveViewport} carries that
+   * mechanism and how it was measured.
+   */
+  private assertWizardScreenIsWhollyVisible(): void {
+    const aboveViewport = this.session.linesAboveViewport();
+    if (aboveViewport.length === 0) return;
+
+    throw new Error(
+      `A wizard frame is painted and ${aboveViewport.length} line(s) sit above the top of the ` +
+        `viewport, off the user's screen — nothing clears the terminal on the way to the mount, ` +
+        `so the frame is sized to the terminal height and starts at the top of an empty buffer. ` +
+        `Either the frame is taller than the terminal, or something printed after the mount and ` +
+        `the frame pushed it off.\n` +
+        `Off the top of the screen:\n${aboveViewport.join("\n")}\n` +
+        `Screen:\n${this.getScreen()}`,
+    );
   }
 
   /**
@@ -191,7 +256,15 @@ export abstract class BaseStep {
     return this.screen.getFullOutput();
   }
 
-  /** Get the visible screen only (for test assertions). */
+  /**
+   * Delegates to {@link TerminalScreen.getScreen} and on to
+   * {@link TerminalSession.getScreen}, so it returns absolute buffer rows
+   * `0 .. viewportY + rows` — scrollback PLUS the viewport, never the visible area
+   * alone. Safe for POSITIVE assertions about current content; unsound for absence,
+   * except on a wizard screen, where {@link waitForWizardFooter} has just proved
+   * `viewportY` is 0 and the range therefore IS the viewport. `TerminalSession` has
+   * no viewport-only reader to reach for instead.
+   */
   getScreen(): string {
     return this.screen.getScreen();
   }

@@ -4,22 +4,14 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
-  createLocalSkill,
-  createTempDir,
   ensureBinaryExists,
   listFiles,
   readTestFile,
-  renderMetadataYaml,
   skillsPath,
-  writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import {
-  buildAgentConfigs,
-  buildProjectConfig,
-} from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, UI_SYMBOLS } from "../../src/cli/consts.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -37,11 +29,13 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  * what is pending removal, so the surviving global entry masks the emptied
  * project slot and only the locked row renders — no `-` appears at all.
  *
- * Fixture note: the global entry is marketplace-sourced on purpose. A project
- * EJECT entry over a global EJECT install cannot be collapsed at all —
- * `wouldOverwriteGlobalEject` refuses the `s` press with a toast — so an
- * eject/eject pair would make this scenario unreachable rather than failing on
- * the render.
+ * Fixture note: the global entry is marketplace-sourced on purpose, through
+ * `editable({ globalSkillsSource })`. A project EJECT entry over a global EJECT
+ * install cannot be collapsed at all — `wouldOverwriteGlobalEject` refuses the
+ * `s` press with a toast — so the fixture's default eject/eject pair would make
+ * this scenario unreachable rather than failing on the render. That option
+ * exists because of this spec, which hand-rolled the shape with
+ * `writeProjectConfig` + `buildProjectConfig` until the fixture could express it.
  *
  * Read-only session: the wizard is aborted, so config.ts and the project skills
  * directory must come out byte-for-byte unchanged.
@@ -81,51 +75,16 @@ describe("edit wizard — pending-removal row when a dual-scope skill collapses 
       // react is installed at BOTH scopes: a marketplace install at global scope plus a local
       // project copy overriding it. vitest is the untouched project skill that keeps the Sources
       // grid populated (and gives the grid a focusable row).
-      tempDir = await createTempDir();
-      const projectDir = path.join(tempDir, "project");
-
-      await writeProjectConfig(
-        projectDir,
-        buildProjectConfig({
-          name: "dual-scope-collapse-test",
-          marketplace: sourceDir,
-          skills: [
-            ...buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
-              scope: "project",
-              origin: EJECT_SOURCE,
-            }),
-            ...buildSkillConfigs([E2E_SKILL.react.id], {
-              scope: "global",
-              origin: DEFAULT_PUBLIC_SOURCE_NAME,
-            }),
-          ],
-          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
-          selectedDomains: ["web"],
-        }),
-      );
-
-      await createLocalSkill(projectDir, E2E_SKILL.react.id, {
-        description: "React framework for dual-scope collapse testing",
-        metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.react.display,
-          category: "web-framework",
-          slug: E2E_SKILL.react.slug,
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "b2c3d4e",
-        }),
+      const project = await ProjectBuilder.editable({
+        marketplace: sourceDir,
+        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+        globalSkills: [E2E_SKILL.react.id],
+        globalSkillsSource: DEFAULT_PUBLIC_SOURCE_NAME,
+        agents: [E2E_AGENT["web-developer"].name],
+        domains: ["web"],
       });
-      await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
-        description: "Vitest testing skill for dual-scope collapse testing",
-        metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.vitest.display,
-          category: "web-testing",
-          slug: E2E_SKILL.vitest.slug,
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "c3d4e5f",
-        }),
-      });
+      tempDir = path.dirname(project.dir);
+      const projectDir = project.dir;
 
       // Setup proof: react genuinely occupies BOTH slots before the edit, so the row that must
       // survive the collapse is backed by a real dual-scope install and not a single entry.

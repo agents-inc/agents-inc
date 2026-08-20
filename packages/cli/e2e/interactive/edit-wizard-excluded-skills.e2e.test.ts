@@ -115,9 +115,10 @@ describe("edit wizard — excluded skills", () => {
 
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Both skills must be present in config
+      // The skill the user kept is the one the config still carries actively; the
+      // excluded one is a tombstone and is pinned as such directly below.
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+        skillIds: [E2E_SKILL.react.id],
       });
 
       // The excluded flag must survive the edit. Read structurally: a no-op edit
@@ -177,9 +178,10 @@ describe("edit wizard — excluded skills", () => {
 
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Both skills must be present in config
+      // The skill the user kept is the one the config still carries actively; the
+      // excluded one is a tombstone and is pinned as such directly below.
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+        skillIds: [E2E_SKILL.react.id],
       });
 
       // The excluded flag must survive the edit. Read structurally: a no-op edit
@@ -265,9 +267,10 @@ describe("edit wizard — excluded skills", () => {
 
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Verify config after save: all skills present, excluded flag preserved on zustand
+      // Verify config after save: both kept skills are active, and the excluded one is
+      // a tombstone rather than an entry this installation has — pinned below.
       await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
+        skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
       });
 
       // The excluded flag must survive the edit — read structurally, as above.

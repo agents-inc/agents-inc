@@ -97,7 +97,7 @@ describe("init wizard — stack flow", () => {
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: pluginSource!.marketplaceName,
+          origin: pluginSource!.marketplaceName,
         });
         const globalProject = { dir: wizard.globalHome };
         for (const agent of E2E_AGENTS.WEB_AND_API) {
@@ -154,7 +154,7 @@ describe("init wizard — stack flow", () => {
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: "eject",
+          origin: "eject",
         });
         expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
           COMPILED_AGENT_FILES,
@@ -201,9 +201,10 @@ describe("init wizard — stack flow", () => {
       // Advance through Web domain
       await build.advanceDomain();
 
-      // The API domain should show restored stack skills
+      // The API domain should show restored stack skills, by the title the fixture
+      // paints rather than a fragment of the id.
       const output = build.getOutput();
-      expect(output).toContain("hono");
+      expect(output).toContain(E2E_SKILL.hono.display);
     });
 
     it("should not restore skills in scratch flow when domain is re-toggled", async () => {

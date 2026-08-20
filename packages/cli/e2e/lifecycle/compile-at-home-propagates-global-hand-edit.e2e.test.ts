@@ -33,15 +33,6 @@ import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
  * without fanning the change out leaves each registered project naming a skill
  * that no longer exists anywhere — in its config and in its compiled agents.
  *
- * `init` / `edit` already fan out: their write path propagates to every
- * registered project and the command then recompiles those projects' agents.
- * `compile` reaches neither, which is what this spec pins.
- *
- * CURRENTLY RED, deliberately: it states the behaviour a global write must
- * guarantee, and nothing guarantees it yet. It is seam-agnostic — it drives the
- * documented user workflow and asserts on the resulting files, so it stays valid
- * whichever write path ends up owning the guarantee.
- *
  * Which assertion carries the red: the project's `config.ts` still naming the
  * removed skill, the missing propagated-recompile line, and the compiled
  * `api-developer.md` still preloading it. The `tsc` assertion does NOT go red

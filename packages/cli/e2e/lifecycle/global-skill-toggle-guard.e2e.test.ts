@@ -6,9 +6,14 @@ import {
   cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
+  normalizeGlobalConfig,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createGlobalOnlyEnv,
+  readSkillEntries,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import "../matchers/setup.js";
 
@@ -22,6 +27,11 @@ import "../matchers/setup.js";
  * Also covers the exclusive-category bypass vector: selecting a different
  * skill in an exclusive category where the current selection is globally
  * installed must be blocked with the same toast message.
+ *
+ * The third `it` is the PERMITTED case the two refusals need to mean anything, and it
+ * lives here rather than in a spec of its own for the reason CLAUDE.md gives: a refusal
+ * on its own cannot tell a correctly-scoped guard from one that has swallowed the whole
+ * build step, and a control in another file is not made to move with them.
  */
 
 describe("global skill toggle guard from project scope", () => {
@@ -171,6 +181,72 @@ describe("global skill toggle guard from project scope", () => {
       await expect({ dir: env.projectDir }).toHaveNoLocalSkills();
 
       expect(result.output).toContain(STEP_TEXT.EDIT_UNCHANGED);
+
+      await result.destroy();
+    },
+  );
+
+  it(
+    "allows the same keys on a skill no scope has installed",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      // Same env, same scope, same two keys as the refusals above — the only difference is
+      // the subject. The SPARE is in the source and in no config, so selecting it takes
+      // nothing away from the global install and the guard has nothing to protect.
+      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+
+      const globalConfigBefore = await readTestFile(configTsPath(env.fakeHome));
+
+      wizard = await EditWizard.launch({
+        projectDir: env.projectDir,
+        source: { sourceDir, tempDir: sourceTempDir },
+        env: { HOME: env.fakeHome },
+        ...TERMINAL_SIZE.TALL,
+      });
+
+      await wizard.build.focusSkill(E2E_SKILL["visual-regression"].display);
+      await wizard.build.toggleFocusedSkill();
+      // A fresh pick defaults to global scope, so the badge is the proof the SELECTION
+      // landed: a blocked toggle leaves the row with no badge at all.
+      expect(
+        await wizard.build.getScopeBadgesForSkill(E2E_SKILL["visual-regression"].display),
+        "a permitted pick must take, and a fresh one defaults to global scope",
+      ).toStrictEqual(["G"]);
+      // `s` overrides that default to the project, which is what makes the addition this
+      // scope's own and keeps the global config out of it.
+      await wizard.build.toggleScopeOnFocusedSkill();
+      expect(
+        await wizard.build.getScopeBadgesForSkill(E2E_SKILL["visual-regression"].display),
+        "`s` must move a freshly picked skill to project scope",
+      ).toStrictEqual(["P"]);
+
+      const sources = await wizard.build.passThroughAllDomains();
+      await sources.waitForReady();
+      await sources.setAllLocal();
+      const agents = await sources.advance();
+      const confirm = await agents.acceptDefaults("edit");
+      const result = await confirm.confirm();
+
+      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
+
+      // Config: the project now owns an entry the guard did not refuse.
+      expect(
+        await readSkillEntries(env.projectDir, E2E_SKILL["visual-regression"].id),
+        "a permitted toggle must record the skill at project scope",
+      ).toStrictEqual([
+        { id: E2E_SKILL["visual-regression"].id, scope: "project", origin: "eject" },
+      ]);
+      // Filesystem: and the copy landed beside it.
+      await expect({ dir: env.projectDir }).toHaveLocalSkills([E2E_SKILL["visual-regression"].id]);
+      // The global scope is not this edit's to change, and did not change: the inverse of
+      // the refusals above, where the PROJECT config is what had to stay byte-identical.
+      expect(
+        normalizeGlobalConfig(await readTestFile(configTsPath(env.fakeHome))),
+        "a permitted project-scope addition must not reach the global config",
+      ).toStrictEqual(normalizeGlobalConfig(globalConfigBefore));
+
+      // And the run said so: the refusals above end in "nothing changed", this one cannot.
+      expect(result.output).not.toContain(STEP_TEXT.EDIT_UNCHANGED);
 
       await result.destroy();
     },

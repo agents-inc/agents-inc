@@ -3,10 +3,11 @@ import type { E2ESource } from "../../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   createPermissionsFile,
+  delay,
   recordInstallSource,
 } from "../../helpers/test-utils.js";
 import { allocateProjectGlobalHome } from "./global-home.js";
-import { STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { INTERNAL_DELAYS, STEP_TEXT, TIMEOUTS } from "../constants.js";
 import { TerminalScreen } from "../terminal-screen.js";
 import { BuildStep } from "../steps/build-step.js";
 import type { WizardResult } from "../wizard-result.js";
@@ -177,8 +178,8 @@ export class EditWizard {
    * (BUILD_FOOTER + footer still confirm the build step is live). ONLY valid for
    * callers that step through the build step blind — pressing Enter to advance
    * domains and toggling the already-focused skill — never for callers that read
-   * the grid to locate a skill by name (findSkillGridPosition needs the clean
-   * category layout this variant deliberately does not wait for).
+   * the grid to locate a skill by name (focusSkill parses the category layout
+   * this variant deliberately does not wait for).
    *
    * Since the size gate rose to 20 rows the first category header does settle at
    * SHORT, so this is now a tolerance rather than a necessity — the grid still
@@ -236,9 +237,14 @@ export class EditWizard {
     return this.session.waitForExit(timeoutMs);
   }
 
-  /** Abort the wizard with Ctrl+C. */
-  abort(): void {
+  /**
+   * Abort the wizard with Ctrl+C. Async, and awaited by every caller: a bare
+   * synchronous write races the handler the current frame registered, which is
+   * why every other keypress wrapper in this framework carries the same delay.
+   */
+  async abort(): Promise<void> {
     this.session.ctrlC();
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   /**
@@ -253,7 +259,7 @@ export class EditWizard {
    * budget stays byte-identical.
    */
   async abortAndDestroy(timeoutMs?: number): Promise<number> {
-    this.abort();
+    await this.abort();
     const exitCode = await this.waitForExit(timeoutMs);
     await this.destroy();
     return exitCode;

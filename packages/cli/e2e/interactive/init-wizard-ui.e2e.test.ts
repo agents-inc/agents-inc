@@ -60,8 +60,8 @@ describe("init wizard — UI elements", () => {
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Focus react (a selected skill) and press S to toggle its scope — the grid's
-      // first-alphabetical cell is Vue, an unselected skill whose `s` is a no-op.
+      // Focus react — a SELECTED skill, which is what makes `s` do anything at all —
+      // and press S to toggle its scope.
       await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
 

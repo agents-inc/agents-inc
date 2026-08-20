@@ -1,4 +1,4 @@
-import { delay } from "../../helpers/test-utils.js";
+import { delay, E2E_SKILL_TITLES } from "../../helpers/test-utils.js";
 import { BaseStep } from "../base-step.js";
 import {
   INTERNAL_DELAYS,
@@ -9,7 +9,6 @@ import {
 } from "../constants.js";
 import { retryEnterUntil } from "../retry-enter.js";
 import type { WizardResult } from "../wizard-result.js";
-import { SearchModal } from "./search-modal.js";
 import { SourcesStep } from "./sources-step.js";
 
 const BOX_DRAWING_CHARS = ["│", "┌", "└", "┐", "┘", "─"];
@@ -402,12 +401,13 @@ export class BuildStep extends BaseStep {
    * Mobile has no E2E source skills ("No categories to display"), just advance.
    */
   async passThroughScratchDomains(): Promise<SourcesStep> {
-    // Web domain — select the react framework. Options render alphabetically by
-    // displayName, so the first-focused cell is Vue, not react; focus react
-    // explicitly. The label is the TITLE the E2E fixture gives that skill, which
-    // is its unprefixed id — not the namespaced id the fixture publishes it under.
+    // Web domain — select the react framework, focused explicitly rather than
+    // relying on where the grid opens. The label is the TITLE the E2E fixture gives
+    // that skill, read from the fixture's own map — not the namespaced id it
+    // publishes the skill under, and not a literal that would have to be edited in
+    // step with it.
     await this.screen.waitForText(STEP_TEXT.DOMAIN_WEB, TIMEOUTS.WIZARD_LOAD);
-    await this.focusSkill("web-framework-react");
+    await this.focusSkill(E2E_SKILL_TITLES.react);
     await this.pressSpace();
     await this.pressEnterWaitNewFrame();
 
@@ -477,13 +477,6 @@ export class BuildStep extends BaseStep {
   async toggleLabels(): Promise<void> {
     await this.waitForWizardFooter();
     await this.pressKey("d");
-  }
-
-  /** Open the search modal (press "/"). */
-  async openSearch(): Promise<SearchModal> {
-    await this.waitForWizardFooter();
-    await this.pressKey("/");
-    return new SearchModal(this.session, this.projectDir);
   }
 
   /**

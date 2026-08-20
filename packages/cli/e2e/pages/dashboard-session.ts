@@ -35,14 +35,20 @@ export class DashboardSession {
     return this.screen.getScreen();
   }
 
-  /** Press Escape. */
-  escape(): void {
+  /**
+   * Press Escape (with delay for PTY processing), like the navigation methods below.
+   * Async because a bare synchronous write races the handler the current frame
+   * registered — the same reason `arrowDown`/`arrowUp` carry the delay.
+   */
+  async escape(): Promise<void> {
     this.session.escape();
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
-  /** Press Ctrl+C. */
-  ctrlC(): void {
+  /** Press Ctrl+C (with delay for PTY processing). */
+  async ctrlC(): Promise<void> {
     this.session.ctrlC();
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   /** Navigate down (with delay for PTY processing). */

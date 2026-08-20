@@ -59,8 +59,12 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  * of `UI_SYMBOLS.SELECTED` in the wizard's render path — the agents step and the
  * checkbox grid wrap theirs in `[…]` on other steps, and the settings overlay's
  * tick needs `s` to open it, which this spec never presses. Asserted against
- * `getScreen()` (the viewport) rather than `getOutput()`, whose scrollback still
- * holds the domain step's checkbox frames.
+ * `getScreen()`, which is scrollback PLUS the viewport rather than the visible
+ * area alone (`TerminalSession.getScreen`). The two coincide here:
+ * `waitForWizardFooter` has just asserted nothing sits above the viewport
+ * (`assertWizardScreenIsWhollyVisible` in `e2e/pages/base-step.ts`), so
+ * `viewportY` is 0 and the earlier steps' checkbox frames are no longer in the
+ * range. `getOutput()` would read the same rows.
  *
  * Read-only session: the wizard is aborted, so config.ts and the project skills
  * directory must come out byte-for-byte unchanged.

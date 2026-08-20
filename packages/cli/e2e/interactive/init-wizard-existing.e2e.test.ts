@@ -88,7 +88,7 @@ describe("init wizard — existing projects", () => {
       expect(output).toContain(STEP_TEXT.DASHBOARD);
       expect(output).not.toContain(STEP_TEXT.STACK);
 
-      dashboard.escape();
+      await dashboard.escape();
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -125,7 +125,7 @@ describe("init wizard — existing projects", () => {
       expect(output).toContain("List");
       expect(output).not.toContain(STEP_TEXT.STACK);
 
-      dashboard.escape();
+      await dashboard.escape();
       await dashboard.waitForExit();
     });
 
@@ -149,7 +149,7 @@ describe("init wizard — existing projects", () => {
       const output = dashboard.getOutput();
       expect(output).toContain("Edit");
 
-      dashboard.escape();
+      await dashboard.escape();
       await dashboard.waitForExit();
     });
 
@@ -167,7 +167,7 @@ describe("init wizard — existing projects", () => {
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
       const treeBefore = await readTreeSnapshot(dashboardDir);
 
-      dashboard.escape();
+      await dashboard.escape();
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -191,7 +191,7 @@ describe("init wizard — existing projects", () => {
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
       const treeBefore = await readTreeSnapshot(dashboardDir);
 
-      dashboard.ctrlC();
+      await dashboard.ctrlC();
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -232,7 +232,7 @@ describe("init wizard — existing projects", () => {
       expect(output).toContain(STEP_TEXT.DASHBOARD);
       expect(output).not.toContain(STEP_TEXT.STACK);
 
-      dashboard.escape();
+      await dashboard.escape();
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);

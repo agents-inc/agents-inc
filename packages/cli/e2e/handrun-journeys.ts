@@ -21,6 +21,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import path from "path";
+import { matrixSchema } from "@workspace/matrix/matrix-schema";
 import { attempt, note, section, verdict } from "./handrun-driver.js";
 import { checkFourSurfaces } from "./handrun-surfaces.js";
 import {
@@ -34,6 +35,8 @@ import {
 import { createE2ESource } from "./helpers/create-e2e-source.js";
 import { CLI } from "./fixtures/cli.js";
 import {
+  readAgentEntries,
+  readAllSkillEntries,
   readConfigSkillIds,
   setupDualScopeWithEject,
   runEditWithFirstSkillAction,
@@ -42,6 +45,33 @@ import { createE2EPluginSource } from "./helpers/create-e2e-plugin-source.js";
 import { claudePluginMarketplaceAdd } from "../src/cli/utils/exec.js";
 import { InitWizard } from "./pages/wizards/init-wizard.js";
 import { initGlobalWithEject } from "./fixtures/dual-scope-helpers.js";
+import {
+  agentsPath,
+  completeWithLocalSources,
+  createLocalSkill,
+  listFiles,
+  readCompiledAgents,
+  readMarketplaceJson,
+  skillsPath,
+  writeAgentFile,
+  writeTestPackageJson,
+} from "./helpers/test-utils.js";
+import {
+  BUILT_IN_STACK_DISPLAY,
+  E2E_SKILL,
+  E2E_SKILL_IDS,
+  E2E_STACK_DISPLAY,
+} from "./fixtures/expected-values.js";
+import {
+  E2E_MARKETPLACE_NAME,
+  E2E_MARKETPLACE_PREFIX,
+  EXIT_CODES,
+  FILES,
+  SOURCE_PATHS,
+  STEP_TEXT,
+  WIZARD_TAB_LABELS_WITHOUT_STACK,
+  WIZARD_TAB_STACK,
+} from "./pages/constants.js";
 import type { ProjectHandle } from "./pages/wizard-result.js";
 
 function listDir(dir: string): string {
@@ -59,6 +89,43 @@ function skillIdsIn(configPath: string): string {
 function mintedId(output: string): string | undefined {
   return /Shared as (\S+)/.exec(output)?.[1];
 }
+
+/**
+ * A collection of config entries as one comparable string: every field of every
+ * entry, serialised, then sorted so array order is not part of the claim.
+ *
+ * Order is deliberately excluded because the two sides of a round trip are
+ * written by different producers — a wizard at one end, `init --from` at the
+ * other — and the configuration is a set of entries rather than a sequence.
+ * Everything else about an entry stays in.
+ */
+function canonicalEntries(values: readonly unknown[]): string {
+  return values
+    .map((value) => JSON.stringify(value))
+    .sort()
+    .join("\n");
+}
+
+/**
+ * A directory in the shared `.claude/skills/` tree that this CLI did not put
+ * there — it has no `metadata.yaml`, so nothing in it can carry the `forkedFrom`
+ * stamp that would make it this installation's.
+ */
+const FOREIGN_SKILL_DIR = "context7-mcp";
+
+/**
+ * An agent file in the shared `.claude/agents/` tree that this CLI did not
+ * compile. Its claim would be the provenance marker rather than `forkedFrom`,
+ * and it carries none — which is the whole of what makes it the user's own.
+ */
+const FOREIGN_AGENT_NAME = "my-own-reviewer";
+
+/** The marketplace journey 35 scaffolds, carrying the prefix the fixture sweep matches. */
+const CATALOGUE_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}catalogue`;
+
+/** The one skill and the one stack a scaffold ships, in that marketplace's own namespace. */
+const CATALOGUE_SKILL_ID = `${CATALOGUE_MARKETPLACE_NAME}-example-skill`;
+const CATALOGUE_STACK_ID = `${CATALOGUE_MARKETPLACE_NAME}-starter`;
 
 /** Journey 1 — a global install from nothing, through the wizard. */
 async function journeyGlobalInstall(): Promise<{ project: ProjectHandle; sourceDir: string }> {
@@ -127,7 +194,12 @@ async function journeyNonTtyRefusal(store: SeedConfigStore, id: string): Promise
     note(`exit ${result.exitCode}`);
     const line = result.output.split("\n").find((l) => l.includes("terminal"));
     note("what it said", line?.trim() ?? "(no mention of a terminal)");
-    verdict("a destructive apply will not proceed unasked", result.exitCode !== 0);
+    // The line, not only the exit code: a run that failed for any other reason exits
+    // non-zero too, and this journey's claim is about WHAT was refused.
+    verdict(
+      "a destructive apply will not proceed unasked",
+      result.exitCode !== 0 && line !== undefined,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -183,7 +255,10 @@ async function journeyHomeScopeRefusal(store: SeedConfigStore, sourceDir: string
   note(`exit ${result.exitCode}`);
   const line = result.output.split("\n").find((l) => l.includes("home directory"));
   note("what it said", line?.trim() ?? "(no mention of the home directory)");
-  verdict("a global install refuses project-scoped content", result.exitCode !== 0);
+  verdict(
+    "a global install refuses project-scoped content",
+    result.exitCode !== 0 && line !== undefined,
+  );
   rmSync(home, { recursive: true, force: true });
 }
 
@@ -199,15 +274,18 @@ async function journeyRefusesExistingInstall(
   note(`exit ${result.exitCode}`);
   const line = result.output.split("\n").find((l) => /already exists|uninstall/.test(l));
   note("what it said", line?.trim() ?? "(no refusal found)");
-  verdict("greenfield stays greenfield", result.exitCode !== 0);
+  verdict("greenfield stays greenfield", result.exitCode !== 0 && line !== undefined);
 }
+
+/** What {@link firstLine} answers when nothing in the output matched. */
+const NO_MATCHING_LINE = "(not found)";
 
 function firstLine(out: string, pattern: RegExp): string {
   return (
     out
       .split("\n")
       .find((l) => pattern.test(l))
-      ?.trim() ?? "(not found)"
+      ?.trim() ?? NO_MATCHING_LINE
   );
 }
 
@@ -300,10 +378,18 @@ async function journeyDeletedConfig(): Promise<void> {
 
   const at: ProjectHandle = { dir: home, globalHome: home };
   const doctor = await CLI.run(["doctor"], at);
-  note(`doctor exit ${doctor.exitCode}`, firstLine(doctor.output, /Orphan|no configuration/i));
+  const doctorSaid = firstLine(doctor.output, /Orphan|no configuration/i);
+  note(`doctor exit ${doctor.exitCode}`, doctorSaid);
   const list = await CLI.run(["list"], at);
-  note(`list exit ${list.exitCode}`, firstLine(list.output, /No |not found|install/i));
-  verdict("the CLI reports rather than crashes", doctor.exitCode !== 0 || list.exitCode === 0);
+  const listSaid = firstLine(list.output, /No |not found|install/i);
+  note(`list exit ${list.exitCode}`, listSaid);
+  // Both commands, and each on what it SAID. The disjunction this replaces was
+  // satisfied by `doctor` merely exiting non-zero, which is also what the crash it
+  // denies would do — so it could not tell a report from a crash.
+  verdict(
+    "the CLI reports rather than crashes",
+    doctorSaid !== NO_MATCHING_LINE && listSaid !== NO_MATCHING_LINE,
+  );
   rmSync(home, { recursive: true, force: true });
 }
 
@@ -339,11 +425,12 @@ async function journeyNamespaceGuards(): Promise<void> {
   note("skills in the repo", listDir(path.join(repo, "src", "skills")));
   await CLI.run(["build", "plugins"], { dir: repo });
   const build = await CLI.run(["build", "marketplace"], { dir: repo });
-  note(
-    `build marketplace exit ${build.exitCode}`,
-    firstLine(build.output, /namespace|prefix|not-ours|Error/i),
+  const refusal = firstLine(build.output, /namespace|prefix|not-ours|Error/i);
+  note(`build marketplace exit ${build.exitCode}`, refusal);
+  verdict(
+    "a build refuses an id outside its namespace",
+    build.exitCode !== 0 && refusal !== NO_MATCHING_LINE,
   );
-  verdict("a build refuses an id outside its namespace", build.exitCode !== 0);
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -420,16 +507,25 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
     'displayName: Mine\nslug: my-own-skill\ncategory: web-framework\ndomain: web\nusageGuidance: Mine.\nauthor: "@me"\ncustom: true\n',
   );
 
+  const postsBefore = store.requests.filter((request) => request.method === "POST").length;
   const shared = await CLI.run(
     ["share"],
     { dir: home, globalHome: home },
     { env: { AGENTS_INC_API_URL: store.url } },
   );
-  const carried = /my-own-skill/.test(shared.output);
-  note(`share exit ${shared.exitCode}`);
+  // The PAYLOAD the store received, not the transcript: `share` prints a count and an
+  // id and never names a skill, so a grep of its output for one is false whatever the
+  // payload carried. `posted` is also the proof that a payload exists at all — with no
+  // POST, "it does not mention the skill" is true of nothing.
+  const posted = store.requests.filter((request) => request.method === "POST").slice(postsBefore);
+  const carried = posted.some((request) => request.body.includes(path.basename(mine)));
+  note(`share exit ${shared.exitCode}`, `${posted.length} configuration(s) posted`);
   note("does the payload mention it?", carried ? "YES — it should not" : "no, correctly");
   note("still on disk", existsSync(mine) ? "yes" : "GONE");
-  verdict("a skill nobody installed is neither carried nor removed", !carried && existsSync(mine));
+  verdict(
+    "a skill nobody installed is neither carried nor removed",
+    posted.length > 0 && !carried && existsSync(mine),
+  );
   rmSync(home, { recursive: true, force: true });
 }
 
@@ -479,9 +575,11 @@ async function journeyScopeToggles(): Promise<void> {
   const ps = await checkFourSurfaces("project", proj, { globalHome: home });
   const moved = before.join(",") !== after.join(",");
   note("did the project's roster change?", moved ? "yes" : "no");
+  // `moved` is the subject guard: four-surface health at both scopes is satisfied by a
+  // toggle that did nothing at all, which is the one outcome this journey denies.
   verdict(
-    "journeys 4 / 15 / 16 — both scopes hold on all four surfaces after a scope toggle",
-    gs.held && ps.held,
+    "journeys 4 / 15 / 16 — the scope toggle moved the project's roster and both scopes hold on all four surfaces",
+    moved && gs.held && ps.held,
   );
   for (const d of [home, proj]) rmSync(d, { recursive: true, force: true });
 }
@@ -605,6 +703,420 @@ async function journeyCustomMarketplaceArc(): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
+/**
+ * Journey 21 — the marketplace-author arc: `doctor` over the repository, `build
+ * plugins`, `build marketplace`, then an install from what was built.
+ *
+ * `doctor` runs three times on purpose. Twice in the repository, at either end of
+ * the build, and once over the installation — it is the one command whose answer
+ * must CHANGE between the two cwds, so the verdict names both directions rather
+ * than only the one it happens to be standing in.
+ */
+async function journeyMarketplaceAuthorArc(): Promise<void> {
+  section("Journey 21 — the marketplace-author arc: doctor, build, publish, install");
+  const source = await createE2ESource();
+  const repo: ProjectHandle = { dir: source.sourceDir };
+
+  const beforeBuild = await CLI.run(["doctor"], repo);
+  note(
+    `doctor over the repository exit ${beforeBuild.exitCode}`,
+    firstLine(beforeBuild.output, new RegExp(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION)),
+  );
+
+  const buildPlugins = await CLI.run(["build", "plugins"], repo);
+  const compiled = (await listFiles(path.join(source.sourceDir, SOURCE_PATHS.PLUGINS_DIST))).sort();
+  const shipped = [...E2E_SKILL_IDS].sort();
+  note(`build plugins exit ${buildPlugins.exitCode}`, `${compiled.length} plugins compiled`);
+  verdict(
+    `journey 21 — build plugins compiles one plugin per skill the repository ships (${shipped.length})`,
+    buildPlugins.exitCode === EXIT_CODES.SUCCESS && compiled.join(",") === shipped.join(","),
+  );
+
+  await writeTestPackageJson(source.sourceDir, { name: E2E_MARKETPLACE_NAME });
+  const buildMarketplace = await CLI.run(["build", "marketplace"], repo);
+  note(`build marketplace exit ${buildMarketplace.exitCode}`);
+  const manifest = await readMarketplaceJson(
+    path.join(source.sourceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, FILES.MARKETPLACE_JSON),
+  );
+  const published = manifest.plugins.map((plugin) => plugin.name).sort();
+  note("the marketplace publishes", `${manifest.name}: ${published.length} plugins`);
+  verdict(
+    `journey 21 — the published marketplace lists those ${shipped.length} plugins and no others`,
+    buildMarketplace.exitCode === EXIT_CODES.SUCCESS &&
+      manifest.name === E2E_MARKETPLACE_NAME &&
+      published.join(",") === shipped.join(","),
+  );
+
+  const afterBuild = await CLI.run(["doctor"], repo);
+  note(`doctor over the built repository exit ${afterBuild.exitCode}`);
+
+  const home = mkdtempSync(path.join(tmpdir(), "handrun-j21-"));
+  try {
+    const install = await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+    note(`init from the built repository exit ${install.exitCode}`);
+    note("skills it installed", listDir(skillsPath(home)));
+    const installed = await checkFourSurfaces("author-arc-install", home);
+
+    const overInstall = await CLI.run(["doctor"], { dir: home, globalHome: home });
+    note(
+      `doctor over the installation exit ${overInstall.exitCode}`,
+      firstLine(overInstall.output, new RegExp(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION)),
+    );
+    verdict(
+      "journey 21 — doctor answers differently in the two cwds: the repository skips the operational layer at both ends of the build, the installation runs it",
+      beforeBuild.exitCode === EXIT_CODES.SUCCESS &&
+        beforeBuild.stdout.includes(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION) &&
+        !beforeBuild.stdout.includes(STEP_TEXT.DOCTOR_CONFIG_CHECK) &&
+        afterBuild.exitCode === EXIT_CODES.SUCCESS &&
+        afterBuild.stdout.includes(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION) &&
+        overInstall.exitCode === EXIT_CODES.SUCCESS &&
+        overInstall.stdout.includes(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION) &&
+        overInstall.stdout.includes(STEP_TEXT.DOCTOR_CONFIG_CHECK) &&
+        !overInstall.stdout.includes(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION),
+    );
+    verdict(
+      `journey 21 — the install from the built repository lands a roster (${installed.skillIds.length} skills) and holds on all four surfaces`,
+      install.exitCode === EXIT_CODES.SUCCESS && installed.held && installed.skillIds.length > 0,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Journey 28 — a marketplace's stacks are its own. One that ships stacks makes
+ * the wizard offer exactly those; one that ships none leaves the wizard no stack
+ * step and no Stack tab. Both arms install, so both have four surfaces to read.
+ *
+ * Journey 28a — a checkout of the public catalogue read off a path — is the
+ * separate leg above and is not repeated here.
+ */
+async function journeyMarketplaceStacks(): Promise<void> {
+  section("Journey 28 — the wizard offers the marketplace's own stacks, or no stack step at all");
+
+  const stacked = await createE2ESource();
+  const stackedHome = mkdtempSync(path.join(tmpdir(), "handrun-j28-stacked-"));
+  const stackedWizard = await InitWizard.launch({
+    source: stacked,
+    projectDir: stackedHome,
+    env: { HOME: stackedHome },
+  });
+  try {
+    const offered = stackedWizard.stack.getOutput();
+    note(
+      "the stack screen offers",
+      offered.includes(E2E_STACK_DISPLAY) ? E2E_STACK_DISPLAY : "(not the source's own stack)",
+    );
+    note(
+      "does it also offer a built-in?",
+      offered.includes(BUILT_IN_STACK_DISPLAY) ? "YES — it should not" : "no, correctly",
+    );
+    verdict(
+      "journey 28 — a marketplace shipping stacks offers its own, plus the scratch row, and none of the built-ins",
+      offered.includes(E2E_STACK_DISPLAY) &&
+        offered.includes(STEP_TEXT.START_FROM_SCRATCH) &&
+        !offered.includes(BUILT_IN_STACK_DISPLAY),
+    );
+
+    const result = await completeWithLocalSources(stackedWizard);
+    note(`init exit ${await result.exitCode}`);
+    note("skills it installed", listDir(skillsPath(stackedHome)));
+    const surfaces = await checkFourSurfaces("stacked-source", stackedHome);
+    verdict(
+      "journey 28 — the stacked source's install lands a roster and holds on all four surfaces",
+      surfaces.held && surfaces.skillIds.length > 0,
+    );
+    await result.destroy();
+  } finally {
+    await stackedWizard.destroy();
+    rmSync(stackedHome, { recursive: true, force: true });
+  }
+
+  const stackless = await createE2ESource({ withoutStacks: true });
+  const stacklessHome = mkdtempSync(path.join(tmpdir(), "handrun-j28-stackless-"));
+  const launched = await InitWizard.launchOnDomainsInProject({
+    source: stackless,
+    projectDir: stacklessHome,
+    globalHome: stacklessHome,
+  });
+  try {
+    // Read before the walk starts. Raw PTY output is append-only, so a stack step
+    // that painted for one frame is still in it — but the confirm step's summary
+    // panel prints a Stack row of its own, so an absence claimed after the walk
+    // would be an absence of nothing.
+    const raw = launched.wizard.getRawOutput();
+    const otherTabs = WIZARD_TAB_LABELS_WITHOUT_STACK.filter((label) => raw.includes(label));
+    note(
+      "tabs painted",
+      `${otherTabs.length} of ${WIZARD_TAB_LABELS_WITHOUT_STACK.length} non-stack tabs`,
+    );
+    note("a Stack tab?", raw.includes(WIZARD_TAB_STACK) ? "YES — it should not be there" : "no");
+    verdict(
+      `journey 28 — a marketplace shipping no stacks paints all ${WIZARD_TAB_LABELS_WITHOUT_STACK.length} other tabs, no Stack tab and no stack step`,
+      raw.includes(STEP_TEXT.DOMAINS) &&
+        otherTabs.length === WIZARD_TAB_LABELS_WITHOUT_STACK.length &&
+        !raw.includes(WIZARD_TAB_STACK) &&
+        !raw.includes(STEP_TEXT.STACK) &&
+        !raw.includes(STEP_TEXT.START_FROM_SCRATCH) &&
+        !raw.includes(BUILT_IN_STACK_DISPLAY),
+    );
+
+    // A stackless source preselects nothing — there is no stack to preselect FROM
+    // — so the grid opens empty and the pick has to be made, or the install below
+    // installs zero skills and every surface is satisfied by nothing happening.
+    const build = await launched.domain.acceptDefaults();
+    await build.selectSkill(E2E_SKILL.react.display);
+    const sources = await build.passThroughAllDomains();
+    await sources.waitForReady();
+    await sources.setAllLocal();
+    const agents = await sources.advance();
+    const confirm = await agents.acceptDefaults("init");
+    const result = await confirm.confirm();
+    note(`stackless init exit ${await result.exitCode}`);
+    note("skills it installed", listDir(skillsPath(stacklessHome)));
+    const surfaces = await checkFourSurfaces("stackless-source", stacklessHome);
+    verdict(
+      "journey 28 — the stackless source installs the skill that was picked and holds on all four surfaces",
+      surfaces.held && surfaces.skillIds.includes(E2E_SKILL.react.id),
+    );
+    await result.destroy();
+  } finally {
+    await launched.wizard.destroy();
+    rmSync(stacklessHome, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Journey 29 — the share round trip. A real installation becomes an id, and that
+ * id installs into a second directory that has never seen any of it.
+ *
+ * All four things the journey names are compared between the two ends — config,
+ * skills directory, agents directory and per-agent curation — and then each end
+ * is read at four-surface strength in its own right, which an
+ * origin-against-rebuild comparison cannot do: two equally broken installations
+ * satisfy every comparison here.
+ */
+async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
+  section("Journey 29 — share turns an installation into an id, and the id rebuilds it elsewhere");
+  const source = await createE2ESource();
+  const origin = mkdtempSync(path.join(tmpdir(), "handrun-j29-origin-"));
+  const rebuilt = mkdtempSync(path.join(tmpdir(), "handrun-j29-rebuilt-"));
+  try {
+    const install = await initGlobalWithEject(source.sourceDir, source.tempDir, origin);
+    note(`the origin install exit ${install.exitCode}`);
+
+    const shared = await runShare(store, { dir: origin, globalHome: origin });
+    const id = mintedId(shared.output);
+    note(`share exit ${shared.exitCode}`, id ?? "(no id minted)");
+    if (id === undefined) {
+      verdict("journey 29 — share mints an id for a real installation", false);
+      return;
+    }
+
+    const reinstalled = await runInitFrom(
+      store,
+      id,
+      { dir: rebuilt, globalHome: rebuilt },
+      source.sourceDir,
+    );
+    note(`init --from ${id} exit ${reinstalled.exitCode}`, firstLine(reinstalled.output, /Error/i));
+
+    const originSkillEntries = await readAllSkillEntries(origin);
+    const rebuiltSkillEntries = await readAllSkillEntries(rebuilt);
+    const originAgentEntries = await readAgentEntries(origin);
+    const rebuiltAgentEntries = await readAgentEntries(rebuilt);
+    note(
+      "config skill entries",
+      `origin ${originSkillEntries.length}, rebuild ${rebuiltSkillEntries.length}`,
+    );
+    note(
+      "config sub-agent entries",
+      `origin ${originAgentEntries.length}, rebuild ${rebuiltAgentEntries.length}`,
+    );
+    verdict(
+      `journey 29 — the rebuilt config carries the same ${originSkillEntries.length} skill entries and ${originAgentEntries.length} sub-agent entries, field for field`,
+      originSkillEntries.length > 0 &&
+        originAgentEntries.length > 0 &&
+        canonicalEntries(originSkillEntries) === canonicalEntries(rebuiltSkillEntries) &&
+        canonicalEntries(originAgentEntries) === canonicalEntries(rebuiltAgentEntries),
+    );
+
+    const originSkillDirs = (await listFiles(skillsPath(origin))).sort().join(", ");
+    const rebuiltSkillDirs = (await listFiles(skillsPath(rebuilt))).sort().join(", ");
+    note("origin skills directory", originSkillDirs || "(empty)");
+    note("rebuilt skills directory", rebuiltSkillDirs || "(empty)");
+    verdict(
+      "journey 29 — the two skills directories hold the same skills",
+      originSkillDirs.length > 0 && originSkillDirs === rebuiltSkillDirs,
+    );
+
+    const originAgentFiles = (await listFiles(agentsPath(origin))).sort().join(", ");
+    const rebuiltAgentFiles = (await listFiles(agentsPath(rebuilt))).sort().join(", ");
+    note("origin agents directory", originAgentFiles || "(empty)");
+    note("rebuilt agents directory", rebuiltAgentFiles || "(empty)");
+    verdict(
+      "journey 29 — the two agents directories hold the same compiled sub-agents",
+      originAgentFiles.length > 0 && originAgentFiles === rebuiltAgentFiles,
+    );
+
+    // Per-agent curation, read where it is decided rather than where it is
+    // declared: which skills each sub-agent got, and which of them are preloaded,
+    // is what the compiled body says.
+    const originBodies = await readCompiledAgents(origin);
+    const rebuiltBodies = await readCompiledAgents(rebuilt);
+    const curationDiffers = Object.keys(originBodies).filter(
+      (file) => originBodies[file] !== rebuiltBodies[file],
+    );
+    note("compiled sub-agents whose body differs", curationDiffers.join(", ") || "none");
+    verdict(
+      `journey 29 — per-agent curation survives the trip: all ${Object.keys(originBodies).length} compiled sub-agents are byte-identical`,
+      Object.keys(originBodies).length > 0 && curationDiffers.length === 0,
+    );
+
+    const originSurfaces = await checkFourSurfaces("share-origin", origin);
+    const rebuiltSurfaces = await checkFourSurfaces("share-rebuild", rebuilt);
+    verdict(
+      "journey 29 — each end holds on all four surfaces in its own right, not merely against the other",
+      originSurfaces.held && rebuiltSurfaces.held,
+    );
+  } finally {
+    for (const d of [origin, rebuilt]) rmSync(d, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Journey 35 — `build marketplace` emits a catalogue the browser can run on:
+ * `catalog.json` beside `marketplace.json`, carrying only what this marketplace
+ * ships.
+ *
+ * The emission has no flag, so an absent catalogue cannot mean an author who
+ * chose not to publish one — it can only mean a marketplace that is broken. The
+ * file is parsed with the editor's own schema, no transform in between, because
+ * a catalogue the editor cannot read is the same as no catalogue.
+ */
+async function journeyCatalogueEmission(): Promise<void> {
+  section("Journey 35 — build marketplace emits a catalogue beside the marketplace");
+  const dir = mkdtempSync(path.join(tmpdir(), "handrun-j35-"));
+  try {
+    const scaffold = await CLI.run(["new", "marketplace", CATALOGUE_MARKETPLACE_NAME], { dir });
+    note(`new marketplace exit ${scaffold.exitCode}`);
+
+    const repo = path.join(dir, CATALOGUE_MARKETPLACE_NAME);
+    const buildPlugins = await CLI.run(["build", "plugins"], { dir: repo });
+    const buildMarketplace = await CLI.run(["build", "marketplace"], { dir: repo });
+    note(`build plugins exit ${buildPlugins.exitCode}`);
+    note(`build marketplace exit ${buildMarketplace.exitCode}`);
+
+    const manifestDir = path.join(repo, SOURCE_PATHS.PLUGIN_MANIFEST_DIR);
+    note("the manifest directory holds", listDir(manifestDir));
+    const catalogPath = path.join(manifestDir, FILES.CATALOG_JSON);
+    const beside =
+      existsSync(catalogPath) && existsSync(path.join(manifestDir, FILES.MARKETPLACE_JSON));
+    verdict(
+      "journey 35 — a catalogue is emitted beside the marketplace, with no flag asking for one",
+      buildMarketplace.exitCode === EXIT_CODES.SUCCESS && beside,
+    );
+    if (!beside) return;
+
+    const parsed = matrixSchema.safeParse(JSON.parse(readFileSync(catalogPath, "utf8")));
+    const issues = parsed.error?.issues ?? [];
+    note(
+      "schema issues",
+      issues.length === 0 ? "none" : issues.map((issue) => issue.path.join(".")).join(", "),
+    );
+    const catalogueSkills = Object.keys(parsed.data?.skills ?? {}).sort();
+    const catalogueStacks = (parsed.data?.suggestedStacks ?? []).map((stack) => stack.id).sort();
+    note("catalogue skills", catalogueSkills.join(", ") || "(none)");
+    note("catalogue stacks", catalogueStacks.join(", ") || "(none)");
+    verdict(
+      "journey 35 — the catalogue parses under the editor's own schema and carries this marketplace's one skill and one stack, and nothing else",
+      issues.length === 0 &&
+        catalogueSkills.join(",") === CATALOGUE_SKILL_ID &&
+        catalogueStacks.join(",") === CATALOGUE_STACK_ID,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Journey 36 — what an installation owns in a directory it shares.
+ *
+ * `~/.claude/skills/` and `~/.claude/agents/` are Claude Code's directories, and
+ * everything else that installs into them is a neighbour. Which entries are this
+ * installation's is one question two commands ask, and the claim is that they
+ * answer it identically — `doctor` recommends `uninstall`, so a directory the
+ * first names and the second declines would be an offer that is never kept.
+ *
+ * Both halves are driven here, against the same tree: a neighbour's skill
+ * directory carrying no `forkedFrom`, and a hand-written agent file carrying no
+ * provenance marker, beside a real install of both kinds. Showing one half alone
+ * proves nothing about the agreement, which is the whole claim.
+ */
+async function journeySharedDirectoryOwnership(): Promise<void> {
+  section("Journey 36 — doctor steps over what it cannot claim, and uninstall refuses the same");
+  const source = await createE2ESource();
+  const home = mkdtempSync(path.join(tmpdir(), "handrun-j36-"));
+  try {
+    const install = await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+    note(`init exit ${install.exitCode}`);
+
+    await createLocalSkill(home, FOREIGN_SKILL_DIR);
+    await writeAgentFile(home, FOREIGN_AGENT_NAME, { frontmatter: true });
+
+    const ourSkills = (await listFiles(skillsPath(home))).filter(
+      (name) => name !== FOREIGN_SKILL_DIR,
+    );
+    const ourAgents = (await listFiles(agentsPath(home))).filter(
+      (file) => file !== `${FOREIGN_AGENT_NAME}.md`,
+    );
+    note("skill directories this install wrote", `${ourSkills.length}: ${ourSkills.join(", ")}`);
+    note("agent files it compiled", `${ourAgents.length}: ${ourAgents.join(", ")}`);
+    note("what it shares the tree with", `${FOREIGN_SKILL_DIR}, ${FOREIGN_AGENT_NAME}.md`);
+
+    const at: ProjectHandle = { dir: home, globalHome: home };
+    const doctor = await CLI.run(["doctor"], at);
+    note(
+      `doctor exit ${doctor.exitCode}`,
+      firstLine(doctor.output, new RegExp(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR)),
+    );
+    note("does it name the neighbour?", doctor.stdout.includes(FOREIGN_SKILL_DIR) ? "yes" : "no");
+    verdict(
+      "journey 36 — doctor names the directory it cannot claim and declines to judge it, rather than failing over it",
+      doctor.exitCode === EXIT_CODES.SUCCESS &&
+        doctor.stdout.includes(FOREIGN_SKILL_DIR) &&
+        doctor.stdout.includes(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR),
+    );
+
+    const uninstall = await CLI.run(["uninstall", "--yes"], at);
+    const skillsLeft = await listFiles(skillsPath(home));
+    const agentsLeft = await listFiles(agentsPath(home));
+    note(
+      `uninstall exit ${uninstall.exitCode}`,
+      firstLine(uninstall.output, new RegExp(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE)),
+    );
+    note("skill directories left", skillsLeft.join(", ") || "(none)");
+    note("agent files left", agentsLeft.join(", ") || "(none)");
+    verdict(
+      `journey 36 — uninstall removed the ${ourSkills.length} skill directories and ${ourAgents.length} agent files this install owns, and left exactly the two it does not`,
+      uninstall.exitCode === EXIT_CODES.SUCCESS &&
+        ourSkills.length > 0 &&
+        ourAgents.length > 0 &&
+        skillsLeft.join(",") === FOREIGN_SKILL_DIR &&
+        agentsLeft.join(",") === `${FOREIGN_AGENT_NAME}.md`,
+    );
+    verdict(
+      "journey 36 — the two commands agree: the neighbour doctor stepped over is the one uninstall kept, and it says which files it kept and why",
+      doctor.stdout.includes(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR) &&
+        skillsLeft.join(",") === FOREIGN_SKILL_DIR &&
+        uninstall.output.includes(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE) &&
+        uninstall.output.includes(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON),
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   const store = await startSeedConfigStore();
   try {
@@ -632,6 +1144,11 @@ async function main(): Promise<void> {
     await attempt("journeyExternalSkills", () => journeyExternalSkills(store, sourceDir));
     await attempt("journeyStackPicksEditable", () => journeyStackPicksEditable());
     await attempt("journeyCustomMarketplaceArc", () => journeyCustomMarketplaceArc());
+    await attempt("journeyMarketplaceAuthorArc", () => journeyMarketplaceAuthorArc());
+    await attempt("journeyMarketplaceStacks", () => journeyMarketplaceStacks());
+    await attempt("journeyShareRoundTrip", () => journeyShareRoundTrip(store));
+    await attempt("journeyCatalogueEmission", () => journeyCatalogueEmission());
+    await attempt("journeySharedDirectoryOwnership", () => journeySharedDirectoryOwnership());
   } finally {
     await store.close();
     process.stdout.write("\nstore closed\n");

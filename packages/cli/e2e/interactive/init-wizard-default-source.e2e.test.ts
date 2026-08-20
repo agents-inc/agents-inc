@@ -114,7 +114,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
       expect(output).toContain(STEP_TEXT.DASHBOARD);
       expect(output).not.toContain("Registering marketplace");
 
-      dashboard.escape();
+      await dashboard.escape();
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     },
@@ -158,7 +158,7 @@ describe.skipIf(!claudeAvailable)("init wizard — default source eject mode ENO
       expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
       expect(output).not.toContain("ENOENT");
       await expect(result.project).toHaveConfig({
-        source: "agents-inc",
+        origin: "agents-inc",
         agents: ["web-developer", "api-developer"],
       });
 

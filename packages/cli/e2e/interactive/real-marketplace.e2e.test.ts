@@ -144,7 +144,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
 
     it("should have created config.ts with agents-inc source", async () => {
       await expect({ dir: projectDir }).toHaveConfig({
-        source: "agents-inc",
+        origin: "agents-inc",
         agents: ["web-developer"],
       });
     });

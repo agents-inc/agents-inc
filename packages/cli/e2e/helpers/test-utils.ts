@@ -1,11 +1,9 @@
 import { execa } from "execa";
-import { cp, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
-import os from "os";
 import {
-  CACHE_DIR,
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   PLUGIN_MANIFEST_DIR,
@@ -13,8 +11,6 @@ import {
   STANDARD_FILES,
 } from "../../src/cli/consts.js";
 import { cliVersion, stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
-import { DEFAULT_SOURCE } from "../../src/cli/lib/configuration/config.js";
-import { sanitizeSourceForCache } from "../../src/cli/lib/loading/source-fetcher.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import {
   renderAgentMd,
@@ -25,7 +21,11 @@ import {
   renderSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
 import { writeTestPackageJson } from "../../src/cli/lib/__tests__/helpers/config-io.js";
-import { normalizeGlobalConfig } from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
+import {
+  normalizeConfigPreservingOrder,
+  normalizeGlobalConfig,
+} from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
+import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
 import {
   cleanupTempDir,
   createTempDir as createTempDirBase,
@@ -63,6 +63,30 @@ export const MONOREPO_ROOT = path.resolve(CLI_ROOT, "../..");
 
 /** Absolute path to the built binary (requires `bun run build` first) */
 export const BIN_RUN = path.join(CLI_ROOT, "bin", "run.js");
+
+/**
+ * The environment that stops a spawned CLI leaving a background writer behind it.
+ *
+ * `@oclif/plugin-warn-if-update-available`'s init hook ends by spawning a DETACHED,
+ * `unref`'d child which writes `<cacheDir>/version`. Nothing awaits it, so the write lands
+ * AFTER the CLI process has exited — and under a fake HOME the cache dir sits inside the very
+ * tree a spec is watching. Every run of this suite has therefore been racing a writer it never
+ * declared: `edit --from`'s byte-identical snapshot compares one project tree before and after
+ * a refused run, and caught `.cache/agents-inc/version` appearing between the two reads.
+ *
+ * `AGENTS_INC_SKIP_NEW_VERSION_CHECK` is oclif's scoped key for this package, composed from
+ * `oclif.bin` — `Config.scopedEnvVarKey("SKIP_NEW_VERSION_CHECK")` returns it rather than it
+ * being guessed. The plugin's `refreshNeeded()` returns false on it, so the child is never
+ * spawned at all; measured against a temp HOME, the version file that reliably appeared 16ms
+ * after the parent exited does not appear within 5s, and no `get-version` process enters the
+ * process table.
+ *
+ * There is no single door to set it at. Three sites spawn the binary — `runCLI` below,
+ * `CLI.run`, and `TerminalSession` — so each spreads this one definition. It goes in FIRST at
+ * each, ahead of the caller's own `env`: it is a default the harness owes every run, not a pin
+ * like HOME, and a spec that ever needs to exercise the update warning must be able to drop it.
+ */
+export const NO_BACKGROUND_VERSION_CHECK = { AGENTS_INC_SKIP_NEW_VERSION_CHECK: "1" };
 
 const E2E_TEMP_PREFIX = "ai-e2e-";
 const AUTO_HOME_PREFIX = "ai-e2e-home-";
@@ -199,6 +223,7 @@ export {
   cleanupTempDir,
   directoryExists,
   fileExists,
+  normalizeConfigPreservingOrder,
   normalizeGlobalConfig,
   renderAgentMd,
   renderAgentYaml,
@@ -207,6 +232,7 @@ export {
   renderMetadataYaml,
   renderSkillMd,
   writeTestPackageJson,
+  writeTestPluginManifest,
 };
 
 /**
@@ -278,31 +304,6 @@ export async function writeCorruptConfig(baseDir: string, source: string): Promi
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
 }
 
-/** Sub-path of a source cache entry inside CACHE_DIR (mirrors getCacheDir in source-fetcher.ts). */
-const SOURCE_CACHE_SUBDIR = "sources";
-
-/**
- * Populate the CLI's source cache for `DEFAULT_SOURCE` under `homeDir` with a
- * copy of `sourceDir`, so the public-marketplace fallback in the multi-source
- * loader resolves from disk instead of hitting the network.
- *
- * The CLI derives its cache root from `os.homedir()`, which the spawned process
- * resolves from the HOME it is given — so the seed is written under the test's
- * fake home, re-rooting the production `CACHE_DIR` shape rather than restating
- * it. Returns the seeded directory so callers can assert the seed landed.
- */
-export async function seedDefaultSourceCache(homeDir: string, sourceDir: string): Promise<string> {
-  const cacheDir = path.join(
-    homeDir,
-    path.relative(os.homedir(), CACHE_DIR),
-    SOURCE_CACHE_SUBDIR,
-    sanitizeSourceForCache(DEFAULT_SOURCE),
-  );
-  await mkdir(path.dirname(cacheDir), { recursive: true });
-  await cp(sourceDir, cacheDir, { recursive: true });
-  return cacheDir;
-}
-
 export async function ensureBinaryExists(): Promise<void> {
   const binExists = await fileExists(BIN_RUN);
   if (!binExists) {
@@ -332,6 +333,18 @@ export function stripAnsi(text: string): string {
  * HOME override via options.env.HOME; an explicit value always wins and is
  * never auto-removed.
  *
+ * `CC_MARKETPLACE`, `AGENTS_INC_API_URL`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the
+ * CLI's own overrides — every variable `src/cli/` reads by name that is not the
+ * harness's — and each is cleared ahead of `options.env`, so a spec that needs a value
+ * still names its own. `VITEST` is the harness's own, read by
+ * `warn({ suppressInTest: true })` (`src/cli/utils/logger.ts`): inherited, it silences
+ * user-facing warnings in every binary this door spawns, and a spec asserting one of
+ * those lines passes by not looking. This door carried none of the five for its whole
+ * life, because the gate that answers for them —
+ * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` — named the other two doors and
+ * stated its roster by hand. It derives the roster from `scripts/check-spawn-doors.ts`
+ * now, so a fourth door arrives at both gates at once.
+ *
  * `CLAUDE_CONFIG_DIR` is derived from whichever HOME wins, and is not
  * overridable, for the same reason `CLI.run` clears `CC_MARKETPLACE`: it is the
  * Claude CLI's own config override, it BEATS `HOME`, and a developer's exported
@@ -354,7 +367,17 @@ export async function runCLI(
     const result = await execa("node", [BIN_RUN, ...args], {
       cwd,
       reject: false,
-      env: { ...options?.env, HOME: home, CLAUDE_CONFIG_DIR: claudeConfigDir(home) },
+      env: {
+        ...NO_BACKGROUND_VERSION_CHECK,
+        CC_MARKETPLACE: undefined,
+        AGENTS_INC_API_URL: undefined,
+        XDG_CACHE_HOME: undefined,
+        GIGET_AUTH: undefined,
+        VITEST: undefined,
+        ...options?.env,
+        HOME: home,
+        CLAUDE_CONFIG_DIR: claudeConfigDir(home),
+      },
     });
     return {
       exitCode: result.exitCode ?? 1,
@@ -743,6 +766,11 @@ export async function injectMarketplaceIntoConfig(
 export function getEjectedTemplatePath(projectDir: string): string {
   return path.join(projectDir, CLAUDE_SRC_DIR, "agents", "_templates", "agent.liquid");
 }
+
+// The list an E2E spec runs against the real binary, held against every message in `src/cli/`
+// by the unit gate that sits beside it. One definition, so the run cannot drift from the
+// messages it is about.
+export { HANDED_OUT_INVOCATIONS } from "../../src/cli/lib/__tests__/helpers/handed-out-invocations.js";
 
 export { createE2ESource, E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";

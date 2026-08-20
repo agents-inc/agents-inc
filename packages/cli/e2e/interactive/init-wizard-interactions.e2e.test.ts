@@ -143,7 +143,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
         const domain = await wizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
 
-        // Focus react (the grid's first-alphabetical cell is Vue, not react), then
+        // Focus react explicitly rather than relying on where the grid opens, then
         // press S to toggle its scope (default is "global").
         await build.focusSkill(E2E_SKILL.react.display);
         await build.toggleScopeOnFocusedSkill();

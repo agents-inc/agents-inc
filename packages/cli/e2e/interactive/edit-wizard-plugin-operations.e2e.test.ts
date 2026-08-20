@@ -72,7 +72,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
       // Config should only contain the surviving skill
       await expect(result.project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
-        source: fixture.marketplaceName,
+        origin: fixture.marketplaceName,
       });
 
       // The removed skill must NOT appear in compiled agent content
@@ -101,7 +101,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
         await expectPhaseSuccess(result, {
           skillIds: [E2E_SKILL.react.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
           compiledAgents: [],
         });
       },
@@ -165,7 +165,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
         // Config should include both the original and the newly added skill
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id, E2E_SKILL.pinia.id],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
         });
 
         // Agents should be recompiled after adding a skill
@@ -221,9 +221,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
       });
 
-      wizard.abort();
-
-      const exitCode = await wizard.waitForExit(TIMEOUTS.EXIT);
+      const exitCode = await wizard.abortAndDestroy(TIMEOUTS.EXIT);
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
 
       const rawOutput = wizard.getRawOutput();

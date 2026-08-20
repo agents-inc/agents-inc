@@ -78,7 +78,7 @@ describe("POM Framework Smoke Tests", () => {
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer", "api-developer"],
-          source: E2E_MARKETPLACE_NAME,
+          origin: E2E_MARKETPLACE_NAME,
         });
         const globalProject = { dir: sharedHome };
         await expect(globalProject).toHaveCompiledAgent("web-developer");

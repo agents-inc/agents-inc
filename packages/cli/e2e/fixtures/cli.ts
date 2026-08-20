@@ -1,7 +1,7 @@
 import { execa } from "execa";
 import { stripVTControlCharacters } from "node:util";
 import type { ProjectHandle } from "../pages/wizard-result.js";
-import { BIN_RUN, claudeConfigDir } from "../helpers/test-utils.js";
+import { BIN_RUN, NO_BACKGROUND_VERSION_CHECK, claudeConfigDir } from "../helpers/test-utils.js";
 
 export type CLIResult = {
   exitCode: number;
@@ -27,6 +27,16 @@ export class CLI {
    * no spec declares. The name is the variable the product reads — this line spent
    * its life spelling a variable nothing has ever set.
    *
+   * `AGENTS_INC_API_URL`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the rest of that same class:
+   * every remaining variable `src/cli/` reads by name, each one a knob a developer's shell may
+   * legitimately carry for their own use. Cleared TOGETHER rather than one at a time as each is
+   * found to matter, because "nobody exports that" is a fact about this machine — a shared
+   * giget cache, a staging seed API or a private-repo token reaching a spec is a run whose
+   * result belongs to the environment rather than to the code. Every one sits ahead of
+   * `options.env`, so a spec that needs a value still names its own.
+   * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` is what keeps this list and the PTY
+   * harness's copy of it complete.
+   *
    * `VITEST` is cleared for the same class of reason, one layer up: it is the HARNESS's
    * variable, not the product's, and `warn({ suppressInTest: true })`
    * (`src/cli/utils/logger.ts`) reads it. Inherited, it silences user-facing warnings in
@@ -41,6 +51,10 @@ export class CLI {
    * developer's real installation, past the fake HOME entirely. It is derived
    * after `options.env` is applied, so it follows an overridden HOME rather than
    * contradicting it.
+   *
+   * {@link NO_BACKGROUND_VERSION_CHECK} is the third class again — not hygiene but a race.
+   * It stops oclif's update plugin spawning the detached child that writes into the fake
+   * HOME's cache dir after this call has already returned. Its own doc carries the mechanism.
    */
   static async run(
     args: string[],
@@ -52,7 +66,11 @@ export class CLI {
       cwd: project.dir,
       reject: false,
       env: {
+        ...NO_BACKGROUND_VERSION_CHECK,
         CC_MARKETPLACE: undefined,
+        AGENTS_INC_API_URL: undefined,
+        XDG_CACHE_HOME: undefined,
+        GIGET_AUTH: undefined,
         VITEST: undefined,
         ...options?.env,
         HOME: home,

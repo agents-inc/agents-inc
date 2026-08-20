@@ -104,7 +104,7 @@ describe.skipIf(!claudeAvailable)(
 );
 
 /**
- * D-229 twin path: `cc edit` must hard-error with the same guarantees as
+ * The twin path: `cc edit` must hard-error with the same guarantees as
  * `cc init` when `installPluginSkills` returns `failed` entries. The guard
  * lives in `edit.tsx::applyPluginChanges` and is byte-identical to the one in
  * `init.tsx::installPluginsStep`; this test locks them to the same contract so

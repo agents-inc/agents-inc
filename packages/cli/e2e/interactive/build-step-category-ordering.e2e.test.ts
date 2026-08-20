@@ -9,9 +9,9 @@ import "../matchers/setup.js";
 /**
  * The build grid must render a category's skills in a deterministic,
  * machine-independent order (alphabetical by displayName), not in matrix
- * readdir/insertion order. In the E2E source the web-framework category holds
- * two skills whose titles sort Vue before react ("Vue Composition Api" < the
- * web-framework-react title), so Vue must render first in the row.
+ * readdir/insertion order. In the E2E source the web-framework category holds two
+ * skills whose titles sort react before Vue ("E2E React" < "Vue Composition Api"),
+ * so react must render first in the row.
  */
 describe("build step — deterministic category ordering", () => {
   let source: E2ESource;
@@ -31,7 +31,7 @@ describe("build step — deterministic category ordering", () => {
     wizard = undefined;
   });
 
-  it("renders web-framework options alphabetically by displayName (Vue before react)", async () => {
+  it("renders web-framework options alphabetically by displayName (react before Vue)", async () => {
     wizard = await InitWizard.launch({
       source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
     });
@@ -55,6 +55,6 @@ describe("build step — deterministic category ordering", () => {
       reactIndex,
       `"${E2E_SKILL.react.display}" must render in the web-framework row`,
     ).toBeGreaterThanOrEqual(0);
-    expect(vueIndex).toBeLessThan(reactIndex);
+    expect(reactIndex).toBeLessThan(vueIndex);
   });
 });

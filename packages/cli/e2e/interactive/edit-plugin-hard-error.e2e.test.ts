@@ -33,7 +33,15 @@ const WITHDRAWN_NOUN = /\bsources?\b/i;
  * fails. Enforces the "never silently substitute eject for plugin" rule from
  * feedback_no_plugin_to_eject_fallback.md.
  *
- * Finding: .ai-docs/agent-findings/2026-04-16-silent-plugin-install-skip-on-missing-marketplace.md
+ * The edit refusal below replaces a silence, which is why it asserts an exit code and a
+ * byte-identical config rather than a state change. `cc edit` once gated its whole plugin
+ * install/uninstall block on the project-level marketplace string, so a config.ts saved
+ * without a `marketplace:` field skipped the block entirely: the added skill reached
+ * config.ts, `claude plugin install` was never invoked, and `enabledPlugins` in
+ * settings.json disagreed with the config while the command exited 0. Install intent is
+ * per skill (`origin !== EJECT_SOURCE`) and a project-level truthiness check cannot read
+ * it, so once plugin work is requested and the marketplace will not resolve, stopping is
+ * the only answer that leaves the two views agreeing.
  *
  * Scenarios:
  *   - `cc edit` against a project whose config lacks `marketplace` AND whose

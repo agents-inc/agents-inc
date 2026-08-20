@@ -195,7 +195,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
             E2E_SKILL.hono.id,
           ],
           agents: E2E_AGENTS.WEB_AND_API,
-          source: MARKETPLACE_SOURCE,
+          origin: MARKETPLACE_SOURCE,
         },
       );
       const { skills: globalSkillsAfterA, ...globalRestAfterA } = await loadConfigOrFail(fakeHome);
@@ -228,7 +228,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
         {
           skillIds: [E2E_SKILL.hono.id],
           agents: [...E2E_AGENTS.API],
-          source: EJECT_SOURCE,
+          origin: EJECT_SOURCE,
         },
       );
 

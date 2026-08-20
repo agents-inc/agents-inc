@@ -44,9 +44,6 @@ import "../matchers/setup.js";
  * `web-framework` is exclusive in the matrix; `web-testing` is not. Asserting on
  * both means the failure reads as one missing KEY rather than as a stack that
  * disappeared wholesale.
- *
- * CURRENTLY RED, deliberately: after the eject the `web-framework` key is gone
- * from the project's stack.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;

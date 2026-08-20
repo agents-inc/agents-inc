@@ -145,8 +145,7 @@ describe("confirm step — info-panel parity", () => {
    * session left both the project and its HOME untouched.
    */
   async function abortAndProveNothingInstalled(): Promise<void> {
-    wizard!.abort();
-    await wizard!.waitForExit(TIMEOUTS.EXIT_WAIT);
+    await wizard!.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
 
     await expectCleanUninstall(projectDir!, { removeConfig: true });
     await expectCleanUninstall(fakeHome!, { removeConfig: true });
@@ -297,7 +296,7 @@ describe("confirm step — info-panel parity", () => {
       await expect(result.project).toHaveConfig({
         skillIds: STACK_SKILL_IDS,
         agents: E2E_AGENTS.WEB_AND_API,
-        source: "eject",
+        origin: "eject",
       });
       await expectPhaseSuccess(
         { project: { dir: wizard.globalHome }, exitCode: result.exitCode },

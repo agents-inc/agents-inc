@@ -55,7 +55,7 @@ describe("init wizard — source management", () => {
         await expect(result.project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
-          source: "eject",
+          origin: "eject",
         });
         await expect({ dir: w.globalHome }).toHaveCompiledAgent("web-developer");
         await expect({ dir: w.globalHome }).toHaveSkillCopied(E2E_SKILL.react.id);

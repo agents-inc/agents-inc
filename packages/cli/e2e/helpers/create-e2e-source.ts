@@ -209,20 +209,33 @@ export const E2E_SKILL_IDS: readonly string[] = E2E_SKILLS.map((skill) => skill.
  * preference: an id is namespaced at runtime, so it is no longer a literal type
  * and cannot key anything exhaustively. The second is that a marketplace rename
  * moves every id and no slug, so a slug-keyed map is one this file never has to
- * revisit. The VALUES stay unprefixed for the same reason they are not derived
- * from ids at all — the build grid sorts by display name, so a title that tracked
- * its id would relocate every cursor target the moment ids change.
+ * revisit. The VALUES are not derived from ids at all — the build grid sorts by
+ * display name, so a title that tracked its id would relocate every cursor target
+ * the moment ids change.
+ *
+ * **A title must be neither an id nor a public-catalogue display name**, and five
+ * of these were both until 2026-08-19: `react` read `"web-framework-react"`, a
+ * verbatim catalogue id AND a strict substring of the fixture id
+ * `e2e-test-fixture-web-framework-react` that the wizard paints beside it — so the
+ * 234 `toContain(display)` assertions across the suite were answered by the id
+ * being rendered and proved nothing about the title. The bare catalogue names
+ * ("React", "Vitest", …) are the other trap: a spec that installs a fixture skill
+ * and opens the wizard against the DEFAULT source renders both catalogues at once,
+ * and two cells sharing a label make `focusSkill` pick whichever comes first. The
+ * `E2E ` prefix is what the fixture's own stack already does ({@link E2E_STACK_NAME}
+ * is "E2E Test Stack"). `CLI Reviewing` and `Visual Regression` are still verbatim
+ * catalogue titles and are the remaining hazard of that second kind.
  */
 export const E2E_SKILL_TITLES = {
-  react: "web-framework-react",
-  vitest: "web-testing-vitest",
-  zustand: "web-state-zustand",
-  hono: "api-framework-hono",
+  react: "E2E React",
+  vitest: "E2E Vitest",
+  zustand: "E2E Zustand",
+  hono: "E2E Hono",
   "research-methodology": "Research Methodology",
   reviewing: "Reviewing",
   "cli-reviewing": "CLI Reviewing",
   "vue-composition-api": "Vue Composition Api",
-  pinia: "web-state-pinia",
+  pinia: "E2E Pinia",
   "visual-regression": "Visual Regression",
 } as const satisfies Record<E2ESkillSlug, string>;
 
@@ -320,29 +333,6 @@ export const E2E_STACK_SKILL_IDS: string[] = [
       .flatMap((assignments) => assignments.map((assignment) => assignment.id)),
   ),
 ].sort();
-
-// Minimal agent template for E2E tests. Diverges from src/agents/_templates/agent.liquid
-// (which ships partials + methodology sections); the frontmatter `skills:` block MUST
-// mirror production exactly — consumes top-level `preloadedSkillIds` (NOT `agent.preloadedSkills`,
-// which does not exist). Drift risk: follow-up could import the production template directly,
-// but that requires shipping all referenced partials into the fixture.
-const AGENT_TEMPLATE = `---
-name: {{ agent.name }}
-description: {{ agent.description }}
-tools: {{ agent.tools | join: ", " }}
-model: {{ agent.model }}
-{% if agent.effort %}effort: {{ agent.effort }}
-{% endif %}permissionMode: {{ agent.permissionMode }}
-{% if preloadedSkillIds.size > 0 %}skills:
-{% for skillId in preloadedSkillIds %}  - {{ skillId }}
-{% endfor %}{% endif %}---
-
-{% include "_partials/intro.liquid" %}
-
-{% for skill in skills %}
-{{ skill.content }}
-{% endfor %}
-`;
 
 type E2ESourceOptions = {
   /**
@@ -482,11 +472,14 @@ async function writeSkillRules(
   );
 }
 
+/**
+ * The source's sub-agents. No `_templates/agent.liquid` is written beside them: agent
+ * rendering resolves its template through `createLiquidEngine`, whose roots are the
+ * project's own two override directories and the CLI's own `templates/` — never a
+ * marketplace. One written here would be resolved by nothing.
+ */
 async function writeAgents(sourceDir: string): Promise<void> {
   const agentsDir = path.join(sourceDir, DIRS.agents);
-  const templatesDir = path.join(sourceDir, DIRS.templates);
-  await mkdir(templatesDir, { recursive: true });
-  await writeFile(path.join(templatesDir, "agent.liquid"), AGENT_TEMPLATE);
 
   const agents: Array<{ name: AgentName; title: string; description: string }> = [
     {

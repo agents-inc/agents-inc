@@ -1,14 +1,24 @@
+import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, TERMINAL_SIZE, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
+  agentsPath,
   cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
+  fileExists,
+  normalizeGlobalConfig,
+  readAgentEntriesFor,
   readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createGlobalOnlyEnv,
+  createTestEnvironment,
+  setupProjectOnlyMixedScope,
+  type DualScopeEnv,
+} from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import "../matchers/setup.js";
@@ -29,6 +39,11 @@ import "../matchers/setup.js";
  * either scope. Both halves are asserted below — the toast on the append-only raw
  * surface, and config.ts plus the compiled agents snapshotted before the attempt and
  * compared after the save.
+ *
+ * The second `it` is the PERMITTED case, in this file because a refusal on its own
+ * cannot tell a correctly-scoped guard from one that has swallowed the agents step
+ * whole: both leave every byte in place and exit 0. The same spacebar, at the same
+ * scope, on a sub-agent the PROJECT owns — which the guard must let through.
  */
 
 describe("global agent toggle guard from project scope", () => {
@@ -131,6 +146,66 @@ describe("global agent toggle guard from project scope", () => {
       await expect({ dir: env.projectDir }).not.toHaveCompiledAgents();
 
       expect(result.output).toContain(STEP_TEXT.EDIT_UNCHANGED);
+
+      await result.destroy();
+    },
+  );
+
+  it(
+    "allows the same key on a sub-agent the project owns",
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+    async () => {
+      // `setupProjectOnlyMixedScope` leaves api-developer owned by the project with no
+      // global entry underneath it, so the guard has nothing to protect and the key that
+      // was inert above must act.
+      const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
+      env = { fakeHome, projectDir, destroy: () => cleanupTempDir(tempDir) };
+      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+
+      const agentName = E2E_AGENT["api-developer"].name;
+      expect(
+        await readAgentEntriesFor(projectDir, agentName),
+        "setup must leave the agent project-owned — a global entry would make this a refusal too",
+      ).toStrictEqual([{ name: agentName, scope: "project" }]);
+
+      const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
+      const globalAgentsBefore = await readCompiledAgents(fakeHome);
+
+      wizard = await EditWizard.launch({
+        projectDir,
+        source: { sourceDir, tempDir: sourceTempDir },
+        env: { HOME: fakeHome },
+        ...TERMINAL_SIZE.TALL,
+      });
+
+      const sources = await wizard.build.passThroughAllDomains();
+      const agents = await sources.acceptDefaults();
+      await agents.toggleAgent(E2E_AGENT["api-developer"].display);
+      const confirm = await agents.advance("edit");
+      const result = await confirm.confirm();
+
+      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
+
+      // Config: the toggle took — the project's own entry is gone rather than tombstoned.
+      expect(
+        await readAgentEntriesFor(projectDir, agentName),
+        "a permitted toggle must drop the project's own agent entry",
+      ).toStrictEqual([]);
+      // Filesystem: and the compiled file went with it.
+      expect(
+        await fileExists(path.join(agentsPath(projectDir), `${agentName}.md`)),
+        "a dropped sub-agent's compiled file must be deleted",
+      ).toBe(false);
+      // The global scope stayed out of it, exactly as under the refusal above — which is
+      // what makes this a control on the guard's SCOPE rather than a second removal test.
+      expect(
+        normalizeGlobalConfig(await readTestFile(configTsPath(fakeHome))),
+        "a project-scope agent drop must not reach the global config",
+      ).toStrictEqual(normalizeGlobalConfig(globalConfigBefore));
+      expect(
+        await readCompiledAgents(fakeHome),
+        "a project-scope agent drop must not rewrite the global compiled agents",
+      ).toStrictEqual(globalAgentsBefore);
 
       await result.destroy();
     },

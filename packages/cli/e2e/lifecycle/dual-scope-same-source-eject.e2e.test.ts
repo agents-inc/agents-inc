@@ -177,8 +177,7 @@ describe("dual-scope same-source (both eject)", () => {
         "G",
       ]);
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 

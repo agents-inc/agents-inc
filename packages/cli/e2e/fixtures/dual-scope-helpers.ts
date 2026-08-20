@@ -68,8 +68,8 @@ export async function readConfigSkillIds(dir: string): Promise<string[]> {
 
 /**
  * Drive one `cc edit` session, applying the given action to web-framework-react
- * in the Web domain (focused explicitly — the grid's first-alphabetical cell is
- * Vue, not react), then save through to completion.
+ * in the Web domain (focused explicitly rather than relying on where the grid
+ * opens), then save through to completion.
  *
  *   - "scope": press `s`, the SOLE dual-scope toggle. On a `[G]`-only row it is
  *     the G->P toggle that produces the persisted dual-scope `[P][G]` pair; on a
@@ -148,9 +148,7 @@ export async function readSkillBadgesViaEdit(
   try {
     return await wizard.build.getScopeBadgesForSkill(skillLabel);
   } finally {
-    wizard.abort();
-    await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
-    await wizard.destroy();
+    await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
   }
 }
 

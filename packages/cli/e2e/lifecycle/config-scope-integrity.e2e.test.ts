@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -19,6 +20,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
   finishWizard,
@@ -40,6 +42,8 @@ import {
  * Item 9: Global config includes all domains
  * D-92: Global config includes source field after splitConfigByScope
  */
+
+const claudeAvailable = await isClaudeCLIAvailable();
 
 /** The domain whose skills the config-types spec strips while keeping the domain declared. */
 const API_DOMAIN = "api";
@@ -151,18 +155,18 @@ describe("config-scope integrity -- source priority preservation", () => {
 //                + Old agent file deleted on scope change (Item 6)
 
 describe("config-scope integrity -- agent scope change merge and file cleanup", () => {
-  // Blocked by D-128: scope toggle from global context should be disabled (no-op).
+  // Blocked: a scope toggle from a global context should be disabled (no-op) and is not.
   it.todo("should ignore scope toggle on global agents when editing from global context");
 });
 
 describe("config-scope integrity -- global stack scope filtering", () => {
-  // Blocked by D-123: project-scoped skills require local copy, but source path
-  // doesn't resolve from consuming projects.
+  // Blocked: project-scoped skills require a local copy, and the source path does
+  // not resolve from a consuming project.
   it.todo("should not reference project-scoped skills in global config stack section");
 });
 
 describe("config-scope integrity -- domains in global config only", () => {
-  // Blocked by D-123: same as stack scope filtering test above.
+  // Blocked for the same reason as the stack scope filtering case above.
   it.todo("should store ALL domains in global config and no domains in project config");
 });
 
@@ -280,69 +284,82 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
   );
 });
 
-describe("config-scope integrity -- global config includes source field", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-  let tempDir: string;
+describe.skipIf(!claudeAvailable)(
+  "config-scope integrity -- global config includes source field",
+  () => {
+    let sourceDir: string;
+    let sourceTempDir: string;
+    let tempDir: string;
 
-  beforeAll(async () => {
-    await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
-  }, TIMEOUTS.SETUP_DUAL);
+    beforeAll(async () => {
+      await ensureBinaryExists();
+      const source = await createE2EPluginSource();
+      sourceDir = source.sourceDir;
+      sourceTempDir = source.tempDir;
+    }, TIMEOUTS.SETUP_DUAL);
 
-  afterEach(async () => {
-    if (tempDir) {
-      await cleanupTempDir(tempDir);
-    }
-  });
+    afterEach(async () => {
+      if (tempDir) {
+        await cleanupTempDir(tempDir);
+      }
+    });
 
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
+    afterAll(async () => {
+      if (sourceTempDir) await cleanupTempDir(sourceTempDir);
+    });
 
-  // TODO: This test has never passed. The dual-scope local install fails with ENOENT because
-  // the skill copier can't resolve source paths in the project context. Plugin mode also
-  // falls back to local when no marketplace is registered in the test env. The test itself
-  // likely needs restructuring — the D-92 functionality (splitConfigByScope preserving the
-  // source field) still needs proper E2E coverage.
-  it.skip(
-    "should include source field in both global and project configs after scope split",
-    { timeout: TIMEOUTS.LIFECYCLE },
-    async () => {
-      const env = await createTestEnvironment();
-      tempDir = env.tempDir;
-      const { fakeHome, projectDir } = env;
+    /**
+     * `setLocal: false` keeps the project half in plugin mode, so the source has to be one a
+     * marketplace can be resolved from — `createE2ESource()` ships no
+     * `.claude-plugin/marketplace.json`, and the install refuses outright rather than
+     * quietly ejecting instead. That refusal, not a skill-copier path resolution failure,
+     * is what kept this spec skipped; the copier reaches every skill it is given here.
+     *
+     * What the two assertions below pin is the WRITER's emission of the `marketplace` field,
+     * not `splitConfigByScope`'s spread: removing `...config` from both partitions of that
+     * function leaves this spec green, because the project half inherits the field from the
+     * effective global config the inlining writer is handed, and the global half is merged
+     * onto the config Phase A already wrote. Deleting `marketplace` in
+     * `cleanForEmission` is what takes it red, on the global assertion first.
+     */
+    it(
+      "should include source field in both global and project configs after scope split",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        const env = await createTestEnvironment();
+        tempDir = env.tempDir;
+        const { fakeHome, projectDir } = env;
 
-      const phaseA = await initGlobal(sourceDir, sourceTempDir, fakeHome);
-      expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
+        const phaseA = await initGlobal(sourceDir, sourceTempDir, fakeHome);
+        expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir, {
-        setLocal: false,
-      });
-      expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
+        const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir, {
+          setLocal: false,
+        });
+        expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Phase C: Verify global config includes the source field.
-      // Before the D-92 fix, splitConfigByScope did not spread ...config,
-      // so source (and marketplace) were lost in the global partition.
-      const globalConfigPath = configTsPath(fakeHome);
-      const globalConfig = await readTestFile(globalConfigPath);
+        // Phase C: Verify global config includes the source field.
+        // Before the fix, splitConfigByScope did not spread ...config,
+        // so source (and marketplace) were lost in the global partition.
+        const globalConfigPath = configTsPath(fakeHome);
+        const globalConfig = await readTestFile(globalConfigPath);
 
-      // The top-level "marketplace" field in the export default block should reference
-      // the E2E source directory. The config writer formats it as:
-      //   "marketplace": "/path/to/source",
-      expect(globalConfig, "Global config must contain a top-level marketplace field").toContain(
-        `"marketplace": "${sourceDir}"`,
-      );
+        // The top-level "marketplace" field in the export default block should reference
+        // the E2E source directory. The config writer formats it as:
+        //   "marketplace": "/path/to/source",
+        expect(globalConfig, "Global config must contain a top-level marketplace field").toContain(
+          `"marketplace": "${sourceDir}"`,
+        );
 
-      // Phase D: Verify project config also includes the source field
-      const projectConfigPath = configTsPath(projectDir);
-      const projectConfig = await readTestFile(projectConfigPath);
+        // Phase D: Verify project config also includes the source field
+        const projectConfigPath = configTsPath(projectDir);
+        const projectConfig = await readTestFile(projectConfigPath);
 
-      expect(projectConfig, "Project config must contain a top-level marketplace field").toContain(
-        `"marketplace": "${sourceDir}"`,
-      );
-    },
-  );
-});
+        expect(
+          projectConfig,
+          "Project config must contain a top-level marketplace field",
+        ).toContain(`"marketplace": "${sourceDir}"`);
+      },
+    );
+  },
+);

@@ -103,7 +103,7 @@ describe("init wizard — scratch flow", () => {
       await expect(result.project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id, E2E_SKILL.hono.id],
         agents: E2E_AGENTS.WEB_AND_API,
-        source: "eject",
+        origin: "eject",
       });
       await expectPhaseSuccess(
         { project: { dir: wizard.globalHome }, exitCode: result.exitCode },

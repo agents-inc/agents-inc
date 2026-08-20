@@ -138,7 +138,11 @@ export class TerminalScreen {
     await this.waitForTextAfter("select", cursor, timeoutMs);
   }
 
-  /** Get the current visible screen (viewport only). */
+  /**
+   * Delegates to {@link TerminalSession.getScreen}, so it returns scrollback PLUS the viewport
+   * rather than the visible area alone — safe for positive assertions about current content,
+   * unsound for absence. See that method's own comment for the range and the consequence.
+   */
   getScreen(): string {
     return this.session.getScreen();
   }

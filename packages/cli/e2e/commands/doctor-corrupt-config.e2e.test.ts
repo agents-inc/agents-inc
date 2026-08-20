@@ -114,12 +114,13 @@ describe("doctor with an unreadable config", () => {
 
   /**
    * The operational layer reads the config for every one of its rows, so its findings on an
-   * unreadable one are cascades — the same rule that already skips it after any content error.
+   * unreadable one are cascades. This is the ONLY content error that stands the whole layer down —
+   * every other one is scoped to the rows the failing pass names in its `blocks` list.
    */
   it("skips the operational layer rather than reporting cascades of the same fault", async () => {
     const stdout = await expectFindingNaming(SYNTAX_ERROR);
 
-    expect(stdout).toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONTENT_ERRORS);
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_SKIP_AFTER_CONFIG_ERROR);
     expect(stdout).not.toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
   });
 

@@ -27,9 +27,7 @@ describe("edit wizard — navigation and hotkeys", () => {
       wizard = await EditWizard.launch({ projectDir: project.dir, cols: 120, rows: 40 });
 
       // Send Ctrl+C to abort
-      wizard.abort();
-
-      const exitCode = await wizard.waitForExit(TIMEOUTS.EXIT);
+      const exitCode = await wizard.abortAndDestroy(TIMEOUTS.EXIT);
 
       // Ctrl+C in a PTY sends SIGINT, which usually results in non-zero exit
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
@@ -43,8 +41,7 @@ describe("edit wizard — navigation and hotkeys", () => {
       wizard = await EditWizard.launch({ projectDir: project.dir, cols: 120, rows: 40 });
 
       // Cancel the wizard
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT);
 
       // Config should be unchanged after cancellation
       await expect(project).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });

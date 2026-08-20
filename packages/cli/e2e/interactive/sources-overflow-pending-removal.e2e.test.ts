@@ -121,11 +121,10 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
       ...TERMINAL_SIZE.SHORT,
     });
 
-    // Build entry focuses the first-alphabetical skill of the first domain (Vue);
-    // react sits one cell to its right. No stack means nothing is preloaded, so the
-    // row is editable — a single blind Right + toggle deselects react without
-    // reading the garbled short-viewport grid.
-    await wizard.build.navigateRight();
+    // Build entry focuses the first-alphabetical skill of the first domain, which is
+    // react. No stack means nothing is preloaded, so the row is editable — a single
+    // toggle on the already-focused cell deselects react without reading the garbled
+    // short-viewport grid.
     await wizard.build.toggleFocusedSkill();
     await wizard.build.advanceDomain();
     await wizard.build.advanceDomain();
@@ -234,7 +233,7 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
 });
 
 /**
- * The zero-focusable-rows case (D-271 follow-up). When every remaining Sources row is inert — a run
+ * The zero-focusable-rows case. When every remaining Sources row is inert — a run
  * of locked-global (readOnly) rows plus the single pending-removal (disabled) row — there is no
  * "last focusable row" to anchor overscroll on, and the viewport-follows-focus scroll has no focused
  * row to track. The overflow affordance must still render, and down-presses must still scroll the
@@ -293,10 +292,9 @@ describe("Sources step overflow when every remaining row is inert (zero focusabl
       ...TERMINAL_SIZE.SHORT,
     });
 
-    // react is the sole project/editable skill; it sits one cell to the right of the
-    // first-alphabetical Vue cell. A single blind Right + toggle deselects it with no
-    // grid parsing — the six global skills are locked.
-    await wizard.build.navigateRight();
+    // react is the sole project/editable skill and is also the first-alphabetical cell,
+    // so it already has focus at build entry. A single toggle deselects it with no grid
+    // parsing — the six global skills are locked.
     await wizard.build.toggleFocusedSkill();
     await wizard.build.advanceDomain();
     await wizard.build.advanceDomain();

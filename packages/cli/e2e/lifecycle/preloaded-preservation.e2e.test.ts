@@ -133,7 +133,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
-          source: fixture.marketplaceName,
+          origin: fixture.marketplaceName,
         });
         await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
 

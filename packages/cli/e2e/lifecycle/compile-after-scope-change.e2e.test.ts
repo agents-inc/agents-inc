@@ -61,8 +61,8 @@ describe("compile after scope change", () => {
       });
       testWizard = wizard;
 
-      // Build step -- Web domain: toggle web-framework-react scope to project
-      // (focus it explicitly — the first-alphabetical cell is Vue, not react).
+      // Build step -- Web domain: toggle web-framework-react scope to project,
+      // focused explicitly rather than relying on where the grid opens.
       await wizard.build.focusSkill(E2E_SKILL.react.display);
       await wizard.build.toggleScopeOnFocusedSkill();
       await wizard.build.advanceDomain();

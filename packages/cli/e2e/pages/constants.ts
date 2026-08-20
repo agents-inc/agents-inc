@@ -41,8 +41,10 @@ export const STEP_TEXT = {
   // THE SOURCES STEP'S SCREEN SENTINEL — `wizard-layout.tsx`'s `STEP_DROPDOWN_LABEL.sources`,
   // duplicated exactly. Every step page object waits on it to know the screen arrived, so a
   // subtitle that moves without this constant does not fail an assertion: it hangs each wizard
-  // spec for the full `TIMEOUTS.WIZARD_LOAD` budget. `wizard-layout.test.tsx` carries the fast
-  // half of the pair and names the string in under a second.
+  // spec for the full `TIMEOUTS.WIZARD_LOAD` budget. `scripts/check-screen-sentinels.ts` compares
+  // the two literals as source and reds in under a second whichever of them moved.
+  // `wizard-layout.test.tsx` covers the PRODUCT half only — it reads no `e2e/` file, which is
+  // how this constant once sat at "Customize skill origins" with the unit suite green.
   //
   // The wording is the step's subject — where each skill comes from — and NOT the config field
   // the step writes, which is `SkillConfig.origin`. Heading it with that field's noun was
@@ -101,7 +103,14 @@ export const STEP_TEXT = {
   // against the whole public catalogue, are narrowed to the source's slugs first — so
   // a fixture shipping ten skills must produce none of these.
   UNRESOLVED_SLUG: "Unresolved slug",
-  COMPILE_NO_SKILLS_ERROR: "No skills found. Add skills with", // Hard error when every compile pass discovered zero skills
+  // Hard error when every compile pass discovered zero skills. Kept to the clause that
+  // separates it from COMPILE_PASS_NO_SKILLS above — both open on the same four words —
+  // because it opens an oclif error box, and a longer fragment straddles the wrap.
+  COMPILE_NO_SKILLS_ERROR: "No skills found. Run",
+  // The command that refusal hands the reader. Split out because it is asserted twice:
+  // once against what the refusal printed and once as the command actually invoked, so
+  // the message and the probe cannot name different things.
+  COMPILE_NO_SKILLS_REMEDY: "init",
   // Hard error when an installed skill's metadata.yaml exists but nothing usable can be
   // made of it — unparseable, or parseable and missing fields the skill is described by.
   // Mirrors CONFIG_LOAD_FAILED's phrasing for the same class of fault one layer down.
@@ -122,7 +131,10 @@ export const STEP_TEXT = {
   // fragment is satisfied by a line that is not the one under test.
   REMOVED_REASON_NOT_IN_SOURCE: "not present in",
   REMOVED_REASON_FILES_GONE: "skill files no longer exist at",
-  PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered projects", // Summary after a global-scope change fans out to one registered project
+  // Summary after a global-scope change REWROTE one registered project. The count is projects
+  // rewritten, not projects reached (reached = rewritten + unchanged), so a fan-out that visits one
+  // project and changes nothing prints "0 registered projects, 1 unchanged" and never this string.
+  PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered projects",
   // Prefix of the same summary. All four fan-out commands print the one line
   // BaseCommand.reportPropagatedRecompile owns ("Recompiled agents in N registered
   // projects, M unchanged"), so a spec that asserts the line's ABSENCE — or must
@@ -197,12 +209,23 @@ export const STEP_TEXT = {
   // Dashboard
   DASHBOARD: "Doctor",
 
-  // `doctor` layered output (src/cli/commands/doctor.ts). The command validates
-  // content first and only reaches the operational layer when content is clean —
-  // operational failures on broken content are downstream cascades, not findings.
+  // `doctor` layered output (src/cli/commands/doctor.ts). Both layers run. The content layer
+  // validates what is on disk, then the operational layer answers row by row: a row stands down
+  // only when a content pass that FAILED names it in its own `blocks` list, and the whole layer
+  // stands down for one finding alone — a config nobody can read, which every row is read out of.
   DOCTOR_CONTENT_SECTION: "Content checks",
   DOCTOR_OPERATIONAL_SECTION: "Operational checks",
-  DOCTOR_SKIP_AFTER_CONTENT_ERRORS: "Skipped — fix the content errors above first",
+  // Duplicated verbatim from `SKIP_AFTER_CONFIG_ERROR` in src/cli/commands/doctor.ts. The sentence
+  // still says "content errors" while the trigger is the config alone, because the config row is
+  // one of them and whatever else failed is printed above it too.
+  DOCTOR_SKIP_AFTER_CONFIG_ERROR: "Skipped — fix the content errors above first",
+  // What `skipRestatingContent` emits for the one noun a corrupt installed skill produces. Unlike
+  // the blanket sentence above it names the PASS that blocked the row, which is the only thing
+  // separating a row that cannot answer from the ones printing verdicts beside it — so a negative
+  // about the blanket string is not a claim about this one, and a regression standing a row down
+  // for the wrong pass satisfies every such negative.
+  DOCTOR_SKIP_RESTATING_SKILL_ERRORS:
+    "Skipped — this row would only restate the skill errors above",
   // Duplicated verbatim from `SKIP_NO_INSTALLATION` in src/cli/commands/doctor.ts. The
   // parenthetical names what the directory IS to a marketplace author standing in it.
   DOCTOR_SKIP_NO_INSTALLATION: "Skipped — no installation here (marketplace repository)",
@@ -459,7 +482,7 @@ export const STEP_TEXT = {
   // Literal fallback rendered in the Stack row when no stack is selected.
   PANEL_STACK_NONE: "none",
   // formatSourceDisplayName("agents-inc"). The Marketplace row names the distinct
-  // marketplaces the selected skills' `SkillConfig.source` values point at, and the
+  // marketplaces the selected skills' `SkillConfig.origin` values point at, and the
   // E2E source carries no marketplace.json, so every skill resolves to
   // DEFAULT_PUBLIC_SOURCE_NAME and the row reads as this. Drive the wizard through
   // `setAllLocal()` and it says "All skills ejected" instead — an eject source names

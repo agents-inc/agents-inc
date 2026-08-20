@@ -231,7 +231,7 @@ describe("eject command", () => {
     expect(skillContent).toContain(E2E_SKILL.react.id);
 
     // Verify config records the source the run actually read from
-    await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
+    await expect({ dir: tempDir }).toHaveConfig({ marketplace: sourceDir });
     expect(await readTestFile(configTsPath(tempDir))).toContain(sourceDir);
 
     // `eject skills` ejects skills only — agent partials stay bundled.
@@ -267,7 +267,7 @@ describe("eject command", () => {
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
 
     // Verify config was created with source reference
-    await expect({ dir: tempDir }).toHaveConfig({ source: sourceDir });
+    await expect({ dir: tempDir }).toHaveConfig({ marketplace: sourceDir });
   });
 
   it("should create config.ts in a fresh directory after eject", async () => {

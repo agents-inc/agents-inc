@@ -99,8 +99,8 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
       });
 
       try {
-        // Focus react explicitly — the grid's first-alphabetical cell is Vue, and
-        // every step below acts on the focused skill (focus persists across `s`/space).
+        // Focus react explicitly rather than relying on where the grid opens: every
+        // step below acts on the focused skill (focus persists across `s`/space).
         await wizard.build.focusSkill(REACT_SKILL_LABEL);
 
         // Baseline: persisted dual-scope row renders both badges, react is the one

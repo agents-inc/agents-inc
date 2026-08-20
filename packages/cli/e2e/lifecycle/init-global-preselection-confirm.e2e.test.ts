@@ -7,7 +7,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { STEP_TEXT, TIMEOUTS, UNCHANGED_MARKER } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupFixture,
@@ -89,20 +89,20 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
       const confirm = await agents.acceptDefaults("edit");
 
       await confirm.waitForReady();
-      const output = confirm.getOutput();
 
-      // Deselected global React should NOT appear with a removal marker.
-      // Deselecting a global pre-selection in a project-scoped edit means
-      // "don't add to project" -- not "remove from global installation".
-      // No "- " prefix should appear for React. React WILL still appear in
-      // the confirm output (dimmed, under Global) because it remains part of
-      // the global installation. The key assertion is that it does NOT have
-      // a removal marker ("- " prefix).
-      const lines = output.split("\n");
-      const removalLines = lines.filter(
-        (l) => l.includes("- ") && (l.includes("react") || l.includes("React")),
-      );
-      expect(removalLines).toStrictEqual([]);
+      // Deselecting a global pre-selection during a project-scoped edit means "do not add to
+      // the project" -- never "remove from the global installation". So React reaches confirm
+      // as the global installation's own untouched row, and the whole claim is that shape:
+      // exactly one row, under Global, carrying the unchanged bullet.
+      //
+      // Asserting the row rather than the absence of a removal marker is what makes it a
+      // claim at all. A scan for lines carrying both "- " and "react" is answered by "found
+      // nothing" — and an empty result is what a run that painted no React row at all
+      // produces too, so the removal this test is named for was never the reason it passed.
+      expect(
+        await confirm.getSummaryDiffEntries(E2E_SKILL.react.display),
+        `a deselected global preselection must reach confirm as one unchanged Global row.\nScreen:\n${confirm.getScreen()}`,
+      ).toStrictEqual([{ scope: "Global", prefix: UNCHANGED_MARKER }]);
 
       await dashboard.destroy();
     },

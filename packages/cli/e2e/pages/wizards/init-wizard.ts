@@ -1,6 +1,6 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
 import { createE2ESource, type E2ESource } from "../../helpers/create-e2e-source.js";
-import { STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { INTERNAL_DELAYS, STEP_TEXT, TIMEOUTS } from "../constants.js";
 import { DashboardSession } from "../dashboard-session.js";
 import { TerminalScreen } from "../terminal-screen.js";
 import { ConfirmStep } from "../steps/confirm-step.js";
@@ -8,7 +8,12 @@ import { DomainStep } from "../steps/domain-step.js";
 import { StackStep } from "../steps/stack-step.js";
 import type { WizardResult } from "../wizard-result.js";
 import { allocateProjectGlobalHome } from "./global-home.js";
-import { cleanupTempDir, createPermissionsFile, createTempDir } from "../../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  createPermissionsFile,
+  createTempDir,
+  delay,
+} from "../../helpers/test-utils.js";
 
 /**
  * How a spawned wizard resolves HOME, which decides where global-scoped
@@ -323,9 +328,14 @@ export class InitWizard {
     return this.session.waitForExit(timeoutMs);
   }
 
-  /** Abort the wizard with Ctrl+C. */
-  abort(): void {
+  /**
+   * Abort the wizard with Ctrl+C. Async, and awaited by every caller: a bare
+   * synchronous write races the handler the current frame registered, which is
+   * why every other keypress wrapper in this framework carries the same delay.
+   */
+  async abort(): Promise<void> {
     this.session.ctrlC();
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
   /**
@@ -341,15 +351,10 @@ export class InitWizard {
    * budget stays byte-identical.
    */
   async abortAndDestroy(timeoutMs?: number): Promise<number> {
-    this.abort();
+    await this.abort();
     const exitCode = await this.waitForExit(timeoutMs);
     await this.destroy();
     return exitCode;
-  }
-
-  /** Press Escape on the wizard (useful for cancelling from stack step). */
-  escape(): void {
-    this.session.escape();
   }
 
   /** Destroy the session and clean up temp dirs. */

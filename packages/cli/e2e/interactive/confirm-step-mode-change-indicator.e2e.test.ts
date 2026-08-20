@@ -110,8 +110,7 @@ describe("confirm step — mode-change indicator", () => {
 
       // Read-only scenario: abort before the confirm Enter so no install runs
       // and disk state stays untouched.
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 });

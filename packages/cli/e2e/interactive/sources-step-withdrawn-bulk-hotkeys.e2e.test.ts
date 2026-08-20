@@ -112,8 +112,7 @@ describe("sources step — withdrawn bulk install-mode hotkeys", () => {
         STEP_TEXT.FOOTER_SET_ALL_PLUGIN,
       );
 
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 
@@ -168,8 +167,7 @@ describe("sources step — withdrawn bulk install-mode hotkeys", () => {
       ).toStrictEqual([{ scope: "Project", prefix: UNCHANGED_MARKER }]);
 
       // Read-only scenario: abort before the confirm Enter so nothing is written to disk.
-      wizard.abort();
-      await wizard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
     },
   );
 });

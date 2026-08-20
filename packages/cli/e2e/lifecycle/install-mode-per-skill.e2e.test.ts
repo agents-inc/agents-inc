@@ -86,7 +86,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
 
         await expectPhaseSuccess(initResult, {
           skillIds: [E2E_SKILL.react.id],
-          source: "eject",
+          origin: "eject",
           copiedSkills: [E2E_SKILL.react.id],
         });
         await initResult.destroy();

@@ -53,7 +53,9 @@ describe("init wizard — flags and permissions", () => {
 
       const output = editWizard.build.getOutput();
       expect(output).toContain(STEP_TEXT.BUILD);
-      expect(output).toContain("react");
+      // The custom source's own TITLE for the skill — a fragment of the id is painted
+      // by any grid that carries the id.
+      expect(output).toContain(E2E_SKILL.react.display);
     });
   });
 

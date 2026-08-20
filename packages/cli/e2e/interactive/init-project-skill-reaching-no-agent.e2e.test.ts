@@ -54,8 +54,8 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
       const domain = await wizard.stack.selectFirstStack();
       const build = await domain.acceptDefaults();
 
-      // Web domain: send React to PROJECT scope. Focused explicitly — the grid's
-      // first-alphabetical cell is Vue, not React.
+      // Web domain: send React to PROJECT scope, focused explicitly rather than
+      // relying on where the grid opens.
       await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
 
