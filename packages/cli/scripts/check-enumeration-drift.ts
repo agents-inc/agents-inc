@@ -19,8 +19,28 @@
  *
  * **The registry is not `STEP_TEXT`-shaped.** The 08-17 filing was about a different family
  * entirely, and a `STEP_TEXT`-specific checker would have caught one of the five. A row names any
- * exported symbol — a const object, a const array, a union — or a module's whole export list of one
- * kind, against any delimited section of any document.
+ * exported symbol — a const object, a const array, a union — a module's whole export list of one
+ * kind, or a whole DIRECTORY's, against any delimited section of any document.
+ *
+ * **A claim is not always about a symbol, and a section is not always one table.** The directory
+ * shape exists because two of the claims here are membership of a TREE: the three test-utility
+ * tables in `reference/testing/factories.md` state what a directory exports, and the command roster
+ * in `reference/commands/index.md` states what `src/cli/commands/**` holds — a barrel declares
+ * nothing of its own and oclif's `pattern` strategy declares no id anywhere, so neither had a symbol
+ * to bind and both went unbound while every constant object beside them was registered. The
+ * `partitioned-tables` reader exists for the same reason one level down: `zod-schemas.md` splits its
+ * 34 schemas across four tables, and a reader that stopped at the first could not express the claim
+ * at all.
+ *
+ * **A member is not always the whole claim.** Two of the columns a document writes are bound here
+ * as one string — `key = value` — because a table stating what each member HOLDS is wrong in a way
+ * a key-only reading cannot see. `E2E_SKILL_TITLES` was registered, answered `agrees` over ten
+ * members and reported the run clean while five of its document's title cells were wrong: the
+ * source side read `property.name.text` and never reached an initializer, and the document side
+ * read the first cell of a row and could not reach a second column. Pairs rather than values,
+ * because a values-only set cannot see a SWAP — two rows exchanging their titles leave that set
+ * identical and every count intact — and because a pair is still a `string`, so the verdict, the
+ * comparison and everything downstream of them are untouched by this.
  *
  * **A row that judges nothing is a hard failure, not a skip.** Every check here that has failed us
  * failed by declining to judge, and a row that quietly reads an empty section reads exactly like a
@@ -31,7 +51,7 @@
  * `check-findings-frontmatter.ts`, and the package root is a parameter so it can be driven against
  * a fixture.
  */
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import path from "path";
 
 import ts from "typescript";
@@ -60,7 +80,17 @@ const MATRIX_TYPES = "src/cli/types/matrix.ts";
 const MODEL_AND_EFFORT = ".ai-docs/reference/features/model-and-effort.md";
 const CONTENT_GENERATORS = "src/cli/lib/__tests__/content-generators.ts";
 const TEST_FS_UTILS = "src/cli/lib/__tests__/test-fs-utils.ts";
+const TEST_FIXTURES = "src/cli/lib/__tests__/test-fixtures.ts";
+const CREATE_E2E_SOURCE = "e2e/helpers/create-e2e-source.ts";
+const TEST_UTILS = "e2e/helpers/test-utils.ts";
 const TESTING_FACTORIES = ".ai-docs/reference/testing/factories.md";
+const MOCK_DATA = ".ai-docs/reference/testing/mock-data.md";
+const SCHEMAS = "src/cli/lib/schemas.ts";
+const ZOD_SCHEMAS = ".ai-docs/reference/types/zod-schemas.md";
+const TEST_FACTORIES_DIR = "src/cli/lib/__tests__/factories";
+const TEST_HELPERS_DIR = "src/cli/lib/__tests__/helpers";
+const TEST_ASSERTIONS_DIR = "src/cli/lib/__tests__/assertions";
+const COMMANDS_DIR = "src/cli/commands";
 const HOTKEYS = "src/cli/components/wizard/hotkeys.ts";
 const WIZARD_STORE = "src/cli/stores/wizard-store.ts";
 const SCOPE_DIFF = "src/cli/lib/wizard/scope-diff.ts";
@@ -78,21 +108,74 @@ const TABLE_RULE = /^\|[\s:|-]+\|\s*$/;
 /** The `(count)` or `(...)` a document writes beside a function name it is naming as a member. */
 const CALL_SIGNATURE = /\(.*\)$/;
 
+/** A backticked span, which is how a document writes one name. Counting them counts the names. */
+const CODE_SPAN = /`[^`]+`/g;
+
 const TABLE_CELL_DELIMITER = "|";
 const CODE_SPAN_DELIMITER = "`";
 
+/** What binds a member to its value in a pair. Written once, in {@link pairOf}, for both sides. */
+const PAIR_SEPARATOR = " = ";
+
 export const NO_SOURCE_FILE = "names a source file that does not exist";
+export const NO_SOURCE_DIRECTORY = "names a source directory that does not exist";
 export const NO_SYMBOL = "names a symbol its source file does not export";
 export const SOURCE_ENUMERATES_NOTHING = "names a symbol that enumerates nothing";
 export const UNREADABLE_MEMBER = "names a symbol holding a member no reader can name";
+export const UNREADABLE_VALUE = "names a symbol holding a member whose value no reader can name";
+export const UNNAMEABLE_REEXPORT = "names a directory whose module re-exports a whole module";
+export const WHOLE_MODULE_REEXPORT = "names a file that re-exports a whole module";
+export const REEXPORTS_A_DECLARATION = "names a file handing on its own declaration as a re-export";
 export const NO_DOCUMENT = "names a document that does not exist";
 export const NO_SECTION = "names a section its document no longer holds";
 export const AMBIGUOUS_SECTION = "opens a section at text the document uses more than once";
 export const DOCUMENT_ENUMERATES_NOTHING = "opens a section that enumerates nothing";
+export const AMBIGUOUS_MEMBER_CELL = "opens a section whose table cell names more than one member";
+export const NO_COLUMN = "opens a section whose table carries no column of that name";
+export const AMBIGUOUS_COLUMN = "opens a section whose table carries that column twice";
 
-/** Which members of a source file a row is about: one symbol's, or the module's own export list. */
+/** Extensions a module of this package is written in. A `.gitkeep` is not one. */
+const MODULE_EXTENSIONS = [".ts", ".tsx"];
+
+/** A spec beside a module is not part of its directory's export surface, nor a command. */
+const SPEC_SUFFIXES = [".test.ts", ".test.tsx"];
+
+/**
+ * What separates a topic from its command in an id, per `oclif.topicSeparator` in `package.json`.
+ * The roster's own strategy is `pattern`, so a path under the tree IS the id and nothing declares
+ * it — which is why the roster is a directory rather than a symbol.
+ */
+const COMMAND_TOPIC_SEPARATOR = " ";
+
+/**
+ * Which members of the source tree a row is about.
+ *
+ * Three shapes name a FILE: one exported symbol's members, the module's own export list of one
+ * kind, or its RE-EXPORT surface — what a consumer imports from it that it did not write. The
+ * fourth names a DIRECTORY, because two claims this registry has to hold are membership of a tree
+ * and of no file in it — a barrel `index.ts` declares nothing of its own, and no expression
+ * anywhere holds "the commands under `src/cli/commands/`". Both had gone unbound for exactly that
+ * reason, and the second is what let a live command be documented as deleted.
+ *
+ * `entries` is the fifth, and it names the same subject as `symbol` read one level deeper: every
+ * member bound to the value it holds. It is a shape of its own rather than an option on `symbol`
+ * because the two answer different strings for the same literal, and a row states which of them its
+ * document carries — a table with a value column is a different claim from a list of names, and the
+ * one that went wrong is the one nothing was reading.
+ *
+ * `reexports` is a shape rather than a widening of either neighbour. `exports` reads DECLARATIONS
+ * and skips every `export { … }`; the directory reader answers a whole tree, so a row naming one
+ * file cannot ask it — and it drops type-only re-exports, which is right for its own subject
+ * (exported VALUES) and wrong for this one: a module's re-export surface is what its consumers
+ * import, and seven of the thirty-one this was written for are types. `"every-name"` says so, and
+ * leaves room for a values-only reading to arrive with its own reason rather than by default.
+ */
 export type SourceEnumeration =
-  { file: string; symbol: string } | { file: string; exports: "const" | "function" };
+  | { file: string; symbol: string }
+  | { file: string; entries: string }
+  | { file: string; exports: "const" | "function" }
+  | { file: string; reexports: "every-name" }
+  | { directory: string; enumerates: "exported-values" | "command-ids" };
 
 /**
  * Where a document states that membership. The section is the text strictly between the two
@@ -100,14 +183,28 @@ export type SourceEnumeration =
  *
  * `code-spans` reads every constant-shaped backticked name in the section, which is how both
  * `STEP_TEXT` documents state their list. `table-rows` reads the first cell of every row under the
- * table's rule, which is how `reference/commands/index.md` states its two.
+ * first table's rule, which is how `reference/commands/index.md` states its two.
+ *
+ * `table-pairs` reads two NAMED columns of the section's table and answers `key = value` for each
+ * row. The columns are named rather than counted because a document is free to write a third
+ * between them — `e2e-infrastructure.md` writes an id there — and because a positional reader goes
+ * on answering confidently after a column is inserted, which is the failure this whole file exists
+ * to refuse. A heading that has been renamed is refused by name rather than read as an empty
+ * column, since silently reading nothing is how the binding was lost in the first place.
+ *
+ * `partitioned-tables` reads every table in the section whose first column carries `column`, for an
+ * enumeration a document states as several tables rather than one — `zod-schemas.md` splits its
+ * schemas across four. The heading is named rather than inferred from the first table, so a table
+ * on another subject standing between them is not read and a renamed heading refuses rather than
+ * dropping a whole partition.
  */
-export type DocumentClaim = {
-  document: string;
-  from: string;
-  to: string;
-  states: "code-spans" | "table-rows";
-};
+type DocumentSection = { document: string; from: string; to: string };
+
+export type DocumentClaim =
+  | (DocumentSection & { states: "code-spans" })
+  | (DocumentSection & { states: "table-rows" })
+  | (DocumentSection & { states: "table-pairs"; keyColumn: string; valueColumn: string })
+  | (DocumentSection & { states: "partitioned-tables"; column: string });
 
 export type RegistryEntry = {
   claim: string;
@@ -225,6 +322,27 @@ export const REGISTRY: RegistryEntry[] = [
       from: "| `SHARED_CONFIG_APPLY`",
       to: "| `SHARED_CONFIG_ONE_DIRECTION`",
       states: "code-spans",
+    },
+  },
+  {
+    // The roster itself — the membership of a TREE, which is why it went unbound while every
+    // constant object in the same document was registered, and why `import skill`, `new skill` and
+    // `new agent` could be documented as removed with `new marketplace` beside them in the same
+    // sentence. The document states the binding it needs in its own words: "The roster is
+    // `src/cli/commands/**` and nothing else: `oclif.commands.strategy` is `"pattern"` over
+    // `./dist/commands`, so a file under that tree IS a command and a command is nothing else."
+    // Nothing declares an id, so nothing but the tree can be read.
+    //
+    // A `--help` diff would answer a different question — what oclif discovered in a BUILT `dist/`,
+    // aliases included, so `list` and `ls` are two rows for one class — and needs the binary. This
+    // row reads source, crosses no tsconfig boundary and runs in the same pass as its neighbours.
+    claim: "the command roster of src/cli/commands/ in reference/commands/index.md",
+    source: { directory: COMMANDS_DIR, enumerates: "command-ids" },
+    document: {
+      document: COMMANDS_INDEX,
+      from: "## Commands Index",
+      to: "commands, in two topics",
+      states: "table-rows",
     },
   },
   {
@@ -411,11 +529,12 @@ export const REGISTRY: RegistryEntry[] = [
     },
   },
 
-  // The one generated union a document enumerates member by member. `SKILL_IDS` and `SKILL_SLUGS`
-  // are declared `as const satisfies readonly SkillSlug[]`, and `unwrap` reads through `as` and
-  // parentheses but not `satisfies` — so a row naming either would be a hard failure rather than a
-  // judgement, and `type-system.md` says so in place of carrying one. `CATEGORIES` and `DOMAINS`
-  // are readable, but no document under `reference/` states their membership as spans or rows.
+  // The one generated union a document enumerates member by member. `SKILL_IDS`, `SKILL_SLUGS`,
+  // `CATEGORIES` and `DOMAINS` are all readable now that `unwrap` reads through `satisfies`, and
+  // none of the four is registerable for a second reason that the widening does not touch: no
+  // document names their members. `type-system.md` owns the four SIZES and states them as a counts
+  // table, which is a claim about quantity rather than the membership list a row judges, and a
+  // table with a row per skill is not a thing to author so that one can be written.
   // The two tuning arrays. Stated member per row rather than as one comma list, because
   // `code-spans` only matches CONSTANT-shaped backticked names and every member of both is
   // lower-case — a one-cell list is unreadable to both readers, which is how `fable` sat missing
@@ -444,6 +563,28 @@ export const REGISTRY: RegistryEntry[] = [
   },
 
   {
+    // The one enumeration a document states as several tables. `zod-schemas.md` partitions the 34
+    // exported schemas across four — Bridge, Loader, Structural, Strict — under a paragraph reading
+    // "the four tables below partition them exactly", and maintains a total beside them. The total
+    // is a claim about quantity and the partition is the membership, so the sub-lists were the half
+    // nothing re-derived: the document's own instruction is to re-derive all five in one pass,
+    // which is the instruction a checker exists to replace.
+    //
+    // Keyed on `Schema`, because the `#### Why slugs and categories are strict` table stands between
+    // the first two and is keyed `Union`. Its four rows are type names, not schemas — read as
+    // members they would report four names `schemas.ts` does not export.
+    claim: "the exported schemas of lib/schemas.ts in reference/types/zod-schemas.md",
+    source: { file: SCHEMAS, exports: "const" },
+    document: {
+      document: ZOD_SCHEMAS,
+      from: "### Bridge Schemas (union type validation)",
+      to: "### Module-Internal Schemas (not exported)",
+      states: "partitioned-tables",
+      column: "Schema",
+    },
+  },
+
+  {
     claim: "AGENT_NAMES in reference/type-system.md",
     source: { file: SOURCE_TYPES, symbol: "AGENT_NAMES" },
     document: {
@@ -467,9 +608,10 @@ export const REGISTRY: RegistryEntry[] = [
   //   - `ProjectConfig` (`src/cli/types/config.ts`) is a type alias to an object TYPE LITERAL, and
   //     `membersOfSymbol` reads object literals, array literals and unions only — so its
   //     seventeen-field table in `features/configuration.md` stays hand-derived.
-  //   - `CANONICAL_FIELD_ORDER` in `config-writer.ts` is `[...] as const satisfies readonly
-  //     (keyof ProjectConfig)[]`; `unwrap` reads through `as` and parentheses but not `satisfies`,
-  //     the same limitation `SKILL_IDS` and `SKILL_SLUGS` hit above.
+  //   - `CANONICAL_FIELD_ORDER` in `config-writer.ts` reads fine now that `unwrap` reads through
+  //     `satisfies`, and no document names its eleven fields. The nearest is the seventeen-field
+  //     `ProjectConfig` block above — a different symbol, a superset, and a fenced TypeScript block
+  //     rather than spans or rows.
   //   - `EXTRACTED_FIELDS` is `new Set([...])` — a call expression, not a literal.
   //   - `SCHEMA_ENTRIES` (`scripts/generate-json-schemas.ts`) is an array of OBJECT literals, so
   //     `stringsOf` refuses it as a member no reader can name. `code-generation.md` owns that count
@@ -543,10 +685,49 @@ export const REGISTRY: RegistryEntry[] = [
   // The test-support side. `reference/testing/factories.md` OWNS the factory, helper and assertion
   // counts, and on 2026-08-18 all three were wrong in both directions at once: it named
   // `createImportSource`, deleted from `disk-writers.ts`, and had never named the seven exports of
-  // `helpers/journey-page.ts` or `renderUnparseableMetadataYaml`. Its three directory tables cannot
-  // be bound — a row names ONE source file, and a barrel re-exporting from eight siblings
-  // enumerates nothing of its own — so the single-file inventories are registered instead and the
-  // directory tables say in the document that they are hand-checked.
+  // `helpers/journey-page.ts` or `renderUnparseableMetadataYaml`.
+  //
+  // Its three tables state what each DIRECTORY exports — "a symbol absent from it is not exported
+  // from that directory" — which is why they were unbindable while a row named one file. The
+  // barrels are not the claim and binding them would be wrong in both directions: `factories/`
+  // re-exports 37 of the 45 the table names, so eight real members would read as drift. Reading the
+  // directory is what the sentence says, and `helpers/` proves the difference — its table names
+  // `extractNamedSection` and `extractScopeSections`, which no barrel re-exports.
+  //
+  // `helpers/` is the third of these and the last to be bound. Its precondition was the three
+  // `cli-runner.ts` refusals — `parseRefusal`, `missingArgsRefusal` and `argOptionRefusal` — which
+  // the table named none of while the row was being written for it; the table carries all three
+  // now, so the directory is readable against it rather than guaranteed to report them.
+  {
+    claim: "the exported values of __tests__/factories/ in reference/testing/factories.md",
+    source: { directory: TEST_FACTORIES_DIR, enumerates: "exported-values" },
+    document: {
+      document: TESTING_FACTORIES,
+      from: 'Barrel import: `import { createMockSkill, buildProjectConfig } from "../__tests__/factories/index.js"`',
+      to: "**`createTestSkill()` / `createMockSkill()` taxonomy contract:**",
+      states: "table-rows",
+    },
+  },
+  {
+    claim: "the exported values of __tests__/helpers/ in reference/testing/factories.md",
+    source: { directory: TEST_HELPERS_DIR, enumerates: "exported-values" },
+    document: {
+      document: TESTING_FACTORIES,
+      from: 'Barrel import: `import { runCliCommand, writeTestSkill } from "../__tests__/helpers/index.js"`',
+      to: "## Assertion Helpers (`src/cli/lib/__tests__/assertions/`)",
+      states: "table-rows",
+    },
+  },
+  {
+    claim: "the exported values of __tests__/assertions/ in reference/testing/factories.md",
+    source: { directory: TEST_ASSERTIONS_DIR, enumerates: "exported-values" },
+    document: {
+      document: TESTING_FACTORIES,
+      from: "## Assertion Helpers (`src/cli/lib/__tests__/assertions/`)",
+      to: "## FS Utilities",
+      states: "table-rows",
+    },
+  },
   {
     claim:
       "the content generators of __tests__/content-generators.ts in reference/testing/factories.md",
@@ -565,6 +746,95 @@ export const REGISTRY: RegistryEntry[] = [
       document: TESTING_FACTORIES,
       from: "Exhaustive — nothing else is exported from that module, and",
       to: "## Expected Values",
+      states: "table-rows",
+    },
+  },
+  {
+    // The registry every unit spec picks its skills from, keyed `Record<string, ResolvedSkill>` —
+    // so nothing about the declaration is exhaustive and the table was the only statement of what
+    // it holds. It named ten of eleven on 2026-08-18, missing `authSecurity`: a spec author reads
+    // the table, does not find a shared-domain skill, and writes a `createMockSkill` call beside a
+    // canonical entry that was already there. That is the short-list failure exactly.
+    claim: "SKILLS in reference/testing/mock-data.md",
+    source: { file: TEST_FIXTURES, symbol: "SKILLS" },
+    document: {
+      document: MOCK_DATA,
+      from: "Every key, bound to `SKILLS` in `src/cli/lib/__tests__/test-fixtures.ts` by `scripts/check-enumeration-drift.ts`:",
+      to: "### TEST_CATEGORIES",
+      states: "table-rows",
+    },
+  },
+  {
+    // The titles the fixture writes into each `metadata.yaml`, which ARE the strings the wizard
+    // paints and every label assertion matches on. `satisfies Record<E2ESkillSlug, string>` is
+    // total over the fixture's own slug set, so `tsc` holds the map to `E2E_SKILLS` — what nothing
+    // held was the document, and an eleventh fixture skill would have left the table at ten while
+    // the spec that needed its label re-typed the string.
+    //
+    // Read as PAIRS, and this is the row that proved why: bound as `table-rows` it answered
+    // `agrees, members: 10` and reported the run clean on 2026-08-19 while five of the document's
+    // Display-title cells were wrong, because the slugs — the only column either half of the check
+    // could reach — were right. The titles are what the suite matches on and the slugs are not, so
+    // a keys-only binding covered the half that cannot break. The document's middle column stays
+    // unbound on purpose: it states bare ids, which are namespaced at runtime and are `E2E_SKILLS`'
+    // business rather than this map's.
+    claim: "E2E_SKILL_TITLES in reference/testing/e2e-infrastructure.md",
+    source: { file: CREATE_E2E_SOURCE, entries: "E2E_SKILL_TITLES" },
+    document: {
+      document: E2E_INFRASTRUCTURE,
+      from: "all 10 entries, bound to source by `scripts/check-enumeration-drift.ts`:",
+      to: "**Keyed by slug for two reasons",
+      states: "table-pairs",
+      keyColumn: "Slug",
+      valueColumn: "Display title",
+    },
+  },
+  {
+    // The E2E helper module's own export surface, in three rows rather than one, because the
+    // document states it as three tables and each needs a reader of its own — a single table
+    // mixing the kinds could bind to none of them. No marker names a count on purpose: a sixth
+    // constant or a thirty-fifth function moves its own table and leaves this file untouched.
+    //
+    // The third of them, the 31 re-exports, is what `reexports: "every-name"` was added for, and
+    // it is the one neither neighbouring reader can answer: `exports` reads DECLARATIONS and skips
+    // every `export { … }`, while `reexportedNames` — reachable only through the directory reader
+    // — returns nothing for a bare block with no `moduleSpecifier`, the form thirteen of the
+    // thirty-one are written in, and drops the type-only re-exports that are seven more.
+    // `reexportSurfaceOf` reads each export clause's own spelling and follows no specifier, so all
+    // three forms are members and the bare block's names answer as written.
+    //
+    // The document's fourth table is deliberately unbound and says so where it stands: it names
+    // the two type aliases this module DECLARES, and no reader enumerates those — `exportedNames`
+    // answers consts and functions only, and a row naming one alias would reach an object type
+    // literal that `membersOfSymbol` enumerates nothing from.
+    claim:
+      "the exported constants of e2e/helpers/test-utils.ts in reference/testing/e2e-infrastructure.md",
+    source: { file: TEST_UTILS, exports: "const" },
+    document: {
+      document: E2E_INFRASTRUCTURE,
+      from: "binds this table to the module's constant exports",
+      to: "### Functions declared here",
+      states: "table-rows",
+    },
+  },
+  {
+    claim:
+      "the exported functions of e2e/helpers/test-utils.ts in reference/testing/e2e-infrastructure.md",
+    source: { file: TEST_UTILS, exports: "function" },
+    document: {
+      document: E2E_INFRASTRUCTURE,
+      from: "binds this table to the module's function exports",
+      to: "### Types declared here",
+      states: "table-rows",
+    },
+  },
+  {
+    claim: "the re-exports of e2e/helpers/test-utils.ts in reference/testing/e2e-infrastructure.md",
+    source: { file: TEST_UTILS, reexports: "every-name" },
+    document: {
+      document: E2E_INFRASTRUCTURE,
+      from: "binds this table to the module's re-exports",
+      to: "## Scope & HOME model",
       states: "table-rows",
     },
   },
@@ -630,11 +900,8 @@ export const REGISTRY: RegistryEntry[] = [
   // `source-changed` that the union has never held. Both are the mis-report failure — a reader greps,
   // finds nothing, and stops trusting the document.
   //
-  // Four neighbouring wizard lists are NOT registrable, each at a guard this checker means to fail
+  // Three neighbouring wizard lists are NOT registrable, each at a guard this checker means to fail
   // at rather than skip. They stay hand-derived and say so where they appear:
-  //   - `WIZARD_STEP_ORDER` is `[...] as const satisfies readonly WizardStep[]`; `unwrap` reads
-  //     through `as` and parentheses but not `satisfies`. The `WizardStep` UNION is registered
-  //     instead, which is the same six names from the declaration the constant is checked against.
   //   - `WizardState` is a type alias to an object TYPE LITERAL, so `membersOfSymbol` — object
   //     literals, array literals and unions only — enumerates nothing from it. The store-field
   //     tables in `store-map.md` therefore cannot be bound, the same limitation `ProjectConfig` hits.
@@ -719,7 +986,24 @@ export const REGISTRY: RegistryEntry[] = [
     source: { file: WIZARD_STORE, symbol: "WizardStep" },
     document: {
       document: STATE_TRANSITIONS,
-      from: "bound to it by `scripts/check-enumeration-drift.ts` so a seventh step cannot land without a row here:",
+      from: "A seventh step cannot land without a row here:",
+      to: "The tab labels are `WIZARD_STEP_LABELS`",
+      states: "table-rows",
+    },
+  },
+  {
+    // The same table, bound a second time to the CONSTANT the document names as its source of
+    // truth. Not a duplicate row: `as const satisfies readonly WizardStep[]` constrains what the
+    // array may hold and not that it holds everything, so a step added to the union and to this
+    // table but never to `WIZARD_STEP_ORDER` compiles, renders no tab, and passes the row above.
+    // `WIZARD_STEP_LABELS` in `wizard-tabs.tsx` is the third list of the same six and is NOT
+    // registered: `satisfies Record<WizardStep, string>` is total over the union, so `tsc` already
+    // refuses a step with no label and a row would repeat a check that cannot fail.
+    claim: "WIZARD_STEP_ORDER in reference/wizard/state-transitions.md",
+    source: { file: WIZARD_STORE, symbol: "WIZARD_STEP_ORDER" },
+    document: {
+      document: STATE_TRANSITIONS,
+      from: "A seventh step cannot land without a row here:",
       to: "The tab labels are `WIZARD_STEP_LABELS`",
       states: "table-rows",
     },
@@ -782,32 +1066,187 @@ function judgeEntry(packageRoot: string, entry: RegistryEntry): EnumerationVerdi
 }
 
 function readSource(packageRoot: string, { claim, source }: RegistryEntry): string[] {
-  const filePath = path.join(packageRoot, source.file);
-  if (!existsSync(filePath)) throw refusal(claim, NO_SOURCE_FILE, source.file);
+  const members =
+    "directory" in source
+      ? membersOfDirectory(packageRoot, source, claim)
+      : membersOfFile(packageRoot, source, claim);
 
-  const file = ts.createSourceFile(
-    filePath,
-    readFileSync(filePath, "utf-8"),
-    ts.ScriptTarget.Latest,
-  );
-
-  const members = membersOf(file, source, claim);
   if (members.length === 0) throw refusal(claim, SOURCE_ENUMERATES_NOTHING, subjectOf(source));
 
   return members;
 }
 
-function membersOf(file: ts.SourceFile, source: SourceEnumeration, claim: string): string[] {
-  return "symbol" in source
-    ? membersOfSymbol(file, source.symbol, claim)
-    : exportedNames(file, source.exports);
+function membersOfFile(
+  packageRoot: string,
+  source: Extract<SourceEnumeration, { file: string }>,
+  claim: string,
+): string[] {
+  const filePath = path.join(packageRoot, source.file);
+  if (!existsSync(filePath)) throw refusal(claim, NO_SOURCE_FILE, source.file);
+
+  const file = parseModule(filePath);
+
+  if ("symbol" in source) return membersOfSymbol(file, source.symbol, claim);
+  if ("entries" in source) return entriesOfSymbol(file, source.entries, claim);
+  if ("reexports" in source) return reexportSurfaceOf(file, claim, source.file);
+
+  return exportedNames(file, source.exports);
+}
+
+/**
+ * Every name a module RE-EXPORTS — the identity a consumer imports from it and did not write there.
+ *
+ * **The design question this shape turns on is what a locally-imported-then-re-exported name
+ * resolves to, and the answer is: the export clause's own spelling, with nothing followed to reach
+ * it.** A document stating this surface is a list of what a spec writes in its import statement,
+ * and the origin module is prose in the row beside it — so `export { a as b }` answers `b`, and a
+ * bare block's names answer exactly as they are written whether their origin is one hop away or
+ * five. No `moduleSpecifier` is resolved, which is why a form the existing reader returns nothing
+ * for is readable here at all.
+ *
+ * The module's IMPORTS are read for one purpose, and it is the refusal: a bare block can hand on a
+ * name the module DECLARED, and such a declaration carries no export modifier, so `exports:
+ * "function"` cannot see it either. That name would fall through both readers and be reported by
+ * neither — the silent under-report this file refuses everywhere else, and the reason a bare block
+ * is not simply read as a list of names.
+ */
+function reexportSurfaceOf(file: ts.SourceFile, claim: string, module: string): string[] {
+  const bound = importedNamesIn(file);
+
+  return file.statements.flatMap((statement) => reexportsIn(statement, bound, claim, module));
+}
+
+function reexportsIn(
+  statement: ts.Statement,
+  bound: Set<string>,
+  claim: string,
+  module: string,
+): string[] {
+  if (!ts.isExportDeclaration(statement)) return [];
+
+  const { exportClause, moduleSpecifier } = statement;
+  if (exportClause === undefined || !ts.isNamedExports(exportClause)) {
+    throw refusal(claim, WHOLE_MODULE_REEXPORT, module);
+  }
+  if (moduleSpecifier !== undefined)
+    return exportClause.elements.map((element) => element.name.text);
+
+  const declared = exportClause.elements
+    .map((element) => (element.propertyName ?? element.name).text)
+    .filter((local) => !bound.has(local));
+  if (declared.length > 0) {
+    throw refusal(claim, REEXPORTS_A_DECLARATION, `${declared.join(", ")} in ${module}`);
+  }
+
+  return exportClause.elements.map((element) => element.name.text);
+}
+
+/** Every local name an import statement binds — default, namespace and named alike, types included. */
+function importedNamesIn(file: ts.SourceFile): Set<string> {
+  return new Set(file.statements.flatMap(importedNamesOf));
+}
+
+function importedNamesOf(statement: ts.Statement): string[] {
+  if (!ts.isImportDeclaration(statement) || statement.importClause === undefined) return [];
+
+  const { name, namedBindings } = statement.importClause;
+  const defaultName = name === undefined ? [] : [name.text];
+  if (namedBindings === undefined) return defaultName;
+
+  return ts.isNamespaceImport(namedBindings)
+    ? [...defaultName, namedBindings.name.text]
+    : [...defaultName, ...namedBindings.elements.map((element) => element.name.text)];
+}
+
+/**
+ * What a directory holds: every value its modules export, or the command id each module defines.
+ *
+ * A spec beside a module is neither — it exports test scaffolding and oclif's pattern strategy runs
+ * over compiled command modules alone — so both readers walk the same filtered tree.
+ */
+function membersOfDirectory(
+  packageRoot: string,
+  source: { directory: string; enumerates: "exported-values" | "command-ids" },
+  claim: string,
+): string[] {
+  const directoryPath = path.join(packageRoot, source.directory);
+  if (!existsSync(directoryPath)) throw refusal(claim, NO_SOURCE_DIRECTORY, source.directory);
+
+  const modules = modulesUnder(directoryPath);
+
+  if (source.enumerates === "command-ids") return modules.map(commandIdOf);
+
+  return [...new Set(modules.flatMap((module) => exportedValuesOf(directoryPath, module, claim)))];
+}
+
+/** Every module under a directory, deepest last, as paths relative to it. */
+function modulesUnder(directoryPath: string, prefix = ""): string[] {
+  return readdirSync(directoryPath, { withFileTypes: true }).flatMap((entry) => {
+    const relativePath = path.join(prefix, entry.name);
+    if (entry.isDirectory()) {
+      return modulesUnder(path.join(directoryPath, entry.name), relativePath);
+    }
+
+    return isModule(entry.name) ? [relativePath] : [];
+  });
+}
+
+function isModule(name: string): boolean {
+  return (
+    MODULE_EXTENSIONS.some((extension) => name.endsWith(extension)) &&
+    !SPEC_SUFFIXES.some((suffix) => name.endsWith(suffix))
+  );
+}
+
+/** The id oclif's pattern strategy gives a command module: its path under the tree, extension off. */
+function commandIdOf(module: string): string {
+  const withoutExtension = module.replace(/\.[^.]+$/, "");
+
+  return withoutExtension.split(path.sep).join(COMMAND_TOPIC_SEPARATOR);
+}
+
+/**
+ * The values one module contributes to its directory's export surface: what it declares, plus every
+ * name it re-exports. A name re-exported from a sibling is the sibling's declaration read twice and
+ * the caller dedupes it; one re-exported from outside the directory is a member only this reader
+ * sees. A whole-module `export *` names nothing at all, and is refused rather than skipped.
+ */
+function exportedValuesOf(directoryPath: string, module: string, claim: string): string[] {
+  const file = parseModule(path.join(directoryPath, module));
+
+  return [
+    ...exportedNames(file, "const"),
+    ...exportedNames(file, "function"),
+    ...file.statements.flatMap((statement) => reexportedNames(statement, claim, module)),
+  ];
+}
+
+function reexportedNames(statement: ts.Statement, claim: string, module: string): string[] {
+  if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier === undefined) return [];
+  if (statement.isTypeOnly) return [];
+
+  const { exportClause } = statement;
+  if (exportClause === undefined || !ts.isNamedExports(exportClause)) {
+    throw refusal(claim, UNNAMEABLE_REEXPORT, module);
+  }
+
+  return exportClause.elements
+    .filter((element) => !element.isTypeOnly)
+    .map((element) => element.name.text);
+}
+
+function parseModule(filePath: string): ts.SourceFile {
+  return ts.createSourceFile(filePath, readFileSync(filePath, "utf-8"), ts.ScriptTarget.Latest);
 }
 
 /** What a refusal about the source half is about, so the failure names a symbol and not a file. */
 function subjectOf(source: SourceEnumeration): string {
-  return "symbol" in source
-    ? `${source.symbol} in ${source.file}`
-    : `the exported ${source.exports}s of ${source.file}`;
+  if ("directory" in source) return `the ${source.enumerates} of ${source.directory}`;
+  if ("symbol" in source) return `${source.symbol} in ${source.file}`;
+  if ("entries" in source) return `the entries of ${source.entries} in ${source.file}`;
+  if ("reexports" in source) return `the re-exports of ${source.file}`;
+
+  return `the exported ${source.exports}s of ${source.file}`;
 }
 
 /**
@@ -827,7 +1266,51 @@ function membersOfSymbol(file: ts.SourceFile, symbol: string, claim: string): st
   return [];
 }
 
-/** What the symbol is defined as, with any `as const` and any parentheses read through. */
+/**
+ * The same symbol's members bound to the values they hold, one `key = value` per property.
+ *
+ * A symbol of any other shape enumerates nothing and falls to the caller's refusal, as above — an
+ * array and a union have members but no values, so a row asking either of them for pairs has named
+ * the wrong shape rather than found an empty one.
+ */
+function entriesOfSymbol(file: ts.SourceFile, symbol: string, claim: string): string[] {
+  const declared = declarationOf(file, symbol);
+  if (declared === undefined) throw refusal(claim, NO_SYMBOL, symbol);
+  if (!ts.isObjectLiteralExpression(declared)) return [];
+
+  return declared.properties.map((property) => entryOf(property, claim, symbol));
+}
+
+function entryOf(property: ts.ObjectLiteralElementLike, claim: string, symbol: string): string {
+  const key = keyOf(property, claim, symbol);
+
+  return pairOf(key, valueOf(property, claim, `${key} in ${symbol}`));
+}
+
+/**
+ * What one member holds, in the single spelling this file reads a value in anywhere: a string
+ * literal, exactly as {@link stringsOf} reads an array's elements and a union's members.
+ *
+ * Every other spelling is refused rather than read, and the reason is that each would have to be
+ * GUESSED at rather than looked up. A template with a substitution has no text until its references
+ * are resolved — `SCHEMA_PATHS` writes all seven of its values that way, and the literal text under
+ * the substitution is a suffix rather than the value. An identifier names a declaration elsewhere
+ * in the module, or in another module — `STANDARD_FILES.METADATA_YAML` is written that way. A
+ * shorthand, a method and a getter have no initializer to read at all. Skipping any of them would
+ * under-report the source by one member while reporting the rest as agreed, which is the exact
+ * shape of the defect this reader was added to close.
+ *
+ * The member is named in the refusal rather than the symbol, so the repair is one row of one table.
+ */
+function valueOf(property: ts.ObjectLiteralElementLike, claim: string, member: string): string {
+  if (!ts.isPropertyAssignment(property) || !ts.isStringLiteral(property.initializer)) {
+    throw refusal(claim, UNREADABLE_VALUE, member);
+  }
+
+  return property.initializer.text;
+}
+
+/** What the symbol is defined as, with any `as const`, `satisfies` and parentheses read through. */
 function declarationOf(file: ts.SourceFile, symbol: string): ts.Node | undefined {
   for (const statement of file.statements) {
     if (ts.isTypeAliasDeclaration(statement) && statement.name.text === symbol) {
@@ -845,8 +1328,18 @@ function declarationOf(file: ts.SourceFile, symbol: string): ts.Node | undefined
   return undefined;
 }
 
+/**
+ * An annotation constrains what a declaration may hold; it is not itself the membership list. So
+ * every one of them is read through to the literal underneath, `satisfies` included — `as const
+ * satisfies readonly T[]` is this codebase's house style for a vocabulary array, which made the
+ * shapes most worth binding the ones the reader could not see.
+ */
 function unwrap(expression: ts.Expression): ts.Expression {
-  if (ts.isAsExpression(expression) || ts.isParenthesizedExpression(expression)) {
+  if (
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isParenthesizedExpression(expression)
+  ) {
     return unwrap(expression.expression);
   }
 
@@ -859,14 +1352,16 @@ function unwrap(expression: ts.Expression): ts.Expression {
  * filings took — so it refuses instead.
  */
 function keysOf(literal: ts.ObjectLiteralExpression, claim: string, symbol: string): string[] {
-  return literal.properties.map((property) => {
-    const { name } = property;
-    if (name === undefined || (!ts.isIdentifier(name) && !ts.isStringLiteral(name))) {
-      throw refusal(claim, UNREADABLE_MEMBER, symbol);
-    }
+  return literal.properties.map((property) => keyOf(property, claim, symbol));
+}
 
-    return name.text;
-  });
+function keyOf(property: ts.ObjectLiteralElementLike, claim: string, symbol: string): string {
+  const { name } = property;
+  if (name === undefined || (!ts.isIdentifier(name) && !ts.isStringLiteral(name))) {
+    throw refusal(claim, UNREADABLE_MEMBER, symbol);
+  }
+
+  return name.text;
 }
 
 function stringsOf(
@@ -918,12 +1413,29 @@ function readDocument(packageRoot: string, { claim, document }: RegistryEntry): 
   if (!existsSync(documentPath)) throw refusal(claim, NO_DOCUMENT, document.document);
 
   const section = sectionOf(readFileSync(documentPath, "utf-8"), document, claim);
-  const named =
-    document.states === "code-spans" ? constantSpansIn(section) : tableRowKeysIn(section);
+  const named = namesIn(section, document, claim);
 
   if (named.length === 0) throw refusal(claim, DOCUMENT_ENUMERATES_NOTHING, document.from);
 
   return [...new Set(named)];
+}
+
+function namesIn(section: string, document: DocumentClaim, claim: string): string[] {
+  switch (document.states) {
+    case "code-spans":
+      return constantSpansIn(section);
+    case "table-rows":
+      return tableRowKeysIn(section, claim);
+    case "table-pairs":
+      return tablePairsIn(section, document, claim);
+    case "partitioned-tables":
+      return partitionedTableKeysIn(section, document.column, claim);
+    default: {
+      const exhaustive: never = document;
+
+      return exhaustive;
+    }
+  }
 }
 
 /** The text strictly between the markers, so neither marker's own words are read as members. */
@@ -945,25 +1457,152 @@ function constantSpansIn(section: string): string[] {
 }
 
 /** The first cell of every row under the table's rule — the heading and the rule itself are not rows. */
-function tableRowKeysIn(section: string): string[] {
+function tableRowKeysIn(section: string, claim: string): string[] {
   const lines = section.split("\n");
   const rule = lines.findIndex((line) => TABLE_RULE.test(line));
   if (rule === -1) return [];
 
+  return rowKeysUnder(lines, rule, claim);
+}
+
+/** Which cells of a row hold the two halves of a pair, resolved from the headings once per table. */
+type PairColumns = { key: number; value: number };
+
+/**
+ * Every row of the section's table as `key = value`, read from the two columns the claim NAMES.
+ *
+ * The key half goes through {@link memberNameIn}, so one member per row is the same contract here
+ * as it is for the reader above and is stated in one place. The value half is read verbatim —
+ * markup off and trimmed, with no call signature stripped — because a value is text the document
+ * quotes rather than a name it writes, and `plans(3)` is a value that means what it says.
+ */
+function tablePairsIn(
+  section: string,
+  document: Extract<DocumentClaim, { states: "table-pairs" }>,
+  claim: string,
+): string[] {
+  const lines = section.split("\n");
+  const rule = lines.findIndex((line) => TABLE_RULE.test(line));
+  if (rule === -1) return [];
+
+  const headings = cellsOf(lines[rule - 1] ?? "").map(cellTextOf);
+  const columns = {
+    key: columnIndexOf(headings, document.keyColumn, claim),
+    value: columnIndexOf(headings, document.valueColumn, claim),
+  };
+
+  return rowsUnder(lines, rule).map((row) => pairIn(row, columns, claim));
+}
+
+/**
+ * Which column a heading names — refused when the document no longer carries it, and refused again
+ * when it carries it twice.
+ *
+ * Neither is a case to guess at. A renamed heading read as an empty column would answer `key = `
+ * for every row and report the whole table as drifted, which invites the repair of editing a
+ * correct document; read as a MISSING column it would answer nothing, which is the silent pass this
+ * file refuses everywhere. And two columns under one heading is a table whose author meant one of
+ * them; taking whichever comes first binds the row to a column by accident.
+ */
+function columnIndexOf(headings: string[], column: string, claim: string): number {
+  if (!headings.includes(column)) throw refusal(claim, NO_COLUMN, column);
+  if (occursTwice(headings, column)) throw refusal(claim, AMBIGUOUS_COLUMN, column);
+
+  return headings.indexOf(column);
+}
+
+function occursTwice(headings: string[], column: string): boolean {
+  return headings.indexOf(column) !== headings.lastIndexOf(column);
+}
+
+function pairIn(row: string, columns: PairColumns, claim: string): string {
+  const cells = cellsOf(row);
+
+  return pairOf(
+    memberNameIn(cells[columns.key] ?? "", claim),
+    cellTextOf(cells[columns.value] ?? ""),
+  );
+}
+
+/** The same, for every table in the section whose first column carries the heading `column`. */
+function partitionedTableKeysIn(section: string, column: string, claim: string): string[] {
+  const lines = section.split("\n");
+
+  return lines.flatMap((line, index) =>
+    TABLE_RULE.test(line) && headingAbove(lines, index) === column
+      ? rowKeysUnder(lines, index, claim)
+      : [],
+  );
+}
+
+/** A heading names a column rather than a member, so it is read as written and never refused. */
+function headingAbove(lines: string[], rule: number): string {
+  return cellTextOf(firstCellOf(lines[rule - 1] ?? ""));
+}
+
+function rowKeysUnder(lines: string[], rule: number, claim: string): string[] {
+  return rowsUnder(lines, rule).map((row) => memberNameIn(firstCellOf(row), claim));
+}
+
+/** A table's rows, which end at the first line under its rule that is not one. */
+function rowsUnder(lines: string[], rule: number): string[] {
   const body = lines.slice(rule + 1);
   const ends = body.findIndex((line) => !isTableRow(line));
 
-  return (ends === -1 ? body : body.slice(0, ends)).map(firstCellOf);
+  return ends === -1 ? body : body.slice(0, ends);
 }
 
 function isTableRow(line: string): boolean {
   return line.trimStart().startsWith(TABLE_CELL_DELIMITER);
 }
 
-function firstCellOf(row: string): string {
-  const cell = row.split(TABLE_CELL_DELIMITER)[1] ?? "";
+/**
+ * The one member a row states, or a refusal to guess which of several it meant.
+ *
+ * A row maps to exactly one member here and always has, so a cell naming two is outside what this
+ * reader can answer. It is refused rather than read because the failure mode of reading it is a
+ * confident wrong answer: {@link CALL_SIGNATURE} is greedy and anchored at the end, so
+ * `` `agentsPath(dir)` / `skillsPath(dir)` `` loses everything from the first `(` to the last `)`
+ * and survives as the single valid name `agentsPath` — whereupon the checker reports `skillsPath`,
+ * which the document plainly carries, as unnamed. A checker that manufactures a drift report is
+ * worse than one that refuses, because the repair it invites is to edit a correct document.
+ *
+ * Splitting the cell on a separator was the alternative and is rejected: no separator convention is
+ * stated anywhere, `/` is also an ordinary character in the path-valued tables this same reader
+ * serves, and inferring one would make the answer depend on punctuation. One name per cell is the
+ * contract, and this is where it is enforced.
+ */
+function memberNameIn(cell: string, claim: string): string {
+  if ([...cell.matchAll(CODE_SPAN)].length > 1) {
+    throw refusal(claim, AMBIGUOUS_MEMBER_CELL, cell.trim());
+  }
 
-  return cell.replaceAll(CODE_SPAN_DELIMITER, "").trim().replace(CALL_SIGNATURE, "");
+  return cellTextOf(cell).replace(CALL_SIGNATURE, "");
+}
+
+/**
+ * The cells of a row as written, code spans intact, which is what counting their names needs. A row
+ * opens with the delimiter, so the first part of the split is the empty string before it.
+ */
+function cellsOf(row: string): string[] {
+  return row.split(TABLE_CELL_DELIMITER).slice(1);
+}
+
+function firstCellOf(row: string): string {
+  return cellsOf(row)[0] ?? "";
+}
+
+/** What a cell says with its markup off. A heading and a value are both read exactly this far. */
+function cellTextOf(cell: string): string {
+  return cell.replaceAll(CODE_SPAN_DELIMITER, "").trim();
+}
+
+/**
+ * One member bound to its value. Both sides of the check pass through here, so the encoding is
+ * written once and a source pair and a document pair cannot be spelt differently.
+ */
+function pairOf(key: string, value: string): string {
+  return `${key}${PAIR_SEPARATOR}${value}`;
 }
 
 /** Named so the row to repair is the one the failure prints, rather than a fault with no address. */

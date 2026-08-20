@@ -46,21 +46,29 @@ export const NO_SHARED_BASE = `${TSCONFIG_JSON} reaches no ${SHARED_CONFIG_PREFI
 export const MISSING_DEPENDENCY = `${PACKAGE_JSON} does not declare ${SHARED_CONFIG_PACKAGE}`;
 
 /**
+ * A root matching no workspace has not been checked, whatever it answers about the workspaces in
+ * it. The floor lives here rather than in the suite because `bun run deps:check` is what CI and
+ * both hooks run: with it in the test file only, all three runners printed `✓ 0 workspaces` and
+ * exited 0 against a root whose globs match nothing, which is the shape of a passing gate.
+ */
+export const NO_WORKSPACES = "matches no workspace";
+
+/**
  * The globs are read rather than restated, for the reason `.syncpackrc.cjs` gives for omitting
  * `source`: one statement of which directories are workspaces cannot drift from itself.
  */
 const RootManifestSchema = z.object({ workspaces: z.array(z.string()) });
 
 const ManifestSchema = z.object({
-  dependencies: z.record(z.string(), z.string()).optional(),
-  devDependencies: z.record(z.string(), z.string()).optional(),
-  [OPT_OUT_KEY]: z.string().optional(),
+  dependencies: z.record(z.string(), z.string()).exactOptional(),
+  devDependencies: z.record(z.string(), z.string()).exactOptional(),
+  [OPT_OUT_KEY]: z.string().exactOptional(),
 });
 type Manifest = z.infer<typeof ManifestSchema>;
 
 const TsconfigSchema = z.object({
-  extends: z.union([z.string(), z.array(z.string())]).optional(),
-  references: z.array(z.object({ path: z.string() })).optional(),
+  extends: z.union([z.string(), z.array(z.string())]).exactOptional(),
+  references: z.array(z.object({ path: z.string() })).exactOptional(),
 });
 type Tsconfig = z.infer<typeof TsconfigSchema>;
 
@@ -75,7 +83,10 @@ export type CheckResult = { clean: boolean; verdicts: WorkspaceVerdict[] };
 export function check({
   repoRoot = REPO_ROOT,
 }: { repoRoot?: string | undefined } = {}): CheckResult {
-  const verdicts = findWorkspaces(repoRoot).map((workspace) => judgeWorkspace(repoRoot, workspace));
+  const workspaces = findWorkspaces(repoRoot);
+  if (workspaces.length === 0) throw new Error(`${repoRoot} ${NO_WORKSPACES}`);
+
+  const verdicts = workspaces.map((workspace) => judgeWorkspace(repoRoot, workspace));
 
   return { clean: verdicts.every((verdict) => verdict.outcome !== "diverged"), verdicts };
 }

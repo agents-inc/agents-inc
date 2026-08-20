@@ -21,6 +21,7 @@ import {
   check,
   MISSING_DEPENDENCY,
   NO_SHARED_IMPORT,
+  NO_WORKSPACES,
   OPT_OUT_KEY,
   SHARED_CONFIG_PACKAGE,
   UNDECLARED_CONFIG_LESS,
@@ -356,6 +357,19 @@ describe("the entry point", () => {
     expect(result.status).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain(SHARED_CONFIG_PACKAGE);
   });
+
+  // The floor that makes this test possible lives in `check()` rather than in this file, so every
+  // caller inherits it. With it here only, all three runners printed `✓ 0 workspaces` and exited 0
+  // against a root whose globs match nothing — and `bun run deps:check` is what CI and both hooks
+  // run, so the gate a fixture-less root reached was a green one.
+  it("exits non-zero on a root matching no workspace, rather than reporting zero of them clean", async () => {
+    const root = await writeFixtureRepo([]);
+
+    const result = spawnSync("bun", [RUNNER, ROOT_FLAG, root], { encoding: "utf-8" });
+
+    expect(result.status).toBe(EXIT_CODES.ERROR);
+    expect(result.stderr).toContain(NO_WORKSPACES);
+  });
 });
 
 describe("this repository", () => {
@@ -406,7 +420,6 @@ describe("this repository", () => {
   it("has no workspace whose eslint config extends nothing and says nothing about it", () => {
     const { clean, verdicts } = check();
 
-    expect(verdicts.length).toBeGreaterThan(0);
     expect(
       verdicts.filter((verdict) => verdict.outcome === "diverged"),
       "every eslint config must extend the shared config or record why it does not",

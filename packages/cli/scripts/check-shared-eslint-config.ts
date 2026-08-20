@@ -53,6 +53,14 @@ export const NO_SHARED_IMPORT = `${ESLINT_CONFIG_BASENAME}.* imports nothing fro
 export const MISSING_DEPENDENCY = `${PACKAGE_JSON} does not declare ${SHARED_CONFIG_PACKAGE}`;
 export const UNDECLARED_CONFIG_LESS = `holds TypeScript but no ${ESLINT_CONFIG_BASENAME}.*, and ${PACKAGE_JSON} does not say why`;
 
+/**
+ * A root matching no workspace has not been checked, whatever it answers about the workspaces in
+ * it. The floor lives here rather than in the suite because `bun run deps:check` is what CI and
+ * both hooks run: with it in the test file only, all three runners printed `✓ 0 workspaces` and
+ * exited 0 against a root whose globs match nothing, which is the shape of a passing gate.
+ */
+export const NO_WORKSPACES = "matches no workspace";
+
 /** What a workspace has to hold for its missing config to be worth declaring. */
 const TYPESCRIPT_GLOB = "**/*.{ts,tsx}";
 const NOT_SOURCE = ["**/node_modules/**", "**/dist/**"];
@@ -64,9 +72,9 @@ const NOT_SOURCE = ["**/node_modules/**", "**/dist/**"];
 const RootManifestSchema = z.object({ workspaces: z.array(z.string()) });
 
 const ManifestSchema = z.object({
-  dependencies: z.record(z.string(), z.string()).optional(),
-  devDependencies: z.record(z.string(), z.string()).optional(),
-  [OPT_OUT_KEY]: z.string().optional(),
+  dependencies: z.record(z.string(), z.string()).exactOptional(),
+  devDependencies: z.record(z.string(), z.string()).exactOptional(),
+  [OPT_OUT_KEY]: z.string().exactOptional(),
 });
 type Manifest = z.infer<typeof ManifestSchema>;
 
@@ -82,7 +90,10 @@ export type CheckResult = { clean: boolean; verdicts: WorkspaceVerdict[] };
 export function check({
   repoRoot = REPO_ROOT,
 }: { repoRoot?: string | undefined } = {}): CheckResult {
-  const verdicts = findWorkspaces(repoRoot).map((workspace) => judgeWorkspace(repoRoot, workspace));
+  const workspaces = findWorkspaces(repoRoot);
+  if (workspaces.length === 0) throw new Error(`${repoRoot} ${NO_WORKSPACES}`);
+
+  const verdicts = workspaces.map((workspace) => judgeWorkspace(repoRoot, workspace));
 
   return { clean: verdicts.every((verdict) => verdict.outcome !== "diverged"), verdicts };
 }

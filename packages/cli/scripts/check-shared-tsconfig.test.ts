@@ -20,6 +20,7 @@ import {
   MISSING_DEPENDENCY,
   MISSING_TSCONFIG,
   NO_SHARED_BASE,
+  NO_WORKSPACES,
   OPT_OUT_KEY,
   SHARED_CONFIG_PACKAGE,
 } from "./check-shared-tsconfig.js";
@@ -34,6 +35,16 @@ const SHARED_BASE_CONFIG = `${SHARED_CONFIG_PACKAGE}/base.json`;
 
 const DECLARED_VERSION = "workspace:*";
 const OPT_OUT_REASON = "ships plain JavaScript — there is no TypeScript here to type-check";
+
+/**
+ * A value TypeScript's JSONC reader cannot convert. It answers this with the key PRESENT and its
+ * value `undefined` — the one input `TsconfigSchema`'s `.exactOptional()` fields reject — and
+ * reports an error beside it, which is the error `readTsconfig` throws on.
+ */
+const UNCONVERTIBLE_TSCONFIG = '{ "extends": someExpression }';
+
+/** What the throw has to say: which file could not be read, and a non-empty reason why. */
+const UNREADABLE_MESSAGE = /tsconfig\.json could not be read: \S/;
 
 /** One workspace to write into a fixture repository. */
 type FixtureWorkspace = {
@@ -235,6 +246,19 @@ describe("a workspace that reaches the shared config", () => {
   });
 });
 
+describe("a tsconfig TypeScript's own reader cannot convert", () => {
+  // The schema never sees this file: `readTsconfig` throws on the reader's error first. That order
+  // is what keeps a present-but-`undefined` key away from `TsconfigSchema`, whose fields are
+  // `.exactOptional()` and reject one — so the exactness rests on this throw.
+  it("aborts the check naming the file and a reason, rather than reading the key as absent", async () => {
+    const root = await writeFixtureRepo([
+      { directory: WORKSPACE_DIR, configs: { "tsconfig.json": UNCONVERTIBLE_TSCONFIG } },
+    ]);
+
+    expect(() => check({ repoRoot: root })).toThrow(UNREADABLE_MESSAGE);
+  });
+});
+
 describe("a workspace that records why it does not extend", () => {
   it("is excused, and its reason is carried through", async () => {
     const root = await writeFixtureRepo([
@@ -287,13 +311,70 @@ describe("the entry point", () => {
     expect(result.status).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain(SHARED_CONFIG_PACKAGE);
   });
+
+  // The floor that makes this test possible lives in `check()` rather than in this file, so every
+  // caller inherits it. With it here only, all three runners printed `✓ 0 workspaces` and exited 0
+  // against a root whose globs match nothing — and `bun run deps:check` is what CI and both hooks
+  // run, so the gate a fixture-less root reached was a green one.
+  it("exits non-zero on a root matching no workspace, rather than reporting zero of them clean", async () => {
+    const root = await writeFixtureRepo([]);
+
+    const result = spawnSync("bun", [RUNNER, ROOT_FLAG, root], { encoding: "utf-8" });
+
+    expect(result.status).toBe(EXIT_CODES.ERROR);
+    expect(result.stderr).toContain(NO_WORKSPACES);
+  });
 });
 
+/**
+ * Which workspaces extend a shared config and which record why they do not — the whole membership,
+ * named rather than counted, because a divergence moves a workspace BETWEEN the two sets and
+ * neither `clean` nor the diverged list can see that move. Inserting `"//no-shared-tsconfig"` into
+ * `packages/cli` takes it out of the bound set, leaves nothing diverged and keeps the check clean:
+ * the workspace stops being held to the rule and the suite says nothing, which is the silence an
+ * opt-out exists to break.
+ *
+ * `toStrictEqual` rather than the `toContain` the two sibling checks use. A workspace arriving in
+ * this repository has to be classified either way, and a red line naming it is how that decision
+ * gets made rather than defaulted.
+ */
+const WORKSPACES_ON_A_SHARED_CONFIG = [
+  "apps/editor",
+  "apps/server",
+  "apps/www",
+  "packages/api-mocks",
+  "packages/cli",
+  "packages/matrix",
+  "packages/ui",
+];
+
+const WORKSPACES_RECORDING_WHY_NOT = [
+  "packages/eslint-config",
+  "packages/prettier-config",
+  "packages/typescript-config",
+  "packages/vitest-config",
+];
+
 describe("this repository", () => {
+  it("names which workspaces extend a shared config and which record why they do not", () => {
+    const { verdicts } = check();
+
+    expect(
+      verdicts.filter((verdict) => verdict.outcome === "bound").map((verdict) => verdict.workspace),
+      "a workspace leaving this list has stopped being held to the rule, and no other assertion here notices",
+    ).toStrictEqual(WORKSPACES_ON_A_SHARED_CONFIG);
+
+    expect(
+      verdicts
+        .filter((verdict) => verdict.outcome === "opted-out")
+        .map((verdict) => verdict.workspace),
+      "an opt-out is a recorded decision, and one arriving unannounced reads exactly like a workspace that was always excused",
+    ).toStrictEqual(WORKSPACES_RECORDING_WHY_NOT);
+  });
+
   it("has no workspace that extends nothing and says nothing about it", () => {
     const { clean, verdicts } = check();
 
-    expect(verdicts.length).toBeGreaterThan(0);
     expect(
       verdicts.filter((verdict) => verdict.outcome === "diverged"),
       "every workspace must extend a shared config or record why it does not",
