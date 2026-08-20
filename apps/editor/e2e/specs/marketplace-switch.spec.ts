@@ -1,12 +1,15 @@
 import {
+  MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
   MARKETPLACE_TOKEN,
+  PRIVATE_MARKETPLACE_CANONICAL_REF,
   PRIVATE_MARKETPLACE_REF,
 } from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
 import { EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
+  BIGCO_CANONICAL_REF,
   BIGCO_CATALOG,
   BIGCO_REF,
   stubMarketplaceEstate,
@@ -32,13 +35,21 @@ import type { ConfigurePage } from "../pages/configure-page"
 // skills the new one does not carry, so it asks first — with a dialog that
 // names those skills rather than warning that something may change.
 
+// `ref` is what a visitor types; `stored` is what the slot then holds and what
+// the switcher lists. They differ by the protocol prefix `--marketplace` routes
+// on, so one repository has one entry however it was spelled.
 const ACME = {
   ref: MARKETPLACE_REF,
+  stored: MARKETPLACE_CANONICAL_REF,
   skill: "Acme Widgets",
   otherSkill: "Acme Gateway",
 } as const
 
-const BIGCO = { ref: BIGCO_REF, skill: "Bigco Widgets" } as const
+const BIGCO = {
+  ref: BIGCO_REF,
+  stored: BIGCO_CANONICAL_REF,
+  skill: "Bigco Widgets",
+} as const
 
 // The id behind that name, for the assertions that read a minted payload
 // rather than the screen. Taken from the fixture rather than written out: the
@@ -80,13 +91,13 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await loadMarketplace(configure, BIGCO.ref)
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
-    expect(await configure.savedToken(PRIVATE_MARKETPLACE_REF)).toBe(
+    expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
       MARKETPLACE_TOKEN
     )
     // Saved, and saved as needing no token — which is a different answer from
     // never having been saved at all.
-    expect(await configure.savedToken(BIGCO.ref)).toBe("")
-    expect(await configure.chosenMarketplace()).toBe(BIGCO.ref)
+    expect(await configure.savedToken(BIGCO.stored)).toBe("")
+    expect(await configure.chosenMarketplace()).toBe(BIGCO.stored)
   })
 
   test("both survive a reload, tokens included", async ({
@@ -101,11 +112,30 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
     expect(await configure.savedMarketplaceRefs()).toEqual(
-      expect.arrayContaining([PRIVATE_MARKETPLACE_REF, BIGCO.ref])
+      expect.arrayContaining([PRIVATE_MARKETPLACE_CANONICAL_REF, BIGCO.stored])
     )
-    expect(await configure.savedToken(PRIVATE_MARKETPLACE_REF)).toBe(
+    expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
       MARKETPLACE_TOKEN
     )
+  })
+
+  // The field takes both spellings of one repository — the bare `owner/repo` it
+  // asks for and the prefixed form `--marketplace` takes — and stored verbatim
+  // they are two entries, each with its own copy of the PAT. The switcher then
+  // offers to switch to the repository the browser is already on.
+  test("is one saved marketplace however the repository was spelled", async ({
+    configure,
+  }) => {
+    await loadMarketplace(configure, ACME.ref)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+
+    await loadMarketplace(configure, ACME.stored)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+
+    expect(await configure.savedMarketplaceRefs()).toEqual([ACME.stored])
+    // Where you already are is not somewhere to switch to, and with one saved
+    // marketplace there is nowhere else at all.
+    await expect(configure.marketplaceSwitcher).toBeHidden()
   })
 
   // A switcher with one entry is furniture: there is nowhere else to go, and
@@ -121,10 +151,10 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await loadMarketplace(configure, BIGCO.ref)
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
-    await expect(configure.switchTo(ACME.ref)).toBeVisible()
+    await expect(configure.switchTo(ACME.stored)).toBeVisible()
     // Where you already are is not somewhere to switch to; the button beside
     // the switcher is the one that names it.
-    await expect(configure.switchTo(BIGCO.ref)).toBeHidden()
+    await expect(configure.switchTo(BIGCO.stored)).toBeHidden()
     await expect(configure.marketplaceButton).toContainText(BIGCO.ref)
   })
 })
@@ -148,7 +178,7 @@ test.describe("switching between saved marketplaces", () => {
   // WHICH skills go, because that set is computable before the switch. A
   // dialog that said "your selection may change" is one people click through.
   test("names the skills the target does not carry", async ({ configure }) => {
-    await configure.switchTo(BIGCO.ref).click()
+    await configure.switchTo(BIGCO.stored).click()
 
     const { description } = configure.marketplaceSwitchDialog
     await expect(description).toContainText(BIGCO.ref)
@@ -158,7 +188,7 @@ test.describe("switching between saved marketplaces", () => {
   })
 
   test("switches nothing until the CTA is pressed", async ({ configure }) => {
-    await configure.switchTo(BIGCO.ref).click()
+    await configure.switchTo(BIGCO.stored).click()
     await expect(configure.marketplaceSwitchDialog.root).toBeVisible()
 
     // Reached WITHOUT the accessibility tree: the grid is `aria-hidden` while
@@ -172,32 +202,32 @@ test.describe("switching between saved marketplaces", () => {
     await expect(
       configure.skillCells.filter({ hasText: ACME.otherSkill })
     ).toHaveCount(1)
-    expect(await configure.chosenMarketplace()).toBe(ACME.ref)
+    expect(await configure.chosenMarketplace()).toBe(ACME.stored)
   })
 
   test("cancelling leaves the catalogue and the selection alone", async ({
     configure,
   }) => {
-    await configure.switchTo(BIGCO.ref).click()
+    await configure.switchTo(BIGCO.stored).click()
     await configure.marketplaceSwitchDialog.cancel()
 
     await expect(configure.marketplaceSwitchDialog.root).toBeHidden()
     await expect(configure.skill(ACME.skill).root).toBeVisible()
     expect(await configure.skill(ACME.skill).isSelected()).toBe(true)
-    expect(await configure.chosenMarketplace()).toBe(ACME.ref)
+    expect(await configure.chosenMarketplace()).toBe(ACME.stored)
     await expect(configure.marketplaceButton).toContainText(ACME.ref)
   })
 
   test("the CTA seats the target and records the choice", async ({
     configure,
   }) => {
-    await configure.switchTo(BIGCO.ref).click()
+    await configure.switchTo(BIGCO.stored).click()
     await configure.marketplaceSwitchDialog.confirm()
 
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
     await expect(configure.skill(ACME.skill).root).toBeHidden()
     await expect(configure.marketplaceButton).toContainText(BIGCO.ref)
-    expect(await configure.chosenMarketplace()).toBe(BIGCO.ref)
+    expect(await configure.chosenMarketplace()).toBe(BIGCO.stored)
   })
 
   // The dialog said the skills would be DROPPED. Coming back is what tells
@@ -205,11 +235,11 @@ test.describe("switching between saved marketplaces", () => {
   // still be selected on return, and would still be in the install list and in
   // any link shared from here.
   test("really drops the skills it said it would", async ({ configure }) => {
-    await configure.switchTo(BIGCO.ref).click()
+    await configure.switchTo(BIGCO.stored).click()
     await configure.marketplaceSwitchDialog.confirm()
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
-    await configure.switchTo(ACME.ref).click()
+    await configure.switchTo(ACME.stored).click()
     await configure.marketplaceSwitchDialog.confirm()
 
     await expect(configure.skill(ACME.skill).root).toBeVisible()
@@ -223,11 +253,11 @@ test.describe("switching between saved marketplaces", () => {
   test("says a switch that carries everything loses nothing", async ({
     configure,
   }) => {
-    await configure.switchTo(BIGCO.ref).click()
+    await configure.switchTo(BIGCO.stored).click()
     await configure.marketplaceSwitchDialog.confirm()
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
-    await configure.switchTo(ACME.ref).click()
+    await configure.switchTo(ACME.stored).click()
 
     await expect(configure.marketplaceSwitchDialog.description).toContainText(
       "loses nothing"
@@ -289,7 +319,7 @@ test.describe("loading another marketplace from the dialog", () => {
 
     await expect(configure.skill(ACME.skill).root).toBeVisible()
     expect(await configure.skill(ACME.skill).isSelected()).toBe(true)
-    expect(await configure.chosenMarketplace()).toBe(ACME.ref)
+    expect(await configure.chosenMarketplace()).toBe(ACME.stored)
     await expect(configure.marketplaceButton).toContainText(ACME.ref)
   })
 
@@ -328,9 +358,9 @@ test.describe("loading another marketplace from the dialog", () => {
     await configure.marketplaceDialog.load()
 
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
-    expect(await configure.chosenMarketplace()).toBe(BIGCO.ref)
+    expect(await configure.chosenMarketplace()).toBe(BIGCO.stored)
 
-    await configure.switchTo(ACME.ref).click()
+    await configure.switchTo(ACME.stored).click()
     await configure.marketplaceSwitchDialog.confirm()
 
     await expect(configure.skill(ACME.skill).root).toBeVisible()
@@ -398,7 +428,7 @@ test.describe("a payload minted after a catalogue change", () => {
 
     const body = posted.at(-1)
     expect(body).toBeDefined()
-    expect(body!.marketplace).toBe(BIGCO.ref)
+    expect(body!.marketplace).toBe(BIGCO.stored)
     expect(Object.keys(body!.skills as object)).toEqual([BIGCO_SKILL_ID])
   })
 
@@ -424,7 +454,7 @@ test.describe("a payload minted after a catalogue change", () => {
     await expect(configure.installDialog.root).toBeVisible()
 
     const body = posted.at(-1)
-    expect(body!.marketplace).toBe(BIGCO.ref)
+    expect(body!.marketplace).toBe(BIGCO.stored)
     expect(body!.matrixVersion).toBe(BIGCO_CATALOG.version)
   })
 })
@@ -457,10 +487,10 @@ test.describe("a shared address", () => {
 
     await expect(configure.marketplaceButton).toContainText(ACME.ref)
     expect(await configure.savedMarketplaceRefs()).toEqual(
-      expect.arrayContaining([PRIVATE_MARKETPLACE_REF, BIGCO.ref])
+      expect.arrayContaining([PRIVATE_MARKETPLACE_CANONICAL_REF, BIGCO.stored])
     )
-    expect(await configure.savedToken(ACME.ref)).toBeNull()
-    await expect(configure.switchTo(ACME.ref)).toBeHidden()
+    expect(await configure.savedToken(ACME.stored)).toBeNull()
+    await expect(configure.switchTo(ACME.stored)).toBeHidden()
   })
 
   // The half of EDITOR-38 that was deliberately left unbuilt: on a shared
@@ -477,10 +507,10 @@ test.describe("a shared address", () => {
     await loadMarketplace(configure, ACME.ref)
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
-    expect(await configure.savedToken(PRIVATE_MARKETPLACE_REF)).toBe(
+    expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
       MARKETPLACE_TOKEN
     )
-    expect(await configure.savedToken(ACME.ref)).toBe("")
+    expect(await configure.savedToken(ACME.stored)).toBe("")
   })
 
   // A token AUTHORIZES one repository and identifies none, so it has no
@@ -519,8 +549,37 @@ test.describe("a browser upgrading from the single slot", () => {
     // The catalogue loads, which is only possible if the PAT came through: the
     // private marketplace 404s anyone who asks without it.
     await expect(configure.skill(ACME.skill).root).toBeVisible()
-    expect(await configure.chosenMarketplace()).toBe(PRIVATE_MARKETPLACE_REF)
-    expect(await configure.savedToken(PRIVATE_MARKETPLACE_REF)).toBe(
+    expect(await configure.chosenMarketplace()).toBe(
+      PRIVATE_MARKETPLACE_CANONICAL_REF
+    )
+    expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
+      MARKETPLACE_TOKEN
+    )
+  })
+
+  // The other slot already out there: the keyed shape, written before the ref
+  // was normalised, so its KEY is the bare `owner/repo` the field asked for.
+  // Nothing may be orphaned by the deploy that starts writing the prefixed
+  // form — a PAT is shown once and cannot be recovered — so the entry is
+  // re-keyed rather than left beside a new one.
+  test("re-keys a saved marketplace without dropping its token", async ({
+    configure,
+    page,
+  }) => {
+    await stubMarketplaceEstate(page)
+    await configure.seedUnnormalisedSlot(
+      PRIVATE_MARKETPLACE_REF,
+      MARKETPLACE_TOKEN
+    )
+
+    await page.reload()
+
+    // Loaded, which the private marketplace only answers to the PAT for.
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    expect(await configure.savedMarketplaceRefs()).toEqual([
+      PRIVATE_MARKETPLACE_CANONICAL_REF,
+    ])
+    expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
       MARKETPLACE_TOKEN
     )
   })

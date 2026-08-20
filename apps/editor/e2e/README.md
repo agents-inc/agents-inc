@@ -40,6 +40,69 @@ place a spec reads state imperatively — scroll position — goes through
 **One behaviour per test.** A spec that fails should name the thing that
 broke.
 
+**Only the topmost modal is in the accessibility tree.** When one dialog opens
+over another, the dialog library marks the one underneath `aria-hidden`, so
+`getByRole` cannot see it and the failure is `element(s) not found` — which is
+indistinguishable from the dialog having closed. Ask "still there behind" of a
+CSS locator instead: `InstallDialog.sheet` is the live example, reached through
+`[data-slot="dialog-content"]` and carrying in its comment why that one locator
+does not follow the rule above. Re-assert the role-based locator AFTER the top
+dialog closes, because that is the stronger claim — it proves both that the
+sheet survived and that it was handed back to assistive technology. Before
+concluding a stacked-dialog test found a product bug, count the DOM:
+
+```js
+document.querySelectorAll('[data-slot="dialog-content"]').length
+await page.getByRole("dialog").count()
+```
+
+Two against one is hidden; one against one is closed. Playwright's
+`error-context.md` ARIA snapshot is not reliable here — it rendered both
+dialogs while `getByRole` matched one. And note that a dialog located by
+`filter({ hasText })` claims that word: the match is a case-insensitive
+substring, so once two dialogs can be open together, a word in one captures the
+other's locator. `SkillContentsDialog` avoids this by locating on an accessible
+name.
+
+**A floating control needs a geometry assertion, not a visibility one.**
+`toBeVisible()` is true of both elements in every overlap defect there is, and
+Playwright clicks by dispatching at an element's box rather than by hit-testing
+what a person would press — so neither visibility nor clickability can see one
+element covering another. Assert the relationship between two live
+`boundingBox()` reads, against the CONTAINER the control must clear rather than
+against whichever element happens to sit in the overlap today, and prefer the
+form that prints the overlap in pixels over one that prints a boolean. The
+`railGap` helper in `specs/marketplace.spec.ts` is the shape.
+
+`position: fixed` is not available inside this layout. The page grid is
+`mx-auto max-w-[105.25rem]` in `src/routes/route-components.tsx`, so past that
+width it stops filling the window and starts being centred in it, and every
+column then slides right as the window widens while a viewport-measured offset
+stays put. No constant offset is right at every width — it is the wrong
+mechanism rather than a number to tune. Use `sticky` within the column the
+control belongs to, and assert the geometry at a width where the grid centres
+as well as at the pinned one.
+
+**Watch the console.** A suite that ignores it is not watching the application
+it drives: a warning fired on every single page load and survived a full green
+run of the suite, because nothing here asserted anything about what the app
+_says_ rather than what it shows. At least one spec must assert that an
+ordinary path — the boring load, the successful save — reports nothing through
+the app's reporting seam. `page.on("console", …)` before the navigation being
+watched, collect what matches the seam's `[issue]` prefix, assert the array is
+empty; `persistence.spec.ts` holds both directions of it.
+
+**A negative is only as good as the channel that would carry it.** That is the
+one rule the three above are each an instance of. `getByRole` reports the
+absence of a dialog it merely cannot see; `toBeVisible` reports no overlap
+because it was never able to report one; a console nobody subscribed to reports
+silence for the same reason an unplugged microphone does. So before asserting
+that something is absent, establish that the same locator, matcher or listener
+reports it when it is PRESENT — drive the assertion red first, or pair it with a
+positive that shares the channel. An assertion that has only ever been green
+over a channel that has never carried a value is not evidence about the
+application.
+
 ## Two things worth knowing before adding tests
 
 **`catalog.spec.ts` guards the fixtures.** The catalogue is regenerated from

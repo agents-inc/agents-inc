@@ -61,6 +61,12 @@ export const stubMarketplaceCatalog = (page: Page) =>
 // matter of counting.
 export const BIGCO_REF = "bigco/skills"
 
+// The same repository as `--marketplace` takes it, which is the form the slot
+// holds and the switcher lists. Written out for the reason its siblings in
+// `@workspace/api-mocks` are: a fixture states the wire value rather than
+// asking the app what it would produce.
+export const BIGCO_CANONICAL_REF = "github:bigco/skills"
+
 export const BIGCO_CATALOG = JSON.parse(
   JSON.stringify(MARKETPLACE_CATALOG)
     .replaceAll("acme", "bigco")

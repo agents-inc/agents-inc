@@ -1,4 +1,8 @@
-import { MARKETPLACE_TOKEN } from "@workspace/api-mocks/fixtures"
+import {
+  MARKETPLACE_CANONICAL_REF,
+  MARKETPLACE_TOKEN,
+  PRIVATE_MARKETPLACE_CANONICAL_REF,
+} from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
 import { STACKS } from "../support/catalog"
@@ -8,6 +12,7 @@ import {
   stubMissingMarketplace,
   stubPrivateMarketplaceCatalog,
 } from "../support/marketplace"
+import { captureCreateConfig } from "../support/sharing"
 
 import type { ConfigurePage } from "../pages/configure-page"
 
@@ -25,6 +30,11 @@ const ACME = {
   category: "Acme Framework",
   ref: "acme/skills",
   private: "acme/private-skills",
+  // The same two once they are STORED, which is a different string from the
+  // one typed above and deliberately so: `--marketplace` routes a ref on its
+  // protocol prefix, and one carrying none is a local directory.
+  stored: MARKETPLACE_CANONICAL_REF,
+  storedPrivate: PRIVATE_MARKETPLACE_CANONICAL_REF,
 } as const
 
 // A skill only the public catalogue ships, so its absence proves a replacement
@@ -190,7 +200,8 @@ test.describe("loading a marketplace", () => {
     // Waited for before storage is read: the load is a fetch, and a one-shot
     // `localStorage` read has no retry of its own to hide the race behind.
     await expect(configure.skill(ACME.skill).root).toBeVisible()
-    expect(await configure.chosenMarketplace()).toBe(ACME.ref)
+    // The STORED form, which is not the one typed into the field above.
+    expect(await configure.chosenMarketplace()).toBe(ACME.stored)
 
     await page.reload()
     await expect(configure.skill(ACME.skill).root).toBeVisible()
@@ -204,6 +215,73 @@ test.describe("loading a marketplace", () => {
     await expect(configure.skill(PUBLIC_SKILL).root).toBeVisible()
     await expect(configure.stack(STACKS.nextjs)).toBeVisible()
     expect(await configure.savedMarketplaces()).toBeNull()
+  })
+})
+
+// What the marketplace field's value BECOMES, which is the one thing about it
+// that leaves the browser.
+//
+// The field asks for `owner/repo` and the CLI reads a ref by its protocol
+// prefix: `github:`, `gh:`, `gitlab:`, a URL — and everything without one as a
+// path on the receiver's own disk. So the form the placeholder asks for is the
+// one form a payload must not carry, and it fails in the worst way available,
+// by resolving to something rather than to nothing: `<cwd>/acme/skills`.
+//
+// This is a claim about the FORM of a field rather than about its presence, so
+// the assertions below are on the exact string. A `toContain` would pass on the
+// bare ref, which is the whole defect.
+test.describe("the ref a loaded marketplace is stored and shared as", () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketplaceCatalog(page)
+  })
+
+  test("mints a ref the CLI resolves as a repository, not as a path", async ({
+    configure,
+    page,
+  }) => {
+    const posted = await captureCreateConfig(page)
+
+    await configure.marketplaceButton.click()
+    // Typed as the placeholder asks for it, which is the form that was minted
+    // verbatim and could not be installed.
+    await configure.marketplaceDialog.fill(ACME.ref)
+    await configure.marketplaceDialog.load()
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+
+    await configure.skill(ACME.skill).toggle()
+    // Minted through the install dialog rather than Share, which needs no
+    // clipboard permission — the payload is the same one either door posts.
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toBeVisible()
+
+    const [body] = posted
+    expect(body).toBeDefined()
+    expect(body!.marketplace).toBe(ACME.stored)
+  })
+
+  test("names the stored form on the button that says where you are", async ({
+    configure,
+  }) => {
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(ACME.ref)
+    await configure.marketplaceDialog.load()
+
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await expect(configure.marketplaceButton).toContainText(ACME.stored)
+  })
+
+  // The prefixed form already worked in the browser before it was minted, and
+  // it has to go on working: the two spellings name one repository, so they
+  // have to come out as one ref rather than two.
+  test("stores the same ref whichever way the repository was spelled", async ({
+    configure,
+  }) => {
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(ACME.stored)
+    await configure.marketplaceDialog.load()
+
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    expect(await configure.chosenMarketplace()).toBe(ACME.stored)
   })
 })
 
@@ -271,8 +349,12 @@ test.describe("a private marketplace", () => {
 
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
-    expect(await configure.chosenMarketplace()).toBe(ACME.private)
-    expect(await configure.savedToken(ACME.private)).toBe(MARKETPLACE_TOKEN)
+    expect(await configure.chosenMarketplace()).toBe(ACME.storedPrivate)
+    // Filed under the stored form too, so one repository holds one credential
+    // however the visitor spelled it.
+    expect(await configure.savedToken(ACME.storedPrivate)).toBe(
+      MARKETPLACE_TOKEN
+    )
 
     await page.reload()
     await expect(configure.skill(ACME.skill).root).toBeVisible()

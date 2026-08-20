@@ -1,6 +1,8 @@
 import {
+  MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
   MARKETPLACE_TOKEN,
+  PRIVATE_MARKETPLACE_CANONICAL_REF,
   PRIVATE_MARKETPLACE_REF,
 } from "@workspace/api-mocks/fixtures"
 
@@ -128,7 +130,7 @@ test.describe("a saved marketplace that no longer loads", () => {
 
     await expect(configure.marketplaceDialog.root).toBeVisible()
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue(
-      PRIVATE_MARKETPLACE_REF
+      PRIVATE_MARKETPLACE_CANONICAL_REF
     )
     await expect(configure.marketplaceDialog.error).toContainText("404")
     await expect(configure.marketplaceDialog.tokenInput).toBeFocused()
@@ -179,7 +181,7 @@ test.describe("a saved marketplace that no longer loads", () => {
 
     await configure.marketplaceButton.click()
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue(
-      PRIVATE_MARKETPLACE_REF
+      PRIVATE_MARKETPLACE_CANONICAL_REF
     )
     await configure.marketplaceDialog.fillToken(MARKETPLACE_TOKEN)
     await configure.marketplaceDialog.load()
@@ -223,7 +225,7 @@ test.describe("a saved marketplace that no longer loads", () => {
     // went away while the marketplace stayed stored would be the same bug with
     // the evidence removed.
     expect(await configure.chosenMarketplace()).not.toBe(
-      PRIVATE_MARKETPLACE_REF
+      PRIVATE_MARKETPLACE_CANONICAL_REF
     )
   })
 
@@ -428,7 +430,7 @@ test.describe("a payload naming a marketplace this browser cannot read", () => {
 
     await expect(configure.marketplaceDialog.root).toBeVisible()
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue(
-      PRIVATE_MARKETPLACE_REF
+      PRIVATE_MARKETPLACE_CANONICAL_REF
     )
     await expect(configure.marketplaceDialog.error).toContainText("404")
     await expect(configure.marketplaceDialog.tokenInput).toBeFocused()
@@ -446,7 +448,7 @@ test.describe("a payload naming a marketplace this browser cannot read", () => {
 
     await expect(configure.skill(ACME_SKILL).root).toBeVisible()
     expect(await configure.skill(ACME_SKILL).isSelected()).toBe(true)
-    expect(await configure.savedToken(PRIVATE_MARKETPLACE_REF)).toBe(
+    expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
       MARKETPLACE_TOKEN
     )
   })
@@ -511,7 +513,7 @@ test.describe("a dialog already open when the import parks", () => {
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue("")
 
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue(
-      MARKETPLACE_REF
+      MARKETPLACE_CANONICAL_REF
     )
     await expect(configure.marketplaceDialog.error).toContainText("404")
     await expect(configure.marketplaceDialog.tokenInput).toBeVisible()

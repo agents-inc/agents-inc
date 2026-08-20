@@ -6,6 +6,7 @@ import {
 
 import { expect, test } from "../fixtures"
 import { EXCLUSIVE_CATEGORY, DOMAINS } from "../support/catalog"
+import { stubCreateConfig } from "../support/sharing"
 import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
 
@@ -37,6 +38,11 @@ test.describe("reading an added skill's contents", () => {
   test.beforeEach(async ({ page, configure }) => {
     await stubSkillIndex(page)
     await stubSkillContents(page)
+    // Two of these open the install dialog, which mints an id for the command
+    // on the way up. There is no preview fetch to stub — the bytes are seated
+    // before the first paint — but that mint is a real call and is this file's
+    // only one.
+    await stubCreateConfig(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()

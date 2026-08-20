@@ -15,6 +15,16 @@ const CONFIGURE_URL = "/"
 
 const MARKETPLACE_STORAGE_KEY = "agents-inc:marketplace:v1"
 
+// The SHAPE this release writes, which the `v1` in the key above is not. Seeded
+// blobs carry it so a slot written by hand is the one the app would have
+// written, and an OLDER number is how a spec asks for a shape that has since
+// been migrated.
+const MARKETPLACE_PERSIST_VERSION = 2
+
+// The keyed shape before the ref was normalised: its keys are the bare
+// `owner/repo` the dialog's field used to store verbatim.
+const UNNORMALISED_PERSIST_VERSION = 1
+
 /**
  * What the marketplace slot holds, keyed by marketplace.
  *
@@ -148,7 +158,27 @@ export class ConfigurePage {
   async seedSavedMarketplaces(slot: SavedMarketplaces) {
     await this.page.evaluate(
       ([key, blob]) => window.localStorage.setItem(key!, blob!),
-      [MARKETPLACE_STORAGE_KEY, JSON.stringify({ state: slot, version: 1 })]
+      [
+        MARKETPLACE_STORAGE_KEY,
+        JSON.stringify({
+          state: slot,
+          version: MARKETPLACE_PERSIST_VERSION,
+        }),
+      ]
+    )
+  }
+
+  /** Seeds the keyed slot as it was written before the ref was normalised. */
+  async seedUnnormalisedSlot(marketplace: string, token: string) {
+    await this.page.evaluate(
+      ([key, blob]) => window.localStorage.setItem(key!, blob!),
+      [
+        MARKETPLACE_STORAGE_KEY,
+        JSON.stringify({
+          state: { current: marketplace, saved: { [marketplace]: token } },
+          version: UNNORMALISED_PERSIST_VERSION,
+        }),
+      ]
     )
   }
 

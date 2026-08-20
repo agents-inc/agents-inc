@@ -102,22 +102,28 @@ export class SkillContentsDialog {
 // committed together.
 export class AddSkillDialog {
   readonly root: Locator
+  readonly results: Locator
   readonly searchInput: Locator
   readonly footerNote: Locator
   readonly cancelButton: Locator
 
   constructor(page: Page) {
     this.root = page.getByRole("dialog").filter({ hasText: "ADD SKILL" })
+    this.results = this.root.getByRole("group", { name: "Search results" })
     this.searchInput = this.root.getByLabel("Search external skills")
     this.footerNote = this.root.locator('[data-slot="dialog-footer-note"]')
     this.cancelButton = this.root.getByRole("button", { name: "Cancel" })
   }
 
   // Result rows are the add-skill lattice; the skill's own name identifies one.
+  //
+  // By role, like everything else here. It could not be until the row became
+  // one: it was a `<div>` with a hand cursor, so the only thing left to ask for
+  // was its `data-slot`. Scoped through the results group because the staged
+  // half of the dialog names the same skills — `Remove docx` is a button whose
+  // name holds `docx` too.
   result(name: string): Locator {
-    return this.root
-      .locator('[data-slot="lattice-row"]')
-      .filter({ hasText: name })
+    return this.results.getByRole("button", { name })
   }
 
   // One staged skill, waiting on the category that will place it.

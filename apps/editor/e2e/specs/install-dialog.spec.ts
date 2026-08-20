@@ -1,3 +1,5 @@
+import { MARKETPLACE_CANONICAL_REF } from "@workspace/api-mocks/fixtures"
+
 import { expect, test } from "../fixtures"
 import {
   DOMAINS,
@@ -15,7 +17,14 @@ const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
 
 // The fixture marketplace, and one skill only it ships — so "the dialog names
 // the loaded marketplace" is observable rather than a matter of counting.
-const ACME = { ref: "acme/skills", skill: "Acme Widgets" } as const
+// `ref` is what a visitor types; `stored` is what the app then holds and what
+// the install command has to name — the form `--marketplace` reads as a
+// repository rather than as a directory on the receiver's disk.
+const ACME = {
+  ref: "acme/skills",
+  stored: MARKETPLACE_CANONICAL_REF,
+  skill: "Acme Widgets",
+} as const
 
 test.describe("install dialog", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
@@ -139,6 +148,13 @@ test.describe("install dialog with pins", () => {
 })
 
 test.describe("install dialog counts", () => {
+  // Opening the dialog mints an id for the command, the same as it does above:
+  // the counts these two read are painted beside a POST that has to be answered
+  // here rather than by whatever is listening on the worker's port.
+  test.beforeEach(async ({ page }) => {
+    await stubCreateConfig(page)
+  })
+
   test("the ejected count follows the cell badges", async ({ configure }) => {
     await configure.chooseStack(STACKS.nextjs)
 
@@ -194,7 +210,7 @@ test.describe("install dialog on a loaded marketplace", () => {
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.header).toContainText(
-      `marketplace ${ACME.ref}`
+      `marketplace ${ACME.stored}`
     )
   })
 

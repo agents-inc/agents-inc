@@ -111,6 +111,39 @@ test.describe("add skill dialog", () => {
     await expect(dialog.footerNote).toContainText("0 staged")
   })
 
+  // The result row is the dialog's ONLY staging control, so a visitor who
+  // cannot reach it with a keyboard cannot use the dialog at all. Two tests
+  // rather than one: reaching the row and acting on it are different failures,
+  // and a row put in the tab order with a key handler that never runs would
+  // pass the first of them on its own.
+  //
+  // The search field takes focus as the dialog opens and nothing focusable sits
+  // between it and the list, so the first result is one Tab away.
+  test("tab moves from the search field to the first result", async ({
+    configure,
+    page,
+  }) => {
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+    await expect(dialog.searchInput).toBeFocused()
+
+    await page.keyboard.press("Tab")
+
+    await expect(dialog.result(FIRST_NAME)).toBeFocused()
+  })
+
+  test("enter stages the focused result", async ({ configure, page }) => {
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+    await expect(dialog.searchInput).toBeFocused()
+
+    await page.keyboard.press("Tab")
+    await page.keyboard.press("Enter")
+
+    await expect(dialog.footerNote).toContainText("1 staged")
+    await expect(dialog.stagedRow(FIRST_NAME)).toBeVisible()
+  })
+
   test("nothing staged leaves the confirm disabled", async ({ configure }) => {
     await configure.addSkillButton.click()
     await expect(configure.addSkillDialog.confirmButton).toBeDisabled()
@@ -179,13 +212,20 @@ test.describe("add skill dialog", () => {
     await expect(row).not.toContainText(/stage/i)
   })
 
+  // Forced, and that is the finding rather than a workaround. Playwright reads
+  // `aria-disabled` only on an element whose computed role admits it, so while
+  // the row was a bare `<div>` the attribute was inert — to the suite and to a
+  // screen reader alike — and an ordinary click went through. Now that the row
+  // is a button the refusal is real and `click()` waits for a control that will
+  // never enable, so the press has to be forced to ask the question this test
+  // is about: if one did land, would it stage anything?
   test("clicking a skill too large to carry stages nothing", async ({
     configure,
   }) => {
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
 
-    await dialog.stage(OVERSIZED_NAME)
+    await dialog.result(OVERSIZED_NAME).click({ force: true })
 
     await expect(dialog.footerNote).toContainText("0 staged")
     await expect(dialog.stagedRow(OVERSIZED_NAME)).toBeHidden()

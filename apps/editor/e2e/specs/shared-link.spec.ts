@@ -1,4 +1,7 @@
-import { MARKETPLACE_REF } from "@workspace/api-mocks/fixtures"
+import {
+  MARKETPLACE_CANONICAL_REF,
+  MARKETPLACE_REF,
+} from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY, MULTI_CATEGORY } from "../support/catalog"
@@ -178,7 +181,7 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
       "aria-pressed",
       "true"
     )
-    expect(await configure.chosenMarketplace()).toBe(MARKETPLACE_REF)
+    expect(await configure.chosenMarketplace()).toBe(MARKETPLACE_CANONICAL_REF)
   })
 
   // The way back the notice actually names, which is a nav item rather than a
