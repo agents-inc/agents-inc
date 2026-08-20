@@ -241,7 +241,22 @@ export class TerminalSession {
     return exitCode;
   }
 
+  /**
+   * Every keystroke this session has sent, in order. The page objects drive the
+   * wizard by writing single keys, so the length is what a navigation helper
+   * COST — which is the only observable a spec has for "this walk should not
+   * have had to travel". Kept as the sequence rather than a bare count so a
+   * failure can say which keys were spent, not merely how many.
+   */
+  private readonly keysWritten: string[] = [];
+
+  /** @see keysWritten — the sequence itself, for specs that assert on cost. */
+  keystrokes(): readonly string[] {
+    return this.keysWritten;
+  }
+
   write(data: string): void {
+    this.keysWritten.push(data);
     this.ptyProcess.write(data);
   }
 

@@ -575,6 +575,16 @@ export const TIMEOUTS = {
 } as const;
 
 // Internal to the framework — NOT exported to tests
+/**
+ * Raw key sequences the page objects write into the PTY. Shared rather than
+ * spelled at each site because specs assert on what a helper SPENT: a spec
+ * counting Tab presses and a page object writing them must agree on the byte,
+ * and `"\t"` typed twice is two definitions of the same key.
+ */
+export const KEYS = {
+  TAB: "\t",
+} as const;
+
 export const INTERNAL_DELAYS = {
   STEP_TRANSITION: 500,
   KEYSTROKE: 150,

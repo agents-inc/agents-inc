@@ -3,6 +3,7 @@ import { BaseStep } from "../base-step.js";
 import {
   INTERNAL_DELAYS,
   INTERNAL_RETRIES,
+  KEYS,
   STEP_TEXT,
   TIMEOUTS,
   type WizardType,
@@ -14,17 +15,30 @@ import { SourcesStep } from "./sources-step.js";
 const BOX_DRAWING_CHARS = ["│", "┌", "└", "┐", "┘", "─"];
 
 /**
- * Bound on the closed-loop Tab-walk in focusSkill. Tab wraps, so one full
- * cycle visits every category, and the bound must clear the largest per-domain
- * count with room for swallowed-keystroke retries on top. Web is the largest
- * at 33 since the taxonomy split; the previous 30 stopped covering one cycle
- * the moment it crossed that, and the walk failed on a category it had not
- * reached yet rather than on one it could not find.
+ * Raised when a lap of the grid observed every category and none held the
+ * wanted cell. Carries what it walked rather than how many keys it pressed:
+ * a press count says the helper gave up, the category list says what the
+ * helper actually looked at, which is the difference between "the label is
+ * wrong" and "the walk never saw the row".
  */
-const MAX_FOCUS_ATTEMPTS = 50;
+export class CategoryWalkError extends Error {
+  constructor(
+    message: string,
+    readonly categoriesWalked: readonly string[],
+  ) {
+    super(message);
+    this.name = "CategoryWalkError";
+  }
+}
 
 /** One visible category section parsed from the current viewport. */
 type VisibleCategory = {
+  /**
+   * The header's own text. The walk's identity for a category: "focus moved"
+   * is this changing, which is the only thing that distinguishes a Tab that
+   * landed from a repaint that has not arrived yet.
+   */
+  label: string;
   /** Leading-space count of the header line — the focused header paints one deeper. */
   indent: number;
   /** Cell texts in option order; the flat index IS the grid column. */
@@ -50,6 +64,9 @@ const CELL_ANNOTATION = /\s*\((?:requires|required by|incompatible|discouraged)\
  */
 const CELL_LEADING_MARKERS = /^(?:(?:[PG]|[+\-✓✗⏏])\s+)+/;
 
+/** Accepts whichever category reads as focused — the walk's "just tell me where I am". */
+const ANY_FOCUSED_CATEGORY = (): boolean => true;
+
 /**
  * The EXACT rendered skill label of a │-delimited grid cell: scope badges,
  * diff markers, and compatibility annotations stripped, whitespace trimmed.
@@ -74,6 +91,23 @@ function isCategoryHeaderLine(line: string, nextLine: string | undefined): boole
     BOX_DRAWING_CHARS.every((char) => !trimmed.includes(char)) &&
     (nextLine?.trimStart().startsWith("┌") ?? false)
   );
+}
+
+/**
+ * The one category on screen when the grid holds nothing else — a scroll
+ * affordance in either direction means the grid has more, so a lone visible
+ * header is a window rather than the whole thing. Returns it, because every
+ * caller wants the category and not the verdict.
+ */
+function onlyCategoryOfWholeGrid(
+  visible: VisibleCategory[],
+  screen: string,
+): VisibleCategory | null {
+  const [only] = visible;
+  if (!only || visible.length !== 1) return null;
+  const scrolls =
+    screen.includes(STEP_TEXT.SCROLL_MORE_ABOVE) || screen.includes(STEP_TEXT.SCROLL_MORE_BELOW);
+  return scrolls ? null : only;
 }
 
 export class BuildStep extends BaseStep {
@@ -127,34 +161,43 @@ export class BuildStep extends BaseStep {
    * distinguish it, and those are stripped), but the focused CATEGORY header
    * does: it paints with one extra leading space (the padding of its
    * background highlight). Tab moves focus to the next category AND resets
-   * the column to 0 (use-category-grid-input.ts), unlike DOWN. So this
-   * method Tab-walks the category focus — re-reading the rendered screen
-   * after every press until the header of the category containing the target
-   * skill is the focused one — then presses RIGHT from the guaranteed col-0
-   * base to the target column. The RIGHT presses stay open-loop because cell
-   * focus is unobservable, but they start from a screen-verified (row, 0).
+   * the column to 0 (use-category-grid-input.ts), unlike DOWN. So this method
+   * reads the focused header first and Tab-walks only if the target is
+   * elsewhere — see {@link walkToCategoryContaining} for why looking before
+   * pressing is the difference between a free hit and a lap of the grid — then
+   * presses RIGHT to the target column. The RIGHT presses stay open-loop
+   * because cell focus is unobservable, but they start from a screen-verified
+   * row and a column base the walk states rather than assumes: 0 when it
+   * arrived by Tab, the tracked {@link gridCol} when it never moved.
    */
   async focusSkill(skillLabel: string): Promise<void> {
     await this.waitForWizardFooter();
 
     const visible = await this.waitForVisibleCategories();
-    const screen = this.getScreen();
-    const [onlyCategory] = visible;
-    const isSingleCategoryGrid =
-      onlyCategory !== undefined &&
-      visible.length === 1 &&
-      !screen.includes(STEP_TEXT.SCROLL_MORE_ABOVE) &&
-      !screen.includes(STEP_TEXT.SCROLL_MORE_BELOW);
-
-    if (isSingleCategoryGrid) {
-      await this.focusColumnInSingleCategory(onlyCategory, skillLabel);
+    const wholeGrid = onlyCategoryOfWholeGrid(visible, this.getScreen());
+    if (wholeGrid) {
+      await this.focusColumnInSingleCategory(wholeGrid, skillLabel);
       return;
     }
 
-    const focused = await this.tabToCategoryContaining(skillLabel);
-    const targetCol = focused.cells.findIndex((cell) => cellLabel(cell) === skillLabel);
-    // Arriving via Tab reset the column to 0 — walk right to the target.
-    for (let i = 0; i < targetCol; i++) {
+    const { category, columnBase } = await this.walkToCategoryContaining(skillLabel);
+    const targetCol = category.cells.findIndex((cell) => cellLabel(cell) === skillLabel);
+    await this.pressRightToColumn(category.cells.length, targetCol, columnBase);
+  }
+
+  /**
+   * Step the column focus to `targetCol` from a KNOWN base, using the grid's
+   * own cyclic-wrap arithmetic (use-focused-list-item.ts). The base is 0 after
+   * arriving in a category via Tab, and the tracked {@link gridCol} when the
+   * walk never had to move.
+   */
+  private async pressRightToColumn(
+    cellCount: number,
+    targetCol: number,
+    fromCol: number,
+  ): Promise<void> {
+    const rights = (targetCol - fromCol + cellCount) % cellCount;
+    for (let i = 0; i < rights; i++) {
       await this.waitForWizardFooter();
       await this.pressArrowRight();
     }
@@ -177,6 +220,7 @@ export class BuildStep extends BaseStep {
     return headers.map(([headerIdx, headerLine], i) => {
       const nextIdx = headers[i + 1]?.[0] ?? lines.length;
       return {
+        label: headerLine.trim(),
         indent: headerLine.length - headerLine.trimStart().length,
         cells: lines
           .slice(headerIdx + 1, nextIdx)
@@ -222,36 +266,102 @@ export class BuildStep extends BaseStep {
   }
 
   /**
-   * Tab-walk the category focus until the focused category has a cell whose
-   * exact label (cellLabel) is `skillLabel`, verifying the focused header
-   * from the rendered screen after every press. Swallowed keystrokes and slow repaints self-correct: a press
-   * that produced no fresh frame within the retry interval is simply followed
-   * by a re-read, and Tab wraps, so the walk revisits every category each
-   * cycle. Always presses Tab at least once — entering the category via Tab
-   * is what guarantees the column reset to 0, even when the target category
-   * was already focused with a stale column from an earlier focusSkill.
+   * Find the category holding `skillLabel` and report the column base focus
+   * arrives on, LOOKING before it presses anything.
+   *
+   * The order is the whole point. A walk that presses first steps off a target
+   * that is already focused and then owes itself a full lap of the grid to get
+   * back — 33 categories against the default catalogue, where the first
+   * category is also the likeliest target. Reading the screen first makes that
+   * case free, and it is the case the flake lived in.
+   *
+   * Every advance is CONFIRMED: {@link advanceCategoryFocus} does not return
+   * until the screen shows a different category focused, so no category can be
+   * walked past while its repaint is still in flight. That is what makes one
+   * lap sufficient, and it is why this terminates on having seen a category
+   * twice rather than on a press budget — a budget cannot tell "the label is
+   * not here" from "I blinked as I went by it", and it reports the number it
+   * gave up at either way.
    */
-  private async tabToCategoryContaining(skillLabel: string): Promise<VisibleCategory> {
-    for (let attempt = 0; attempt < MAX_FOCUS_ATTEMPTS; attempt++) {
-      await this.waitForWizardFooter();
-      const cursor = this.getRawCursor();
-      await this.pressKey("\t");
-      try {
-        await this.waitForWizardFooterAfter(cursor, INTERNAL_RETRIES.INTERVAL_MS);
-      } catch {
-        // No fresh frame — the Tab may have been swallowed under load, or the
-        // repaint is slow. The re-read below decides; the next iteration
-        // presses again if focus did not move.
+  private async walkToCategoryContaining(
+    skillLabel: string,
+  ): Promise<{ category: VisibleCategory; columnBase: number }> {
+    const holdsTarget = (category: VisibleCategory): boolean =>
+      category.cells.some((cell) => cellLabel(cell) === skillLabel);
+
+    let current = await this.waitForFocusedCategory();
+    if (holdsTarget(current)) return { category: current, columnBase: this.gridCol };
+
+    const walked = new Set([current.label]);
+    for (;;) {
+      current = await this.advanceCategoryFocus(current.label);
+      if (holdsTarget(current)) return { category: current, columnBase: 0 };
+      if (walked.has(current.label)) {
+        throw this.noCategoryHolds(skillLabel, [...walked], current.label);
       }
-      const focused = this.findFocusedCategory(this.parseVisibleCategories());
-      if (focused?.cells.some((cell) => cellLabel(cell) === skillLabel)) {
-        return focused;
-      }
+      walked.add(current.label);
     }
-    throw new Error(
-      `focusSkill: category containing "${skillLabel}" was not focused after ` +
-        `${MAX_FOCUS_ATTEMPTS} Tab presses.\nScreen:\n${this.getScreen()}`,
+  }
+
+  /** Says what a lap of the grid looked at, so a miss reads as a fact not a budget. */
+  private noCategoryHolds(
+    skillLabel: string,
+    walked: string[],
+    cameBackTo: string,
+  ): CategoryWalkError {
+    return new CategoryWalkError(
+      `focusSkill: no category holds a cell labelled "${skillLabel}". Walked all ` +
+        `${walked.length} categories once and came back to "${cameBackTo}": ${walked.join(", ")}` +
+        `\nScreen:\n${this.getScreen()}`,
+      walked,
     );
+  }
+
+  /** Poll the viewport until exactly one category reads as focused. */
+  private async waitForFocusedCategory(): Promise<VisibleCategory> {
+    const focused = await this.pollForFocusedCategory(ANY_FOCUSED_CATEGORY);
+    if (focused) return focused;
+    throw new Error(
+      `focusSkill: no category reads as focused on screen.\nScreen:\n${this.getScreen()}`,
+    );
+  }
+
+  /**
+   * Press Tab until the screen SHOWS focus somewhere else. A press that
+   * produced no visible move is re-pressed rather than assumed: under load the
+   * repaint can arrive after the poll, and a walk that assumes the move looks
+   * at the category it just left while standing on the next one — passing its
+   * own target unseen.
+   */
+  private async advanceCategoryFocus(from: string): Promise<VisibleCategory> {
+    for (let press = 0; press < INTERNAL_RETRIES.MAX_ATTEMPTS; press++) {
+      await this.waitForWizardFooter();
+      await this.pressKey(KEYS.TAB);
+      const moved = await this.pollForFocusedCategory((category) => category.label !== from);
+      if (moved) return moved;
+    }
+    throw new CategoryWalkError(
+      `focusSkill: category focus never left "${from}" across ` +
+        `${INTERNAL_RETRIES.MAX_ATTEMPTS} Tab presses.\nScreen:\n${this.getScreen()}`,
+      [from],
+    );
+  }
+
+  /**
+   * Re-read the viewport until the focused category satisfies `accept`, or the
+   * retry interval runs out. Null means the screen never said so — the caller
+   * decides whether that is a re-press or a failure.
+   */
+  private async pollForFocusedCategory(
+    accept: (category: VisibleCategory) => boolean,
+  ): Promise<VisibleCategory | null> {
+    const deadline = Date.now() + INTERNAL_RETRIES.INTERVAL_MS;
+    for (;;) {
+      const focused = this.findFocusedCategory(this.parseVisibleCategories());
+      if (focused && accept(focused)) return focused;
+      if (Date.now() >= deadline) return null;
+      await delay(INTERNAL_DELAYS.KEYSTROKE);
+    }
   }
 
   /**
@@ -280,12 +390,7 @@ export class BuildStep extends BaseStep {
       this.gridCol = 0;
       return;
     }
-    const rights = (targetCol - this.gridCol + category.cells.length) % category.cells.length;
-    for (let i = 0; i < rights; i++) {
-      await this.waitForWizardFooter();
-      await this.pressArrowRight();
-    }
-    this.gridCol = targetCol;
+    await this.pressRightToColumn(category.cells.length, targetCol, this.gridCol);
   }
 
   /**

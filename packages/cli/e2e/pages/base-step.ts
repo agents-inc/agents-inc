@@ -16,6 +16,18 @@ export abstract class BaseStep {
     this.defaultTimeout = TIMEOUTS.WIZARD_LOAD;
   }
 
+  /**
+   * Keystrokes this session has sent so far — see
+   * {@link TerminalSession.keystrokes}. Public because the cost of a
+   * navigation helper is a behaviour a spec is entitled to pin: a walk that
+   * reaches the right cell by travelling the whole grid passes every
+   * assertion about WHERE focus ended, and none about what it spent getting
+   * there.
+   */
+  keystrokes(): readonly string[] {
+    return this.session.keystrokes();
+  }
+
   protected async pressEnter(): Promise<void> {
     this.session.enter();
     await delay(INTERNAL_DELAYS.STEP_TRANSITION);
