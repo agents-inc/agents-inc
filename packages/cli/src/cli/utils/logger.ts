@@ -65,7 +65,12 @@ export function pushBufferMessage(level: StartupMessage["level"], text: string):
 //   - After a colon, use lowercase (e.g., "Skipping 'foo': invalid frontmatter")
 //   - Use em dash for supplemental info (e.g., "Missing category — defaulting to 'local'")
 export type WarnOptions = {
-  /** When true, suppresses this warning in test environments (VITEST=true). */
+  /**
+   * When true, suppresses this warning in a UNIT run — the gate reads `VITEST` from the
+   * environment of the process evaluating it, so it can only ever mean that. Both E2E runners
+   * hand the spawned binary `VITEST: undefined`, so an E2E run of the real binary is a test
+   * environment in which this warning IS printed.
+   */
   suppressInTest?: boolean;
 };
 

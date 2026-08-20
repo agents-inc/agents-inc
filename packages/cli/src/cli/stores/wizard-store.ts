@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import {
+  CLI_INVOKE_COMMAND,
   DEFAULT_PUBLIC_SOURCE_NAME,
   DEFAULT_SCRATCH_DOMAINS,
   EJECT_SOURCE,
   FALLBACK_DOMAIN,
   INSTALL_MODES,
+  SKILL_CATEGORIES_PATH,
 } from "../consts.js";
 import type { InstallMode } from "../lib/installation/index.js";
 import { deriveInstallMode as sharedDeriveInstallMode } from "../lib/installation/installation.js";
@@ -16,7 +18,13 @@ import {
 } from "../lib/configuration/scope-predicates.js";
 import { isLocalOnlySkill } from "../lib/loading/multi-source-loader.js";
 import { matrix, getSkillById, getCategoryDomain } from "../lib/matrix/matrix-provider.js";
-import { buildCategoriesForDomain, orderDomains, skillSlotKey } from "../lib/wizard/index.js";
+import {
+  agentSlotKey,
+  buildCategoriesForDomain,
+  firstFocusableAgent,
+  orderDomains,
+  skillSlotKey,
+} from "../lib/wizard/index.js";
 import type {
   AgentName,
   Domain,
@@ -351,6 +359,38 @@ function collectTombstones<T extends { excluded?: boolean }>(configs: T[]): T[] 
   return configs.filter((entry) => entry.excluded);
 }
 
+/** The `(name, scope)` slots a rebuilt agent roster occupies. */
+function filledAgentSlots(configs: AgentScopeConfig[]): ReadonlySet<string> {
+  return new Set(configs.map((ac) => agentSlotKey(ac.name, ac.scope)));
+}
+
+/**
+ * Saved tombstones that still mask something once preselection has rebuilt the
+ * active entries.
+ *
+ * A tombstone says "the install at this scope is silenced", which is only
+ * meaningful while the active entry it silences sits at the OTHER scope — that
+ * pair is the whole of the dual-scope indicator. A tombstone left at a slot the
+ * rebuild has just filled with an active entry silences nothing, and the config
+ * merge keys an active and an excluded entry apart, so both would be written.
+ */
+function agentTombstonesOutsideRebuild(
+  saved: AgentScopeConfig[],
+  rebuilt: AgentScopeConfig[],
+): AgentScopeConfig[] {
+  const filled = filledAgentSlots(rebuilt);
+  return collectTombstones(saved).filter((ac) => !filled.has(agentSlotKey(ac.name, ac.scope)));
+}
+
+/** The skill-side twin of {@link agentTombstonesOutsideRebuild}, keyed on `(id, scope)`. */
+function skillTombstonesOutsideRebuild(
+  saved: SkillConfig[],
+  rebuilt: SkillConfig[],
+): SkillConfig[] {
+  const filled = new Set(rebuilt.map((sc) => skillSlotKey(sc.id, sc.scope)));
+  return collectTombstones(saved).filter((sc) => !filled.has(skillSlotKey(sc.id, sc.scope)));
+}
+
 /**
  * Applies an agent toggle: deselect removes the agent's entries; select restores an excluded
  * entry or adds a new one.
@@ -359,6 +399,16 @@ function collectTombstones<T extends { excluded?: boolean }>(configs: T[]): T[] 
  * one the project owns — an active global install and a live `[P][G]` pair are both refused
  * upstream in `toggleAgent`, and a global-scope edit owns everything it can see — so the only
  * correct outcome is a clean removal.
+ *
+ * A newly added agent is `scope: "global"` DELIBERATELY, and a project-scoped installation
+ * therefore compiling it with an empty stack is the CORRECT outcome, not a defect (ruled
+ * 2026-08-19, after a finding filed against this line was graded wrong and deleted). Global is
+ * the default scope for an agent, and `isScopePairCompatible` in
+ * `lib/configuration/config-generator.ts` is the reason the stack comes out empty: project
+ * skills never reach global agents, so a global agent paired with project-scoped skills is
+ * given none of them. Re-scoping the agent to match the skills would put a global-by-default
+ * agent under the project's ownership on nothing but a toggle. Anyone reading this line as a
+ * missing `scope` derivation is re-deriving a reading that has already been rejected.
  */
 function applyAgentToggle(
   configs: AgentScopeConfig[],
@@ -384,9 +434,11 @@ function applyAgentToggle(
  * True when an existing agent entry must outlive a domain-roster rebuild, which merges rather than
  * replaces. Two kinds survive:
  *
- * - ALL excluded tombstones, so a dual-scope pair (active entry plus a tombstone at the other
- *   scope) survives preselection — the agent-side mirror of the D-223 fix in
- *   `populateFromSkillIds`. Deliberately NOT filtered by roster membership (D-227).
+ * - Every excluded tombstone whose slot the rebuild leaves free, so a dual-scope pair (active
+ *   entry plus a tombstone at the other scope) survives preselection — the agent-side mirror of
+ *   the D-223 fix in `populateFromSkillIds`. Deliberately NOT filtered by roster membership
+ *   (D-227); the slot test is what keeps a tombstone from landing beside an active entry it
+ *   cannot be masking.
  * - Every entry the project does not own, so a globally-installed agent outside the selected
  *   domains' roster is never silently uninstalled by a project edit (D-277).
  *
@@ -395,8 +447,11 @@ function applyAgentToggle(
 function survivesRosterRebuild(
   agentConfig: AgentScopeConfig,
   roster: ReadonlySet<AgentName>,
+  rebuiltSlots: ReadonlySet<string>,
 ): boolean {
-  if (agentConfig.excluded) return true;
+  if (agentConfig.excluded) {
+    return !rebuiltSlots.has(agentSlotKey(agentConfig.name, agentConfig.scope));
+  }
   return !isProjectOwned(agentConfig) && !roster.has(agentConfig.name);
 }
 
@@ -493,13 +548,60 @@ function restoreSkillConfigs(
  * Built-in agent names grouped by domain prefix. Custom domains return no preselected agents.
  * The consolidated `pm` and `reviewer` are cross-domain by role, so every domain rosters both;
  * the preselection union dedupes when several selected domains bring them.
+ *
+ * Exported ahead of a second production caller for the reason CLAUDE.md's Code Style exception
+ * names: this is an identity roster more than one surface has to agree on. It, the grid's
+ * `BUILT_IN_AGENT_GROUPS` and the generated `AGENT_NAMES` are three hand-or-machine-written
+ * lists of the same set, and `tsc` only ever reconciled them for REMOVALS — an agent added to
+ * the catalogue and to neither roster shipped unreachable through the wizard, six at a time.
+ * `lib/wizard/agent-roster.test.ts` is the surface that reconciles them now.
  */
-const DOMAIN_AGENTS: Partial<Record<Domain, AgentName[]>> = {
+export const DOMAIN_AGENTS: Partial<Record<Domain, AgentName[]>> = {
   web: ["web-developer", "web-researcher", "web-tester", "pm", "reviewer"],
   api: ["api-developer", "api-researcher", "api-tester", "pm", "reviewer"],
   cli: ["cli-developer", "cli-tester", "cli-researcher", "pm", "reviewer"],
   ai: ["ai-developer", "ai-researcher", "ai-tester", "pm", "reviewer"],
 };
+
+/**
+ * What an id this catalogue does not carry means, and what changes it.
+ *
+ * The outcome first, because it is the part the user cannot see: the skill reaches no screen,
+ * so it is absent from everything the session goes on to write. Then the one reading a user can
+ * act on — a marketplace this installation has not refreshed since the entry was written.
+ *
+ * `edit` classifies the same event far better downstream: `removalReason` in
+ * `lib/skills/unresolved-skill-entries.ts` tells a marketplace drop from a local install whose
+ * files are gone, and names the directory it looked in. None of that is reachable from here —
+ * that classification is asynchronous and reads the filesystem, while this is a synchronous
+ * store function holding only the matrix — so this line offers a remedy rather than a guess at
+ * a reason it cannot establish.
+ */
+function absentFromSourceWarning(skillId: SkillId): string {
+  return (
+    `Installed skill '${skillId}' is not present in the loaded source — it may have been ` +
+    `removed or renamed. It is left out of this session's selection. Run ` +
+    `'${CLI_INVOKE_COMMAND} update' to refresh the marketplace if you expect it to still be ` +
+    `carried there.`
+  );
+}
+
+/**
+ * The same for a skill the catalogue DOES carry and no domain claims.
+ *
+ * {@link getCategoryDomain} reads `categories[category]?.domain`, so an undeclared category and
+ * one declared without a `domain` are one answer here — and the wizard is organised by domain,
+ * which is why an unplaceable category costs the skill its screen. Both ways out are the
+ * source's: declare the category properly, or take the version of the source that already does.
+ */
+function unplaceableCategoryWarning(skillId: SkillId, category: string): string {
+  return (
+    `Installed skill '${skillId}' has unknown category '${category}' — skipping. No domain in ` +
+    `this source claims that category, so the wizard has no screen to place the skill on. ` +
+    `Declare it with a 'domain' in the source's '${SKILL_CATEGORIES_PATH}', or run ` +
+    `'${CLI_INVOKE_COMMAND} update' to refresh the marketplace.`
+  );
+}
 
 function resolveSkillForPopulation(
   skillId: SkillId,
@@ -507,15 +609,13 @@ function resolveSkillForPopulation(
   const { skills } = matrix;
   const skill = skills[skillId];
   if (!skill?.category) {
-    warn(
-      `Installed skill '${skillId}' is not present in the loaded source — it may have been removed or renamed`,
-    );
+    warn(absentFromSourceWarning(skillId));
     return null;
   }
 
   const domain = getCategoryDomain(skill.category);
   if (!domain) {
-    warn(`Installed skill '${skillId}' has unknown category '${skill.category}' — skipping`);
+    warn(unplaceableCategoryWarning(skillId, skill.category));
     return null;
   }
 
@@ -654,7 +754,7 @@ function withSelectedMode(options: SourceOption[], source: string | undefined): 
 /**
  * The per-skill inputs every source row shares: the canonical id, the live config entry driving
  * scope/lock classification, and the source options with the effective source preselected. A
- * pending-removal row re-pins that selection to its persisted source (`withSelectedSource`).
+ * pending-removal row re-pins that selection to its persisted origin (`withSelectedMode`).
  */
 function resolveSkillRowInputs(
   id: SkillId,
@@ -1073,7 +1173,7 @@ export type WizardState = {
    * installed, the same authority the Sources grid enforces by rendering that row inert.
    *
    * Side effects: updates the active `skillConfigs` entry for the skill at `scope`, writing the
-   * `source` value the mode resolves to. No-op with a warning on an empty skill id; silent no-op
+   * `origin` value the mode resolves to. No-op with a warning on an empty skill id; silent no-op
    * on a refused global slot.
    */
   setInstallMode: (
@@ -1113,6 +1213,18 @@ export type WizardState = {
    * Side effects: sets `focusedAgentId`
    */
   setFocusedAgentId: (id: AgentName | null) => void;
+  /**
+   * Seed `focusedAgentId` to the row the agents grid focuses first, unless a
+   * focused agent is already recorded — the grid restores that one instead.
+   *
+   * Runs on entry to the agents step so the value is written before any frame
+   * renders or input is processed. The `s` scope toggle in `wizard.tsx` reads
+   * `focusedAgentId` synchronously, and terminal input is not ordered against
+   * render-phase effects: a post-mount seed can lose to a buffered keystroke.
+   *
+   * Side effects: sets `focusedAgentId`
+   */
+  seedFocusedAgent: () => void;
   /**
    * Preselect agents based on selected domains from the first wizard step.
    * Matches domains against DOMAIN_AGENTS mapping.
@@ -1176,7 +1288,7 @@ export type WizardState = {
    * Build the source selection rows for the sources step UI.
    *
    * For each selected technology, resolves the canonical skill ID and marks which of the two
-   * install modes its persisted `source` stands for.
+   * install modes its persisted `origin` stands for.
    *
    * @returns Array of row objects, one per selected technology, each containing:
    *   - `skillId` - Canonical resolved skill ID
@@ -1243,6 +1355,22 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   ...overrides,
 });
 
+/**
+ * Writes the focus each step opens on, synchronously, as the step is entered.
+ *
+ * Both grids highlight a row from their first frame, and both scope toggles read
+ * the focused id out of this store the moment a key arrives. Terminal input is not
+ * ordered against render-phase effects, so a focus seeded after mount can lose to
+ * a keystroke that was already buffered — which is why entry seeds it instead.
+ */
+function seedFocusForStep(
+  step: WizardStep,
+  actions: Pick<WizardState, "seedFocusedSkillForActiveDomain" | "seedFocusedAgent">,
+): void {
+  if (step === "build") actions.seedFocusedSkillForActiveDomain();
+  if (step === "agents") actions.seedFocusedAgent();
+}
+
 export const useWizardStore = create<WizardState>((set, get) => ({
   ...createInitialState(),
 
@@ -1251,7 +1379,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       step,
       history: [...state.history, state.step],
     }));
-    if (step === "build") get().seedFocusedSkillForActiveDomain();
+    seedFocusForStep(step, get());
   },
 
   setApproach: (approach) => set({ approach }),
@@ -1325,8 +1453,8 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       // Preserve excluded entries so they flow through to wizard result.
       // D-223: allow an excluded tombstone to coexist with an active entry for the
       // same skill id at a different scope (render layer computes secondaryScope
-      // from the pair).
-      const excludedConfigs = collectTombstones(savedConfigs ?? []);
+      // from the pair) — and only at a different one.
+      const excludedConfigs = skillTombstonesOutsideRebuild(savedConfigs ?? [], skillConfigs);
 
       return {
         domainSelections,
@@ -1601,16 +1729,12 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   setToastMessage: (message) => set({ toastMessage: message }),
 
-  goBack: () =>
-    set((state) => {
-      if (state.history.length === 0) return state;
-      const history = [...state.history];
-      const previousStep = history.pop()!;
-      return {
-        step: previousStep,
-        history,
-      };
-    }),
+  goBack: () => {
+    const previousStep = get().history.at(-1);
+    if (previousStep === undefined) return;
+    set((state) => ({ step: previousStep, history: state.history.slice(0, -1) }));
+    seedFocusForStep(previousStep, get());
+  },
 
   toggleAgent: (agent) =>
     set((state) => {
@@ -1700,6 +1824,11 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   setFocusedAgentId: (id) => set({ focusedAgentId: id }),
 
+  seedFocusedAgent: () => {
+    if (get().focusedAgentId !== null) return;
+    set({ focusedAgentId: firstFocusableAgent() });
+  },
+
   preselectAgentsFromDomains: () =>
     set((state) => {
       // A stack declares its own roster, and that declaration is the whole of what
@@ -1713,7 +1842,10 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       ].sort();
       const roster = new Set(sorted);
       const merged = sorted.map((name) => buildAgentConfigForName(name, state.agentConfigs));
-      const retained = state.agentConfigs.filter((ac) => survivesRosterRebuild(ac, roster));
+      const rebuiltSlots = filledAgentSlots(merged);
+      const retained = state.agentConfigs.filter((ac) =>
+        survivesRosterRebuild(ac, roster, rebuiltSlots),
+      );
       return {
         selectedAgents: sorted,
         agentConfigs: [...merged, ...retained],
@@ -1727,7 +1859,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const mergedAgents = [...new Set([...stackAgents, ...globalAgents])].sort();
       const merged = mergedAgents.map((name) => buildAgentConfigForName(name, savedConfigs));
       // Preserve dual-scope tombstones, same invariant as preselectAgentsFromDomains (D-227).
-      const excludedConfigs = collectTombstones(savedConfigs);
+      const excludedConfigs = agentTombstonesOutsideRebuild(savedConfigs, merged);
       return {
         selectedAgents: mergedAgents,
         agentConfigs: [...merged, ...excludedConfigs],

@@ -3,22 +3,32 @@ import {
   DEFAULT_BRANDING,
   DEFAULT_PLUGIN_NAME,
   EDITOR_URL,
+  LOCAL_SKILLS_PATH,
+  MARKETPLACE_JSON,
   STANDARD_FILES,
   editorConfigUrl,
 } from "../consts.js";
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
+import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
 import type { AgentName, SkillId } from "../types/index.js";
 
 export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: "Unknown error occurred",
   UNKNOWN_ERROR_SHORT: "Unknown error",
   NO_INSTALLATION: `No installation found. Run '${CLI_INVOKE_COMMAND} init' first to set up ${DEFAULT_BRANDING.NAME}`,
-  NO_SKILLS_FOUND: "No skills found",
-  VALIDATION_FAILED: "Validation failed",
   FAILED_RESOLVE_SOURCE: "Failed to resolve marketplace",
   FAILED_LOAD_AGENT_PARTIALS: "Failed to load agent partials",
   FAILED_COMPILE_AGENTS: "Failed to compile agents",
   CLAUDE_CLI_NOT_FOUND: `Claude CLI not found — '${CLI_INVOKE_COMMAND} update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`,
+  /**
+   * What `compile` refuses with when every pass discovered zero skills. It is reached only
+   * after an installation was detected, so the state it describes is a configuration with
+   * nothing installed under it — the same state `doctor` reports as `config-empty` and
+   * names `init` for, because `init` on a config that declares nothing opens the wizard
+   * rather than the dashboard. `edit` is the wrong half of the pair here: it modifies the
+   * currently installed skills, and there are none to modify.
+   */
+  NO_SKILLS_TO_COMPILE: `No skills found. Run '${CLI_INVOKE_COMMAND} init' to choose skills, or add your own under ${LOCAL_SKILLS_PATH}/.`,
 } as const;
 
 export const SUCCESS_MESSAGES = {
@@ -39,7 +49,6 @@ export const STATUS_MESSAGES = {
   LOADING_AGENT_PARTIALS: "Loading agent partials...",
   FETCHING_REPOSITORY: "Fetching repository...",
   COPYING_SKILLS: "Copying skills...",
-  UPDATING_PLUGIN_SKILLS: "Updating plugin skills...",
   /**
    * Printed when revalidation found the remote marketplace had moved on. It is the
    * only warning a user gets that this load costs a download rather than a
@@ -47,6 +56,21 @@ export const STATUS_MESSAGES = {
    */
   MARKETPLACE_HAS_NEWER_CONTENT: "Marketplace has newer content — fetching the update...",
 } as const;
+
+/**
+ * The partials `readAgentFiles` compiles a sub-agent out of, in the order it reads them —
+ * and therefore what `eject agent-partials` puts under the reader's control. Spelled from
+ * {@link STANDARD_FILES} rather than as prose so the sentence below cannot name a file the
+ * compiler does not read: it named "templates, agent intro, workflow, and examples" for
+ * years, four nouns matching nothing that ships.
+ */
+const AGENT_PARTIAL_FILES = [
+  STANDARD_FILES.IDENTITY_MD,
+  STANDARD_FILES.PLAYBOOK_MD,
+  STANDARD_FILES.CRITICAL_REQUIREMENTS_MD,
+  STANDARD_FILES.CRITICAL_REMINDERS_MD,
+  STANDARD_FILES.OUTPUT_MD,
+];
 
 export const INFO_MESSAGES = {
   NO_CHANGES_MADE: "No changes made.",
@@ -63,6 +87,8 @@ export const INFO_MESSAGES = {
    */
   EJECTED_SKILLS_USER_OWNED: `Ejected skills are yours to own — '${CLI_INVOKE_COMMAND} update' does not change them.`,
   NO_PLUGIN_MARKETPLACES: "No plugin marketplaces are configured — nothing to refresh.",
+  /** Printed under the destination `eject agent-partials` just named, so it names files only. */
+  AGENT_PARTIALS_CUSTOMIZABLE: `Each sub-agent directory there holds ${AGENT_PARTIAL_FILES.join(", ")} — edit those to customize that sub-agent.`,
 } as const;
 
 /** Closing line of a plugin install, printed wherever one runs. */
@@ -176,6 +202,63 @@ export function sourceUnreachableUsingCache(source: string): string {
 export function marketplacesRefreshFailed(marketplaces: string[]): string {
   const subject = marketplaces.length === 1 ? "marketplace" : "marketplaces";
   return `${marketplaces.length} ${subject} could not be updated: ${marketplaces.join(", ")}`;
+}
+
+/**
+ * `build marketplace`'s refusal when package.json names no author, so the manifest
+ * would carry an owner with no name.
+ *
+ * Refused rather than warned because `marketplaceOwnerSchema` requires that name: a
+ * manifest written without one is a file this CLI's own reader rejects, and a build
+ * that exits 0 having produced it reports success for a marketplace nobody can add.
+ */
+export function marketplaceOwnerHasNoName(packageJsonPath: string): string {
+  return [
+    `A marketplace's owner must have a name, and no name could be read from 'author' in ${packageJsonPath}.`,
+    `Nothing was written: a ${MARKETPLACE_JSON} whose 'owner.name' is empty is refused by this CLI's own reader, so the build would have reported success for a marketplace nobody can install from.`,
+    `Set 'author' in that file — either "Jane Doe <jane@example.com>" or { "name": "Jane Doe" } — and build again.`,
+  ].join("\n\n");
+}
+
+/**
+ * `build marketplace`'s refusal when package.json carries a version that is only a version
+ * to a reader who does not check it.
+ *
+ * `marketplaceSchema` requires `min(1)` here, and nothing upstream did: the package.json
+ * schema types the field as a bare string, and the generator's `??` default treats `""` as
+ * a value because it is not nullish. So an empty version reached the manifest, the build
+ * exited 0, and the file was refused the first time this CLI read it back — the same
+ * write-then-fail-on-read shape the zero-plugin refusal closed.
+ */
+export function marketplaceHasNoVersion(packageJsonPath: string): string {
+  return [
+    `A marketplace must have a version, and 'version' in ${packageJsonPath} is empty.`,
+    `Nothing was written: a ${MARKETPLACE_JSON} whose 'version' is empty is refused by this CLI's own reader, so the build would have reported success for a marketplace nobody can install from.`,
+    `Set 'version' in that file — "0.1.0" if this is its first release — and build again.`,
+  ].join("\n\n");
+}
+
+/**
+ * `build marketplace`'s refusal when the name read from package.json is not one a
+ * marketplace may publish under.
+ *
+ * The way out is the flag rather than a rename of the npm package: an npm scoped name
+ * is a legitimate thing for a package to have and an illegitimate marketplace name, so
+ * the two identities are allowed to differ. Every offending character is named, because
+ * `@scope/thing` gives an author two edits to make and a rule alone gives them none.
+ */
+export function marketplaceNameNotPublishable(name: string, packageJsonPath: string): string {
+  const offenders = charactersOutsideKebabCase(name);
+  return [
+    `Marketplace name '${name}', read from 'name' in ${packageJsonPath}, is not a name a marketplace may publish under.`,
+    ...(offenders.length > 0
+      ? [
+          `It carries ${offenders.map((character) => `'${character}'`).join(" and ")}, which a marketplace name may not.`,
+        ]
+      : []),
+    `A marketplace name is kebab-case: lowercase letters, numbers and hyphens, starting with a letter.`,
+    `Publish under a name of your own instead: '${CLI_INVOKE_COMMAND} build marketplace --name <your-marketplace>'.`,
+  ].join("\n\n");
 }
 
 /**
