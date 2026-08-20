@@ -10,7 +10,6 @@ reporting_agent: cli-tester
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
-blocked_by: 2026-08-08-a-new-skill-picked-in-a-project-edit-is-written-into-the-global-install.md
 status: resolved
 resolved_by: >-
   Owner ruling 2026-08-08 (CLI-443) narrowed the guard to GLOBAL-OWNED halves. `isGloballyLockedSkill`
@@ -51,8 +50,11 @@ byte-identical afterwards.
 
 Refusing to uninstall the INHERITED global half is correct and deliberate. The observation is that
 the guard fires on the pair as a unit, so the project-owned half is unreachable too — and because a
-newly-selected skill in a project edit is written at global scope (see `blocked_by`), no
-project-owned entry without a global backing can exist in this install shape. The result is that
+newly-selected skill in a project edit is written at global scope (`createDefaultSkillConfig` in the
+same file returns a literal `scope: "global"`, and `buildSkillConfigForId` degrades to its output
+whenever the hydration snapshot holds no entry for the id, which is the definition of a
+genuinely-new selection), no project-owned entry without a global backing can exist in this install
+shape. The result is that
 "remove a skill from this project" has no reachable subject anywhere in a global-first installation.
 
 ### Reproduction
@@ -109,3 +111,25 @@ prove-the-code-path-fired rule:
 > the same operation is ALLOWED. A refusal assertion on its own cannot distinguish a guard that is
 > correctly scoped from a guard that has swallowed its entire domain — both produce an unchanged
 > filesystem and an unchanged config.
+
+## Lineage — dropped `blocked_by:` key
+
+This file previously carried a `blocked_by:` key naming a sibling finding filed the same day against
+the same store, on the scope a fresh pick gets in a project edit. **That target is no longer on disk
+and the key has been removed.** What the link asserted is recorded here.
+
+**What the link asserted.** The upstream defect was that with a global installation already in
+place, a genuine project-scope session (`init` → dashboard → Edit) that selects a NEW skill records
+it at global scope and installs it under `$HOME/.claude/skills/`, leaving the project's own skills
+and agents directories empty, with no guard and no warning — the only disclosure being the `[G]`
+badge in the confirm summary. That is what made the defect recorded here unreachable rather than
+merely refused: if no new skill can be created project-only, the only route to a project-scoped
+skill is the `s` toggle on an already-global one, which produces the `[P][G]` pair whose global half
+the removal guard then protected. The two had to be settled together, which is what the key
+recorded.
+
+**How the pair was settled (owner rulings, 2026-08-08).** The global default for a fresh pick was
+ruled CORRECT and left in place — `createDefaultSkillConfig` still returns `scope: "global"` — with
+the requirement that the `s` override produce a real project install, now covered by
+`e2e/lifecycle/project-edit-fresh-pick-scope-override.e2e.test.ts`. The refusal recorded here was
+narrowed instead, per this file's `resolved_by:`.

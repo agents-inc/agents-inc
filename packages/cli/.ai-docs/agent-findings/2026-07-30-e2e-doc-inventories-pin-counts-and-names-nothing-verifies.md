@@ -17,12 +17,26 @@ domain: e2e
 root_cause: enforcement-gap
 status: partial
 partial_note: >-
-  All the stale counts and inventories found in this sweep were corrected in the same pass
-  (per-directory spec totals, STEP_TEXT membership, the BuildStep/AgentsStep/ConfirmStep method
-  tables, the test-utils export list, the TIMEOUTS table). What is NOT fixed is the mechanism:
-  nothing checks that a name or count in prose still resolves, so the same drift will recur. The
-  dangling `findSkillGridPosition` reference in `e2e/pages/wizards/edit-wizard.ts` is a source
-  edit and was deliberately left to its owner.
+  Re-derived on 2026-08-19 against source and against scripts/check-enumeration-drift.ts. The
+  previous note's "nothing checks that a name or count in prose still resolves" is now too wide, and
+  is narrowed rather than kept. MECHANISM - largely built. The drift checker binds a document
+  section to a source symbol and reddens the suite when the two disagree. Six of its rows bind
+  standards/e2e/README.md - `STEP_TEXT`, `DIRS`, `FILES`, `TIMEOUTS`, `EXIT_CODES` and
+  `SOURCE_PATHS` - and two bind reference/testing/e2e-infrastructure.md, `STEP_TEXT` again and
+  `E2E_SKILL_TITLES`. The per-directory spec totals this finding opened with are no longer that
+  document's to state: the E2E file totals are owned by DOCUMENTATION_MAP.md under the
+  one-document-owns-a-count rule, so that class went away rather than being guarded. STILL
+  UNGUARDED, and this is the whole of what survives - the page-object method inventories
+  (`BuildStep`, `AgentsStep`, `ConfirmStep`, `BaseStep`, `TerminalScreen`, `InitWizard`,
+  `EditWizard`) and the test-utils.ts export inventory in reference/testing/e2e-infrastructure.md.
+  The second is this finding's own class recurring in the exact document it named: re-derived on
+  2026-08-19 it was five exports short and carried one phantom name, a module-private constant sat
+  under an "(internal)" annotation inside a table headed Export. Repaired, and still bound to
+  nothing. Binding it needs one change beyond membership, which the repair deliberately did not
+  make: the checker reads a whole first cell as ONE member name, and 11 of the 47 cells name more
+  than one export. Two of those 11 are the sharp shape - the call-signature strip is greedy and
+  end-anchored, so a cell pairing two call signatures reduces to the first name and silently loses
+  the second, which surfaces as the checker calling a name the document plainly carries unnamed.
 ---
 
 ## What Was Wrong
@@ -69,9 +83,7 @@ and its 14 omitted members enumerated; the `BuildStep`, `AgentsStep`, `ConfirmSt
 at all six sites; the two inverted `HOME=cwd` claims replaced with the sibling-HOME model and its
 rationale.
 
-Not fixed: the `findSkillGridPosition` reference in `e2e/pages/wizards/edit-wizard.ts` (a source
-edit, outside this task's file ownership), and the absence of any mechanism that would have caught
-any of the above.
+Not fixed: the absence of any mechanism that would have caught any of the above.
 
 ## Proposed Standard
 

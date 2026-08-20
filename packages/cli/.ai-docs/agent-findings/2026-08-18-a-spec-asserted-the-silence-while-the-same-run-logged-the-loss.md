@@ -129,8 +129,14 @@ have caught it without anyone thinking to look. The opt-in shape matters: an `ex
 escape hatch, so the specs that deliberately provoke a discard (`persistence.spec.ts` and the
 unreadable-catalogue cases) declare it rather than being exempted wholesale.
 
-This is the same argument the sibling finding
-`2026-08-18-an-editor-e2e-test-reached-live-github-and-asserted-a-third-partys-file-size.md` makes
-for network access, in the same fixtures file, about the same suite: a guarantee worth having is one
-that holds where nobody thought to ask. Both want `e2e/fixtures.ts` to stop being a single
-`configure` fixture with no defaults, and they should probably be done together.
+This is the same argument a sibling finding made for network access, in the same fixtures file,
+about the same suite: a guarantee worth having is one that holds where nobody thought to ask. There,
+a spec resolved a staged skill against the live `api.github.com` and asserted, in effect, that a
+third party keeps a directory over 256 KB — forgetting a stub failed as a PASS. **That half has
+since landed**, and it is the shape to copy: `apps/editor/e2e/fixtures.ts` overrides Playwright's
+`page` fixture to route every third-party origin to `route.abort("blockedbyclient")`, collect what
+it caught, and assert in teardown that the collected list is empty. Both halves of that pairing are
+load-bearing — the abort keeps the bytes out, and the teardown assertion is what makes the omission
+LEGIBLE, because an abort alone reaches the app as some failure or other and a spec that only asks
+whether an error appeared is satisfied by the wrong one. The console half proposed here is still
+outstanding, and `fixtures.ts` now carries the seam for it.

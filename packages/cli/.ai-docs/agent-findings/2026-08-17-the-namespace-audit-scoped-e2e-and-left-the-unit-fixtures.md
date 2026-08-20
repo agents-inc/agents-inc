@@ -54,10 +54,16 @@ than of the tests:
    it — and a source shipping one of them is refused. The finding is therefore constructible only
    for the catalogue's own checkout.
 
-   This is a third instance of the shape
-   `2026-08-16-namespaced-ids-fall-out-of-every-catalogue-keyed-builtin-table.md` names, and it is
-   the one that instance's own item 3 asked for: that finding swept `auditEntryFor` for the sibling
-   `skill-unaudited` check and fixed the NOISE half, leaving the contradiction check unexamined.
+   This is a third instance of a shape recorded the day before: a built-in table keyed by the
+   PUBLIC catalogue's `SkillId` union, consulted with an id that now belongs to another
+   marketplace's namespace, so the lookup misses and the miss has a silent fallback rather than an
+   error. The coupling is a catalogue MEMBERSHIP test, not a parse, which is why nothing that scans
+   for positional id splitting can find it. The first two instances were `resolveAssignment` in
+   `packages/matrix/src/read-model/assignment-defaults.ts`, where a skill outside the catalogue
+   reached no sub-agent at all, and `checkUnauditedSkills` in `matrix-health-check.ts`, which
+   warned once per skill for every custom marketplace. That report's third item asked for a sweep of
+   the remaining `Record<SkillId, …>` lookups, and this is one of them: the `auditEntryFor` sweep
+   fixed the NOISE half, `skill-unaudited`, and left the contradiction check unexamined.
    The difference matters because the two misses fail in opposite directions — `skill-unaudited`
    fired for every custom marketplace and had to be narrowed, while `audit-verdict-contradiction`
    now fires for none and cannot be, since only the catalogue may hold an id the manifest names.

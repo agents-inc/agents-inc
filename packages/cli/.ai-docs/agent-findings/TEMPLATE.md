@@ -24,10 +24,10 @@ domain: e2e | cli | web | api | shared | infra
 #   api    → HTTP handlers, external service integration
 #   shared → utilities, types, schemas used across domains
 #   infra  → build, tooling, CI, scripts
-root_cause: missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap | scope-discipline-deferred
+root_cause: missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap | scope-discipline-deferred | premise-expired
 status: open | partial | resolved | superseded # REQUIRED — see "Lifecycle fields" below
 # Conditionally required lifecycle fields:
-# partial_note: <what's landed (docs/standards) vs what's pending (code)>  # REQUIRED when status: partial
+# partial_note: <which half landed and which is pending — either direction>  # REQUIRED when status: partial
 # resolved_by: <short note describing the fix>  # REQUIRED when status: resolved
 # superseded_by: <newer-finding-filename.md>  # REQUIRED when status: superseded — and implies it
 # supersedes: <older-finding-filename.md>  # on the NEWER finding; does not change its own status
@@ -43,7 +43,7 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
    an inference rather than a count. As of the 2026-07-30 backfill, every finding on disk
    declares one; keep it that way (see "Known gap: status backfill — CLOSED" below).
    Do not quote a count here: the status distribution is owned by
-   `.ai-docs/the tracker (todo/cli.md)`, per documentation-bible.md's
+   the tracker (`todo/cli.md`), per documentation-bible.md's
    "A Count Lives in Exactly One Document".
 
 2. `type:` and `root_cause:` are SEPARATE enums. They are not interchangeable.
@@ -52,10 +52,27 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
                  missing-standard | architectural-drift
      root_cause: WHY IT HAPPENED — which property of the rule system let it through.
                  missing-rule | rule-not-visible | rule-not-specific-enough |
-                 convention-undocumented | enforcement-gap | scope-discipline-deferred
+                 convention-undocumented | enforcement-gap | scope-discipline-deferred |
+                 premise-expired
+                 `premise-expired` is the one that needs a definition rather than a reading:
+                 the rule was CORRECT when written, a later change invalidated the fact it
+                 rested on, and nothing existed to notice. It is not `missing-rule` (a rule
+                 was there) and not `rule-not-specific-enough` (it was specific, and right).
+                 Reach for it only when the original reasoning still reads as sound against
+                 the world it was written in — that is the whole of what distinguishes it.
    `enforcement-gap` is a `root_cause` value ONLY. It is NOT a valid `type`. The two enums are
    disjoint — no value is legal in both fields. If a value seems to fit both, you have picked the
    wrong field for one of them.
+
+   **RUNNABLE.** `scripts/check-findings-frontmatter.ts` reports any finding whose `root_cause` is
+   outside the enum, naming the file and the value. It does not restate the enum: it reads the
+   `root_cause:` LINE out of this file's own frontmatter above and splits it on the pipes, so the
+   list at the top of this document is not a description of the check — it IS the check's input.
+   Two consequences worth knowing before editing this file. Reformatting that line (wrapping it,
+   changing the separator, moving it into a comment) changes what the scan accepts. And a value in
+   neither list was previously invisible rather than wrong, which is the whole reason this scan
+   exists: a finding carrying an invented `root_cause` parses, reads normally, and is silently in no
+   group for every rollup that reads the field.
 
 3. `superseded_by:` and `status: superseded` are a PAIR. Setting one without the other is a
    schema defect. A finding pointing at its replacement is by definition superseded.
@@ -69,8 +86,8 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
       must say `superseded_by: A`. A one-sided link hides the lineage from whichever end the
       reader arrives at.
    c. **A finding may supersede more than one predecessor** — write `supersedes:` as a YAML list
-      in that case. (`2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md`
-      supersedes three.) A scalar silently drops the other links.
+      in that case. A scalar silently drops the other links, and nothing reports the loss: the
+      surviving link still resolves, so a link-integrity scan passes over the ones it replaced.
 
    If a target legitimately no longer exists, do NOT just delete the key: record in the referring
    file's body what the link asserted and what evidence establishes the target once existed. The
@@ -78,6 +95,28 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
 
 4. Widening an enum: if an authentic value does not fit, widen the enum HERE in TEMPLATE.md
    rather than inventing an ad-hoc value in a single finding.
+
+   **RUNNABLE, and cheaper than it reads.** Because the checker reads `root_cause` from the
+   frontmatter line above, widening that enum is ONE edit — this file's own line — and the scan
+   widens with it. There is no second list to update in `scripts/`, and there is no version of this
+   change that leaves a checker disagreeing with the template. The precedent is
+   `scope-discipline-deferred`, and it is worth reading for what it did rather than for the
+   sentence it usually gets. A finding invented `scope-boundary-preserved` for deferred cleanup
+   that respected a task-scope boundary; the CAUSE was authentic and the enum was widened for it —
+   but under a different word, so the invented value survives on neither side and the finding did
+   not keep it. Widening and rewriting are not alternatives: widen for the cause, then write the
+   finding in the vocabulary that landed. What is not intended is leaving an invented value in
+   place, which now fails the scan rather than sitting unnoticed.
+
+   Two mechanical notes, both learned here. The enum values are also restated in rule 2 above, and
+   that restatement is NOT read by the checker — widen both or they disagree silently. And write
+   the value on one line wherever it appears in prose: `scope-boundary-preserved` sat wrapped
+   across a line break in this very paragraph for as long as the claim did, so every grep for it
+   returned nothing and the error was unfindable by the one check anybody would run.
+
+   Nothing else in this schema is read mechanically, so `type:`, `status:` and the lifecycle-field
+   pairings are still prose that a reader has to keep. Do not infer from "the enum is checked" that
+   the rest of the block is.
 
 5. **Any multi-sentence value is double-quoted or written as a `>-` block scalar.** A plain YAML
    scalar cannot contain a bare `: ` — the parser reads colon-space as a nested key and gives up on
@@ -94,11 +133,42 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
    same way the moment any line carries a colon-space, which is why "it parsed when I wrote it" is
    not evidence that the next sentence will.
 
+6. **`affected_files:` is the grep's output, pasted — not a reading of it.** When the body claims
+   "N hits in M files", this list is the file list that produced N and M, transcribed. Do not
+   re-derive it from the prose, and do not summarise it: a hit count and a file list that disagree
+   are the signal, and there is nothing to notice the disagreement if the list was written from the
+   summary. A rename sweep reported "roughly twenty hits in fifteen files" and named fifteen paths;
+   the real figure was 35 hits in 20 files, and the shape of the omission is legible in the list
+   itself — every named entry was an `identity.md` or a `playbook.md` whose `identity.md` sibling
+   was already a hit, so the two agents with no `identity.md` hit fell straight through.
+
+   Scope the grep to the widest tree the claim covers, not to where the defect hurt most. The same
+   sweep scoped its gate to `src/agents/` because that is where the prompts are; run over `src/` it
+   also found a retired agent name in a test comment, in a file the original rename had edited. A
+   retired name is a lie wherever it appears.
+
    `scripts/check-findings-frontmatter.ts` parses every file in this directory and its suite fails
    on any that does not. That is the enforcement; this rule is how not to trip it. Note what the
    failure looks like from the outside if the scan is not run: Prettier stops recognising an
    unreadable block as frontmatter and reformats it as Markdown, so `format:check` reports a style
    violation — which reads as cosmetic and is not.
+
+   **Also RUNNABLE, and it is the one that catches a list gone stale rather than a list written
+   badly.** The same scan reports any two findings sharing `(affected_files, root_cause, date)` with
+   no `supersedes:` / `superseded_by:` / `blocked_by:` link between them. It reports rather than
+   refuses, deliberately: the tuple names a PAIR, and the frontmatter cannot say which half is
+   wrong — one piece of work filed twice, an absent cross-link, or a file list that stopped being
+   true. **A cross-linked pair is never reported**, because a discovery and the finding that
+   replaced it are two valid filings once the link says which is which.
+
+   The pair on disk that produced this scan was the third case, twice over: two findings from
+   2026-04-21 both naming `src/cli/lib/installation/local-installer.ts` alone, both
+   `enforcement-gap`, unlinked — and neither was about that file any more, because the module had
+   been split and both symbols had moved to `src/cli/lib/config-gate/propagate.ts`. Repairing each
+   list against source is what retires such a pair; adding a cross-link to silence it would assert a
+   lineage that does not exist. **This is what a stale `affected_files:` costs beyond misleading a
+   reader — it manufactures a false positive in a scan that has no way to tell which half to
+   distrust.**
 
 KNOWN GAP: status backfill — CLOSED 2026-07-30
 
@@ -133,16 +203,8 @@ KNOWN GAP: status backfill — CLOSED 2026-07-30
   The last three may be legitimate — recording both the replacement and the underlying fix is
   useful — and this template should decide whether to sanction it. The other four are defects.
 
-  OPEN QUESTION for this template's owner — `partial` has only one documented direction.
-  README.md defines it as "docs/standards landed, code-side fix pending". The backfill found the
-  INVERSE to be far more common: the code fix shipped and the Proposed Standard was never written.
-  Twenty of the 21 new `partial` files are that shape and say so in their `partial_note:`. Either
-  widen the enum, or state here that `partial` covers both directions and the `partial_note:` MUST
-  name which — otherwise the field is ambiguous at a glance in a third of the directory.
-
-  Counts are owned by `.ai-docs/the tracker (todo/cli.md)`, which re-derives them from
-  disk at each pass. Do not restate them here.
-  Source: `2026-07-30-findings-rollup-has-no-snapshot-rule-and-schema-drifted.md`.
+  Counts are owned by the tracker (`todo/cli.md`), which re-derives them from disk at each pass.
+  Do not restate them here.
 -->
 
 <!--
@@ -165,3 +227,8 @@ How to resolve a finding:
 
 <!-- What rule, convention, or documentation update would prevent this in the future? -->
 <!-- Be specific: name the doc file and section where the rule should go -->
+<!-- This is a PROPOSAL, not an approved instruction. Cross-check it against CLAUDE.md's
+     NEVER/ALWAYS rules and the relevant standards/ doc before writing it, and say so
+     explicitly if it conflicts. README.md -> "Writing a Finding" is the rule and the
+     case that produced it. -->
+<!-- Every count in the body says whether it is a census or a sample. Same section. -->

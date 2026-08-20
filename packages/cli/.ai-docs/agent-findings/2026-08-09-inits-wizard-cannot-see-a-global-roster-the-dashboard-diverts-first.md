@@ -4,13 +4,17 @@ severity: low
 affected_files:
   - src/cli/commands/init.tsx
 standards_docs:
-  - .ai-docs/reference/commands/init.md
+  - .ai-docs/reference/commands/index.md
 date: 2026-08-09
 reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: open
+status: partial
+partial_note: >-
+  Proposed standard 1 landed: reference/commands/index.md now states that the divert makes the
+  wizard's hydration branch unreachable and that `edit` is what hydrates a saved roster. Still
+  outstanding: the dead branch itself in init.tsx, and the guards rule for standards/.
 ---
 
 ## What Was Wrong
@@ -64,11 +68,12 @@ roster.
 
 Two things, both small:
 
-1. **Record the divert in `.ai-docs/reference/commands/init.md`.** The command's page describes
-   the wizard as `init`'s main path; nothing says that an existing installation — project OR
-   global — sends the whole flow to the dashboard, and that the wizard branch is reachable only
-   in a directory with no install anywhere. A reader adding behaviour "for init with an existing
-   install" cannot currently tell that `edit` is where it belongs.
+1. **Record the divert in the command's reference page** — done, in
+   `.ai-docs/reference/commands/index.md` (there is no `commands/init.md`; `index.md` is the
+   canonical body). The page had described the wizard as `init`'s main path with nothing saying
+   that an existing installation — project OR global — sends the whole flow to the dashboard, so a
+   reader adding behaviour "for init with an existing install" could not tell that `edit` is where
+   it belongs.
 
 2. **A rule for guards, in `.ai-docs/standards/` alongside the other command conventions:** a
    pre-flight guard belongs at the point that can meet the state it guards, and its reachability

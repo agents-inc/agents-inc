@@ -12,7 +12,13 @@ reporting_agent: cli-developer
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
-status: open
+status: partial
+partial_note: >-
+  The code-side pins landed with the category change. The Proposed Standard below is now written
+  into CLAUDE.md's Test Assertions list, beside the `// KNOWN GAP:` rule it complements, together
+  with its corollary about where the pin belongs. Pending: the separate rule that `metadata.yaml` is
+  a generator input rather than a shipped artefact, which this finding records as outstanding and
+  which `clean-code-standards.md` still does not carry.
 ---
 
 ## What Was Wrong

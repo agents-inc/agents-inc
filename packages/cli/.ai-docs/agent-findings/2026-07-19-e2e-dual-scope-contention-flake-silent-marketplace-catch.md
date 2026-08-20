@@ -14,7 +14,7 @@ category: testing
 domain: e2e
 root_cause: enforcement-gap
 status: partial
-partial_note: 'Fix A landed; the two remaining items did not. Landed: `seedFocusedSkillForActiveDomain` exists in `wizard-store.ts` and is wired at hydrate, `setStep("build")` and every domain transition; `FOCUS_EFFECT_FLUSH_MS` is gone from the tree; `maxWorkers: 16` is retained in `e2e/vitest.config.ts` as the documented palliative. Pending: (a) the diagnosability hardening — `ensureMarketplace`''s lazy-resolution `catch` still returns `{ marketplace: null, registered: false }` with no `verbose`/`warn`, so a transient failure is still indistinguishable from a genuinely absent marketplace, and no retry was added; (b) the remaining root-cause fix, the `inputReady` gate on the wizard footer sentinel — no `inputReady` flag exists in `src/cli/`, and the finding records it as owner-deferred rather than rejected. The closed-loop keypress retry stays reverted; do not re-attempt it. Verified 2026-07-30.'
+partial_note: 'Fix A landed; the two remaining items did not. Landed: `seedFocusedSkillForActiveDomain` exists in `wizard-store.ts` and is wired at hydrate, `setStep("build")` and every domain transition; `FOCUS_EFFECT_FLUSH_MS` is gone from the tree; `maxWorkers: 16` is retained in `e2e/vitest.config.ts` as the documented palliative. Landed 2026-08-19: (a) the diagnosability half — `ensureMarketplace`''s lazy-resolution `catch` now binds the error and `warn`s `Could not resolve a marketplace from ''<ref>'': <cause>` before returning `{ marketplace: null, registered: false }`, so a transient failure and a genuinely absent marketplace no longer read alike in a capture or to a user; the single retry it also suggested was NOT added, and remains the owner''s call. Pending: (b) the remaining root-cause fix, the `inputReady` gate on the wizard footer sentinel — no `inputReady` flag exists in `src/cli/`, and the finding records it as owner-deferred rather than rejected. The closed-loop keypress retry stays reverted; do not re-attempt it. Verified 2026-07-30, updated 2026-08-19.'
 ---
 
 # Dual-scope E2E suites flake under full-suite contention; one mechanism is ensureMarketplace's silent catch
@@ -126,6 +126,24 @@ so the retry misfires. Empirical result: 3 of 4 full runs red (worse than the
 is intentionally back to single-press drivers + Fix A + `maxWorkers: 16`
 (current steady state: green most runs, occasional 1-2 dual-scope failures that
 always pass solo).
+
+## 2026-08-19 update — the silent catch is gone
+
+`ensureMarketplace` binds the caught error and warns with `getErrorMessage(error)` before returning
+a null marketplace. Driven by hand — `init --from` against a local source with no
+`.claude-plugin/marketplace.json` — the run now prints
+
+```
+  Warning: Could not resolve a marketplace from '<ref>': Marketplace not found at: <ref>
+```
+
+above the unchanged hard error, which still says only that the marketplace "could not be resolved".
+That is the whole point: the hard error is a policy statement and cannot name a cause, so the
+warning is the only place the reason reaches anyone. A transient IO failure under contention now
+says so in the capture instead of looking identical to a repository that ships no marketplace.
+
+The retry suggested beside it was deliberately not added — it changes behaviour rather than
+diagnosability, and nothing has established that the transient failures are retryable.
 
 ## Remaining root-cause fix (proposed, NOT implemented — owner deferred)
 

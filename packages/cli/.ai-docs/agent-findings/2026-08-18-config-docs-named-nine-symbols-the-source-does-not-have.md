@@ -51,11 +51,13 @@ opposite of what the code does.
 | `SkillConfig.source`                   | `features/configuration.md`                           | `SkillConfig.origin` — likewise refused by name                                           |
 | `ConfigWriteResult.propagatedProjects` | `features/compilation-pipeline.md`                    | `ConfigWriteResult.propagation: GateReport`                                               |
 
-The first five were reported on 2026-08-17 by
-`2026-08-17-two-branches-of-one-writer-answered-the-custom-question-differently.md`, whose Proposed
-Standard says in as many words that this document "should note that `collectCustomDomains` is gone".
-It was not done, and nothing connected the finding to the page. That is the enforcement gap: a
-finding is a note to a future reader, not a check.
+The first five were reported on 2026-08-17, when all four axes of `generateConfigTypesSource` moved
+onto one question — does the loaded catalogue declare the thing? — answered by `isCustomSkill`,
+`isCustomAgent`, `isCustomDomain` and `isUndeclaredCategory` in
+`lib/configuration/config-types-writer.ts`, and `collectCustomDomains` was deleted with them. That
+report's Proposed Standard said in as many words that `config/config-writer.md` "should note that
+`collectCustomDomains` is gone". It was not done, and nothing connected the finding to the page.
+That is the enforcement gap: a finding is a note to a future reader, not a check.
 
 `ProjectConfig.source` and `SkillConfig.source` are the sharper case, because the loader _refuses_
 them. `RENAMED_CONFIG_FIELDS = { source: "marketplace" }` and

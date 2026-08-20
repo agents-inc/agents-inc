@@ -15,10 +15,29 @@ domain: e2e
 root_cause: rule-not-specific-enough
 status: partial
 partial_note: >-
-  The order-preserving normaliser is now shared from e2e/assertions/config-assertions.ts and named
-  for its load-bearing property. Pending: it has no test file of its own, and the two normalisers
-  are still separate functions in separate modules (unification needs ownership of
-  src/cli/lib/__tests__/helpers/config-comparison.ts).
+  Re-derived against source 2026-08-19; both pending claims the previous note carried are now
+  false and are replaced rather than kept. CODE - landed, and further than proposal 3 asked.
+  `normalizeConfigPreservingOrder` no longer lives in a separate module: it sits in
+  src/cli/lib/__tests__/helpers/config-comparison.ts beside `normalizeGlobalConfig`, both built on
+  one `significantLines`, so the duplicated behaviour is in one place and the two names are the only
+  difference a call site sees. E2E reaches it through e2e/helpers/test-utils.ts, not through
+  e2e/assertions/config-assertions.ts, which holds no re-export and never did. It also has tests
+  now - src/cli/lib/__tests__/helpers/config-comparison.test.ts covers both functions, and it
+  carries the discriminating case proposal 4 asked for, asserting in one test that reordered lines
+  do NOT compare equal under `normalizeConfigPreservingOrder` while they DO under
+  `normalizeGlobalConfig`. Proposal 3's `{ sort }` option was deliberately not taken; one module off
+  one implementation reaches the same end without a boolean a reader has to look up. DOCS - owed.
+  Proposals 1 and 2 are unwritten: no standards document
+  states that a normaliser under an equality assertion must encode its comparison strength in its
+  name, or that swapping one normaliser for another under an existing assertion is an assertion
+  change rather than a refactor. Both rules exist today only as JSDoc on the two functions, which is
+  the one place a reader who is about to make the substitution will not look. Also still owed, and
+  now the only code-side item left, is proposal 4's tail - `expectNoDuplicates` in
+  e2e/assertions/config-assertions.ts has no test. It is the whole of that module since the
+  normalisers moved out, it carries real logic (filter for repeats, total each one, fold label and
+  context into the message), and it cannot be tested where it sits: no vitest project collects a
+  spec under e2e/assertions/. Closing it means moving the helper to
+  src/cli/lib/__tests__/helpers/ with a test beside it, the same route the normalisers took.
 ---
 
 ## What Was Wrong

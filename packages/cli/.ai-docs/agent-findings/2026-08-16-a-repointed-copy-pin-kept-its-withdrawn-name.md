@@ -17,9 +17,10 @@ status: partial
 partial_note: >-
   The five stale copy pins are fixed, and the spec names and assertion messages that described
   them moved with them. Two surfaces are documented here and deliberately not patched, per the
-  document-first rule for sweeps. First, `LOCAL_SOURCE_NOT_FOUND` in
-  `e2e/lifecycle/init-edit-error-guards.e2e.test.ts`, whose VALUE was re-pointed during CLI-463
-  and whose NAME was not. Second, the `describe("stored source resolution")` heading in
+  document-first rule for sweeps. The first of the two has since been fixed: the constant in
+  `e2e/lifecycle/init-edit-error-guards.e2e.test.ts` is now `LOCAL_MARKETPLACE_NOT_FOUND`, so its
+  name and its value name the same noun. Still open is the `describe("stored source resolution")`
+  heading in
   `e2e/commands/compile.e2e.test.ts`, which reads on the internal `resolveSource({ caller:
   "stored" })` path rather than on printed copy and is a judgement call the owner should make.
   Neither is an assertion, so neither can ever go red. The Proposed Standard below is written

@@ -5,13 +5,21 @@ affected_files:
   - src/cli/lib/schemas.ts
   - src/cli/commands/build/marketplace.ts
   - src/cli/lib/marketplace-generator.ts
+  - src/cli/lib/validate-kebab-name.ts
+  - src/cli/utils/messages.ts
 standards_docs: []
 date: 2026-07-09
 reporting_agent: cli-developer
 category: typescript
 domain: cli
 root_cause: rule-not-specific-enough
-status: open
+status: partial
+partial_note: >-
+  The command half landed 2026-08-19: `build marketplace` now validates the name derived from
+  package.json with the same `validateKebabCaseName` it always applied to `--name`, refuses before
+  anything is written, and names every offending character. The schema half is untouched and is what
+  keeps this finding open — `marketplaceSchema.name` is still `z.string().min(1)`, so a
+  `marketplace.json` this CLI did not write still parses with a name Claude Code rejects.
 ---
 
 ## What Was Wrong
@@ -31,7 +39,7 @@ schema but is rejected by `claude plugin marketplace add` with a schema validati
 error. The repo's schema is laxer than the external contract it claims to produce,
 so the invalid output was not caught anywhere on the producing side.
 
-## Fix Applied
+## Fix Applied (2026-07-09)
 
 Added an opt-in `--name` flag to `build:marketplace` that overrides the
 `package.json` name for the marketplace identity. When the flag is provided it is
@@ -40,6 +48,21 @@ validated fail-fast (before any file is written) with the existing canonical
 with `EXIT_CODES.INVALID_ARGS`. Default behavior (no flag → read `package.json`
 name verbatim, no sanitization) is unchanged. This is a targeted, opt-in fix; it
 does not close the underlying schema gap for the default path.
+
+## Second Fix Applied (2026-08-19) — the default path, still not the schema
+
+`loadMarketplaceIdentity` now runs `validateKebabCaseName` over the name whichever way it arrived.
+A name read from package.json is refused with `marketplaceNameNotPublishable` (in
+`src/cli/utils/messages.ts`) at `EXIT_CODES.ERROR`, naming every character kebab-case does not
+admit — `@` and `/` for a scoped name — and pointing at `--name` as the way out, because an npm
+scoped name is legitimate for a package and illegitimate for a marketplace, so the two identities
+have to be allowed to differ. A `--name` the author typed keeps its own sentence and
+`EXIT_CODES.INVALID_ARGS`: an argument is something they can retype, a package name is not.
+
+**This deliberately does not touch `marketplaceSchema`.** That schema parses third-party
+marketplaces as well as the ones this CLI writes, so tightening `name` changes what LOADS, not only
+what this command emits — a separate decision with a separate blast radius, and the reason the
+Proposed Standard below is still the open half of this finding.
 
 ## Proposed Standard
 

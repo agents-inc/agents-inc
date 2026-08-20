@@ -2,9 +2,25 @@
 type: standard-gap
 severity: medium
 status: partial
-partial_note: standards added (clean-code-standards § 15.6, config-writer § Propagation observability); code fix (Option A warn() at writeScopedConfigs call sites) pending
+partial_note: >-
+  Standards landed. Code side half-landed, in the shape the finding listed as its Option C rather
+  than its Option A - the wizard write returns a gate report instead of void, and two of the four
+  commands that fan out read the skipped list off it and warn once per project, naming the path.
+  Still open on the other two, which are the surfaces this finding was actually written about. The
+  init and edit paths take the same report and hand it to the shared recompile reporter on the base
+  command, which reads only the updated list, so a project skipped during an install or an edit is
+  still invisible without the verbose flag. The wizard-write wrapper in `local-installer.ts` does
+  not bind the report at all, which is why a grep for the field names does not reach that site.
 affected_files:
+  - src/cli/base-command.ts
+  - src/cli/commands/compile.ts
+  - src/cli/commands/edit.tsx
+  - src/cli/commands/init.tsx
+  - src/cli/commands/uninstall.tsx
+  - src/cli/lib/config-gate/index.ts
+  - src/cli/lib/config-gate/propagate.ts
   - src/cli/lib/installation/local-installer.ts
+  - src/cli/lib/operations/project/write-project-config.ts
 standards_docs:
   - .ai-docs/reference/config/config-writer.md
   - .ai-docs/standards/clean-code-standards.md
@@ -15,12 +31,46 @@ domain: cli
 root_cause: enforcement-gap
 ---
 
-## Status (2026-04-21 residual audit)
+## Status (2026-08-19 re-derivation against source)
 
-- **Standards**: Landed. `.ai-docs/standards/clean-code-standards.md` § 15.6 "Return values must be consumed or removed" codifies the rule; `.ai-docs/reference/config/config-writer.md` § "Propagation observability" documents the gap.
-- **Code fix**: NOT shipped. Both call sites in `writeScopedConfigs` (`src/cli/lib/installation/local-installer.ts` ~L784 and ~L838) still only read `result.updated.length` / `propagation.updated.length` behind `verbose()`. `skipped` is populated (L682, L690, L698, L731) and returned (L738) but never surfaced via `warn()`. Option A still owed.
+The two earlier status blocks were written when the subject was one function in one file. Both the
+function and the file have moved, so this section is re-derived rather than amended, and it replaces
+what was here.
+
+- **Standards**: Landed, unchanged. `.ai-docs/standards/clean-code-standards.md` § 15.6 "Return
+  values must be consumed or removed" codifies the rule; `.ai-docs/reference/config/config-writer.md`
+  § "Propagation observability" documents the gap.
+- **The subject moved.** `propagateGlobalChangesToProjects` lives in
+  `src/cli/lib/config-gate/propagate.ts`, not in `local-installer.ts`. The entry point this finding
+  named — the wizard write it called `writeScopedConfigs` — no longer exists under that name and
+  returns a gate report rather than `void`; a spec in `src/cli/lib/__tests__/` holds the old spelling
+  as its own example of a name nothing declares. The file list above is repaired to what a grep over
+  the propagation result actually returns today: 29 hits in 9 files.
+- **Why the repair mattered beyond accuracy.** This finding and its sibling
+  (`2026-04-21-registerProjectPath-sweep-observability-gap.md`) both named `local-installer.ts` and
+  nothing else, both `enforcement-gap`, both the same day, and neither cross-linked the other — the
+  exact tuple a duplicate-filing scan reports. They are not duplicates; both file lists were four
+  months stale in the same direction, because the module they described was split and neither
+  finding was re-derived. A stale file list does not merely mislead a reader, it manufactures a
+  false positive in a scan that has no way to tell which half is wrong.
+- **Half the code fix shipped, and not the half proposed.** Option A was "warn at the two call
+  sites"; what landed is nearer Option C. The gate returns the result up, and two commands read it:
+  `compile` and `uninstall` each iterate the skipped list and warn once per project, naming the path
+  through one shared message. That is stronger than the summary count Option A asked for.
+- **Still open, on the two surfaces this finding was about.** `init` and `edit` receive the same
+  report and pass it to the shared recompile reporter on the base command, which returns early unless
+  something was UPDATED and never reads `skipped`. So the original consequence stands exactly as
+  written for an install or an edit: a project whose directory was renamed, deleted or moved falls
+  out of propagation, and nothing says so without `--verbose`.
+- **One site is invisible to the grep**, and it is worth naming because it is the shape that hides:
+  the wizard-write wrapper in `src/cli/lib/installation/local-installer.ts` calls the gate and
+  discards the returned report entirely. A discarded return has no field name to search for, so
+  every census written around `propagated.skipped` passes straight over it.
 
 ## What Was Wrong
+
+_As observed on 2026-04-21 and left as written. Every path and entry-point name below is superseded
+by the re-derivation above; the observation is what this section is for._
 
 `propagateGlobalChangesToProjects` in `src/cli/lib/installation/local-installer.ts` returns `{ updated: string[]; skipped: string[] }`, but no production caller inspects `skipped`.
 
@@ -45,11 +95,14 @@ No pre-existing ticket covers this gap:
 
 - `todo/D-216-global-config-propagation.md` tracks propagation feature mechanics (scope defaults, `writeStandaloneConfigTypes` at project branch), not skip visibility.
 - The merger gap that dropped `projects` from a HOME-context write was one reason propagation never fired at all — since closed, `mergeConfigs` now carries `existingConfig.projects` forward — and it was never about per-project skip visibility.
-- `.ai-docs/agent-findings/2026-04-21-d233-projects-normalization-asymmetry.md` covers register/deregister path mismatch, not runtime-skip visibility.
+- The register/deregister path-normalization mismatch — since closed, both ends now normalize through a single `normalizeProjectPath` helper — was about whether a stored path matches on lookup, not about runtime-skip visibility.
 
 ## Fix Applied
 
-None — discovery only. Documentation added under "Propagation observability" in `.ai-docs/reference/config/config-writer.md`.
+Discovery only when written — documentation added under "Propagation observability" in
+`.ai-docs/reference/config/config-writer.md`. Since then the per-project warning has landed on two of
+the four fan-out surfaces and not on the two this finding was about; the re-derivation at the top of
+this file is the current statement and this line is not.
 
 ## Proposed Standard
 
@@ -69,7 +122,7 @@ if (result.skipped.length > 0) {
 
 **Option B — auto-deregister permanently-missing paths.** When `fileExists(projectConfigPath)` is false (skip branch #1, the deterministic "project was deleted on disk" case), call `deregisterProjectPath(globalConfig, projectPath)` inline and rewrite `~/.claude-src/config.ts`. Treat `loadProjectConfigFromDir` null/throw as transient (do NOT deregister — could be a transient FS / parse issue). This plus Option A gives "silent on transient failures, self-healing on permanent loss."
 
-Note: D-233 (`todo/D-233-dual-scope-spacebar-toggle.md`) already references `2026-04-21-d233-projects-normalization-asymmetry.md` — Option B should be landed after that normalization fix so `deregisterProjectPath` actually matches the registered (realpath'd) entry.
+Note: Option B depends on `deregisterProjectPath` actually matching the registered (realpath'd) entry, and that dependency is now satisfied. `registerProjectPath`, `deregisterProjectPath` and the current-project skip in `propagateGlobalChangesToProjects` — all in `src/cli/lib/config-gate/propagate.ts` — normalize through one `normalizeProjectPath` helper, which resolves symlinks and throws on a missing directory rather than falling back to a weaker second tier.
 
 **Option C — bubble up as a command-layer warning.** Return the skipped count from `writeScopedConfigs` (currently `Promise<void>`) and have each oclif command (`cc init`, `cc edit`, `cc uninstall`, etc.) print a `warn()` summary. More invasive but gives each command the choice of how loudly to surface it.
 

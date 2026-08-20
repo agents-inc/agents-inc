@@ -14,10 +14,17 @@ status: open
 
 ## What Was Wrong
 
-`2026-08-07-two-interactive-components-are-pointer-only-command-block-and-segmented.md`
-established the rule and EDITOR-24 fixed the two components it named. Writing
-that rule into `packages/ui/CLAUDE.md` under EDITOR-25 meant reading the package
-against it, and `Lattice` breaks it in the same way both of those did.
+The rule — **if a component styles something as clickable, that thing must be a
+`<button>`, or must carry `role`, `tabIndex` and a key handler** — was
+established the day before, against two components in this package whose
+affordance existed in CSS and not in the accessibility tree: `CommandBlock` with
+`copyable` (a `cursor-pointer` `<div>` that was the install dialog's only
+action) and `Segmented` (a `role="group"` of independent `aria-pressed` toggles
+for a row its own comment called mutually exclusive). Both were fixed — the
+first into a `role="button"` answering Enter and Space, the second into a
+`radiogroup` of `role="radio"` segments with a roving tabindex and arrow keys.
+Writing that rule into `packages/ui/CLAUDE.md` under EDITOR-25 meant reading the
+package against it, and `Lattice` breaks it in the same way both of those did.
 
 `LatticeRow` and `LatticeCell` are `<div>`s. `latticeRowVariants` opens with
 `relative -mt-px flex cursor-pointer items-start gap-3 …` and

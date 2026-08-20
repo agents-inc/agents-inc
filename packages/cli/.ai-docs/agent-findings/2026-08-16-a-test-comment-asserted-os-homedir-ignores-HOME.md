@@ -13,8 +13,10 @@ root_cause: convention-undocumented
 status: resolved
 resolved_by: >-
   The comment now states what is true — the spy pins the `os.homedir()` call directly, and
-  `vi.stubEnv("HOME", ...)` would reach it too because `os.homedir()` reads `$HOME` on POSIX.
-  The spy itself was left alone; it was never the defect.
+  `vi.stubEnv("HOME", ...)` reaches it too under node, because node's `os.homedir()` reads `$HOME`
+  on POSIX. Corrected since: bun fixes the value at startup and ignores later mutation, so under
+  the other runtime this suite runs on, the spy is the only thing that works. The spy itself was
+  left alone; it was never the defect.
 ---
 
 ## What Was Wrong
@@ -33,12 +35,23 @@ $ node -e "process.env.HOME='/tmp/fake-home-test'; console.log(require('os').hom
 /tmp/fake-home-test
 ```
 
-The repository already depends on that being true elsewhere.
-`agent-findings/2026-08-06-in-process-command-tests-run-against-the-real-home-directory.md`
-records the opposite conclusion from the same mechanism — it names `os.homedir()` as the reason an
-in-process command spec reads the developer's own `~/.claude`, and its fix is
-`vi.stubEnv("HOME", tempDir)`. That fix only works because `os.homedir()` reads `$HOME`. So the
-two files disagreed, and the wrong one was the one written as a justification.
+The repository already depends on that being true elsewhere: every in-process command spec isolates
+the developer's own `~/.claude` with `vi.stubEnv("HOME", <temp dir>)` or `setupIsolatedHome`, and
+that only works because `os.homedir()` reads `$HOME`.
+
+**Under node. Not under bun** — measured after this finding was written, and the correction matters
+because this package runs its tests under both runtimes:
+
+```
+$ node -e 'process.env.HOME="/tmp/probe"; console.log(require("os").homedir())'
+/tmp/probe
+$ bun  -e 'process.env.HOME="/tmp/probe"; console.log(require("os").homedir())'
+/home/<user>
+```
+
+So the comment this finding corrected was not simply false; it was true of one of the two runtimes
+the suite runs under, and the correction below is true of the other. A path reaching `os.homedir()`
+needs the spy AND the env var, which is what `isolated-home.ts` says in its own JSDoc.
 
 The cost is not the spy — the spy is a perfectly good isolation and the test is correct. The cost
 is that the comment reads as a researched constraint, so the next spec needing home isolation

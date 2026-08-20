@@ -62,12 +62,17 @@ at a time, the citations divided three ways:
 
 ### The three false sentences
 
-- `2026-04-21-e2e-build-step-keypress-missing-stable-render.md` carried
+- The 2026-04-21 report of the seven unguarded key presses in `BuildStep` carried
   `partial_note: … Pending — sibling coverage gap across ~32 keypress methods in base-step.ts + 6
 other step files`. That sweep landed. `base-step.ts` and all six step files now guard every key
-  press with the wizard-footer wait, and the only residue is the three sync
-  `abort()`/`escape()`/`ctrlC()` methods carved out in
-  `2026-07-20-e2e-keypress-guard-sweep-landed-sync-abort-carveout.md`.
+  press with the wizard-footer wait. The residue it left has since closed too: a later sweep
+  deliberately carved out the sync `void` teardown methods, because making them `async` would have
+  created floating promises at every unawaited spec call site in one change, and today
+  `InitWizard.abort`, `EditWizard.abort` and `DashboardSession.escape`/`ctrlC` are all `async` and
+  awaited, `InitWizard.escape` is gone, and `abortAndDestroy()` is the sanctioned teardown. What
+  those four await is a keystroke `delay` rather than `waitForWizardFooter` — a bare synchronous
+  write races the handler the current frame registered, and a dashboard has no wizard footer to
+  wait on.
 
 - `2026-08-01-link-integrity-scan-scope-excludes-the-keys-that-dangle.md` stated that **three**
   findings carry machine-specific absolute paths beginning `/home/vince/`, naming them. Two of the
@@ -87,9 +92,9 @@ other step files`. That sweep landed. `base-step.ts` and all six step files now 
 All 64 sites repaired, per the three classes above. Two structural notes:
 
 - **One `supersedes:` key was removed and its lineage written into the body**, as TEMPLATE.md
-  rule 3 requires when a target legitimately no longer exists —
-  `2026-07-18-d233-agent-collapse-fix-in-toggleagent-action-not-helper.md` now opens with a comment
-  recording what the link asserted and that the target carried the mirrored `superseded_by:`.
+  rule 3 requires when a target legitimately no longer exists: the referring finding was given an
+  opening comment recording what the link had asserted and that its target had carried the mirrored
+  `superseded_by:`.
 
 - **Eleven `affected_files:` entries naming deleted findings were dropped.** Six of the surviving
   findings listed other findings as affected files, which is how a documentation change gets its

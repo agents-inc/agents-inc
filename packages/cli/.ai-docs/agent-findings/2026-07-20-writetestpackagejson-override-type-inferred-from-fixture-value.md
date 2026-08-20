@@ -12,7 +12,20 @@ reporting_agent: cli-tester
 category: typescript
 domain: shared
 root_cause: convention-undocumented
-status: open
+status: partial
+partial_note: >-
+  CODE - landed, and re-derived against source on 2026-08-19 rather than inferred from this file.
+  `TestPackageJsonOverrides` is now declared in `src/cli/lib/__tests__/helpers/config-io.ts` as
+  `Partial<Omit<typeof VALID_PACKAGE_JSON_FILE, "author"> and an author union>`, so the object form
+  passes with no cast; its own docblock records that three specs had been paying for the inference
+  with a double cast. `grep -rn 'as unknown as string' e2e/ src/` returns one hit and it is that
+  docblock naming the retired idiom, so the class is swept rather than merely the instance. The
+  implementation differs from proposal 1 - the fixture itself is still untyped and the union sits on
+  the overrides type - which reaches the same result by a shorter route. DOCS - owed. Proposal 2,
+  the general rule that an overrides type must not be derived from a fixture VALUE, is written into
+  no standards document; `grep -rn 'Partial<typeof' .ai-docs/standards/` returns nothing. This
+  finding calls that half the more important one, because the idiom is compact and attractive and
+  will recur in the next helper.
 ---
 
 ## What Was Wrong

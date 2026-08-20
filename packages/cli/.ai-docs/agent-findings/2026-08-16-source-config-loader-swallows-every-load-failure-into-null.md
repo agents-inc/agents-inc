@@ -101,9 +101,10 @@ two loaders disagreeing.
 
 ## Related
 
-- `2026-08-16-hand-maintained-json-schema-requires-a-field-the-type-does-not-have.md` — the same
-  audit's observation that live configs carry dead keys surviving on `.passthrough()` alone. That
-  is the _entry_ half of this defect; this finding is the _exit_ half.
+- **Live configs carry dead keys — `domains` and `selectedAgents` are on no schema and nothing
+  reads them — surviving purely on `.passthrough()` on both loader schemas.** That is the _entry_
+  half of this defect; this finding is the _exit_ half.
 - A second, smaller gap found in the same pass: nothing under `src/schemas/*.json` had any test at
   all before this one. `src/cli/lib/schemas.test.ts` now pins the field names the two
-  hand-maintained files publish, which is the "at minimum a test" option that finding proposed.
+  hand-maintained files publish. It pins the marketplace keys only, so a `required` entry naming a
+  field `ProjectConfig` does not have would still pass it.

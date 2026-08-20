@@ -20,9 +20,11 @@ status: partial
 partial_note: >
   Code side landed for the three cases where the intended assertion was unambiguous (the
   `expectSkillConfigs` / `expectAgentConfigs` parameter types, the eject-source assertion in
-  source-switching, the rendered-frame assertion in step-agents). Pending: no rule is written
-  anywhere that says an unused binding in a test is triage-worthy rather than lint noise, and the
-  four coverage gaps listed under "Left For The Owner" have no home in TODO.md.
+  source-switching, the rendered-frame assertion in step-agents), and CLAUDE.md's Test Assertions
+  list now carries the triage rule. Pending: the second proposed standard (a shared assertion
+  helper's expected parameter uses the production type rather than a structural restatement) is
+  unwritten, and the three coverage gaps listed under "Left For The Owner" have no home in the
+  tracker.
 ---
 
 ## What Was Wrong
@@ -81,9 +83,11 @@ Two cases where the binding named something the test observed and then threw awa
 correct assertion could be read off an existing passing assertion rather than invented:
 
 - `step-agents.test.tsx` "should toggle agent on SPACE" destructured `lastFrame` and asserted only
-  `store.selectedAgents`. Store-only assertions are exactly the class that
-  `2026-07-18-live-in-session-selected-state-uncovered-badge-only-assertions.md` documents as able to
-  pass while the rendered grid is wrong. The frame string was not invented: the continue-footer text
+  `store.selectedAgents`. Store-only assertions are exactly the class that can pass while the
+  rendered grid is wrong: selection intent and the scope badge are read from different store fields
+  (`domainSelections` versus `skillConfigs`), so a keypress that updates one and not the other leaves
+  the field a test happens to read looking correct while the frame is not. The frame string was not
+  invented: the continue-footer text
   for a 1-agent selection is the same footer a sibling test in the same file already asserts on for a
   3-agent selection.
 - `source-switching.integration.test.ts` imported `SkillConfig`, used it nowhere, and verified its
@@ -107,24 +111,19 @@ All 53 reports resolved with no `eslint-disable` and no deleted tests. `npx esli
 
 ## Left For The Owner
 
-Four coverage gaps surfaced by the same sweep where the missing assertion was **not** obvious, so
+Three coverage gaps surfaced by the same sweep where the missing assertion was **not** obvious, so
 nothing was invented. Recording them here rather than guessing:
 
 1. `wizard-flow.integration.test.tsx` — "should preserve domain selections when navigating back in
    scratch flow" never navigates back. It presses ARROW*DOWN twice and ENTER to \_reach* domain
    selection, then asserts the pre-selection. There is no ESCAPE in the test. The name describes a
    behaviour the body does not exercise; the sibling Flow-D test does the real round trip.
-2. `load-agent-defs.test.ts` — a `CLI_AGENT` fixture ("Built-in web developer") existed for a
-   CLI-vs-source override scenario that the test design cannot express: `loadMergedAgents` is
-   mocked, so the merge happens inside the mock and the test only asserts pass-through. The inline
-   comment "Source overrides CLI for 'web-developer'" claims coverage that is not there. Either
-   unmock the merge or drop the comment.
-3. `skill-resolution.integration.test.ts` — "should mark conflicting skill from another source as
+2. `skill-resolution.integration.test.ts` — "should mark conflicting skill from another source as
    incompatible" sets a conflict `reason` of `"Choose one frontend framework"`, asserts only the
    boolean, and imported `getIncompatibleReason` (plus `isDiscouraged` / `getDiscourageReason`)
    without calling any of them. The reason string is set up and discarded; the discouraged half of
    the API has no integration coverage at all.
-4. `config-types-writer.test.ts` — the file mocks `GLOBAL_INSTALL_ROOT` to a non-existent path
+3. `config-types-writer.test.ts` — the file mocks `GLOBAL_INSTALL_ROOT` to a non-existent path
    specifically so `getGlobalConfigTypesPath` returns null, imported that function, and never called
    it. Its null branch is only ever exercised indirectly.
 

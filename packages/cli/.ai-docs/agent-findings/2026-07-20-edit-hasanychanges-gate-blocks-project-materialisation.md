@@ -15,7 +15,7 @@ category: architecture
 domain: cli
 root_cause: convention-undocumented
 status: resolved
-resolved_by: "Gate replaced with an explicit intent signal — `init`'s dashboard flow passes the hidden `--project-setup` flag to Edit, which materialises on a no-op only when that flag is set and cwd is not the home root. The recommended `installation.projectDir !== cwd` shape was NOT adopted (see Resolution). All 5 project-tracking tests pass with assertions unchanged; see 2026-07-20-command-delegation-must-carry-caller-intent.md."
+resolved_by: "Gate replaced with an explicit intent signal — `init`'s dashboard flow passes the hidden `--project-setup` flag to Edit, which materialises on a no-op only when that flag is set and cwd is not the home root. The recommended `installation.projectDir !== cwd` shape was NOT adopted (see Resolution). All 5 project-tracking tests pass with assertions unchanged; the general rule is standards/clean-code-standards.md § 18.3."
 ---
 
 ## What Was Wrong

@@ -78,10 +78,11 @@ bun -e 'import { check } from "./scripts/check-shared-eslint-config.ts";
 
 — and it is the only form that reports a workspace the list has never heard of.
 
-This is the same shape as
-[`2026-08-05-roster-expectations-pinned-by-count-not-by-name.md`](./2026-08-05-roster-expectations-pinned-by-count-not-by-name.md)
-one level up: that finding moved assertions off counts and onto names, and this one is what the
-next question after that becomes — a name list is only as good as the derivation that produced it.
+This is the same shape one level up as the rule now standing in `CLAUDE.md` ("ALWAYS constrain a
+shared expected-value constant to the generated union it mirrors"): that one moved expectations off
+counts and onto names, after retiring three agents produced 25 `tsc` errors across four consumer
+files and none at the line actually holding the stale name. This finding is what the next question
+after that becomes — a name list is only as good as the derivation that produced it.
 
 **Secondly, monorepo-layout.md should keep saying that `no-suite` / `no-config` is an exit as well
 as an exemption.** The three subsections describing the checks each mention that a workspace with

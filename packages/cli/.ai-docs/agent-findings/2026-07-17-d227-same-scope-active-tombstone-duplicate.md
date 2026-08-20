@@ -10,9 +10,8 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: superseded
-superseded_by: 2026-07-30-d277-global-immutability-collapses-tombstone-provenance.md
-resolved_by: "Resolved by side effect of D-277 section B: the generalised self-heal (dropOrphanedDerivedMasks / dropOrphanedDerivedAgentMasks in local-installer.ts) drops a global tombstone whose collision has cleared, and a same-scope ACTIVE global entry is not a project-scope collision — so the active+tombstone duplicate this finding describes collapses on the next reconciled project write instead of persisting across cycles."
+status: resolved
+resolved_by: "Preselection now drops a saved tombstone whose (id, scope) slot the rebuild has just filled with an active entry, at all three sites that preserved them unconditionally: survivesRosterRebuild (preselectAgentsFromDomains), agentTombstonesOutsideRebuild (preselectAgentsFromStack) and skillTombstonesOutsideRebuild (populateFromSkillIds), all in wizard-store.ts. Four specs in src/cli/stores/d227-same-scope-tombstone-duplicate.test.ts pin the corrected shape on both the agent and the skill path; three of them were it.fails and are now plain assertions."
 ---
 
 ## What Was Wrong
@@ -71,3 +70,25 @@ of upstream source.
 Document the dual-scope invariant ("a tombstone may coexist with an active entry
 only at a _different_ scope") in a wizard-store / config standards note so future
 tombstone code preserves it.
+
+## Correction — the supersession claim was false
+
+This file previously carried `status: superseded` and named the D-277 self-heal as having closed it
+by side effect. It had not, and the claim would have been read as a resolution by anyone auditing
+the finding rather than the code.
+
+Two things are wrong with it. `dropOrphanedDerivedAgentMasks` runs over the PROJECT split only — it
+never sees the global config a fresh stack-init writes, which is the very config this duplicate is
+minted into. And the collapse it performs is conditional on a collision clearing, which is a
+different question from "an active entry already occupies this slot": `agentKey` / `skillKey` in
+`config-merger.ts` keep `X:global` and `X:global:excluded` distinct, so nothing downstream was
+merging the pair away.
+
+The duplicate was still reproducible at the store level on the day the supersession was recorded.
+The specs that now pin the corrected shape were `it.fails` until the preselection fix landed, which
+is the direct evidence: a finding closed by side effect would have made them pass, and it did not.
+
+The lesson generalises past this file. A `superseded_by` or `resolved_by` written from a reading of
+another change is a claim about behaviour, and it needs the same evidence any behavioural claim
+does — a spec that fails before and passes after. Without one it is indistinguishable from a guess,
+and it retires the finding either way.

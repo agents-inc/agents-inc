@@ -17,9 +17,10 @@ root_cause: missing-rule
 status: partial
 partial_note: >-
   Code side landed for ProjectConfig.agents (the loader now supplies it, and ~20 dead `?? []`
-  guards were deleted). The same shape survives on CategoryDefinition.order/required/exclusive
-  and behind config-writer's `as unknown[]`, both now carrying disables rather than fixes. No
-  bible section written.
+  guards were deleted). CategoryDefinition.order/required/exclusive is CLOSED 2026-08-19 — the
+  three disables and defaults are gone and the two red tests were the defect, not the evidence;
+  see the update at the foot of this file. config-writer's `as unknown[]` was reordered rather
+  than disabled. No bible section written.
 ---
 
 ## What Was Wrong
@@ -82,3 +83,26 @@ keep"** — with three rules:
    about the DECLARATION, not about the guard. Check what the producing boundary actually
    supplies before deleting anything. This pass found three such clusters and only one of them
    was a genuinely dead guard.
+
+## Update — 2026-08-19 (cli-developer), the CategoryDefinition half
+
+Closed, by deleting the three defaults. The reason the disables gave — that "a category
+auto-synthesized for a custom skill arrives without them" — is not true of any producer:
+`synthesizeCategory` supplies all three (`exclusive: false`, `required: false`,
+`order: AUTO_SYNTH_ORDER`), `defaultCategories` is `as const satisfies Record<Category, …>`, the
+local-skill category `source-loader.ts` adds spells all three out, and both parse boundaries —
+`categoryDefinitionSchema` here and `packages/matrix`'s schema — declare them non-optional. The
+type is not stricter than the data; the comment was.
+
+**The two tests that turned red are the part worth carrying forward.** This finding read them as
+evidence that the defaults fire, and they are the opposite: each is driven by a fixture that
+destructures a required field off a `TEST_CATEGORIES` entry (`FRAMEWORK_WITHOUT_FLAGS`,
+`FRAMEWORK_WITHOUT_ORDER`) and feeds it through `buildCategoryMap`, whose parameter is
+`Partial<Record<Category, Partial<CategoryDefinition>>>` and whose body is a cast. A fixture that
+can construct a value the type forbids can make any dead branch look reachable, and a spec written
+over it reads as coverage. Both specs and both fixtures are deleted.
+
+So the rule the bible section needs has a second half: when a type-aware lint verdict disagrees
+with a test, check whether the test's FIXTURE could exist — a red test is only evidence if its
+input is producible. Reaching for a disable at that moment records the disagreement instead of
+settling it.

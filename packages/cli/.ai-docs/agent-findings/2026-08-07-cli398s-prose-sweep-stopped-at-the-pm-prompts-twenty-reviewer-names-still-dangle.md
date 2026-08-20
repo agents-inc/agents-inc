@@ -26,7 +26,6 @@ domain: cli
 root_cause: enforcement-gap
 status: resolved
 resolved_by: CLI-431 — every dangling per-domain reviewer name rewritten to the consolidated `reviewer`; `grep -rn` for all five retired reviewer names and all five retired PM names now returns nothing across `src/` and nothing across a rebuilt `dist/`.
-supersedes: 2026-08-06-cli398-consolidation-left-dangling-reviewer-names-in-pm-prompts.md
 ---
 
 ## What Was Wrong
@@ -80,9 +79,10 @@ of the grep, not its output.
 
 One more reference lived outside `src/agents/` entirely, where the proposed gate would never have
 looked: a comment in `src/cli/lib/configuration/config-generator.test.ts` describing a seeded agent
-as `web-reviewer` while the code beside it correctly said `reviewer`. Both the short enumeration and
-the out-of-scope hit are written up in
-`2026-08-07-a-rename-sweeps-affected-files-list-was-a-reading-of-the-grep-not-its-output.md`.
+as `web-reviewer` while the code beside it correctly said `reviewer`. The short enumeration is why `TEMPLATE.md` schema rule 6 now
+requires `affected_files:` to be the grep's pasted output rather than a reading of it, and the
+out-of-scope hit is why the same rule scopes a rename gate to `src/` rather than to `src/agents/`.
+The real figure was 35 hits in 20 files against the fifteen named here.
 
 Left in place deliberately rather than fixed in passing: several of the stale lines sit one line
 away from a line CLI-399 rewrote (`tester/web-tester/identity.md` has "Code review -> web-reviewer
@@ -104,3 +104,28 @@ Two things, both cheap:
    performed once and skipped once. The `no-restricted-syntax` rule that guards task IDs in test
    names is the shape available today: a lint rule over `src/agents/**/*.md` matching retired agent
    names would have failed CLI-398's own commit.
+
+## Lineage — dropped `supersedes:` key
+
+This file previously carried, in its frontmatter, a `supersedes:` key naming the 2026-08-06 report
+of the same consolidation defect. **That target is no longer on disk and the key has been removed.**
+What the link asserted is recorded here so the lineage is not lost.
+
+**What the reference asserted.** The predecessor recorded that the five domain reviewers were folded
+into one `reviewer` agent, that the roster surfaces an audit had enumerated were updated (the agent
+name union, the domain-to-agent map, the default stacks, the editor ids, the test expected values),
+and that the PROSE of the other agents' prompts was not — every compiled PM shipped a handoff line
+naming a sub-agent Claude Code cannot invoke. Its "Fix Applied" rewrote ten partials across the four
+per-domain PM directories and then claimed a tree-wide clean grep. That claim is what this finding
+opens by falsifying. Both files carried `root_cause: enforcement-gap` and named
+`.ai-docs/standards/prompt-bible.md` as their standards doc; the predecessor's `affected_files:` were
+the ten PM partials, disjoint from the fifteen listed here. Its own Proposed Standard is the grep
+step this finding's Proposed Standard asks to be made a gate.
+
+**Evidence the target existed** (it was not a typo and not a rename): this finding's opening
+paragraph quotes the predecessor's closing claim verbatim — "Grep for `-reviewer` under
+`src/agents/` now matches only the `reviewer` agent itself and the `meta-reviewing-*` skill ids" —
+and the predecessor carried the mirrored `superseded_by:` key pointing back here, so the pair was
+linked in both directions before its half was removed. The consolidations both files describe are
+themselves visible on disk: `src/agents/reviewer/` holds one agent and `src/agents/planning/` holds
+one `pm`, where the predecessor's ten `affected_files:` named four.

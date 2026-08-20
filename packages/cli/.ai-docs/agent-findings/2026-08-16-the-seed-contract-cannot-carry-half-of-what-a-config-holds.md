@@ -16,7 +16,7 @@ domain: shared
 root_cause: scope-discipline-deferred
 status: partial
 partial_note: >-
-  Three of the six items landed. The marketplace ref travels (payload `marketplace`, added in the
+  Three of the six items landed, and proposed standard 1 (the seed-contract enum row) is corrected. The marketplace ref travels (payload `marketplace`, added in the
   v4 bump), locally-authored skills are decided on disk by `forkedFrom` rather than by the matrix,
   and content for a skill no catalogue can resolve travels inline (payload `external`, the v5
   bump). Still outstanding, both unchanged in mechanism: `model: "inherit"` has no wire spelling,
@@ -110,10 +110,10 @@ closed by `installation-payload.ts`.
 ## Proposed Standard
 
 1. **Correct the enum-alignment row in `.ai-docs/reference/features/seed-contract.md`**
-   ("Enum alignment with the CLI's own unions"). `"inherit"`'s absence from the wire is a real gap,
-   not a redundancy: absence and `"inherit"` resolve differently whenever the sub-agent's metadata
-   names a model. `model-and-effort.md`'s precedence section already states the rule the current
-   wording contradicts.
+   ("Enum alignment with the CLI's own unions") — **landed**. `"inherit"`'s absence from the wire is
+   a real gap, not a redundancy: absence and `"inherit"` resolve differently whenever the sub-agent's
+   metadata names a model, and every bundled agent's does. The row and the paragraph under it now
+   say so and name the producer refusal.
 
 2. **Add a "What the contract cannot carry" section to `seed-contract.md`**, owning the list above.
    The doc currently describes the payload → config direction only; with an encoder in the tree it

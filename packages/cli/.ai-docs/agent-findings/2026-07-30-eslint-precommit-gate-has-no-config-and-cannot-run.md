@@ -12,7 +12,7 @@ category: architecture
 domain: infra
 root_cause: enforcement-gap
 status: resolved
-resolved_by: "Option B taken at the user's explicit request: ESLint 9 flat config (`eslint.config.js`) with `typescript-eslint` + `eslint-config-prettier`, an `npm run lint` script, and lint wired into both `lint-staged` and `prepublishOnly`. The gate is now runnable; baseline is 150 problems, unfixed and reported rather than swept. See `2026-07-30-eslint-disable-directives-were-never-verified.md` for drift the new linter exposed."
+resolved_by: "Option B taken at the user's explicit request: ESLint 9 flat config (`eslint.config.js`) with `typescript-eslint` + `eslint-config-prettier`, an `npm run lint` script, and lint wired into both `lint-staged` and `prepublishOnly`. The gate is now runnable; baseline is 150 problems, unfixed and reported rather than swept. The first thing it exposed was directive drift nothing had ever verified: a `no-var` disable sitting one line above a COMMENT rather than above the `var` it meant to cover, so it suppressed nothing, reported as an auto-fixable unused directive, and `--fix` would have rewritten a TDZ-avoiding `var` into a crash."
 ---
 
 ## What Was Wrong

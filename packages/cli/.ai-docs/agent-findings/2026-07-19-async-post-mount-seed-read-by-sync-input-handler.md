@@ -70,3 +70,26 @@ hydrate/transition actions), never seeded in a post-mount `useEffect`. Terminal 
 not ordered against render-phase effects._ When two handlers act on the "same" focused
 element, they must resolve it from one source of truth, or that source must be written
 before the first frame.
+
+## Update — 2026-08-19 (cli-developer)
+
+The agents step carried the identical shape and was not covered by the fix above. `StepAgents`
+seeded `focusedAgentId` in a post-mount `useEffect` while `wizard.tsx` read it synchronously in the
+`s` handler — the same two clocks, one step over.
+
+It is now seeded the way the skills step is. `seedFocusedAgent` writes the roster's first row into
+the store as the step is entered, and `setStep` and `goBack` both route through one
+`seedFocusForStep`, so a back-navigation seeds on arrival exactly as a forward one does. The seed
+declines when a focused agent is already recorded, which is what lets the grid restore the row the
+user left rather than snapping back to the top.
+
+The roster moved to `src/cli/lib/wizard/agent-roster.ts` so the store derives the first row from the
+same list the grid renders instead of a second copy of it. That is also what the standing
+roster-invariant finding asks for as its first step — `BUILT_IN_AGENT_GROUPS` is now importable by a
+test.
+
+One thing worth recording for whoever tries to reproduce this class again: it is not observable by
+hand on an idle machine, and it is not observable in `ink-testing-library` either, where the mount
+effect has already flushed by the time `render()` returns. The gate that can see it is a store spec
+— `focusedAgentId` is null at step entry before the fix and carries the grid's first row after —
+because that asserts the ordering rather than the outcome the ordering usually reaches anyway.

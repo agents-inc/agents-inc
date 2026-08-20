@@ -6,7 +6,7 @@ affected_files:
   - packages/cli/src/cli/commands/build/marketplace.ts
   - packages/cli/scripts/generate-source-types.ts
   - packages/matrix/src/matrix-schema.ts
-  - packages/matrix/src/schema.ts
+  - packages/matrix/src/built-in-matrix.ts
 standards_docs:
   - .ai-docs/standards/clean-code-standards.md
 date: 2026-08-17
@@ -26,16 +26,18 @@ partial_note: >-
   local-skill merge. What remains open is everything the finding proposed BEYOND that one caller,
   and none of it has moved. The three-caller consolidation has not happened: `generatePhase2` in
   `scripts/generate-source-types.ts` still passes `defaultRules.relationships` unnarrowed
-  straight to `mergeMatrixWithSkills`, and `loadAndMergeSkillsMatrix` in
-  `lib/matrix/matrix-loader.ts` still has zero callers while the barrel still advertises it. The
+  straight to `mergeMatrixWithSkills`; the third candidate, `loadAndMergeSkillsMatrix` in
+  `lib/matrix/matrix-loader.ts`, was DELETED on 2026-08-19 along with its barrel export, so the
+  consolidation now has two callers to unify and a function to write rather than one to widen. The
   rule "`mergeMatrixWithSkills` is a resolution primitive, not an entry point" is not written into
   `reference/features/skills-and-matrix.md`. The second observation still holds — `/home/vince/dev/skills`
   has no `config/` directory, so its stacks reach a build only through `defaultStacks` and only
   under `isDefaultSource`, and `built-in-catalogue.md` documents that mechanism without stating
-  the consequence for an artefact built from a checkout. The third holds too: `packages/matrix/src/schema.ts`
-  is still PascalCase (`MatrixSchema`, `ResolvedSkillSchema`) beside camelCase in `seed.ts`,
-  `skill-index.ts` and `matrix-schema.ts`, and `standards/typescript-types-bible.md` carries no
-  naming rule for Zod schema exports.
+  the consequence for an artefact built from a checkout. The third is CLOSED: the rule it asked for
+  is `standards/typescript-types-bible.md` § 12b, and on 2026-08-19 the file it named was renamed
+  `built-in-matrix.ts` with every schema in it camelCased — `builtInMatrixSchema` is the export the
+  owner's ruling named, anchored to `BUILT_IN_MATRIX`, the one constant it validates — so the
+  package runs one convention and the case-only twin it warned about is gone.
 ---
 
 ## What Was Wrong
@@ -47,10 +49,12 @@ shared function that answers. Each reaches for `mergeMatrixWithSkills` and assem
 | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
 | `generatePhase2` (`scripts/generate-source-types.ts`)                                                            | `defaultCategories`                   | `defaultRules.relationships`, **unnarrowed**                     | `defaultStacks.map(resolveStack)`                       |
 | `loadAndMergeFromBasePath` (`source-loader.ts`, private, reachable through the exported `loadMarketplaceMatrix`) | `{ ...defaultCategories, ...source }` | `relationshipsForSource` — source rules + **narrowed** built-ins | `resolveOfferedStacks` -> `convertStackToResolvedStack` |
-| `loadAndMergeSkillsMatrix` (`matrix/matrix-loader.ts`)                                                           | source only, both files mandatory     | source only                                                      | none                                                    |
+| `loadAndMergeSkillsMatrix` (`matrix/matrix-loader.ts`) — **deleted 2026-08-19**                                  | source only, both files mandatory     | source only                                                      | none                                                    |
 
-The third has **no callers at all** — it is exported through `lib/matrix/index.ts` and reached by
-nothing, so the barrel advertises a matrix builder that no production path uses.
+The third had **no callers at all** — it was exported through `lib/matrix/index.ts` and reached by
+nothing, so the barrel advertised a matrix builder that no production path used. It was deleted on
+2026-08-19; the row stays because it is the third arrangement of the same inputs and the reason the
+consolidation is worth doing at all.
 
 The consequence is that the one orchestration which is actually correct for a marketplace is
 private to `source-loader.ts`, and the difference is not cosmetic. Measured against a freshly
@@ -128,11 +132,14 @@ never shipped; what the fix did NOT do is the consolidation below.
 
 ## Proposed Standard
 
-Extract the marketplace-matrix orchestration into one exported function, and let all three callers
-reach it. `src/cli/lib/matrix/matrix-loader.ts` already claims that job with the dead
-`loadAndMergeSkillsMatrix`; widen that one rather than adding a fourth — optional categories and
-rules files, a `skillsDir` override, and relationship narrowing — then have
-`loadAndMergeFromBasePath` call it and delete the private half. Local-skill discovery stays in
+Extract the marketplace-matrix orchestration into one exported function, and let both remaining
+callers reach it. This section originally said to widen `loadAndMergeSkillsMatrix` rather than add a
+fourth builder; that function has since been deleted for having no callers, so the shared function
+is a new export — optional categories and rules files, a `skillsDir` override, and relationship
+narrowing — after which `loadAndMergeFromBasePath` calls it and the private half goes. Nothing is
+lost by having deleted the dead one first: the consolidation was always going to rewrite its body
+entirely, and keeping a zero-caller export alive as a placeholder for work nobody had scheduled is
+what let it read as a maintained entry point for months. Local-skill discovery stays in
 `source-loader.ts`, where it belongs: it is an install-time concern and must never reach an artefact
 an author publishes.
 

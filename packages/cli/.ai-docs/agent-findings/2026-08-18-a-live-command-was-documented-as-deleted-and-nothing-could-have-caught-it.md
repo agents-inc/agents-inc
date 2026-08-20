@@ -15,14 +15,18 @@ reporting_agent: codex-keeper
 category: architecture
 domain: cli
 root_cause: enforcement-gap
-status: partial
-partial_note: >-
-  The documentation side has landed — `reference/commands/index.md` now carries `new marketplace`,
-  the corrected eject destinations, the corrected search column heading and the `build marketplace`
-  identity refusals, and five more of its exhaustive lists are bound to source in the drift
-  registry. Two code-side defects are named below and unfixed: `eject`'s `--output` flag description
-  names a default directory the command does not use, and `compile`'s no-skills error tells the user
-  to run `agents-inc add <skill>`, a command that has never existed.
+status: resolved
+resolved_by: >-
+  The documentation side landed first — `reference/commands/index.md` carries `new marketplace`, the
+  corrected eject destinations, the corrected search column heading and the `build marketplace`
+  identity refusals, with five more of its exhaustive lists bound to source in the drift registry.
+  The two code-side defects it named as outstanding then landed as well. `compile`'s no-skills
+  refusal moved into `ERROR_MESSAGES.NO_SKILLS_TO_COMPILE` and now names `init`, pinned end to end
+  by `e2e/commands/compile-no-skills-refusal.e2e.test.ts`, which invokes the command the refusal
+  printed rather than a hardcoded one. `eject`'s `--output` description no longer promises a default
+  the flag does not declare nor names one of three destinations, pinned by two specs in
+  `eject.test.ts` reading the flag's own `description`; the page's "read the table, not the help
+  text" warning is gone with the reason for it.
 ---
 
 ## What Was Wrong
@@ -110,8 +114,18 @@ to `GLOBAL_SKILL_HEADINGS` in the working tree made the new row report
 `namedButAbsent: ['GLOBAL_SKILLS_HEADING'] | presentButUnnamed: ['GLOBAL_SKILL_HEADINGS']`, and
 reverting returned the whole registry to clean.
 
-**Not fixed — deliberately, they are code.** The two source defects above. This pass writes
-documentation and does not edit `src/`.
+**Source (landed later, by `cli-developer`).** Both defects above are fixed. `compile`'s refusal
+became `ERROR_MESSAGES.NO_SKILLS_TO_COMPILE` — `No skills found. Run '<bin> init' to choose skills,
+or add your own under .claude/skills/.` — naming `init` because the refusal is only reachable after
+an installation was detected, which is the state `doctor` already reports as `config-empty` and
+names `init` for. `eject`'s `--output` description became `Write everything into this directory
+instead of each eject type's own destination`, which promises no default and names none of the three
+destinations, so the reference page's "read the table, not the help text" warning went with it.
+
+The proof is the shape the deletion callout above earns: `e2e/commands/compile-no-skills-refusal.e2e.test.ts`
+drives `compile` to the refusal and then **invokes the command the refusal printed** — the same
+constant, not a hardcoded name — asserting the binary answers it. That is the check a sentence about
+what does not exist has to carry, run rather than read.
 
 ## Proposed Standard
 

@@ -2,7 +2,7 @@
 type: standard-gap
 severity: low
 affected_files:
-  - src/cli/lib/installation/local-installer.ts
+  - src/cli/lib/config-gate/propagate.ts
 standards_docs:
   - .ai-docs/reference/config/config-writer.md
 date: 2026-04-21
@@ -11,8 +11,28 @@ category: architecture
 domain: cli
 root_cause: enforcement-gap
 status: partial
-partial_note: Documentation verified present under "Registration observability" in `.ai-docs/reference/config/config-writer.md` (lines 251-273). Code-side fix NOT applied as of 2026-04-21 re-audit — `registerProjectPath` filter loop at `src/cli/lib/installation/local-installer.ts` lines 627-632 still has zero `verbose()`/`warn()`/`log()` statements, does not compute `dropped = existing.length - valid.length`, does not return a `droppedStale` array, and the returned `changed` flag still collapses sweep+append semantics. Return signature remains `{ config, changed }` (line 621). None of Options A/B/C applied.
+partial_note: >-
+  Documentation landed under "Registration observability" in
+  `.ai-docs/reference/config/config-writer.md`. Code side NOT applied, re-derived against source on
+  2026-08-19 - all three of the finding's claims still hold word for word, and none of Options A, B
+  or C is in. The subject MOVED and the file list above is repaired for it. `registerProjectPath`
+  now lives in `src/cli/lib/config-gate/propagate.ts`, is no longer exported, and its single caller
+  is in the same module; the sweep still emits nothing, still computes no dropped count, still
+  returns no dropped list, and its changed flag still collapses "swept a stale entry" and "appended
+  this project" into one boolean the caller folds into a write decision.
 ---
+
+## Where it lives now (2026-08-19)
+
+`registerProjectPath` moved to `src/cli/lib/config-gate/propagate.ts` when the gate was extracted,
+and lost its export on the way — its one caller is the effective-global-config resolver in the same
+module. Nothing else about it changed: the defect and every sentence below are current, and only the
+address is not. The observation is left as written; this note is the correction.
+
+Naming the same file as the sibling finding
+(`2026-04-21-propagation-skipped-observability-gap.md`) is what made the two an unlinked duplicate
+filing under `(affected_files, root_cause, date)` — a real pair, reported by a real scan, and the
+answer was that BOTH file lists were four months stale rather than that either finding was a copy.
 
 ## What Was Wrong
 

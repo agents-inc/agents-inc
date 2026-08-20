@@ -26,8 +26,11 @@ partial_note: >-
   All three factories in skill-factories.ts — createTestSkill, createMockSkill and, as of the
   second pass below, createMockExtractedSkill — now read their taxonomy from one stated table and
   throw on a miss. No factory in the file derives a field from an id. The reference doc carries the
-  contract. What remains pending is the Proposed Standard, which is still not written into any
-  standards doc, so nothing mechanical stops the class returning in a factory nobody has read yet.
+  contract. Proposed standards 1 and 2 are now written — CLAUDE.md's Data Integrity bullet and
+  clean-code-standards § 15.2 both name slug, domain AND category and both name test factories, and
+  § 7.2 states that a cast on a value the same expression just computed is not a boundary cast.
+  What remains pending is proposed standard 3: the reviewing agents' own prompts do not carry the
+  two detection shapes, and reading the factory is the only detector this class has.
 ---
 
 ## What Was Wrong

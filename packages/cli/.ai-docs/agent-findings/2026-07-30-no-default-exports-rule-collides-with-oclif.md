@@ -75,8 +75,11 @@ rule set was kept to the stock `js.configs.recommended` + `tseslint.configs.reco
    }
    ```
 
-   Nineteen disable comments would be nineteen chances to place one on the wrong line — see
-   `2026-07-30-eslint-disable-directives-were-never-verified.md` for what that costs.
+   Nineteen disable comments would be nineteen chances to place one on the wrong line, and the cost
+   is not hypothetical. A `no-var` directive in this repo sat one line above a COMMENT rather than
+   above the `var` it meant to cover, so it suppressed nothing, reported as an auto-fixable "unused
+   directive", and `--fix` would have rewritten a TDZ-avoiding `var` into a crash. It is correctly
+   placed now, in `src/cli/lib/__tests__/factories/skill-factories.ts`.
 
 3. **General principle worth stating once:** before a documented convention is promoted to a lint
    rule, measure it against the repo. A rule whose violations are all framework-mandated is not a

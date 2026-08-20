@@ -41,10 +41,17 @@ nothing tied the limit back to the thing it was measuring.**
    Ant Design, and its `why` explained: "UI components is not a pick-one category, so a conflict
    there is a real dead end rather than a swap." Once the kits moved into the exclusive
    `web-ui-kit`, that sentence was false and the expectation inverted. This is the second instance
-   of the class recorded in
-   `2026-08-07-a-selection-golden-exemplar-was-carried-by-a-rule-another-wave-deleted.md`, which
-   proposed recording each exemplar's carrier in its `why`. That proposal was never adopted, and
-   this scenario named its carrier in prose without anyone treating the prose as a dependency.
+   of a class first recorded the same day: a `SELECTION_SCENARIOS` exemplar leans on one catalogue
+   fact, and moving that fact reddens the scenario without weakening the semantics it exists to
+   pin, because the scenario stays internally coherent throughout and only its relationship to the
+   catalogue breaks. The first was `an-unmet-requirement-inside-a-pick-one-category`, whose
+   out-of-reach exemplar was VitePress and whose only fence was VitePress's own `requires` on a Vue
+   base; deleting that rule — a settled loosening, since a docs site is its own deployable — left
+   the scenario red in both runners. Its `why` in
+   `packages/matrix/src/contract/selection-scenarios.ts` now records that lineage. The remedy
+   proposed then was to record each exemplar's carrier in its `why` as a rule. That proposal was
+   never adopted, and this scenario named its carrier in prose without anyone treating the prose as
+   a dependency.
 
 ## Fix Applied
 
