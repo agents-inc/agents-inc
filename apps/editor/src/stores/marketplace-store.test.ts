@@ -1,6 +1,8 @@
 import {
+  MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
   MARKETPLACE_TOKEN,
+  PRIVATE_MARKETPLACE_CANONICAL_REF,
   PRIVATE_MARKETPLACE_REF,
 } from "@workspace/api-mocks"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -41,17 +43,17 @@ describe("readSavedMarketplaces", () => {
   it("restores the chosen marketplace and every token beside it", () => {
     expect(
       readSavedMarketplaces({
-        current: PRIVATE_MARKETPLACE_REF,
+        current: PRIVATE_MARKETPLACE_CANONICAL_REF,
         saved: {
-          [MARKETPLACE_REF]: "",
-          [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN,
+          [MARKETPLACE_CANONICAL_REF]: "",
+          [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN,
         },
       })
     ).toStrictEqual({
-      current: PRIVATE_MARKETPLACE_REF,
+      current: PRIVATE_MARKETPLACE_CANONICAL_REF,
       saved: {
-        [MARKETPLACE_REF]: "",
-        [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN,
+        [MARKETPLACE_CANONICAL_REF]: "",
+        [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN,
       },
     })
   })
@@ -60,12 +62,12 @@ describe("readSavedMarketplaces", () => {
   it("restores a marketplace saved without a token", () => {
     expect(
       readSavedMarketplaces({
-        current: MARKETPLACE_REF,
-        saved: { [MARKETPLACE_REF]: "" },
+        current: MARKETPLACE_CANONICAL_REF,
+        saved: { [MARKETPLACE_CANONICAL_REF]: "" },
       })
     ).toStrictEqual({
-      current: MARKETPLACE_REF,
-      saved: { [MARKETPLACE_REF]: "" },
+      current: MARKETPLACE_CANONICAL_REF,
+      saved: { [MARKETPLACE_CANONICAL_REF]: "" },
     })
   })
 
@@ -78,15 +80,15 @@ describe("readSavedMarketplaces", () => {
   it("discards a token filed under no marketplace and keeps the rest", () => {
     expect(
       readSavedMarketplaces({
-        current: PRIVATE_MARKETPLACE_REF,
+        current: PRIVATE_MARKETPLACE_CANONICAL_REF,
         saved: {
           "": MARKETPLACE_TOKEN,
-          [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN,
+          [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN,
         },
       })
     ).toStrictEqual({
-      current: PRIVATE_MARKETPLACE_REF,
-      saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
+      current: PRIVATE_MARKETPLACE_CANONICAL_REF,
+      saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
     })
   })
 
@@ -99,11 +101,11 @@ describe("readSavedMarketplaces", () => {
     expect(
       readSavedMarketplaces({
         current: "someone/else",
-        saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
+        saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
       })
     ).toStrictEqual({
       current: "",
-      saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
+      saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
     })
   })
 
@@ -112,12 +114,129 @@ describe("readSavedMarketplaces", () => {
     expect(
       readSavedMarketplaces({
         current: "",
-        saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
+        saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
       })
     ).toStrictEqual({
       current: "",
-      saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
+      saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
     })
+  })
+
+  // Every slot written before the ref was normalised holds the bare
+  // `owner/repo` the dialog's placeholder asks for, which is a LOCAL DIRECTORY
+  // to `--marketplace`. Re-keyed on the way in rather than left beside a new
+  // entry: the token has to stay reachable, and a slot that kept the old key
+  // would go on minting the ref that cannot be installed.
+  it("re-keys a marketplace saved in the form the CLI reads as a path", () => {
+    expect(
+      readSavedMarketplaces({
+        current: PRIVATE_MARKETPLACE_REF,
+        saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
+      })
+    ).toStrictEqual({
+      current: PRIVATE_MARKETPLACE_CANONICAL_REF,
+      saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
+    })
+  })
+
+  // The choice moves with the entry it names. Without this the re-keyed slot
+  // holds a `current` that matches none of its keys, and `choiceAmong` drops it
+  // to the public catalogue — the visitor's own marketplace lost to the fix.
+  it("carries the choice onto the re-keyed entry", () => {
+    expect(
+      readSavedMarketplaces({
+        current: MARKETPLACE_REF,
+        saved: { [MARKETPLACE_REF]: "" },
+      }).current
+    ).toBe(MARKETPLACE_CANONICAL_REF)
+  })
+
+  // Both spellings of one repository in one slot, which is what the
+  // unnormalised key left behind — two entries, two copies of one PAT, and a
+  // switcher offering the repository the browser is already on. They collapse,
+  // and the credential survives the collapse: a PAT is shown once and cannot be
+  // recovered, so "no token held" can never be what replaces one.
+  it("collapses two spellings of one repository and keeps the credential", () => {
+    expect(
+      readSavedMarketplaces({
+        current: PRIVATE_MARKETPLACE_REF,
+        saved: {
+          [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN,
+          [PRIVATE_MARKETPLACE_CANONICAL_REF]: "",
+        },
+      })
+    ).toStrictEqual({
+      current: PRIVATE_MARKETPLACE_CANONICAL_REF,
+      saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
+    })
+  })
+
+  // The same collapse the other way round, so the rule is about the CREDENTIAL
+  // rather than about which key happened to be written first.
+  it("keeps the credential whichever spelling was saved holding it", () => {
+    expect(
+      readSavedMarketplaces({
+        current: PRIVATE_MARKETPLACE_CANONICAL_REF,
+        saved: {
+          [PRIVATE_MARKETPLACE_CANONICAL_REF]: "",
+          [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN,
+        },
+      })
+    ).toStrictEqual({
+      current: PRIVATE_MARKETPLACE_CANONICAL_REF,
+      saved: { [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
+    })
+  })
+
+  // Every browser at the CURRENT version arrives here rather than at the
+  // migration below: zustand calls `migrate` only on a version mismatch and
+  // hands the raw state to `merge` otherwise, so a slot that fails this parse
+  // while carrying the current version reaches this line and no other. A
+  // partial write, a hand edit — or the case the rule is actually about, a
+  // shape change shipped without a version bump, which would make this the door
+  // every browser hits at once. What it discards is a PAT that is shown once
+  // and can be read back from nowhere.
+  it("reports a slot it could not read", () => {
+    readSavedMarketplaces({ current: 7, saved: {} })
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      expect.stringContaining("marketplace"),
+      expect.objectContaining({ issues: ["current: invalid_type"] })
+    )
+  })
+
+  // The other half, and the reason the report above is worth having at all. An
+  // ABSENT slot is every visitor who has never opened the dialog, and a warning
+  // filed against all of them is noise that gets the warning removed again —
+  // which is the split `config-store`'s own `merge` draws, for that reason.
+  it("reports nothing for a slot that was never written", () => {
+    readSavedMarketplaces(undefined)
+
+    expect(sink.issue).not.toHaveBeenCalled()
+  })
+
+  it("reports nothing for a slot it read", () => {
+    readSavedMarketplaces({
+      current: MARKETPLACE_CANONICAL_REF,
+      saved: { [MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN },
+    })
+
+    expect(sink.issue).not.toHaveBeenCalled()
+  })
+
+  // The field and the code, and nothing the visitor typed. A record key here IS
+  // a repository the visitor named, and the value beside it is their
+  // credential, so nothing past the field's own name travels — the same rule
+  // the migration keeps by reporting versions only.
+  it("names no repository of the visitor's in what it reports", () => {
+    readSavedMarketplaces({
+      current: PRIVATE_MARKETPLACE_REF,
+      saved: { [PRIVATE_MARKETPLACE_REF]: 7 },
+    })
+
+    expect(JSON.stringify(sink.issue.mock.calls)).not.toContain(
+      PRIVATE_MARKETPLACE_REF
+    )
   })
 
   it.each([
@@ -162,13 +281,23 @@ describe("migrateSavedMarketplaces", () => {
     })
   })
 
+  // The deploy that lands the canonical key meets browsers holding the keyed
+  // shape, which is every browser that ever saved a marketplace. It is carried
+  // through untouched, ref included: re-keying is `readSavedMarketplaces`'s
+  // job and every migrated slot passes through it on the way to the store, so
+  // doing it twice would be two places to disagree.
+  //
+  // Nothing reported, because nothing was discarded — a keyed slot falling to
+  // the single-slot parse would be read as unreadable, and the marketplace and
+  // the PAT would go together.
   it("leaves a slot already in the keyed shape alone", () => {
     const keyed = {
-      current: MARKETPLACE_REF,
-      saved: { [MARKETPLACE_REF]: "" },
+      current: PRIVATE_MARKETPLACE_REF,
+      saved: { [PRIVATE_MARKETPLACE_REF]: MARKETPLACE_TOKEN },
     }
 
     expect(migrateSavedMarketplaces(keyed, 1)).toStrictEqual(keyed)
+    expect(sink.issue).not.toHaveBeenCalled()
   })
 
   // A token with no repository to spend it on names nothing, exactly as it did

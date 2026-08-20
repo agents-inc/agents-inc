@@ -64,11 +64,13 @@ type ConfigActions = {
   // from this browser rather than from a link — so it is deliberately not
   // `importConfig`, whose event counts share-link arrivals as their own cohort.
   applySavedStack: (config: PersistedConfig) => void
-  // Whatever the SEATED catalogue cannot place, dropped. Called when a
-  // marketplace switch has just reseated one, and called for one reason: the
-  // switch dialog names the skills the target does not carry, so they have to
-  // actually go. Hidden from the grid is not dropped — they would still be in
-  // the install list and in any link shared from here, under their bare ids.
+  // Whatever the SEATED catalogue cannot place, dropped. Every door that seats
+  // a catalogue owes this call, and WHY is in
+  // `features/configure/lib/marketplace-switch.ts`, which owns the act and
+  // counts the doors. Deliberately a pointer and not the reasoning: someone
+  // writing a third door never opens this file, because they are not calling
+  // this yet — and a warning readable only from inside the guard cannot reach
+  // the door that lacks one.
   pruneToCatalog: () => void
   reset: () => void
 }
@@ -137,10 +139,20 @@ const reportPruning = (before: PersistedConfig, after: PersistedConfig) => {
   const droppedIds = countIds(before) - countIds(after)
   const droppedStack = before.stackId !== null && after.stackId === null
 
-  // Catalog slugs and counts — nothing here describes the user.
+  // Counts and a yes/no, and no id of any kind. "Catalog slugs describe nobody"
+  // was true while there was one catalogue and ours; a stack id is
+  // `matrixStackSchema.id`, so once a marketplace can be seated it is the ORG's
+  // word — and this is the report a visitor who switched back off their
+  // marketplace files, which is exactly when a stack gets pruned.
+  //
+  // `droppedStack` rather than `droppedStackId` costs nothing: the boolean is
+  // the whole of what an observer can act on, since the id named a catalogue
+  // this browser no longer has seated and could not be looked up anyway. The
+  // same rule the two path reports keep, reached from the other direction —
+  // there is no path here to truncate, only a value not to send.
   reportIssue("Pruned saved ids the catalog no longer knows", {
     droppedIds,
-    droppedStackId: droppedStack ? before.stackId : undefined,
+    droppedStack,
   })
 }
 
@@ -305,6 +317,10 @@ const cycled = (assignments: Assignments, agentId: string): Assignments => {
 // deselected one's already go, and `select` restores them verbatim when the
 // skill is eventually picked. Entries that end up saying nothing are dropped
 // rather than left behind.
+//
+// `undefined` is "the catalogue turned this down", and it is not the same
+// answer as an empty patch: the caller has to be able to skip `set` entirely,
+// because `set` is what WRITES.
 const configure = (
   state: PersistedConfig,
   skillId: string,
@@ -315,7 +331,7 @@ const configure = (
     return { skills: { ...state.skills, [skillId]: change(selected) } }
   }
 
-  if (!isKnownSkill(skillId)) return {}
+  if (!isKnownSkill(skillId)) return undefined
 
   // Starting from a fresh entry rather than a blank one, so a skill
   // configured before it is picked still arrives with its agents.
@@ -327,6 +343,8 @@ const configure = (
   }
 }
 
+// `undefined` for a row nothing selected holds, for the reason `configure`
+// answers with it: an empty patch would still reach `set`, and `set` writes.
 const patchAssignment = (
   state: PersistedConfig,
   skillId: string,
@@ -335,7 +353,7 @@ const patchAssignment = (
 ) => {
   const entry = state.skills[skillId]
   const current = entry?.assignments[agentId]
-  if (!entry || !current) return {}
+  if (!entry || !current) return undefined
 
   return {
     skills: {
@@ -498,13 +516,20 @@ export const useConfigStore = create<ConfigState>()(
       toggleSkill: (skillId) => {
         const selecting = !(skillId in get().skills)
 
+        // The catalog guard, ahead of `set` rather than inside its updater.
+        // An arm answering `{}` reads as "change nothing" and is not one:
+        // persist wraps `set` as "call it, then write", and the write half runs
+        // whatever the updater returned — so a click the catalogue turned down
+        // put the whole configuration back in the slot. `applyStack` above
+        // makes the same return for the same reason.
+        if (selecting && !isKnownSkill(skillId)) return
+
         set((state) => {
           const current = state.skills[skillId]
 
-          if (current) return deselect(state, skillId, current)
-          if (!isKnownSkill(skillId)) return {}
-
-          return select(state, skillId)
+          return current
+            ? deselect(state, skillId, current)
+            : select(state, skillId)
         })
 
         // The roster's pulse narrates the selection behind it, so a deselect
@@ -513,12 +538,11 @@ export const useConfigStore = create<ConfigState>()(
         const reached = selecting ? get().skills[skillId] : undefined
         useUiStore.getState().flashAgents(liveAgentIds(reached))
 
-        // Read back rather than assumed: the catalog guard can refuse the
-        // toggle outright, and an event for a selection that never happened
-        // is worse than no event at all.
-        const nowSelected = skillId in get().skills
-        if (nowSelected !== selecting) return
-
+        // `selecting` rather than a read-back, now that the refusal happens
+        // before any of this: every toggle that reaches here lands, so what the
+        // click asked for IS what happened. The read-back existed because the
+        // guard used to sit inside the updater, where the event had to be told
+        // apart from a selection that never happened.
         track({
           name: "skill_toggled",
           skillId,
@@ -526,7 +550,7 @@ export const useConfigStore = create<ConfigState>()(
           // miss is an id the catalogue dropped between the click and this
           // read, which is not a domain anything can name.
           domainId: activeSkillById(skillId)?.domainId ?? "unknown",
-          selected: nowSelected,
+          selected: selecting,
         })
       },
 
@@ -539,9 +563,14 @@ export const useConfigStore = create<ConfigState>()(
             ? { ...patch, install: "eject" as const }
             : patch
 
-        set((state) =>
-          configure(state, skillId, (entry) => ({ ...entry, ...allowed }))
-        )
+        // Computed, guarded, then set — the shape `pruneToCatalog` below takes,
+        // and for the same reason: `set` is what writes, so an action with
+        // nothing to change must not reach it at all.
+        const configured = configure(get(), skillId, (entry) => ({
+          ...entry,
+          ...allowed,
+        }))
+        if (configured) set(configured)
 
         // One event per field, so "does anyone ever leave the defaults" is a
         // question the data can answer per segment rather than in aggregate.
@@ -556,31 +585,30 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       cycleAssignment: (skillId, agentId) => {
-        set((state) =>
-          configure(state, skillId, (entry) => ({
-            ...entry,
-            assignments: cycled(entry.assignments, agentId),
-          }))
-        )
+        const configured = configure(get(), skillId, (entry) => ({
+          ...entry,
+          assignments: cycled(entry.assignments, agentId),
+        }))
+        if (configured) set(configured)
 
         track({ name: "assignment_cycled", skillId, agentId })
       },
 
-      toggleAssignmentEnabled: (skillId, agentId) =>
-        set((state) =>
-          patchAssignment(state, skillId, agentId, (current) => ({
-            ...current,
-            enabled: !current.enabled,
-          }))
-        ),
+      toggleAssignmentEnabled: (skillId, agentId) => {
+        const patched = patchAssignment(get(), skillId, agentId, (current) => ({
+          ...current,
+          enabled: !current.enabled,
+        }))
+        if (patched) set(patched)
+      },
 
-      flipAssignmentLoad: (skillId, agentId) =>
-        set((state) =>
-          patchAssignment(state, skillId, agentId, (current) => ({
-            ...current,
-            load: current.load === "preloaded" ? "lazy" : "preloaded",
-          }))
-        ),
+      flipAssignmentLoad: (skillId, agentId) => {
+        const patched = patchAssignment(get(), skillId, agentId, (current) => ({
+          ...current,
+          load: current.load === "preloaded" ? "lazy" : "preloaded",
+        }))
+        if (patched) set(patched)
+      },
 
       toggleAgentPin: (agentId) => {
         const on = !isAgentOn(get(), agentId)
@@ -696,10 +724,21 @@ export const useConfigStore = create<ConfigState>()(
           // The app's only *silent* failure: an afternoon of configuration
           // becomes empty state, and nothing on screen says so. Paths and
           // codes only — the issues must never carry the values themselves.
+          //
+          // The FIELD and the code, and nothing past them, because `skills`,
+          // `remembered` and `agents` are `z.record`s and it is the SCHEMA that
+          // decides how deep a path may be reported. Their keys are the seated
+          // catalogue's ids, and `onlyPersistableSkills` persists a
+          // MARKETPLACE's ids verbatim — it filters out added external skills,
+          // not a marketplace's own — so on a private catalogue every key is a
+          // name the org chose. This report is the discard's only trace and it
+          // has no reader on screen, so its one destination is Sentry through
+          // our own `/monitoring` tunnel. The same truncation
+          // `readSavedMarketplaces` makes, for the same reason.
           reportIssue("Discarded unreadable saved configuration", {
             persistVersion: PERSIST_VERSION,
             issues: parsed.error.issues.map(
-              (issue) => `${issue.path.join(".") || "(root)"}: ${issue.code}`
+              (issue) => `${String(issue.path[0] ?? "(root)")}: ${issue.code}`
             ),
           })
           return current

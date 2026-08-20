@@ -442,7 +442,14 @@ export function AddSkillDialog() {
               {results.length === 0 ? (
                 <Note>no skills match</Note>
               ) : (
-                <LatticeRows className="mt-3.5">
+                <LatticeRows
+                  className="mt-3.5"
+                  // A named group, so the rows inside it can be asked for by
+                  // role: the staged half of the dialog names the same skills,
+                  // and `Remove docx` is a button whose name holds `docx` too.
+                  role="group"
+                  aria-label="Search results"
+                >
                   {results.map((entry) => {
                     const stagedHere = isStaged(entry)
                     const tooLarge = isTooLargeToAdd(entry)
@@ -450,6 +457,14 @@ export function AddSkillDialog() {
                       <LatticeRow
                         key={skillCoordinate(entry)}
                         selected={stagedHere}
+                        // Otherwise the name is every string in the row run
+                        // together — including the stage marker, so it would
+                        // change under the visitor as they staged. The
+                        // repository is in it because the row is a button and
+                        // therefore a leaf: one name can be all assistive
+                        // technology is given, and two repositories can carry a
+                        // skill of the same name.
+                        aria-label={`${entry.name} from ${entry.repo}`}
                         // Shown and not hidden, the way an incompatible skill is
                         // in the grid: a result missing without explanation is
                         // the search failing, and the whole point is that the
@@ -458,6 +473,12 @@ export function AddSkillDialog() {
                         // it cannot be acted on rather than quietly ignoring a
                         // click.
                         aria-disabled={tooLarge || undefined}
+                        // The refusal is printed in the row, which the leaf
+                        // above hides — `title` is the accessible DESCRIPTION,
+                        // which is where a reason belongs.
+                        title={
+                          tooLarge ? carryLimitRefusal(entry.bytes) : undefined
+                        }
                         className={
                           tooLarge ? "cursor-default hover:bg-cell" : undefined
                         }

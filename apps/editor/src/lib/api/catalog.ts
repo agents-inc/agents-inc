@@ -69,6 +69,42 @@ export const parseMarketplaceRef = (
   return { owner, repo, ...(ref !== undefined && { ref }) }
 }
 
+// The prefix `--marketplace` reads as GitHub, and the one this app writes.
+// Spelled here rather than reached for across packages, for the same reason
+// `MARKETPLACE_PATTERN` above spells the prefixes it strips: the agreement with
+// the CLI is a wire format, and both halves state it.
+const CANONICAL_PREFIX = "github:"
+
+/** That repository as `--marketplace` names it, branch included where one is. */
+const formatMarketplaceRef = ({ owner, repo, ref }: MarketplaceRef) =>
+  `${CANONICAL_PREFIX}${owner}/${repo}${ref === undefined ? "" : `#${ref}`}`
+
+/**
+ * The one form a marketplace is kept in: as the key a token is filed under, as
+ * the name on the button, and as what a shared payload carries.
+ *
+ * It has to be the CLI's form rather than the field's, because `--marketplace`
+ * routes a ref on its PROTOCOL — `github:`, `gh:`, a URL — and reads everything
+ * without one as a path on the receiver's own disk. So the bare `owner/repo`
+ * this dialog asks for is not a repository to the half of the system that
+ * installs from it, and it fails in the worst way available: by resolving to
+ * something rather than to nothing.
+ *
+ * Applied where a ref ARRIVES rather than where one is minted, and that is the
+ * whole of why it lives here. Minting is only one of the jobs the string does —
+ * the same value keys the credential slot — so a ref made canonical on the way
+ * out but not on the way in leaves one repository under two keys, with a copy
+ * of the PAT under each.
+ *
+ * Total on purpose: something that is not a repository comes back as it went
+ * in, because {@link fetchCatalog} refuses it in the sentence the field needs
+ * and there is nothing to add here.
+ */
+export const canonicalMarketplaceRef = (input: string): string => {
+  const parsed = parseMarketplaceRef(input)
+  return parsed ? formatMarketplaceRef(parsed) : input.trim()
+}
+
 /** Where that repository's catalogue lives, on the CORS-enabled contents API. */
 export const catalogUrl = ({ owner, repo, ref }: MarketplaceRef): string => {
   const base = `${GITHUB_API_ORIGIN}/repos/${owner}/${repo}/contents/${CATALOG_PATH}`
@@ -108,10 +144,48 @@ const TOKEN_MIGHT_FIX = new Set([401, 403, 404])
 // Paths and codes, never values. A private marketplace's skill names are the
 // org's own, and a diagnostics channel is exactly the wrong place for the one
 // thing this whole design keeps off our infrastructure.
-const issuesOf = (error: { issues: { path: PropertyKey[]; code: string }[] }) =>
-  error.issues.map(
-    (issue) => `${issue.path.join(".") || "(root)"}: ${issue.code}`
-  )
+//
+// So WHERE a parse failed is said twice, because the two readers are not the
+// same reader and only one of them is already entitled to the marketplace's
+// vocabulary.
+//
+// Named rather than written inline, because the two expressions differ by a
+// character and the whole failure this guards against is one being copied where
+// the other belonged.
+const wholePath = (path: PropertyKey[]) => path.join(".") || "(root)"
+const firstSegment = (path: PropertyKey[]) => String(path[0] ?? "(root)")
+
+/**
+ * The same issues addressed to their two destinations.
+ *
+ * `shown` keeps the whole path. It reaches the dialog of whoever just fetched
+ * this catalogue with their own token, in their own browser, and its job is to
+ * locate ONE broken entry among hundreds — `skills` alone sends an author
+ * bisecting a build they can already read.
+ *
+ * `reported` keeps the first segment only, and that is a fact about the SCHEMA
+ * rather than a habit of this function. `matrixSchema` keys `categories`,
+ * `skills` and a stack's `skills` by the MARKETPLACE's ids, so every segment
+ * past the first is a name the org chose — while {@link reportIssue} ends at
+ * Sentry through our own `/monitoring` tunnel, which is the exact route the
+ * direct-to-GitHub fetch below exists to keep an org's vocabulary off. A schema
+ * whose records were keyed by OUR vocabulary could be joined in full;
+ * `config-store` joins `persistedConfigSchema` for that reason.
+ *
+ * The first segment rather than every segment up to the first record key: which
+ * depth is safe is a property of the schema, so a walk encoding it here would go
+ * quietly wrong the next time `matrixSchema` grows a field.
+ */
+type CatalogIssues = { shown: string[]; reported: string[] }
+
+const issuesOf = (error: {
+  issues: { path: PropertyKey[]; code: string }[]
+}): CatalogIssues => ({
+  shown: error.issues.map((issue) => `${wholePath(issue.path)}: ${issue.code}`),
+  reported: error.issues.map(
+    (issue) => `${firstSegment(issue.path)}: ${issue.code}`
+  ),
+})
 
 const authHeaders = (token: string | undefined) =>
   token ? { Authorization: `Bearer ${token}` } : {}
@@ -125,13 +199,18 @@ const notAMarketplace = (input: string): CatalogResult => ({
   error: `${input.trim()} is not a marketplace — name one as "owner/repo"`,
 })
 
-const unreadableCatalog = (name: string, issues: string[]): CatalogResult => {
-  reportIssue("Marketplace published an unreadable catalog", { issues })
+const unreadableCatalog = (
+  name: string,
+  { shown, reported }: CatalogIssues
+): CatalogResult => {
+  reportIssue("Marketplace published an unreadable catalog", {
+    issues: reported,
+  })
 
   return {
     ok: false,
     kind: "invalid",
-    error: `${name} published an unreadable catalog.json — ${issues.join(", ")}`,
+    error: `${name} published an unreadable catalog.json — ${shown.join(", ")}`,
   }
 }
 

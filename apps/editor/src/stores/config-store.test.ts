@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { unknownSavedIds, useConfigStore, withoutWrites } from "./config-store"
 
@@ -85,6 +85,119 @@ describe("withoutWrites", () => {
     slot.storage.setItem(SLOT, OTHER)
 
     expect(slot.held()).toStrictEqual(OTHER)
+  })
+})
+
+// The ids the vendored public catalogue does and does not hold. `toggleSkill`
+// and the option actions all ask it before they change anything, and what they
+// do when the answer is no is what the block below is about.
+const KNOWN_SKILL = "web-framework-react"
+const KNOWN_AGENT = "web-developer"
+const UNKNOWN_SKILL = "acme-web-widgets"
+
+// The same id read the other way round: unknown to the VENDORED catalogue
+// because it belongs to a marketplace's. A browser that loaded that
+// marketplace has it seated, selects against it, and persists it verbatim.
+const PRIVATE_CATALOG_SKILL = UNKNOWN_SKILL
+
+// A marketplace's STACK id, and the same fact about it: `matrixStackSchema.id`
+// is the catalogue's own vocabulary, so a stack saved on a marketplace and
+// reopened against the vendored catalogue is pruned by a name the org chose.
+// The spelling `MARKETPLACE_CATALOG` publishes, and the one the prune tests at
+// the foot of this file already use as their dropped stack.
+const PRIVATE_CATALOG_STACK = "acme-house-stack"
+
+/**
+ * The store built against a `localStorage` this suite can watch.
+ *
+ * `set` is what WRITES: persist wraps it as "call it, then `setItem()`", and
+ * the `setItem()` half runs OUTSIDE zustand's own `Object.is` short-circuit. So
+ * an updater arm returning an empty patch changes nothing and saves anyway —
+ * which is a fact about the SLOT and not about the state, and the reason these
+ * read the slot rather than asking the identity question `pruneToCatalog` above
+ * asks. That question passes against the empty patch too, and is exactly how
+ * this survived.
+ *
+ * The store's slot is `createJSONStorage(() => window.localStorage)`, read once
+ * at module scope — so the browser has to be standing BEFORE the import, which
+ * is what the reset and the dynamic import are for. This suite runs in node,
+ * where persist otherwise finds no storage at all and takes its silent no-op
+ * branch: nothing to watch, and every assertion below vacuously green.
+ */
+const storeOnAWatchedSlot = async () => {
+  const held = new Map<string, string>()
+  // This store's slot alone. `toggleSkill` also flashes the roster, and the UI
+  // store persists to a slot of its own on the same `localStorage`.
+  const writes: string[] = []
+
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => held.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key === SLOT) writes.push(value)
+        held.set(key, value)
+      },
+      removeItem: (key: string) => {
+        held.delete(key)
+      },
+    },
+  })
+
+  vi.resetModules()
+  const { useConfigStore: store } = await import("./config-store")
+
+  return { store, writes }
+}
+
+// An action the catalogue refuses must not reach `set`.
+//
+// The refusals were written as arms INSIDE the updater — `return {}` reads as
+// "change nothing" and is not: persist saves whatever the updater returned, so
+// a click the catalogue turned down put the whole configuration back in the
+// slot. Harmless while the slot holds what memory holds, and not harmless in
+// the one window where it does not — a restore parked on a marketplace that
+// would not load is finished by a press that arrives after the store has been
+// written to at least once.
+describe("an action the catalogue refuses", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The control, and it is not ceremony: without it every assertion below is
+  // green against a slot nothing was ever going to write to.
+  it("writes the slot when the catalogue can place the skill", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(writes).toHaveLength(1)
+  })
+
+  it("writes nothing for a skill the catalogue cannot place", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().toggleSkill(UNKNOWN_SKILL)
+
+    expect(writes).toStrictEqual([])
+  })
+
+  // The same arm one helper deeper: `configure` asks the catalogue the same
+  // question for a skill that is not selected, and answered it the same way.
+  it("writes nothing for an option set on a skill it cannot place", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().setSkillOption(UNKNOWN_SKILL, { scope: "global" })
+
+    expect(writes).toStrictEqual([])
+  })
+
+  // And `patchAssignment`'s, which turns down a row no selected skill holds.
+  it("writes nothing for a row no selected skill holds", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().toggleAssignmentEnabled(KNOWN_SKILL, KNOWN_AGENT)
+
+    expect(writes).toStrictEqual([])
   })
 })
 
@@ -179,5 +292,138 @@ describe("unknownSavedIds", () => {
     const before = config({ remembered: { "acme-web-widgets": entry() } })
 
     expect(unknownSavedIds(before, config())).toStrictEqual([])
+  })
+})
+
+// The two doors onto the same slot that REPORT, and what each may name.
+//
+// Both are reached through the real persist middleware — a stubbed
+// `localStorage` holding a blob, then `readSavedConfig()` — because what is
+// under test is the reported payload and nothing pure produces one.
+
+const sink = { issue: vi.fn(), error: vi.fn() }
+
+const readingASlotHolding = async (blob: string) => {
+  const held = new Map([["agents-inc:config:v1", blob]])
+
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => held.get(key) ?? null,
+      setItem: (key: string, value: string) => held.set(key, value),
+      removeItem: (key: string) => held.delete(key),
+    },
+  })
+
+  // Imported after the reset, not before. `resetModules` gives the store a
+  // FRESH `report.ts` with a sink variable of its own, so a sink installed on
+  // the statically imported copy would be set on a module nothing calls — and
+  // every assertion here would read zero calls and pass by accident.
+  //
+  // The reset also reseats the catalogue: a fresh `catalog-store` is the
+  // VENDORED one, which is what makes a marketplace's ids unknown below.
+  vi.resetModules()
+  const { setReportingSink } = await import("@/lib/observability/report")
+  setReportingSink(sink)
+
+  const { readSavedConfig } = await import("./config-store")
+  await readSavedConfig()
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+// The discard door. A blob the current contract can no longer read becomes a
+// warning, and the warning is the only trace — the discard itself is silent on
+// screen.
+//
+// What it may name is decided by `persistedConfigSchema` rather than by the
+// handler: `skills`, `remembered` and `agents` are `z.record`s, and once a
+// visitor loads a marketplace, `onlyPersistableSkills` persists that
+// CATALOGUE's ids verbatim — it filters out ADDED external skills, not a
+// marketplace's own. So on a private marketplace the keys are the org's, and
+// `reportIssue` ends at Sentry through our own `/monitoring` tunnel.
+describe("the unreadable-configuration door", () => {
+  // A blob at the CURRENT version, which is the case `migrateConfig` never
+  // sees: persist calls `migrate` only on a mismatch and hands everything else
+  // straight to `merge`.
+  const UNREADABLE_AT_THIS_VERSION = JSON.stringify({
+    state: {
+      stackId: null,
+      skills: {
+        [PRIVATE_CATALOG_SKILL]: {
+          install: 7,
+          scope: "project",
+          assignments: {},
+        },
+      },
+      remembered: {},
+      agents: {},
+    },
+    version: 8,
+  })
+
+  // Asserted over the whole call log rather than over `issues`, because a check
+  // on the reported field alone passes while the path leaks — the shape
+  // `marketplace-store.test.ts` settled on for the same reason.
+  it("names no skill of the marketplace's own in what it reports", async () => {
+    await readingASlotHolding(UNREADABLE_AT_THIS_VERSION)
+
+    expect(sink.issue).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(sink.issue.mock.calls)).not.toContain(
+      PRIVATE_CATALOG_SKILL
+    )
+  })
+
+  // Still worth reporting, and still worth locating: the top-level field and
+  // the code say a saved configuration was lost and roughly where, which is the
+  // whole reason this door is not silent.
+  it("still says which field and which code", async () => {
+    await readingASlotHolding(UNREADABLE_AT_THIS_VERSION)
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Discarded unreadable saved configuration",
+      expect.objectContaining({ issues: ["skills: invalid_value"] })
+    )
+  })
+})
+
+// The PRUNE door, and it is the one no `issue.path` grep can see: it reports a
+// bare VALUE rather than a path, so the census that found the two joins above
+// looks straight past it.
+//
+// A stack id is `matrixStackSchema.id` — as marketplace-owned as a skill id —
+// and it reaches the same `/monitoring` tunnel. The blob below is a
+// configuration saved on a marketplace and reopened with the vendored catalogue
+// seated, which is what a visitor switching back does.
+describe("the pruned-ids door", () => {
+  const SAVED_ON_A_MARKETPLACE = JSON.stringify({
+    state: {
+      stackId: PRIVATE_CATALOG_STACK,
+      skills: {},
+      remembered: {},
+      agents: {},
+    },
+    version: 8,
+  })
+
+  it("names no stack of the marketplace's own in what it reports", async () => {
+    await readingASlotHolding(SAVED_ON_A_MARKETPLACE)
+
+    expect(sink.issue).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(sink.issue.mock.calls)).not.toContain(
+      PRIVATE_CATALOG_STACK
+    )
+  })
+
+  // The whole signal survives the redaction: that a prune happened, how much it
+  // took, and that a stack was among it. Only the org's word for the stack goes.
+  it("still says a stack was dropped, and how many ids went with it", async () => {
+    await readingASlotHolding(SAVED_ON_A_MARKETPLACE)
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Pruned saved ids the catalog no longer knows",
+      { droppedIds: 0, droppedStack: true }
+    )
   })
 })

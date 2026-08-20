@@ -10,11 +10,16 @@ import {
   malformedCatalogHandler,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
 
-import { catalogUrl, fetchCatalog, parseMarketplaceRef } from "./catalog"
+import {
+  canonicalMarketplaceRef,
+  catalogUrl,
+  fetchCatalog,
+  parseMarketplaceRef,
+} from "./catalog"
 
 // The editor's half of a marketplace's `catalog.json`. Fetched from GitHub
 // DIRECTLY rather than through our worker, which is the whole design: org
@@ -32,6 +37,40 @@ const sink = { issue: vi.fn(), error: vi.fn() }
 beforeEach(() => {
   setReportingSink(sink)
 })
+
+// `clearMocks` empties the spies; it does not put a stubbed global back. One
+// test below serves its own catalogue that way, and leaving the stub in place
+// would silently take the mocked GitHub away from every test after it.
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+// A skill id out of a PRIVATE catalogue — the org's own vocabulary, and the one
+// thing fetching browser-direct exists to keep off anything of ours.
+const PRIVATE_SKILL_ID = "acme-internal-billing-ledger"
+
+// A catalogue that IS a catalogue apart from one entry, so the failure lands
+// INSIDE the `skills` record rather than on it.
+//
+// That depth is the whole point. `MALFORMED_CATALOG` breaks `skills` at the top
+// level, so every path it produces is one segment long and a record key can
+// never appear in one — which is how the guard beside it passed for months
+// while a joined path leaked the keys of a private catalogue.
+const CATALOG_WITH_A_BROKEN_SKILL = {
+  ...MARKETPLACE_CATALOG,
+  skills: { [PRIVATE_SKILL_ID]: { id: PRIVATE_SKILL_ID } },
+}
+
+// Served without msw because the payload is this test's own rather than a
+// fixture the Playwright specs share. Stubbing the transport keeps the suite's
+// no-network guarantee for the same reason interception does: nothing leaves.
+const serving = (body: unknown) =>
+  vi.fn().mockResolvedValue(
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })
+  )
 
 // The dialog's field is the marketplace, and a marketplace is a repository. The
 // `github:` prefix is what `--marketplace` takes on the CLI, so a value copied
@@ -63,6 +102,54 @@ describe("parseMarketplaceRef", () => {
     "refuses %o as a marketplace",
     (input) => {
       expect(parseMarketplaceRef(input)).toBeUndefined()
+    }
+  )
+})
+
+// The one form a ref is kept in, and it is the CLI's rather than the field's.
+//
+// `--marketplace` routes on a protocol prefix and reads everything without one
+// as a path on the receiver's own disk, so a bare `owner/repo` — which is
+// exactly what the dialog's placeholder asks for — is not a repository to the
+// half of the system that has to install from it. Every spelling the field
+// accepts therefore comes out as one string, which is what makes the ref a
+// storage key as well as a wire value.
+describe("canonicalMarketplaceRef", () => {
+  it.each([
+    ["acme/skills", "github:acme/skills"],
+    ["github:acme/skills", "github:acme/skills"],
+    ["gh:acme/skills", "github:acme/skills"],
+    ["https://github.com/acme/skills", "github:acme/skills"],
+    ["https://github.com/acme/skills.git", "github:acme/skills"],
+    ["  acme/skills  ", "github:acme/skills"],
+  ])("reads %o as %o", (input, expected) => {
+    expect(canonicalMarketplaceRef(input)).toBe(expected)
+  })
+
+  // A branch is part of which catalogue this is, so it survives the rewrite —
+  // and `--marketplace` takes it in the same place giget does.
+  it("keeps a branch on the end of the canonical form", () => {
+    expect(canonicalMarketplaceRef("acme/skills#next")).toBe(
+      "github:acme/skills#next"
+    )
+  })
+
+  // Already canonical in, unchanged out. Said as its own case because this
+  // runs on every read of the slot: a rewrite that moved a ref it had already
+  // rewritten would be a new key on every load.
+  it("leaves a ref that is already canonical alone", () => {
+    expect(canonicalMarketplaceRef("github:acme/skills")).toBe(
+      canonicalMarketplaceRef(canonicalMarketplaceRef("acme/skills"))
+    )
+  })
+
+  // Not a repository, so there is nothing to canonicalise and nothing here to
+  // say about it: `fetchCatalog` refuses it at the field the user is looking
+  // at, which is where the sentence belongs.
+  it.each(["", "   ", "acme", "acme/skills/extra"])(
+    "hands %o back trimmed rather than inventing a repository",
+    (input) => {
+      expect(canonicalMarketplaceRef(input)).toBe(input.trim())
     }
   )
 })
@@ -184,6 +271,44 @@ describe("fetchCatalog", () => {
     expect(JSON.stringify(sink.issue.mock.calls)).not.toContain(
       MALFORMED_CATALOG.version
     )
+  })
+
+  // The same promise as above, held against the catalogue that can actually
+  // break it: a failure one level down carries the record KEY in its path, and
+  // `matrixSchema` keys `categories`, `skills` and a stack's `skills` by the
+  // MARKETPLACE's ids rather than by ours.
+  //
+  // Asserted over the whole call log rather than over `issues`, because a check
+  // on the reported field alone passes while the path leaks — the shape
+  // `marketplace-store.test.ts` settled on for the same reason.
+  it("names no skill of the marketplace's own in what it reports", async () => {
+    vi.stubGlobal("fetch", serving(CATALOG_WITH_A_BROKEN_SKILL))
+
+    await fetchCatalog(PRIVATE_MARKETPLACE_REF, MARKETPLACE_TOKEN)
+
+    expect(sink.issue).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(sink.issue.mock.calls)).not.toContain(
+      PRIVATE_SKILL_ID
+    )
+  })
+
+  // The other half of the split, and it is not a leak: whoever reads this
+  // fetched the catalogue with their own token, and "skills" alone does not
+  // locate one broken entry among three hundred. The path stays whole where it
+  // never leaves the browser.
+  it("names the broken entry in full on screen", async () => {
+    vi.stubGlobal("fetch", serving(CATALOG_WITH_A_BROKEN_SKILL))
+
+    const result = await fetchCatalog(
+      PRIVATE_MARKETPLACE_REF,
+      MARKETPLACE_TOKEN
+    )
+
+    // The mirror image of the assertion above, over the whole result for the
+    // same reason: what must never appear in one channel must still appear in
+    // the other, or the split has quietly become a truncation of both.
+    expect(result).toMatchObject({ ok: false, kind: "invalid" })
+    expect(JSON.stringify(result)).toContain(`skills.${PRIVATE_SKILL_ID}.slug`)
   })
 
   it("reads an unreachable GitHub as its own kind of failure", async () => {

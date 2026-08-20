@@ -16,6 +16,7 @@ import {
   switchConsequence,
 } from "@/features/configure/lib/marketplace-switch"
 import {
+  canonicalMarketplaceRef,
   fetchCatalog,
   type CatalogFailure,
   type CatalogFailureKind,
@@ -305,7 +306,11 @@ function MarketplaceForm({
   // shape can no longer tell.
   const nameMarketplace = (named: string) => {
     setMarketplace(named)
-    setToken(tokenFor(named))
+    // Asked of the CANONICAL ref, because that is the key the token was filed
+    // under. The field takes several spellings of one repository, and a lookup
+    // on the raw one would answer "no credential held" for a repository this
+    // browser holds one for — then re-file the pasted PAT under a second key.
+    setToken(tokenFor(canonicalMarketplaceRef(named)))
     // A consequence describes the catalogue that was READ. Naming a different
     // one stops it describing anything, so the next press has to read again
     // rather than seat what the last press found. A refusal is left where it
@@ -396,7 +401,10 @@ function MarketplaceForm({
   // marketplace field already means. It costs the selection exactly what naming
   // a repository costs it, so it is read and described exactly as one.
   const submit = async () => {
-    const named = marketplace.trim()
+    // Normalised here, at the one door a visitor types a ref through. What is
+    // seated, filed and minted is this string, so the spelling the field
+    // happens to have taken stops mattering the moment Load is pressed.
+    const named = canonicalMarketplaceRef(marketplace)
     if (!named) {
       readCatalogue(PUBLIC_TARGET)
       return

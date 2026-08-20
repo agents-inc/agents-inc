@@ -8,6 +8,12 @@ import { NavRail } from "@/components/nav-rail"
 //
 // Desktop-only, with a hard `min-w` below which the page scrolls sideways.
 // The route supplies the other two columns, so Docs can span both.
+//
+// `mx-auto max-w-*` is why `position: fixed` is unusable for anything that has
+// to line up with this grid: past the max width the grid stops filling the
+// window and starts being centred in it, so every column slides right as the
+// window widens while a viewport-measured offset stays put. Use `sticky` inside
+// the column the control belongs to. See `e2e/README.md` under Conventions.
 export function RootLayout() {
   return (
     <div className="mx-auto grid max-w-[105.25rem] min-w-[85.25rem] grid-cols-[9.5rem_minmax(43.75rem,1fr)_18.75rem] items-start bg-page">

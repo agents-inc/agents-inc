@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { z } from "zod"
 
+import { canonicalMarketplaceRef } from "@/lib/api/catalog"
 import { reportIssue } from "@/lib/observability/report"
 
 // The marketplaces this browser has loaded, the token each one needed, and
@@ -50,7 +51,15 @@ const STORAGE_KEY = "agents-inc:marketplace:v1"
 // The SHAPE's version, which the `v1` in the key above is not: that names the
 // slot and stays put, exactly as `config-store` sits on `agents-inc:config:v1`
 // at its eighth version.
-const PERSIST_VERSION = 1
+//
+// v2 is the KEY's form rather than the shape around it. The key used to be
+// whatever spelling of a repository the dialog's field happened to take, and it
+// is the canonical ref now — so a slot written before it holds entries under
+// names nothing looks up any more. The rewrite itself is
+// `readSavedMarketplaces`'s, which every slot passes through; the bump is what
+// makes persist write the result straight back, so an old key does not sit in
+// storage with its copy of the PAT until the next time something is saved.
+const PERSIST_VERSION = 2
 
 // Every string is plain and empty means absent, which is also what an untouched
 // dialog holds — so "never set" and "cleared" need no third state.
@@ -68,13 +77,40 @@ export type SavedMarketplaces = {
 
 const EMPTY: SavedMarketplaces = { current: "", saved: {} }
 
-// A token filed under no marketplace names nothing: there is no repository for
-// the credential to be a credential for. The same rule the single slot stated
-// about itself, now said per ENTRY — dropping its neighbours with it would be
-// the very loss this shape exists to make impossible.
+// Two spellings of one repository meeting in one entry, which is what a key
+// nobody normalised left behind. The CREDENTIAL is what survives the collapse:
+// `""` says none is held, so it can never be what replaces one that is — a PAT
+// is shown once and cannot be read back from anywhere. Past that the later
+// entry wins, which is all a map has ever meant.
+const keepingTheCredential = (held: string | undefined, incoming: string) =>
+  incoming === "" ? (held ?? "") : incoming
+
+// Every token filed under the repository it authorizes, named the one way that
+// repository is named.
+//
+// Two rules in one pass over the same entries, because they are one question
+// asked of each. A token filed under NO marketplace names nothing — there is no
+// repository for the credential to be a credential for — and goes, without its
+// neighbours; that is the single slot's own rule said per ENTRY, since dropping
+// the others with it would be the very loss this shape exists to make
+// impossible.
+//
+// And a key in ANY spelling of a repository becomes the canonical one. That is
+// the same rule reaching one step further: an entry under a name nothing looks
+// up any more holds a credential for nothing just as surely as an unkeyed one
+// does, and a browser that named one repository both ways is holding two
+// entries and two copies of one PAT. Read here rather than migrated, because
+// every slot reaches the store through this — the keyed shape and the single
+// one the migration hands over alike.
 const filedUnderAMarketplace = (saved: Record<string, string>) =>
-  Object.fromEntries(
-    Object.entries(saved).filter(([marketplace]) => marketplace !== "")
+  Object.entries(saved).reduce<Record<string, string>>(
+    (filed, [marketplace, token]) => {
+      if (marketplace === "") return filed
+
+      const key = canonicalMarketplaceRef(marketplace)
+      return { ...filed, [key]: keepingTheCredential(filed[key], token) }
+    },
+    {}
   )
 
 // A choice this browser cannot have made: nothing was ever loaded from it, so
@@ -89,18 +125,54 @@ const choiceAmong = (current: string, saved: Record<string, string>) =>
  * The untrusted read, kept pure so it can be exercised without a browser — the
  * arrangement `readSavedStack` established.
  *
- * An unreadable slot and an empty one are the same answer: there is nothing to
- * restore either way, and the app opens on the public catalogue, which is
- * exactly what it does for a visitor who has never opened the dialog.
+ * An unreadable slot and an empty one are the same answer ON SCREEN: there is
+ * nothing to restore either way, and the app opens on the public catalogue,
+ * which is exactly what it does for a visitor who has never opened the dialog.
+ *
+ * They are not the same answer about the DATA, and that is why they are told
+ * apart below. What this slot holds is a PAT, shown once and readable back from
+ * nowhere; answering `EMPTY` puts the store in a state the next `set` writes,
+ * so the credential is not merely unread but gone. An ABSENT slot arrives as
+ * `undefined` and is every first visit — conflating the two would file a
+ * warning against every visitor who has never opened the dialog, which is what
+ * makes a report worthless and gets it removed again. The same split
+ * `config-store`'s `merge` draws, in the same order and for the same reason.
+ *
+ * THIS is the door every browser at the current version arrives at.
+ * `migrateSavedMarketplaces` below is the other one, and zustand opens exactly
+ * one of them per load: it calls `migrate` only on a version mismatch and hands
+ * the raw state to `merge` otherwise. So reporting only there is silence on
+ * precisely the case a shape change shipped without a version bump produces —
+ * the deploy on which a silent discard becomes a mass credential loss.
  */
 export const readSavedMarketplaces = (
   persisted: unknown
 ): SavedMarketplaces => {
+  if (persisted === undefined) return EMPTY
+
   const parsed = savedMarketplacesSchema.safeParse(persisted)
-  if (!parsed.success) return EMPTY
+  if (!parsed.success) {
+    reportIssue("Discarded unreadable saved marketplaces", {
+      persistVersion: PERSIST_VERSION,
+      // The failing field and why, and nothing past it. A path segment under
+      // `saved` is a REPOSITORY THE VISITOR NAMED and the value beside it is
+      // their credential, so only the field's own name travels — the same rule
+      // the migration keeps by reporting versions alone.
+      issues: parsed.error.issues.map(
+        (issue) => `${String(issue.path[0] ?? "(root)")}: ${issue.code}`
+      ),
+    })
+    return EMPTY
+  }
 
   const saved = filedUnderAMarketplace(parsed.data.saved)
-  return { current: choiceAmong(parsed.data.current, saved), saved }
+  // The choice is re-keyed with the entries it names, or a slot written before
+  // the ref was normalised would hold a `current` matching none of its own keys
+  // — and `choiceAmong` would read that as a marketplace this browser never
+  // saved, dropping it to the public catalogue.
+  const current = canonicalMarketplaceRef(parsed.data.current)
+
+  return { current: choiceAmong(current, saved), saved }
 }
 
 // What the single-slot release wrote: one marketplace, and the one token that
@@ -128,6 +200,14 @@ export const migrateSavedMarketplaces = (
   fromVersion: number
 ): unknown => {
   if (fromVersion === PERSIST_VERSION) return persisted
+
+  // Already keyed, and there is nothing here to reshape: what v2 moved is the
+  // FORM of the key, and that rule lives in `readSavedMarketplaces` alone —
+  // every slot reaches the store through it, so stating it twice would be two
+  // places to disagree. Guarded by SHAPE rather than by version number,
+  // because a keyed slot arriving at the single-slot parse below would be read
+  // as unreadable and discarded, marketplaces and PATs together.
+  if (savedMarketplacesSchema.safeParse(persisted).success) return persisted
 
   const slot = singleSlotSchema.safeParse(persisted)
   if (!slot.success || !slot.data.marketplace) {

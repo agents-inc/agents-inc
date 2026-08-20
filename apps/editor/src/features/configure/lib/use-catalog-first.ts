@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react"
 
-import { fetchCatalog, type CatalogFailure } from "@/lib/api/catalog"
+import {
+  canonicalMarketplaceRef,
+  fetchCatalog,
+  type CatalogFailure,
+} from "@/lib/api/catalog"
 import { fetchSharedConfig } from "@/lib/api/configs"
 import { activeMarketplace, useCatalogStore } from "@/stores/catalog-store"
 import {
@@ -206,8 +210,14 @@ const seatCatalog = async (
     return null
   }
 
-  const failure = await seatMarketplace(marketplace)
-  return failure ? { marketplace, failure } : null
+  // The other door a ref arrives through, and the one that carries the refs
+  // already out in the world: an id minted before this was normalised names its
+  // marketplace the way the field took it. Canonicalised on the way in, so the
+  // token lookup finds the entry this browser really holds and a payload minted
+  // from a shared address goes on naming a repository.
+  const named = canonicalMarketplaceRef(marketplace)
+  const failure = await seatMarketplace(named)
+  return failure ? { marketplace: named, failure } : null
 }
 
 // The catalogue this browser last chose, seated before anything reads what was

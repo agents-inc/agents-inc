@@ -16,6 +16,15 @@ import { activeSkillById } from "@/stores/catalog-store"
 // for names and holds nothing. That direction matters — the seated catalogue is
 // the one that still knows what these ids mean, and after the switch nothing
 // will.
+//
+// TWO controls seat a catalogue: the switcher's CTA and the marketplace
+// dialog's Load, which carries the public case as a target of its own. Each
+// owes both halves of the act — name the cost with `switchConsequence`, then
+// make it true with `config-store`'s `pruneToCatalog` — and naming without
+// dropping is the failure that made this module necessary. The count is part of
+// the contract: a third door belongs here before it belongs on a component,
+// which is why `pruneToCatalog` now points at this file rather than explaining
+// itself where only its existing callers would read it.
 
 // The name the visitor picked it by. An id the seated catalogue cannot place
 // either — catalogue drift, or an added skill after a reseat — is still being
