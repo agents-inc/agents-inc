@@ -4,6 +4,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     globalSetup: ["./e2e/global-setup.ts"],
+    // Per SPEC FILE rather than per run, which is what the guard it carries needs: it takes the
+    // build dist/ holds when the file loads and refuses once that has moved under it. See the
+    // file's own docblock for why a globalSetup teardown cannot carry this.
+    setupFiles: ["./e2e/setup.ts"],
     testTimeout: 30_000,
     hookTimeout: 60_000,
     pool: "forks",

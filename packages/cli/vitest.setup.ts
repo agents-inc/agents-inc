@@ -1,9 +1,56 @@
 import os from "os";
 import path from "path";
 import { mkdtemp, rm } from "fs/promises";
-import { beforeAll, beforeEach, afterAll, vi } from "vitest";
+import { fileURLToPath } from "url";
+import chalk from "chalk";
+import { beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
 import { initializeMatrix } from "./src/cli/lib/matrix/matrix-provider";
+import { guardAgainstDistReplacement } from "./src/cli/lib/testing/dist-staleness";
 import { BUILT_IN_MATRIX } from "./src/cli/types/generated/matrix";
+
+/** chalk's "every colour off" level — the one that emits a frame with no escapes at all. */
+const COLOR_DISABLED_CHALK_LEVEL = 0;
+
+// A second agent's `bun run build` empties dist/ under this run — tsup has `clean: true`, and
+// all three `pretest` hooks call it. The `commands` specs resolve oclif through ./dist/commands,
+// so one invoked inside that window finds nothing there, and the reader is handed an ordinary
+// assertion failure with no mention of a build. The rule and the message are in src/, where they
+// have tests of their own; what stays here is the part that cannot move — the guard has to be
+// taken where the suite loads, and this file's own location is the package root it is measured
+// from. (This file is in `tsconfig.json`'s `include` and in eslint.config.js's `files` as of
+// 2026-08-22; it was in neither when the split was made, which used to be a second reason.)
+//
+// Both hooks, one check. `beforeEach` refuses a test that would run over a build the file did
+// not start with; `afterEach` names the cause on the test that was actually in flight when the
+// rebuild landed, which is the one whose misleading failure the reader reads first.
+const CLI_ROOT = path.dirname(fileURLToPath(import.meta.url));
+const assertDistUnchanged = guardAgainstDistReplacement(CLI_ROOT);
+
+beforeEach(assertDistUnchanged);
+afterEach(assertDistUnchanged);
+
+// Colour off, PINNED rather than assumed. Ink paints through chalk, and chalk turns
+// itself off on vitest's non-TTY stdout — so every component assertion here was written
+// against a plain frame, and source-grid.test.tsx's inline layout snapshots were
+// recorded as plain frames. That was detection rather than a decision: `FORCE_COLOR` in
+// the developer's own shell overrides it, chalk then inserts truecolour escapes BETWEEN
+// words, and `toContain("Marketplace Agents Inc")` reports a MISSING STRING — a harness
+// problem wearing a regression's clothes, which is the expensive part. It made a gate
+// result untrustworthy unless you also knew which shell produced it.
+//
+// Pinned here rather than worked around per assertion, because the assertions are not
+// the defect: which of them break depends only on where the component happens to put a
+// style boundary, stripping escapes inside them would owe every future test the same
+// parser (CLAUDE.md forbids that helper outright), and a snapshot of a LAYOUT has no
+// escape-tolerant form to be rewritten into at all.
+//
+// The opt-in half is already written down and keeps working unchanged: the three
+// `describe` blocks in source-grid.test.tsx that assert ON colour each save chalk.level,
+// force truecolor and restore it. Needing colour belongs to the test; the default
+// belongs here. Ink and this file resolve one chalk instance, so one assignment covers
+// both. The e2e harness states the same rule its own way — `FORCE_COLOR: "0"` in
+// e2e/helpers/terminal-session.ts, an env var because that door spawns a child.
+chalk.level = COLOR_DISABLED_CHALK_LEVEL;
 
 // Unit tests render Ink components against fake streams, where being "in CI"
 // must not exist as a concept — yet Ink consults these variables (`is-in-ci`)
@@ -28,6 +75,15 @@ let testHomeDir: string;
 
 beforeAll(async () => {
   testHomeDir = await mkdtemp(path.join(os.tmpdir(), "vitest-home-"));
+});
+
+beforeEach(async () => {
+  // Installed per TEST, not once per file. From a `beforeAll` a single `vi.restoreAllMocks()`
+  // — which twenty-three specs in this package call from an `afterEach` — withdrew this spy for
+  // every LATER test in that file, after which os.homedir() answered from the developer's own
+  // machine. That is how a unit test came to read a real ~/.claude-src/config.ts and pass on it.
+  // `home-dir-read-at-call-time.test.ts` holds the re-installation, paired with a case proving
+  // the withdrawal it survives is real.
   vi.spyOn(os, "homedir").mockImplementation(() => {
     // If a test has overridden HOME to something other than the real home, respect it
     if (process.env.HOME && process.env.HOME !== realHomedir) {
@@ -35,9 +91,7 @@ beforeAll(async () => {
     }
     return testHomeDir;
   });
-});
 
-beforeEach(async () => {
   initializeMatrix(BUILT_IN_MATRIX);
   const { useWizardStore } = await import("./src/cli/stores/wizard-store");
   useWizardStore.getState().reset();
