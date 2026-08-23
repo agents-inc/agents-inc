@@ -1,4 +1,4 @@
-# D-25: Auto-Version Check + Source Staleness -- Refinement
+# CLI-718: Auto-Version Check + Source Staleness -- Refinement
 
 **Status:** Refinement complete, ready for implementation
 **Priority:** Medium

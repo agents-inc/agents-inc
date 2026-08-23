@@ -10,8 +10,8 @@ accurate."
 `packages/cli/src/cli/lib/configuration/default-rules.ts` (759 lines, `SkillRulesConfig`):
 slug-based conflict GROUPS with a required `reason`, plus the other relationship sections. That is
 why this is a CLI row, and why it executes the upstream half of EDITOR-06 ("123 of 222 skills
-state no relationships"). D-306 stays the umbrella for richer semantics; this item populates the
-EXISTING vocabulary, and anything needing new semantics is recorded for D-306, not invented here.
+state no relationships"). CLI-740 stays the umbrella for richer semantics; this item populates the
+EXISTING vocabulary, and anything needing new semantics is recorded for CLI-740, not invented here.
 
 ## Why "100% accurate" needs structure, not just effort
 
@@ -46,7 +46,7 @@ numbers at 229. Output: a worksheet grouping the audit into category-sized batch
      taxonomy fix is clean — `shared-monorepo` splits into an exclusive task-runner category
      `{nx, turborepo}` beside a composing workspaces one (skills-repo metadata + categories
      change); Elysia moves beside its api-framework partners so that group's fence becomes the
-     category — or ACCEPTED LOSS recorded into D-306 as the "more advanced later" backlog (the
+     category — or ACCEPTED LOSS recorded into CLI-740 as the "more advanced later" backlog (the
      Postgres-hosts cross-category group is the known case; the 8 subset-groups get per-group
      calls).
    - **Phase C (depends on EDITOR-11 step 2's shared closure, same dependency as the
@@ -127,7 +127,7 @@ numbers at 229. Output: a worksheet grouping the audit into category-sized batch
 
 Queued behind the current in-flight pipeline (D-239 docs, SKILLS-08 proof). Phase 0 runs first and
 costs little; the fan-out starts once the decisions above are settled — they shape every batch.
-Related: EDITOR-06 (closes its upstream half), D-306 (inherits anything needing new semantics),
+Related: EDITOR-06 (closes its upstream half), CLI-740 (inherits anything needing new semantics),
 EDITOR-11 (consumer unification), CLI-364 residuals (decision 3).
 
 ## Phase 0 refresh (2026-08-07)

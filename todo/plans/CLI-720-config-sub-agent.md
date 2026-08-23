@@ -1,4 +1,4 @@
-# D-41: Create `agents-inc` Configuration Skill
+# CLI-720: Create `agents-inc` Configuration Skill
 
 ## Refinement Document
 
@@ -24,7 +24,7 @@ The skill contains the full knowledge base: 38 category values, 18 agent names, 
 
 ## 1. Why a Skill, Not an Agent
 
-The original D-41 spec proposed a `config-manager` sub-agent. During refinement, we identified a fundamental UX problem: **sub-agents launched via the Task tool are not interactive**. They receive a prompt, run autonomously, and return a single result. No back-and-forth.
+The original CLI-720 spec proposed a `config-manager` sub-agent. During refinement, we identified a fundamental UX problem: **sub-agents launched via the Task tool are not interactive**. They receive a prompt, run autonomously, and return a single result. No back-and-forth.
 
 Config tasks frequently need clarification:
 
@@ -676,7 +676,7 @@ Same as the agent design: **knowledge drift**. The embedded category values, age
 
 ### agent-mappings.yaml Is Gone
 
-The original D-41 TODO spec mentions `agent-mappings.yaml`. This file was removed in D-43. All skills are now assigned to all selected agents; stacks provide fine-grained mapping.
+The original CLI-720 TODO spec mentions `agent-mappings.yaml`. This file was removed in D-43. All skills are now assigned to all selected agents; stacks provide fine-grained mapping.
 
 ### Stack Entries in config.yaml
 

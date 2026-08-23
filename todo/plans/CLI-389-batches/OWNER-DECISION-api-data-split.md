@@ -52,7 +52,7 @@ Most of the migration cost exists only under B. The batch originally presented B
 verification showed that was wrong. Both are sound — A is cheap now, B avoids compounding the
 naming drift. **Your call.**
 
-## Sub-decision 2 — the conceded fences (D-306 residue)
+## Sub-decision 2 — the conceded fences (CLI-740 residue)
 
 Eleven "you can't have both" claims are knowingly given up, and four advisory notes ride along
 — sign off (or veto individual lines):

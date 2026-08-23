@@ -1,9 +1,9 @@
-# D-13: Eject Skills by Domain/Category
+# CLI-716: Eject Skills by Domain/Category
 
 **Status:** Refinement
 **Date:** 2026-02-26
 **Size:** S (small)
-**Related:** D-12 (eject full agents), D-47 (eject compile function)
+**Related:** D-12 (eject full agents), CLI-721 (eject compile function)
 
 ---
 

@@ -145,7 +145,7 @@ Five members, C(5,2) = 10 pairwise fences. Same-kind analysis, the B6 way:
   queries") positions them as alternatives _for the same API_, and different APIs coexist.
 - **trpc ↔ swr: fence arguable — knowingly conceded.** tRPC-as-taught rides TanStack Query;
   adding SWR beside it is two async-cache layers in one app. Dubious steady state; under the
-  split it goes unfenced. D-306 residue.
+  split it goes unfenced. CLI-740 residue.
 
 **Variant A — THE DECISION (adjudicated in verification; the category split itself still goes
 to the owner, but the A-vs-B choice is closed):** three categories, all category-`:` edits only,
@@ -221,10 +221,10 @@ CLI-406's probe verified: both routers carry `requires`. Shapes, checked against
   pair) and is a knowing picker-level behavior change, recorded here. The parity
   `compatibleWith` group must shed remix in the same edit (M4). The remix↔react-router
   mode-incoherence itself is inexpressible post-decision-2 (different categories, requires
-  cannot demand absence) — recorded for D-306, cost is advice-level.
+  cannot demand absence) — recorded for CLI-740, cost is advice-level.
 - Neither router is fenced against the meta-frameworks (react-router beside nextjs is
   selectable today and stays so; Next.js ships its own router). Same inexpressible shape, same
-  D-306 record, advice-level.
+  CLI-740 record, advice-level.
 - Editorial: `web-routing`'s description reads "Client-side routing (TanStack Router)" — stale,
   never names React Router. M-surface.
 
@@ -305,7 +305,7 @@ categories — all die free at Phase C, consistent with the worksheet's 17-redun
 categories — land **before** Phase C deletes the conflict layer; otherwise
 `{docusaurus, vitepress}` and `{graphql-apollo, graphql-urql}` have a fenceless window.
 
-### D-306 residue
+### CLI-740 residue
 
 - **trpc↔swr** (fence removed, arguable validity): two async-cache layers in one app; the split
   leaves it advice-level.
@@ -316,7 +316,7 @@ categories — land **before** Phase C deletes the conflict layer; otherwise
   react-router / nextjs + tanstack-router select clean today and post-change; the built-in
   router makes a standalone router skill incoherent there. Same inexpressible shape.
 - **docusaurus/vitepress internal-framework flavor** (fences removed): a class-A verdict hides
-  that customization content is React- resp. Vue-flavored; if D-306 ever grows a
+  that customization content is React- resp. Vue-flavored; if CLI-740 ever grows a
   "content-flavor" note field, these two are its first users.
 - **tanstack-router Solid trigger**: widen to `needsAny [react, solidjs]` if Solid content
   lands in the body (official adapter already shipped upstream).

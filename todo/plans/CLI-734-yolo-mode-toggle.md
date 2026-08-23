@@ -1,4 +1,4 @@
-# D-181: Add YOLO Mode Toggle to Build Step
+# CLI-734: Add YOLO Mode Toggle to Build Step
 
 **Status:** Ready for Dev (plan drafted, open questions below)
 **Scope:** ~65 LOC across 11 files + ~13 new tests

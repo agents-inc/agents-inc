@@ -1,4 +1,4 @@
-# D-219 — Default E2E wizard launcher to a sensible fixture
+# CLI-736 — Default E2E wizard launcher to a sensible fixture
 
 > **Refined 2026-04-20**: fold into D-226's `launchInProject`/`launchInGlobal` sugar. Shared plugin fixture via `globalSetup` (built once per worker, `claude`-available-gated). Sentinel strings for opt-out (`"no-marketplace"`, `"local-only"`). Hard-error fixture frozen readonly (`chmod -R a-w`) to prevent mutation bleed. 172 call sites in 74 files; ~96% can drop the plumbing; ~7 in 6 files stay explicit. Do NOT rename `createE2ESource` — keep it as the no-marketplace primitive so that code path stays observable.
 

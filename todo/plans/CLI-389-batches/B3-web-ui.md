@@ -52,7 +52,7 @@ The attacks and their outcomes:
 - **Monorepo, two apps, two kits** (admin on Ant Design, marketing on shadcn): the strongest
   attack, and genuinely real — but the picker composes one stack per project, and every kept
   radio in the tree (desktop electron↔tauri, api-baas) over-fences the same multi-app monorepo
-  shape. **Conceded as a block for D-306** (per-app selections are D-306-class semantics), radio
+  shape. **Conceded as a block for CLI-740** (per-app selections are CLI-740-class semantics), radio
   stays.
 - **Cherry-picking one component library's hooks beside another's components**
   (`@mantine/hooks` in a shadcn app): real but the skills teach the component systems, not the
@@ -89,7 +89,7 @@ question). The structural facts, stated so B3 lands the same side as B2:
   the Radix/MUI/Floating-UI authors, shadcn ships both engines, and post-2025 Radix-maintenance
   concerns make incremental radix→base-ui adoption a multi-year reality, not a short migration
   window. headless-ui (Tailwind Labs) beside radix appears in real Tailwind-first codebases.
-  No radio; a `discourages`-shaped "mixing primitive libraries" note goes to D-306.
+  No radio; a `discourages`-shaped "mixing primitive libraries" note goes to CLI-740.
 - **tanstack-table** is a headless _table engine_, composing with any kit or primitive (a MUI
   app with a TanStack-powered table is normal). It belongs in the headless residue; a
   one-member `web-table` category was considered and rejected (sole-member smell again).
@@ -141,7 +141,7 @@ _preprocessor for Tailwind's pipeline_ ("not designed to be used with CSS prepro
 think of Tailwind itself as your preprocessor" — https://tailwindcss.com/docs/compatibility)
 while allowing-but-discouraging CSS-modules-beside-Tailwind ("can co-exist… but we don't
 recommend using CSS modules and Tailwind together if you can avoid it") — the vendor's own
-allow-but-discourage stance _strengthens_ the chosen disposition and is cited as the D-306
+allow-but-discourage stance _strengthens_ the chosen disposition and is cited as the CLI-740
 `discourages` evidence; separate build pipelines
 (Vite compiles `.module.scss` and Tailwind's CSS independently) make the mixed codebase —
 Tailwind for new surfaces, an SCSS token system for legacy or bespoke sections — a real
@@ -150,7 +150,7 @@ cva/theming/design-tokens compose with _either_ approach and with each other —
 tailwind + cva is literally the shadcn stack, and 56 default stacks fill `web-styling`
 (35 scss-modules, 21 tailwind) as the required category it is. A sub-radio
 `{tailwind, scss-modules}` was considered and rejected: no fence exists today, coexistence is
-documented, and decision-2's mechanism makes any new radio a hard block. Recorded for D-306 as
+documented, and decision-2's mechanism makes any new radio a hard block. Recorded for CLI-740 as
 a `discourages`-shaped pair instead.
 
 **web-editor (lexical XOR tiptap) — radio SUSTAINED.** The brief's attack — one app, two
@@ -158,7 +158,7 @@ editors on different surfaces (comment box + document editor) — is theoretical
 a steady state teams choose: both libraries cover both surfaces, and two editor frameworks
 means two node-schema systems, two serialization formats and double bundle weight for zero
 capability gain. Real-world coexistence is Draft.js/Quill _migrations toward_ one of these —
-migration-window, non-blocking by the wave's semantics. Noted for D-306 as theoretical
+migration-window, non-blocking by the wave's semantics. Noted for CLI-740 as theoretical
 over-restriction; no change.
 
 ## Manifest rows
@@ -179,7 +179,7 @@ Batch id `web-ui`, audited `2026-08-07`. Verdict shorthand: **constrained** =
 | base-ui (web-ui-base-ui)                          | web-ui-components                     | constrained (**after new binding**) | B             | [react]                                                                                     | **ADD `needsAny [react, nextjs, remix]`**                                         | https://base-ui.com; skill body ("React-only", `@base-ui/react` v1.7.0)                                                                                     | The worksheet's high-confidence missing binding — confirmed. Now also shadcn's default engine (companion-skill role mirrors radix-ui's).                                                                                                                                                                                                                                                                             |
 | tanstack-table (web-ui-tanstack-table)            | web-ui-components                     | constrained                         | B (as taught) | [react]                                                                                     | keep `needsAny [react, nextjs, remix]`                                            | skill body (`useReactTable`, `@tanstack/react-table` only); https://tanstack.com/table                                                                      | Library is class-C-shaped (official vue/solid/svelte/angular adapters upstream) but the skill teaches React only — class B until adapters are authored; promotion path recorded (F2 pattern).                                                                                                                                                                                                                        |
 | tailwind (web-styling-tailwind)                   | web-styling                           | **universal**                       | C             | [—, see note]                                                                               | **none**                                                                          | https://tailwindcss.com/docs/compatibility; skill body (v4 CSS-first, `@tailwindcss/vite`/postcss/webpack branches)                                         | **The SKILLS-01 class-C exemplar, recorded.** Its host axis is the _bundler/meta-framework_ (vite, postcss, nextjs), not the UI framework — the adapter-filename rule ("must be framework skill slugs") needs a ruling before its adapters can be authored (F4). No requires: it styles any framework and none (apollo-server broad-surface precedent, verify-B5-B12 3). Inbound edge: shadcn-ui `needs [tailwind]`. |
-| scss-modules (web-styling-scss-modules)           | web-styling                           | universal                           | A             | []                                                                                          | none                                                                              | skill body (SCSS modules + cascade layers + tokens, self-contained); https://sass-lang.com                                                                  | Framework-neutral methodology skill. tailwind↔scss-modules coexistence documented — D-306 discourages note, no fence.                                                                                                                                                                                                                                                                                                |
+| scss-modules (web-styling-scss-modules)           | web-styling                           | universal                           | A             | []                                                                                          | none                                                                              | skill body (SCSS modules + cascade layers + tokens, self-contained); https://sass-lang.com                                                                  | Framework-neutral methodology skill. tailwind↔scss-modules coexistence documented — CLI-740 discourages note, no fence.                                                                                                                                                                                                                                                                                              |
 | cva (web-styling-cva)                             | web-styling                           | universal                           | A             | []                                                                                          | none                                                                              | skill body ("works with any CSS approach… across frameworks"); https://cva.style/docs                                                                       | The brief's question answered: binds to nothing — cva is a plain function producing class strings, host-agnostic. Class A exactly.                                                                                                                                                                                                                                                                                   |
 | theming (web-styling-theming)                     | web-styling                           | universal                           | A             | []                                                                                          | none                                                                              | skill body (inline-script boot, `data-theme`, `color-scheme` — all platform-level)                                                                          | next-themes coverage is example-flavor (one section), not a binding — class A; a nextjs adapter would promote to C if ever split out.                                                                                                                                                                                                                                                                                |
 | design-tokens (web-styling-design-tokens)         | web-styling                           | universal                           | A             | []                                                                                          | none                                                                              | skill body (DTCG, Style Dictionary, CSS custom properties); https://design-tokens.github.io/community-group/format/                                         | Pure architecture skill; composes with tailwind (its own utility-framework-bridge example) and scss alike.                                                                                                                                                                                                                                                                                                           |
@@ -240,7 +240,7 @@ paths), C ×4 (mui, ant-design, tailwind, tiptap).
   verdict (payload doctrine: an install story neither creates nor removes a binding).
   Verification sustained both halves of the asymmetry on this re-cut ground.
 
-### D-306 residue from this batch
+### CLI-740 residue from this batch
 
 - web-ui-kit over-fences the monorepo multi-app case (two apps, two kits) — recorded as a
   block over the category, same concession class as B6's baas↔db-host block;

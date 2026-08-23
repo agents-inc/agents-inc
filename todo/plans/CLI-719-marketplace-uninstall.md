@@ -1,9 +1,9 @@
-# D-26: Marketplace-Specific Uninstall
+# CLI-719: Marketplace-Specific Uninstall
 
 **Status:** Ready for Dev
 **Priority:** M (Medium)
 **Depends on:** Uninstall redesign (config-based removal logic) -- COMPLETED (current `uninstall.tsx` already uses config-based matching)
-**Related:** Multi-Source UX 2.0 (Phase 1-6 complete), D-25 (source staleness)
+**Related:** Multi-Source UX 2.0 (Phase 1-6 complete), CLI-718 (source staleness)
 
 ---
 

@@ -22,7 +22,7 @@ the B12 handoff, ADOPTED on body evidence (the skill is 100% turbo.json/turbo CL
 double-duty as the transitive nx fence once `shared-task-runner` exists. The `infra-iac` radio
 SURVIVES all three documented coexistence patterns under the prior verifiers' steady-state
 semantics — each dissolves as cross-scope, migration-window, or engine-internal, and each gets
-an honest D-306 line. `infra-platform` stays open: multi-cloud is normal and the category is
+an honest CLI-740 line. `infra-platform` stays open: multi-cloud is normal and the category is
 structurally un-radioable (aws-sdk is a client SDK, not a host; cloudflare-workers is
 dual-identity) — and the `{vercel, netlify}` sub-radio is now explicitly priced and declined
 (verification amendment). clack is universal; github-actions is recorded as the catalog's canonical
@@ -57,7 +57,7 @@ no requires on github-actions. changesets ↔ turborepo-ci compose per B12's han
 
 The prior verifiers' semantics (B6 §api-orm, verify-B6 1.2/1.4, B12 group #15): _a skill
 picker models the steady state of one project_; migration-window coexistence never breaks a
-radio; real steady-state coexistence at a different scope or layer gets recorded as a D-306
+radio; real steady-state coexistence at a different scope or layer gets recorded as a CLI-740
 line while the radio holds. Applied to the three members:
 
 1. **terraform ↔ pulumi — migration window plus a layered pattern, radio holds.** Both
@@ -71,13 +71,13 @@ line while the radio holds. Applied to the three members:
    owner; the layers are separate state stores, typically separate repos. Within the one
    project the picker models, one engine owns the resources — dual ownership of the same
    resources is the drift disaster the radio prevents. Same disposition as B6's
-   drizzle+prisma: radio KEPT, layered TF-state-consumption recorded as a D-306 line.
+   drizzle+prisma: radio KEPT, layered TF-state-consumption recorded as a CLI-740 line.
 2. **sst beside org-level terraform — the api-db-host shape, radio holds.** SST is
    application-scoped IaC (one `sst.config.ts` owns the app's infra), and orgs that run
    Terraform for accounts/VPCs/org policy while product teams ship SST apps are real. But
    that coexistence is a scope split — platform repo vs app repo — exactly the shape of
    B6's turso-as-edge-replica-beside-a-primary-host: a real minority pattern at a different
-   layer, conceded honestly to D-306, while the radio keeps modeling the steady state of the
+   layer, conceded honestly to CLI-740, while the radio keeps modeling the steady state of the
    project in hand. The sst body agrees it is an alternative, not a complement, at app scope:
    its when-NOT-to-use names "Existing Terraform/Pulumi codebases where SST abstraction adds
    no value". Two IaC tools owning one app's infrastructure is the incoherent case; radio
@@ -92,7 +92,7 @@ line while the radio holds. Applied to the three members:
    inside `sst.config.ts` — while its _lifecycle half_ (stacks, backends, `pulumi up`,
    StackReferences, Automation API) contradicts SST's state ownership (you never run `pulumi
 up` in an SST app). This is verify-B6 1.4's dual-client-one-provider disposition
-   transplanted: radio KEPT, pattern recorded as a D-306 line ("sst embeds the Pulumi
+   transplanted: radio KEPT, pattern recorded as a CLI-740 line ("sst embeds the Pulumi
    programming model; half the pulumi skill applies inside sst.config.ts, half must not be
    followed; unrepresentable in current vocabulary") rather than waved off.
 
@@ -122,7 +122,7 @@ a radio was examined and fails structurally:
   not even an existing fence to preserve — so nothing is lost by declining to invent one.
 - The honest same-slot tension — vercel ↔ netlify (two Git-centric deploy-the-app platforms;
   the steady state is one primary host per app; monorepo split-hosting and migrations are
-  the minority) — goes to D-306 as a dubious-combo line, alongside
+  the minority) — goes to CLI-740 as a dubious-combo line, alongside
   vercel ↔ cloudflare-workers-as-host. Same recording discipline as verify-B6 2.10.
 
 **The `{vercel, netlify}` sub-radio, priced and declined (verification amendment).** The
@@ -137,7 +137,7 @@ split-hosting one monorepo across the two platforms (marketing on one, app on th
 root-directory targeting) is a practiced, documented pattern; (c) **the analogy
 under-transfers** — api-db-host _preserved_ 120 pre-existing pair-fences and all its members
 are same-slot substitutes, whereas here the fence would be new and the same-slot set is
-exactly 2 of 4 members. Reopen triggers: D-306's severity-tier direction (block vs discourage)
+exactly 2 of 4 members. Reopen triggers: CLI-740's severity-tier direction (block vs discourage)
 is the right vocabulary for vercel↔netlify; a second pure same-slot host joining the category
 reopens the question.
 
@@ -225,10 +225,10 @@ domain's framework anchors — classification omitted per §4, same as react/ele
   skill would assert a dependency the product does not have. Same gap B6 hit from the other
   side when it deferred `vercel-kv/vercel-postgres → requires [vercel]`: platform-boundness
   is currently unrepresentable unless the platform skill happens to be the right content
-  match. Recorded for D-306 as an advisory ("sst's typical data plane is `@aws-sdk/client-*`
+  match. Recorded for CLI-740 as an advisory ("sst's typical data plane is `@aws-sdk/client-*`
   — the sst skill's own handlers import it; pairing is recommended, not required" — a
   `recommends`-shaped fact with no surviving vocabulary). **Promoted (verification
-  amendment): the platform-anchor gap is a named CLI-405/D-306 design input beside F5 (F10)**,
+  amendment): the platform-anchor gap is a named CLI-405/CLI-740 design input beside F5 (F10)**,
   not a residue line only — it now has two independent specimens from two batches (B6's
   deferred vercel-kv/vercel-postgres → [vercel]; sst → AWS), the same two-specimen bar that
   made F5 a CLI-405 design input. The input: the vocabulary cannot express platform-boundness
@@ -247,11 +247,11 @@ Batch id `infra-cli`, audited `2026-08-07`. 15 skills: 11 class A, 1 class B, 1 
 | turborepo-ci (infra-ci-cd-turborepo-ci)                | infra-ci-cd [o]                                         | constrained-via-exclusivity-or-requires | **B** | [turborepo]    | **requires [turborepo]**                              | skill body (turbo.json outputs/env, TURBO_TOKEN, --affected, turbo prune); https://turborepo.dev/docs                                                                      | **The B12 handoff, adopted.** Transitively fences vs nx (today via group :67-70, post-split via `shared-task-runner`). CI-provider-agnostic — no github-actions binding.                                                                                    |
 | setup-env (infra-config-setup-env)                     | infra-config [o]                                        | universal                               | **C** | [nextjs, vite] | **none — needsAny REJECTED (F5)**                     | skill body (Zod at startup, NEXT_PUBLIC_/VITE_ prefixes, t3-env); https://zod.dev; https://env.t3.gg                                                                       | SKILLS-01's class-C proving case — and the first specimen showing the class-C derivation rule over-fences host-neutral cores.                                                                                                                               |
 | kubernetes (infra-containers-kubernetes)               | infra-containers [o]                                    | universal                               | A     | []             | none                                                  | skill body (apps/v1, securityContext, probes, Helm, Kustomize); https://kubernetes.io/docs/; https://helm.sh/docs/                                                         | Compositional boundaries drawn in-body (image-build/CI/IaC delegated). No docker binding.                                                                                                                                                                   |
-| terraform (infra-iac-terraform)                        | infra-iac [X]                                           | constrained-via-exclusivity-or-requires | A     | []             | none                                                  | skill body (HCL, lock files, remote state, moved/import blocks, OpenTofu); https://developer.hashicorp.com/terraform                                                       | Radio sustained. Layered TF+Pulumi coexistence → D-306 (see disposition b.1).                                                                                                                                                                               |
+| terraform (infra-iac-terraform)                        | infra-iac [X]                                           | constrained-via-exclusivity-or-requires | A     | []             | none                                                  | skill body (HCL, lock files, remote state, moved/import blocks, OpenTofu); https://developer.hashicorp.com/terraform                                                       | Radio sustained. Layered TF+Pulumi coexistence → CLI-740 (see disposition b.1).                                                                                                                                                                             |
 | pulumi (infra-iac-pulumi)                              | infra-iac [X]                                           | constrained-via-exclusivity-or-requires | A     | []             | none                                                  | skill body (ComponentResource, Outputs, interpolate, Automation API); https://www.pulumi.com/docs/; https://www.pulumi.com/docs/iac/get-started/terraform/reference-state/ | Multi-cloud (@pulumi/aws, gcp, azure, kubernetes) — no platform binding. Body never mentions terraform; no smuggled coupling.                                                                                                                               |
-| sst (infra-iac-sst)                                    | infra-iac [X]                                           | constrained-via-exclusivity-or-requires | A     | []             | none — aws-sdk binding REJECTED (platform-anchor gap) | skill body (sst.aws.* components, resource linking, sst dev, transforms); https://sst.dev/docs/; https://sst.dev/docs/providers/                                           | AWS-bound with no catalog anchor to bind to. Embeds Pulumi (D-306, disposition b.3); beside-org-terraform is a scope split (b.2).                                                                                                                           |
-| vercel (infra-platform-vercel)                         | infra-platform [o]                                      | universal                               | A     | []             | none                                                  | skill body (vercel.json, functions/regions, Routing Middleware, crons, monorepo); https://vercel.com/docs                                                                  | vercel↔netlify same-slot tension → D-306 dubious-combo line (disposition c). Framework-agnostic (auto-detect) — no meta-framework binding.                                                                                                                  |
-| netlify (infra-platform-netlify)                       | infra-platform [o]                                      | universal                               | A     | []             | none                                                  | skill body (netlify.toml, .mts functions, Deno edge functions, Blobs); https://docs.netlify.com/                                                                           | Same D-306 line as vercel.                                                                                                                                                                                                                                  |
+| sst (infra-iac-sst)                                    | infra-iac [X]                                           | constrained-via-exclusivity-or-requires | A     | []             | none — aws-sdk binding REJECTED (platform-anchor gap) | skill body (sst.aws.* components, resource linking, sst dev, transforms); https://sst.dev/docs/; https://sst.dev/docs/providers/                                           | AWS-bound with no catalog anchor to bind to. Embeds Pulumi (CLI-740, disposition b.3); beside-org-terraform is a scope split (b.2).                                                                                                                         |
+| vercel (infra-platform-vercel)                         | infra-platform [o]                                      | universal                               | A     | []             | none                                                  | skill body (vercel.json, functions/regions, Routing Middleware, crons, monorepo); https://vercel.com/docs                                                                  | vercel↔netlify same-slot tension → CLI-740 dubious-combo line (disposition c). Framework-agnostic (auto-detect) — no meta-framework binding.                                                                                                                |
+| netlify (infra-platform-netlify)                       | infra-platform [o]                                      | universal                               | A     | []             | none                                                  | skill body (netlify.toml, .mts functions, Deno edge functions, Blobs); https://docs.netlify.com/                                                                           | Same CLI-740 line as vercel.                                                                                                                                                                                                                                |
 | cloudflare-workers (infra-platform-cloudflare-workers) | infra-platform [o]                                      | universal                               | A     | []             | none                                                  | skill body (wrangler.jsonc, KV/D1/R2/DO/Queues bindings, Hono integration); https://developers.cloudflare.com/workers/                                                     | **Dual-identity (host + edge-service layer)** — the structural reason infra-platform cannot radio (disposition c).                                                                                                                                          |
 | aws-sdk (infra-platform-aws-sdk)                       | infra-platform [o]                                      | universal                               | A     | []             | none                                                  | skill body (modular @aws-sdk/client-*, command pattern, DocumentClient, paginators); https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/                    | Client SDK, not a host — composes with every platform; aws-sdk-beside-vercel is canonical multi-cloud. Category description re-cut (F4).                                                                                                                    |
 | cli-commander (cli-framework-cli-commander)            | cli-framework [X, required]                             | constrained-via-exclusivity-or-requires | —     | —              | none                                                  | skill body (Commander v13, parseAsync, EXIT_CODES, wizard state machines, @clack/prompts bundled); https://github.com/tj/commander.js                                      | Framework anchor — classification omitted per §4. Bundles clack teaching (F6); exit-code contradiction with the clack skill (F7).                                                                                                                           |
@@ -266,8 +266,8 @@ Batch id `infra-cli`, audited `2026-08-07`. 15 skills: 11 class A, 1 class B, 1 
 | turborepo-ci → requires [github-actions]                        | REJECTED    | Provider-agnostic by its own when-NOT-to-use; GHA auto-detection is a gotcha note with a documented manual fallback.                                                                                                                                                                                                             |
 | kubernetes → requires [docker]                                  | REJECTED    | Manifests consume OCI images from any builder/registry; the body delegates image building generically, not to Docker.                                                                                                                                                                                                            |
 | setup-env → needsAny [nextjs, vite]                             | REJECTED    | Core is host-neutral (server-side Zod validation is the primary case); the binding would block server-only projects. This is the F5 class-C derivation flag — the rejection is load-bearing for CLI-405's design.                                                                                                                |
-| sst → requires [aws-sdk]                                        | REJECTED    | Platform-anchor gap: SST needs AWS-the-platform (no catalog anchor), not the SDK skill; an SST app can ship zero SDK calls. Advisory pairing → D-306 (`recommends`-shaped).                                                                                                                                                      |
-| sst → needsAny [pulumi]                                         | REJECTED    | SST embeds the Pulumi engine internally — a product dependency, not a selection dependency; the pulumi skill's lifecycle half (stacks, backends, `pulumi up`) actively contradicts SST's state ownership. D-306 embedding line (disposition b.3).                                                                                |
+| sst → requires [aws-sdk]                                        | REJECTED    | Platform-anchor gap: SST needs AWS-the-platform (no catalog anchor), not the SDK skill; an SST app can ship zero SDK calls. Advisory pairing → CLI-740 (`recommends`-shaped).                                                                                                                                                    |
+| sst → needsAny [pulumi]                                         | REJECTED    | SST embeds the Pulumi engine internally — a product dependency, not a selection dependency; the pulumi skill's lifecycle half (stacks, backends, `pulumi up`) actively contradicts SST's state ownership. CLI-740 embedding line (disposition b.3).                                                                              |
 | oclif-ink → requires [react]                                    | REJECTED    | Ink embeds React's programming model, but `web-framework-react` is the _web_ anchor whose content (DOM, web patterns) is majority-inapplicable in a terminal — and the binding's victim is every oclif project, forced to drag a web framework skill into a CLI stack (verify-B5-B12 item 18's in-catalog-victim discriminator). |
 | clack → needsAny [cli-commander, oclif-ink]                     | REJECTED    | Standalone-usable — cli-commander's own body names "raw @clack/prompts without Commander" as a valid mode; oclif-ink never touches it.                                                                                                                                                                                           |
 | vercel / netlify / cloudflare-workers → meta-framework bindings | REJECTED    | All three are framework-agnostic hosts (auto-detect/adapters); binding any to nextjs-class skills would invert reality.                                                                                                                                                                                                          |
@@ -287,7 +287,7 @@ gap) rather than routine.
   Recommended: move docker to `infra-containers`, description "Containers (Docker,
   Kubernetes)". Measured cost: 1 metadata `category:` edit + 1 description re-cut + regen;
   zero default-stacks entries reference docker. Apply-phase decision.
-- **F3 — three D-306 lines from the infra-iac radio** (disposition b): layered
+- **F3 — three CLI-740 lines from the infra-iac radio** (disposition b): layered
   terraform+pulumi via `RemoteStateReference`; sst-beside-org-terraform as a scope split;
   sst-embeds-pulumi (half the pulumi skill applies inside `sst.config.ts`, half must not be
   followed). All three recorded so the radio's survival is honest, not convenient.
@@ -314,12 +314,12 @@ gap) rather than routine.
   vocabulary, but the manifest should not imply the requirement is live.
 - **F9 — clack + Ink raw-mode caveat.** Both claim stdin raw mode; a clack prompt cannot run
   during an active Ink render (sequential use is fine). Content note only; no fence.
-- **F10 — the platform-anchor gap, promoted to a named CLI-405/D-306 design input
+- **F10 — the platform-anchor gap, promoted to a named CLI-405/CLI-740 design input
   (verification amendment).** Two specimens from two batches meet the two-specimen bar that
   promoted F5: B6's deferred `vercel-kv/vercel-postgres → requires [vercel]` and sst → AWS.
   Platform-boundness is unrepresentable unless a platform skill happens to be the right
   content match; candidate direction: platform/host anchors as binding targets. Rides beside
-  F5 into CLI-405's design inputs; the D-306 `recommends`-shaped advisory lines stay.
+  F5 into CLI-405's design inputs; the CLI-740 `recommends`-shaped advisory lines stay.
 
 ## Contradicts-the-worksheet
 
@@ -330,7 +330,7 @@ gap) rather than routine.
 2. **"infra-iac exclusive — defensible, but three unaudited orphans riding it" resolves
    stronger than defensible:** all three documented coexistence patterns dissolve under the
    steady-state semantics (migration window / scope split / engine embedding), so the radio
-   is confirmed the correct and sufficient fence, with the residue in D-306 rather than in
+   is confirmed the correct and sufficient fence, with the residue in CLI-740 rather than in
    weakened category semantics.
 3. **"infra-platform — should it be exclusive?" — no, and it structurally cannot be.** The
    blocker is not multi-cloud frequency but membership shape: aws-sdk can never radio, and
@@ -358,7 +358,7 @@ Lightest batch so far — one rule, zero id changes, zero stack edits.
   description re-cut, regen. Zero default-stacks entries affected (verified).
 - **M3 — description re-cuts:** `infra-platform` (F4); `infra-containers` (with M2).
 - **M4 — skills-repo content notes (not this repo):** F7 exit-code alignment, F6 slimming
-  option, F9 raw-mode caveat, and the D-306 advisory for sst↔aws-sdk pairing.
+  option, F9 raw-mode caveat, and the CLI-740 advisory for sst↔aws-sdk pairing.
 
 ## Cross-batch handoffs
 
@@ -372,6 +372,6 @@ Lightest batch so far — one rule, zero id changes, zero stack edits.
 [vercel]` line stays B6's (subjects are B6's, target is this batch's vercel) — nothing for
   B11 to adopt; noted so it does not fall between batches. The platform-anchor gap it shares
   with sst→aws is one named design input (F10), not two themes.
-- **→ D-306:** six lines from this batch — layered terraform+pulumi, sst-beside-org-terraform,
+- **→ CLI-740:** six lines from this batch — layered terraform+pulumi, sst-beside-org-terraform,
   sst-embeds-pulumi, vercel↔netlify dubious combo, vercel↔cloudflare-workers-as-host, and
   the sst↔aws-sdk `recommends`-shaped advisory.

@@ -1,4 +1,4 @@
-# D-08: Support User-Defined Stacks in Consumer Projects
+# CLI-714: Support User-Defined Stacks in Consumer Projects
 
 **Status:** Pending
 **Research doc:** [docs/cli/research/user-defined-stacks.md](../../docs/cli/research/user-defined-stacks.md)

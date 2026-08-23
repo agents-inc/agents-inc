@@ -51,7 +51,7 @@ on demonstrated content, never the upstream install story and never the class le
 must therefore distinguish "optional wiring for" from "runs only inside".** Known design input
 for CLI-405: the platform-anchor gap — couplings to hosts that are not anchor skills (sst→AWS,
 vercel-kv→Vercel) are currently inexpressible and need a decision (host anchors, or a new
-advisory vocabulary via D-306). This is the owner's validation requirement made
+advisory vocabulary via CLI-740). This is the owner's validation requirement made
 real: a skill whose only adapter is `nextjs` AND whose remaining body is unfollowable without it
 derives `requires needsAny [nextjs]`, so pairing it with plain React (no Next.js) is surfaced by
 the same machinery that handles every other incompatibility, in the wizard, the editor and

@@ -1,4 +1,4 @@
-# D-19: Improve Template Error Messages
+# CLI-717: Improve Template Error Messages
 
 **Status:** Refinement Complete
 **Priority:** S (Small)

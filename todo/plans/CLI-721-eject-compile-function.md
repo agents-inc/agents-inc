@@ -1,8 +1,8 @@
-# D-47: Eject a Standalone Compile Function for Sub-Agent Compilation
+# CLI-721: Eject a Standalone Compile Function for Sub-Agent Compilation
 
 **Status:** Refinement
 **Date:** 2026-02-26
-**Related:** D-44 (eject templates), D-12 (eject full agents), D-13 (eject skills by domain)
+**Related:** D-44 (eject templates), D-12 (eject full agents), CLI-716 (eject skills by domain)
 
 ---
 

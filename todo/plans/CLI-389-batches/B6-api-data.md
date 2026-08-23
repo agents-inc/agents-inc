@@ -18,7 +18,7 @@ replace two, and ZERO `requires` bindings are needed.** Today `api-database` + `
 group #26 fence 137 skill pairs; only 29 of those fences are right. The proposed set keeps
 those 29, adds 2 correct fences the current tree misses, and removes **108 wrong or dropped
 pairwise exclusions** (**97 flatly wrong, 11 knowingly conceded** — group #26's two edges plus
-the 9 baas↔db-host pairs; arithmetic corrected per verify-B6 6.1, full D-306 residue list in
+the 9 baas↔db-host pairs; arithmetic corrected per verify-B6 6.1, full CLI-740 residue list in
 the group-#26 disposition below). Every candidate `requires` binding was examined and rejected, including the brief's
 own `mongoose → requires mongodb` (the mongodb _skill_ turns out to be a Mongoose skill —
 see finding F1).
@@ -81,7 +81,7 @@ TIME`) — skill body confirms. Postgres+Cockroach in one service is the same ra
   `@upstash/redis` on edge routes plus ioredis on workers is a real steady state that
   legitimately wants both skills. The radio stays (it is one provider, the redis skill's
   ioredis patterns apply verbatim to the Upstash TCP endpoint, and the current tree fences the
-  pair anyway), but redis↔upstash is recorded in the D-306 residue as
+  pair anyway), but redis↔upstash is recorded in the CLI-740 residue as
   dual-client-one-provider.
   The split's big win: redis stops radio-excluding postgres, drizzle, and mongo — cache beside
   any database is the _normal_ architecture, and today's category forbids it.
@@ -99,7 +99,7 @@ TIME`) — skill body confirms. Postgres+Cockroach in one service is the same ra
   These are mutually substitutable hosts; PlanetScale-now-does-Postgres makes "Managed
   _Database_" (not "Managed Postgres") the right frame. Soft edge: turso as an edge-replica
   _secondary_ beside a primary Postgres host is a real minority pattern — accepted
-  over-restriction, noted for D-306.
+  over-restriction, noted for CLI-740.
 - **`api-baas` (purified) — one BaaS per project. Radio right for the three that are actually
   BaaS.** supabase/firebase/appwrite each own auth+database+storage+functions; two _full_ BaaS
   stacks in one project is architecturally incoherent. One documented exception the radio
@@ -108,7 +108,7 @@ TIME`) — skill body confirms. Postgres+Cockroach in one service is the same ra
   provider (https://supabase.com/docs/guides/auth/third-party/firebase-auth,
   https://supabase.com/blog/third-party-auth-mfa-phone-send-hooks), so
   Firebase-Auth-plus-Supabase-everything-else is a supported, documented steady state whose
-  user plausibly selects both skills — recorded as firebase↔supabase in the D-306 residue; the
+  user plausibly selects both skills — recorded as firebase↔supabase in the CLI-740 residue; the
   radio stays (the mixed pattern uses Firebase for one slice, not two full stacks). But
   neon/planetscale/turso are NOT BaaS — no
   auth, no storage, no functions; they are managed databases, and their skills say so. Their
@@ -138,7 +138,7 @@ TIME`) — skill body confirms. Postgres+Cockroach in one service is the same ra
 | cockroachdb → requires [postgresql]                                  | REJECTED              | It rides the pg driver, but the two are siblings in the exclusive `api-sql-engine` — a requires into one's own radio is the contradiction the plan's consistency gate exists to catch. The skill is self-contained on connection anyway.                                             |
 | neon → [postgresql], planetscale → [mysql], turso → (sqlite)         | REJECTED              | Each ships its own serverless driver (`@neondatabase/serverless`, `@planetscale/database`, `@libsql/client`); none needs the raw-driver skill, and no sqlite skill exists.                                                                                                           |
 | vercel-kv → requires [upstash]                                       | REJECTED              | Product lineage, not a skill dependency — the skill already teaches `@upstash/redis` standalone. Same-kind sibling in `api-kv`.                                                                                                                                                      |
-| vercel-kv / vercel-postgres → requires [vercel] (infra-platform)     | DEFERRED, not adopted | Product-true (only provisionable on Vercel) but both products are discontinued (Dec 2024 / Jun 2025) and the better disposition is retirement (F2). If kept, revisit; recorded for D-306, not bound now.                                                                             |
+| vercel-kv / vercel-postgres → requires [vercel] (infra-platform)     | DEFERRED, not adopted | Product-true (only provisionable on Vercel) but both products are discontinued (Dec 2024 / Jun 2025) and the better disposition is retirement (F2). If kept, revisit; recorded for CLI-740, not bound now.                                                                           |
 
 Zero adopted — with the 22 as _subjects_. One inbound binding from outside the batch surfaced
 in verification (verify-B6 4.5) and is handed to B5, or it falls between batches — see F4.
@@ -167,7 +167,7 @@ exclusive category under the split, so every verdict is
 | mysql (api-database-mysql)                     | api-sql-engine   | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (mysql2: prepared statements, streaming); https://sidorares.github.io/node-mysql2/                                                                                                                                                              | Driver-level engine skill. mysql2 also speaks to PlanetScale/Vitess — cross-category pairing allowed.                                                                     |
 | cockroachdb (api-database-cockroachdb)         | api-sql-engine   | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (pg wire protocol, mandatory 40001 retries, online DDL); https://www.cockroachlabs.com/docs/                                                                                                                                                    | Engine, not a host (self-hostable + Cockroach Cloud). Leaves group #26 — see disposition.                                                                                 |
 | drizzle (api-database-drizzle)                 | api-orm          | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (titled "Drizzle ORM + Neon"); https://orm.drizzle.team; Gel dialect: https://github.com/drizzle-team/drizzle-orm/releases/tag/0.40.0                                                                                                           | Targets pg/mysql/sqlite/gel + neon/turso/planetscale drivers — why no engine binding.                                                                                     |
-| prisma (api-database-prisma)                   | api-orm          | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body; https://www.prisma.io/docs (supports Postgres, MySQL, SQLite, MongoDB, CockroachDB)                                                                                                                                                            | Prisma-on-Mongo makes it a mongoose alternative in that mode — cross-radio, deliberately unfenced (advisory over-permissiveness; noted D-306).                            |
+| prisma (api-database-prisma)                   | api-orm          | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body; https://www.prisma.io/docs (supports Postgres, MySQL, SQLite, MongoDB, CockroachDB)                                                                                                                                                            | Prisma-on-Mongo makes it a mongoose alternative in that mode — cross-radio, deliberately unfenced (advisory over-permissiveness; noted CLI-740).                          |
 | sequelize (api-database-sequelize)             | api-orm          | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (v6 Model.init, v7 alpha; pg/mysql/mariadb/sqlite/mssql); https://sequelize.org                                                                                                                                                                 |                                                                                                                                                                           |
 | typeorm (api-database-typeorm)                 | api-orm          | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (decorators, Data Mapper); https://typeorm.io                                                                                                                                                                                                   |                                                                                                                                                                           |
 | knex (api-database-knex)                       | api-orm          | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (v3 query/schema builder, pg/mysql/sqlite/mssql); https://knexjs.org                                                                                                                                                                            | Query builder, not ORM — same radio regardless (see rationale).                                                                                                           |
@@ -184,12 +184,12 @@ exclusive category under the split, so every verdict is
 | appwrite (api-baas-appwrite)                   | api-baas (stays) | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (TablesDB, node-appwrite server SDK); https://appwrite.io/docs                                                                                                                                                                                  | True BaaS.                                                                                                                                                                |
 | neon (api-baas-neon)                           | api-db-host      | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (@neondatabase/serverless, branching, scale-to-zero); https://neon.tech/docs                                                                                                                                                                    | NOT a BaaS (no auth/storage/functions) — the worksheet's "sits with supabase … for good reason" does not survive inspection.                                              |
 | planetscale (api-baas-planetscale)             | api-db-host      | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (@planetscale/database, deploy requests, Vitess); Postgres GA 2025-09-22: https://planetscale.com/changelog/postgres-ga                                                                                                                         | Skill body is MySQL-era — needs a Postgres-support refresh (skills-repo note, F3).                                                                                        |
-| turso (api-baas-turso)                         | api-db-host      | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (@libsql/client, embedded replicas, batch()); https://docs.turso.tech                                                                                                                                                                           | The category's soft edge (edge-replica secondary pattern) — noted D-306.                                                                                                  |
+| turso (api-baas-turso)                         | api-db-host      | constrained-via-exclusivity-or-requires | A     | []         | none                                   | skill body (@libsql/client, embedded replicas, batch()); https://docs.turso.tech                                                                                                                                                                           | The category's soft edge (edge-replica secondary pattern) — noted CLI-740.                                                                                                |
 
 ## Group #26 disposition — accepted-loss OVERTURNED: mostly recovered
 
 Old group: `{neon, vercel-postgres, cockroachdb}` (default-rules.ts:111-114), the worksheet's
-"known accepted loss to D-306" because neon lived in `api-baas` while the other two lived in
+"known accepted loss to CLI-740" because neon lived in `api-baas` while the other two lived in
 `api-database`. Under the new set:
 
 - **neon ↔ vercel-postgres: RECOVERED** — both in `api-db-host`. This is the load-bearing edge:
@@ -201,19 +201,19 @@ Old group: `{neon, vercel-postgres, cockroachdb}` (default-rules.ts:111-114), th
   Postgres host and a different distributed engine now coexist unfenced. But this fence was
   dubious anyway: "one managed host" and "one engine" are separate claims, and a
   Neon-primary + Cockroach-analytics polyglot is no less coherent than postgres+mongo, which we
-  now deliberately allow. Residue recorded for D-306 as two edges, not a group.
+  now deliberately allow. Residue recorded for CLI-740 as two edges, not a group.
 
 Net: group #26 goes from "no non-violent restructure recovers the fence" to one edge recovered
 exactly, two edges upgraded into a better fence, two conceded edges of questionable validity.
 Also removed knowingly: the 9 baas↔db-host cross pairs from the old `api-baas` radio. Under
 decision 2's advisory, exclusivity-only model these are acceptable over-permissiveness — but
-the D-306 record must cover the full 3×4 block, not one pair (verify-B6 2.10): the named worst
+the CLI-740 record must cover the full 3×4 block, not one pair (verify-B6 2.10): the named worst
 cases are supabase↔neon _and_ supabase↔planetscale, both two-Postgres-hosts pairs now that
 PlanetScale does Postgres. A category merge that would keep these fences was examined and
 rejected — it would wrongly block real combos like firebase↔neon (Firebase Auth + Neon
 Postgres).
 
-### D-306 residue — the full list (verify-B6 change 2)
+### CLI-740 residue — the full list (verify-B6 change 2)
 
 The 11 knowingly conceded exclusions (fences removed despite arguable validity):
 
