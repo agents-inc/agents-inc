@@ -9,6 +9,7 @@ import {
   type WizardType,
 } from "../constants.js";
 import { retryEnterUntil } from "../retry-enter.js";
+import { retrySpaceUntilToggled } from "../retry-space.js";
 import type { WizardResult } from "../wizard-result.js";
 import { SourcesStep } from "./sources-step.js";
 
@@ -48,7 +49,10 @@ type VisibleCategory = {
 /**
  * Trailing compatibility annotation SkillTag appends after the label
  * (category-grid.tsx getCompatibilityLabel): "(requires X and Y)",
- * "(required by X)", "(incompatible)", "(discouraged)".
+ * "(required by X)", "(incompatible: conflicts with X)",
+ * "(discouraged: the reason the source authored)". The last two state a
+ * verdict and then its reason, so the keyword alternation above must stay
+ * open-ended after the word rather than closing on a paren.
  * Anchored to the end of the cell and greedy, so requirement names that
  * themselves contain parentheses stay inside the match. Real display names
  * ("Gel (EdgeDB)") keep their parentheses because they never open with one
@@ -68,6 +72,13 @@ const CELL_LEADING_MARKERS = /^(?:(?:[PG]|[+\-✓✗⏏])\s+)+/;
 const ANY_FOCUSED_CATEGORY = (): boolean => true;
 
 /**
+ * The attempt index of the first Space press of a toggle. It is the only one
+ * with no earlier press still unaccounted for behind it, and therefore the only
+ * one a confirmation may accept the moment it reads the target state.
+ */
+const FIRST_PRESS = 0;
+
+/**
  * The EXACT rendered skill label of a │-delimited grid cell: scope badges,
  * diff markers, and compatibility annotations stripped, whitespace trimmed.
  * Matching labels via this (instead of `cell.includes(label)`) keeps labels
@@ -76,6 +87,32 @@ const ANY_FOCUSED_CATEGORY = (): boolean => true;
  */
 function cellLabel(cell: string): string {
   return cell.trim().replace(CELL_LEADING_MARKERS, "").replace(CELL_ANNOTATION, "").trim();
+}
+
+/**
+ * A cell's rendered text with layout whitespace flattened — the closed-loop
+ * signal that a Space press landed on the skill it was aimed at.
+ *
+ * It is the WHOLE cell, deliberately, because no single element of it tracks
+ * selection on its own. The scope badge (` G ` / ` P `) is the usual mover: a
+ * selected skill always has an active `SkillConfig`, whose `scope` is a
+ * required field, so the badge is present exactly while something selects the
+ * skill (`buildCategoriesForDomain` in `lib/wizard/build-step-logic.ts`). But a
+ * dual-scope deselect collapses `[P][G]` to `[G]` rather than clearing it, and
+ * `getCompatibilityLabel` paints a `(required by …)` annotation on the way OUT
+ * of a selection — both are text this comparison sees and a badge-presence test
+ * would not.
+ *
+ * What it must never be is a check for "the frame changed": see
+ * {@link retrySpaceUntilToggled} for why a toggle cannot take that shape.
+ * Anchoring on one named cell's own text is what makes it a statement about
+ * the subject rather than about the terminal.
+ *
+ * Whitespace is flattened because a neighbouring cell gaining or losing a badge
+ * shifts this one's padding without changing what it says.
+ */
+function renderedCellText(cell: string): string {
+  return cell.trim().replace(/\s+/g, " ");
 }
 
 /**
@@ -230,19 +267,37 @@ export class BuildStep extends BaseStep {
     });
   }
 
-  /** Poll the viewport until at least one category header is painted. */
-  private async waitForVisibleCategories(): Promise<VisibleCategory[]> {
+  /**
+   * Re-read the viewport until `read` has an answer, or the retry interval runs
+   * out. Null means the screen never said so, and every caller decides for
+   * itself whether that is a re-press or a failure — which is the whole reason
+   * this does not throw.
+   *
+   * The one poll every closed-loop read in this file is built on: a category
+   * appearing, focus arriving somewhere, a cell changing what it renders. They
+   * differ only in what they are looking for, and a second copy of the deadline
+   * is a second place for the interval to drift.
+   */
+  private async pollViewport<T>(read: () => T | null): Promise<T | null> {
     const deadline = Date.now() + INTERNAL_RETRIES.INTERVAL_MS;
     for (;;) {
-      const visible = this.parseVisibleCategories();
-      if (visible.length > 0) return visible;
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `focusSkill: no category headers found on screen.\nScreen:\n${this.getScreen()}`,
-        );
-      }
+      const seen = read();
+      if (seen !== null) return seen;
+      if (Date.now() >= deadline) return null;
       await delay(INTERNAL_DELAYS.KEYSTROKE);
     }
+  }
+
+  /** Poll the viewport until at least one category header is painted. */
+  private async waitForVisibleCategories(): Promise<VisibleCategory[]> {
+    const visible = await this.pollViewport(() => {
+      const painted = this.parseVisibleCategories();
+      return painted.length > 0 ? painted : null;
+    });
+    if (visible) return visible;
+    throw new Error(
+      `focusSkill: no category headers found on screen.\nScreen:\n${this.getScreen()}`,
+    );
   }
 
   /**
@@ -347,21 +402,14 @@ export class BuildStep extends BaseStep {
     );
   }
 
-  /**
-   * Re-read the viewport until the focused category satisfies `accept`, or the
-   * retry interval runs out. Null means the screen never said so — the caller
-   * decides whether that is a re-press or a failure.
-   */
+  /** Re-read the viewport until the focused category satisfies `accept`. */
   private async pollForFocusedCategory(
     accept: (category: VisibleCategory) => boolean,
   ): Promise<VisibleCategory | null> {
-    const deadline = Date.now() + INTERNAL_RETRIES.INTERVAL_MS;
-    for (;;) {
+    return this.pollViewport(() => {
       const focused = this.findFocusedCategory(this.parseVisibleCategories());
-      if (focused && accept(focused)) return focused;
-      if (Date.now() >= deadline) return null;
-      await delay(INTERNAL_DELAYS.KEYSTROKE);
-    }
+      return focused && accept(focused) ? focused : null;
+    });
   }
 
   /**
@@ -394,15 +442,142 @@ export class BuildStep extends BaseStep {
   }
 
   /**
-   * Navigate to a skill by label in the grid and press Space to toggle selection.
+   * Navigate to a skill by label in the grid and toggle it, CLOSED-LOOP: the
+   * Space press is confirmed against the target cell's own rendered text and
+   * re-pressed if the grid never shows it landing (see
+   * {@link retrySpaceUntilToggled} for the race, and {@link renderedCellText}
+   * for the signal).
+   *
+   * This is the only Space press in the framework that can be confirmed,
+   * because it is the only one that knows WHICH skill it is aimed at — see
+   * {@link toggleFocusedSkill}, which does not and says so.
+   *
+   * It follows that `selectSkill` means the toggle LANDED: a press the product
+   * refuses (a global-locked skill at project scope, the last skill in a
+   * required exclusive category) leaves the cell exactly as it was and is
+   * reported here rather than passed on. A spec whose subject IS the refusal
+   * wants {@link selectSkillAwaiting}, which anchors on the toast the refusal
+   * emits instead.
    */
   async selectSkill(skillLabel: string): Promise<void> {
     await this.focusSkill(skillLabel);
-    await this.waitForWizardFooter();
-    await this.pressSpace();
+    await this.toggleFocusedSkillUntilRendered(skillLabel);
   }
 
-  /** Toggle the currently focused skill selection (Space). */
+  /**
+   * Press Space until the cell labelled `skillLabel` renders the other way
+   * round, starting from what it renders NOW.
+   *
+   * The target is read once and held. Re-reading it per attempt would turn
+   * "reach the flipped state" into "flip once more", which a late-landing press
+   * makes unterminating — and the flipped state is the loop's whole point: it
+   * exits on having OBSERVED it, so however many presses were swallowed or
+   * doubled along the way, the cell it leaves behind is the one the caller
+   * asked for.
+   */
+  private async toggleFocusedSkillUntilRendered(skillLabel: string): Promise<void> {
+    const before = this.renderedCellOrThrow(skillLabel);
+    await retrySpaceUntilToggled(
+      () => this.toggleFocusedSkill(),
+      (attempt) => this.confirmCellToggled(skillLabel, before, attempt),
+    );
+  }
+
+  /** Wait for the cell to move off `before`, then hold a retry to a second look. */
+  private async confirmCellToggled(
+    skillLabel: string,
+    before: string,
+    attempt: number,
+  ): Promise<void> {
+    const toggled = await this.pollViewport(() => this.cellOtherThan(skillLabel, before));
+    if (toggled === null) throw this.cellNeverToggled(skillLabel, before, attempt);
+    if (attempt === FIRST_PRESS) return;
+    await this.confirmCellStayedToggled(skillLabel, before, attempt);
+  }
+
+  /**
+   * The one bounded margin in this loop, and it is not a settle delay in
+   * disguise: it waits on the single thing no surface can show, which is a
+   * press already written to the PTY whose effect has not arrived.
+   *
+   * {@link FIRST_PRESS} has nothing behind it, so it is accepted on the frame
+   * it is observed on and pays nothing. Every press after it has an earlier one
+   * unaccounted for, and a toggle that lands twice comes back to where it
+   * started — which this sees, and answers with another press rather than a
+   * wrong pass.
+   */
+  private async confirmCellStayedToggled(
+    skillLabel: string,
+    before: string,
+    attempt: number,
+  ): Promise<void> {
+    await delay(INTERNAL_DELAYS.KEYSTROKE);
+    if (this.cellOtherThan(skillLabel, before) !== null) return;
+    throw new Error(
+      `selectSkill: the cell labelled "${skillLabel}" toggled and came straight back to ` +
+        `"${before}", so one of the ${attempt + 1} Space presses landed late and undid ` +
+        `another.\nScreen:\n${this.getScreen()}`,
+    );
+  }
+
+  /** Says which cell refused to move and what it was still rendering. */
+  private cellNeverToggled(skillLabel: string, before: string, attempt: number): Error {
+    return new Error(
+      `selectSkill: the cell labelled "${skillLabel}" still renders "${before}" after ` +
+        `${attempt + 1} Space press(es). Either the presses are being swallowed, or the ` +
+        `product refused the toggle — a refusal is a toast, so assert it with ` +
+        `selectSkillAwaiting.\nScreen:\n${this.getScreen()}`,
+    );
+  }
+
+  /** The named cell's rendered text when it is no longer `before`, else null. */
+  private cellOtherThan(skillLabel: string, before: string): string | null {
+    const cell = this.renderedCell(skillLabel);
+    return cell !== null && cell !== before ? cell : null;
+  }
+
+  /** The named cell's rendered text, or null when no visible cell carries the label. */
+  private renderedCell(skillLabel: string): string | null {
+    const cell = this.parseVisibleCategories()
+      .flatMap((category) => category.cells)
+      .find((candidate) => cellLabel(candidate) === skillLabel);
+    return cell === undefined ? null : renderedCellText(cell);
+  }
+
+  /** {@link renderedCell} where the caller has already navigated to the cell. */
+  private renderedCellOrThrow(skillLabel: string): string {
+    const cell = this.renderedCell(skillLabel);
+    if (cell !== null) return cell;
+    throw new Error(
+      `selectSkill: no visible cell is labelled "${skillLabel}", so its toggle has nothing ` +
+        `to be confirmed against.\nScreen:\n${this.getScreen()}`,
+    );
+  }
+
+  /**
+   * Toggle the currently focused skill selection (Space), OPEN-LOOP — and it
+   * cannot honestly be anything else.
+   *
+   * A confirmation has to name its subject, and this method has none to name.
+   * Under `NO_COLOR` the focused CELL has no text signal at all (`SkillTag`
+   * distinguishes it by `borderColor` / `borderDimColor`, which the harness
+   * strips), so the page object cannot read which skill it is about to toggle,
+   * and the tracked {@link gridCol} is a dead-reckoning hint that several
+   * callers reach this method without ever setting.
+   *
+   * The second reason is the one that settles it: for this method a landed
+   * press does not always change anything. Callers deliberately press Space on
+   * a global-locked row to assert it is INERT
+   * (`dual-scope-s-round-trip-space-inert.e2e.test.ts`,
+   * `global-skill-toggle-guard.e2e.test.ts`), so "the cell did not move" is a
+   * correct outcome here as often as it is a swallowed keystroke, and no
+   * observable separates them.
+   *
+   * Use {@link selectSkill} when the skill has a name — it confirms. Use
+   * {@link toggleFocusedSkillAwaiting} when the outcome is a toast — it anchors
+   * on raw output after a pre-press cursor. Reach for this one only where
+   * neither applies, and assert the outcome in the spec.
+   */
   async toggleFocusedSkill(): Promise<void> {
     await this.waitForWizardFooter();
     await this.pressSpace();
@@ -453,6 +628,28 @@ export class BuildStep extends BaseStep {
   async toggleScopeOnFocusedSkill(): Promise<void> {
     await this.waitForWizardFooter();
     await this.pressKey("s");
+  }
+
+  /**
+   * Press "s" on the focused skill and wait for `sentinel` in RAW PTY output
+   * emitted after the press. Scope-key counterpart of
+   * {@link toggleFocusedSkillAwaiting}, and it exists for the same reason: a
+   * toast is painted into an absolutely-positioned row Ink rewrites in place,
+   * so the processed buffer has usually lost it by the time a spec reads it,
+   * while raw output is append-only and keeps it.
+   *
+   * It is the only assertion that can see the `s` refusal at all. When the
+   * wizard is editing the global install, the scope keystroke is turned away by
+   * `toggleFocusedScope` in `wizard.tsx` BEFORE the store is called, and the
+   * store's own guard would have turned it away too — so "the row did not move"
+   * is satisfied by either one and cannot tell them apart. The toast is emitted
+   * by the component guard alone.
+   */
+  async toggleScopeOnFocusedSkillAwaiting(sentinel: string): Promise<void> {
+    await this.waitForWizardFooter();
+    const cursor = this.getRawCursor();
+    await this.pressKey("s");
+    await this.screen.waitForTextAfter(sentinel, cursor, this.defaultTimeout);
   }
 
   /**
@@ -512,13 +709,13 @@ export class BuildStep extends BaseStep {
     // publishes the skill under, and not a literal that would have to be edited in
     // step with it.
     await this.screen.waitForText(STEP_TEXT.DOMAIN_WEB, TIMEOUTS.WIZARD_LOAD);
-    await this.focusSkill(E2E_SKILL_TITLES.react);
-    await this.pressSpace();
+    await this.selectSkill(E2E_SKILL_TITLES.react);
     await this.pressEnterWaitNewFrame();
 
-    // API domain — select required skill.
-    await this.waitForWizardFooter();
-    await this.pressSpace();
+    // API domain — select required skill. Blind, because which cell the grid
+    // opens on is the point: toggleFocusedSkill rather than an open-coded
+    // press, so the one unconfirmable Space in this class has one home.
+    await this.toggleFocusedSkill();
     await this.pressEnterWaitNewFrame();
 
     // Mobile domain — no skills in E2E source, just advance to Sources
@@ -658,12 +855,17 @@ export class BuildStep extends BaseStep {
    * count — the number the grid currently treats as chosen in that category,
    * derived from the option `selected` flags (NOT from the scope badges).
    *
-   * This is the only text-observable signal of a skill's in-grid selected
-   * state: the E2E harness runs with NO_COLOR, so the teal/dim color that also
-   * distinguishes selected rows is stripped from captured output. The scope
-   * badge (` G `/` P `) is a separate element sourced from `skillConfigs.scope`,
-   * so it can disagree with this counter when `domainSelections` and
-   * `skillConfigs` diverge.
+   * It is NOT the only text-observable signal of in-grid selected state, and it
+   * used to say it was. `CategorySection` renders the counter only for an
+   * EXCLUSIVE category (`category.exclusive ? … : null` in category-grid.tsx),
+   * so it says nothing at all about the rest of the grid. The cell's own text
+   * covers every category — see {@link renderedCellText}, which
+   * {@link selectSkill} confirms its toggle against. What IS true is that the
+   * teal/dim colour distinguishing a selected row is stripped under NO_COLOR,
+   * so neither signal is the colour. The two can also disagree: this counter
+   * reads the option `selected` flags while the scope badge is sourced from
+   * `skillConfigs.scope`, and a dual-scope deselect moves the badge and leaves
+   * the flag alone.
    *
    * Matches the display name only when it heads a `(N of M)` counter, so
    * "Framework" never collides with "Meta-Framework" (the `-` before the inner

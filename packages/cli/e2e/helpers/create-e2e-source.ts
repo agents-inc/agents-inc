@@ -286,6 +286,17 @@ export const E2E_STACK_ID = "e2e-test-stack";
 export const E2E_STACK_DESCRIPTION = "Minimal stack for E2E testing";
 
 /**
+ * A sub-agent name the CLI does not declare, for the source
+ * {@link E2ESourceOptions.withUndeclaredStackAgent} writes.
+ *
+ * Deliberately plausible rather than obviously junk — a marketplace author's mistake looks like
+ * a sub-agent, which is what makes the name reach `config/stacks.ts` in the first place. It is
+ * not a member of `AgentName`, so it is written as the `string` a hand-authored stacks file
+ * actually holds and never cast into the union.
+ */
+export const UNDECLARED_STACK_AGENT = "frontend-dev";
+
+/**
  * `Stack` with its agents' assignments widened, for the reason {@link E2ESkill.id}
  * gives: this marketplace's ids are not members of the public catalogue's union.
  * The shape is otherwise production's, because it is serialized into the source's
@@ -365,6 +376,16 @@ type E2ESourceOptions = {
    * its stack step and the wizard skips that step entirely.
    */
   withoutStacks?: boolean;
+  /**
+   * Write `config/stacks.ts` with one extra sub-agent the CLI does not declare
+   * ({@link UNDECLARED_STACK_AGENT}) beside the real ones.
+   *
+   * A marketplace's stacks file is authored by hand and nothing narrows its agent keys, so this
+   * is the shape an author's typo takes on disk. The declared sub-agents are left in place
+   * because the claim under test is a DROP: a source whose stack named only the unknown one
+   * could not tell a narrowing apart from a load that failed.
+   */
+  withUndeclaredStackAgent?: boolean;
 };
 
 /** A created E2E source: the source root plus the temp dir owning it. */
@@ -391,6 +412,9 @@ export type E2ESource = {
  * When `options.withoutStacks` is set, the stacks file is omitted — see the
  * option's own note for what a stackless marketplace makes the wizard do.
  *
+ * When `options.withUndeclaredStackAgent` is set, the stack names one sub-agent the CLI does
+ * not declare beside its real ones — see that option's note.
+ *
  * When `options.withoutSkills` names skills, they are not written at all — see
  * that option's note for the pair of sources it exists to produce.
  */
@@ -409,7 +433,7 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
     E2E_SKILLS.filter((skill) => !omitted.has(skill.id)),
   );
   if (!options?.withoutStacks) {
-    await writeStacks(sourceDir);
+    await writeStacks(sourceDir, options?.withUndeclaredStackAgent === true);
   }
   await writeAgents(sourceDir);
 
@@ -446,10 +470,16 @@ async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]):
   }
 }
 
-async function writeStacks(sourceDir: string): Promise<void> {
+async function writeStacks(sourceDir: string, withUndeclaredAgent: boolean): Promise<void> {
   const stacksFilePath = path.join(sourceDir, STACKS_FILE_PATH);
   await mkdir(path.dirname(stacksFilePath), { recursive: true });
-  await writeFile(stacksFilePath, renderConfigTs({ stacks: [E2E_STACK] }));
+  const stack = withUndeclaredAgent
+    ? {
+        ...E2E_STACK,
+        agents: { ...E2E_STACK.agents, [UNDECLARED_STACK_AGENT]: webDeveloperAgentConfig },
+      }
+    : E2E_STACK;
+  await writeFile(stacksFilePath, renderConfigTs({ stacks: [stack] }));
 }
 
 async function writeSkillRules(

@@ -33,13 +33,9 @@ export async function readTestTsConfig<T>(filePath: string): Promise<T> {
   const jiti = createJiti(import.meta.url, {
     moduleCache: false,
     interopDefault: true,
-    // Both spellings, matching config-loader.ts: `@agents-inc/cli/config` is the name the CLI
-    // published under until 0.150.0, kept so a config hand-written against it still loads. See
-    // config-loader.ts for the full reason, and REPO-24 in todo/repo.md for removing it.
-    alias: {
-      "agents-inc/config": CONFIG_EXPORTS_PATH,
-      "@agents-inc/cli/config": CONFIG_EXPORTS_PATH,
-    },
+    // Matching config-loader.ts, which resolves the one public specifier a hand-written config
+    // can import real data from.
+    alias: { "agents-inc/config": CONFIG_EXPORTS_PATH },
   });
   // Boundary cast: jiti returns unknown, caller provides expected type
   const result = await jiti.import(filePath, { default: true });

@@ -17,7 +17,11 @@ import {
   createLocalSkill,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { MINIMAL_PROJECT_AGENT_NAMES, ProjectBuilder } from "../fixtures/project-builder.js";
+import {
+  MINIMAL_PROJECT_AGENT_NAMES,
+  ProjectBuilder,
+  metadataFieldsFor,
+} from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
 import type { SkillId } from "../../src/cli/types/index.js";
@@ -153,11 +157,17 @@ describe("template ejection + custom compilation", () => {
 
       await createLocalSkill(projectDir, E2E_FIRST_SKILL, {
         description: "First test skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-first" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_FIRST_SKILL),
+          contentHash: "hash-first",
+        }),
       });
       await createLocalSkill(projectDir, E2E_SECOND_SKILL, {
         description: "Second test skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-second" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SECOND_SKILL),
+          contentHash: "hash-second",
+        }),
       });
 
       // Eject templates

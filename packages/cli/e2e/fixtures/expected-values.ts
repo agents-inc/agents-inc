@@ -41,6 +41,14 @@ export { E2E_STACK_AGENTS } from "../helpers/create-e2e-source.js";
 export { E2E_STACK_SKILL_IDS } from "../helpers/create-e2e-source.js";
 
 /**
+ * The sub-agent name the `withUndeclaredStackAgent` source writes into its stack, and which the
+ * CLI does not declare. The expected value for "a stack may only name sub-agents that exist" —
+ * derived from the fixture that puts it on disk, so the spec and the source cannot disagree
+ * about which name is the unknown one.
+ */
+export { UNDECLARED_STACK_AGENT } from "../helpers/create-e2e-source.js";
+
+/**
  * The sub-agents the wizard preselects for a Web-only build — the whole roster a
  * scratch init installs when Web is the one domain selected, sorted the way the
  * installed roster is.

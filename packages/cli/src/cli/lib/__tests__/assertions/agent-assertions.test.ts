@@ -1,60 +1,96 @@
-import { describe, it, expect } from "vitest";
-import { parseCompiledAgent } from "./agent-assertions.js";
+import { describe, it } from "vitest";
 
-const HAPPY_PATH_AGENT = `---
-name: web-dev
+import { expectAgentCompilation } from "./agent-assertions.js";
+
+/**
+ * The shared assertion nobody opens, held against text in the shape a compiled agent really
+ * arrives in rather than the mirror template its call sites render.
+ *
+ * Both fixtures below carry one hazard of that shape and nothing else. A mirror template has
+ * neither, which is why a reader that trips over both can sit under twenty green call sites: the
+ * assertion is only ever as strict as the text it is handed, and the text it is handed in a unit
+ * test is written by the same person as the assertion.
+ */
+
+/**
+ * The protocol's own fenced demonstration of the call it is teaching, which is a real part of
+ * every compiled agent that has a dynamic skill at all.
+ */
+const AGENT_DEMONSTRATING_THE_CALL = `---
+name: web-developer
 skills:
   - web-framework-react
-  - web-testing-vitest
 ---
-# web-dev
+# Web Developer Agent
 
-Body content here.
+<skill_activation_protocol>
+### Step 2 - ACTIVATE
 
-skill: "web-state-zustand"
+\`\`\`
+skill: "[skill-id]"
+\`\`\`
+
+## Available Skills (Require Loading)
+
+### web-testing-vitest
+- Description: Vitest test runner
+- Invoke: \`skill: "web-testing-vitest"\`
+- Use when: when working with web-testing
+
+</skill_activation_protocol>
+
+---
+
+<critical_reminders>
+Check your work.
+</critical_reminders>
 `;
 
-const MISSING_FRONTMATTER_AGENT = `# web-dev
-
-Just a body with no frontmatter block.
-`;
-
-const HYPHENATED_KEYS_AGENT = `---
-name: api-dev
-allowed-tools: read-file
-model-name: opus
+/** An agent whose prose separates its sections with the horizontal rules the template emits. */
+const AGENT_WITH_BODY_RULES = `---
+name: web-developer
 skills:
-  - api-framework-hono
+  - web-framework-react
 ---
-Body content.
+# Web Developer Agent
+
+---
+
+<skill_activation_protocol>
+## Available Skills (Require Loading)
+
+### web-testing-vitest
+- Description: Vitest test runner
+- Invoke: \`skill: "web-testing-vitest"\`
+- Use when: when working with web-testing
+
+</skill_activation_protocol>
+
+---
+
+<critical_reminders>
+Check your work.
+</critical_reminders>
 `;
 
-describe("parseCompiledAgent", () => {
-  it("parses frontmatter, body, and preloaded/dynamic skills on the happy path", () => {
-    const result = parseCompiledAgent(HAPPY_PATH_AGENT);
-
-    expect(result.frontmatter.name).toBe("web-dev");
-    expect(result.preloadedSkillIds).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
-    expect(result.dynamicSkillIds).toStrictEqual(["web-state-zustand"]);
-    expect(result.body).toContain("Body content here.");
-    expect(result.raw).toBe(HAPPY_PATH_AGENT);
+describe("expectAgentCompilation", () => {
+  it("reports the protocol's skills and not the invocation it demonstrates", () => {
+    // `[skill-id]` is the placeholder the protocol teaches the call with. Reported as a skill, it
+    // makes every exact dynamic-skill expectation unsatisfiable — and every `noDynamicSkills`
+    // one pass for a reason that has nothing to do with the agent under test.
+    expectAgentCompilation(AGENT_DEMONSTRATING_THE_CALL, {
+      name: "web-developer",
+      preloadedSkills: ["web-framework-react"],
+      dynamicSkills: ["web-testing-vitest"],
+    });
   });
 
-  it("degrades to empty frontmatter and passes body through when no frontmatter block exists", () => {
-    const result = parseCompiledAgent(MISSING_FRONTMATTER_AGENT);
-
-    expect(result.frontmatter).toStrictEqual({});
-    expect(result.preloadedSkillIds).toStrictEqual([]);
-    expect(result.dynamicSkillIds).toStrictEqual([]);
-    expect(result.body).toBe(MISSING_FRONTMATTER_AGENT);
-  });
-
-  it("preserves hyphenated frontmatter keys", () => {
-    const result = parseCompiledAgent(HYPHENATED_KEYS_AGENT);
-
-    expect(result.frontmatter.name).toBe("api-dev");
-    expect(result.frontmatter["allowed-tools"]).toBe("read-file");
-    expect(result.frontmatter["model-name"]).toBe("opus");
-    expect(result.preloadedSkillIds).toStrictEqual(["api-framework-hono"]);
+  it("reads a protocol that sits past the body's horizontal rules", () => {
+    // A reader that splits the frontmatter off rather than replacing it cuts on every rule as
+    // well, and hands back the fragment before the first one — so the protocol is simply absent,
+    // and an absence assertion over it passes for free.
+    expectAgentCompilation(AGENT_WITH_BODY_RULES, {
+      dynamicSkills: ["web-testing-vitest"],
+    });
   });
 });

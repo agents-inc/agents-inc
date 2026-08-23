@@ -25,6 +25,8 @@ import {
   normalizeConfigPreservingOrder,
   normalizeGlobalConfig,
 } from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
+import { compactedStackIn } from "../../src/cli/lib/__tests__/helpers/compacted-stack.js";
+import { parseCompiledAgentSections } from "../../src/cli/lib/__tests__/helpers/compiled-agent-sections.js";
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
 import {
   cleanupTempDir,
@@ -32,6 +34,7 @@ import {
   directoryExists,
   fileExists,
 } from "../../src/cli/lib/__tests__/test-fs-utils.js";
+import { assertDistIsPresent } from "../../src/cli/lib/testing/dist-staleness.js";
 import type {
   AgentName,
   AgentScopeConfig,
@@ -221,10 +224,12 @@ export async function cleanupIsolatedClaudeHome(
 
 export {
   cleanupTempDir,
+  compactedStackIn,
   directoryExists,
   fileExists,
   normalizeConfigPreservingOrder,
   normalizeGlobalConfig,
+  parseCompiledAgentSections,
   renderAgentMd,
   renderAgentYaml,
   renderConfigTs,
@@ -304,13 +309,37 @@ export async function writeCorruptConfig(baseDir: string, source: string): Promi
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
 }
 
+/**
+ * Refuses a spec file that begins with no `dist/` under it.
+ *
+ * **It read {@link BIN_RUN} for its whole life, which is the one artefact in this path that
+ * cannot go missing.** `bin/run.js` is three lines, git tracks it, and it starts whatever the
+ * state of the build — oclif then resolves the commands from `./dist/commands`
+ * (package.json -> `oclif.commands.target`), which is what a checkout that has never been built
+ * does not have. So in the exact failure this exists to name, it returned cleanly and the run
+ * went on to report `expected 127 to be 1`: an ordinary assertion failure saying nothing about a
+ * build. Nearly every spec in both suites calls it from a `beforeAll`, and the handful that do
+ * not looked like the only gap — re-derive both populations rather than trusting a figure written
+ * here. The INVOCATION is matched rather than the name, and `*.smoke.test.ts` is counted with
+ * `*.e2e.test.ts`: a bare import carries the string too, and the smoke suite calls this as well,
+ * so the obvious grep for the name over `*.e2e.test.ts` alone undercounts at both ends — it has
+ * already put a stale figure into a tracker row.
+ *
+ *     find e2e \( -name '*.e2e.test.ts' -o -name '*.smoke.test.ts' \)
+ *     grep -rlP 'beforeAll\(ensureBinaryExists|await ensureBinaryExists\(\)' e2e --include='*.ts'
+ *
+ * **Presence only, and never staleness.** Whether the build matches the tree is asked once per
+ * run, by `e2e/global-setup.ts`, and that is the honest scope for it — a `src/` edit landing
+ * mid-run does not invalidate the build this run is already executing out of. Asked here instead
+ * it refuses every spec file that begins after another agent saves a source file, which in this
+ * checkout emptied half a suite. `assertDistIsPresent` carries that reasoning where the rule
+ * lives.
+ *
+ * Async over a synchronous stat because every call site awaits it, and a `void` return would
+ * turn each of those into an `await-thenable` report.
+ */
 export async function ensureBinaryExists(): Promise<void> {
-  const binExists = await fileExists(BIN_RUN);
-  if (!binExists) {
-    throw new Error(
-      `CLI binary not found at ${BIN_RUN}. Run 'bun run build' from packages/cli, or 'bunx turbo run build --filter=agents-inc' from the repository root, before running E2E tests.`,
-    );
-  }
+  assertDistIsPresent(CLI_ROOT);
 }
 
 /** Strip ANSI escape sequences from CLI output */

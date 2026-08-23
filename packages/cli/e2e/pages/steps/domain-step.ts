@@ -1,5 +1,6 @@
 import { BaseStep } from "../base-step.js";
 import { STEP_TEXT, TIMEOUTS } from "../constants.js";
+import { toggleListRowUntilRendered } from "../list-row-toggle.js";
 import { BuildStep } from "./build-step.js";
 import { StackStep } from "./stack-step.js";
 
@@ -32,14 +33,25 @@ export class DomainStep extends BaseStep {
   }
 
   /**
-   * Toggle a domain by name using Space.
-   * Navigates the cursor to the line containing the domain label,
-   * then presses Space to toggle it.
+   * Navigate to a domain by name and toggle it, CLOSED-LOOP: the Space press is confirmed
+   * against that row's own rendered text and re-pressed only while the list has not shown it
+   * landing (see {@link toggleListRowUntilRendered} for the race and the signal).
+   *
+   * The `[✓]` marker {@link deselectAll} already reads before it decides to press is what makes
+   * this confirmable at all — the same text-observable state the build grid's cells lack.
    */
   async toggleDomain(domainName: string): Promise<void> {
     await this.navigateCursorToItem(domainName);
     await this.waitForWizardFooter();
-    await this.pressSpace();
+    await toggleListRowUntilRendered({
+      method: "DomainStep.toggleDomain",
+      label: domainName,
+      readScreen: () => this.getScreen(),
+      press: async () => {
+        await this.waitForWizardFooter();
+        await this.pressSpace();
+      },
+    });
   }
 
   /** Advance to build step after toggling domains. */

@@ -1,4 +1,5 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
+import { expectCancelledExit } from "../../assertions/phase-assertions.js";
 import type { E2ESource } from "../../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
@@ -19,7 +20,7 @@ export type EditWizardOptions = {
    * The source this installation answers to.
    *
    * `edit` takes no `--marketplace` and reads no `CC_MARKETPLACE` — naming a source is `init`'s
-   * decision (CLI-466) — so this is RECORDED in the install's config.ts before the
+   * decision alone — so this is RECORDED in the install's config.ts before the
    * wizard launches, exactly as an `init --marketplace` would have left it. Installs that
    * already name their own source (anything a wizard produced) are untouched.
    */
@@ -257,11 +258,19 @@ export class EditWizard {
    * `waitForExit()` does. Adopting sites must pass whatever value they used
    * before (`TIMEOUTS.EXIT_WAIT`, `TIMEOUTS.EXIT`, or nothing) so the wait
    * budget stays byte-identical.
+   *
+   * The exit code is pinned to CANCELLED here rather than at the call sites,
+   * so that every aborted session is held to it instead of the handful that
+   * happened to capture the return value. The check runs AFTER `destroy()`:
+   * a throw between the wait and the teardown would leak the PTY session and
+   * this wizard's temp dirs, so cleanup completes first and the verdict lands
+   * on the way out.
    */
   async abortAndDestroy(timeoutMs?: number): Promise<number> {
     await this.abort();
     const exitCode = await this.waitForExit(timeoutMs);
     await this.destroy();
+    expectCancelledExit(exitCode, "edit");
     return exitCode;
   }
 

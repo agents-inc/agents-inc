@@ -43,7 +43,14 @@ const PLUGIN_VERSION = "1.0.0";
 const PLUGIN_INSTALLED_AT = "2026-01-01T00:00:00.000Z";
 const REGISTRY_VERSION = 1;
 
-function pluginKeyFor(skillId: string, marketplace: string): string {
+/**
+ * The key a skill's plugin is enabled and registered under — `<skillId>@<marketplace>`.
+ *
+ * Exported because two fixtures write it and every `toHavePlugin` assertion reads it, and
+ * `settings.json` and the registry have to agree on the spelling for a plugin to be found
+ * at all. `ProjectBuilder.pluginProject` is the second caller.
+ */
+export function pluginKeyFor(skillId: string, marketplace: string): string {
   return `${skillId}@${marketplace}`;
 }
 

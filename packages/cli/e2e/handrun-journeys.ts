@@ -50,6 +50,7 @@ import {
   completeWithLocalSources,
   createLocalSkill,
   listFiles,
+  MONOREPO_ROOT,
   readCompiledAgents,
   readMarketplaceJson,
   skillsPath,
@@ -529,17 +530,29 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
+/**
+ * The public-catalogue checkout journey 28a reads.
+ *
+ * `SKILLS_SOURCE` first, then the sibling of the monorepo root — the same pair
+ * `interactive/real-marketplace` and `interactive/edit-wizard-pending-removal-row` resolve, and
+ * for the same reason: the skills repository is a separate checkout beside this one rather than
+ * a workspace in it. This was one author's absolute path once, which meant the journey
+ * skipped on every machine but that one while reporting the skip as an absent catalogue.
+ */
+const CATALOGUE_CHECKOUT = process.env.SKILLS_SOURCE ?? path.resolve(MONOREPO_ROOT, "../skills");
+
 /** Journey 28a — a checkout of the public catalogue, read off a path, offers the built-in stacks. */
 async function journeyCatalogueCheckout(): Promise<void> {
   section("Journey 28a — a public-catalogue checkout reaches the built-in stacks");
-  const checkout = "/home/vince/dev/skills";
-  if (!existsSync(checkout)) {
-    note("SKIPPED — no catalogue checkout on this machine", checkout);
+  // The skills DIRECTORY, not the checkout root: a stale or half-cloned checkout is a directory
+  // that exists and carries no catalogue, and this journey would then fail as a wizard defect.
+  if (!existsSync(path.join(CATALOGUE_CHECKOUT, SOURCE_PATHS.SKILLS_DIR))) {
+    note("SKIPPED — no catalogue checkout on this machine", CATALOGUE_CHECKOUT);
     return;
   }
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j28a-"));
   const wizard = await InitWizard.launch({
-    source: { sourceDir: checkout, tempDir: checkout },
+    source: { sourceDir: CATALOGUE_CHECKOUT, tempDir: CATALOGUE_CHECKOUT },
     projectDir: home,
     env: { HOME: home, CLAUDE_CONFIG_DIR: path.join(home, ".claude") },
   });

@@ -35,6 +35,11 @@ export { setupIsolatedHome, useFakeHome } from "./isolated-home.js";
 export type { IsolatedHome } from "./isolated-home.js";
 export { silenceConsole } from "./silence-console.js";
 export { elementAt, firstElement } from "./element-at.js";
+export { installThroughOperations } from "./install-through-operations.js";
+export type {
+  InstallThroughOperationsOptions,
+  InstallThroughOperationsResult,
+} from "./install-through-operations.js";
 
 // --- Remaining utility function ---
 

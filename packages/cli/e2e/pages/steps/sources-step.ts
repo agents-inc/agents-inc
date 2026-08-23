@@ -4,17 +4,27 @@ import { AgentsStep } from "./agents-step.js";
 import { BuildStep } from "./build-step.js";
 
 /**
- * How many rows the no-argument drivers (`setAllLocal` / `setAllPlugin`) walk.
+ * The glyph `SourceGrid` paints in front of the FOCUSED cell, and a blank spacer in front of
+ * every other. It is a glyph rather than a colour, so it survives `NO_COLOR` — which is what
+ * makes the grid cursor readable from a captured frame at all.
  *
- * It only has to be an UPPER BOUND on the focusable rows a Sources step can present, never the
- * exact count: focus wraps, so an over-long walk re-commits a mode a row already carries, and
- * `commitLocalOnEveryRow` documents why that is a no-op. Every spec reaching these drivers runs
- * against a source built by `createE2ESource` (ten skills, which `createE2EPluginSource` rebuilds
- * rather than extends), and `classifySkillSourceRows` emits at most one FOCUSABLE row per skill —
- * a locked global row, a pending-removal row and the locked half of a `[P][G]` pair are all inert,
- * and inert rows are skipped by `↓` and refused by SPACE. Ten plus headroom.
+ * Duplicated from `UI_SYMBOLS.CHEVRON` in `src/cli/consts.ts` rather than imported, for the
+ * reason `e2e/pages/constants.ts` gives about the diff markers it mirrors: a page object that
+ * read the very symbol the product rendered with could not notice that symbol changing.
  */
-const SOURCE_ROW_WALK_LENGTH = 12;
+const FOCUS_MARKER = "\u276F";
+
+/**
+ * A bound on the walk below, and nothing the walk's CORRECTNESS depends on.
+ *
+ * It replaces a fixture-sized `SOURCE_ROW_WALK_LENGTH = 12`, which was an upper bound the
+ * walk trusted: a Sources step presenting more focusable rows than that silently walked
+ * PART of the grid, left the rest on their previous mode, and passed. The walk is closed-loop
+ * now — it stops when the cursor comes back to the row it started on — so this number only
+ * has to be larger than any grid a wizard can paint, and a walk that reaches it has hit a
+ * loop rather than a large source.
+ */
+const SOURCE_ROW_WALK_LIMIT = 100;
 
 export class SourcesStep extends BaseStep {
   /** Wait for sources step to be ready. */
@@ -42,12 +52,12 @@ export class SourcesStep extends BaseStep {
    * page object.
    */
   async setAllLocal(): Promise<void> {
-    await this.commitLocalOnEveryRow(SOURCE_ROW_WALK_LENGTH);
+    await this.commitLocalOnEveryRow();
   }
 
   /** Set every EDITABLE skill row to install as a plugin. See `setAllLocal`. */
   async setAllPlugin(): Promise<void> {
-    await this.commitPluginOnEveryRow(SOURCE_ROW_WALK_LENGTH);
+    await this.commitPluginOnEveryRow();
   }
 
   /**
@@ -100,10 +110,10 @@ export class SourcesStep extends BaseStep {
 
   /**
    * Commit `Local` on every focusable row, one row at a time: SPACE on the focused cell, then
-   * `↓` to the next row, `rowCount` times.
+   * `↓` to the next row, until the cursor comes back to the row it started on.
    *
    * The per-row equivalent of the bulk `l` key, and the only route to an all-eject install once
-   * that key is withdrawn. Four grid facts make the plain walk correct, and each is load-bearing:
+   * that key is withdrawn. Four grid facts make the walk correct, and each is load-bearing:
    *
    *  - Focus SEEDS on the first focusable row and `↓` SKIPS inert ones (`firstFocusableRowIndex` /
    *    `skipRow`, both on `isRowInert`), and SPACE returns immediately on an inert row. So a
@@ -113,16 +123,16 @@ export class SourcesStep extends BaseStep {
    *    `consts.ts`, captioned by `INSTALL_MODE_CELL_LABELS`).
    *  - `↓` PRESERVES the column (`useFocusedListItem` clamps rather than resets), and every row
    *    has the same two cells, so the walk stays on `Local` without re-selecting the column.
-   *  - Focus WRAPS, so an over-long walk re-commits `Local` on a row that already has it instead
-   *    of running off the end. Overshooting `rowCount` is therefore harmless; undershooting
-   *    leaves the remaining rows on their previous mode.
+   *  - Focus WRAPS, which is what gives the walk its own stopping condition: the first row is
+   *    reached a second time exactly when every focusable row has been visited once.
    *
    * Needs a viewport tall enough that the grid does not overflow: with `hiddenBelow > 0`, `↓` on
    * the last focusable row scrolls the viewport instead of moving focus (`SourceGrid`'s overscroll
-   * branch) and the walk stalls on that row. Use `TERMINAL_SIZE.TALL`.
+   * branch). Use `TERMINAL_SIZE.TALL`. The walk NAMES that case now instead of stalling silently
+   * inside it — see {@link commitFocusedColumnOnEveryRow}.
    */
-  async commitLocalOnEveryRow(rowCount: number): Promise<void> {
-    await this.commitFocusedColumnOnEveryRow(rowCount);
+  async commitLocalOnEveryRow(): Promise<void> {
+    await this.commitFocusedColumnOnEveryRow();
   }
 
   /**
@@ -135,22 +145,99 @@ export class SourcesStep extends BaseStep {
    * undo itself: horizontal focus WRAPS modulo the column count, and with two columns `→` from
    * `Plugin` returns to `Local`, so the walk would alternate modes down the grid.
    *
-   * Every caveat on `commitLocalOnEveryRow` applies unchanged, including the `TERMINAL_SIZE.TALL`
-   * requirement and the harmlessness of overshooting `rowCount`.
+   * Every caveat on `commitLocalOnEveryRow` applies unchanged, including `TERMINAL_SIZE.TALL`.
    */
-  async commitPluginOnEveryRow(rowCount: number): Promise<void> {
+  async commitPluginOnEveryRow(): Promise<void> {
     await this.moveSourceColumnRight();
-    await this.commitFocusedColumnOnEveryRow(rowCount);
+    await this.commitFocusedColumnOnEveryRow();
   }
 
-  /** SPACE on the focused cell, then `↓`, `rowCount` times. The shared body of the two walks. */
-  private async commitFocusedColumnOnEveryRow(rowCount: number): Promise<void> {
-    for (let index = 0; index < rowCount; index++) {
+  /**
+   * SPACE on the focused cell, then `↓`, until the cursor returns to the row it started on.
+   * The shared body of the two walks.
+   *
+   * Closed-loop on the PAINTED cursor rather than counted: the count it replaced was the
+   * fixture's ten skills plus headroom, so a Sources step presenting more focusable rows than
+   * that walked part of the grid, left the rest on their previous mode, and passed — the walk's
+   * own driver reporting an all-eject install that was not one.
+   *
+   * **A step with no cursor at all is a real state, and it is the one this walk exists to
+   * contain**: `SourceTag` paints the marker only on an EDITABLE cell, so a project edit whose
+   * every skill is a locked global install paints none, and there is nothing to commit. Only the
+   * FIRST read may answer that — a cursor that vanishes part-way through is the frame going wrong
+   * under the walk, and returning quietly there would be the vacuous pass in a new spelling.
+   *
+   * A `↓` that leaves the cursor where it was is the overscroll case the doc above names, and it
+   * is raised rather than walked around: it is a stall, and the old counted walk spent the rest of
+   * its budget re-committing that one row.
+   */
+  private async commitFocusedColumnOnEveryRow(): Promise<void> {
+    const firstRow = await this.focusedRow();
+    if (firstRow === undefined) return;
+    let previousRow = firstRow;
+
+    for (let visited = 0; visited < SOURCE_ROW_WALK_LIMIT; visited++) {
       await this.waitForWizardFooter();
       await this.pressSpace();
       await this.waitForWizardFooter();
       await this.pressArrowDown();
+
+      const row = await this.focusedRow();
+      if (row === undefined) {
+        throw new Error(
+          `The sources walk started on a row and then found no grid cursor at all:\n${firstRow}\n\n` +
+            `A step with no editable row paints no cursor from the start; one that loses it ` +
+            `part-way means the captured frame is not the grid this walk began on.`,
+        );
+      }
+      if (row === firstRow) return;
+      if (row === previousRow) {
+        throw new Error(
+          `The sources walk pressed \u2193 and the cursor stayed on the same row:\n${row}\n\n` +
+            `That is SourceGrid's overscroll branch — the grid is taller than the viewport, so ` +
+            `\u2193 scrolls instead of moving focus. Launch the wizard with TERMINAL_SIZE.TALL.`,
+        );
+      }
+      previousRow = row;
     }
+
+    throw new Error(
+      `The sources walk visited ${SOURCE_ROW_WALK_LIMIT} rows without returning to the one it ` +
+        `started on. Focus wraps, so this is a walk that lost its place rather than a large grid.`,
+    );
+  }
+
+  /**
+   * The whole painted line the grid cursor is on — the row's identity for the walk above.
+   *
+   * The LINE rather than the skill name, because nothing has to be parsed out of it: SPACE
+   * commits a mode by colour and weight alone (`INSTALL_MODE_CELL_LABELS` is the same text
+   * either way), and under `NO_COLOR` both are stripped, so a committed row paints exactly the
+   * characters it painted before. Only `←`/`→` move the marker within a line, and this
+   * walk presses neither.
+   *
+   * `getScreen()` is scrollback PLUS viewport in general, but `waitForWizardFooter()` has just
+   * proved `viewportY` is 0, so here it IS the viewport — the reasoning `BaseStep.getScreen`
+   * carries.
+   *
+   * `undefined` for a step with NO cursor, which is a grid whose every row is inert; the caller
+   * decides whether that is legitimate where it found it. More than one line carrying the marker
+   * is never legitimate — it would mean the marker is no longer the cursor's alone, and the
+   * walk's stopping condition would silently become a coin toss — so that is raised here.
+   */
+  private async focusedRow(): Promise<string | undefined> {
+    await this.waitForWizardFooter();
+    const [row, ...surplus] = this.getScreen()
+      .split("\n")
+      .filter((line) => line.includes(FOCUS_MARKER));
+
+    if (surplus.length > 0) {
+      throw new Error(
+        `Expected at most one line carrying the grid cursor "${FOCUS_MARKER}" on the Sources ` +
+          `step, found ${surplus.length + 1}.`,
+      );
+    }
+    return row;
   }
 
   /** Go back to build step (Escape). */

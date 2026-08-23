@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   TO_TEST_MARKER,
+  journeyNumbersIn,
   nonSpecNamesIn,
   readJourneyRows,
   readSpecNames,
@@ -24,6 +25,17 @@ const SPEC_NAMES = [
 
 const HEADER = `| #   | Journey | From-scratch spec | Surfaces asserted | Status |
 | --- | ------- | ----------------- | ----------------- | ------ |`;
+
+/**
+ * A numbered table that is not a journey table, written the same width as one so that nothing but
+ * its heading cells can tell the two apart. The page carries such a table — the four assertion
+ * surfaces, numbered 1 to 4 — and a reader discriminating by width would read its rows as journeys.
+ */
+const SURFACES_TABLE = [
+  "| #   | Surface | What it is | Read it with | Notes |",
+  "| --- | ------- | ---------- | ------------ | ----- |",
+  "| 1   | Compiled agent files | what a run wrote | `readCompiledAgents` | none |",
+].join("\n");
 
 function page(...rows: string[]): string {
   return [HEADER, ...rows].join("\n");
@@ -135,6 +147,42 @@ describe("every backticked name is classified rather than skipped", () => {
     expect(nonSpecNamesIn(rows)).toStrictEqual(["skipIf"]);
     expect(specsNamedBy(rows[0]!)).toStrictEqual(["lifecycle/install-mode-bulk"]);
     expect(rows[0]?.marker).toBe("TO TEST (blocked)");
+  });
+});
+
+/**
+ * The row-level half of that same totality, which for a while was the half nothing held. A name
+ * that fails to resolve is classified; a ROW that failed to parse was passed over, and one
+ * unescaped `|` inside a code span is all it takes — markdown makes an extra cell of it, the reader
+ * skips the row, and every gate walking row → spec skips it in silence with the page still reading
+ * as fully checked.
+ */
+describe("a row the reader cannot read is numbered all the same", () => {
+  it("numbers a row whose cells came out wrong, so a gate can see the reader pass over it", () => {
+    const dropped = page(
+      "| 13 | Read | `commands/init-from-shared-config` | 1 | **COVERED** |",
+      "| 14 | Split in two | `commands/init-from-agent-scope` | 1 | **COVERED** — emits `A | B` |",
+    );
+
+    expect(readJourneyRows(dropped, SPEC_NAMES).map((row) => row.number)).toStrictEqual(["13"]);
+    expect(journeyNumbersIn(dropped)).toStrictEqual(["13", "14"]);
+  });
+
+  it("reads an escaped pipe as part of its cell rather than as the end of one", () => {
+    const [row] = readJourneyRows(
+      page("| 14 | A union of `X \\| Y` | `commands/init-from-agent-scope` | 1 | **COVERED** |"),
+      SPEC_NAMES,
+    );
+
+    expect(row?.journey).toBe("A union of `X | Y`");
+    expect(row?.marker).toBe("COVERED");
+  });
+
+  it("reads and numbers the journey tables alone, not every numbered table on the page", () => {
+    const both = `${SURFACES_TABLE}\n\n${page("| 13 | Read | `commands/init-from-shared-config` | 1 | **COVERED** |")}`;
+
+    expect(readJourneyRows(both, SPEC_NAMES).map((row) => row.number)).toStrictEqual(["13"]);
+    expect(journeyNumbersIn(both)).toStrictEqual(["13"]);
   });
 });
 

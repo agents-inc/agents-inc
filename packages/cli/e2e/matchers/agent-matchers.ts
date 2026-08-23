@@ -2,7 +2,7 @@ import path from "path";
 import { readFile } from "fs/promises";
 import { parse as parseYaml } from "yaml";
 import { DIRS } from "../pages/constants.js";
-import { fileExists } from "../helpers/test-utils.js";
+import { fileExists, parseCompiledAgentSections } from "../helpers/test-utils.js";
 
 /**
  * Parses compiled-agent frontmatter with the real YAML parser. Compiled agents
@@ -49,9 +49,22 @@ export type AgentFrontmatterExpectations = {
 };
 
 export type AgentDynamicSkillsExpectations = {
+  /**
+   * Ids that must appear as DYNAMIC entries — the `### ` headings of the activation
+   * protocol, which carry the bare id in plugin and eject mode alike.
+   *
+   * Read off the parsed section rather than scanned for. `body.includes(id)` was
+   * satisfied by an id sitting inside a longer id, inside a preload's `id:id` ref, and
+   * inside the agent's own prose, and every compiled body in the tree carries prose
+   * naming skills.
+   */
   skillIds?: readonly string[];
+  /**
+   * Ids that must appear in NEITHER list: not preloaded in the frontmatter — in either
+   * ref form — and not activated in the body.
+   */
   noSkillIds?: readonly string[];
-  hasActivationProtocol?: boolean;
+  /** No activation protocol at all, which is the arm the template renders when nothing is lazy. */
   allPreloaded?: boolean;
 };
 
@@ -191,50 +204,35 @@ export const agentMatchers = {
     }
 
     const content = await readFile(agentPath, "utf-8");
-    // Strip the leading frontmatter block ONLY. `split()` cuts on EVERY match, and a compiled
-    // agent's body is full of `---` horizontal rules, so taking element [1] returned the first
-    // ~1KB of a ~39KB file: every `skillIds` expectation was unsatisfiable and every `noSkillIds`
-    // one passed on absence from a slice nothing is rendered into.
-    const body = content.replace(/^---\n[\s\S]*?\n---\n/, "");
+    const { preloadedRefs, dynamicEntries } = parseCompiledAgentSections(content);
+    const dynamicIds = dynamicEntries.map((entry) => entry.id);
 
-    const missingId = expectations.skillIds?.find((id) => !body.includes(id));
+    const missingId = expectations.skillIds?.find((id) => !dynamicIds.includes(id));
     if (missingId) {
       return {
         pass: false,
         message: () =>
-          `Expected agent body to contain skill "${missingId}" but it does not.\nBody excerpt:\n${body.slice(0, 500)}`,
+          `Expected agent "${agentName}" to activate skill "${missingId}" dynamically but its protocol names: ${JSON.stringify(dynamicIds)}`,
       };
     }
 
-    const forbiddenId = expectations.noSkillIds?.find((id) => body.includes(id));
+    const forbiddenId = expectations.noSkillIds?.find(
+      (id) => dynamicIds.includes(id) || preloads(preloadedRefs, id),
+    );
     if (forbiddenId) {
       return {
         pass: false,
-        message: () => `Expected agent body to NOT contain skill "${forbiddenId}" but it does`,
+        message: () =>
+          `Expected agent "${agentName}" to carry no skill "${forbiddenId}" but it preloads ${JSON.stringify(preloadedRefs)} and activates ${JSON.stringify(dynamicIds)}`,
       };
     }
 
-    if (expectations.hasActivationProtocol) {
-      const hasProtocol = body.includes("<skill_activation_protocol>");
-      const hasNote = body.includes("<skills_note>");
-      if (!hasProtocol && !hasNote) {
-        return {
-          pass: false,
-          message: () =>
-            `Expected agent body to have skill activation protocol or skills note but found neither`,
-        };
-      }
-    }
-
-    if (expectations.allPreloaded) {
-      const hasDynamic = body.includes("<skill_activation_protocol>");
-      if (hasDynamic) {
-        return {
-          pass: false,
-          message: () =>
-            `Expected all skills to be preloaded (no activation protocol) but found <skill_activation_protocol>`,
-        };
-      }
+    if (expectations.allPreloaded && dynamicEntries.length > 0) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected all skills to be preloaded (no activation protocol) but agent "${agentName}" activates ${JSON.stringify(dynamicIds)}`,
+      };
     }
 
     return {
@@ -243,3 +241,8 @@ export const agentMatchers = {
     };
   },
 };
+
+/** Whether a preload list names this skill, in the plugin `id:id` form or as the bare id. */
+function preloads(refs: readonly string[], id: string): boolean {
+  return refs.includes(id) || refs.includes(`${id}:${id}`);
+}

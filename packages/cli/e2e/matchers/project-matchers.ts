@@ -209,7 +209,20 @@ export const projectMatchers = {
   },
 
   /**
-   * Checks that compiled agent .md files exist in .claude/agents/.
+   * Checks that `.claude/agents/` exists and holds at least one `.md`.
+   *
+   * **A `readdir` and a non-empty check, and nothing more** — so it cannot see a wrong
+   * roster, a swap or stale content, and on any flow that runs after an install the
+   * install alone satisfies it. That makes it the wrong tool for a spec whose subject IS
+   * the roster: use `readCompiledAgents(dir)` and compare `Object.keys` against a named
+   * constant with `toStrictEqual` (`E2E_STACK_AGENTS.map(a => `${a}.md`)` is the derived
+   * one), or `toHaveCompiledAgent(name)` for a single named agent, which also proves the
+   * file carries frontmatter.
+   *
+   * What it is still right for, and both callers of each are commented on site: a spec
+   * that means "an install reached this directory at all" when the roster belongs to
+   * product data the spec is not about, and `.not.` — an absence has no roster to get
+   * wrong, so the weak reading is the correct one there.
    */
   async toHaveCompiledAgents(received: { dir: string }) {
     const agentsDir = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS);

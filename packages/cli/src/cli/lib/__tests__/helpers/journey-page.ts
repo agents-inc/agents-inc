@@ -15,6 +15,13 @@
  * first set to be empty and the second to hold only names it recognises; it could do neither while
  * both were dropped on the floor.
  *
+ * That was NAME classification, and for a while it was the only half made total — a ROW still had to
+ * be five cells wide or it went the way the six names had gone. One unescaped `|` inside a code span
+ * is all it takes: markdown splits the row into six cells, the reader drops it, and the six specs it
+ * named stop being judged by any gate that walks row → spec. So `journeyNumbersIn` reads the `#`
+ * column alone, blind to everything else a row must satisfy, and a gate holding it against what
+ * `readJourneyRows` returned sees the drop.
+ *
  * The parsing is pure and the filesystem is one function at the edge, so the classification can be
  * tested against a three-element spec list rather than a fixture tree.
  */
@@ -26,11 +33,38 @@ export const SPEC_SUFFIX = ".e2e.test.ts";
 /** The marker `user-journeys.md`'s vocabulary defines as "No from-scratch spec". */
 export const TO_TEST_MARKER = "TO TEST";
 
+/**
+ * The header every journey table opens with, and what tells one from the other tables on the page.
+ *
+ * Identified by its heading cells rather than by its width, because width is the thing under test:
+ * the four-surfaces table numbers its rows 1 to 4 as well, so a reading that told the two apart by
+ * counting columns would condemn it and be blind to the malformed row it exists to find.
+ */
+const JOURNEY_TABLE_HEADER = ["#", "Journey", "From-scratch spec", "Surfaces asserted", "Status"];
+
 /** `#`, Journey, From-scratch spec, Surfaces asserted, Status — the shape of every journey table. */
-const JOURNEY_TABLE_COLUMNS = 5;
+const JOURNEY_TABLE_COLUMNS = JOURNEY_TABLE_HEADER.length;
 
 /** A journey row's `#`, which is a number and sometimes a letter after it (`13a`, `28a`). */
 const JOURNEY_NUMBER = /^\d+[a-z]?$/;
+
+/**
+ * What ends a cell: a `|` the author did not escape.
+ *
+ * Markdown gives a table cell one escape and no other way to hold a pipe — `\|`, which the renderer
+ * resolves BEFORE it parses the cell's inline markup, so it works inside a code span where no other
+ * backslash escape does. A reader splitting on a bare `|` therefore disagrees with every renderer of
+ * the same page about where a correctly-written cell ends, and the row comes out one cell too wide.
+ *
+ * Copied verbatim into `scripts/check-enumeration-drift.ts`, which reads registered documentation
+ * tables through the same rule, and held against that copy by
+ * `scripts/check-enumeration-drift.test.ts`. What was deliberately NOT copied is this file's own
+ * contract rather than the escape rule: the `.slice(1, -1)` and the per-cell trim below.
+ */
+const CELL_SEPARATOR = /(?<!\\)\|/;
+
+/** The escape, undone once the cell it belongs to has been separated out. */
+const ESCAPED_PIPE = "\\|";
 
 /** Each spec, helper and source file the From-scratch column names is in backticks. */
 const NAMED_IN_BACKTICKS = /`([^`]+)`/g;
@@ -86,9 +120,7 @@ export function readSpecNames(e2eRoot: string): string[] {
  */
 export function readJourneyRows(page: string, specNames: readonly string[]): JourneyRow[] {
   const directories = specDirectories(specNames);
-  const rows = page
-    .split("\n")
-    .map(tableCells)
+  const rows = journeyTableLines(page)
     .filter(isJourneyRow)
     .map((cells) => toJourneyRow(cells, specNames, directories));
 
@@ -99,6 +131,20 @@ export function readJourneyRows(page: string, specNames: readonly string[]): Jou
   }
 
   return rows;
+}
+
+/**
+ * Every `#` the journey tables number, whatever shape the row carrying it came out.
+ *
+ * Deliberately blind to everything else `isJourneyRow` requires, which is what makes it a check ON
+ * the reader rather than a second copy of it: a row `readJourneyRows` drops still answers here, so
+ * the difference between the two IS the silence. Nothing else can see it — a page whose entries are
+ * skipped reads exactly like a page whose entries all passed.
+ */
+export function journeyNumbersIn(page: string): string[] {
+  return journeyTableLines(page)
+    .filter(isNumbered)
+    .map(([number]) => number);
 }
 
 /** The specs a row names and a run can reach. */
@@ -170,21 +216,52 @@ function coverageMarker(status: string): string {
   return marker ?? status;
 }
 
+/**
+ * Every line the journey tables hold, split into cells — the whole of what this module reads.
+ *
+ * A markdown table has no closing delimiter, so the scan carries which table it is in: a journey
+ * header opens one and the first line that is not a table row ends it. Reading the rows of the
+ * journey tables and reading their numbers must not disagree about which lines those are, so both
+ * come through here.
+ */
+function journeyTableLines(page: string): string[][] {
+  const lines: string[][] = [];
+  let insideJourneyTable = false;
+
+  for (const cells of page.split("\n").map(tableCells)) {
+    if (cells.length === 0) insideJourneyTable = false;
+    else if (isJourneyTableHeader(cells)) insideJourneyTable = true;
+    else if (insideJourneyTable) lines.push(cells);
+  }
+
+  return lines;
+}
+
 function tableCells(line: string): string[] {
   if (!line.startsWith("|")) return [];
 
   return line
-    .split("|")
+    .split(CELL_SEPARATOR)
     .slice(1, -1)
-    .map((cell) => cell.trim());
+    .map((cell) => cell.trim().replaceAll(ESCAPED_PIPE, "|"));
+}
+
+function isJourneyTableHeader(cells: readonly string[]): boolean {
+  return (
+    cells.length === JOURNEY_TABLE_HEADER.length &&
+    cells.every((cell, column) => cell === JOURNEY_TABLE_HEADER[column])
+  );
+}
+
+/** Whether a table line is numbered as a journey — the one thing the two readings share. */
+function isNumbered(cells: string[]): cells is [string, ...string[]] {
+  const [number] = cells;
+
+  return number !== undefined && JOURNEY_NUMBER.test(number);
 }
 
 function isJourneyRow(cells: string[]): cells is JourneyRowCells {
-  const [number] = cells;
-
-  return (
-    cells.length === JOURNEY_TABLE_COLUMNS && number !== undefined && JOURNEY_NUMBER.test(number)
-  );
+  return isNumbered(cells) && cells.length === JOURNEY_TABLE_COLUMNS;
 }
 
 function firstSegment(name: string): string {

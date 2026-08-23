@@ -1,13 +1,30 @@
 import { existsSync } from "fs";
 import path from "path";
 import { expect } from "vitest";
-import { readAllSkillEntries, readAgentEntries } from "../fixtures/dual-scope-helpers.js";
-import { readCompiledAgents } from "../helpers/test-utils.js";
+import {
+  loadConfigOrFail,
+  parseCompiledAgentSections,
+  readCompiledAgents,
+} from "../helpers/test-utils.js";
 import {
   TS_NOT_ASSIGNABLE,
   typecheckGeneratedConfig,
   probeConfigTypesNarrowing,
 } from "../helpers/type-check-probe.js";
+import { EJECT_SOURCE } from "../../src/cli/consts.js";
+import { buildSkillRefsFromConfig } from "../../src/cli/lib/resolver.js";
+import {
+  activeAgentScopeMap,
+  effectivelyExcludedSkillIds,
+  isActiveAt,
+} from "../../src/cli/lib/configuration/scope-predicates.js";
+import { bytewise } from "../../src/cli/utils/string.js";
+import type {
+  AgentName,
+  AgentScopeConfig,
+  ProjectConfig,
+  SkillReference,
+} from "../../src/cli/types/index.js";
 
 /**
  * The four assertion surfaces `standards/e2e/user-journeys.md` defines, read at
@@ -30,6 +47,28 @@ import {
  * check below held even against a union collapsed all the way to `string`.
  */
 const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
+
+/** Which of a compiled agent's two skill lists an entry sits in. */
+type SkillListSide = "preloaded" | "dynamic";
+
+/**
+ * One place a skill occupies in one compiled agent: the list it sits in, the ref
+ * that list renders it as, and — on the dynamic side only — the bare id its
+ * `### ` heading carries.
+ *
+ * `headingId` is `null` on the preloaded side because the frontmatter renders no
+ * heading, not because nothing is checked there. The two sides are NOT
+ * symmetrical: a preload is emitted as `pluginRef ?? id`, so a marketplace skill
+ * reads `id:id` there, while a dynamic skill's heading is the BARE id in both
+ * modes and only its `Invoke:` line carries the ref. An expectation keyed on the
+ * ref form alone reads one of the two lines a dynamic skill occupies.
+ */
+type SkillPlacement = {
+  agent: string;
+  side: SkillListSide;
+  ref: string;
+  headingId: string | null;
+};
 
 export type SurfaceFinding = {
   claim: string;
@@ -66,8 +105,10 @@ export async function inspectFourSurfaces(
   const expectEmpty = options?.expectEmpty ?? false;
   const claudeSrc = path.join(dir, ".claude-src");
 
-  const skills = await readAllSkillEntries(dir);
-  const agents = await readAgentEntries(dir);
+  // One load, not three: every claim below reads the same config snapshot, so no
+  // two of them can disagree about what this scope declares.
+  const config = await loadConfigOrFail(dir);
+  const { agents, skills } = config;
   const bodies = await readCompiledAgents(dir);
   const compiledFiles = Object.keys(bodies);
   const skillIds = skills.map((entry) => String(entry.id));
@@ -104,19 +145,20 @@ export async function inspectFourSurfaces(
     (file) => !agents.some((a) => `${String(a.name)}.md` === file),
   );
 
-  // A compiled agent naming a skill this configuration does not carry is the
-  // failure a directory listing cannot see.
-  const dangling: string[] = [];
-  for (const [file, body] of Object.entries(bodies)) {
-    const referenced = [...body.matchAll(/^\s*-\s+([a-z0-9-]+)\s*$/gm)]
-      .map((match) => match[1])
-      .filter((ref): ref is string => ref !== undefined && ref.includes("-"));
-    for (const ref of referenced) {
-      if (!skillIds.includes(ref) && !dangling.includes(`${file} → ${ref}`)) {
-        dangling.push(`${file} → ${ref}`);
-      }
-    }
-  }
+  // Where each compiled agent PUT its skills, against where this config says they
+  // belong — both directions at once, which is the failure a directory listing
+  // cannot see and a scan of the body cannot see either.
+  const compiledHere = agentsCompiledHere(agents, bodies);
+  const assignedPlacements = sortedPlacementLines(
+    expectedPlacements(
+      config,
+      compiledHere.map((agent) => agent.name),
+    ),
+  );
+  const writtenPlacements = sortedPlacementLines(
+    compiledHere.flatMap((agent) => renderedPlacements(String(agent.name), agent.body)),
+  );
+  const placementDrift = placementDifference(assignedPlacements, writtenPlacements);
 
   const typecheck = await typecheckGeneratedConfig(claudeSrc);
   const narrowing = await probeConfigTypesNarrowing(claudeSrc, GENERATED_ALIASES);
@@ -168,9 +210,19 @@ export async function inspectFourSurfaces(
           ...(undeclared.length > 0 && { detail: undeclared.join(", ") }),
         },
         {
-          claim: "no compiled agent references a skill this config does not carry",
-          held: dangling.length === 0,
-          ...(dangling.length > 0 && { detail: dangling.join(", ") }),
+          // Both directions over one installation: every skill this config assigns
+          // an agent appears exactly once across that agent's preload list and its
+          // activation protocol — never both, never neither, in the ref form its own
+          // `origin` dictates — and every entry in those two lists is a skill this
+          // config carries.
+          //
+          // The reading it replaces matched `^\s*-\s+([a-z0-9-]+)\s*$` over the whole
+          // body, which had no colon in its character class: it therefore skipped
+          // every plugin-mode preload in the tree, and false-matched any kebab-cased
+          // one-word prose bullet an agent's `identity.md` happens to carry.
+          claim: "each compiled agent's skill lists partition exactly what this config assigns it",
+          held: placementDrift === null,
+          ...(placementDrift !== null && { detail: placementDrift }),
         },
         {
           claim: "config.ts type-checks against its own generated types",
@@ -216,4 +268,115 @@ export async function expectFourSurfaces(
   ).toStrictEqual([]);
 
   return reading;
+}
+
+/**
+ * The agents this config declares that also have a compiled file at this scope, each
+ * paired with the body that was written for it.
+ *
+ * An agent declared here but compiled elsewhere has no body to read, and a body here that
+ * no config row declares is the `undeclared` claim's subject rather than this one's.
+ */
+function agentsCompiledHere(
+  agents: readonly AgentScopeConfig[],
+  bodies: Record<string, string>,
+): { name: AgentName; body: string }[] {
+  return agents.flatMap((entry) => {
+    const body = bodies[`${String(entry.name)}.md`];
+    return body === undefined ? [] : [{ name: entry.name, body }];
+  });
+}
+
+/**
+ * Where this config says each compiled agent's skills must appear, and in what form.
+ *
+ * Derived rather than written out, so a template change moves both sides at once and
+ * nothing here has to be re-baselined. The two filters mirror `buildCompileAgents` in
+ * `lib/installation/local-installer.ts`, which is what the compile pass itself applies:
+ * an effectively-excluded skill is dropped, and a globally-scoped sub-agent sees only
+ * globally-scoped skills.
+ */
+function expectedPlacements(
+  config: ProjectConfig,
+  agentNames: readonly AgentName[],
+): SkillPlacement[] {
+  const excludedIds = effectivelyExcludedSkillIds(config.skills);
+  const globalIds = new Set(config.skills.filter((s) => isActiveAt(s, "global")).map((s) => s.id));
+  const originById = new Map(config.skills.map((s) => [s.id, s.origin]));
+  const scopeByAgent = activeAgentScopeMap(config.agents);
+
+  return agentNames.flatMap((name) => {
+    const seesGlobalOnly = scopeByAgent.get(name) === "global";
+    return buildSkillRefsFromConfig(config.stack?.[name] ?? {})
+      .filter((ref) => !excludedIds.has(ref.id) && (!seesGlobalOnly || globalIds.has(ref.id)))
+      .map((ref) => placementFor(String(name), ref, originById.get(ref.id)));
+  });
+}
+
+/**
+ * The one place a skill's assignment and its `origin` put it.
+ *
+ * `origin` decides the ref form on the same rule `pluginRefFor` in `lib/compiler.ts`
+ * applies: an ejected skill — and one with no config entry at all — renders bare, and
+ * anything from a marketplace renders as `id:id`.
+ */
+function placementFor(
+  agent: string,
+  ref: SkillReference,
+  origin: string | undefined,
+): SkillPlacement {
+  const rendered = origin === undefined || origin === EJECT_SOURCE ? ref.id : `${ref.id}:${ref.id}`;
+  return ref.preloaded === true
+    ? { agent, side: "preloaded", ref: rendered, headingId: null }
+    : { agent, side: "dynamic", ref: rendered, headingId: ref.id };
+}
+
+/** Where one compiled agent actually put each skill. */
+function renderedPlacements(agent: string, body: string): SkillPlacement[] {
+  const { preloadedRefs, dynamicEntries } = parseCompiledAgentSections(body);
+
+  return [
+    ...preloadedRefs.map<SkillPlacement>((ref) => ({
+      agent,
+      side: "preloaded",
+      ref,
+      headingId: null,
+    })),
+    ...dynamicEntries.map<SkillPlacement>(({ id, invokeRef }) => ({
+      agent,
+      side: "dynamic",
+      ref: invokeRef,
+      headingId: id,
+    })),
+  ];
+}
+
+/** One placement as the line a failure names it by, sorted so the two sides line up. */
+function sortedPlacementLines(placements: readonly SkillPlacement[]): string[] {
+  return placements
+    .map(({ agent, side, ref, headingId }) =>
+      headingId === null
+        ? `${agent} [${side}] ${ref}`
+        : `${agent} [${side}] ${ref} (heading: ${headingId})`,
+    )
+    .sort(bytewise);
+}
+
+/** What the two readings disagree about, or `null` when they are identical. */
+function placementDifference(expected: string[], rendered: string[]): string | null {
+  if (expected.length === rendered.length && expected.every((line, i) => line === rendered[i])) {
+    return null;
+  }
+
+  const unrendered = expected.filter((line) => !rendered.includes(line));
+  const unassigned = rendered.filter((line) => !expected.includes(line));
+  const halves = [
+    unrendered.length > 0 ? `assigned but not rendered: ${unrendered.join("; ")}` : "",
+    unassigned.length > 0 ? `rendered but not assigned: ${unassigned.join("; ")}` : "",
+  ].filter((half) => half.length > 0);
+  if (halves.length > 0) return halves.join(" — ");
+
+  // Same membership, different arity — one skill rendered twice on one side. Neither
+  // difference above can see it, and "exactly once" is half of what is being claimed.
+  return `assigned ${expected.length} placements but rendered ${rendered.length}: ${rendered.join("; ")}`;
 }

@@ -11,21 +11,66 @@ export type IsolatedHome = {
 };
 
 /**
+ * oclif's update-check door, closed for the life of every isolated home.
+ *
+ * `@oclif/plugin-warn-if-update-available`'s init hook spawns a DETACHED, `unref`ed
+ * child that `mkdir -p`s and writes `<home>/.cache/agents-inc/version` before it makes
+ * its network call. The child outlives the test that started it, so it recreates a fake
+ * home `cleanup` has already removed — and its `mkdir` landing inside a running
+ * recursive remove is the other side of the `ENOTEMPTY: rmdir` this suite sees. Measured
+ * on `commands/eject.test.ts`: 26 resurrected `/tmp/cc-eject-test-*` directories in one
+ * run of that one file, and 0 with this set.
+ *
+ * The key is oclif's own — `Config.scopedEnvVarKey` upper-cases the bin name and joins
+ * it to the flag — and only `"1"` and `"true"` count, which is what
+ * `isolated-home.test.ts` asserts through `Config` rather than by spelling.
+ */
+const OCLIF_SKIP_VERSION_CHECK = { name: "AGENTS_INC_SKIP_NEW_VERSION_CHECK", value: "1" };
+
+/** Restores one environment variable to the state it was found in — absent included. */
+type RestoreEnv = () => void;
+
+/**
+ * Remembers a variable without touching it, for the caller that sets its own value and
+ * still wants the original put back.
+ */
+function captureEnv(name: string): RestoreEnv {
+  const original = process.env[name];
+
+  return () => {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  };
+}
+
+function overrideEnv(name: string, value: string): RestoreEnv {
+  const restore = captureEnv(name);
+  process.env[name] = value;
+  return restore;
+}
+
+/**
  * Creates a temp directory with an isolated `projectDir` and `fakeHome`,
  * chdirs into `projectDir`, and points `process.env.HOME` at `fakeHome`.
  *
- * The returned `cleanup` restores the original cwd and HOME (or unsets HOME
- * when it was originally undefined) and removes the temp directory.
+ * The returned `cleanup` restores the original cwd, HOME and update-check setting (or
+ * unsets each when it was originally undefined) and removes the temp directory.
  *
  * Call in `beforeEach` and invoke `cleanup` in `afterEach`.
  *
- * Isolation mechanism: this and {@link useFakeHome} isolate production code that
- * reads the home directory via `process.env.HOME`. They do NOT reliably isolate code
- * that calls `os.homedir()`: node re-reads `$HOME` on every call, so a mutated env var
- * is picked up there, but bun resolves it once at startup and ignores later mutation —
- * and this package runs its tests under both. Any path reaching `os.homedir()` needs a
- * `vi.spyOn(os, "homedir")` spy beside the env var (see the homedir-spy test files).
- * The two mechanisms are NOT interchangeable.
+ * Isolation mechanism. `vitest.setup.ts` installs a process-wide `vi.spyOn(os, "homedir")`
+ * that answers with `process.env.HOME` whenever that differs from the real home, so setting
+ * the variable does reach `os.homedir()` — under bun, which resolves it once at startup, as
+ * well as under node, which re-reads it per call.
+ *
+ * Two things used to escape it, and both are closed. The spy was installed in a `beforeAll`,
+ * so a `vi.restoreAllMocks()` ANYWHERE in a file removed it for every later test in that
+ * file — it is installed per TEST now. And no mechanism here reaches a constant a module
+ * computed from `os.homedir()` at IMPORT time, which `CACHE_DIR` and `GLOBAL_INSTALL_ROOT`
+ * in `src/cli/consts.ts` both were — they are `cacheRoot()` and `globalInstallRoot()` now,
+ * read at call time. `src/cli/lib/__tests__/home-dir-read-at-call-time.test.ts` holds both,
+ * the second as a declaration-shape gate over the whole of `src/cli`, since the frozen form
+ * is a hazard for any constant somebody adds rather than for those two.
  */
 export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   const tempDir = await createTempDir(prefix);
@@ -34,15 +79,16 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   await mkdir(projectDir, { recursive: true });
   await mkdir(fakeHome, { recursive: true });
 
-  const originalHome = process.env.HOME;
   const originalCwd = process.cwd();
   process.chdir(projectDir);
-  process.env.HOME = fakeHome;
+  const restoreEnv = [
+    overrideEnv("HOME", fakeHome),
+    overrideEnv(OCLIF_SKIP_VERSION_CHECK.name, OCLIF_SKIP_VERSION_CHECK.value),
+  ];
 
   const cleanup = async () => {
     process.chdir(originalCwd);
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
+    for (const restore of restoreEnv) restore();
     await cleanupTempDir(tempDir);
   };
 
@@ -56,34 +102,32 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
  * the test itself decides when to point HOME at the fake home. Returns a live
  * view of the fake home dir.
  *
- * Isolation mechanism: like {@link setupIsolatedHome}, this isolates production
- * code that reads the home directory via `process.env.HOME`. Code that calls
- * `os.homedir()` needs a `vi.spyOn(os, "homedir")` spy beside it — node re-reads
- * `$HOME` there and bun does not, and this package runs both. The two are NOT
- * interchangeable.
+ * `setHome: false` withholds the HOME override and nothing else: the update-check door
+ * is closed either way, because a detached writer is a hazard to the temp tree whatever
+ * HOME says at the moment the command runs.
+ *
+ * Isolation mechanism, and its two gaps: see {@link setupIsolatedHome}, which carries
+ * both in full.
  */
 export function useFakeHome(
   getTempDir: () => string,
   options?: { setHome?: boolean },
 ): { readonly dir: string } {
-  let savedHome: string | undefined;
+  let restoreEnv: RestoreEnv[] = [];
   let fakeHome: string;
 
   beforeEach(async () => {
-    savedHome = process.env.HOME;
     fakeHome = path.join(getTempDir(), "fake-home");
     await mkdir(fakeHome, { recursive: true });
-    if (options?.setHome !== false) {
-      process.env.HOME = fakeHome;
-    }
+    restoreEnv = [
+      options?.setHome === false ? captureEnv("HOME") : overrideEnv("HOME", fakeHome),
+      overrideEnv(OCLIF_SKIP_VERSION_CHECK.name, OCLIF_SKIP_VERSION_CHECK.value),
+    ];
   });
 
   afterEach(() => {
-    if (savedHome !== undefined) {
-      process.env.HOME = savedHome;
-    } else {
-      delete process.env.HOME;
-    }
+    for (const restore of restoreEnv) restore();
+    restoreEnv = [];
   });
 
   return {

@@ -42,7 +42,8 @@ export type TerminalSessionOptions = {
  * PTY output is piped into a headless xterm terminal emulator, which processes
  * all ANSI escape sequences (cursor movement, clearing, etc.) and maintains a
  * proper screen buffer. Read it through getScreen() or getFullOutput() — neither
- * is viewport-only; see getScreen()'s own comment for what each range covers.
+ * is viewport-only, and in this harness the two read the SAME range. getScreen()
+ * carries the measurement.
  *
  * HOME defaults to a freshly-created sibling temp directory, distinct from
  * cwd/projectDir, so os.homedir() never collapses onto the project directory —
@@ -119,6 +120,14 @@ export class TerminalSession {
       // lines passes by not looking. Cleared here rather than gated in the product,
       // because a spawned bin/run.js is a user's binary and should see a user's
       // environment. `CLI.run` clears it for the same reason on its own side.
+      //
+      // PINNED, NOT DEFAULTED — and deliberately (owner ruling 2026-08-21). This sits
+      // AFTER `...options?.env` where the other two spawn doors put it BEFORE, so a caller here
+      // cannot re-inject it. That asymmetry is the intent rather than an oversight: this door
+      // drives the interactive wizard, where a silenced product warning is exactly the failure
+      // the suite exists to catch, and no spec has a legitimate reason to want it back. A spec
+      // that genuinely needs `VITEST` set re-injects it through `CLI.run`, which defaults rather
+      // than pins. Do not "fix" this by moving it above the spread for consistency.
       VITEST: undefined,
       // CI and GITHUB_ACTIONS pass through untouched, and that is load-bearing:
       // the CLI's own render wrapper (src/cli/components/render.ts) must trust
@@ -173,12 +182,23 @@ export class TerminalSession {
    * Consequence: `not.toContain(...)` on this string matches anything the session ever drew, so it
    * is safe for POSITIVE assertions about current content and unsound for absence. Prove a negative
    * by ORDER (`toMatch(/…$/)`) or by BEHAVIOUR — see `.ai-docs/standards/e2e/assertions.md`.
+   *
+   * AND IT IS THE SAME RANGE {@link getFullOutput} READS. For xterm's normal buffer
+   * `length === baseY + rows`, and `viewportY === baseY` unless something has scrolled the
+   * EMULATOR's own viewport — which nothing in `e2e/` does (`grep -rn 'scrollLines\|scrollToBottom\|
+   * scrollToTop\|scrollToLine' e2e src` returns nothing). Measured against `@xterm/headless`
+   * 2026-08-21 at three geometries — 6 rows/20 lines, 40 rows/200 lines, 40 rows/5 lines —
+   * `viewportY + rows === length` held at all three. So choosing between the two readers protects
+   * nothing, and a comment or a spec header offering one as the safer of the pair is describing a
+   * protection this harness does not have. Where a negative on `getScreen()` IS sound, what makes
+   * it sound is `waitForWizardFooter()` having just proved `viewportY === 0` — a property the
+   * assertion establishes rather than one the reader has to trust.
    */
   getScreen(): string {
     return this.readBufferLines(this.xterm.buffer.active.viewportY + this.xterm.rows);
   }
 
-  /** Reads ALL output including scrollback above the viewport. */
+  /** Reads the whole buffer. The same range {@link getScreen} reads — see the measurement there. */
   getFullOutput(): string {
     return this.readBufferLines(this.xterm.buffer.active.length);
   }

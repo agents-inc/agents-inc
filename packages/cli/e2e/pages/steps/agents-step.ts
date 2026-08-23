@@ -1,5 +1,6 @@
 import { BaseStep } from "../base-step.js";
 import { STEP_TEXT, TIMEOUTS, type WizardType } from "../constants.js";
+import { toggleListRowUntilRendered } from "../list-row-toggle.js";
 import { ConfirmStep } from "./confirm-step.js";
 import { SourcesStep } from "./sources-step.js";
 
@@ -13,13 +14,27 @@ export class AgentsStep extends BaseStep {
   }
 
   /**
-   * Toggle an agent by name.
-   * Scrolls the cursor to the line containing the agent name, then presses Space.
+   * Navigate to an agent by name and toggle it, CLOSED-LOOP: the Space press is confirmed
+   * against that row's own rendered text and re-pressed only while the list has not shown it
+   * landing (see {@link toggleListRowUntilRendered} for the race and the signal).
+   *
+   * It follows that `toggleAgent` means the toggle LANDED. A press the product refuses — a
+   * global-locked sub-agent at project scope — leaves the row exactly as it was and is reported
+   * here rather than passed on; a spec whose subject IS the refusal wants
+   * {@link toggleFocusedAgentAwaiting}, which anchors on the toast instead.
    */
   async toggleAgent(agentName: string): Promise<void> {
     await this.navigateCursorToItem(agentName);
     await this.waitForWizardFooter();
-    await this.pressSpace();
+    await toggleListRowUntilRendered({
+      method: "AgentsStep.toggleAgent",
+      label: agentName,
+      readScreen: () => this.getScreen(),
+      press: async () => {
+        await this.waitForWizardFooter();
+        await this.pressSpace();
+      },
+    });
   }
 
   /**

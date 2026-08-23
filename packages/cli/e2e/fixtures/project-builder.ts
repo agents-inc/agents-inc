@@ -16,6 +16,7 @@ import type {
   FixtureStackAgentConfig,
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "./expected-values.js";
+import { pluginKeyFor } from "./plugin-install-state.js";
 import { DIRS, FILES } from "../pages/constants.js";
 import type { AgentName, Domain } from "../../src/cli/types/index.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
@@ -179,6 +180,49 @@ const SKILL_IDENTITY_FIELDS: Record<string, SkillIdentityFields> = {
     slug: E2E_SKILL.vitest.slug,
     displayName: E2E_SKILL.vitest.display,
   },
+  [E2E_SKILL.pinia.id]: {
+    category: "web-client-state",
+    slug: E2E_SKILL.pinia.slug,
+    displayName: E2E_SKILL.pinia.display,
+  },
+  "web-testing-cypress-e2e": {
+    category: "web-e2e",
+    slug: "cypress-e2e",
+    displayName: "Cypress E2E",
+  },
+  "web-testing-playwright-e2e": {
+    category: "web-e2e",
+    slug: "playwright-e2e",
+    displayName: "Playwright E2E",
+  },
+  "web-testing-react-testing-library": {
+    category: "web-testing",
+    slug: "react-testing-library",
+    displayName: "React Testing Library",
+  },
+  "web-testing-vue-test-utils": {
+    category: "web-testing",
+    slug: "vue-test-utils",
+    displayName: "Vue Test Utils",
+  },
+  "web-mocks-msw": { category: "web-mocking", slug: "msw", displayName: "MSW" },
+  "web-state-jotai": { category: "web-client-state", slug: "jotai", displayName: "Jotai" },
+  "web-testing-e2e-valid": { category: "web-e2e", slug: "e2e-valid", displayName: "Valid E2E" },
+  "web-testing-e2e-broken": { category: "web-e2e", slug: "e2e-broken", displayName: "Broken E2E" },
+  "web-testing-e2e-good": { category: "web-e2e", slug: "e2e-good", displayName: "Good E2E" },
+  "web-testing-e2e-exists": {
+    category: "web-e2e",
+    slug: "e2e-exists",
+    displayName: "Existing E2E",
+  },
+  "web-testing-e2e-orphan": { category: "web-e2e", slug: "e2e-orphan", displayName: "Orphan E2E" },
+  "web-testing-e2e-first": { category: "web-e2e", slug: "e2e-first", displayName: "First E2E" },
+  "web-testing-e2e-second": { category: "web-e2e", slug: "e2e-second", displayName: "Second E2E" },
+  "my-custom-skill": {
+    category: "web-tooling",
+    slug: "my-custom-skill",
+    displayName: "My Custom Skill",
+  },
 };
 
 /**
@@ -196,6 +240,25 @@ export function metadataFieldsFor(skillId: string): SkillIdentityFields {
     );
   }
   return entry;
+}
+
+/**
+ * Enables a set of plugin keys in the project's `.claude/settings.json` — the one file
+ * `toHavePlugin` reads, and therefore the only place a plugin's presence or departure is
+ * observable.
+ *
+ * Writes rather than merges, because the only caller runs it on a directory it has just
+ * created and nothing has put a settings.json there yet. `createPermissionsFile` runs
+ * after and DOES merge, so the permissions block lands on top of these keys rather than
+ * replacing them.
+ */
+async function enablePluginsInSettings(projectDir: string, pluginKeys: string[]): Promise<void> {
+  const claudeDir = path.join(projectDir, DIRS.CLAUDE);
+  await mkdir(claudeDir, { recursive: true });
+  await writeFile(
+    path.join(claudeDir, FILES.SETTINGS_JSON),
+    JSON.stringify({ enabledPlugins: Object.fromEntries(pluginKeys.map((key) => [key, true])) }),
+  );
 }
 
 /**
@@ -240,8 +303,7 @@ export class ProjectBuilder {
       description: "E2E test skill for compile verification",
       body: "# Test E2E Skill\n\nThis skill exists solely for E2E testing of the compile command.",
       metadata: renderMetadataYaml({
-        displayName: E2E_SKILL.vitest.display,
-        slug: E2E_SKILL.vitest.slug,
+        ...metadataFieldsFor(MINIMAL_PROJECT_SKILL_ID),
         cliDescription: "E2E test skill",
         usageGuidance: "Use when testing E2E scenarios",
         contentHash: "a1b2c3d",
@@ -367,7 +429,7 @@ export class ProjectBuilder {
       metadata:
         options?.globalSkill?.metadata ??
         renderMetadataYaml({
-          displayName: "web-testing-cypress-e2e",
+          ...metadataFieldsFor("web-testing-cypress-e2e"),
           cliDescription: "E2E test skill",
           usageGuidance: "Use when testing E2E scenarios",
           contentHash: "c3d4e5f",
@@ -398,7 +460,7 @@ export class ProjectBuilder {
       metadata:
         options?.projectSkill?.metadata ??
         renderMetadataYaml({
-          displayName: "web-testing-playwright-e2e",
+          ...metadataFieldsFor("web-testing-playwright-e2e"),
           cliDescription: "E2E test skill",
           usageGuidance: "Use when testing E2E scenarios",
           contentHash: "d4e5f6a",
@@ -657,7 +719,21 @@ export default {
 
   /**
    * Creates a project that looks like it was initialized in plugin mode.
-   * Has config with marketplace source, skills, agents dir with agent stubs.
+   * Has config with marketplace source, skills, agents dir with agent stubs, and each
+   * declared skill's plugin key enabled in `.claude/settings.json`.
+   *
+   * **The enabled keys are what make a DEPARTURE assertable.** Without them the fixture
+   * claimed plugin origin in config.ts and left the one file `toHavePlugin` reads empty,
+   * so `not.toHavePlugin` held before the command ran and every migration spec built here
+   * could check the install direction and not the uninstall one. A hardening pass added
+   * exactly that assertion, mutated away the `claudePluginUninstall` call, watched it stay
+   * green and removed its own assertion rather than ship a vacuous one.
+   *
+   * `unresolvableSkills` get no key: they are config entries with no files, which is a
+   * state no install ever reached, so enabling them would be a claim about an install that
+   * did not happen. The registry half lives in `createPluginInstalledProject`, in
+   * `plugin-install-state.ts` — that fixture owns a fake HOME and this one does
+   * not, and `toHavePlugin` reads only the project's settings.json.
    */
   static async pluginProject(options: PluginProjectOptions): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
@@ -691,6 +767,10 @@ export default {
 
     await writeAgentStubs(projectDir, agents);
 
+    await enablePluginsInSettings(
+      projectDir,
+      skills.map((id) => pluginKeyFor(id, options.marketplaceName)),
+    );
     await createPermissionsFile(projectDir);
 
     return { dir: projectDir };
