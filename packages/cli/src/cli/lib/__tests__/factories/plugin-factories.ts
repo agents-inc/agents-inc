@@ -1,21 +1,9 @@
-import { CLAUDE_DIR, DEFAULT_PLUGIN_NAME, PLUGINS_SUBDIR } from "../../../consts";
 import type {
   CompileAgentConfig,
   CompileConfig,
-  CompileContext,
   Marketplace,
   MarketplacePlugin,
 } from "../../../types";
-
-export function createCompileContext(overrides?: Partial<CompileContext>): CompileContext {
-  return {
-    stackId: "test-stack",
-    verbose: false,
-    projectRoot: "/project",
-    outputDir: `/project/${CLAUDE_DIR}/${PLUGINS_SUBDIR}/${DEFAULT_PLUGIN_NAME}`,
-    ...overrides,
-  };
-}
 
 export function createMockCompileConfig(
   agents: Record<string, CompileAgentConfig>,

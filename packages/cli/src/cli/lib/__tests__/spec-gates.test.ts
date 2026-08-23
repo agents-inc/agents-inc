@@ -10,6 +10,7 @@ import {
   type JourneyRow,
   SPEC_SUFFIX,
   TO_TEST_MARKER,
+  journeyNumbersIn,
   nonSpecNamesIn,
   readJourneyRows,
   readSpecNames,
@@ -41,6 +42,182 @@ const RECOGNISED_NON_SPEC_NAMES = [
   // Journey 17: the vitest guard the blocked plugin leg is skipped by, named to say why that leg
   // does not run. A code symbol, so there is no file for it to resolve to.
   "skipIf",
+];
+
+/**
+ * Every spec the `e2e` project collects that no journey names — the page's opening requirement
+ * read in the direction nothing else reads it.
+ *
+ * `user-journeys.md` opens by requiring every spec it collects to belong to a journey, and the
+ * three gates above hold it to that from the ROW end: the specs a row names are from scratch, are
+ * named with their directory, and are specs at all. All three walk row -> spec, so the page cannot
+ * see what it OMITS — and a spec belonging to no row is invisible in exactly the way a row naming
+ * no spec is not. It has already cost something: five corrupt-config specs belonged to no journey,
+ * which is how a ruling landed on the second reader of `.claude-src/config.ts` with no row whose
+ * surfaces anyone re-judged
+ * (`agent-findings/2026-08-21-five-specs-covered-a-behaviour-the-coverage-matrix-had-no-row-for.md`).
+ *
+ * **This is a backlog, not a verdict.** It rosters the population as it stood when the gate landed,
+ * because a gate that opens by demanding a hundred and fifty rows is deleted the first time it is
+ * inconvenient — the site checker and the from-scratch gate above both introduced themselves this
+ * way. What it buys immediately is the NEXT spec: a file added without a journey fails here, and a
+ * spec that gains a row has to leave this list in the same commit, so the number can only fall.
+ *
+ * Re-derive rather than trusting the length of this array — the gate itself prints the difference,
+ * and this is the population it is measured against:
+ *
+ *     find e2e -name '*.e2e.test.ts' | wc -l
+ */
+const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
+  "commands/build-agent-plugins",
+  "commands/compile",
+  "commands/compile-edge-cases",
+  "commands/compile-global-scope-hint",
+  "commands/compile-incomplete-skill-metadata",
+  "commands/compile-malformed-skill-metadata",
+  "commands/compile-no-skills-refusal",
+  "commands/compile-prunes-stale-agents",
+  "commands/compile-scope-filtering",
+  "commands/compile-warns-scope-dropped-stack-pair",
+  "commands/doctor-content",
+  "commands/dual-scope",
+  "commands/edit-refuses-unusable-local-skill-metadata",
+  "commands/eject",
+  "commands/eject-default-source-skill-absent",
+  "commands/eject-home-config-pair",
+  "commands/eject-preserves-exclusive-stack",
+  "commands/handed-out-invocations",
+  "commands/list",
+  "commands/local-skill-invalid-metadata-yaml",
+  "commands/plugin-build-versioning",
+  "commands/plugin-uninstall-core",
+  "commands/plugin-uninstall-edge-cases",
+  "commands/relationships",
+  "commands/source-flag-is-init-only",
+  "commands/uninstall",
+  "commands/uninstall-global-propagation",
+  "commands/uninstall-manifest-removal",
+  "commands/uninstall-marker-sweep",
+  "commands/uninstall-preservation",
+  "integration/custom-agents",
+  "integration/eject-compile",
+  "integration/eject-integration",
+  "interactive/build-step-category-ordering",
+  "interactive/build-step-focus-walk-cost",
+  "interactive/build-step-space-confirmation",
+  "interactive/confirm-step-info-panel-parity",
+  "interactive/confirm-step-mode-change-indicator",
+  "interactive/default-sandbox-runs-project-scope",
+  "interactive/edit-custom-skill",
+  "interactive/edit-eject-migration-reports-copies",
+  "interactive/edit-migration-eject-to-plugin-no-marketplace",
+  "interactive/edit-plugin-hard-error",
+  "interactive/edit-skill-accumulation",
+  "interactive/edit-unresolvable-entry-removal-reasons",
+  "interactive/edit-wizard-added-skill-source-marker",
+  "interactive/edit-wizard-completion",
+  "interactive/edit-wizard-detection",
+  "interactive/edit-wizard-dual-scope-added-marker",
+  "interactive/edit-wizard-dual-scope-collapse-removal-row",
+  "interactive/edit-wizard-dual-scope-indicator",
+  "interactive/edit-wizard-excluded-skills",
+  "interactive/edit-wizard-global-scope-pending-removal-row",
+  "interactive/edit-wizard-launch",
+  "interactive/edit-wizard-local",
+  "interactive/edit-wizard-pending-removal-row",
+  "interactive/edit-wizard-plugin-migration",
+  "interactive/edit-wizard-plugin-operations",
+  "interactive/edit-wizard-unique-skill-guard",
+  "interactive/info-panel-scope-toggle-diff",
+  "interactive/init-plugin-config-marketplace-source",
+  "interactive/init-project-skill-reaching-no-agent",
+  "interactive/init-wizard-default-source",
+  "interactive/init-wizard-exclusive-compat",
+  "interactive/init-wizard-existing",
+  "interactive/init-wizard-flags",
+  "interactive/init-wizard-interactions",
+  "interactive/init-wizard-navigation",
+  "interactive/init-wizard-plugin",
+  "interactive/init-wizard-scope-split",
+  "interactive/init-wizard-scratch",
+  "interactive/init-wizard-sources-added-markers",
+  "interactive/init-wizard-stack-agents",
+  "interactive/init-wizard-stack-banner",
+  "interactive/init-wizard-ui",
+  "interactive/init-wizard-unreachable-source",
+  "interactive/init-wizard-validation-warning",
+  "interactive/refusal-lands-before-the-spinner",
+  "interactive/scenario-c-init-registers-project",
+  "interactive/search-static",
+  "interactive/sources-focused-row-marker-spacing",
+  "interactive/sources-grid-scope-row-headers",
+  "interactive/sources-inert-row-selection-check",
+  "interactive/sources-overflow-pending-removal",
+  "interactive/uninstall",
+  "interactive/wizard-overflow-affordance",
+  "interactive/wizard-terminal-resize-guard",
+  "lifecycle/agent-scope-toggle-keeps-curation",
+  "lifecycle/cancelled-init-blank-global-config",
+  "lifecycle/compile-after-scope-change",
+  "lifecycle/compile-at-home-propagates-global-hand-edit",
+  "lifecycle/config-scope-integrity",
+  "lifecycle/cross-scope-lifecycle",
+  "lifecycle/doctor-dual-scope",
+  "lifecycle/doctor-global-scope-blind-spots",
+  "lifecycle/dual-scope-collapse-live-selection",
+  "lifecycle/dual-scope-edit-display",
+  "lifecycle/dual-scope-edit-integrity",
+  "lifecycle/dual-scope-edit-mixed-sources",
+  "lifecycle/dual-scope-edit-scope-changes",
+  "lifecycle/dual-scope-edit-source-changes",
+  "lifecycle/dual-scope-mixed-source-compiled-ref",
+  "lifecycle/dual-scope-s-round-trip-space-inert",
+  "lifecycle/edit-add-local-skills",
+  "lifecycle/edit-deselect-reselect-discards-source-scope",
+  "lifecycle/edit-global-fallback",
+  "lifecycle/edit-global-propagation-stale-stack-ref",
+  "lifecycle/edit-global-remove-dual-scope-partial",
+  "lifecycle/edit-plugin-banner-parity",
+  "lifecycle/edit-project-scope-last-skill-stack-cleanup",
+  "lifecycle/edit-remove-skill-stack-surgical",
+  "lifecycle/eject-migration-failure-hard-error",
+  "lifecycle/eject-skill-directory-cleanup",
+  "lifecycle/empty-scope-dirs-removed",
+  "lifecycle/exclusion-lifecycle",
+  "lifecycle/global-agent-propagation-type-consistency",
+  "lifecycle/global-agent-toggle-guard",
+  "lifecycle/global-blank-config-overinstalls-agents",
+  "lifecycle/global-fan-out-re-emit-is-byte-stable",
+  "lifecycle/global-install-masks-project-owned-exclusive-category",
+  "lifecycle/global-install-tombstones-project-owned",
+  "lifecycle/global-scope-install-reporting",
+  "lifecycle/global-skill-toggle-guard",
+  "lifecycle/init-dashboard-edit-plugin-install",
+  "lifecycle/init-edit-error-guards",
+  "lifecycle/init-global-preselection-confirm",
+  "lifecycle/init-plugin-marketplace-fail",
+  "lifecycle/init-then-edit-merge",
+  "lifecycle/local-lifecycle",
+  "lifecycle/plugin-install-failure-hard-error",
+  "lifecycle/plugin-lifecycle",
+  "lifecycle/plugin-scope-lifecycle",
+  "lifecycle/preloaded-preservation",
+  "lifecycle/project-config-name-under-global-install",
+  "lifecycle/project-edit-global-source-switch-divergence",
+  "lifecycle/project-init-global-config-marketplace",
+  "lifecycle/project-only-deselect-integrity",
+  "lifecycle/project-scope-new-domain-config-types",
+  "lifecycle/re-edit-cycles",
+  "lifecycle/recompile-summary-honesty",
+  "lifecycle/scenario-b-edit-home-preserves-projects",
+  "lifecycle/scope-aware-local-copy",
+  "lifecycle/scope-change-deselect-integrity",
+  "lifecycle/scope-toggle-agent-content",
+  "lifecycle/scope-toggle-config-snapshot",
+  "lifecycle/scope-toggle-roundtrip",
+  "lifecycle/selected-agent-name-excluded",
+  "lifecycle/unified-config-view",
+  "lifecycle/uninstall-reinit-lifecycle",
 ];
 
 /**
@@ -204,6 +381,29 @@ const LINT_ZONES = [
 ];
 
 /**
+ * What one in-process ESLint pass over one fixture is allowed to take.
+ *
+ * Measured 2026-08-21 on an idle machine: the escape-shape gate's whole loop runs in ~2.7s across
+ * `LINT_ZONES.length * ESCAPE_SHAPES.length * 2` passes, so ~110ms each — every one of them a
+ * type-aware lint that resolves the fixture through the TypeScript project service. The budget is
+ * ~20x that, and the headroom is the whole point: the gate passed in isolation and on a quiet
+ * re-run while failing under a wave with six agents live, which reads to whoever meets it as a
+ * regression the change caused rather than as a busy machine.
+ */
+const LINT_PASS_BUDGET_MS = 2_500;
+
+/**
+ * The timeout that gate runs under, DERIVED from the work rather than stated beside it.
+ *
+ * A zone or a shape added to either array above is more lint passes, and a constant written as a
+ * number would go on claiming to be sized for the old loop — the failure would land on whoever
+ * added it, under a name that says nothing about them. Raising the suite default instead is the
+ * other wrong answer: it would hand the same headroom to every unit test in the package, where a
+ * ten-second unit test IS the bug.
+ */
+const ESCAPE_SHAPE_TIMEOUT_MS = LINT_ZONES.length * ESCAPE_SHAPES.length * 2 * LINT_PASS_BUDGET_MS;
+
+/**
  * The path the shared-base gate lints under. Any `.ts` path does: that gate replaces the config
  * file rather than resolving one, and the shared base is not type-checked, so nothing here has to
  * belong to a TypeScript program the way `LINT_ZONES` do.
@@ -252,6 +452,24 @@ async function e2eProjects(): Promise<SuiteProject[]> {
  */
 async function journeyRows(): Promise<JourneyRow[]> {
   return readJourneyRows(await readFile(USER_JOURNEYS_PATH, "utf8"), readSpecNames(E2E_ROOT));
+}
+
+/**
+ * Whether the page names `spec` anywhere on it — a From-scratch cell, a Status cell's prose, one
+ * of journey 38's legs, or the withdrawn table's Specs column. All four are the page claiming the
+ * spec, and a reading restricted to the From-scratch column would file the five documented
+ * corrupt-config variants as belonging to nothing.
+ *
+ * A membership test rather than a reader: it picks nothing out of the page, which is why it does
+ * not need tests of its own the way `journey-page.ts` does. Both accepted forms END at a backtick,
+ * and that is the whole of the care needed — a plain substring scan reports `commands/compile`,
+ * `commands/doctor` and `commands/uninstall` as claimed, on mentions of `commands/compile-…`,
+ * `commands/doctor-diagnostics` and `commands/uninstall-corrupt-config`. All three are the shortest
+ * name in their family, which is the shape this fails on and the shape a spec directory fills up
+ * with.
+ */
+function namedOnJourneyPage(page: string, spec: string): boolean {
+  return page.includes(`\`${spec}\``) || page.includes(`${spec}${SPEC_SUFFIX}\``);
 }
 
 /** The source of a spec the page names. The reader has already proved a file answers to it. */
@@ -313,11 +531,37 @@ async function packageScripts(): Promise<string[]> {
 }
 
 /**
+ * Every way a spec is turned off from inside the file rather than by a machine it cannot run on.
+ *
+ * `describe.skipIf(cond)` states a condition and is legitimate — most of this suite is skipped
+ * without the Claude CLI, and a run says so. An UNCONDITIONAL `.skip` runs nowhere, and vitest's
+ * skipped tally is already full of the conditional kind, so no number in a run tells the two
+ * apart. `it.todo` is deliberately absent: it has no body, so nothing about it can be mistaken
+ * for coverage, and vitest counts todos separately.
+ *
+ * The trailing `(` is what discriminates: `describe.skipIf(` contains `describe.skip` and must
+ * not be reported.
+ */
+const UNCONDITIONAL_SKIP_FORMS = ["describe.skip(", "it.skip(", "test.skip("];
+
+/** The spec's path when it is turned off in its own file, else null. */
+async function specTurnedOffInItsOwnFile(spec: string): Promise<string | null> {
+  const source = await readFile(path.join(CLI_ROOT, spec), "utf8");
+  return UNCONDITIONAL_SKIP_FORMS.some((form) => source.includes(form)) ? spec : null;
+}
+
+/**
  * A spec file no configured suite collects is a file nobody has ever run, and nothing about it
  * fails: `e2e/smoke/` sat outside every `include` for months, accumulating a fixture the Claude
- * CLI rejected and assertions that could not see it. Both halves are asserted, because either
+ * CLI rejected and assertions that could not see it. All three halves are asserted, because each
  * alone is satisfiable by doing nothing — a config that claims a file no script hands to vitest
- * is as unrun as a file no config claims.
+ * is as unrun as a file no config claims, and a file both of them reach is as unrun as either
+ * when its own `describe` is skipped.
+ *
+ * The third is the one that shipped a hole here. A propagation spec's only route to the defect it
+ * covered was a bulk hotkey; the hotkey was withdrawn, the fixture could no longer reach the
+ * defect, and the file went `describe.skip` — where it read exactly like a passing file for as
+ * long as nobody opened it.
  */
 describe("every spec the repository holds belongs to a gate", () => {
   it("collects every spec file under e2e/ from one of the configured projects", async () => {
@@ -343,6 +587,44 @@ describe("every spec the repository holds belongs to a gate", () => {
         `--project ${project.test.name}`,
       );
     }
+  });
+
+  it("runs every spec it collects, rather than one being turned off in its own file", async () => {
+    const specs = await fg(EVERY_E2E_SPEC, { cwd: CLI_ROOT });
+    const turnedOff = await Promise.all(specs.map(specTurnedOffInItsOwnFile));
+
+    expect(
+      turnedOff.filter((spec) => spec !== null),
+      "a spec skipped unconditionally is collected, counted as skipped, and proves nothing",
+    ).toStrictEqual([]);
+  });
+});
+
+/**
+ * The precondition every gate below rests on, and the one nothing held.
+ *
+ * All three of them walk row → spec, so a row the reader never returned is judged by none of them —
+ * and there is no red anywhere to say so, because a page whose entries are skipped reads exactly
+ * like a page whose entries all passed. That is the failure `journey-page.ts` was written to end,
+ * and it ended only the NAME half: a row still had to come out five cells wide, and one unescaped
+ * `|` inside a code span is enough that it does not. It has already happened here — row 11 wrote
+ * `GlobalAgentName | "…"` in its Status cell, markdown made six cells of it, the reader dropped it,
+ * and the six specs it names were the only proof six journeys had.
+ *
+ * The two readings are compared by MEMBERS rather than by length, because a page that gained a row
+ * while losing another is a page where nothing changed at all.
+ */
+describe("the reader sees every row the journey tables number", () => {
+  it("reads every numbered row, rather than dropping one whose cells came out wrong", async () => {
+    const page = await readFile(USER_JOURNEYS_PATH, "utf8");
+    // The reader refuses a page it parsed nothing out of, which is this comparison's subject guard:
+    // two empty readings would agree with each other about a page neither of them read.
+    const read = (await journeyRows()).map((row) => row.number);
+
+    expect(
+      journeyNumbersIn(page),
+      "a journey table numbers a row the reader cannot see, so every gate below skips it in silence — the usual cause is an unescaped '|' inside a code span, which markdown splits into an extra cell",
+    ).toStrictEqual(read);
   });
 });
 
@@ -417,6 +699,34 @@ describe("a journey names from-scratch specs that are from scratch", () => {
 });
 
 /**
+ * The same requirement read spec -> row, which is the direction the three gates above cannot see.
+ *
+ * They ask whether the specs a row NAMES are proof; this asks whether a spec is named at all. The
+ * page opens on that requirement — "every spec the `e2e` project collects belongs to a journey on
+ * this page" — and until now nothing held it, so the matrix could not report its own omissions.
+ */
+describe("every spec the e2e project collects belongs to a journey", () => {
+  it("names every spec on the page, bar the backlog rostered when this gate landed", async () => {
+    const page = await readFile(USER_JOURNEYS_PATH, "utf8");
+    const specs = readSpecNames(E2E_ROOT);
+    const claimed = specs.filter((spec) => namedOnJourneyPage(page, spec));
+
+    // The subject guard for the roster below: a page that stopped being readable claims nothing,
+    // and every spec would arrive as unclaimed — a diff of a hundred and fifty names that says
+    // nothing about the one thing that actually broke.
+    expect(
+      claimed.length,
+      "the page names no spec at all — it has been restructured out from under this gate",
+    ).toBeGreaterThan(0);
+
+    expect(
+      specs.filter((spec) => !namedOnJourneyPage(page, spec)),
+      "a spec belongs to no journey — give it a row, or add it to SPECS_BELONGING_TO_NO_JOURNEY, which may only shrink",
+    ).toStrictEqual(SPECS_BELONGING_TO_NO_JOURNEY);
+  });
+});
+
+/**
  * The fourth gate, and the one that answers for the other three. A check is trusted because it
  * has been seen to go red for the reason it names; a check nobody has watched fail is
  * indistinguishable from a check that cannot. Two live instances in two days, both caught by
@@ -430,31 +740,35 @@ describe("a journey names from-scratch specs that are from scratch", () => {
  * silence.
  */
 describe("a verdict that cannot fail is refused before it is trusted", () => {
-  it("reports every escape shape, and no discriminating form, in each separately-ruled zone", async () => {
-    const eslint = new ESLint({ cwd: CLI_ROOT });
+  it(
+    "reports every escape shape, and no discriminating form, in each separately-ruled zone",
+    async () => {
+      const eslint = new ESLint({ cwd: CLI_ROOT });
 
-    for (const zone of LINT_ZONES) {
-      for (const shape of ESCAPE_SHAPES) {
-        const againstVacuous = await rulesReportedAgainst(eslint, shape.vacuous, zone);
-        const againstDiscriminating = await rulesReportedAgainst(
-          eslint,
-          shape.discriminating,
-          zone,
-        );
+      for (const zone of LINT_ZONES) {
+        for (const shape of ESCAPE_SHAPES) {
+          const againstVacuous = await rulesReportedAgainst(eslint, shape.vacuous, zone);
+          const againstDiscriminating = await rulesReportedAgainst(
+            eslint,
+            shape.discriminating,
+            zone,
+          );
 
-        // The positive half is the subject guard for the negative one: without it, a zone eslint
-        // declined to lint at all would satisfy the negative for free.
-        expect(
-          againstVacuous,
-          `'${zone}' accepts ${shape.name} — '${shape.rule}' does not reach this zone`,
-        ).toContain(shape.rule);
-        expect(
-          againstDiscriminating,
-          `'${zone}' reports '${shape.rule}' against ${shape.name} the code CAN falsify — the rule has outgrown the shape`,
-        ).not.toContain(shape.rule);
+          // The positive half is the subject guard for the negative one: without it, a zone eslint
+          // declined to lint at all would satisfy the negative for free.
+          expect(
+            againstVacuous,
+            `'${zone}' accepts ${shape.name} — '${shape.rule}' does not reach this zone`,
+          ).toContain(shape.rule);
+          expect(
+            againstDiscriminating,
+            `'${zone}' reports '${shape.rule}' against ${shape.name} the code CAN falsify — the rule has outgrown the shape`,
+          ).not.toContain(shape.rule);
+        }
       }
-    }
-  });
+    },
+    ESCAPE_SHAPE_TIMEOUT_MS,
+  );
 });
 
 /**

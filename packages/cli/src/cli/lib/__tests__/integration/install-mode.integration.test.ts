@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ProjectConfig, SkillId } from "../../../types";
 import type { SkillConfig } from "../../../types/config";
 import type { SourceLoadResult } from "../../loading/source-loader";
-import { installEject, buildAndMergeConfig } from "../../installation/local-installer";
+import { buildAndMergeConfig } from "../../installation/local-installer";
+import { writeProjectConfig } from "../../operations/project/write-project-config.js";
 // `writeConfigFile` is a config-gate internal — no barrel exposes it, by design.
 // A test asserting on the writer itself is allowed the deep import.
 import { writeConfigFile } from "../../config-gate/propagate.js";
@@ -52,7 +53,7 @@ afterEach(async () => {
 describe("Integration: Install Mode Persistence", () => {
   it("should persist skills with 'local' source in config after install", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
-    const result = await installEject({
+    const result = await writeProjectConfig({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
       }),
@@ -66,7 +67,7 @@ describe("Integration: Install Mode Persistence", () => {
 
   it("should persist skills with 'plugin' source in config after install", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
-    const result = await installEject({
+    const result = await writeProjectConfig({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
       }),
@@ -83,7 +84,7 @@ describe("Integration: Install Mode Persistence", () => {
       ...MIXED_SOURCE_SKILLS.slice(0, 2),
       { id: VITEST_SKILL_ID, scope: "project", origin: "agents-inc" },
     ];
-    const result = await installEject({
+    const result = await writeProjectConfig({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
       }),
@@ -98,7 +99,7 @@ describe("Integration: Install Mode Persistence", () => {
   it("should persist per-skill source in config after install", async () => {
     const skills = MIXED_SOURCE_SKILLS;
 
-    const result = await installEject({
+    const result = await writeProjectConfig({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
       }),
@@ -117,7 +118,7 @@ describe("Integration: Install Mode Persistence", () => {
 
   it("should have all skills as local when no explicit source set", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
-    const result = await installEject({
+    const result = await writeProjectConfig({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
       }),
@@ -136,7 +137,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
   it("should round-trip install mode through config write and read", async () => {
     // First install with "eject" sources
     const localSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
-    const result1 = await installEject({
+    const result1 = await writeProjectConfig({
       wizardResult: buildWizardResult(localSkills, {
         selectedAgents: ["web-developer"],
       }),
@@ -149,7 +150,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
 
     // Second install with "plugin" sources — config gets overwritten
     const pluginSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
-    const result2 = await installEject({
+    const result2 = await writeProjectConfig({
       wizardResult: buildWizardResult(pluginSkills, {
         selectedAgents: ["web-developer"],
       }),
@@ -164,7 +165,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
   it("should round-trip per-skill source through config write and read", async () => {
     const skills = MIXED_SOURCE_SKILLS;
 
-    const result = await installEject({
+    const result = await writeProjectConfig({
       wizardResult: buildWizardResult(skills, {
         selectedAgents: ["web-developer"],
       }),

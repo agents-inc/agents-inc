@@ -1,3 +1,4 @@
+import { DEFAULT_SELECTION_OPTIONS } from "@workspace/matrix";
 import { SEED_VERSION } from "@workspace/matrix/seed";
 
 import { renderSkillMd } from "../content-generators.js";
@@ -15,11 +16,20 @@ const TEST_MATRIX_VERSION = "1.0.0";
  *
  * `eject` rather than `plugin`: a test source is local and has no marketplace, so plugin mode
  * legitimately refuses it — that is its own error path, not this one.
+ *
+ * `scope` is READ from the shared selection default rather than written out, so it cannot drift
+ * from what `seedAgentScope` answers for a sub-agent carrying no `agents` entry. That is what
+ * makes the pair coherent whatever the default becomes: a skill and a sub-agent both resting
+ * there are writable by definition. Written out as `project` it was not — a project skill never
+ * reaches a global sub-agent — so "assign a skill and say nothing else" composed a payload
+ * `configToSeedPayload` refuses to mint, `seedToWizardResult` throws on and the installer filters
+ * away. Building that pair now takes an explicit `scope: "project"`, which is what the specs
+ * pinning the refusal already say.
  */
 export function buildSeedSkill(overrides?: Partial<SeedSkill>): SeedSkill {
   return {
     install: "eject",
-    scope: "project",
+    scope: DEFAULT_SELECTION_OPTIONS.scope,
     assignments: {},
     ...overrides,
   };

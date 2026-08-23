@@ -40,8 +40,7 @@ import { regenerateConfigTypes } from "../configuration/config-types-writer.js";
  * drives a write of, some part of the config pair — `writeConfigFile` writes it
  * directly; the propagation and prune functions write it into every registered
  * project; `writeScopedFromWizard` writes both halves from a wizard result and
- * `writeScopeConfigTypes` writes the types half alone; `deregisterProjectPath`
- * rewrites the global config to drop a registration. The gate is their only caller
+ * `writeScopeConfigTypes` writes the types half alone. The gate is their only caller
  * and none of them is part of the barrel's public surface.
  *
  * Every name below is declared in `src/` — checked by grep, and the only thing that
@@ -58,7 +57,6 @@ const INSTALLATION_RAW_WRITERS = [
   "propagateGlobalChangesToProjects",
   "pruneGlobalEntriesFromRegisteredProjects",
   "writeScopeConfigTypes",
-  "deregisterProjectPath",
 ] as const;
 
 /**
@@ -76,7 +74,7 @@ const CONFIGURATION_RAW_WRITERS = [
 ] as const;
 
 /**
- * A name the guard lists carried until CLI-434, replaced there by
+ * A name the guard lists carried until it was replaced by
  * `writeScopedFromWizard`. Held here rather than in a list because it is the
  * self-test for the check below — the shape it exists to catch — and because a
  * future export under this spelling should fail loudly rather than quietly
@@ -91,8 +89,8 @@ const A_NAME_NOTHING_DECLARES = "writeScopedConfigs";
  * Both guards are lists of STRINGS filtered against a barrel's exports, so a row
  * naming something nothing declares can never fail: no file can re-export a
  * symbol that does not exist. It is a permanently-green row that reads, to
- * anyone scanning the list, exactly like the live ones beside it. CLI-434 found
- * three such rows out of ten, and `grep` had endorsed two of them — both still
+ * anyone scanning the list, exactly like the live ones beside it. The audit that
+ * added this check found three such rows out of ten, and `grep` had endorsed two of them — both still
  * grep to a live function declaration inside `local-installer.test.ts`, which
  * keeps positional-argument shims under the old spellings.
  *

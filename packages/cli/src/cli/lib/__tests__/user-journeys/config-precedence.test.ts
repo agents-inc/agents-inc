@@ -20,7 +20,11 @@ import {
   buildPreRenameProjectConfig,
   buildPreRenameSkillEntryConfig,
 } from "../factories/config-factories.js";
-import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import {
+  readTestTsConfig,
+  writeCorruptTestConfig,
+  writeTestTsConfig,
+} from "../helpers/config-io.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../test-constants.js";
 import { renderConfigTs } from "../content-generators";
@@ -113,7 +117,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
   });
 
   describe("environment variable precedence — init's rung alone", () => {
-    it("should use CC_SOURCE when no flag provided", async () => {
+    it("should use CC_MARKETPLACE when no flag provided", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
 
       const result = await resolveSource({ caller: "init", projectDir });
@@ -122,7 +126,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       expect(result.sourceOrigin).toBe("env");
     });
 
-    it("should use CC_SOURCE over project config", async () => {
+    it("should use CC_MARKETPLACE over project config", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
       await createProjectConfig(projectDir, {
         marketplace: "github:project/source",
@@ -134,7 +138,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       expect(result.sourceOrigin).toBe("env");
     });
 
-    it("should ignore CC_SOURCE for every command after init", async () => {
+    it("should ignore CC_MARKETPLACE for every command after init", async () => {
       process.env[SOURCE_ENV_VAR] = "github:env/source";
       await createProjectConfig(projectDir, {
         marketplace: "github:project/source",
@@ -212,16 +216,24 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       expect(config).toBeNull();
     });
 
-    it("should return null for invalid TypeScript in project config", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        "invalid typescript content {{",
-      );
+    /**
+     * The third corruption kind, and the last one that reported itself as absence. A file that
+     * cannot be EVALUATED sent this rung the same `null` a missing file does, and `resolveSource`
+     * reads the return value alone — so the run walked past a config naming a private marketplace
+     * and fetched the public one. It refuses now (owner ruling 2026-08-20). The spec directly
+     * above holds the state that still answers `null`, without which this pair cannot tell a
+     * scoped guard from one that has swallowed both cases.
+     */
+    it("should refuse a project config that exists and cannot be evaluated", async () => {
+      const configPath = await writeCorruptTestConfig(projectDir, "invalid typescript content {{");
 
-      const config = await loadProjectSourceConfig(projectDir);
-      expect(config).toBeNull();
+      const resolution = resolveSource({ caller: "stored", projectDir });
+
+      await expect(resolution).rejects.toThrow(configPath);
+      await expect(
+        resolution,
+        "walking on to the default marketplace is the outcome the refusal exists to prevent",
+      ).rejects.not.toThrow(DEFAULT_SOURCE);
     });
   });
 
@@ -333,11 +345,12 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
    * The install-repointing trap, closed. `loadSourceConfig` once turned EVERY load failure into
    * `null`, so a refusal raised in the Zod schema alone arrived here as "no config" — and
    * `resolveSource` reads the return value alone, so it walked past that rung to the public
-   * marketplace instead of the one the config named. It now re-raises `ConfigSchemaError` and
-   * `ConfigDefaultExportError`: a file that EVALUATED and said something the schema refuses is a
-   * statement about this install, and only a file that could not be evaluated at all is still
-   * reported as absence. These two hold the refusal at the caller — both assert that
-   * `resolveSource` rejects, which is the shape a silent `null` could never produce.
+   * marketplace instead of the one the config named. It raises every load failure now: the shape
+   * the schema refused, the module whose exports are all named, and — since 2026-08-20 — the file
+   * that could not be evaluated at all, which was the last one still reported as absence. These two
+   * hold the refusal at the caller for the SCHEMA kind, and the spec above holds it for the
+   * evaluation kind; all three assert that `resolveSource` rejects, which is the shape a silent
+   * `null` could never produce.
    */
   describe("a config carrying a field name from before the rename", () => {
     it("refuses to resolve rather than repointing at the default marketplace", async () => {

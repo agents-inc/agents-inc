@@ -227,6 +227,28 @@ export const REACT_HONO_ONE_STACK_MATRIX = createMockMatrix(SKILLS.react, SKILLS
   suggestedStacks: [createMockResolvedStack("react-hono", "React Hono")],
 });
 
+/**
+ * REACT_HONO_ONE_STACK_MATRIX whose stack claims a skill the catalogue does not carry.
+ *
+ * Nothing reconciles the two: `convertStackToResolvedStack` in `lib/loading/source-loader.ts`
+ * copies a stack's skill ids straight through under its own comment — "Stack values are already
+ * skill IDs — no alias resolution needed" — so a source whose `stacks.ts` names a skill its
+ * catalogue dropped loads without complaint and the mismatch is not found until the stack is
+ * chosen. That is the one production route on which `populateFromSkillIds` warns from a PAINTED
+ * frame rather than during hydration, which is what makes this fixture worth a name.
+ */
+export const STACK_CLAIMING_ABSENT_SKILL_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
+  categories: buildCategoryMap({
+    "web-framework": TEST_CATEGORIES.framework,
+    "api-api": TEST_CATEGORIES.api,
+  }),
+  suggestedStacks: [
+    createMockResolvedStack("react-hono", "React Hono", {
+      allSkillIds: ["web-framework-react", "web-styling-tailwind"],
+    }),
+  ],
+});
+
 // Like REACT_HONO_FRAMEWORK_API_MATRIX but with api-api on the "api" domain, so the
 // two skills split across distinct domains (react → web, hono → api). Category defs
 // are complete (carry `id`), so buildCategoriesForDomain resolves options per domain.

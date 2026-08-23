@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import fg from "fast-glob";
 import { describe, expect, it } from "vitest";
 
-import { check } from "../../../../scripts/check-spawn-doors.js";
+import { check, clearances } from "../../../../scripts/check-spawn-doors.js";
 import { SOURCE_ENV_VAR } from "../configuration/config.js";
 import { envReadsIn } from "./helpers/env-reads.js";
 
@@ -128,18 +128,33 @@ describe("a spawned binary is told about every environment variable the product 
     ).toStrictEqual(doors);
   });
 
-  it.each(RUNNERS)("$spawns clears every one of them", async ({ runner }) => {
-    const source = await readFile(path.join(CLI_ROOT, runner), "utf8");
+  /**
+   * Judged per DOOR and from the syntax tree, because the two coarser readings both pass on a
+   * runner that clears nothing. This asked whether the runner's SOURCE TEXT contained
+   * `<NAME>: undefined` anywhere, and a comment satisfies that — measured, by replacing `runCLI`'s
+   * clearing line with a comment saying it: this file stayed green while the door leaked `VITEST`
+   * into every binary it spawned. Per file rather than per door is the same defect one step up, a
+   * file with two spawns passing on whichever of them is written correctly.
+   */
+  it.each(RUNNERS)("$spawns clears every one of them", ({ runner }) => {
+    const doors = clearances().filter((door) => door.file === runner);
 
-    // The subject guard: an empty roster would leave the filter below satisfied for free, and
-    // both the roster and the product would have to be emptied together to reach it.
+    // Two subject guards. An empty roster leaves the filter below satisfied for free, and so does
+    // a runner whose doors this scan cannot see — each would report a clean runner for a reason
+    // that has nothing to do with the environment it hands over.
     expect(
       EVERY_PRODUCT_ENV_VAR,
       "the roster is empty, so this runner is asked nothing",
     ).not.toStrictEqual([]);
+    expect(
+      doors,
+      `${runner} is on the roster and starts the binary nowhere this scan can see`,
+    ).not.toStrictEqual([]);
 
-    const uncleared = EVERY_PRODUCT_ENV_VAR.filter(
-      (name) => !source.includes(`${name}: undefined`),
+    const uncleared = doors.flatMap(({ spawnedBy, clears }) =>
+      EVERY_PRODUCT_ENV_VAR.filter((name) => !clears.includes(name)).map(
+        (name) => `${spawnedBy}: ${name}`,
+      ),
     );
 
     expect(

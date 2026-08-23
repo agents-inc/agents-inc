@@ -47,7 +47,6 @@ export {
 } from "./stack-factories.js";
 
 export {
-  createCompileContext,
   createMockCompileConfig,
   createMockMarketplace,
   createMockMarketplacePlugin,

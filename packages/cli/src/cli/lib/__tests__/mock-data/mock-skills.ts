@@ -4,33 +4,15 @@ import type {
   Category,
   CategoryPath,
   ResolvedSkill,
-  Skill,
   SkillId,
   SkillSlug,
   SkillSource,
 } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, LOCAL_PSEUDO_CATEGORY } from "../../../consts";
-import {
-  createMockSkill,
-  createMockSkillEntry,
-  createTestSkill,
-} from "../factories/skill-factories.js";
+import { createMockSkill, createTestSkill } from "../factories/skill-factories.js";
 import { SKILLS } from "../test-fixtures";
 import { renderSkillMd } from "../content-generators";
-
-// Skill entries from compiler.test.ts
-
-export const REACT_SKILL_PRELOADED = createMockSkillEntry("web-framework-react", true);
-
-export const REACT_SKILL = createMockSkillEntry("web-framework-react");
-
-export const VITEST_SKILL = createMockSkillEntry("web-testing-vitest");
-
-export const VITEST_SINGLE_FILE_SKILL: Skill = {
-  ...VITEST_SKILL,
-  path: "skills/web-testing-vitest.md",
-};
 
 const METHODOLOGY_TEST_SKILLS: TestSkill[] = [
   {

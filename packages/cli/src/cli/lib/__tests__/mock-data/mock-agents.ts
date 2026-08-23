@@ -1,9 +1,8 @@
 // Shared agent configs and definitions for test files.
 
-import type { AgentConfig, AgentDefinition, AgentName } from "../../../types";
+import type { AgentDefinition, AgentName } from "../../../types";
 import type { TestAgent } from "../fixtures/create-test-source";
-import { createMockAgent, createMockAgentConfig } from "../factories/agent-factories.js";
-import { REACT_SKILL, REACT_SKILL_PRELOADED, VITEST_SINGLE_FILE_SKILL } from "./mock-skills.js";
+import { createMockAgent } from "../factories/agent-factories.js";
 
 // ---------------------------------------------------------------------------
 // Canonical agent definitions — reusable for both mock objects and disk-writing tests.
@@ -63,40 +62,6 @@ const API_DEVELOPER_DEFINITION = createMockAgent("API Developer", {
 export const RESOLVE_AGENTS_DEFINITIONS: Record<string, AgentDefinition> = {
   "web-developer": WEB_DEVELOPER_DEFINITION,
   "api-developer": API_DEVELOPER_DEFINITION,
-};
-
-// ---------------------------------------------------------------------------
-// Agent config maps from compiler.test.ts
-// ---------------------------------------------------------------------------
-
-const REACT_SKILL_WITH_PATH = {
-  ...REACT_SKILL,
-  path: "skills/web-framework-react/",
-};
-
-export const WEB_DEV_NO_SKILLS: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer"),
-};
-
-export const API_DEV_NO_SKILLS: Record<string, AgentConfig> = {
-  "api-developer": createMockAgentConfig("api-developer"),
-};
-
-export const WEB_DEV_WITH_REACT: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [REACT_SKILL]),
-};
-
-export const WEB_DEV_WITH_PRELOADED_REACT: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [REACT_SKILL_PRELOADED]),
-};
-
-export const WEB_DEV_WITH_VITEST: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [VITEST_SINGLE_FILE_SKILL]),
-};
-
-export const TWO_AGENTS_SHARED_SKILL: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [REACT_SKILL_WITH_PATH]),
-  reviewer: createMockAgentConfig("reviewer", [REACT_SKILL_WITH_PATH]),
 };
 
 // ---------------------------------------------------------------------------

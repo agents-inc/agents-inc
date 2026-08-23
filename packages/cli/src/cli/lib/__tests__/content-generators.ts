@@ -3,7 +3,6 @@
  * Single source of truth for all test content templates.
  */
 import { omit } from "remeda";
-import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 
 export function renderSkillMd(id: string, description?: string, body?: string): string {
   const desc = description ?? `${id} skill`;
@@ -68,7 +67,16 @@ export interface SkillMetadataFields {
   domain?: string;
   author?: string;
   displayName?: string;
-  category?: string;
+  /**
+   * Required, so that no fixture reaches the `local` placeholder by omission.
+   *
+   * A skill's category is the field that decides whether it can be reached at all: local-skill
+   * discovery refuses the placeholder outright, and a skill wearing it belongs to no domain, so
+   * it joins no grid tab and reaches no sub-agent. A default here wrote that skill silently, and
+   * a spec built on one exercised a catalogue the skill was never in. The placeholder is still
+   * writable — {@link renderMetadataYaml} takes it like any other value — but only by name.
+   */
+  category: string;
   slug?: string;
   cliDescription?: string;
   usageGuidance?: string;
@@ -82,6 +90,13 @@ export interface SkillMetadataFields {
  * which `compile` refuses the run.
  */
 export type RequiredMetadataField = "displayName" | "slug" | "category" | "domain";
+
+/**
+ * The fields as they reach the emitter: each of the four above is absent when
+ * {@link renderIncompleteMetadataYaml} was asked to leave it out.
+ */
+type EmittedMetadataFields = Omit<SkillMetadataFields, RequiredMetadataField> &
+  Partial<Pick<SkillMetadataFields, RequiredMetadataField>>;
 
 /** Stand-in identity for a fixture that writes a skill without naming one. */
 const UNNAMED_SKILL_DISPLAY_NAME = "Test Skill";
@@ -98,18 +113,14 @@ function domainOfCategory(category: string): string {
 }
 
 /**
- * Fills the four required fields a fixture left unnamed. `local` is the
- * pseudo-category `categoryPathSchema` accepts for a skill that belongs to no
- * marketplace category, so a fixture that names none still writes a file the
- * product could have written — and one that adds no member to the generated
- * `Category` and `Domain` unions.
+ * Fills the required fields a fixture left unnamed. `category` is not among them —
+ * it is the one field a wrong value makes the skill unreachable through, so it is
+ * asked for rather than supplied.
  */
 function completeMetadata(fields: SkillMetadataFields): SkillMetadataFields {
-  const category = fields.category ?? LOCAL_PSEUDO_CATEGORY;
   return {
     ...fields,
-    category,
-    domain: fields.domain ?? domainOfCategory(category),
+    domain: fields.domain ?? domainOfCategory(fields.category),
     displayName: fields.displayName ?? UNNAMED_SKILL_DISPLAY_NAME,
     slug: fields.slug ?? UNNAMED_SKILL_SLUG,
   };
@@ -149,7 +160,7 @@ export function renderUnparseableMetadataYaml(): string {
   return `{{{ this is not: valid: yaml: "at all\n`;
 }
 
-function emitMetadataYaml(fields: SkillMetadataFields): string {
+function emitMetadataYaml(fields: EmittedMetadataFields): string {
   const lines = [
     ...(fields.custom ? ["custom: true"] : []),
     ...(fields.domain ? [`domain: ${fields.domain}`] : []),

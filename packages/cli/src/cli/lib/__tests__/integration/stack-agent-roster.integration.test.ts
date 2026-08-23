@@ -50,7 +50,7 @@ function continuePastSourcesStep(): void {
   useWizardStore.getState().preselectAgentsFromDomains();
 }
 
-/** The config an eject install writes for the current store state (`buildEjectConfig`). */
+/** The config an install writes for the current store state (`buildInstallConfig`). */
 function generateConfigFromStore(declaration: Stack): ProjectConfig {
   const store = useWizardStore.getState();
   const skillIds: SkillId[] = store.getAllSelectedTechnologies();

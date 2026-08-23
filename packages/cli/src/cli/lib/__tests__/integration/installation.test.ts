@@ -2,18 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import {
-  CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
-  CLI_INVOKE_COMMAND,
-  DEFAULT_BRANDING,
-  DEFAULT_PLUGIN_NAME,
-  STANDARD_FILES,
-} from "../../../consts";
+import { CLAUDE_DIR, CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../../../consts";
 import { buildProjectConfig } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
-import { detectInstallation, getInstallationOrThrow } from "../../installation";
+import { detectInstallation } from "../../installation";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import type { ProjectConfig } from "../../../types";
 
@@ -138,43 +131,6 @@ describe("installation", () => {
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("eject");
-    });
-  });
-
-  describe("getInstallationOrThrow", () => {
-    it("should throw helpful error when no installation found", async () => {
-      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(
-        `No ${DEFAULT_BRANDING.NAME} installation found`,
-      );
-    });
-
-    it("should include init suggestion in error message", async () => {
-      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(`${CLI_INVOKE_COMMAND} init`);
-    });
-
-    it("should return installation when found (local)", async () => {
-      await writeInstallationConfig(tempDir, buildProjectConfig());
-
-      const result = await getInstallationOrThrow(tempDir);
-
-      expect(result).not.toBeNull();
-      expect(result.mode).toBe("eject");
-      expect(result.projectDir).toBe(tempDir);
-    });
-
-    it("should return installation when found (plugin)", async () => {
-      await writeInstallationConfig(
-        tempDir,
-        buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
-        }),
-      );
-
-      const result = await getInstallationOrThrow(tempDir);
-
-      expect(result).not.toBeNull();
-      expect(result.mode).toBe("plugin");
-      expect(result.projectDir).toBe(tempDir);
     });
   });
 
