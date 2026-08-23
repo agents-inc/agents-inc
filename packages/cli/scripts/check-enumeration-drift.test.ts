@@ -11,7 +11,7 @@
  * failed us failed by declining to judge rather than by judging wrongly, and a row that silently
  * judges nothing reads exactly like a row that passed.
  */
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -39,6 +39,28 @@ import {
   UNREADABLE_VALUE,
   WHOLE_MODULE_REEXPORT,
 } from "./check-enumeration-drift.js";
+import { expectRefusal } from "./refusal-expectations.js";
+
+/** This package's root, so a claim about a file in it is read from the file rather than a fixture. */
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
+
+/**
+ * The declarations that state markdown's cell escape, spelt as both files that carry them spell
+ * them. `scripts/check-enumeration-drift.ts` copied them verbatim from
+ * `src/cli/lib/__tests__/helpers/journey-page.ts`, and until one module can hold the rule for both
+ * this is the only thing that makes the pair move together.
+ *
+ * The rule is a fact about how markdown is rendered rather than about either reader, so the two
+ * have the same reason to change and no reason to change apart — which is what separates this from
+ * a value each site restates so its own subject stays observable.
+ */
+const ESCAPE_RULE_DECLARATIONS = [
+  "const CELL_SEPARATOR = /(?<!\\\\)\\|/;",
+  'const ESCAPED_PIPE = "\\\\|";',
+];
+
+const ESCAPE_RULE_ORIGIN = "src/cli/lib/__tests__/helpers/journey-page.ts";
+const ESCAPE_RULE_COPY = "scripts/check-enumeration-drift.ts";
 
 const SOURCE_FILE = "src/sentinels.ts";
 const DOCUMENT = "docs/reference.md";
@@ -219,6 +241,15 @@ const IDENTIFIER_VALUE_SOURCE = [
   ``,
 ].join("\n");
 
+/** A value holding a pipe, which no document can write in a table cell except as the escape `\|`. */
+const PIPED_VALUE_SOURCE = [
+  `export const ${SENTINELS} = {`,
+  `  alpha: "First | Sentinel",`,
+  `  bravo: "Second Sentinel",`,
+  `} as const satisfies Record<string, string>;`,
+  ``,
+].join("\n");
+
 /** A spread, which carries no name in this literal for either half of a pair to be read from. */
 const SPREAD_VALUE_SOURCE = [
   `const OTHERS = { charlie: "Third Sentinel" } as const;`,
@@ -265,6 +296,9 @@ const KEY_COLUMN = "Key";
 const MIDDLE_COLUMN = "Id";
 const VALUE_COLUMN = "Title";
 
+/** A pipe in the column standing between the two a row names, escaped as markdown requires. */
+const PIPED_MIDDLE_CELL = "alpha-id \\| bravo-id";
+
 const TABLE_PAIRS_CLAIM = {
   document: DOCUMENT,
   from: SECTION_OPENS,
@@ -302,8 +336,13 @@ function documentTabulating(keys: string[]): string {
   ].join("\n");
 }
 
-/** A table stating one member per row, with a column between the two the row names. */
-function documentPairing(rows: [key: string, value: string][]): string {
+/**
+ * A table stating one member per row, with a column between the two the row names.
+ *
+ * `middleCell` is what that column carries when a test cares — nothing reads it, so what a row
+ * writes there can only matter by changing where the cells around it end.
+ */
+function documentPairing(rows: [key: string, value: string][], middleCell?: string): string {
   return [
     `## A Section`,
     ``,
@@ -311,7 +350,11 @@ function documentPairing(rows: [key: string, value: string][]): string {
     ``,
     `| ${KEY_COLUMN} | ${MIDDLE_COLUMN} | ${VALUE_COLUMN} |`,
     `| ---- | ---- | ---- |`,
-    ...rows.map(([key, value]) => `| \`${key}\` | \`${key}-id\` | \`${value}\` |`),
+    ...rows.map(([key, value]) => {
+      const id = middleCell ?? `${key}-id`;
+
+      return `| \`${key}\` | \`${id}\` | \`${value}\` |`;
+    }),
     ``,
     `${SECTION_CLOSES} is another document's business.`,
     ``,
@@ -364,9 +407,50 @@ const DIRECTORY_BOUND_CLAIMS = [
   "the command roster of src/cli/commands/ in reference/commands/index.md",
 ];
 
+/**
+ * Every claim read as `key = value` rather than as keys alone.
+ *
+ * The first is the row the shape was written for: bound as `table-rows` it reported `agrees` while
+ * five of the document's value cells were wrong, because the keys — all either half could reach —
+ * were right. The other two are the survey that followed (2026-08-19), and each was measured
+ * against the real repository rather than inferred. Every further table the survey looked at was
+ * refused, each for a reason in the SOURCE rather than in the document:
+ *
+ * - `STANDARD_FILES` binds `METADATA_YAML`, `AGENT_METADATA_YAML` and `PLUGIN_JSON` to identifiers
+ *   (`METADATA_YAML_FILE`, `PLUGIN_MANIFEST_FILE`) rather than to string literals, and `DIRS` binds
+ *   `skills` to `SKILLS_DIR_PATH` — a value `valueOf` refuses rather than guess at.
+ * - `SCHEMA_PATHS` writes every value as a template with a substitution, and its document's
+ *   value column states the suffix rather than the value — so resolving the templates would still
+ *   not agree.
+ * - `EXIT_CODES` is numeric, and reading it as pairs needs a deliberate widening of `valueOf`.
+ * - `UI_SYMBOLS` is refused twice over: the members bound to the module-private `CHECK_GLYPH` /
+ *   `EN_DASH_GLYPH` are identifiers too, and its documents' value column is prose — `unicode
+ *   chevron`, `space` — rather than the glyph, which is a correct choice for a table a human reads.
+ *
+ * Converting any of those is a scope call rather than a mechanical sweep.
+ */
+const PAIR_BOUND_CLAIMS = [
+  "E2E_SKILL_TITLES in reference/testing/e2e-infrastructure.md",
+  "STANDARD_DIRS in reference/utilities.md",
+  "CLI_COLORS in reference/component-patterns.md",
+];
+
 /** The claim that reads a module's RE-EXPORT surface, which neither file reader answers. */
 const REEXPORT_BOUND_CLAIMS = [
   "the re-exports of e2e/helpers/test-utils.ts in reference/testing/e2e-infrastructure.md",
+];
+
+/**
+ * The two documents that each tabulate the whole export list of `configuration/scope-predicates.ts`.
+ *
+ * Duplication across documents is allowed (owner ruling 2026-08-20) and the checker watches both,
+ * which is what a row per document is for: one of them was bound and one was not, so the ninth
+ * export would have reddened the owner's table and left the copy in `scope-system.md` reading as
+ * authoritative and short by one.
+ */
+const SCOPE_PREDICATE_CLAIMS = [
+  "the exported functions of configuration/scope-predicates.ts in reference/features/configuration.md",
+  "the exported functions of configuration/scope-predicates.ts in reference/concepts/scope-system.md",
 ];
 
 function symbolEntry(claim: DocumentClaim): RegistryEntry {
@@ -601,10 +685,11 @@ describe("a source enumeration that is a directory", () => {
       [DOCUMENT]: documentTabulating(["alpha", "bravo"]),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [barrelEntry(TABLE_ROWS_CLAIM)] }),
+      SOURCE_ENUMERATES_NOTHING,
       "the refusal that made these tables unregisterable, and the reason the directory shape exists",
-    ).toThrow(SOURCE_ENUMERATES_NOTHING);
+    );
   });
 
   it("reads every const and function the directory's modules export", async () => {
@@ -673,12 +758,14 @@ describe("a source enumeration that is a directory", () => {
       [DOCUMENT]: documentTabulating(["ALPHA_DEFAULT", "alpha"]),
     });
 
-    expect(() =>
-      check({
-        packageRoot,
-        registry: [directoryEntry(SOURCE_DIRECTORY, "exported-values", TABLE_ROWS_CLAIM)],
-      }),
-    ).toThrow(UNNAMEABLE_REEXPORT);
+    expectRefusal(
+      () =>
+        check({
+          packageRoot,
+          registry: [directoryEntry(SOURCE_DIRECTORY, "exported-values", TABLE_ROWS_CLAIM)],
+        }),
+      UNNAMEABLE_REEXPORT,
+    );
   });
 
   it("reads the command id of every module under the tree, topics included", async () => {
@@ -725,12 +812,14 @@ describe("a source enumeration that is a directory", () => {
   it("throws when the directory does not exist", async () => {
     const packageRoot = await writeFixturePackage({ [DOCUMENT]: documentTabulating(["alpha"]) });
 
-    expect(() =>
-      check({
-        packageRoot,
-        registry: [directoryEntry(SOURCE_DIRECTORY, "exported-values", TABLE_ROWS_CLAIM)],
-      }),
-    ).toThrow(NO_SOURCE_DIRECTORY);
+    expectRefusal(
+      () =>
+        check({
+          packageRoot,
+          registry: [directoryEntry(SOURCE_DIRECTORY, "exported-values", TABLE_ROWS_CLAIM)],
+        }),
+      NO_SOURCE_DIRECTORY,
+    );
   });
 
   it("throws when the directory holds no module, rather than reading it as an empty roster", async () => {
@@ -739,12 +828,14 @@ describe("a source enumeration that is a directory", () => {
       [DOCUMENT]: documentTabulating(["alpha"]),
     });
 
-    expect(() =>
-      check({
-        packageRoot,
-        registry: [directoryEntry(SOURCE_DIRECTORY, "exported-values", TABLE_ROWS_CLAIM)],
-      }),
-    ).toThrow(SOURCE_ENUMERATES_NOTHING);
+    expectRefusal(
+      () =>
+        check({
+          packageRoot,
+          registry: [directoryEntry(SOURCE_DIRECTORY, "exported-values", TABLE_ROWS_CLAIM)],
+        }),
+      SOURCE_ENUMERATES_NOTHING,
+    );
   });
 });
 
@@ -860,9 +951,10 @@ describe("a source enumeration that is a file's re-exports", () => {
       [DOCUMENT]: documentTabulating(["alpha", "own"]),
     });
 
-    expect(() =>
-      check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
-    ).toThrow(REEXPORTS_A_DECLARATION);
+    expectRefusal(
+      () => check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
+      REEXPORTS_A_DECLARATION,
+    );
   });
 
   it("refuses a file re-exporting a whole module, rather than under-reporting it as nothing", async () => {
@@ -871,9 +963,10 @@ describe("a source enumeration that is a file's re-exports", () => {
       [DOCUMENT]: documentTabulating(["alpha"]),
     });
 
-    expect(() =>
-      check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
-    ).toThrow(WHOLE_MODULE_REEXPORT);
+    expectRefusal(
+      () => check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
+      WHOLE_MODULE_REEXPORT,
+    );
   });
 
   it("throws when the file re-exports nothing, rather than reading it as an empty surface", async () => {
@@ -882,17 +975,19 @@ describe("a source enumeration that is a file's re-exports", () => {
       [DOCUMENT]: documentTabulating(["ALPHA"]),
     });
 
-    expect(() =>
-      check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
-    ).toThrow(SOURCE_ENUMERATES_NOTHING);
+    expectRefusal(
+      () => check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
+      SOURCE_ENUMERATES_NOTHING,
+    );
   });
 
   it("throws when the file does not exist, naming the file rather than the shape", async () => {
     const packageRoot = await writeFixturePackage({ [DOCUMENT]: documentTabulating(["alpha"]) });
 
-    expect(() =>
-      check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
-    ).toThrow(NO_SOURCE_FILE);
+    expectRefusal(
+      () => check({ packageRoot, registry: [reexportEntry(SOURCE_FILE, TABLE_ROWS_CLAIM)] }),
+      NO_SOURCE_FILE,
+    );
   });
 });
 
@@ -999,10 +1094,11 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
       [DOCUMENT]: documentPairing([["alpha", "First Sentinel"]]),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
+      UNREADABLE_VALUE,
       "`SCHEMA_PATHS` writes all seven of its values this way, and the text under the substitution is not the value",
-    ).toThrow(UNREADABLE_VALUE);
+    );
   });
 
   it("refuses a value spelt as a name declared elsewhere, rather than answering the name", async () => {
@@ -1014,10 +1110,11 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
       ]),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
+      UNREADABLE_VALUE,
       "`STANDARD_FILES.METADATA_YAML` is written this way, and a reader skipping it under-reports by one",
-    ).toThrow(UNREADABLE_VALUE);
+    );
   });
 
   it("names the member whose value it refused, so the repair is one row and not the symbol", async () => {
@@ -1043,7 +1140,8 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
       ]),
     });
 
-    expect(() => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
       UNREADABLE_MEMBER,
     );
   });
@@ -1058,10 +1156,11 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
       ]).replace(VALUE_COLUMN, "Display title"),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
+      NO_COLUMN,
       "a renamed heading is a document change the row must be re-pointed at, not a column to guess at",
-    ).toThrow(NO_COLUMN);
+    );
   });
 
   it("names the heading it could not find, so a renamed column is repaired where it moved", async () => {
@@ -1088,7 +1187,8 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
       ]).replace(MIDDLE_COLUMN, VALUE_COLUMN),
     });
 
-    expect(() => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
       AMBIGUOUS_COLUMN,
     );
   });
@@ -1099,10 +1199,69 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
       [DOCUMENT]: documentPairing([["alpha` / `bravo", "First Sentinel"]]),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
+      AMBIGUOUS_MEMBER_CELL,
       "one member per row is the contract both readers hold, and it is stated in one place",
-    ).toThrow(AMBIGUOUS_MEMBER_CELL);
+    );
+  });
+});
+
+/**
+ * Markdown gives a table cell one escape and no other way to hold a pipe — `\|`, resolved before
+ * the cell's inline markup is parsed, which is why it works inside a code span where no other
+ * backslash escape does. A reader splitting on a bare `|` therefore disagrees with every renderer
+ * of the same page about where a correctly-written cell ends: the row comes out one cell too wide
+ * and every column after the escape shifts by one.
+ *
+ * The two readers that resolve a column POSITIONALLY answer from the shifted row rather than
+ * refusing, so the failure is a confident wrong answer — the checker reports a correct document as
+ * drifted, and the repair it invites is to edit the document. The key readers beside them take the
+ * first cell and are shifted only by a pipe in the member name itself.
+ *
+ * The separator is spelt exactly as `__tests__/helpers/journey-page.ts` spells it, which reads the
+ * journey tables the same way. Two escape-aware readers that disagreed about where a cell ends
+ * would be worse than one naive one.
+ */
+describe("a table cell that holds a pipe", () => {
+  it("reads the value column through an escaped pipe standing in the column before it", async () => {
+    const packageRoot = await writeFixturePackage({
+      [SOURCE_FILE]: TITLED_OBJECT_SOURCE,
+      [DOCUMENT]: documentPairing(
+        [
+          ["alpha", "First Sentinel"],
+          ["bravo", "Second Sentinel"],
+          ["charlie", "Third Sentinel"],
+        ],
+        PIPED_MIDDLE_CELL,
+      ),
+    });
+
+    expect(
+      check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
+      "a bare split makes this row one cell wider than it renders, and the Title column answers whatever the escape pushed into its place",
+    ).toStrictEqual({
+      clean: true,
+      verdicts: [{ claim: CLAIM, outcome: "agrees", members: 3 }],
+    });
+  });
+
+  it("reads a value cell holding an escaped pipe as one cell, with the escape resolved", async () => {
+    const packageRoot = await writeFixturePackage({
+      [SOURCE_FILE]: PIPED_VALUE_SOURCE,
+      [DOCUMENT]: documentPairing([
+        ["alpha", "First \\| Sentinel"],
+        ["bravo", "Second Sentinel"],
+      ]),
+    });
+
+    expect(
+      check({ packageRoot, registry: [pairsEntry(TABLE_PAIRS_CLAIM)] }),
+      "the value the source holds carries the pipe, so a cell read up to the escape states a value nothing holds",
+    ).toStrictEqual({
+      clean: true,
+      verdicts: [{ claim: CLAIM, outcome: "agrees", members: 2 }],
+    });
   });
 });
 
@@ -1155,10 +1314,11 @@ describe("what the document is read from", () => {
       [DOCUMENT]: documentTabulating(["charlie(count)` / `delta(...)"]),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [moduleEntry("function", TABLE_ROWS_CLAIM)] }),
+      AMBIGUOUS_MEMBER_CELL,
       "the call-signature strip is greedy and end-anchored, so this cell survived as the single valid name `charlie` and the checker reported `delta` — which the document plainly carries — as unnamed",
-    ).toThrow(AMBIGUOUS_MEMBER_CELL);
+    );
   });
 
   it("names the cell it refused, so the row to repair is the one the failure prints", async () => {
@@ -1239,10 +1399,11 @@ describe("a document that partitions one enumeration across several tables", () 
       [DOCUMENT]: documentPartitioning([[]], ["ALPHA", "BRAVO", "CHARLIE"]),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, registry: [symbolEntry(PARTITIONED_TABLES_CLAIM)] }),
+      DOCUMENT_ENUMERATES_NOTHING,
       "a renamed heading silently drops a whole partition, so it refuses rather than judging the rest",
-    ).toThrow(DOCUMENT_ENUMERATES_NOTHING);
+    );
   });
 });
 
@@ -1252,7 +1413,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming(["ALPHA"]),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       NO_SOURCE_FILE,
     );
   });
@@ -1263,7 +1425,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming(["ALPHA"]),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       NO_SYMBOL,
     );
   });
@@ -1274,7 +1437,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming(["ALPHA"]),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       SOURCE_ENUMERATES_NOTHING,
     );
   });
@@ -1289,7 +1453,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming(["ALPHA", "BRAVO", "CHARLIE"]),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       UNREADABLE_MEMBER,
     );
   });
@@ -1297,7 +1462,8 @@ describe("a registry row that would judge nothing", () => {
   it("throws when the document does not exist", async () => {
     const packageRoot = await writeFixturePackage({ [SOURCE_FILE]: OBJECT_SOURCE });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       NO_DOCUMENT,
     );
   });
@@ -1308,7 +1474,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming(["ALPHA", "BRAVO", "CHARLIE"]).replace(SECTION_OPENS, "reworded:"),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       NO_SECTION,
     );
   });
@@ -1322,7 +1489,8 @@ describe("a registry row that would judge nothing", () => {
       ),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       NO_SECTION,
     );
   });
@@ -1336,7 +1504,8 @@ describe("a registry row that would judge nothing", () => {
       ].join("\n"),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       AMBIGUOUS_SECTION,
     );
   });
@@ -1347,7 +1516,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming([]),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(CODE_SPANS_CLAIM)] }),
       DOCUMENT_ENUMERATES_NOTHING,
     );
   });
@@ -1358,7 +1528,8 @@ describe("a registry row that would judge nothing", () => {
       [DOCUMENT]: documentNaming(["ALPHA", "BRAVO", "CHARLIE"]),
     });
 
-    expect(() => check({ packageRoot, registry: [symbolEntry(TABLE_ROWS_CLAIM)] })).toThrow(
+    expectRefusal(
+      () => check({ packageRoot, registry: [symbolEntry(TABLE_ROWS_CLAIM)] }),
       DOCUMENT_ENUMERATES_NOTHING,
     );
   });
@@ -1423,16 +1594,48 @@ describe("this repository", () => {
     ).toStrictEqual([]);
   });
 
-  it("binds the one enumeration read as key-value pairs rather than keys alone", () => {
-    const rows = REGISTRY.filter((entry) => entry.document.states === "table-pairs");
+  it("binds one enumeration duplicated across two documents to both of them", () => {
+    const rows = REGISTRY.filter((entry) => SCOPE_PREDICATE_CLAIMS.includes(entry.claim));
 
     expect(
-      rows.map((entry) => entry.claim),
-      "this table's keys were bound while five of its value cells were wrong, and the check called it clean",
-    ).toStrictEqual(["E2E_SKILL_TITLES in reference/testing/e2e-infrastructure.md"]);
+      rows.map((entry) => entry.claim).sort(),
+      "a second copy nothing reads is the one a reader trusts and the ninth export leaves behind",
+    ).toStrictEqual([...SCOPE_PREDICATE_CLAIMS].sort());
+    const distinctSources = new Set(rows.map((entry) => JSON.stringify(entry.source)));
+
+    expect(
+      distinctSources.size,
+      "one source read twice — two rows over two sources would not be this claim at all",
+    ).toBe(1);
     expect(
       check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
     ).toStrictEqual([]);
+  });
+
+  it("binds every enumeration read as key-value pairs rather than keys alone", () => {
+    const rows = REGISTRY.filter((entry) => entry.document.states === "table-pairs");
+
+    expect(
+      rows.map((entry) => entry.claim).sort(),
+      "a keys-only binding covers the half of a two-column table that cannot break, and reports agrees while every value cell is wrong",
+    ).toStrictEqual([...PAIR_BOUND_CLAIMS].sort());
+    expect(
+      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
+    ).toStrictEqual([]);
+  });
+
+  it("states markdown's cell escape identically in both files that carry it", () => {
+    const origin = readFileSync(path.join(PACKAGE_ROOT, ESCAPE_RULE_ORIGIN), "utf-8");
+    const copy = readFileSync(path.join(PACKAGE_ROOT, ESCAPE_RULE_COPY), "utf-8");
+
+    expect(
+      ESCAPE_RULE_DECLARATIONS.filter((declaration) => origin.includes(declaration)),
+      "a rule the origin no longer states is one its copy is agreeing with nothing about",
+    ).toStrictEqual(ESCAPE_RULE_DECLARATIONS);
+    expect(
+      ESCAPE_RULE_DECLARATIONS.filter((declaration) => copy.includes(declaration)),
+      "two escape-aware readers disagreeing about where a cell ends read a whole column from the wrong place",
+    ).toStrictEqual(ESCAPE_RULE_DECLARATIONS);
   });
 
   it("has no document whose exhaustive list disagrees with the source it enumerates", () => {

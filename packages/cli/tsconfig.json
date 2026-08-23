@@ -55,5 +55,27 @@
     // `noEmit: true`, every tsc invocation in this package passes --noEmit anyway,
     // and tsup owns the real dist/ through its own outDir (see tsup.config.ts).
   },
-  "include": ["src/**/*"]
+  // The package's own source, plus the four tool configs at its root. Those four stood outside
+  // every tsconfig here until 2026-08-22, and outside ESLint's `files` blocks with it — a posture
+  // that was correct while they were declaration and nothing else, and stopped being correct as
+  // they took on logic. `vitest.setup.ts` alone now pins `chalk.level`, spies on `os.homedir` per
+  // test, seeds the matrix every unit file reads and runs the dist-replacement guard; a type
+  // error or an unused import in any of it failed nothing.
+  //
+  // The asymmetry is what settled it: `e2e/vitest.config.ts` has always been type-checked and
+  // linted, because `e2e/tsconfig.json` includes `**/*.ts` and eslint.config.js names `e2e/**/*.ts`
+  // — so this package already covered one vitest config and exempted the other purely on where it
+  // sat. Measured cost of closing that: zero `tsc` errors and zero ESLint reports.
+  //
+  // It has to be THIS file rather than a `tsconfig.tools.json`, and that is not a preference:
+  // typescript-eslint's project service only discovers projects named `tsconfig.json`, so a
+  // separately-named one would type-check under `tsc -p` and leave the type-aware lint rules with
+  // no program — the same trap `scripts/tsconfig.json` exists to avoid (see eslint.config.js).
+  "include": [
+    "src/**/*",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "vitest.global-setup.ts",
+    "vitest.setup.ts"
+  ]
 }

@@ -30,6 +30,7 @@ import {
   type UnresolvedReference,
   witnessOf,
 } from "./check-findings-frontmatter.js";
+import { expectRefusal } from "./refusal-expectations.js";
 
 const FINDING_FILE = "2026-01-01-a-finding.md";
 const OTHER_FINDING_FILE = "2026-01-02-another-finding.md";
@@ -295,7 +296,7 @@ describe("a finding whose root_cause is not one TEMPLATE.md offers", () => {
     const root = await writeFixtureDir({ [FINDING_FILE]: finding({ status: "open" }) });
     writeFileSync(path.join(root, TEMPLATE_FILE), "---\nstatus: open\n---\n");
 
-    expect(() => checkFixture(root)).toThrow(NO_ROOT_CAUSE_ENUM);
+    expectRefusal(() => checkFixture(root), NO_ROOT_CAUSE_ENUM);
   });
 });
 
@@ -712,7 +713,7 @@ describe("a finding the INDEX names nowhere", () => {
     const root = await writeFixtureDir({ [FINDING_FILE]: finding({ status: "open" }) });
     rmSync(path.join(root, INDEX_FILE));
 
-    expect(() => checkFixture(root)).toThrow(NO_INDEX);
+    expectRefusal(() => checkFixture(root), NO_INDEX);
   });
 });
 
@@ -792,14 +793,23 @@ const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [
   unresolved(UNUSED_BINDINGS, AFFECTED_FILES, `${INTEGRATION}source-switching.integration.test.ts`),
 ];
 
+/**
+ * The finding whose `resolved_by` names the producer that loaded its own sub-agent roster. The
+ * roster is still the ruling; the symbol was deleted as a test-only export, so the note now names
+ * something a reader cannot grep for.
+ */
+const FOUR_PRODUCERS =
+  "2026-08-21-four-producers-of-one-union-and-two-of-them-read-the-marketplace.md";
+
 function undeclaredSymbol(file: string, key: string, symbol: string): UndeclaredSymbol {
   return { file, key, symbol };
 }
 
 /**
- * Every name a lifecycle note pins its claim to that nothing in the repository declares — 9 across
- * 4 findings. Each is a note asserting something about code, in terms of a symbol a reader cannot
- * find, which is the rename half of the class and the half a scanner can see.
+ * Every name a lifecycle note pins its claim to that nothing in the repository declares. Each is a
+ * note asserting something about code, in terms of a symbol a reader cannot find, which is the
+ * rename half of the class and the half a scanner can see. Re-derive the population from the diff
+ * this assertion prints rather than from a count written here, which rots on the next deletion.
  *
  * `loadAndMergeSkillsMatrix` is the one already written up twice: a doc pass found four passages
  * describing it as live, one of them an instruction not to call it, and the function does not
@@ -825,6 +835,7 @@ const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [
   ),
   undeclaredSymbol(CATALOG_EMISSION, PARTIAL_NOTE, "generatePhase2"),
   undeclaredSymbol(CATALOG_EMISSION, PARTIAL_NOTE, "loadAndMergeSkillsMatrix"),
+  undeclaredSymbol(FOUR_PRODUCERS, RESOLVED_BY, "loadConfigTypesDataInBackground"),
 ];
 
 /**

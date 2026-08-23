@@ -51,7 +51,7 @@ const EXTENDING_CONFIG = [
 
 const RE_EXPORTING_CONFIG = `export { baseConfig as default } from "${SHARED_BASE_ENTRY}"\n`;
 
-/** What packages/cli carried until CLI-427: the shared set composed by hand, one addition short. */
+/** What packages/cli carried before it re-exported: the shared set composed by hand, one short. */
 const RESTATING_CONFIG = [
   `import js from "@eslint/js"`,
   `import tseslint from "typescript-eslint"`,

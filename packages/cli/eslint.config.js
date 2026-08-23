@@ -4,7 +4,29 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import eslintConfigPrettier from "eslint-config-prettier";
 import reactHooks from "eslint-plugin-react-hooks";
 
-const TYPESCRIPT_SOURCES = ["src/**/*.ts", "src/**/*.tsx", "e2e/**/*.ts", "scripts/**/*.ts"];
+/**
+ * The tool configs at the package root, named one by one rather than by a `*.ts` glob: a bare
+ * root glob would also pull in whatever a throwaway harness leaves there, which is the trap the
+ * long note in the block below is about.
+ *
+ * They are in `tsconfig.json`'s `include` as of 2026-08-22 and so are type-checked and reachable
+ * by the type-aware rules — see that file's note for why the exemption they used to hold stopped
+ * earning itself, and why a separately-named tsconfig could not have replaced it.
+ */
+const ROOT_TOOL_CONFIGS = [
+  "tsup.config.ts",
+  "vitest.config.ts",
+  "vitest.global-setup.ts",
+  "vitest.setup.ts",
+];
+
+const TYPESCRIPT_SOURCES = [
+  "src/**/*.ts",
+  "src/**/*.tsx",
+  "e2e/**/*.ts",
+  "scripts/**/*.ts",
+  ...ROOT_TOOL_CONFIGS,
+];
 const CLI_SOURCES = ["src/**/*.ts", "src/**/*.tsx"];
 
 /**
@@ -179,10 +201,9 @@ export default defineConfig(
 
   {
     // The shared set, scoped to what this package actually compiles. `baseConfig` and
-    // `typeCheckedConfig` both match `**/*.{ts,tsx}`; the `files` here narrows them to the
-    // three source trees, which is what keeps tsup.config.ts, vitest.config.ts and
-    // vitest.setup.ts — the root-level tool configs, in no tsconfig of this package — out of a
-    // type-aware run they would fail to parse under.
+    // `typeCheckedConfig` both match `**/*.{ts,tsx}`; the `files` here narrows them to the three
+    // source trees plus the four root tool configs named above — everything this package has a
+    // tsconfig for, and so everything the type-aware rules can be run against at all.
     //
     // What the narrowing does NOT do is exclude everything else, and the difference is
     // worth knowing before it costs someone a session. Two of the TEST_FILES patterns

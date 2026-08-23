@@ -7,12 +7,22 @@
  * filename, a name truncated with an ellipsis — cannot all be present in the real tree at once. The
  * second runs it against this repository, which is the assertion that holds the rule.
  */
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
+import {
+  BINDING_DOCUMENTS,
+  BRIEFING_CONTRACT,
+  DOCUMENTATION_MAP,
+  STANDARDS_DIRECTORY,
+} from "./check-briefing-contract.js";
 import {
   AGENT_FINDINGS,
   AGENT_SUGGESTIONS,
@@ -27,6 +37,7 @@ import {
   SPECS,
   TRACKERS,
 } from "./check-finding-citations.js";
+import { expectRefusal } from "./refusal-expectations.js";
 
 const A_LIVE_FINDING = "2026-08-19-a-finding-that-is-still-on-disk";
 const A_DELETED_FINDING = "2026-08-19-a-finding-a-batch-removed";
@@ -196,10 +207,11 @@ describe("the scan", () => {
     const root = await writeFixtureTree({});
     rmSync(path.join(root, TRACKERS), { recursive: true });
 
-    expect(
+    expectRefusal(
       () => check({ repositoryRoot: root }),
+      NO_SCOPE_DIRECTORY,
       "a scope that quietly reads no documents reads exactly like a scope that passed",
-    ).toThrow(NO_SCOPE_DIRECTORY);
+    );
   });
 
   it("refuses a finding directory that is not there, rather than resolving nothing", async () => {
@@ -208,10 +220,11 @@ describe("the scan", () => {
     });
     rmSync(path.join(root, AGENT_SUGGESTIONS), { recursive: true });
 
-    expect(
+    expectRefusal(
       () => check({ repositoryRoot: root }),
+      NO_FINDING_DIRECTORY,
       "a resolution set missing one of its halves calls every citation of that half dangling",
-    ).toThrow(NO_FINDING_DIRECTORY);
+    );
   });
 
   it("reads every scope it is given rather than stopping at the first defect", async () => {
@@ -307,17 +320,20 @@ describe("a spec citing a finding", () => {
  * read nothing at all while the `it` filtering dangling citations to it asserted over an empty list
  * and passed.
  *
- * The spec scope's zero is stated rather than assumed, and it is recent: four specs cited two
- * findings an old prune had removed, and repairing them deleted the four sentences rather than
- * repointing them. The row stays because that tree is where those citations lived — and the day a
- * spec cites a finding again, this line reddens and the value moves to `cites findings`.
+ * The spec scope's zero WAS stated rather than assumed, and it is now spent: it read zero because
+ * four specs had cited two findings an old prune removed, and repairing them deleted the four
+ * sentences rather than repointing them. On 2026-08-21 three lifecycle specs cited
+ * `2026-08-21-three-specs-pressed-space-at-a-wizard-that-refuses.md` from the KNOWN GAP comments
+ * the closed-loop Space confirmation forced them to carry, this line reddened exactly as it said
+ * it would, and the value moved. Moving it back would mean the spec tree had stopped citing, which
+ * is worth a second look rather than a silent edit.
  */
 type ScopePopulation = "cites findings" | "cites none today";
 
 const SCOPE_POPULATIONS: Record<string, ScopePopulation> = {
   [TRACKERS]: "cites findings",
   [CHANGELOGS]: "cites findings",
-  [SPECS]: "cites none today",
+  [SPECS]: "cites findings",
 };
 
 /** One scope read on its own, so no scope's silence can be covered by another's population. */
@@ -357,6 +373,102 @@ describe("this repository", () => {
     expect(
       repository.dangling.filter((citation) => citation.document.startsWith(`${SPECS}/`)),
       "a spec's comment is where a reader goes for why an assertion exists, and a finding is that why — the population pinned above is what says whether this list is empty because nothing cites or because nothing was read",
+    ).toStrictEqual([]);
+  });
+});
+
+/**
+ * Where this package's gates say what they read, against what the task running them says it hashes.
+ *
+ * The scans above are only evidence if they RAN. `todo/` sits outside every workspace, so turbo's
+ * default input set — every file in the package — cannot reach it, and a change confined to a
+ * tracker leaves `agents-inc#test`'s hash byte-identical. The cached pass that replays then
+ * describes a tree the scan never opened, which is the same green a fully-resolving tree gives.
+ *
+ * The required entries are DERIVED from the gates' own exported paths rather than listed here, so a
+ * scope row added to {@link SCOPES} that reaches outside this package fails this assertion instead
+ * of quietly leaving the cache stale.
+ */
+const TURBO_CONFIG = "turbo.json";
+
+const THIS_PACKAGE = "packages/cli/";
+
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const REPOSITORY_ROOT = path.resolve(PACKAGE_ROOT, "../..");
+
+/** Only the shape this assertion reads — the rest of the task's declaration is not its business. */
+const turboConfigSchema = z.object({
+  tasks: z.object({ test: z.object({ inputs: z.array(z.string()).optional() }) }),
+});
+
+/** Every repository-relative path this package's gates open, taken from the gates themselves. */
+function everyTreeTheGatesRead(): string[] {
+  return [
+    ...SCOPES.map((scope) => scope.directory),
+    ...FINDING_DIRECTORIES,
+    ...BINDING_DOCUMENTS,
+    STANDARDS_DIRECTORY,
+    DOCUMENTATION_MAP,
+    BRIEFING_CONTRACT,
+  ];
+}
+
+function isOutsideThisPackage(repositoryPath: string): boolean {
+  return !repositoryPath.startsWith(THIS_PACKAGE);
+}
+
+/** How the task must spell a path it cannot reach by default: relative to the package, and whole. */
+function turboInputFor(repositoryPath: string): string {
+  const fromPackage = `../../${repositoryPath}`;
+  return statSync(path.join(REPOSITORY_ROOT, repositoryPath)).isDirectory()
+    ? `${fromPackage}/**`
+    : fromPackage;
+}
+
+/**
+ * Parsed rather than searched for as text. `turbo.json` carries `//` comments explaining itself, so
+ * a substring check for an entry is satisfied by a comment mentioning it — the shape where a gate
+ * proves nothing because the thing it looked for is prose.
+ */
+function declaredTestInputs(): string[] {
+  const configPath = path.join(PACKAGE_ROOT, TURBO_CONFIG);
+  const { config, error } = ts.parseConfigFileTextToJson(
+    configPath,
+    readFileSync(configPath, "utf-8"),
+  );
+  if (error !== undefined) {
+    throw new Error(
+      `${TURBO_CONFIG} does not parse: ${ts.flattenDiagnosticMessageText(error.messageText, " ")}`,
+    );
+  }
+
+  const parsed: unknown = config;
+  return turboConfigSchema.parse(parsed).tasks.test.inputs ?? [];
+}
+
+/** The trees a gate reads that the task running it does not hash — each one a replayable green. */
+function unhashedTreesTheGatesRead(): string[] {
+  const declared = new Set(declaredTestInputs());
+
+  const required = [...new Set(everyTreeTheGatesRead().filter(isOutsideThisPackage))]
+    .map(turboInputFor)
+    .sort();
+
+  return required.filter((input) => !declared.has(input));
+}
+
+describe("the task that runs these scans", () => {
+  it("reads gates that reach outside this package, so the derivation has a subject", () => {
+    expect(
+      everyTreeTheGatesRead().filter(isOutsideThisPackage).length,
+      "with nothing outside the package the assertion below passes for free, and would keep passing after a scope row moved out of it",
+    ).toBeGreaterThan(0);
+  });
+
+  it("hashes every tree they read, so a change confined to one cannot replay a cached pass", () => {
+    expect(
+      unhashedTreesTheGatesRead(),
+      "turbo's default inputs stop at the package boundary, so a gate reading `todo/` or the root CLAUDE.md is answered from cache about a tree it never opened",
     ).toStrictEqual([]);
   });
 });

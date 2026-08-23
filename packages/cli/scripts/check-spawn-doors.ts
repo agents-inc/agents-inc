@@ -27,6 +27,15 @@
  * scan of this shape must not have — a hit can be argued with, a silence cannot even be seen — so
  * an argument is also judged by the literal pieces of the path it spells.
  *
+ * **The same read answers a second question, and `clearances()` is where it comes out.** The
+ * environment roster in `src/cli/lib/__tests__/e2e-runner-environment.test.ts` requires every door
+ * to hand the child `<NAME>: undefined` for each variable the product reads. That used to be
+ * checked by looking for the string in the runner's SOURCE TEXT, which a comment satisfies —
+ * measured, by replacing `runCLI`'s clearing line with a comment saying it: the roster stayed green
+ * while that door leaked the harness's `VITEST` into every binary it spawned, and the only thing
+ * that noticed was an e2e spec covering one of the five variables. A property set to `undefined`
+ * and a sentence describing one are the same substring and different syntax trees.
+ *
  * A generated bundle is not judged. `e2e/helpers/handrun.gen.mjs` carries the doors of the sources
  * this scan already reads, so judging it reports each of them twice — and a STALE bundle would red
  * for a defect no edit fixes, sending a reader to rebuild rather than to the door.
@@ -89,13 +98,55 @@ export type DoorVerdict = {
   outcome: "guarded" | "unguarded";
 };
 
+/** One site that starts the binary, and the variables it takes away from the child. */
+export type DoorClearance = {
+  file: string;
+  spawnedBy: string;
+  clears: string[];
+};
+
 export type CheckResult = { clean: boolean; doors: DoorVerdict[] };
 
+/** One door, read once for every question asked of it. */
+type Door = DoorClearance & { guarded: boolean };
+
 export function check({ packageRoot = PACKAGE_ROOT }: { packageRoot?: string } = {}): CheckResult {
+  const doors = doorsUnder(packageRoot).map(verdictOf);
+
+  return { clean: doors.every((door) => door.outcome === "guarded"), doors };
+}
+
+/** How one door reads to the guard question, which is the only one `check` asks of it. */
+function verdictOf({ file, spawnedBy, guarded }: Door): DoorVerdict {
+  return { file, spawnedBy, outcome: guarded ? "guarded" : "unguarded" };
+}
+
+/**
+ * Every door paired with the variables it sets to `undefined` in the environment it hands over.
+ *
+ * The environment roster in `src/cli/lib/__tests__/e2e-runner-environment.test.ts` is the caller.
+ * It used to ask whether a runner's SOURCE TEXT contained `<NAME>: undefined` anywhere, which a
+ * comment satisfies — and this codebase writes that exact sentence in prose, `src/cli/utils/
+ * logger.ts` among them. Measured: replacing `runCLI`'s clearing line with a comment saying it
+ * left the roster green while every binary that door spawned inherited the harness's `VITEST`.
+ */
+export function clearances({
+  packageRoot = PACKAGE_ROOT,
+}: { packageRoot?: string } = {}): DoorClearance[] {
+  return doorsUnder(packageRoot).map(clearanceOf);
+}
+
+/** How one door reads to the environment question, which is the only one `clearances` asks. */
+function clearanceOf({ file, spawnedBy, clears }: Door): DoorClearance {
+  return { file, spawnedBy, clears };
+}
+
+/** Every door in the tree. A tree holding none has not been scanned, whatever it answers. */
+function doorsUnder(packageRoot: string): Door[] {
   const doors = modulesUnder(packageRoot).flatMap((module) => doorsIn(packageRoot, module));
   if (doors.length === 0) throw new Error(`${packageRoot} ${NO_DOORS}`);
 
-  return { clean: doors.every((door) => door.outcome === "guarded"), doors };
+  return doors;
 }
 
 /** Every module under the root, in path order, as paths relative to it. */
@@ -118,19 +169,24 @@ function isJudgedModule(name: string): boolean {
   return MODULE_EXTENSIONS.some((extension) => name.endsWith(extension));
 }
 
-/** Every call in one module that starts the binary, and whether the env it hands over is guarded. */
-function doorsIn(packageRoot: string, module: string): DoorVerdict[] {
+/** Every call in one module that starts the binary, read for everything asked of a door. */
+function doorsIn(packageRoot: string, module: string): Door[] {
   const filePath = path.join(packageRoot, module);
   const source = readFileSync(filePath, "utf-8");
   if (!source.includes(BINARY_CONSTANT) && !source.includes(BINARY_FILE)) return [];
 
   const file = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest);
 
-  return spawnCallsIn(file).map((call) => ({
-    file: module.split(path.sep).join("/"),
-    spawnedBy: calleeNameOf(call.expression),
-    outcome: reachesGuard(envHandedBy(call), file) ? "guarded" : "unguarded",
-  }));
+  return spawnCallsIn(file).map((call) => {
+    const env = envHandedBy(call);
+
+    return {
+      file: module.split(path.sep).join("/"),
+      spawnedBy: calleeNameOf(call.expression),
+      guarded: reachesGuard(env, file),
+      clears: clearedIn(env, file),
+    };
+  });
 }
 
 /** Every call whose arguments carry the binary inside an array, which is how each door writes it. */
@@ -209,36 +265,93 @@ function nameOf(name: ts.PropertyName): string {
 }
 
 /**
- * Whether the guard is reachable from the expression a door hands over, following every local
- * declaration the expression names.
+ * Every expression a door's environment is built out of: the one handed to the spawn, and the
+ * initializer of every local reachable from it.
  *
- * The hops are what make this usable: the PTY harness's env is a local built from another local,
- * and stopping at the call would report the one door that has been guarded since the fix landed.
+ * The hops are what make this usable, and both questions below need them: the PTY harness's env is
+ * a local built from another local, so a reader stopping at the call would report the one door
+ * that has been guarded since the fix landed, and would report it as clearing nothing.
  */
-function reachesGuard(env: ts.Expression | undefined, file: ts.SourceFile): boolean {
-  if (env === undefined) return false;
-
+function envSourcesOf(env: ts.Expression, file: ts.SourceFile): ts.Expression[] {
+  const sources = [env];
   const seen = new Set<string>();
-  const pending = identifiersIn(env);
+  const pending = valueIdentifiersIn(env);
 
   for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
-    if (name === GUARD_CONSTANT) return true;
     if (seen.has(name)) continue;
 
     seen.add(name);
     const initializer = initializerOf(file, name);
-    if (initializer !== undefined) pending.push(...identifiersIn(initializer));
+    if (initializer === undefined) continue;
+
+    sources.push(initializer);
+    pending.push(...valueIdentifiersIn(initializer));
   }
 
-  return false;
+  return sources;
 }
 
-function identifiersIn(node: ts.Node): string[] {
+/** Whether the guard is reachable from the expression a door hands over. */
+function reachesGuard(env: ts.Expression | undefined, file: ts.SourceFile): boolean {
+  if (env === undefined) return false;
+
+  return envSourcesOf(env, file).some(namesTheGuard);
+}
+
+function namesTheGuard(source: ts.Expression): boolean {
+  return valueIdentifiersIn(source).includes(GUARD_CONSTANT);
+}
+
+/**
+ * Every variable a door takes away from the child — the properties its environment assigns
+ * `undefined`, which is the shape all three runners clear one in.
+ *
+ * Read from the syntax tree rather than from the source text, because that is the whole
+ * difference: a comment naming the variable and the line that removes it are the same substring.
+ */
+function clearedIn(env: ts.Expression | undefined, file: ts.SourceFile): string[] {
+  if (env === undefined) return [];
+
+  return envSourcesOf(env, file).flatMap(clearedPropertiesIn);
+}
+
+function clearedPropertiesIn(source: ts.Expression): string[] {
+  const cleared: string[] = [];
+
+  const collect = (node: ts.Node): void => {
+    if (ts.isPropertyAssignment(node) && isUndefined(node.initializer)) {
+      cleared.push(nameOf(node.name));
+    }
+    node.forEachChild(collect);
+  };
+  collect(source);
+
+  return cleared;
+}
+
+function isUndefined(node: ts.Expression): boolean {
+  return ts.isIdentifier(node) && node.text === "undefined";
+}
+
+/**
+ * Every identifier standing for a VALUE, which is every one except those written as property KEYS.
+ *
+ * The distinction is the whole of one verdict. `NO_BACKGROUND_VERSION_CHECK` is an object whose
+ * single key is the variable oclif reads, so spreading it and naming it are opposites: a door
+ * writing `NO_BACKGROUND_VERSION_CHECK: "1"` sets a variable nothing reads and suppresses nothing.
+ * A reader counting every identifier calls that door guarded — measured on a real one, an ad-hoc
+ * hand-run script in the package root, which this scan reported guarded while oclif's update
+ * plugin detached a child from it on every run.
+ */
+function valueIdentifiersIn(node: ts.Node): string[] {
   const names: string[] = [];
 
   const collect = (child: ts.Node): void => {
     if (ts.isIdentifier(child)) names.push(child.text);
-    child.forEachChild(collect);
+    child.forEachChild((grandchild) => {
+      if (ts.isPropertyAssignment(child) && grandchild === child.name) return;
+      collect(grandchild);
+    });
   };
   collect(node);
 

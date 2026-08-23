@@ -29,6 +29,7 @@ import {
   type TableAddress,
   UNNAMEABLE_MEMBER,
 } from "./check-screen-sentinels.js";
+import { expectRefusal } from "./refusal-expectations.js";
 
 const SENTINEL_FILE = "e2e/pages/constants.ts";
 const PRODUCT_FILE = "src/screen.tsx";
@@ -158,7 +159,7 @@ describe("a pair that would judge nothing", () => {
   it("throws when a file does not exist", async () => {
     const packageRoot = await writeFixturePackage({ [SENTINEL_FILE]: sentinelSource(SUBTITLE) });
 
-    expect(() => check({ packageRoot, pairs: [PAIR_ENTRY] })).toThrow(NO_SOURCE_FILE);
+    expectRefusal(() => check({ packageRoot, pairs: [PAIR_ENTRY] }), NO_SOURCE_FILE);
   });
 
   it("throws when a file no longer declares the symbol", async () => {
@@ -167,7 +168,7 @@ describe("a pair that would judge nothing", () => {
       [PRODUCT_FILE]: productSource(SUBTITLE).replace(PRODUCT_SYMBOL, "RENAMED_LABELS"),
     });
 
-    expect(() => check({ packageRoot, pairs: [PAIR_ENTRY] })).toThrow(NO_SYMBOL);
+    expectRefusal(() => check({ packageRoot, pairs: [PAIR_ENTRY] }), NO_SYMBOL);
   });
 
   it("throws when the symbol no longer holds the key", async () => {
@@ -176,7 +177,7 @@ describe("a pair that would judge nothing", () => {
       [PRODUCT_FILE]: productSource(SUBTITLE).replace(`${PRODUCT_KEY}:`, "origins:"),
     });
 
-    expect(() => check({ packageRoot, pairs: [PAIR_ENTRY] })).toThrow(NO_KEY);
+    expectRefusal(() => check({ packageRoot, pairs: [PAIR_ENTRY] }), NO_KEY);
   });
 
   it("throws when the key holds something other than a literal string", async () => {
@@ -188,10 +189,11 @@ describe("a pair that would judge nothing", () => {
       ),
     });
 
-    expect(
+    expectRefusal(
       () => check({ packageRoot, pairs: [PAIR_ENTRY] }),
+      NOT_A_STRING,
       "a composed label is a different claim, and comparing it to a fragment would be a false green",
-    ).toThrow(NOT_A_STRING);
+    );
   });
 
   it("names the pair in every refusal, so the row to repair is the one it prints", async () => {
@@ -219,10 +221,11 @@ describe("the product's own label table", () => {
       ),
     });
 
-    expect(
+    expectRefusal(
       () => labelledScreens({ packageRoot, labels: PRODUCT_LABEL_TABLE }),
+      UNNAMEABLE_MEMBER,
       "a spread would drop every screen behind it, which is the roster silently shrinking",
-    ).toThrow(UNNAMEABLE_MEMBER);
+    );
   });
 });
 

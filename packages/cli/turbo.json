@@ -59,8 +59,28 @@
     // resolves command modules from ./dist/commands, and dist is gitignored.
     // Locally a stale dist makes them pass; in CI 205 tests across 17 files
     // failed with exit 127 the first time this ran on a fresh clone.
+    //
+    // The inputs are `$TURBO_DEFAULT$` plus two trees this package's own gates
+    // READ but do not contain. The default set is every file in the package and
+    // stops at its boundary, so a change confined to todo/ or to the root
+    // CLAUDE.md leaves this task's hash byte-identical — and
+    // check-finding-citations.test.ts (which walks todo/) and
+    // check-briefing-contract.test.ts (which follows the root CLAUDE.md's
+    // links) then replay a cached pass describing a tree they never opened. A
+    // gate answered from cache about its own subject is not evidence. Verified
+    // with `turbo run test --dry=json --filter=agents-inc`: before, 1366 files
+    // hashed and none of them under todo/; after, 2315 including the root
+    // CLAUDE.md. Note that .ai-docs/ needs no entry and never did — the default
+    // set already carries its 226 files, because it IS inside the package.
+    // "test" is where these belong rather than "build": the build excludes
+    // .ai-docs/ and *.md deliberately above, and nothing here is build input.
+    // The assertion that keeps this list honest derives it from the checkers'
+    // own exported paths — see "the task that runs these scans" in
+    // scripts/check-finding-citations.test.ts — so a scope reaching outside the
+    // package fails that test rather than silently going stale here.
     "test": {
-      "dependsOn": ["build"]
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", "../../todo/**", "../../CLAUDE.md"]
     }
   }
 }

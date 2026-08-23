@@ -19,7 +19,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
-import { check, type DoorVerdict, GUARD_CONSTANT } from "./check-spawn-doors.js";
+import {
+  check,
+  clearances,
+  type DoorVerdict,
+  GUARD_CONSTANT,
+  NO_DOORS,
+} from "./check-spawn-doors.js";
+import { expectRefusal } from "./refusal-expectations.js";
 
 const DOOR_FILE = "e2e/helpers/runner.ts";
 const GENERATED_FILE = "e2e/helpers/handrun.gen.mjs";
@@ -129,6 +136,68 @@ const DOOR_SPELLING_THE_PATH_IN_A_TEMPLATE = [
   ``,
 ].join("\n");
 
+/**
+ * The shape that NAMES the guard while handing the child nothing out of it: the constant's own
+ * identifier written as an environment key, rather than its contents spread. The constant is an
+ * object whose single key is the variable oclif reads, so the two are not interchangeable and the
+ * mistake is invisible at the call site.
+ *
+ * Not invented. An ad-hoc hand-run script appeared in the package root doing exactly this, and the
+ * scan reported it guarded while oclif's update plugin was never suppressed for it at all.
+ */
+const DOOR_NAMING_THE_GUARD_AS_A_KEY = [
+  `import pty from "@lydell/node-pty";`,
+  ``,
+  `import { BIN_RUN } from "./test-utils.js";`,
+  ``,
+  `export function open(args: string[], cwd: string) {`,
+  `  return pty.spawn("node", [BIN_RUN, ...args], {`,
+  `    cwd,`,
+  `    env: { ...process.env, ${GUARD_CONSTANT}: "1" },`,
+  `  });`,
+  `}`,
+  ``,
+].join("\n");
+
+/** A variable the roster in `e2e-runner-environment.test.ts` requires every door to clear. */
+const CLEARED_VARIABLE = "VITEST";
+
+/** A door that clears the variable in the env literal it hands the spawn. */
+const DOOR_CLEARING_INLINE = [
+  `import { execa } from "execa";`,
+  ``,
+  `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+  ``,
+  `export async function runCLI(args: string[], cwd: string) {`,
+  `  return execa("node", [BIN_RUN, ...args], {`,
+  `    cwd,`,
+  `    env: { ...${GUARD_CONSTANT}, ${CLEARED_VARIABLE}: undefined, HOME: cwd },`,
+  `  });`,
+  `}`,
+  ``,
+].join("\n");
+
+/**
+ * The shape a substring scan cannot tell from the one above: the door clears nothing, and a
+ * comment beside it spells the clearing line out. Not an invented shape — `src/cli/utils/logger.ts`
+ * already carries that exact sentence in prose, and the roster this feeds was measured passing on
+ * a `runCLI` whose clearing line had been replaced by one.
+ */
+const DOOR_NAMING_THE_VARIABLE_IN_PROSE = [
+  `import { execa } from "execa";`,
+  ``,
+  `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+  ``,
+  `export async function runCLI(args: string[], cwd: string) {`,
+  `  return execa("node", [BIN_RUN, ...args], {`,
+  `    cwd,`,
+  `    // the runners hand the spawned binary ${CLEARED_VARIABLE}: undefined`,
+  `    env: { ...${GUARD_CONSTANT}, HOME: cwd },`,
+  `  });`,
+  `}`,
+  ``,
+].join("\n");
+
 function guarded(file: string, spawnedBy: string): DoorVerdict {
   return { file, spawnedBy, outcome: "guarded" };
 }
@@ -208,6 +277,15 @@ describe("a site that starts the built binary", () => {
       "asking whether the FILE mentions the constant passes a door that spawns bare beneath one that does",
     ).toStrictEqual([unguarded(DOOR_FILE, "execa")]);
   });
+  it("is reported when it writes the guard's own name as an environment key rather than its contents", async () => {
+    const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_NAMING_THE_GUARD_AS_A_KEY });
+
+    expect(
+      check({ packageRoot: root }).doors,
+      "the constant's identifier is not the variable oclif reads, so a door spelling it as a key suppresses nothing",
+    ).toStrictEqual([unguarded(DOOR_FILE, "pty.spawn")]);
+  });
+
   it("is seen at all when it spells the binary's path rather than naming the constant", async () => {
     const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_SPELLING_THE_PATH });
 
@@ -255,7 +333,49 @@ describe("the scan", () => {
   it("refuses a tree holding no door at all, rather than calling it clean", async () => {
     const root = await writeFixturePackage({ "e2e/helpers/nothing.ts": "export const x = 1;\n" });
 
-    expect(() => check({ packageRoot: root })).toThrow();
+    expectRefusal(() => check({ packageRoot: root }), NO_DOORS);
+  });
+});
+
+/**
+ * The second question asked of the same doors. `NO_BACKGROUND_VERSION_CHECK` is one constant a door
+ * either reaches or does not; the environment roster is a list of variables each door must set to
+ * `undefined`, and until this existed the only reader of it asked whether the runner's SOURCE TEXT
+ * contained `<NAME>: undefined` anywhere. That passes on a comment, and a comment clears nothing.
+ */
+describe("the variables a door clears for the child", () => {
+  it("names one the call sets to undefined in the env it hands over", async () => {
+    const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_CLEARING_INLINE });
+
+    expect(clearances({ packageRoot: root })).toStrictEqual([
+      { file: DOOR_FILE, spawnedBy: "execa", clears: [CLEARED_VARIABLE] },
+    ]);
+  });
+
+  it("names one reached through the locals the PTY harness assembles its env from", async () => {
+    const root = await writeFixturePackage({
+      [DOOR_FILE]: doorSpawningThroughLocals(`{ ...process.env, ${CLEARED_VARIABLE}: undefined }`),
+    });
+
+    expect(
+      clearances({ packageRoot: root }),
+      "the PTY harness clears every variable two locals away from its spawn, and reading only the call reports none of them",
+    ).toStrictEqual([{ file: DOOR_FILE, spawnedBy: "pty.spawn", clears: [CLEARED_VARIABLE] }]);
+  });
+
+  it("names nothing when the file only says so in a comment", async () => {
+    const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_NAMING_THE_VARIABLE_IN_PROSE });
+
+    expect(
+      clearances({ packageRoot: root }),
+      "a substring scan reads this door as clearing the variable, and the binary it spawns still inherits it",
+    ).toStrictEqual([{ file: DOOR_FILE, spawnedBy: "execa", clears: [] }]);
+  });
+
+  it("refuses a tree holding no door, rather than reporting that nothing needs clearing", async () => {
+    const root = await writeFixturePackage({ "e2e/helpers/nothing.ts": "export const x = 1;\n" });
+
+    expectRefusal(() => clearances({ packageRoot: root }), NO_DOORS);
   });
 });
 

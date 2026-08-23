@@ -86,7 +86,7 @@ function vendoredTypeFiles(cliRoot: string): EmittedFile[] {
 
 const AGENTS_HEADER = `// AUTO-GENERATED from packages/cli/src/agents/*/*/metadata.yaml in this repo.
 // Do not edit manually — run \`bun run generate\` in packages/matrix.
-// Fills the AGENT_DEFINITIONS gap described in the CLI's todo/D-239.
+// Fills the AGENT_DEFINITIONS gap the shared matrix package left open.
 
 import type { AgentName } from "../vendor/generated/source-types"
 import type { ModelName, PermissionMode } from "../vendor/matrix"

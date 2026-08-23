@@ -75,6 +75,7 @@ const SCOPE_PREDICATES = "src/cli/lib/configuration/scope-predicates.ts";
 const CONFIG_WRITER_DOC = ".ai-docs/reference/config/config-writer.md";
 const SCOPE_SPLIT_DOC = ".ai-docs/reference/config/scope-split.md";
 const CONFIGURATION_DOC = ".ai-docs/reference/features/configuration.md";
+const SCOPE_SYSTEM_DOC = ".ai-docs/reference/concepts/scope-system.md";
 const TYPE_SYSTEM = ".ai-docs/reference/type-system.md";
 const MATRIX_TYPES = "src/cli/types/matrix.ts";
 const MODEL_AND_EFFORT = ".ai-docs/reference/features/model-and-effort.md";
@@ -85,6 +86,11 @@ const CREATE_E2E_SOURCE = "e2e/helpers/create-e2e-source.ts";
 const TEST_UTILS = "e2e/helpers/test-utils.ts";
 const TESTING_FACTORIES = ".ai-docs/reference/testing/factories.md";
 const MOCK_DATA = ".ai-docs/reference/testing/mock-data.md";
+const MOCK_DATA_MODULE_DIR = "src/cli/lib/__tests__/mock-data";
+const MOCK_AGENTS = `${MOCK_DATA_MODULE_DIR}/mock-agents.ts`;
+const MOCK_CATEGORIES = `${MOCK_DATA_MODULE_DIR}/mock-categories.ts`;
+const MOCK_SOURCES = `${MOCK_DATA_MODULE_DIR}/mock-sources.ts`;
+const MOCK_SOURCE_FILES = `${MOCK_DATA_MODULE_DIR}/mock-source-files.ts`;
 const SCHEMAS = "src/cli/lib/schemas.ts";
 const ZOD_SCHEMAS = ".ai-docs/reference/types/zod-schemas.md";
 const TEST_FACTORIES_DIR = "src/cli/lib/__tests__/factories";
@@ -113,6 +119,25 @@ const CODE_SPAN = /`[^`]+`/g;
 
 const TABLE_CELL_DELIMITER = "|";
 const CODE_SPAN_DELIMITER = "`";
+
+/**
+ * What ends a cell: a `|` the author did not escape.
+ *
+ * Markdown gives a table cell one escape and no other way to hold a pipe — `\|`, which the renderer
+ * resolves BEFORE it parses the cell's inline markup, so it works inside a code span where no other
+ * backslash escape does. A reader splitting on a bare `|` therefore disagrees with every renderer of
+ * the same page about where a correctly-written cell ends, and the row comes out one cell too wide.
+ *
+ * Spelt exactly as `src/cli/lib/__tests__/helpers/journey-page.ts` spells it, which reads the
+ * journey tables through the same rule. Two escape-aware readers disagreeing about where a cell
+ * ends would be worse than one naive one, so the two spellings are held against each other in
+ * `scripts/check-enumeration-drift.test.ts` — nothing else makes a verbatim copy move with its
+ * origin, and a comment naming the other file is findable rather than binding.
+ */
+const CELL_SEPARATOR = /(?<!\\)\|/;
+
+/** The escape, undone once the cell it belongs to has been separated out. */
+const ESCAPED_PIPE = "\\|";
 
 /** What binds a member to its value in a pair. Written once, in {@link pairOf}, for both sides. */
 const PAIR_SEPARATOR = " = ";
@@ -259,11 +284,11 @@ export const REGISTRY: RegistryEntry[] = [
       states: "table-rows",
     },
   },
-  // The other five rows of the same table. `STATUS_MESSAGES` was registered alone, and the row two
+  // The remaining rows of the same table. `STATUS_MESSAGES` was registered alone, and the row two
   // below it was the one that had drifted: `SHARED_CONFIG_APPLY` named five members against seven,
   // missing `GLOBAL_SKILLS_HEADING` and `GLOBAL_AGENTS_HEADING` — the project-scope removal plan's
   // own two headings, which `commands/edit.md` had been naming all along. One table introduced as
-  // "enumerated exhaustively" with one of its six objects bound to source is what let that sit.
+  // "enumerated exhaustively" with a single one of its objects bound to source is what let that sit.
   {
     claim: "ERROR_MESSAGES in reference/commands/index.md",
     source: { file: MESSAGES, symbol: "ERROR_MESSAGES" },
@@ -325,6 +350,16 @@ export const REGISTRY: RegistryEntry[] = [
     },
   },
   {
+    claim: "INCOMPLETE_WORK_RECOVERY in reference/commands/index.md",
+    source: { file: MESSAGES, symbol: "INCOMPLETE_WORK_RECOVERY" },
+    document: {
+      document: COMMANDS_INDEX,
+      from: "| `INCOMPLETE_WORK_RECOVERY`",
+      to: "The same module exports these",
+      states: "code-spans",
+    },
+  },
+  {
     // The roster itself — the membership of a TREE, which is why it went unbound while every
     // constant object in the same document was registered, and why `import skill`, `new skill` and
     // `new agent` could be documented as removed with `new marketplace` beside them in the same
@@ -371,10 +406,11 @@ export const REGISTRY: RegistryEntry[] = [
     },
   },
 
-  // `reference/utilities.md`'s own copy of the six message objects — the second writable copy of
-  // the six rows above it, registered for the same reason the builders were. `SHARED_CONFIG_APPLY`
-  // named five members against seven in BOTH documents on 2026-08-18, and repairing one would have
-  // left the other reading as authoritative.
+  // `reference/utilities.md`'s own copies of the message objects — second writable copies of rows
+  // above it, registered for the same reason the builders were. `SHARED_CONFIG_APPLY` named five
+  // members against seven in BOTH documents on 2026-08-18, and repairing one would have left the
+  // other reading as authoritative. Which objects have a row HERE is that document's own decision,
+  // stated above its table, so a shorter block than the one above is by design rather than drift.
   {
     claim: "ERROR_MESSAGES in reference/utilities.md",
     source: { file: MESSAGES, symbol: "ERROR_MESSAGES" },
@@ -437,9 +473,9 @@ export const REGISTRY: RegistryEntry[] = [
   },
 
   // `consts.ts` and `exit-codes.ts` — the leaf constants every other layer reads. Each of these
-  // objects is stated in exactly one document, so unlike the six above there is no second copy to
-  // keep in step; the row exists because a key added to a constant object is the same one-line edit
-  // in a file no documentation pass opens.
+  // objects is stated in exactly one document, so unlike the message objects above there is no
+  // second copy to keep in step; the row exists because a key added to a constant object is the
+  // same one-line edit in a file no documentation pass opens.
   {
     claim: "EXIT_CODES in reference/utilities.md",
     source: { file: EXIT_CODES_FILE, symbol: "EXIT_CODES" },
@@ -464,13 +500,21 @@ export const REGISTRY: RegistryEntry[] = [
     },
   },
   {
+    // Read as PAIRS, and the cheapest of the tables the 2026-08-19 survey looked at: the
+    // document's Value column already stated what every member holds, so the binding tightened
+    // with no document edit at all. Its neighbours above and below are keys-only for reasons in
+    // the SOURCE — `STANDARD_FILES` binds `METADATA_YAML`, `AGENT_METADATA_YAML` and `PLUGIN_JSON`
+    // to `METADATA_YAML_FILE` / `PLUGIN_MANIFEST_FILE`, and `DIRS` binds `skills` to
+    // `SKILLS_DIR_PATH` — an identifier is a value `valueOf` refuses to guess at rather than read.
     claim: "STANDARD_DIRS in reference/utilities.md",
-    source: { file: CONSTS, symbol: "STANDARD_DIRS" },
+    source: { file: CONSTS, entries: "STANDARD_DIRS" },
     document: {
       document: UTILITIES,
       from: "`STANDARD_DIRS` constant, same convention:",
       to: "### Branding and Naming",
-      states: "table-rows",
+      states: "table-pairs",
+      keyColumn: "Key",
+      valueColumn: "Value",
     },
   },
   {
@@ -644,7 +688,7 @@ export const REGISTRY: RegistryEntry[] = [
     source: { file: CONFIG_TYPES_WRITER, exports: "function" },
     document: {
       document: CONFIG_WRITER_DOC,
-      from: "**Seven exported functions, exhaustively.** This document owns the list.",
+      from: "This document owns the list.",
       to: "`deriveCategories` / `deriveDomains` are exported for",
       states: "table-rows",
     },
@@ -679,6 +723,24 @@ export const REGISTRY: RegistryEntry[] = [
       document: CONFIGURATION_DOC,
       from: "Eight exported functions, exhaustively — bound to the module by",
       to: "`ScopedEntry` is the shared",
+      states: "table-rows",
+    },
+  },
+  {
+    // The same export list, tabulated a second time in the document that explains the scope
+    // system. Duplication across documents is allowed (owner ruling 2026-08-20) and the checker
+    // watches both — which is what a row per document is for, the way `STEP_TEXT` is registered
+    // twice above. Bound as its own row rather than as a field on the one above because each copy
+    // is separately wrong: the ninth export would have reddened the owner's table alone and left
+    // this one reading as authoritative and short by one, which is the mis-report failure this
+    // whole file exists to refuse.
+    claim:
+      "the exported functions of configuration/scope-predicates.ts in reference/concepts/scope-system.md",
+    source: { file: SCOPE_PREDICATES, exports: "function" },
+    document: {
+      document: SCOPE_SYSTEM_DOC,
+      from: "**`ScopedEntry`** is the shared shape every predicate accepts",
+      to: "The full export list is",
       states: "table-rows",
     },
   },
@@ -762,6 +824,63 @@ export const REGISTRY: RegistryEntry[] = [
       from: "Every key, bound to `SKILLS` in `src/cli/lib/__tests__/test-fixtures.ts` by `scripts/check-enumeration-drift.ts`:",
       to: "### TEST_CATEGORIES",
       states: "table-rows",
+    },
+  },
+  {
+    // The `mock-data/` inventories the same document keeps, each re-derived member-for-member on
+    // 2026-08-23 and none of them held by anything before this — which is the cheapest moment to
+    // bind a list and the only one where the row costs nothing, since a row that arrives green is
+    // evidence the list is right rather than a repair disguised as a gate. The sibling lists in the
+    // same document rotted and were deleted; these are named rather than deleted because each line
+    // states something the export name does not, and the document says so where it stands.
+    //
+    // `code-spans` rather than `table-rows`: the document writes these as bullet lists, and a
+    // bullet naming two constants that share one sentence is a member each. Bound to the whole
+    // `const` export list rather than to a symbol, so a constant ADDED to the module is a drift
+    // report here — the short-list failure that sends a reader off to write a duplicate.
+    claim: "the exported constants of mock-data/mock-agents.ts in reference/testing/mock-data.md",
+    source: { file: MOCK_AGENTS, exports: "const" },
+    document: {
+      document: MOCK_DATA,
+      from: "### mock-agents.ts",
+      to: "### mock-categories.ts",
+      states: "code-spans",
+    },
+  },
+  {
+    claim:
+      "the exported constants of mock-data/mock-categories.ts in reference/testing/mock-data.md",
+    source: { file: MOCK_CATEGORIES, exports: "const" },
+    document: {
+      document: MOCK_DATA,
+      from: "### mock-categories.ts",
+      to: "### mock-matrices.ts",
+      states: "code-spans",
+    },
+  },
+  {
+    claim: "the exported constants of mock-data/mock-sources.ts in reference/testing/mock-data.md",
+    source: { file: MOCK_SOURCES, exports: "const" },
+    document: {
+      document: MOCK_DATA,
+      from: "### mock-sources.ts",
+      to: "### mock-stacks.ts",
+      states: "code-spans",
+    },
+  },
+  {
+    // The last section of its document, so the closing paragraph is the marker — written for this
+    // row, because a section with nothing after it has no end and `sectionOf` would read to the end
+    // of the file. It states the one thing these rows do not cover: they read `const` exports, so a
+    // function or a type added to one of these modules is a member no row here can see.
+    claim:
+      "the exported constants of mock-data/mock-source-files.ts in reference/testing/mock-data.md",
+    source: { file: MOCK_SOURCE_FILES, exports: "const" },
+    document: {
+      document: MOCK_DATA,
+      from: "### mock-source-files.ts",
+      to: "**Each bound row reads",
+      states: "code-spans",
     },
   },
   {
@@ -938,14 +1057,21 @@ export const REGISTRY: RegistryEntry[] = [
   {
     // Second writable copies of two lists `reference/utilities.md` already owns and is bound to.
     // Registering both is what stops one being repaired while the other reads as authoritative —
-    // the same reasoning as the six `messages.ts` objects above.
+    // the same reasoning as the `messages.ts` objects above.
+    // Of the two, only this one carries a Value column, so only this one can be read as pairs —
+    // `reference/utilities.md` states the same list as prose keys and stays `code-spans`. The hex
+    // is the whole of what a colour constant IS, and it was the half nothing read: the document
+    // wrote every one of them in double quotes (`"#99FFFF"`) where the source holds the bare hex,
+    // so binding the values first required un-quoting the table.
     claim: "CLI_COLORS in reference/component-patterns.md",
-    source: { file: CONSTS, symbol: "CLI_COLORS" },
+    source: { file: CONSTS, entries: "CLI_COLORS" },
     document: {
       document: COMPONENT_PATTERNS,
       from: "## Color Constants (CLI_COLORS in `src/cli/consts.ts`)",
       to: "## UI Symbols (UI_SYMBOLS in",
-      states: "table-rows",
+      states: "table-pairs",
+      keyColumn: "Constant",
+      valueColumn: "Value",
     },
   },
   {
@@ -1583,9 +1709,15 @@ function memberNameIn(cell: string, claim: string): string {
 /**
  * The cells of a row as written, code spans intact, which is what counting their names needs. A row
  * opens with the delimiter, so the first part of the split is the empty string before it.
+ *
+ * The escape is undone here rather than left to the readers, so a cell answers what the page
+ * renders — every column of a row is separated and read by one rule, whichever reader asks.
  */
 function cellsOf(row: string): string[] {
-  return row.split(TABLE_CELL_DELIMITER).slice(1);
+  return row
+    .split(CELL_SEPARATOR)
+    .slice(1)
+    .map((cell) => cell.replaceAll(ESCAPED_PIPE, TABLE_CELL_DELIMITER));
 }
 
 function firstCellOf(row: string): string {

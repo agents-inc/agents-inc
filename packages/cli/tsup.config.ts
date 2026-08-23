@@ -56,25 +56,16 @@ export default defineConfig({
       console.log(`Removed ${strayTests.length} stray compiled test artifacts from dist/`);
     }
 
-    // Both copies below remove the destination first. `clean: true` clears only
-    // tsup's own outputs, and `fs.copy` merges — it never drops a destination
-    // entry the source no longer has. So a deleted agent survived every
-    // incremental build, and dist/ publishes wholesale: five retired reviewer
-    // directories and four retired PM directories were each observed sitting on
-    // a path `loadAllAgents()` really does glob, carrying ids no longer in the
-    // AgentName union. E2E builds the dist it then runs against, so no other
-    // gate could see them. packaging.test.ts asserts the mirror.
-
-    // Copy config/ (stacks.ts etc.) to dist/config/
-    // so it's available regardless of how PROJECT_ROOT resolves at runtime
-    const srcConfig = "config";
-    const destConfig = path.join("dist", "config");
-
-    if (await fs.pathExists(srcConfig)) {
-      await fs.remove(destConfig);
-      await fs.copy(srcConfig, destConfig);
-      console.log("Copied config/ to dist/config/");
-    }
+    // The `fs.remove` before the copy below is not redundant with `clean: true`.
+    // tsup's clean globs `**/*` over the whole outDir and unlinks every match
+    // whatever emitted it — but it only unlinks, so directories are left
+    // standing, and `**/*` matches no dotfile. `fs.copy` then merges rather than
+    // mirrors: it never drops a destination entry the source no longer has. So a
+    // retired agent's directory outlives the source that produced it, and dist/
+    // publishes wholesale. E2E builds the dist it then runs against, so no other
+    // gate sees it. packaging.test.ts asserts the mirror, and compares entries
+    // with `onlyFiles: false` and `dot: true` — which is what makes a surviving
+    // empty directory a failure rather than a tidy-up.
 
     // Copy src/agents/ (agent partials + templates) to dist/src/agents/
     // so eject command can find them regardless of how PROJECT_ROOT resolves
