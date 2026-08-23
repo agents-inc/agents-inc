@@ -21,6 +21,7 @@ import {
   type SkillEntry,
 } from "@/stores/persisted-schema"
 import {
+  SCOPE_ERROR,
   isStackCustom,
   monogramOf,
   selectDomainViews,
@@ -229,6 +230,7 @@ describe("summarize", () => {
       assignmentCount: 0,
       preloadedCount: 0,
       ejectedCount: 0,
+      unscopedAgentCount: 0,
     })
   })
 
@@ -292,6 +294,123 @@ describe("summarize", () => {
       agentCount: 0,
       assignmentCount: 0,
     })
+  })
+
+  // A project skill on a sub-agent resting at global is an ERROR to resolve,
+  // not an assignment that quietly does nothing — so it counts. It is exactly
+  // as configured as any other row, and it is blocking the install BECAUSE it
+  // is real. Under-reporting it would have the button say "0 sub-agents" while
+  // the roster showed three rows.
+  it("counts an assignment the two scopes rule out like any other", () => {
+    const config = scratch({
+      a: {
+        ...DEFAULT_SKILL_OPTIONS,
+        scope: "project",
+        assignments: {
+          "web-developer": live("preloaded"),
+          reviewer: live(),
+        },
+      },
+    })
+
+    expect(summarize(config)).toMatchObject({
+      skillCount: 1,
+      agentCount: 2,
+      assignmentCount: 2,
+      preloadedCount: 1,
+    })
+  })
+
+  // The one number that changes: how many sub-agents have to be moved. Distinct
+  // SUB-AGENTS rather than pairs, because that is the number of clicks it takes
+  // to resolve — two project skills on one global sub-agent is one click.
+  it("reports no unscoped sub-agents when every scope agrees", () => {
+    const config = scratch({
+      a: {
+        ...DEFAULT_SKILL_OPTIONS,
+        assignments: { "web-developer": live(), reviewer: live() },
+      },
+    })
+
+    expect(summarize(config).unscopedAgentCount).toBe(0)
+  })
+
+  it("counts each sub-agent needing project scope once", () => {
+    const config = scratch({
+      a: {
+        ...DEFAULT_SKILL_OPTIONS,
+        scope: "project",
+        assignments: { "web-developer": live(), reviewer: live() },
+      },
+      b: {
+        ...DEFAULT_SKILL_OPTIONS,
+        scope: "project",
+        assignments: { "web-developer": live() },
+      },
+    })
+
+    expect(summarize(config).unscopedAgentCount).toBe(2)
+  })
+
+  // Pinning the sub-agent into the project is one of the two ways out, and it
+  // changes nothing but the error count — everything else was already correct.
+  it("clears the count once the sub-agent is pinned to the project", () => {
+    const config = scratch(
+      {
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          scope: "project",
+          assignments: { "web-developer": live("preloaded") },
+        },
+      },
+      { "web-developer": { scope: "project" } }
+    )
+
+    expect(summarize(config)).toMatchObject({
+      agentCount: 1,
+      assignmentCount: 1,
+      preloadedCount: 1,
+      unscopedAgentCount: 0,
+    })
+  })
+
+  // A row the roster switched off installs nothing, so it has nothing to
+  // resolve — the same rule every other count here already keeps.
+  //
+  // A live global skill sits beside it deliberately: without one the sub-agent
+  // is off anyway and the count is zero for a second reason, which would leave
+  // this assertion green over a channel that never carried a value.
+  it("does not count a switched-off row as needing anything", () => {
+    const config = scratch({
+      a: {
+        ...DEFAULT_SKILL_OPTIONS,
+        assignments: { "web-developer": live() },
+      },
+      b: {
+        ...DEFAULT_SKILL_OPTIONS,
+        scope: "project",
+        assignments: { "web-developer": off() },
+      },
+    })
+
+    expect(summarize(config).unscopedAgentCount).toBe(0)
+  })
+
+  // Nor a sub-agent pinned off: it is excluded from every count on screen and
+  // from the payload, so there is nothing about it left to block.
+  it("does not count a pinned-off sub-agent as needing anything", () => {
+    const config = scratch(
+      {
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          scope: "project",
+          assignments: { "web-developer": live() },
+        },
+      },
+      { "web-developer": { on: false } }
+    )
+
+    expect(summarize(config).unscopedAgentCount).toBe(0)
   })
 
   it("counts ejected skills rather than ejected assignments", () => {
@@ -412,6 +531,87 @@ describe("selectRosterGroups", () => {
       .skills[0]!.usedBy.map((agent) => agent.id)
 
     expect(usedBy).toEqual(["web-developer", "reviewer"])
+  })
+
+  // The row carries the error and the sub-agent stays ON. Both halves matter:
+  // the marker is where the user learns WHICH row is wrong, and the agent
+  // reading as on is what makes its scope word — the one-click fix — a live
+  // control rather than a recessed one.
+  it("marks a row the two scopes rule out, leaving the sub-agent on", () => {
+    const rows = allRows(
+      scratch({
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          scope: "project",
+          assignments: { "web-developer": live() },
+        },
+      })
+    )
+    const developer = rows.find((row) => row.agent.id === "web-developer")!
+
+    expect(developer.on).toBe(true)
+    expect(developer.skills.map((skill) => skill.id)).toEqual(["a"])
+    expect(developer.skills[0]!.scopeError).toBe(SCOPE_ERROR)
+  })
+
+  it("leaves a row the scopes allow unmarked", () => {
+    const rows = allRows(
+      scratch({
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          assignments: { "web-developer": live() },
+        },
+      })
+    )
+
+    expect(
+      rows.find((row) => row.agent.id === "web-developer")!.skills[0]!
+        .scopeError
+    ).toBeUndefined()
+  })
+
+  // A row switched off by the roster is not a row with a scope error, and the
+  // two must stay tellable apart: only one of them is a problem to fix, and
+  // only one of them is the user's own decision.
+  it("does not mark a switched-off row", () => {
+    const rows = allRows(
+      scratch({
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          scope: "project",
+          assignments: { "web-developer": off() },
+        },
+      })
+    )
+    const row = rows.find((agentRow) => agentRow.agent.id === "web-developer")!
+      .skills[0]!
+
+    expect(row.enabled).toBe(false)
+    expect(row.scopeError).toBeUndefined()
+  })
+
+  // The where-used list answers "which on-agents carry this skill", and an
+  // erroring row is carried — that is why it is an error. Leaving it out would
+  // under-report the configuration the user built.
+  it("lists an erroring row among the skill's uses", () => {
+    const rows = allRows(
+      scratch(
+        {
+          a: {
+            ...DEFAULT_SKILL_OPTIONS,
+            scope: "project",
+            assignments: { "web-developer": live(), reviewer: live() },
+          },
+        },
+        { reviewer: { scope: "project" } }
+      )
+    )
+
+    expect(
+      rows
+        .find((row) => row.agent.id === "reviewer")!
+        .skills[0]!.usedBy.map((agent) => agent.id)
+    ).toEqual(["web-developer", "reviewer"])
   })
 })
 
@@ -565,6 +765,41 @@ describe("selectInstallInventory", () => {
     ).toEqual({ "web-developer": "project", reviewer: "global" })
   })
 
+  // The pane lists what the install writes, and the install is blocked while an
+  // error stands — so the pane is only ever read in a resolvable state. What it
+  // must not do is describe a different configuration from the one on screen.
+  it("lists an agent whose skills the scopes rule out", () => {
+    const inventory = selectInstallInventory(
+      scratch({
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          scope: "project",
+          assignments: { "web-developer": live() },
+        },
+      })
+    )
+
+    expect(inventory.agents.map(({ agent }) => agent.id)).toEqual([
+      "web-developer",
+    ])
+  })
+
+  // And it holds a skill, so it is not a bare agent. `baseOnly` says "this file
+  // has no skills in it", which would be a second thing the pane got wrong.
+  it("does not call it base-only — it holds a skill", () => {
+    const inventory = selectInstallInventory(
+      scratch({
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          scope: "project",
+          assignments: { "web-developer": live() },
+        },
+      })
+    )
+
+    expect(inventory.agents[0]!.baseOnly).toBe(false)
+  })
+
   it("excludes a pinned-off agent even when skills point at it", () => {
     const inventory = selectInstallInventory(
       scratch(
@@ -643,6 +878,22 @@ describe("selectDomainViews", () => {
 
     const cell = allCells(config, { sel: true })[0]!
     expect(cell.agentCount).toBe(2)
+  })
+
+  // The cell's number answers "how many sub-agents carry this skill", and a
+  // scope flip does not un-assign anything — it makes each of those an error to
+  // resolve. Dropping the count to zero would hide what the user built and
+  // leave the roster's marked rows unexplained.
+  it("keeps the agent count when the skill moves to project scope", () => {
+    const config = scratch({
+      [FIRST_SKILL]: {
+        ...DEFAULT_SKILL_OPTIONS,
+        scope: "project",
+        assignments: { "web-developer": live(), reviewer: live() },
+      },
+    })
+
+    expect(allCells(config, { sel: true })[0]!.agentCount).toBe(2)
   })
 })
 

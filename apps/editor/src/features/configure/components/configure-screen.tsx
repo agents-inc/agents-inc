@@ -2,7 +2,11 @@ import { getRouteApi } from "@tanstack/react-router"
 import { Hinge } from "@workspace/ui/components/divider"
 import { useMemo } from "react"
 
-import { selectDomainViews } from "@/features/configure/lib/derive"
+import {
+  blockedNotice,
+  selectDomainViews,
+  summarize,
+} from "@/features/configure/lib/derive"
 import { useCatalogFirst } from "@/features/configure/lib/use-catalog-first"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
@@ -55,15 +59,24 @@ export function ConfigureScreen() {
 
   const stack = stacks.find((candidate) => candidate.id === stackId)
 
+  // Composed rather than assigned, and the halves are deliberately different
+  // kinds of thing. `notice` describes the OPENING — a fact about a moment,
+  // which is why it is state — while this describes the configuration as it
+  // stands right now. Set once at arrival it would go on saying "Install is
+  // blocked" after the user had unblocked it, which is the same stale-vouching
+  // problem EDITOR-43 was about, wearing the other coat.
+  const blockedLine = blockedNotice(summarize(config).unscopedAgentCount)
+  const line = [notice, blockedLine].filter((part) => part !== null).join(" ")
+
   return (
     <>
       <main className="min-w-0 bg-column px-gutter pt-0 pb-30">
-        {notice && (
+        {line && (
           <p
             role="alert"
             className="pt-4 font-mono text-11 text-muted-foreground italic"
           >
-            {notice}
+            {line}
           </p>
         )}
 

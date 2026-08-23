@@ -26,6 +26,7 @@ import {
 import {
   DEFAULT_SKILL_OPTIONS,
   isAgentOn,
+  reachesAgent,
   resolveAgentOptions,
   type AgentEffort,
   type AgentModel,
@@ -225,8 +226,60 @@ const incompatibleReasonOf = (cause: IncompatibilityCause): string => {
   }
 }
 
-// Only live assignments count, everywhere a number appears: a row the roster
-// switched off is kept for the UI but is not part of what installs.
+/**
+ * What the roster's marker says on a row whose two scopes cannot meet.
+ *
+ * The fix rather than the diagnosis: the row already names the skill and sits
+ * under the sub-agent, so what it owes the reader is the thing to do about it.
+ * Spelled once because the marker and the notice above the grid both say it.
+ *
+ * It is the sub-agent that is named because that is the one-click fix — its
+ * scope word is on the row directly above. Setting the skill back to global is
+ * the other way out, and the notice says both.
+ */
+export const SCOPE_ERROR = "This sub-agent must be set to project scope too"
+
+/**
+ * The same problem said above the grid, in one line, or `null` when there is
+ * none.
+ *
+ * The third of three live signals and the widest: the marker says WHICH row,
+ * the Install button says how many are left, and this says what the state is
+ * and both ways out of it. All three are derived from the same count, so none
+ * of them can stand while the others are gone — which is what a one-shot notice
+ * set at arrival could not promise.
+ *
+ * It points at the marked rows rather than naming the skills. Those markers are
+ * on screen, each beside the one control that resolves it, which is further
+ * than a name in a sentence can get anyone.
+ */
+export const blockedNotice = (unscopedAgentCount: number) => {
+  if (unscopedAgentCount === 0) return null
+
+  const subject =
+    unscopedAgentCount === 1
+      ? "1 sub-agent needs"
+      : `${unscopedAgentCount} sub-agents need`
+
+  return `Install is blocked: ${subject} project scope. Look for the marked rows under Sub-agents, or set the skill itself to global.`
+}
+
+// An enabled row this sub-agent cannot carry, because a project skill is
+// installed under one project's `.claude` and a global sub-agent's front-matter
+// is not. A switched-off row installs nothing either way, so it is not an error
+// to resolve — the same rule every count here already keeps.
+const isScopeError = (
+  agents: ConfigSelection["agents"],
+  entry: SkillEntry,
+  agentId: string
+) =>
+  entry.assignments[agentId]?.enabled === true &&
+  !reachesAgent(agents, entry.scope, agentId)
+
+// Only enabled assignments count, everywhere a number appears: a row the roster
+// switched off is kept for the UI but is not part of what installs. A row with
+// a scope error IS part of it — that is why it blocks the install — so it
+// counts like any other.
 const enabledAssignments = (entry: SkillEntry) =>
   Object.entries(entry.assignments).filter(
     ([, assignment]) => assignment.enabled
@@ -357,6 +410,11 @@ export type RosterSkillRow = {
   load: LoadState
   // The row's own switch; the agent being off recesses it separately.
   enabled: boolean
+  // Set when this sub-agent cannot carry this skill — the roster draws a marker
+  // and the two buttons refuse. Its own field rather than folded into
+  // `enabled`: that one is the user's decision and this is a problem to fix,
+  // and only this one has words to show.
+  scopeError?: string
   // Every on-agent carrying this skill live, in roster order. The where-used
   // number appears only when the skill reaches beyond one agent.
   usedBy: SubAgent[]
@@ -423,6 +481,7 @@ type AgentSkill = {
   displayName: string
   load: LoadState
   enabled: boolean
+  scopeError?: string
 }
 
 const skillsByAgent = (config: ConfigSelection) => {
@@ -436,6 +495,12 @@ const skillsByAgent = (config: ConfigSelection) => {
         displayName: displayNameOf(skillId),
         load: assignment.load,
         enabled: assignment.enabled,
+        // Kept, shown, and marked: the row is where the user learns WHICH pair
+        // is wrong, and the sub-agent's own scope word one line above is the
+        // click that resolves it.
+        ...(isScopeError(config.agents, entry, agentId) && {
+          scopeError: SCOPE_ERROR,
+        }),
       })
       byAgent.set(agentId, bucket)
     }
@@ -506,12 +571,40 @@ export type ConfigSummary = {
   assignmentCount: number
   preloadedCount: number
   ejectedCount: number
+  /**
+   * Sub-agents that must be moved to project scope before this can install.
+   *
+   * The whole of EDITOR-08's mechanism: one number, and Install and Share
+   * refuse while it is non-zero. There is exactly one rule to count today, so
+   * there is no rule registry, no error type and no problems panel — a second
+   * rule can be generalised for when a second rule exists.
+   *
+   * Distinct SUB-AGENTS rather than pairs, because that is how many clicks it
+   * takes to resolve: two project skills on one global sub-agent is one scope
+   * word away from working.
+   */
+  unscopedAgentCount: number
 }
 
 const isEjected = (entry: SkillEntry) => entry.install === "eject"
 
+const holdsAScopeError = (config: ConfigSelection, agentId: string) =>
+  Object.values(config.skills).some((entry) =>
+    isScopeError(config.agents, entry, agentId)
+  )
+
+// The sub-agents that have to move before any of this installs. Filtered from
+// the same `onIds` every other number here uses, which is what makes them
+// already distinct — and what leaves a pinned-off sub-agent, excluded from
+// every count on screen and from the payload, with nothing left to block.
+const unscopedAgentIds = (
+  config: ConfigSelection,
+  onIds: ReadonlySet<string>
+) => [...onIds].filter((agentId) => holdsAScopeError(config, agentId))
+
 // What would install: on agents (a pin with no skills still counts — a base
-// agent), and the live assignments they hold.
+// agent), and the enabled assignments they hold. Plus the one thing standing
+// between all of it and an install that works.
 export const summarize = (config: ConfigSelection): ConfigSummary => {
   const entries = Object.values(config.skills)
   const onIds = new Set(
@@ -531,6 +624,7 @@ export const summarize = (config: ConfigSelection): ConfigSummary => {
       ([, assignment]) => assignment.load === "preloaded"
     ).length,
     ejectedCount: entries.filter(isEjected).length,
+    unscopedAgentCount: unscopedAgentIds(config, onIds).length,
   }
 }
 

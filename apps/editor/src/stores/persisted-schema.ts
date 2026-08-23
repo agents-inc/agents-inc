@@ -1,6 +1,7 @@
 import {
   DEFAULT_SELECTION_OPTIONS,
   SUB_AGENTS_BY_ID,
+  isSeedScopePairWritable,
   subAgentById,
 } from "@workspace/matrix"
 import { z } from "zod"
@@ -141,9 +142,51 @@ export const resolveAgentOptions = (
   }
 }
 
+/**
+ * Project skills never reach global sub-agents; global skills reach any.
+ *
+ * A global sub-agent's front-matter is written to `~/.claude`, where every
+ * project on the machine sees it, and a project-scoped skill is installed under
+ * one project's `.claude` — so a global agent carrying a project skill names
+ * something that does not exist from anywhere else.
+ *
+ * The rule is not this app's to state, and it is no longer stated here: it
+ * lives on the wire contract as `isSeedScopePairWritable`, where the CLI's
+ * `isScopePairCompatible` reads it too. It used to be a verbatim third copy —
+ * so this is not a preference the editor is expressing, and it is no longer a
+ * sentence that can drift from the two surfaces that enforce it. A
+ * configuration carrying a live pair is one nobody can install, and the editor
+ * minted them because it is the one surface that consumes no generated config
+ * types (EDITOR-08).
+ */
+export const isScopePairCompatible = (
+  skillScope: SkillOptions["scope"],
+  agentScope: AgentScope
+) => isSeedScopePairWritable(skillScope, agentScope)
+
+/**
+ * The same rule asked of the agents map, which is where an agent's scope comes
+ * from. Sparse, so an agent nobody has moved rests at global and the map says
+ * nothing about it at all — which is why the question cannot be answered from
+ * the assignment alone.
+ */
+export const reachesAgent = (
+  agents: PersistedConfig["agents"],
+  skillScope: SkillOptions["scope"],
+  agentId: string
+) =>
+  isScopePairCompatible(skillScope, resolveAgentOptions(agents, agentId).scope)
+
 // The roster's one on/off rule: an explicit pin wins; otherwise an agent is on
 // exactly when it holds at least one enabled skill. Selecting a skill enables
 // its agents *through* this rule — nothing stores "on".
+//
+// `reachesAgent` is deliberately NOT asked here, and that is the whole shape of
+// the answer to EDITOR-08. An agent holding a project skill while it rests at
+// global is not an agent with no skills; it is an agent with a skill and a
+// problem, and the problem is only fixable because the row is on screen and the
+// agent's own scope word is a live control. Nothing counts differently — what
+// the pair costs is Install and Share, which `summarize` gates.
 export const isAgentOn = (
   config: Pick<PersistedConfig, "skills" | "agents">,
   agentId: string

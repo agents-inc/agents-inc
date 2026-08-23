@@ -5,14 +5,12 @@ import { useEffect, useRef, useState } from "react"
 import {
   selectRosterGroups,
   summarize,
+  type ConfigSummary,
   type RosterAgentRow,
   type RosterSkillRow,
 } from "@/features/configure/lib/derive"
 import { toSeedPayload } from "@/features/configure/lib/seed"
-import {
-  useShareLink,
-  type ShareState,
-} from "@/features/configure/lib/use-share-link"
+import { useShareLink } from "@/features/configure/lib/use-share-link"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
 import { useConfigStore } from "@/stores/config-store"
 import {
@@ -26,12 +24,21 @@ import {
 import { useSavedStackStore } from "@/stores/saved-stack-store"
 import { useUiStore } from "@/stores/ui-store"
 
-const SHARE_LABELS: Record<ShareState, string> = {
-  idle: "Share",
-  sharing: "Sharing…",
-  copied: "Link copied",
-  failed: "Sharing failed",
-}
+// What would install, under the Install button's own name.
+const installLabel = ({ agentCount, skillCount }: ConfigSummary) =>
+  `${agentCount} ${agentCount === 1 ? "sub-agent" : "sub-agents"} and ` +
+  `${skillCount} ${skillCount === 1 ? "skill" : "skills"}`
+
+// And what is stopping it instead. The number IS the number of clicks left:
+// each of these sub-agents is one scope word away from resolving.
+//
+// On the button rather than behind a tooltip, and that is deliberate — a
+// disabled button suppresses pointer events, so a `title` on one never opens.
+// The reason has to be readable without asking for it.
+const blockedLabel = (count: number) =>
+  count === 1
+    ? "1 sub-agent needs project scope"
+    : `${count} sub-agents need project scope`
 
 // The domain band is exactly this tall, and each pinned header offsets by one
 // band per index — that is what makes them stack while scrolling.
@@ -158,6 +165,52 @@ function WhereUsedTip({ tip }: { tip: UseTip }) {
 const QUIET_AT_REST =
   "opacity-0 transition-opacity duration-[120ms] group-hover/agent:opacity-100 group-focus-within/agent:opacity-100"
 
+// The marker on a row whose two scopes cannot meet.
+//
+// A real `<button>` rather than a hinted span, for the reason the options
+// panel's info glyph is one: a hinted span is pointer-only, and a button is
+// what makes the explanation reachable by keyboard. Its accessible name IS the
+// explanation, so hovering and tabbing answer the same question.
+//
+// The glyph is that info glyph with the stem and the dot swapped — the same
+// circle, the same 12px, the same stroke — which is the whole difference
+// between an `i` and a `!`. The design ships no icon set beyond the GitHub
+// mark, so drawing it here is what the panel already does.
+//
+// `destructive` is the one colour in the tokens that is neither the reserved
+// amber (which means "the user chose this") nor the roster's off-grey (which
+// means "this is not happening"). The design has never drawn an error state at
+// all — EDITOR-07 lists them among the surfaces that have never been designed —
+// so this is the smallest honest choice rather than a settled one.
+function ScopeErrorMark({ reason }: { reason: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={reason}
+      title={reason}
+      // The row underneath toggles the assignment; asking what is wrong with it
+      // is not asking to switch it off.
+      onClick={(event) => event.stopPropagation()}
+      className="ml-1 inline-flex shrink-0 cursor-help align-[-0.125rem] text-destructive outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        aria-hidden
+      >
+        <circle cx="12" cy="12" r="9.25" />
+        <path d="M12 7v5.5" />
+        <path d="M12 16.3v.1" />
+      </svg>
+    </button>
+  )
+}
+
 // One assignment line: bullet · name · load word · where-used. A 4-track grid
 // so the bullet occupies the first track and every skill name shares the
 // agents' flush left edge — indentation by structure, not padding.
@@ -180,6 +233,8 @@ function SkillRow({
   const flipAssignmentLoad = useConfigStore((state) => state.flipAssignmentLoad)
 
   // The row reads as off when either switch is off — its own, or the agent's.
+  // A scope error is neither: the row is live, it is just not installable yet,
+  // so it keeps its amber and gains a marker rather than going quiet.
   const live = agentOn && skill.enabled
 
   return (
@@ -208,12 +263,17 @@ function SkillRow({
             : "bg-transparent shadow-[inset_0_0_0_1px_var(--color-hairline)]"
         }`}
       />
-      <span
-        className={`truncate text-10_5 leading-[1.35] font-normal ${
-          live ? "text-brand" : "text-roster-off"
-        }`}
-      >
-        {skill.displayName}
+      <span className="flex min-w-0 items-center">
+        <span
+          className={`truncate text-10_5 leading-[1.35] font-normal ${
+            live ? "text-brand" : "text-roster-off"
+          }`}
+        >
+          {skill.displayName}
+        </span>
+        {skill.scopeError !== undefined && (
+          <ScopeErrorMark reason={skill.scopeError} />
+        )}
       </span>
       {/* `pre` / `lazy` — never "preloaded" — and never amber: that is
           reserved for the name's on-state. One grey for both words, since the
@@ -445,7 +505,12 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
 
   const groups = selectRosterGroups(config)
   const stats = summarize(config)
-  const { state: shareState, share } = useShareLink(config)
+  const {
+    state: shareState,
+    label: shareLabel,
+    share,
+    blocked,
+  } = useShareLink(config)
   const flashed = new Set(flashedAgentIds)
 
   // The tooltip's position was measured against a scroll state that no longer
@@ -562,21 +627,37 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
         >
           Save
         </Button>
-        {/* Copies a `?fromId=` link; the button itself is the only feedback
-            surface, so its label narrates the outcome and decays to idle. */}
+        {/* Copies a `?fromId=` link. The button is the only feedback surface
+            the panel has, so the words belong to whichever ending happened —
+            `useShareLink` owns one narration per ending and this renders it. A
+            table here could only key off the coarse state, which is how four
+            endings came to share the word "failed" and how the one that a
+            reload fixes came to vanish after two seconds (SERVER-04). */}
         <Button
           className="mb-2 w-full"
-          disabled={shareState === "sharing" || stats.skillCount === 0}
+          disabled={
+            shareState === "sharing" || stats.skillCount === 0 || blocked
+          }
           onClick={() => void share()}
         >
-          {SHARE_LABELS[shareState]}
+          {shareLabel}
         </Button>
-        <Button variant="full" onClick={() => setDialog("install")}>
+        {/* One rule, both doors (EDITOR-08). A project skill on a sub-agent
+            resting at global is a pair `init --from` THROWS on, so a link
+            minted from here would fail on the recipient — which is worse than
+            no link. The button says how many sub-agents are left to move rather
+            than how much would install, because a disabled button suppresses
+            pointer events and a tooltip on one never opens. */}
+        <Button
+          variant="full"
+          disabled={blocked}
+          onClick={() => setDialog("install")}
+        >
           Install{" "}
           <span className="pl-1 font-normal tracking-[.06em] text-faint">
-            {stats.agentCount}{" "}
-            {stats.agentCount === 1 ? "sub-agent" : "sub-agents"} and{" "}
-            {stats.skillCount} {stats.skillCount === 1 ? "skill" : "skills"}
+            {blocked
+              ? blockedLabel(stats.unscopedAgentCount)
+              : installLabel(stats)}
           </span>
         </Button>
       </div>

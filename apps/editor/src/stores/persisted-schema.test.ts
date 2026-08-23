@@ -12,10 +12,12 @@ import {
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
   isAgentOn,
+  isScopePairCompatible,
   isWorthRemembering,
   migrateConfig,
   persistedConfigSchema,
   pruneUnknownIds,
+  reachesAgent,
   restingAgentOptions,
   type PersistedConfig,
   type SkillEntry,
@@ -189,6 +191,59 @@ describe("isWorthRemembering", () => {
   })
 })
 
+// A global sub-agent's front-matter is written to ~/.claude, where every
+// project on the machine sees it; a project skill is installed under one
+// project's .claude. So a global agent carrying a project skill names something
+// that does not exist from anywhere else.
+//
+// The rule is the CLI's, down to the name: `isScopePairCompatible` in
+// `packages/cli/src/cli/lib/configuration/config-generator.ts`. Its `init
+// --from` decode THROWS on a payload holding such a pair, so the pair is not a
+// preference either surface holds — it is a configuration that cannot install.
+describe("isScopePairCompatible", () => {
+  it.each([
+    ["global", "global", true],
+    ["global", "project", true],
+    ["project", "project", true],
+    ["project", "global", false],
+  ] as const)(
+    "a %s skill on a %s sub-agent is %s",
+    (skillScope, agentScope, allowed) => {
+      expect(isScopePairCompatible(skillScope, agentScope)).toBe(allowed)
+    }
+  )
+})
+
+// The same rule asked of the agents map, which is where an agent's scope
+// actually comes from: sparse, so an agent nobody has moved rests at global and
+// the map says nothing about it at all.
+describe("reachesAgent", () => {
+  it("refuses a project skill for an agent resting at global", () => {
+    expect(reachesAgent({}, "project", KNOWN_AGENT)).toBe(false)
+  })
+
+  it("allows it once that agent is pinned to the project", () => {
+    expect(
+      reachesAgent(
+        { [KNOWN_AGENT]: { scope: "project" } },
+        "project",
+        KNOWN_AGENT
+      )
+    ).toBe(true)
+  })
+
+  it("allows a global skill either way", () => {
+    expect(reachesAgent({}, "global", KNOWN_AGENT)).toBe(true)
+    expect(
+      reachesAgent(
+        { [KNOWN_AGENT]: { scope: "project" } },
+        "global",
+        KNOWN_AGENT
+      )
+    ).toBe(true)
+  })
+})
+
 describe("isAgentOn", () => {
   it("is off with no skills and no pin", () => {
     expect(isAgentOn(config(), KNOWN_AGENT)).toBe(false)
@@ -249,6 +304,24 @@ describe("isAgentOn", () => {
 
   // `on: false` is a decision, and `undefined` is the absence of one — a
   // boolean read would collapse the two and switch every pinned-off agent on.
+  // The scope rule is deliberately NOT asked here. A sub-agent holding a project
+  // skill while it rests at global is not an agent with no skills — it is an
+  // agent with a skill and a problem, and the problem is only fixable because
+  // the row is on screen and switched on. Reading it as off would hide the very
+  // row the user has to click to resolve it.
+  it("stays on for an assignment the two scopes rule out", () => {
+    const unresolved = config({
+      skills: {
+        [KNOWN_SKILL]: entry({
+          scope: "project",
+          assignments: { [KNOWN_AGENT]: LIVE },
+        }),
+      },
+    })
+
+    expect(isAgentOn(unresolved, KNOWN_AGENT)).toBe(true)
+  })
+
   it("keeps a pinned-off agent off while it carries a model", () => {
     const pinnedOff = config({
       skills: {

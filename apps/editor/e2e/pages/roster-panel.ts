@@ -87,6 +87,15 @@ export class RosterPanel {
     })
   }
 
+  // The error marker on a row whose two scopes cannot meet. A real button, like
+  // the options panel's info glyph, so the explanation is reachable without a
+  // pointer — and its accessible name IS the explanation.
+  scopeError(skillName: string, agentId: string): Locator {
+    return this.skillRow(skillName, agentId).getByRole("button", {
+      name: /must be set to project scope/,
+    })
+  }
+
   whereUsed(skillName: string, agentId: string): Locator {
     return this.skillRow(skillName, agentId).getByRole("button", {
       name: /^Used by /,
