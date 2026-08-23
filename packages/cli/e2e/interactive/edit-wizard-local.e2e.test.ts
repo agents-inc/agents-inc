@@ -6,9 +6,10 @@ import {
   cleanupTempDir,
   ensureBinaryExists,
   loadConfigOrFail,
+  readCompiledAgents,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   TIMEOUTS,
@@ -28,6 +29,15 @@ import "../matchers/setup.js";
  * - Skills are copied from the source directory to .claude/skills/
  * - Removal in eject mode updates config but does NOT delete skill files
  */
+
+/**
+ * The one sub-agent every project in this file is built with, as the compiled filename an
+ * edit must leave behind. Named rather than counted: the parameterless
+ * `toHaveCompiledAgents()` that stood at both sites below was already satisfied by the
+ * agent stub `ProjectBuilder.editable` writes, so it could not tell an edit that
+ * recompiled from one that wrote nothing at all.
+ */
+const COMPILED_AGENT_FILES = [`${E2E_AGENT["web-developer"].name}.md`];
 
 describe("edit wizard — eject mode", () => {
   let sourceFixture: E2ESource;
@@ -144,7 +154,9 @@ describe("edit wizard — eject mode", () => {
         // The "Changes:" section should list additions
         expect(rawOutput).toContain("Changes:");
 
-        await expect(result.project).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(result.project.dir)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
       },
     );
 
@@ -346,7 +358,9 @@ describe("edit wizard — eject mode", () => {
           compiledAgents: [],
         });
 
-        await expect(result.project).toHaveCompiledAgents();
+        expect(Object.keys(await readCompiledAgents(result.project.dir)).sort()).toStrictEqual(
+          COMPILED_AGENT_FILES,
+        );
       },
     );
   });

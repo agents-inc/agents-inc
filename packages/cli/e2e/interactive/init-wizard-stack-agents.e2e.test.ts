@@ -3,13 +3,27 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
-import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
+import {
+  cleanupTempDir,
+  ensureBinaryExists,
+  isClaudeCLIAvailable,
+  readCompiledAgents,
+} from "../helpers/test-utils.js";
+import { E2E_AGENT_DISPLAY, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import "../matchers/setup.js";
 
 const claudeAvailable = await isClaudeCLIAvailable();
+
+/**
+ * The stack's whole sub-agent roster as compiled filenames, derived from the stack
+ * definition rather than retyped. The subject of this spec IS the roster the stack
+ * preselects, so the install it drives is held to that roster and no less: the
+ * parameterless `toHaveCompiledAgents()` that stood here proved only that the directory
+ * held at least one `.md`, which an install that compiled one of the two passed.
+ */
+const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
 
 describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", () => {
   let wizard: InitWizard | undefined;
@@ -67,7 +81,9 @@ describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", ()
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       await expect(result.project).toHaveConfig({ agents: ["web-developer"] });
-      await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
+      expect(Object.keys(await readCompiledAgents(wizard.globalHome)).sort()).toStrictEqual(
+        COMPILED_AGENT_FILES,
+      );
     },
   );
 });

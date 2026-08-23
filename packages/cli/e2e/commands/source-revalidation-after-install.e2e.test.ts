@@ -79,6 +79,7 @@ describe("a source that moves on under an existing installation", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
             assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
           }),
         },

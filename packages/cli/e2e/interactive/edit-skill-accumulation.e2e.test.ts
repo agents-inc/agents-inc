@@ -10,6 +10,7 @@ import {
   createPermissionsFile,
   createLocalSkill,
   writeAgentFile,
+  readCompiledAgents,
   readTestFile,
   renderMetadataYaml,
 } from "../helpers/test-utils.js";
@@ -163,8 +164,14 @@ describe("project config does not accumulate global skills after edit", () => {
       });
 
       // In this test, the installation is global-only (no project init was run).
-      // Agents are compiled at HOME scope, not project scope.
-      await expect({ dir: tempHOME }).toHaveCompiledAgents();
+      // Agents are compiled at HOME scope, not project scope — and the global config
+      // above declares ONE sub-agent, so the roster is named rather than counted: the
+      // parameterless `toHaveCompiledAgents()` that stood here was satisfied by the
+      // agent file this spec's own setup wrote before the wizard ever ran. The named
+      // matcher stays beside it because it also proves the file carries frontmatter.
+      expect(Object.keys(await readCompiledAgents(tempHOME))).toStrictEqual([
+        `${E2E_AGENT["web-developer"].name}.md`,
+      ]);
       await expect({ dir: tempHOME }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
     },
   );

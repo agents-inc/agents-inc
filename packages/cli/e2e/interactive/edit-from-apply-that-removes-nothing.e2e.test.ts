@@ -84,7 +84,7 @@ describe("edit --from a configuration that removes nothing", () => {
         skills: Object.fromEntries(
           skills.map((skillId) => [
             skillId,
-            buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+            buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
           ]),
         ),
         agents: { [WEB_DEV]: { scope: "project" } },

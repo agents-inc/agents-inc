@@ -206,7 +206,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         const settingsBefore = await readTestFile(settingsPath);
 
         // Step through manually; confirm() would wait for a success banner that
-        // will never arrive because installPluginsStep must hard-error.
+        // will never arrive because `requireMarketplaceOrExit` must hard-error.
         const domain = await wizard.stack.selectFirstStack();
         const build = await domain.acceptDefaults();
         const sources = await build.passThroughAllDomains();

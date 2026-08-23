@@ -103,8 +103,17 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
       await sources.waitForReady();
       const agents = await sources.advance();
 
-      // Deselect api-developer by toggling it off (display name on screen).
-      await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
+      // The press the KNOWN GAP at the end is about, and it is a REFUSAL rather than a
+      // deselect: api-developer is installed globally and this is a project edit, so the
+      // product blocks the toggle and says so in a toast. It used to go through
+      // `toggleAgent`, which was open-loop — the keystroke was spent, nothing moved, and
+      // the run carried on as though the sub-agent had been deselected. `toggleAgent` is
+      // closed-loop now and reports a refusal instead of passing it on, so the press takes
+      // the same cursor-anchored raw wait `lifecycle/global-agent-toggle-guard` uses for
+      // this exact state: the toast is the only surface the refusal reaches, and the wait
+      // IS the assertion on it.
+      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
+      await agents.toggleFocusedAgentAwaiting(STEP_TEXT.GLOBAL_AGENTS_BLOCKED);
 
       const confirm = await agents.advance("edit");
       const result = await confirm.confirm();
@@ -143,8 +152,10 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
       ).toStrictEqual([]);
 
       // KNOWN GAP: the excluded-agent half of this spec's original claim is not
-      // reachable through this flow. Toggling api-developer off at PROJECT scope
-      // while it is installed GLOBALLY does not write an excluded agent row — the
+      // reachable through this flow, and the reason is now asserted rather than
+      // assumed: the product REFUSES the toggle above, which the press's toast wait
+      // pins. Toggling api-developer off at PROJECT scope while it is installed
+      // GLOBALLY does not write an excluded agent row — the
       // emitted config.ts carries all ten agents as active `scope: "global"`
       // entries, and its only `excluded` row is the web-framework-react SKILL
       // tombstone that `toggleScopeOnFocusedSkill` above mints. The original

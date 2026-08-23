@@ -96,7 +96,7 @@ describe("edit wizard — confirm step and completion", () => {
         const result = await wizard.build.saveFromBuild("edit");
 
         // The unresolvable skill is gone from config.ts — the wizard could not represent it, so
-        // the merge removed it and `edit` named it in the Changes block (CLI-450).
+        // the merge removed it and `edit` named it in the Changes block.
         await expectPhaseSuccess(result, {
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],

@@ -17,6 +17,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * D-264 mechanism #1 — a global config that declares skills but ZERO agents
@@ -59,7 +60,10 @@ describe("global blank-agent config on compile", () => {
     });
     const skillDir = await createLocalSkill(fakeHome, E2E_SKILL.react.id, {
       description: "Global local skill so the compile pass has a skill to discover",
-      metadata: renderMetadataYaml({ contentHash: "hash-blank-agents" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(E2E_SKILL.react.id),
+        contentHash: "hash-blank-agents",
+      }),
     });
 
     // Setup must be valid — otherwise the compile could no-op for the wrong

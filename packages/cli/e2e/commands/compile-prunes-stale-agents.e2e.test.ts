@@ -14,6 +14,7 @@ import {
 import { EXIT_CODES } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * Regression: `cc compile` must prune stale compiled agent files.
@@ -61,7 +62,10 @@ describe("compile prunes stale compiled agents", () => {
 
     await createLocalSkill(fakeHome, E2E_SKILL.react.id, {
       description: "Global skill backing web-developer",
-      metadata: renderMetadataYaml({ contentHash: "hash-prune-react" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(E2E_SKILL.react.id),
+        contentHash: "hash-prune-react",
+      }),
     });
 
     // Pre-seed the agents dir with two files that are NOT in config.agents:

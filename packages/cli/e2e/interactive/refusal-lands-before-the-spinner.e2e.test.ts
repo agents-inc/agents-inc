@@ -12,6 +12,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * Both wizard commands render a loading `<Spinner>` and then await a load that can
@@ -91,7 +92,10 @@ describe("a refusal does not sit under a live spinner", () => {
     });
     await createLocalSkill(projectDir, E2E_SKILL.react.id, {
       description: "Minimal skill for the refusal-frame guard",
-      metadata: renderMetadataYaml({ contentHash: "hash-refusal-frame" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(E2E_SKILL.react.id),
+        contentHash: "hash-refusal-frame",
+      }),
     });
 
     prompt = new InteractivePrompt(["edit"], projectDir, { env: { CC_MARKETPLACE: undefined } });

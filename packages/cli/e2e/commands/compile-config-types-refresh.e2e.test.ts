@@ -20,6 +20,7 @@ import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 import path from "path";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * The documented hand-edit workflow is "edit config.ts, then run compile".
@@ -46,11 +47,17 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // union must follow the config, not the filesystem.
     await createLocalSkill(projectDir, E2E_SKILL.react.id, {
       description: "Installed skill later removed from config by hand",
-      metadata: renderMetadataYaml({ contentHash: "hash-react" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(E2E_SKILL.react.id),
+        contentHash: "hash-react",
+      }),
     });
     await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
       description: "Installed skill later added to config by hand",
-      metadata: renderMetadataYaml({ contentHash: "hash-vitest" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(E2E_SKILL.vitest.id),
+        contentHash: "hash-vitest",
+      }),
     });
     await writeProjectConfig(projectDir, {
       name: "e2e-types-refresh",
@@ -64,12 +71,14 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     expect(firstRun.output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
     expect(await fileExists(configTypesTsPath(projectDir))).toBe(true);
 
-    // The pass loads the matrix alone, so nothing declares this id and the union says so:
-    // the section heading records what a loaded catalogue did NOT declare.
+    // The installed skill states a real category, so local-skill discovery merges it into the
+    // loaded catalogue and the union carries it unsectioned. A `// Custom` heading here would
+    // mean the catalogue did not declare the id — which is what a placeholder category used to
+    // produce, by keeping the skill out of the matrix entirely.
     const firstTypes = await readTestFile(configTypesTsPath(projectDir));
     const firstSkillId = readGeneratedUnion(firstTypes, "SkillId");
     expect(firstSkillId, "config-types.ts must declare a SkillId alias").toBeDefined();
-    expect(firstSkillId?.trim()).toBe(`// Custom\n  | "${E2E_SKILL.react.id}"`);
+    expect(firstSkillId?.trim()).toBe(`"${E2E_SKILL.react.id}"`);
     expect(firstTypes, "union must follow config.ts, not installed files").not.toContain(
       `"${E2E_SKILL.vitest.id}"`,
     );
@@ -98,16 +107,14 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     const secondTypes = await readTestFile(configTypesTsPath(projectDir));
     // The union is rebuilt from the edited config's entries: the added skills are
     // in (including the not-installed one), the removed skill is out even though
-    // its files are still on disk
-    // `formatSkillUnion` sorts the union, and the fixture marketplace's namespace
-    // puts its ids ahead of a bare one — so vitest leads and web-mocks-msw follows.
-    // They sit under different headings because the loaded catalogue declares one of
-    // them and not the other: `web-mocks-msw` is the catalogue's, the fixture id is not.
+    // its files are still on disk.
+    //
+    // Both ids are the loaded catalogue's — the fixture one because its installed metadata
+    // states a category the merge can place it under, `web-mocks-msw` because the marketplace
+    // ships it — so the union carries no section headings at all.
     const secondSkillId = readGeneratedUnion(secondTypes, "SkillId");
     expect(secondSkillId, "config-types.ts must declare a SkillId alias").toBeDefined();
-    expect(secondSkillId?.trim()).toBe(
-      `// Custom\n  | "${E2E_SKILL.vitest.id}"\n  // Marketplace\n  | "web-mocks-msw"`,
-    );
+    expect(secondSkillId?.trim()).toBe(`"${E2E_SKILL.vitest.id}" | "web-mocks-msw"`);
     expect(secondTypes).not.toContain(`"${E2E_SKILL.react.id}"`);
     expect(secondTypes).toContain(`export type AgentName = "${E2E_AGENT["web-developer"].name}";`);
 
@@ -168,7 +175,10 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // Global install: one global-scoped skill + agent
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
       description: "Global skill for dual-scope types refresh",
-      metadata: renderMetadataYaml({ contentHash: "hash-global" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-cypress-e2e"),
+        contentHash: "hash-global",
+      }),
     });
     await writeProjectConfig(globalHome, {
       name: "e2e-global",
@@ -179,7 +189,10 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // Project install: one project-scoped skill + agent
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
       description: "Project skill for dual-scope types refresh",
-      metadata: renderMetadataYaml({ contentHash: "hash-project" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        contentHash: "hash-project",
+      }),
     });
     await writeProjectConfig(projectDir, {
       name: "e2e-project",

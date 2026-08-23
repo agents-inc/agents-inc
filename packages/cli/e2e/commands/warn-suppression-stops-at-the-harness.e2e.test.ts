@@ -18,6 +18,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * `warn({ suppressInTest: true })` exists to keep the UNIT suite quiet. It must not
@@ -65,7 +66,10 @@ describe("a warning the unit suite suppresses still reaches the user through the
 
     await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
       description: "Installed on disk and unknown to the matrix",
-      metadata: renderMetadataYaml({ contentHash: "hash-vitest" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(E2E_SKILL.vitest.id),
+        contentHash: "hash-vitest",
+      }),
     });
     await writeProjectConfig(projectDir, {
       name: "e2e-warn-suppression",

@@ -21,6 +21,8 @@ import {
   readActiveAgentNames,
 } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
+import { EDIT_PROJECT_SETUP_FLAG } from "../../src/cli/consts.js";
+import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 
 /**
  * Global-agent propagation — the propagated config pair's value and type sides
@@ -40,10 +42,11 @@ import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
  * Setup (exercises the real CLI pipeline end-to-end):
  *   1. Global init at HOME with api-developer DESELECTED — the global agents
  *      rows (and the union they seed) start without it.
- *   2. Register Project B via `cc edit` with a minimal agent-scope change
- *      (web-developer G→P). A pure passthrough edit does not create the
- *      project config, so the toggle forces config generation and project
- *      registration. B's rows inherit the narrow global set.
+ *   2. Register Project B via the Edit an `init` dashboard opens — `cc edit
+ *      --project-setup`, the door that makes that directory the run's subject —
+ *      with a minimal agent-scope change (web-developer G→P). A pure passthrough
+ *      edit does not create the project config, so the toggle forces config
+ *      generation and project registration. B's rows inherit the narrow global set.
  *   3. Register Project A the same way.
  *   4. Run `cc edit` in Project A and toggle api-developer ON. The agent
  *      lands at the wizard's default `scope: global`; `splitConfigByScope`
@@ -58,28 +61,7 @@ import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 
 const WEB_DEVELOPER_AGENT = "web-developer";
 const API_DEVELOPER_AGENT = "api-developer";
-
-/**
- * Extract the `SelectedAgentName` union literal members from a rendered
- * `config-types.ts`. The writer emits:
- *   export type SelectedAgentName = "name1" | "name2";
- *
- * Returns the list of names from the RHS of the declaration (no `AgentName`
- * fallback — the test asserts the bounded-union emission explicitly).
- */
-function parseSelectedAgentNameUnion(configTypesContent: string): string[] {
-  const blockMatch = configTypesContent.match(/export type SelectedAgentName\s*=\s*([^;]+);/);
-  expect(
-    blockMatch,
-    "Expected config-types.ts to declare `export type SelectedAgentName = ...;`",
-  ).not.toBeNull();
-
-  const [, rhs] = blockMatch ?? [];
-  if (rhs === undefined) return [];
-  return Array.from(rhs.matchAll(/"([^"]+)"/g)).flatMap(([, name]) =>
-    name === undefined ? [] : [name],
-  );
-}
+const SELECTED_AGENT_ALIAS = "SelectedAgentName";
 
 /**
  * Launch `cc init` at HOME and complete the wizard with api-developer
@@ -125,11 +107,18 @@ async function initGlobalWithoutApiDeveloper(
 }
 
 /**
- * Register a project with the global config by launching its Edit wizard
- * (dashboard → Edit) and toggling the scope of one existing global agent
- * to project (web-developer G→P). A pure passthrough edit does NOT create
- * the project config (see `edit-global-fallback.e2e.test.ts`), so we need
- * some state change to force config generation and project registration.
+ * Register a project with the global config by driving the Edit wizard an `init`-originated
+ * dashboard selection would open, and toggling the scope of one existing global agent to
+ * project (web-developer G→P). A pure passthrough edit does NOT create the project config
+ * (see `edit-global-fallback.e2e.test.ts`), so we need some state change to force config
+ * generation and project registration.
+ *
+ * `--project-setup` is the flag `init`'s dashboard appends for an `init`-originated Edit, and
+ * it is what makes this directory the run's subject. Without it a bare `cc edit` here edits
+ * the installation it FOUND — the global one — because this directory holds no config of its
+ * own; `resolveEditRoot` in `commands/edit.tsx` decides that, the scope toggle is inert under
+ * it, and the registration this helper exists to perform would silently not happen. Reaching
+ * the same wizard by the same door the docblock always described.
  *
  * We toggle an AGENT's scope (not a skill's) so the registration leaves every
  * skill at global scope. Phase 4 then adds api-developer as the ONLY new
@@ -148,6 +137,7 @@ async function registerProjectViaAgentScopeChange(
     projectDir,
     source: { sourceDir, tempDir: sourceTempDir },
     env: { HOME: fakeHome },
+    extraArgs: [`--${EDIT_PROJECT_SETUP_FLAG}`],
     ...TERMINAL_SIZE.TALL,
   });
 
@@ -275,7 +265,10 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // and that the value/type sides agree on the initial narrow set.
       const globalTypesPhase1 = await readTestFile(globalTypesPath);
       const globalSelectedPhase1 = await readActiveAgentNames(fakeHome);
-      const globalTypeUnionPhase1 = parseSelectedAgentNameUnion(globalTypesPhase1);
+      const globalTypeUnionPhase1 = readGeneratedUnionMembers(
+        globalTypesPhase1,
+        SELECTED_AGENT_ALIAS,
+      );
       expect(globalSelectedPhase1).toContain(WEB_DEVELOPER_AGENT);
       expect(globalSelectedPhase1).not.toContain(API_DEVELOPER_AGENT);
       expect([...globalTypeUnionPhase1].sort()).toStrictEqual([...globalSelectedPhase1].sort());
@@ -311,7 +304,10 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // not the specific composition.
       const projectBTypesBefore = await readTestFile(projectBTypesPath);
       const projectBSelectedBefore = await readActiveAgentNames(projectBDir);
-      const projectBTypeUnionBefore = parseSelectedAgentNameUnion(projectBTypesBefore);
+      const projectBTypeUnionBefore = readGeneratedUnionMembers(
+        projectBTypesBefore,
+        SELECTED_AGENT_ALIAS,
+      );
       expect(
         projectBSelectedBefore,
         "Project B's active agent rows must not contain api-developer before global promotion",
@@ -379,7 +375,10 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       const projectBTypesAfter = await readTestFile(projectBTypesPath);
 
       const projectBSelectedAfter = await readActiveAgentNames(projectBDir);
-      const projectBTypeUnionAfter = parseSelectedAgentNameUnion(projectBTypesAfter);
+      const projectBTypeUnionAfter = readGeneratedUnionMembers(
+        projectBTypesAfter,
+        SELECTED_AGENT_ALIAS,
+      );
 
       // Value side: the active rows of config.ts::agents MUST contain api-developer.
       expect(
@@ -407,8 +406,8 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(
         [...projectBTypeUnionAfter].sort(),
         `config.ts::agents (active) and config-types.ts::SelectedAgentName must match.
-config.ts:       ${JSON.stringify(projectBSelectedAfter.sort())}
-config-types.ts: ${JSON.stringify(projectBTypeUnionAfter.sort())}`,
+config.ts:       ${JSON.stringify([...projectBSelectedAfter].sort())}
+config-types.ts: ${JSON.stringify([...projectBTypeUnionAfter].sort())}`,
       ).toStrictEqual([...projectBSelectedAfter].sort());
     },
   );

@@ -12,7 +12,7 @@ import {
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
@@ -111,7 +111,10 @@ describe("dual-scope compile", () => {
 
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
       description: "Global skill for single-scope test",
-      metadata: renderMetadataYaml({ contentHash: "hash-global" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-cypress-e2e"),
+        contentHash: "hash-global",
+      }),
     });
 
     const { exitCode } = await CLI.run(
@@ -150,7 +153,10 @@ describe("dual-scope compile", () => {
 
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
       description: "Project skill for single-scope test",
-      metadata: renderMetadataYaml({ contentHash: "hash-local" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        contentHash: "hash-local",
+      }),
     });
 
     const { exitCode } = await CLI.run(
@@ -195,7 +201,10 @@ describe("dual-scope compile", () => {
 
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
       description: "Global skill for cross-scope test",
-      metadata: renderMetadataYaml({ contentHash: "hash-global" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-cypress-e2e"),
+        contentHash: "hash-global",
+      }),
     });
 
     // Project installation: agent references the global skill but has NO local skills

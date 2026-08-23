@@ -14,11 +14,27 @@ describe("init wizard — navigation", () => {
   });
 
   describe("Ctrl+C abort", () => {
-    it("should exit the wizard without creating files", async () => {
+    /**
+     * The name is what this test asserts and no more. It used to read "should exit the wizard
+     * without creating files", which claimed a filesystem guarantee it never looked at — and
+     * could not have, because `abortAndDestroy` deletes the temp tree before returning, so the
+     * directories any such assertion would read are gone by the time the test body resumes. A
+     * name that promises more than the body checks is worse than a narrow one: the next reader
+     * takes the claim as covered and writes nothing.
+     *
+     * That guarantee IS covered, from scratch and at both scopes, by
+     * `lifecycle/cancelled-init-blank-global-config` — which asserts the absent project
+     * `config.ts` and the absent skills and agents directories under both the project and the
+     * fake HOME before it tears anything down. This test is the reachability half only: Ctrl+C
+     * on the wizard's first frame ends the process rather than hanging it.
+     */
+    it("should exit as cancelled when Ctrl+C is pressed on the first step", async () => {
       wizard = await InitWizard.launch();
 
-      const exitCode = await wizard.abortAndDestroy();
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      // abortAndDestroy pins the exit code to CANCELLED itself, so it carries the
+      // verdict for this test. A copy here could never go red — the funnel throws
+      // first — and would read as coverage while providing none.
+      await wizard.abortAndDestroy();
     });
   });
 
@@ -66,8 +82,12 @@ describe("init wizard — navigation", () => {
 
       await wizard.stack.cancel();
 
+      // Escape-to-cancel does NOT go through abortAndDestroy, so this is the one
+      // aborted-session path the funnel's assertion cannot reach — it is pinned here.
       const exitCode = await wizard.waitForExit();
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      expect(exitCode, "cancelling the stack step with Escape must exit as cancelled").toBe(
+        EXIT_CODES.CANCELLED,
+      );
     });
   });
 });

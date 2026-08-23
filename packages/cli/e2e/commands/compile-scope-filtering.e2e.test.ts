@@ -13,7 +13,7 @@ import "../matchers/setup.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
 
 /**
  * Regression tests for compile scope-filtering fixes.
@@ -43,7 +43,10 @@ describe("compile scope filtering", () => {
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
           description: "Global skill for scope filtering test",
-          metadata: renderMetadataYaml({ contentHash: "hash-global-sf" }),
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor("web-testing-cypress-e2e"),
+            contentHash: "hash-global-sf",
+          }),
         },
         projectSkills: [
           { id: "web-testing-playwright-e2e", scope: "project", origin: "eject" },
@@ -54,7 +57,10 @@ describe("compile scope filtering", () => {
         },
         projectSkill: {
           description: "Project skill for scope filtering test",
-          metadata: renderMetadataYaml({ contentHash: "hash-project-sf" }),
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor("web-testing-playwright-e2e"),
+            contentHash: "hash-project-sf",
+          }),
         },
       });
       tempDir = path.dirname(project.dir);
@@ -133,11 +139,17 @@ describe("compile scope filtering", () => {
 
       await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
         description: "Global skill A",
-        metadata: renderMetadataYaml({ contentHash: "hash-gA" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-cypress-e2e"),
+          contentHash: "hash-gA",
+        }),
       });
       await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "Global skill B",
-        metadata: renderMetadataYaml({ contentHash: "hash-gB" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SKILL.react.id),
+          contentHash: "hash-gB",
+        }),
       });
 
       // Project installation: completely different agent, no overlap with global
@@ -155,7 +167,10 @@ describe("compile scope filtering", () => {
 
       await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
         description: "Project skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-pC" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-playwright-e2e"),
+          contentHash: "hash-pC",
+        }),
       });
 
       const globalRun = await CLI.run(
@@ -212,7 +227,10 @@ describe("compile scope filtering", () => {
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
           description: "Global skill for project discovery",
-          metadata: renderMetadataYaml({ contentHash: "hash-gpd" }),
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor("web-testing-cypress-e2e"),
+            contentHash: "hash-gpd",
+          }),
         },
         // Only the project-scoped skill is registered here — the global one is
         // referenced by the stack below and by nothing else.
@@ -225,7 +243,10 @@ describe("compile scope filtering", () => {
         },
         projectSkill: {
           description: "Project-local skill for discovery test",
-          metadata: renderMetadataYaml({ contentHash: "hash-ppd" }),
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor("web-testing-playwright-e2e"),
+            contentHash: "hash-ppd",
+          }),
         },
       });
       tempDir = path.dirname(project.dir);
@@ -268,7 +289,10 @@ describe("compile scope filtering", () => {
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
           description: "Global skill for verbose test",
-          metadata: renderMetadataYaml({ contentHash: "hash-gv" }),
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor("web-testing-cypress-e2e"),
+            contentHash: "hash-gv",
+          }),
         },
         projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
         projectStack: {
@@ -276,7 +300,10 @@ describe("compile scope filtering", () => {
         },
         projectSkill: {
           description: "Project skill for verbose test",
-          metadata: renderMetadataYaml({ contentHash: "hash-pv" }),
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor("web-testing-playwright-e2e"),
+            contentHash: "hash-pv",
+          }),
         },
       });
       tempDir = path.dirname(project.dir);

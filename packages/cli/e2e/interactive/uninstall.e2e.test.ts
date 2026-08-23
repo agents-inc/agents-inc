@@ -17,6 +17,22 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  *
  * Note: The uninstall confirmation is NOT the wizard, so it uses
  * InteractivePrompt (which wraps TerminalSession internally).
+ *
+ * **The three cancellations pin `EXIT_CODES.CANCELLED` at the call site rather than through a
+ * funnel, and that is a decision rather than an omission.** The wizard was ruled the other way —
+ * `expectCancelledExit` lives inside `abortAndDestroy()` — because thirty of its thirty-five
+ * aborting specs never captured the exit code at all, so the verdict had to be moved somewhere
+ * every abort passes through. Nothing of that shape is true here: all three sites already await
+ * `waitForExit`, so none of them is MISSING the check, and what was wrong was its strength.
+ * `not.toBe(SUCCESS)` cannot tell a clean decline from a crash on the confirm prompt — 1 and 4
+ * both satisfy it — which is exactly what a command whose whole job is deleting files must not be
+ * ambiguous about. A funnel would also have to live in `fixtures/interactive-prompt.ts`, hoisting
+ * the verdict into a page object shared by every non-wizard prompt so that three specs could stop
+ * writing one line each.
+ *
+ * The permitted case that makes these three mean anything is in this same file: "confirm with y"
+ * exits SUCCESS and takes the directories with it. A refusal pinned alone cannot tell a guard that
+ * is correctly scoped from one that declines everything.
  */
 describe("uninstall interactive", () => {
   let tempDir: string;
@@ -92,7 +108,9 @@ describe("uninstall interactive", () => {
       await prompt.waitForText(STEP_TEXT.UNINSTALL_CANCELLED, TIMEOUTS.EXIT);
 
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT);
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      expect(exitCode, "a declined uninstall is a cancellation, not a failure").toBe(
+        EXIT_CODES.CANCELLED,
+      );
     });
 
     it("should preserve files after cancellation", async () => {
@@ -145,7 +163,9 @@ describe("uninstall interactive", () => {
       await prompt.waitForText(STEP_TEXT.UNINSTALL_CANCELLED, TIMEOUTS.EXIT);
 
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT);
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      expect(exitCode, "the y/N default is a cancellation, not a failure").toBe(
+        EXIT_CODES.CANCELLED,
+      );
     });
   });
 
@@ -241,7 +261,10 @@ describe("uninstall interactive", () => {
       await prompt.ctrlC();
 
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT);
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      expect(
+        exitCode,
+        "Ctrl+C settles promptConfirm through its onExit fallback, which is the same cancellation the n key takes",
+      ).toBe(EXIT_CODES.CANCELLED);
     });
 
     it("should preserve files after Ctrl+C", async () => {

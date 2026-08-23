@@ -105,10 +105,11 @@ describe.skipIf(!claudeAvailable)(
 
 /**
  * The twin path: `cc edit` must hard-error with the same guarantees as
- * `cc init` when `installPluginSkills` returns `failed` entries. The guard
- * lives in `edit.tsx::applyPluginChanges` and is byte-identical to the one in
- * `init.tsx::installPluginsStep`; this test locks them to the same contract so
- * drift between the two code paths cannot slip past CI.
+ * `cc init` when `installPluginSkills` returns `failed` entries. There is one
+ * guard rather than two copies of it — `BaseCommand.reportPluginInstalls`, which
+ * `edit.tsx::applyPluginChanges` and `init.tsx::handleInstallation` both reach
+ * through `installPluginSkillsReported` — so this test pins the shared contract
+ * from the edit side, and the init case above pins it from the other.
  *
  * Scenario:
  *   1. Seed a valid plugin-mode project whose config.ts records a
@@ -181,8 +182,8 @@ describe.skipIf(!claudeAvailable)(
         expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
 
         const output = result.output;
-        // Remediation hint matches edit.tsx::applyPluginChanges verbatim and
-        // stays in lockstep with init.tsx::installPluginsStep.
+        // Remediation hint is `pluginInstallFailureError`, emitted by the one
+        // reporter both commands reach, so the two spellings cannot drift apart.
         expect(output).toContain("Failed to install");
         expect(output).toContain("plugin skill(s)");
         expect(output).toContain("Plugin install intent could not be honored");

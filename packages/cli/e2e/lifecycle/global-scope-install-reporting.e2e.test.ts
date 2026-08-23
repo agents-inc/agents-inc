@@ -122,6 +122,10 @@ describe("default init from a project dir — global scope reporting", () => {
     for (const agentName of COMPILED_AGENT_NAMES) {
       await expect({ dir: fakeHome }).toHaveCompiledAgent(agentName);
     }
+    // The weak reading is the CORRECT one for an absence: the matcher fails on an
+    // agents directory that is missing OR holds no `.md`, and both are what "nothing was
+    // compiled here" means. Its blind spots — a wrong roster, a swap — need something to
+    // BE there, so a negation cannot inherit them.
     await expect({ dir: projectDir }).not.toHaveCompiledAgents();
 
     await expect({ dir: fakeHome }).toHaveConfig({

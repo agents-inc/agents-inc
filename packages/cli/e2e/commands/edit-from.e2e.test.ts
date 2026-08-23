@@ -74,7 +74,10 @@ describe("edit --from <id> without a terminal", () => {
       id,
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: { scope: "project" } },
       }),

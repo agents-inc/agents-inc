@@ -12,8 +12,16 @@ import {
   createDualScopeEnv,
   createGlobalOnlyEnv,
   readAgentEntries,
+  readConfigSkillIds,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
+
+/**
+ * The one skill `E2E_STACK` assigns to no agent, so no phase here installs it at
+ * either scope. That is what makes selecting it a real addition rather than a
+ * toggle the scope guards refuse.
+ */
+const SPARE_SKILL = E2E_SKILL["visual-regression"];
 
 /**
  * D-221 — Agent scope toggle (project → global) corrupts `agents` array
@@ -228,10 +236,16 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         );
 
         // ================================================================
-        // Phase 3: Second edit — add one skill (unrelated change) to force
-        // a write path execution. If merge-step-corruption is present it
-        // would amplify here. We pick `web-state-zustand` because it is
-        // present in the E2E source and not in the initial stack.
+        // Phase 3: Second edit, whose whole job is to force a config WRITE so
+        // Phase 4 has something to measure amplification against.
+        //
+        // The skill has to be one this project can actually add. It was
+        // `web-state-zustand`, which `createDualScopeEnv` installs at GLOBAL
+        // scope — so a project-scope edit had the global lock refuse the toggle,
+        // no write was forced, and Phase 4 read a config the second edit never
+        // rewrote. The SPARE is the fixture's answer to exactly this: the one
+        // skill `E2E_STACK` assigns to no agent, so nothing has installed it at
+        // either scope and selecting it is a genuine addition.
         // ================================================================
         wizard2 = await EditWizard.launch({
           projectDir,
@@ -239,9 +253,15 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
-        await wizard2.build.selectSkill(E2E_SKILL.zustand.display);
+        await wizard2.build.selectSkill(SPARE_SKILL.display);
         const sources2 = await wizard2.build.passThroughAllDomainsGeneric();
         await sources2.waitForReady();
+        // Every other phase against this fixture sets its sources local, and this
+        // one now has to as well: `createE2ESource` writes no marketplace
+        // manifest, so a freshly added skill left on its default plugin origin is
+        // an install the CLI correctly refuses. The phase got away without it for
+        // as long as it added nothing.
+        await sources2.setAllLocal();
         const agents2 = await sources2.advance();
         const confirm2 = await agents2.acceptDefaults("edit");
         const result2 = await confirm2.confirm();
@@ -253,6 +273,14 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // contain exactly one entry per (name, scope) pair — corruption
         // must NOT self-amplify across edit cycles.
         // ================================================================
+        // Proof the second edit executed the write path at all. Without it every
+        // assertion below holds trivially for a run that changed nothing — which
+        // is precisely how this phase passed while its skill toggle was refused.
+        expect(
+          await readConfigSkillIds(projectDir),
+          "the second edit must have written the added skill, or it forced no write to amplify",
+        ).toContain(SPARE_SKILL.id);
+
         const rowsAfterSecondEdit = await readAgentEntries(projectDir);
         expectNoDuplicates(
           rowsAfterSecondEdit.map((row) => `${row.name}:${row.scope}`),

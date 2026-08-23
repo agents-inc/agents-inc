@@ -221,8 +221,9 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
         source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
       });
 
-      const exitCode = await wizard.abortAndDestroy(TIMEOUTS.EXIT);
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      // abortAndDestroy pins the exit code to CANCELLED itself; this test's own
+      // subject is that no plugin operation ran, which the assertions below carry.
+      await wizard.abortAndDestroy(TIMEOUTS.EXIT);
 
       const rawOutput = wizard.getRawOutput();
       expect(rawOutput).not.toContain("Installing plugin:");

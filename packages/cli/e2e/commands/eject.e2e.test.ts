@@ -320,7 +320,7 @@ describe("eject command", () => {
     });
 
     // Withdrawn, not ignored: silently accepting it would eject from one source while
-    // recording another in config.ts (CLI-450).
+    // recording another in config.ts.
     expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
     expect(output).toContain("--marketplace");
     expect(await directoryExists(skillsPath(tempDir))).toBe(false);

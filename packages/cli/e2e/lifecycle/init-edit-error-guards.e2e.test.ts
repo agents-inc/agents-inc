@@ -13,6 +13,7 @@ import {
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /** The `source-fetcher` message for a marketplace path that is not a directory. */
 const LOCAL_MARKETPLACE_NOT_FOUND = "Local marketplace not found:";
@@ -195,7 +196,10 @@ describe("init/edit error guards", () => {
 
       await createLocalSkill(projectDir, E2E_SKILL.react.id, {
         description: "Minimal skill for edit error test",
-        metadata: renderMetadataYaml({ contentHash: "hash-edit-err" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SKILL.react.id),
+          contentHash: "hash-edit-err",
+        }),
       });
 
       const { exitCode, combined } = await runCLI(["edit"], projectDir, {

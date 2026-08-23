@@ -105,11 +105,20 @@ describe("doctor with an unreadable config", () => {
   /**
    * The reason was never absent from the old output — it arrived as repeated unstructured loader
    * lines spliced between the check rows. It belongs to the finding now, and only to the finding.
+   *
+   * This asserted the ABSENCE of that loose loader line until 2026-08-20, when the unreadable-config
+   * ruling turned the `verbose()` it was copied from into a throw. Nothing emits the string any
+   * more, so the absence could no longer fail and the spec was green for a reason unrelated to its
+   * name. The claim worth pinning is the surviving half, and it is a positive one: the finding
+   * carries the reason ITSELF. Asserted as one string so the adjacency is the assertion — a reason
+   * printed loose between the rows again would not sit against the state label.
    */
-  it("carries the reason in the finding instead of printing it beside the rows", async () => {
+  it("carries the loader's reason inside the finding, on the row that names the state", async () => {
     const stdout = await expectFindingNaming(SYNTAX_ERROR);
 
-    expect(stdout).not.toContain(STEP_TEXT.CONFIG_SOURCE_LOAD_NOISE);
+    expect(stdout, "the finding states the reason, not only that there was one").toContain(
+      `${STEP_TEXT.DOCTOR_CONFIG_UNREADABLE}: ${STEP_TEXT.CONFIG_LOAD_REASON}`,
+    );
   });
 
   /**

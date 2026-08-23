@@ -143,6 +143,10 @@ describe("global agent toggle guard from project scope", () => {
         await readCompiledAgents(env.projectDir),
         "a blocked agent toggle must not materialise a project-scope compiled agent",
       ).toStrictEqual(projectAgentsBefore);
+      // The weak reading is the CORRECT one for an absence: the matcher fails on an
+      // agents directory that is missing OR holds no `.md`, and both are what "nothing was
+      // compiled here" means. Its blind spots — a wrong roster, a swap — need something to
+      // BE there, so a negation cannot inherit them.
       await expect({ dir: env.projectDir }).not.toHaveCompiledAgents();
 
       expect(result.output).toContain(STEP_TEXT.EDIT_UNCHANGED);

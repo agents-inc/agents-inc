@@ -98,7 +98,10 @@ describe("edit --from <id> interactive", () => {
       id,
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: { scope: "project" } },
       }),
@@ -111,8 +114,14 @@ describe("edit --from <id> interactive", () => {
       id,
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-          [UNPLACEABLE_SKILL]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [UNPLACEABLE_SKILL]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: { scope: "project" } },
       }),

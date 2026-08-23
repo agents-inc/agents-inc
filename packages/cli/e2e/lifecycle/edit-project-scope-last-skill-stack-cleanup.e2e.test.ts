@@ -108,7 +108,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
 
       // ================================================================
       // Phase 2: Run `cc edit` at PROJECT scope and deselect vitest entirely.
-      // projectDir differs from HOME, so cwd !== GLOBAL_INSTALL_ROOT and the
+      // projectDir differs from HOME, so cwd is not the global install root and the
       // edit writes with authoritativeScope "owned".
       // ================================================================
 

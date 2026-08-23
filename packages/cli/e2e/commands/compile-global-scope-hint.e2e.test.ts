@@ -11,6 +11,7 @@ import {
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * Project-context compile hint.
@@ -44,7 +45,10 @@ describe("compile project-context global-scope hint", () => {
     });
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
       description: "Global skill for hint test",
-      metadata: renderMetadataYaml({ contentHash: "hash-hint-g" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-cypress-e2e"),
+        contentHash: "hash-hint-g",
+      }),
     });
   }
 
@@ -65,7 +69,10 @@ describe("compile project-context global-scope hint", () => {
     });
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
       description: "Project skill for hint test",
-      metadata: renderMetadataYaml({ contentHash: "hash-hint-p" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        contentHash: "hash-hint-p",
+      }),
     });
 
     const { exitCode, output } = await CLI.run(
@@ -100,7 +107,10 @@ describe("compile project-context global-scope hint", () => {
     });
     await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
       description: "Project skill for guard test",
-      metadata: renderMetadataYaml({ contentHash: "hash-guard-p" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        contentHash: "hash-guard-p",
+      }),
     });
 
     const { exitCode, output } = await CLI.run(

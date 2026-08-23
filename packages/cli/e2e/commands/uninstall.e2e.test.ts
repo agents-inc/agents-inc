@@ -18,7 +18,7 @@ import {
   addForkedFromMetadata,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -143,7 +143,11 @@ describe("uninstall command", () => {
     );
     await writeFile(
       path.join(userSkillDir, FILES.METADATA_YAML),
-      renderMetadataYaml({ author: "@user", contentHash: "user-hash" }),
+      renderMetadataYaml({
+        ...metadataFieldsFor("my-custom-skill"),
+        author: "@user",
+        contentHash: "user-hash",
+      }),
     );
 
     await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
@@ -174,7 +178,11 @@ describe("uninstall command", () => {
     );
     await writeFile(
       path.join(userSkillDir, FILES.METADATA_YAML),
-      renderMetadataYaml({ author: "@user", contentHash: "user-hash" }),
+      renderMetadataYaml({
+        ...metadataFieldsFor("my-custom-skill"),
+        author: "@user",
+        contentHash: "user-hash",
+      }),
     );
 
     const { exitCode, output } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });

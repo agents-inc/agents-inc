@@ -16,9 +16,10 @@ import {
   ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
+  readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 
 /**
  * Edit: add new local-source skills lifecycle E2E test.
@@ -36,6 +37,15 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
+
+/**
+ * The stack's whole sub-agent roster as compiled filenames, derived from the stack
+ * definition rather than retyped. Phase 1 installs that stack, so the recompile phase 2
+ * drives is held to the same roster: the parameterless `toHaveCompiledAgents()` that
+ * stood here proved only that the directory held at least one `.md`, which phase 1's own
+ * install satisfies whatever phase 2 does to it.
+ */
+const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
 
 describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
   let fixture: E2EPluginSource;
@@ -152,7 +162,9 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       // global-edit model HOME == projectDir, so global content lands here.
       // This validates the source migration path (plugin → eject) in edit.
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
-      await expect({ dir: projectDir }).toHaveCompiledAgents();
+      expect(Object.keys(await readCompiledAgents(projectDir)).sort()).toStrictEqual(
+        COMPILED_AGENT_FILES,
+      );
     },
   );
 });

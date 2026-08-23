@@ -34,21 +34,19 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
  * A PROJECT-context edit that migrates a GLOBAL-scoped skill's install mode must
  * reach every OTHER registered project — its config.ts and its compiled agents.
  *
- * `edit` performs the migration under `$HOME` (the skill's own scope decides the
- * paths) and then records the new `source` straight into the global `config.ts`
- * with a raw config write, outside the write path that fans global changes out.
- * `writeScopedFromWizard` runs afterwards and reloads that already-updated global
- * config, so its own merge reports "nothing changed" and the propagation branch
- * — which is gated on that flag — never runs. The result: the editing project
- * sees the new source, and every other registered project is left naming the old
- * one, in its config AND in the compiled agents built from it.
+ * The migration itself happens under `$HOME`, because `executeMigration` resolves each
+ * skill's paths from ITS OWN scope. `recordGlobalSourceMigrations` then records the new
+ * `origin` in the global config, and every other registered project inlines that value, so
+ * its config and the agents compiled from it are stale until the change fans out.
  *
  * Shape of the fixture:
  *   - HOME owns react (global scope, marketplace source) and a GLOBAL
  *     api-developer whose stack preloads react. Both projects are registered.
- *   - project-a and project-b each own a PROJECT-scoped web-developer whose
- *     stack preloads the same global react, and each inlines the global react
- *     row verbatim, exactly as an install would leave it.
+ *   - project-a holds react as a persisted `[P][G]` pair — an active project entry plus the
+ *     global tombstone that pair is written with — and a PROJECT-scoped web-developer whose
+ *     stack preloads it.
+ *   - project-b is the bystander: it inlines the global react row verbatim, exactly as an
+ *     install would leave it, and owns a PROJECT-scoped web-developer of its own.
  *
  * Both projects' stale `.claude/agents/web-developer.md` files are produced by a
  * real `compile` run rather than hand-written, so the plugin-form reference under
@@ -62,27 +60,20 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
  * The Claude CLI is not required: a plugin -> eject migration copies the skill
  * locally and treats the plugin uninstall as best-effort.
  *
- * RETIRED, and deliberately NOT repaired.
+ * THE ROUTE THIS DRIVES, and why it is not the one this file was written with.
  *
- * This spec was RED against a real, open propagation defect. Its only route to that defect was
- * the Sources step's bulk `l` key, which rewrote `source` on every active entry — the inherited
- * global react row included — from a project directory. That key is withdrawn, and
- * `setInstallMode` now refuses a project-context call against a global slot the hydration
- * snapshot owns. So the fixture below can no longer reach the migration at all: `setAllLocal`
- * walks the rows, react's row is locked, and the edit becomes a no-op. Eight of the ten
- * assertions would go red for the setup rather than for the defect.
+ * The original fixture reached the migration through the Sources step's bulk `l` key, which
+ * rewrote `origin` on every active entry — the inherited global react row included — from a
+ * project directory. That key is withdrawn, and `setInstallMode` now refuses a
+ * project-context call against a global slot the hydration snapshot owns, so the bulk route
+ * is closed BY CONSTRUCTION. A spec whose trigger has been removed reports nothing: it went
+ * `describe.skip` and read exactly like a passing file.
  *
- * The route is closed BY CONSTRUCTION. The defect is not fixed, and re-pointing this fixture
- * until it went green would report a repair that never happened.
- *
- * The defect is still live on a narrower path, which is why this file is skipped rather than
- * deleted. `recordGlobalSourceMigrations` writes the global config raw, outside the write path
- * that fans global changes out to registered projects, and one supported flow still reaches it:
- * commit an install-mode change on the PROJECT half of a `[P][G]` pair, then collapse the pair
- * P->G with `s` in the same session. The entry is the project's own when configured and global
- * when written, so the migration is real and the fan-out is still missing. A revived spec must
- * drive THAT sequence — Sources mode change, ESC back to build, `s`, forward again — instead of
- * a bulk key, and must keep project-b as the bystander that carries the red.
+ * The narrower route this drives instead is the residue that authority leaves legitimate:
+ * commit an install-mode change on the PROJECT half of a `[P][G]` pair — the project's own
+ * to configure — then collapse the pair P->G with `s` in the same session. The entry is the
+ * project's when configured and global when written, so the migration is real and the global
+ * config must both record it and carry it to every other registered project.
  */
 
 /** Compiled reference form for a marketplace-sourced skill (bare id when ejected). */
@@ -141,12 +132,35 @@ function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   });
 }
 
+/**
+ * The editing project, holding react as a persisted `[P][G]` pair: the active project entry
+ * the `s` toggle produces, plus the global tombstone written alongside it. That project half
+ * is the one slot the Sources step still leaves editable at project scope, so it is the only
+ * route left to an install-mode change that ends up global.
+ */
+function buildDualScopeProjectConfig(name: string): FixtureProjectConfig {
+  return buildProjectConfig({
+    name,
+    skills: [
+      ...buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        origin: MARKET,
+        excluded: true,
+      }),
+      ...buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: MARKET }),
+    ],
+    agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+    selectedDomains: ["web"],
+    stack: projectStack,
+  });
+}
+
 /** The compiled agent a registered project owns at project scope. */
 function projectAgentPath(dir: string): string {
   return path.join(agentsPath(dir), `${E2E_AGENT["web-developer"].name}.md`);
 }
 
-describe.skip("project-context source migration of a global skill propagates to other registered projects", () => {
+describe("project-context source migration of a global skill propagates to other registered projects", () => {
   let sourceDir: string;
   let sourceTempDir: string;
   let tempDir: string;
@@ -209,7 +223,7 @@ describe.skip("project-context source migration of a global skill propagates to 
       metadata: reactMetadata,
     });
 
-    await writeProjectConfig(projectA, buildRegisteredProjectConfig(PROJECT_A));
+    await writeProjectConfig(projectA, buildDualScopeProjectConfig(PROJECT_A));
     await writeProjectConfig(projectB, buildRegisteredProjectConfig(PROJECT_B));
 
     // Phase 1: a real compile of BOTH projects while react is still
@@ -229,9 +243,11 @@ describe.skip("project-context source migration of a global skill propagates to 
     compileBOutput = compiledB.combined;
     preEditAgentB = await readTestFile(projectAgentPath(projectB));
 
-    // Phase 2: edit from PROJECT A (cwd = project-a, HOME = fakeHome, so this is
-    // a genuine project-context edit) and switch every source to local ("l"),
-    // flipping the GLOBAL react entry from the marketplace to eject.
+    // Phase 2: edit from PROJECT A (cwd = project-a, HOME = fakeHome, so this is a genuine
+    // project-context edit). Commit the mode change on the ONE editable row — the project
+    // half of the `[P][G]` pair; the locked global row is skipped by the walk — then go back
+    // to the build step and collapse the pair P->G with `s`, which carries the entry, and
+    // the mode just committed on it, to global scope.
     const wizard = await EditWizard.launch({
       projectDir: projectA,
       source: { sourceDir, tempDir: sourceTempDir },
@@ -241,7 +257,14 @@ describe.skip("project-context source migration of a global skill propagates to 
     const sources = await wizard.build.passThroughAllDomainsGeneric();
     await sources.waitForReady();
     await sources.setAllLocal();
-    const agents = await sources.advance();
+
+    const build = await sources.goBack();
+    await build.focusSkill(E2E_SKILL.react.display);
+    await build.toggleScopeOnFocusedSkill();
+
+    const sourcesAgain = await build.passThroughAllDomainsGeneric();
+    await sourcesAgain.waitForReady();
+    const agents = await sourcesAgain.advance();
     const confirm = await agents.acceptDefaults("edit");
     const outcome = await finishWizard(await confirm.confirm());
     editExitCode = outcome.exitCode;

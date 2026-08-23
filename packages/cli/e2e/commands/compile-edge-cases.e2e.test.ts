@@ -14,7 +14,11 @@ import {
   skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { MINIMAL_PROJECT_AGENT_NAMES, ProjectBuilder } from "../fixtures/project-builder.js";
+import {
+  MINIMAL_PROJECT_AGENT_NAMES,
+  ProjectBuilder,
+  metadataFieldsFor,
+} from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import type { SkillId, SkillAssignment } from "../../src/cli/types/index.js";
@@ -116,7 +120,10 @@ describe("compile command edge cases", () => {
       // Create a valid skill
       await createLocalSkill(projectDir, "web-testing-e2e-valid", {
         description: "Valid skill that should compile",
-        metadata: renderMetadataYaml({ contentHash: "hash-valid" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-e2e-valid"),
+          contentHash: "hash-valid",
+        }),
       });
 
       // Create a skill with broken YAML frontmatter in SKILL.md
@@ -140,7 +147,10 @@ This skill has invalid YAML frontmatter.
       // for the missing-metadata reason
       await writeFile(
         path.join(brokenSkillDir, FILES.METADATA_YAML),
-        renderMetadataYaml({ contentHash: "hash-broken" }),
+        renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-e2e-broken"),
+          contentHash: "hash-broken",
+        }),
       );
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -175,7 +185,10 @@ This skill has invalid YAML frontmatter.
       // Create a valid skill
       await createLocalSkill(projectDir, "web-testing-e2e-good", {
         description: "Good skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-good" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-e2e-good"),
+          contentHash: "hash-good",
+        }),
       });
 
       // Create a skill with valid SKILL.md but broken metadata.yaml
@@ -247,7 +260,10 @@ This skill has invalid YAML frontmatter.
       // Only create the skill that exists
       await createLocalSkill(projectDir, "web-testing-e2e-exists", {
         description: "This skill exists on disk",
-        metadata: renderMetadataYaml({ contentHash: "hash-exists" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-e2e-exists"),
+          contentHash: "hash-exists",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -284,7 +300,10 @@ This skill has invalid YAML frontmatter.
       // Create the skill on disk so discovery finds it
       await createLocalSkill(projectDir, "web-testing-e2e-orphan", {
         description: "Skill with no stack assignment",
-        metadata: renderMetadataYaml({ contentHash: "hash-orphan" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-e2e-orphan"),
+          contentHash: "hash-orphan",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });

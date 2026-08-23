@@ -110,7 +110,7 @@ describe("edit removes the only skill an agent references", () => {
 
       // ================================================================
       // Phase 2: Run `cc edit` at global scope and deselect react entirely.
-      // Setting projectDir === HOME makes cwd === GLOBAL_INSTALL_ROOT, so
+      // Setting projectDir === HOME makes cwd the global install root, so
       // the wizard edits ~/.claude-src/config.ts with authoritativeScope "all".
       // ================================================================
 

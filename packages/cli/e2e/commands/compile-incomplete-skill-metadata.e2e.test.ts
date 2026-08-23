@@ -14,7 +14,7 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { flattenCliOutput } from "../fixtures/seed-config-store.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -64,7 +64,10 @@ async function seedInstalledProject(): Promise<Fixture> {
 async function stripRequiredField(fixture: Fixture): Promise<void> {
   await writeFile(
     fixture.metadataPath,
-    renderIncompleteMetadataYaml({ contentHash: "b2c3d4e" }, [OMITTED_FIELD]),
+    renderIncompleteMetadataYaml(
+      { ...metadataFieldsFor(INCOMPLETE_SKILL), contentHash: "b2c3d4e" },
+      [OMITTED_FIELD],
+    ),
   );
 }
 

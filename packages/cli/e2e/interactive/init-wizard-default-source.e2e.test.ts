@@ -163,6 +163,12 @@ describe.skipIf(!claudeAvailable)("init wizard — default source eject mode ENO
       });
 
       // Compiled agents (default global scope) land under the wizard's global HOME.
+      // Deliberately the weak matcher: it says an install reached this directory at all,
+      // which is what "the eject path completed without ENOENT" needs, and no more. The
+      // roster here belongs to whichever stack the REAL marketplace ships first, so a
+      // named-constant comparison would be a second copy of `default-stacks.ts` kept in a
+      // spec whose subject is the ENOENT. Specs whose subject IS the roster compare it —
+      // `init-wizard-stack.e2e.test.ts` against `E2E_STACK_AGENTS`.
       await expect({ dir: wizard.globalHome }).toHaveCompiledAgents();
     },
   );

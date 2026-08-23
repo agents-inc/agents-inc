@@ -99,8 +99,11 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       "External1",
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-          [EXTERNAL_ID]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [EXTERNAL_ID]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
         },
         external: {
           [EXTERNAL_ID]: buildSeedExternalSkill({
@@ -224,6 +227,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
         skills: {
           [EXTERNAL_ID]: buildSeedSkill({
             install: "plugin",
+            scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
         },

@@ -8,6 +8,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupTempDir,
+  compactedStackIn,
   configTsPath,
   createPermissionsFile,
   createTempDir,
@@ -36,56 +37,13 @@ import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
  *
  * Every scenario asserts BOTH the parsed `config.ts` stack AND the compiled
  * agent `.md` files under `.claude/agents/`.
- */
-
-type StackSkillAssignment = string | { id: string; preloaded?: boolean };
-
-/**
- * A category value is the bare assignment when the category is exclusive (it can
- * hold at most one skill, so the array wrapper carries nothing) and an array
- * otherwise — see `compactCategoryAssignments` in config-writer.ts.
- */
-type Stack = Record<string, Record<string, StackSkillAssignment | StackSkillAssignment[]>>;
-
-/**
- * Extracts the stack JSON from a CLI-written `config.ts` by finding the
- * `const stack` declaration and parsing its value. Returns the parsed stack.
  *
- * Deliberately NOT `loadConfigOrFail`: this file asserts on the writer's
- * compaction contract, which the structural loader undoes. `compactAssignment`
- * (config-writer.ts) writes `{ id, preloaded: false }` as a bare string, and
- * `normalizeAgentConfig` (stacks-loader.ts) expands it back to
- * `{ id, preloaded: false }` on load — and re-wraps an exclusive category's bare
- * value in an array. The bare assertions below (e.g.
- * `toStrictEqual("api-framework-hono")`) are therefore only observable in the
- * config.ts text as written — a structural read cannot express them.
+ * The stack is read with `compactedStackIn`, which parses the config.ts TEXT rather
+ * than loading it: the assertions below name the writer's compacted forms — a bare
+ * id, a bare exclusive value — and a structural read expands both back before the
+ * assertion can see them. Its own docblock carries the full reasoning; swapping it
+ * for `loadConfigOrFail` deletes what this file checks while staying green.
  */
-function extractStack(configContent: string): Stack {
-  const marker = "const stack";
-  const startIdx = configContent.indexOf(marker);
-  expect(
-    startIdx,
-    "Expected config.ts to contain a `const stack` variable declaration after CLI edit",
-  ).not.toBe(-1);
-
-  const eqIdx = configContent.indexOf("=", startIdx);
-  const braceIdx = configContent.indexOf("{", eqIdx);
-
-  let depth = 0;
-  let endIdx = braceIdx;
-  for (let i = braceIdx; i < configContent.length; i++) {
-    if (configContent[i] === "{") depth++;
-    if (configContent[i] === "}") depth--;
-    if (depth === 0) {
-      endIdx = i + 1;
-      break;
-    }
-  }
-
-  const stackJson = configContent.slice(braceIdx, endIdx);
-  // Boundary: JSON embedded inside a TypeScript file, parsed as data.
-  return JSON.parse(stackJson) as Stack;
-}
 
 describe("stack per-agent curation survives edit", () => {
   let sourceDir: string;
@@ -179,7 +137,7 @@ describe("stack per-agent curation survives edit", () => {
         // ================================================================
 
         const configAfterEdit = await readTestFile(configPath);
-        const stackAfterEdit = extractStack(configAfterEdit);
+        const stackAfterEdit = compactedStackIn(configAfterEdit);
 
         // --- Scenario A: curated removal is preserved ---
         expect(
@@ -336,7 +294,7 @@ describe("stack per-agent curation survives edit", () => {
         // ================================================================
 
         const configAfterEdit = await readTestFile(configPath);
-        const stackAfterEdit = extractStack(configAfterEdit);
+        const stackAfterEdit = compactedStackIn(configAfterEdit);
 
         expect(
           stackAfterEdit["web-developer"]?.["web-testing"],
@@ -425,7 +383,7 @@ describe("stack per-agent curation survives edit", () => {
         // step. No other changes.
         //
         // HOME must be a directory DISTINCT from projectDir. Otherwise
-        // GLOBAL_INSTALL_ROOT = os.homedir() collapses onto projectDir,
+        // the global install root (os.homedir()) collapses onto projectDir,
         // edit.tsx sets isEditingFromGlobalScope = true, and the `s` scope
         // toggle is rejected with toast "Scope toggle unavailable in global
         // context". Pattern from e2e/commands/dual-scope.e2e.test.ts:37.
@@ -469,7 +427,7 @@ describe("stack per-agent curation survives edit", () => {
         // ================================================================
 
         const configAfterEdit = await readTestFile(configPath);
-        const stackAfterEdit = extractStack(configAfterEdit);
+        const stackAfterEdit = compactedStackIn(configAfterEdit);
 
         // --- web-developer curation is preserved byte-identical ---
         // The web-framework entry is also the contrast for the newly seeded

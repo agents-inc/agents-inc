@@ -5,7 +5,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -107,7 +107,7 @@ describe.skipIf(!claudeAvailable)(
         const initBuild = await initDomains.acceptDefaults();
         const initSources = await initBuild.passThroughAllDomains();
         await initSources.waitForReady();
-        await initSources.commitLocalOnEveryRow(E2E_SKILL_IDS.length);
+        await initSources.commitLocalOnEveryRow();
         const initAgents = await initSources.advance();
         const initConfirm = await initAgents.acceptDefaults("init");
         const initResult = await initConfirm.confirm();

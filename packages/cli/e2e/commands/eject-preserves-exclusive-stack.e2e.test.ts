@@ -98,8 +98,14 @@ describe("eject preserves a project's exclusive stack categories", () => {
         SHARED_CONFIG_ID,
         buildSeedPayload({
           skills: {
-            [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-            [E2E_SKILL.vitest.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+            [E2E_SKILL.react.id]: buildSeedSkill({
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+            [E2E_SKILL.vitest.id]: buildSeedSkill({
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
           },
           // The stack under test is the PROJECT's, so the sub-agent holding it has to be pinned
           // there: a payload naming no agent scope takes the shared selection default and the

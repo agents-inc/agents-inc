@@ -20,7 +20,7 @@ import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../
 import "../matchers/setup.js";
 
 /**
- * The word CLI-463 withdraws from the user-facing surface, as a whole word. The refusal
+ * The word `source` withdraws from the user-facing surface, as a whole word. The refusal
  * under test reads "marketplace could not be resolved from '<ref>' … fix the marketplace
  * or switch the affected skills to eject mode" — one noun for one thing, where it once
  * spelled three. `<ref>` is a path the fixture chose and this negative runs over the whole
@@ -156,7 +156,8 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
    * has no marketplace.json. Default skill sources carry plugin intent
    * (primarySource / DEFAULT_PUBLIC_SOURCE_NAME). Previously the CLI silently
    * copied the plugin-intended skills as eject copies. After the fix,
-   * `installPluginsStep` hard-errors via `EXIT_CODES.ERROR`.
+   * `handleInstallation` resolves the marketplace through
+   * `BaseCommand.requireMarketplaceOrExit`, which hard-errors via `EXIT_CODES.ERROR`.
    *
    * This documents the removal of the old "eject mode fallback" in init.tsx.
    */

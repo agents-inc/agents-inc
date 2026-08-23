@@ -99,7 +99,12 @@ describe("update against the source an ejected skill was really installed from",
     store.publish(
       SEED_CONFIG_ID,
       buildSeedPayload({
-        skills: { [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }) },
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
     );

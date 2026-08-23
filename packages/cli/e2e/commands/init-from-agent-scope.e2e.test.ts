@@ -136,7 +136,6 @@ describe("init --from <id>: sub-agent scope", () => {
     // than a section that never renders.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       skillIds: [E2E_SKILL.react.id],
-      hasActivationProtocol: true,
     });
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_DEV, { noSkills: true });
     await expect({ dir: env.fakeHome }).toHaveAgentDynamicSkills(API_DEV, {

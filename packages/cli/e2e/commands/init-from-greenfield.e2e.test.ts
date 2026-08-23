@@ -134,7 +134,10 @@ describe("init --from <id>: greenfield only", () => {
       "Project04",
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.vitest.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         // Pinned, because a project skill never reaches a sub-agent that rests global — and a
         // sub-agent pinned into the project is the other half of "nothing global here".

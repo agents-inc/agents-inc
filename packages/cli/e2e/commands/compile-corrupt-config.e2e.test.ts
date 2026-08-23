@@ -19,6 +19,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * D-273 — a corrupt `.claude-src/config.ts` (a file that exists but cannot be
@@ -65,7 +66,10 @@ async function seedGlobalInstall(fakeHome: string): Promise<void> {
   });
   await createLocalSkill(fakeHome, SKILL_ID, {
     description: "Global local skill so the compile pass has a skill to discover",
-    metadata: renderMetadataYaml({ contentHash: "hash-corrupt-config" }),
+    metadata: renderMetadataYaml({
+      ...metadataFieldsFor(SKILL_ID),
+      contentHash: "hash-corrupt-config",
+    }),
   });
 }
 
@@ -170,7 +174,10 @@ describe("compile with a corrupt config", () => {
     // error rather than the corrupt-config error — and must not resurrect agents.
     await createLocalSkill(fakeHome, SKILL_ID, {
       description: "Local skill with no config present",
-      metadata: renderMetadataYaml({ contentHash: "hash-no-config" }),
+      metadata: renderMetadataYaml({
+        ...metadataFieldsFor(SKILL_ID),
+        contentHash: "hash-no-config",
+      }),
     });
 
     const { exitCode, combined } = await runCLI(["compile"], fakeHome, {

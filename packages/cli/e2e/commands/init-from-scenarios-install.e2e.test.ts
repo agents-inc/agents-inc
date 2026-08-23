@@ -144,7 +144,10 @@ describe("init --from <id>: install scopes and unknown ids", () => {
             scope: "global",
             assignments: { [WEB_DEV]: "lazy" },
           }),
-          [E2E_SKILL.vitest.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
@@ -190,9 +193,13 @@ describe("init --from <id>: install scopes and unknown ids", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
             assignments: { [WEB_DEV]: "lazy", [UNKNOWN_AGENT_NAME]: "lazy" },
           }),
-          [UNKNOWN_SKILL_ID]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [UNKNOWN_SKILL_ID]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
@@ -228,6 +235,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
             assignments: { [WEB_DEV]: "lazy", [API_DEV]: "preloaded" },
           }),
         },
@@ -295,6 +303,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
           skills: {
             [E2E_SKILL.react.id]: buildSeedSkill({
               install: "plugin",
+              scope: "project",
               assignments: { [WEB_DEV]: "lazy" },
             }),
             [E2E_SKILL.vitest.id]: buildSeedSkill({

@@ -94,6 +94,16 @@ describe("init wizard against a source that has gone away", () => {
   });
 
   it("paints no band at all for a load with nothing to say", () => {
+    // The control for the negative below, and it belongs in THIS `it`. Without it the whole
+    // body is an absence, which a screen that painted nothing satisfies as readily as one that
+    // painted a clean frame — and the only thing standing between those two readings was a
+    // positive in a sibling `it` and a `waitForReady` that throws in `beforeAll`. Both are
+    // controls living outside the test they are relied on by.
+    expect(
+      warmingScreen,
+      "the wizard's own footer is missing — there is no painted frame for the band to be absent from",
+    ).toContain(STEP_TEXT.FOOTER_SELECT);
+
     // The fixture ships ten skills and the CLI's built-in rules are written against
     // the whole public catalogue, which used to leave 2384 references dangling and
     // paint three of them plus a count over every wizard frame in this suite.

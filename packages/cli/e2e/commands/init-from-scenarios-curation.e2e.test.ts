@@ -85,17 +85,34 @@ describe("init --from <id>: per-sub-agent curation", () => {
       buildSeedPayload({
         stackId: E2E_STACK_ID,
         skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "preloaded" } }),
-          [E2E_SKILL.vitest.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-          [E2E_SKILL.zustand.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "preloaded" },
+          }),
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [E2E_SKILL.zustand.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
           [E2E_SKILL.reviewing.id]: buildSeedSkill({
+            scope: "project",
             assignments: { [WEB_DEV]: "lazy", [API_DEV]: "lazy" },
           }),
-          [E2E_SKILL["cli-reviewing"].id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL["cli-reviewing"].id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
           [E2E_SKILL["research-methodology"].id]: buildSeedSkill({
+            scope: "project",
             assignments: { [WEB_DEV]: "lazy", [API_DEV]: "lazy" },
           }),
-          [E2E_SKILL.hono.id]: buildSeedSkill({ assignments: { [API_DEV]: "preloaded" } }),
+          [E2E_SKILL.hono.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [API_DEV]: "preloaded" },
+          }),
         },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: PINNED_TO_PROJECT },
       }),
@@ -159,10 +176,17 @@ describe("init --from <id>: per-sub-agent curation", () => {
         skills: {
           // Shared, but at different load states — the case a per-skill flag cannot express.
           [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
             assignments: { [WEB_DEV]: "preloaded", [API_DEV]: "lazy" },
           }),
-          [E2E_SKILL.zustand.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-          [E2E_SKILL.hono.id]: buildSeedSkill({ assignments: { [API_DEV]: "preloaded" } }),
+          [E2E_SKILL.zustand.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [E2E_SKILL.hono.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [API_DEV]: "preloaded" },
+          }),
         },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: PINNED_TO_PROJECT },
       }),
@@ -197,18 +221,16 @@ describe("init --from <id>: per-sub-agent curation", () => {
       exactSkills: [E2E_SKILL.hono.id],
     });
 
-    // The body carries the lazy half. `hasActivationProtocol` is the subject guard: it proves the
-    // section that would name a wrongly-assigned skill is actually painted in this file, so the
-    // negative below cannot pass by the section being absent.
+    // The body carries the lazy half. The positive claim in each call is the subject guard for
+    // the negative beside it: `skillIds` reads the activation protocol's own entries, so a file
+    // whose protocol never rendered fails it rather than satisfying `noSkillIds` by absence.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       skillIds: [E2E_SKILL.zustand.id],
       noSkillIds: [E2E_SKILL.hono.id],
-      hasActivationProtocol: true,
     });
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(API_DEV, {
       skillIds: [E2E_SKILL.react.id],
       noSkillIds: [E2E_SKILL.zustand.id],
-      hasActivationProtocol: true,
     });
   });
 
@@ -220,7 +242,10 @@ describe("init --from <id>: per-sub-agent curation", () => {
       "Bare0002",
       buildSeedPayload({
         skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT, [API_DEV]: { on: true, ...PINNED_TO_PROJECT } },
       }),
@@ -249,7 +274,6 @@ describe("init --from <id>: per-sub-agent curation", () => {
     // negative is a real absence rather than a section that never renders.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       skillIds: [E2E_SKILL.react.id],
-      hasActivationProtocol: true,
     });
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(API_DEV, {
       noSkillIds: [E2E_SKILL.react.id],
@@ -296,9 +320,18 @@ describe("init --from <id>: per-sub-agent curation", () => {
       buildSeedPayload({
         skills: {
           // web-framework is exclusive (one skill), meta-reviewing is not (two).
-          [E2E_SKILL.react.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-          [E2E_SKILL.reviewing.id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
-          [E2E_SKILL["cli-reviewing"].id]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }),
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [E2E_SKILL.reviewing.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [E2E_SKILL["cli-reviewing"].id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),

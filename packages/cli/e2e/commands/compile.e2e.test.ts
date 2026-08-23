@@ -20,7 +20,9 @@ import {
   MINIMAL_PROJECT_AGENT_NAMES,
   MINIMAL_PROJECT_SKILL_ID,
   ProjectBuilder,
+  metadataFieldsFor,
 } from "../fixtures/project-builder.js";
+import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -79,6 +81,34 @@ describe("compile command", () => {
     });
   });
 
+  /**
+   * The fixture's own skill has to be a skill the matrix can hold, or every spec that
+   * compiles this project compiles it around a skill nothing can be given. The generated
+   * `Category` union is where that is visible: it is emitted from the categories the
+   * discovered skills actually joined, so a dropped skill leaves it `never` while the
+   * compile still succeeds and still reports the skill as discovered.
+   */
+  it("registers the project's local skill under the category its metadata states", async () => {
+    const project = await ProjectBuilder.minimal();
+    tempDir = path.dirname(project.dir);
+
+    const { exitCode, output } = await CLI.run(["compile"], project);
+
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(
+      output,
+      "a skill wearing the placeholder category belongs to no domain and reaches no sub-agent",
+    ).not.toContain(STEP_TEXT.LOCAL_SKILL_PLACEHOLDER_CATEGORY);
+
+    const generatedTypes = await readTestFile(
+      path.join(project.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS),
+    );
+    expect(
+      readGeneratedUnionMembers(generatedTypes, "Category"),
+      "the Category union names every category a discovered skill joined",
+    ).toStrictEqual([metadataFieldsFor(MINIMAL_PROJECT_SKILL_ID).category]);
+  });
+
   it("should fail when no skills are available", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "empty-project");
@@ -121,15 +151,24 @@ describe("compile command", () => {
 
       await createLocalSkill(projectDir, "web-testing-react-testing-library", {
         description: "First test skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-first" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-react-testing-library"),
+          contentHash: "hash-first",
+        }),
       });
       await createLocalSkill(projectDir, "web-testing-vue-test-utils", {
         description: "Second test skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-second" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-vue-test-utils"),
+          contentHash: "hash-second",
+        }),
       });
       await createLocalSkill(projectDir, "web-mocks-msw", {
         description: "Third test skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-third" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-mocks-msw"),
+          contentHash: "hash-third",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -204,7 +243,10 @@ describe("compile command", () => {
       // Create a valid skill
       await createLocalSkill(projectDir, "web-state-jotai", {
         description: "Valid skill",
-        metadata: renderMetadataYaml({ contentHash: "hash-valid" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-state-jotai"),
+          contentHash: "hash-valid",
+        }),
       });
 
       const invalidSkillDir = path.join(skillsPath(projectDir), "web-state-mobx");
@@ -242,7 +284,9 @@ describe("compile command", () => {
       expect(stdout).toContain("USAGE");
       expect(stdout).toContain("Compile agents");
       expect(stdout).toContain("--verbose");
-      expect(stdout, "compile reads the source its config records").not.toContain("--marketplace");
+      expect(stdout, "compile reads the marketplace its config records").not.toContain(
+        "--marketplace",
+      );
     });
   });
 
@@ -308,15 +352,20 @@ describe("compile command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       for (const agentName of MINIMAL_PROJECT_AGENT_NAMES) {
-        // The matcher strips the frontmatter block before looking, so a file that
-        // is frontmatter and nothing else cannot satisfy it — which a `contains`
-        // check for a "#" anywhere in the file could.
+        // This fixture's config assigns no skill to any sub-agent, so both of the body's
+        // skill lists must be empty — and the one local skill it DOES install, discovered
+        // by the same compile, must not have been swept into either of them. The template
+        // renders the skills note rather than the activation protocol on that arm, which
+        // is what `allPreloaded` reads.
         await expect(project).toHaveAgentDynamicSkills(agentName, {
-          hasActivationProtocol: true,
+          allPreloaded: true,
+          noSkillIds: [MINIMAL_PROJECT_SKILL_ID],
         });
 
-        // …and the body opens with the provenance marker and then a heading, rather than
-        // the terminator being the last thing in the file.
+        // The body opens with the provenance marker and then a heading, rather than the
+        // frontmatter terminator being the last thing in the file. This is the half that
+        // says the file is more than its frontmatter; the two claims above are about
+        // what the body then puts in its skill lists.
         const agentContent = await readTestFile(
           path.join(agentsPath(project.dir), `${agentName}.md`),
         );
@@ -385,7 +434,7 @@ describe("compile command", () => {
     });
   });
 
-  describe("stored source resolution", () => {
+  describe("stored marketplace resolution", () => {
     let sourceTempDir: string;
 
     afterEach(async () => {
@@ -416,7 +465,10 @@ describe("compile command", () => {
       // Create a local skill in the project
       await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
         description: "Skill for stored-source verification",
-        metadata: renderMetadataYaml({ contentHash: "hash-source-stored" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SKILL.pinia.id),
+          contentHash: "hash-source-stored",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
@@ -462,7 +514,10 @@ describe("compile command", () => {
       });
       await createLocalSkill(globalHome, E2E_SKILL.pinia.id, {
         description: "Skill for home-root source labelling",
-        metadata: renderMetadataYaml({ contentHash: "hash-home-root" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SKILL.pinia.id),
+          contentHash: "hash-home-root",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(
@@ -503,7 +558,10 @@ describe("compile command", () => {
       });
       await createLocalSkill(globalHome, E2E_SKILL.pinia.id, {
         description: "Skill for home-root config labelling",
-        metadata: renderMetadataYaml({ contentHash: "hash-home-verbose" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SKILL.pinia.id),
+          contentHash: "hash-home-verbose",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(
@@ -550,7 +608,10 @@ describe("compile command", () => {
       });
       await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
         description: "Skill for project source labelling",
-        metadata: renderMetadataYaml({ contentHash: "hash-project-root" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(E2E_SKILL.pinia.id),
+          contentHash: "hash-project-root",
+        }),
       });
 
       const { exitCode, output } = await CLI.run(
@@ -592,7 +653,10 @@ describe("compile command", () => {
       // Create a local skill in the global home directory
       await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
         description: "Global skill for compile fallback",
-        metadata: renderMetadataYaml({ contentHash: "hash-global" }),
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor("web-testing-cypress-e2e"),
+          contentHash: "hash-global",
+        }),
       });
 
       // Create a project directory WITHOUT config
