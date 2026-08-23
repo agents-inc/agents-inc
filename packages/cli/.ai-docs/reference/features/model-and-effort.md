@@ -264,9 +264,14 @@ stack entry still carries them."_ An agent with no `config.stack` entry returns 
 an agent with one returns `{ ...tuning, skills }`. Reordering those two statements would silently
 drop the override for every bare agent.
 
-A second builder, `convertStackToCompileConfig` (`lib/resolver.ts`), used to discard the tuning —
-it reduced each `AgentScopeConfig` to its name. It was deleted with the stack-plugin compiler in
-CLI-459, along with the behavioural fork it created, so no surviving builder drops the overrides.
+**There is no second builder.** `buildCompileAgents` is the single producer of a `CompileConfig`'s
+`agents` map — `local-installer.ts` and `agent-recompiler.ts` are its two production callers, and
+`lib/resolver.ts` reads the result rather than assembling its own. So no path can drop the
+overrides by reducing an `AgentScopeConfig` to its name:
+
+```
+grep -rn 'buildCompileAgents' src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
+```
 
 `lib/agents/agent-recompiler.ts` routes through `buildCompileAgents`, so overrides survive a
 recompile. Agents present in `agentNames` but absent from the built config get `{}` — the same
@@ -306,11 +311,14 @@ Two consequences worth holding onto:
   being skipped. Nothing can produce that today — Zod narrows `effort` to `EFFORT_NAMES` at every
   parse boundary — but the guard is weaker than the type suggests, so a change that loosens the
   schema loses the skip.
-- **`model` and `effort` are single-token property names**, so the template reads them straight off
-  `AgentConfig`. Their neighbours in the same block (`agent.disallowed_tools`,
-  `agent.permission_mode`) are spelled snake_case while the TypeScript fields are camelCase; with
-  `strictVariables: false` those lookups resolve to `undefined` silently. This axis is unaffected by
-  that, and a fix there must not "normalise" `model` / `effort` along with it.
+- **Every lookup in this block reads a property off `AgentConfig` by its exact TypeScript name**,
+  camelCase included: `agent.disallowedTools` and `agent.permissionMode` sit beside `agent.model`
+  and `agent.effort`. `strictVariables: false` is why that has to be checked rather than assumed —
+  a lookup matching no property resolves to `undefined` in silence, so a misspelled field costs its
+  value with no render error, no `tsc` error and no lint report. **`permissionMode` hides such a
+  miss best of the four**, because its `default:` filter emits the key either way: the line stays,
+  carrying `default`, and only the VALUE is wrong. A test asserting the emitted KEY is green
+  through that; assert the emitted value.
 
 ### Sanitisation boundary
 
@@ -318,16 +326,21 @@ Two consequences worth holding onto:
 `engine.renderFile("agent", …)`, at both render call sites. Both fields go through the same helper:
 
 ```ts
-model: sanitizeString(data.agent.model, "agent.model"),
-effort: sanitizeString(data.agent.effort, "agent.effort"),
+...(data.agent.model !== undefined && {
+  model: sanitizeLiquidSyntax(data.agent.model, "agent.model"),
+}),
+...(data.agent.effort !== undefined && {
+  effort: sanitizeLiquidSyntax(data.agent.effort, "agent.effort"),
+}),
 ```
 
-`sanitizeString` returns `undefined` unchanged and otherwise strips `{{`, `}}`, `{%`, `%}` via
-`sanitizeLiquidSyntax`, warning when it fires. It is generically typed `<T extends string>` and
-returns `T`, so **stripping is a boundary cast**: a value that lost characters would still be typed
-`EffortLevel` while no longer being a member of `EFFORT_NAMES`. It cannot fire on these two fields
-today because Zod validates them against the enum upstream; the uniform treatment exists because
-`sanitizeCompiledAgentData` treats all agent metadata as untrusted rather than reasoning per field.
+`sanitizeLiquidSyntax` (`src/cli/lib/compiler.ts`) strips `{{`, `}}`, `{%`, `%}` and warns when it
+fires; absence is handled by the conditional spread at the call site rather than inside the helper,
+which takes a `T extends string` and never sees `undefined`. It returns `T`, so **stripping is a
+boundary cast**: a value that lost characters would still be typed `EffortLevel` while no longer
+being a member of `EFFORT_NAMES`. It cannot fire on these two fields today because Zod validates
+them against the enum upstream; the uniform treatment exists because `sanitizeCompiledAgentData`
+treats all agent metadata as untrusted rather than reasoning per field.
 
 ## Validation boundaries
 

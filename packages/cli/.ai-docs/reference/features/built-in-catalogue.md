@@ -38,7 +38,7 @@ related:
   - reference/features/agent-system.md
   - reference/features/wizard-flow.md
   - reference/types/core-types.md
-last_validated: 2026-08-09
+last_validated: 2026-08-21
 ---
 
 # Built-in Catalogue — `defaultStacks` and `defaultRules`
@@ -96,9 +96,11 @@ and the types `Stack`, `StackAgentConfig`, `CategoryMap`, `SkillRulesConfig`, `P
 source repo's own `config/stacks.ts` can therefore write
 `import { defaultStacks } from "agents-inc/config"` and spread it. `config-loader.ts` makes this
 work under jiti by aliasing `"agents-inc/config"` to the local `config-exports.ts`, so the import
-resolves whether the source repo is loaded from disk in dev or from a fetched clone. The same map
-still carries `"@agents-inc/cli/config"`, the spelling the package published under before 0.150.0,
-so a source repo written against it keeps loading; REPO-24 in `todo/repo.md` tracks its removal.
+resolves whether the source repo is loaded from disk in dev or from a fetched clone. That is now the
+only key in the map: the pre-0.150.0 spelling `"@agents-inc/cli/config"` was dropped once the old
+package's downloads turned out to be a crawler walking every version it ever published. A config
+still written against it fails loudly — jiti does not fall back to normal resolution, so `loadConfig`
+rewraps `Cannot find module '@agents-inc/cli/config'` with the offending config's path.
 
 ## `defaultStacks`
 
@@ -149,31 +151,34 @@ Listed rather than counted, so the claim self-checks against `grep '^    id: "'`
 removing a stack fails the unit suite (and therefore the `pre-commit` hook, which runs
 `bun run test`) until the constant is updated deliberately.
 
-**The two agent counts in the Notes column are hand-maintained and nothing holds them.** No spec
-asserts a per-stack agent count, so either can go wrong without a gate noticing. Re-derive each by
-counting the keys of that stack's `agents` object.
+**The two agent counts in the Notes column are held**, along with the other fifteen and the id
+column itself: `EXPECTED_AGENT_COUNT_PER_STACK` in `default-stacks.test.ts` is keyed by stack id and
+compared whole. It counts DECLARED agent slots — the keys of that stack's `agents` object — which is
+the reading the invocation below takes and the one invariant 4 is written in. Seven of those slots
+hold nothing; see [invariant 4](#structural-invariants).
 
 ### Structural invariants
 
-**`src/cli/lib/configuration/__tests__/default-stacks.test.ts` now holds most of what follows**, and
-holds it as this document's own quantities — its constants carry a docblock naming this section and
-the count-ownership rule, so a number that moves here reddens the unit suite rather than sitting
-wrong. What it pins: the stack count (`EXPECTED_STACK_COUNT`), the assignment total
+**`src/cli/lib/configuration/__tests__/default-stacks.test.ts` holds every quantity below**, and
+holds it as this document's own — its constants carry a docblock naming this section and the
+count-ownership rule, so a number that moves here reddens the unit suite rather than sitting wrong.
+What it pins: the stack count (`EXPECTED_STACK_COUNT`), the assignment total
 (`EXPECTED_ASSIGNMENT_TOTAL`, invariant 2), the aliased-slot count and the MEMBERS of each hoisted
-array (`EXPECTED_SHARED_ALIAS_SLOTS`, `SHARED_ALIAS_MEMBERS`, invariant 3), the sub-agent roster by
-NAME rather than by count (`EXPECTED_STACK_AGENT_NAMES`, invariant 4), and that no assignment
-anywhere states a load. Two of those are held as MEMBERSHIP rather than as the count this document
-states — the agent roster and the hoisted arrays' contents — because a count cannot tell a retired
-agent from a swapped one, and a swap inside a hoisted array leaves every count in that file green.
+array (`EXPECTED_SHARED_ALIAS_SLOTS`, `SHARED_ALIAS_MEMBERS`, invariant 3), the sub-agent roster
+with its per-agent stack tally (`EXPECTED_STACKS_PER_AGENT`, invariant 4), the per-stack agent
+counts keyed by stack id (`EXPECTED_AGENT_COUNT_PER_STACK`), the assigned categories and skill ids
+by name (`EXPECTED_ASSIGNED_CATEGORIES`, `EXPECTED_ASSIGNED_SKILL_IDS`, invariant 4), the declared
+slots that hold nothing (`EXPECTED_EMPTY_AGENT_SLOTS`), and that no assignment anywhere states a
+load.
 
-**Four claims in this section are held by nothing**, and are the ones to re-derive: the
-**35 distinct categories** and **53 distinct skill ids** in invariant 4 — the suite reads
-`BUILT_IN_MATRIX` but asserts nothing about either total — the **per-stack agent counts** (8, 9, 10
-or 12), and the **which-agents-appear-in-how-many-stacks** sentence in the same invariant. Invariant
-1 is a claim about a type and a render branch rather than a quantity, so nothing here can hold it.
+**Most of those are held as MEMBERSHIP rather than as the count this document states** — the agent
+roster, the hoisted arrays' contents, the categories and the skill ids — because a count cannot tell
+a retired member from a swapped one, and a swap inside a hoisted array leaves every count in that
+file green. Only invariant 1 has nothing holding it, and it cannot: it is a claim about a type and a
+render branch rather than a quantity.
 
-Re-derive all four with this, from `packages/cli`, rather than with a reading of your own — what a
-total counts is the half that drifts silently, and every figure below is over the module's `agents`
+Re-derive with this, from `packages/cli`, rather than with a reading of your own — what a total
+counts is the half that drifts silently, and every figure below is over the module's `agents`
 records, keyed distinctly, with every stack included:
 
 ```
@@ -193,7 +198,7 @@ console.log([...new Set(perStack)].sort((a, b) => a - b), [...byAgent].sort((a, 
 '
 ```
 
-**These stay written even though nothing binds them, and the reason is what they are.** The corpus
+**These stay written now that a suite binds them, and the reason is what they are.** The corpus
 declines to store a count whose correct end state is ZERO — a worklist is wrong the moment anyone
 acts on it, and wrong in the direction that reads as work still owed (the `.optional()` census in
 `typescript-types-bible.md`, and `agent-findings/INDEX.md`, both decline for that reason). These are
@@ -202,6 +207,11 @@ stored value is right until the catalogue moves and is exactly the thing a reade
 that it did.
 The invocation is what makes the check cheap; it does not replace the number, because a document
 with no number to collide against cannot be found stale.
+
+**A count here is a count of DECLARED slots**, which is the reading the invocation takes and the one
+invariant 4 states — `Object.keys(s.agents)` counts a sub-agent a stack names whether or not it
+files anything under it. The two readings differ, and where they differ is pinned by name rather
+than averaged: see the empty slots in [invariant 4](#structural-invariants).
 
 Stated as facts, each verified by evaluating the module:
 
@@ -248,6 +258,17 @@ Stated as facts, each verified by evaluating the module:
    `buildAgentGroups`
    finds no custom agent ids in `suggestedStacks` and returns `BUILT_IN_AGENT_GROUPS` unchanged.
 
+   **`cli-tester`'s eight are not eight, and this is the one figure above that changes meaning
+   under the other reading.** Seven of the stacks that name it give it `{}` — `nextjs-fullstack`,
+   `nextjs-supabase-fullstack`, `nextjs-turborepo-fullstack`, `react-hono-fullstack`,
+   `nextjs-ai-saas`, `nextjs-saas-starter` and `expo-mobile-fullstack` — so `cli-ink-oclif` is the
+   only stack that hands it a skill. `cli-developer` and `cli-tester` are therefore "the same 8"
+   declared and 8-versus-1 assigned. Every other agent's two readings agree. The empty slots are
+   pinned by name in `EXPECTED_EMPTY_AGENT_SLOTS`, beside an assertion that the `cli-ink-oclif`
+   slot is filled, because a pin naming only empties cannot tell a correctly-scoped gap from a
+   catalogue that files nothing at all. Whether a stack should declare a sub-agent it gives nothing
+   to is a product question this document does not answer; it records that seven do.
+
 ## `defaultRules`
 
 ### Shape
@@ -273,20 +294,23 @@ Declaration order in the object literal is `conflicts`, `discourages`, `requires
 `alternatives` — it does **not** match the field order in `RelationshipDefinitions`. Every field on
 that type is required, and `defaultRules` supplies all four.
 
-**The four Built-in entries are held, but not by a constant that points here.**
+**The four Built-in entries are held by constants that now point here.**
 `default-rules.test.ts` pins a length for `conflicts`, `requires` and `alternatives` and asserts
-`discourages` `toStrictEqual([])` — with its own literals, carrying no reference to this document,
-unlike the `defaultStacks` suite whose constants name this page in their docblock. So a rule added
-or removed reddens the unit suite, and **repairing that suite is exactly the change that leaves
-this table wrong**: the spec goes green on its own literal, nothing points the person repairing it
-at this page, and the two numbers then live in different files under different readings. Until a
-constant here names this section the way `EXPECTED_STACK_COUNT` does, treat a red
-`default-rules.test.ts` as an instruction to re-derive this table in the same pass.
+`discourages` `toStrictEqual([])`. Those literals used to carry no reference to this document,
+unlike the `defaultStacks` suite whose constants name this page in their docblock — which is the
+arrangement that guaranteed drift rather than catching it: the spec went green on its own literal,
+nothing put the person repairing it in front of this table, and the two numbers then lived in
+different files under different readings. They now share one docblock naming this section and the
+count-ownership rule, and each assertion carries a message saying the number is moved here in the
+same change. Treat a red `default-rules.test.ts` as an instruction to re-derive this table in the
+same pass.
 
-**The `needsAny` count and the distinct slug total in the next section are held by nothing at all.**
-Re-derive all six figures — the four above and those two — with this, from `packages/cli`. The slug
-total is over every kind at once, `requires` contributing its `skill` as well as its `needs`, which
-is the reading the narrowing pass in the next section depends on:
+**The `needsAny` count and the distinct slug total in the next section are held too**, by
+`EXPECTED_NEEDS_ANY_COUNT` and `EXPECTED_DISTINCT_SLUG_COUNT` in the same file. Re-derive all six
+figures — the four above and those two — with this, from `packages/cli`. The slug total is over
+every kind at once, `requires` contributing its `skill` as well as its `needs`, which is the
+reading the narrowing pass in the next section depends on, and the reading the suite's own
+derivation takes:
 
 ```
 npx tsx -e '
@@ -318,10 +342,14 @@ console.log({
    The default is AND. The canonical example — pinned field-for-field by the test — is the
    `zustand` rule, whose `needs` lists `react`, `nextjs`, `remix` and `react-native` with
    `needsAny: true`.
-4. **Every slug the built-in rules name currently resolves.** The rules reference 176 distinct
-   slugs, and all 176 are present in `BUILT_IN_MATRIX.slugMap.slugToId`. This is a currently-true
-   property, **not an enforced one** — see
-   [Trap 3](#trap-3--nothing-fails-when-the-catalogue-goes-stale).
+4. **Every slug the built-in rules name resolves, and a spec enforces it.** The rules reference 176
+   distinct slugs, and all 176 are present in `BUILT_IN_MATRIX.slugMap.slugToId`.
+   `default-rules.test.ts` → _"names only slugs the vendored catalogue can resolve"_ asserts both
+   halves in one spec, and needs both: the total alone cannot see one slug swapped for another, and
+   the resolution check alone is satisfied for free by the empty list a broken derivation hands it.
+   This is the property that [Trap 3](#trap-3--nothing-fails-when-the-catalogue-goes-stale)
+   describes nothing else catching — a stale BUILT-IN slug is narrowed out before resolution, so it
+   reaches no warning, no `unresolvedSlugs` entry and no `doctor` finding.
 
 ## Precedence — how a source repo overrides or extends
 
@@ -484,6 +512,17 @@ observable:
 | `skills` (per-agent/cat) | filtered by `skillIdSet.has(id)`               | filtered by `id in currentMatrix.skills` (`resolveStackAgentSkills`)           |
 | `allSkillIds`            | derived **from the already-filtered** `skills` | derived from `resolveAgentConfigToSkills`, which **warns but does not filter** |
 | Unknown-id handling      | silent drop                                    | dropped from `skills`, **kept** in `allSkillIds`, one `warn` per occurrence    |
+| Unknown sub-agent NAME   | not checked — see below                        | dropped from `skills` and from `allSkillIds`, one named `warn` per stack       |
+
+**The sub-agent row is an asymmetry with a reason, not a gap.** `resolveStack` reads
+`defaultStacks` — the CLI's own constant, declared `Partial<Record<AgentName, …>>` with literal
+keys, so a name `src/agents/` does not declare is a compile error and there is nothing left for a
+runtime check to find. `convertStackToResolvedStack` reads a THIRD PARTY's hand-authored
+`config/stacks.ts`, where nothing between the file and the matrix narrows the keys, so the same
+name arrives typed `AgentName` and compiles. It is dropped rather than refused — a stack is a
+suggestion the wizard offers, not an install contract, and refusing would take the valid sub-agents
+with it — and the drop is announced in the wizard's startup band, because until that landed the
+wizard narrowed these names out of its own grid and told nobody.
 
 So on the runtime path a stale id vanishes from `ResolvedStack.skills` but survives in
 `ResolvedStack.allSkillIds`, making `allSkillIds` a superset rather than a flattening. That matters
@@ -508,33 +547,32 @@ for the stack-defaults branch. On the generated path the two fields agree by con
 
 ## Test surface
 
-| File                                                             | Pins                                                                                                                                                                                                                                                                                                                                 |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/cli/lib/configuration/__tests__/default-stacks.test.ts`     | `EXPECTED_STACK_COUNT`; three stacks by name/description/philosophy; `it.each` over every stack for non-empty required fields; `it.each` over every (stack, agent, category) triple asserting `SkillAssignment[]` shape; `it.each` over the same triples asserting no assignment carries a `preloaded` key; one stack entry by value |
-| `src/cli/lib/configuration/__tests__/default-rules.test.ts`      | `version`; the exact sorted key set of `relationships`; a length for `conflicts` / `requires` / `alternatives`; one representative entry per kind; `discourages` empty                                                                                                                                                               |
-| `src/cli/lib/configuration/__tests__/default-categories.test.ts` | Sibling. Pins the count **and** asserts key-for-key equality with the generated `CATEGORIES` union                                                                                                                                                                                                                                   |
+| File                                                             | Pins                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/configuration/__tests__/default-stacks.test.ts`     | `EXPECTED_STACK_COUNT`; the per-agent stack tally, the per-stack agent count, the assigned categories and the assigned skill ids, each as a named constant compared whole; the declared slots holding nothing, beside the one that does not; every assigned id present in `BUILT_IN_MATRIX.skills`; three stacks by name/description/philosophy; `it.each` over every stack for non-empty required fields; `it.each` over every (stack, agent, category) triple asserting `SkillAssignment[]` shape; `it.each` over the same triples asserting no assignment carries a `preloaded` key; one stack entry by value |
+| `src/cli/lib/configuration/__tests__/default-rules.test.ts`      | `version`; the exact sorted key set of `relationships`; a length for `conflicts` / `requires` / `alternatives` / `needsAny`; the distinct slug total, and that every one of them resolves through `BUILT_IN_MATRIX.slugMap`; one representative entry per kind; `discourages` empty                                                                                                                                                                                                                                                                                                                              |
+| `src/cli/lib/configuration/__tests__/default-categories.test.ts` | Sibling. Pins the count **and** asserts key-for-key equality with the generated `CATEGORIES` union                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 The stack file's two triple-level `it.each` blocks expand to 2960 specs — the 1480
 `(stack, agent, category)` triples, twice over — and are nearly the whole cost of the two files,
-which run 2986 and 13 specs respectively. Both run in the unit suite, which the `pre-commit` hook
+which run 2995 and 15 specs respectively. Both run in the unit suite, which the `pre-commit` hook
 executes.
 
-**One gap, closeable and currently passing if closed:**
+**Both files' membership is now cross-checked against the generated matrix**, which
+`default-categories.test.ts` had (`keys` vs `CATEGORIES`) and neither of these did:
 
-1. **Neither file's MEMBERSHIP is cross-checked against the generated matrix.**
-   `default-categories.test.ts` has exactly that assertion (`keys` vs `CATEGORIES`).
-   `default-stacks.test.ts` reads `BUILT_IN_MATRIX` but asks a different question — it asserts every
-   assignment sits under the category the matrix says its skill belongs to, and its lookup
-   deliberately `filter`s out an id the matrix does not carry, so a stale id passes through that
-   spec rather than failing it. `default-rules.test.ts` does not read the matrix at all. No spec
-   asserts that every `defaultStacks` skill id exists in `BUILT_IN_MATRIX.skills`, or that every
-   rule slug resolves through `BUILT_IN_MATRIX.slugMap`. Both properties hold, so the assertions
-   would pass on the day they are written.
+1. `default-stacks.test.ts` asserts every assigned id is present in `BUILT_IN_MATRIX.skills`. It
+   already read the matrix for a different question — that every assignment sits under the category
+   the matrix says its skill belongs to — and that lookup `filter`s out an id the matrix does not
+   carry, so a stale id passed through that spec rather than failing it. The new assertion is where
+   one fails, and it sits in the same spec as the id roster so neither can be satisfied alone.
+2. `default-rules.test.ts` asserts every rule slug resolves through `BUILT_IN_MATRIX.slugMap`, which
+   is [invariant 4](#invariants-and-dead-fields) and is the only enforcement that property has.
 
-   **Re-derive before relying on this.** It is an assertion of ABSENCE, which
-   `scripts/check-enumeration-drift.ts` cannot falsify — writing either spec moves no symbol name,
-   so the paragraph stays green whichever way it goes. Grep `BUILT_IN_MATRIX` in
-   `src/cli/lib/configuration/__tests__/` and read what the hits assert.
+**Re-derive before relying on this.** These are assertions of ABSENCE, which
+`scripts/check-enumeration-drift.ts` cannot falsify — deleting either spec moves no symbol name, so
+this paragraph stays green whichever way it goes. Grep `BUILT_IN_MATRIX` in
+`src/cli/lib/configuration/__tests__/` and read what the hits assert.
 
 ## Traps
 
@@ -579,9 +617,10 @@ The narrowing described under [Precedence](#the-built-in-rules-are-narrowed-to-t
 takes the middle row's warning away from the built-ins on purpose, and costs nothing here: the
 warning was already not a staleness signal. It fired for every slug a small source did not ship,
 which is the normal case, so a genuinely stale built-in slug was one line among thousands that read
-exactly the same. Invariant 4 above — every built-in slug resolves against `BUILT_IN_MATRIX` — is
-the property that would catch it, and no spec asserts it (same grep as the gap above; same reason
-the drift checker cannot police the claim).
+exactly the same. [Invariant 4](#invariants-and-dead-fields) — every built-in slug resolves against
+`BUILT_IN_MATRIX` — is the property that catches it, and `default-rules.test.ts` now asserts it. It
+is the only thing that does: every runtime surface either narrows the built-ins away first or reads
+already-resolved references, so the unit suite is where a stale built-in slug fails or nowhere.
 
 **`checkMatrixHealth` closes the rule half and not the stack half.** It runs six checks — category
 domains, skill categories, relation refs, **unresolved rule slugs**, audit-verdict contradictions,

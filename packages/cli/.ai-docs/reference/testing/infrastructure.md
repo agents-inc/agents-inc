@@ -59,9 +59,24 @@ to remember that, because two layers enforce it:
 
 The guard **refuses; it does not rebuild** — a direct `vitest run` stays fast and stays something
 you asked for. Its message names the fix (`bun run build`). It ignores `*.test.ts(x)`, `__tests__/`
-and `__mocks__/` — the same negations `tsup.config.ts` and `turbo.json` use — so editing or adding a
-spec never trips it, and it globs directories as well as files because a **deleted** source file
-leaves nothing to stat: only its parent directory's mtime moves.
+and `__mocks__/` — the same negations `tsup.config.ts` and `turbo.json` use — and it globs
+directories as well as files because a **deleted** source file leaves nothing to stat: only its
+parent directory's mtime moves.
+
+That glob is why the ignore list is read a second time, as a pattern list rather than as an ignore
+list. Every entry that arrives or leaves moves the one mtime a directory has, and an ordinary
+editor SAVE is one of them — mainstream editors write the new contents beside the original and
+rename over it. So a directory holding something ignored that has ITSELF moved since the build has
+an account of its mtime the build does not care about, and `directoriesAnIgnoredChangeAccountsFor`
+drops that directory out of the comparison. **That is what makes editing or adding a spec never
+trip it**, in either tree.
+
+**What that gives up, exactly:** a build input **deleted** from a directory where a spec, a
+`__tests__` or a `__mocks__` entry was **also** written since the build. Those two events leave one
+reading between them and nothing in it says which of them moved it. Nothing else is given up — a
+build input added or edited carries an mtime of its own and still refuses, and a deletion from a
+directory whose ignored entries all predate the build is still the only account of that directory's
+mtime there is.
 
 **Two trees, not one** (CLI-458). `BUILD_INPUT_TREES` names `packages/cli/src` and
 `packages/matrix/src`, because tsup inlines `@workspace/matrix` into the bundle (`noExternal`) —
@@ -71,10 +86,8 @@ output of its own to go stale instead. Before that, touching a matrix file and r
 than every matrix source file. The message names whichever tree moved and, for matrix, why it
 counts. Cost of the second tree: 28 entries, **+0.3 ms** median on a ~25 ms scan (the two trees are
 scanned in parallel; matrix alone measures 0.5 ms). Two behaviours worth knowing: a **deleted**
-matrix source trips it (the parent directory's mtime moves), and **editing** a matrix spec does not
-— but **adding or deleting** one does, because matrix keeps its specs beside the code rather than in
-`__tests__/`, so the bare-directory ignores that absorb this under `packages/cli/src` have nothing
-to match there. That is a refusal you did not need, never a green you should not have had.
+matrix source trips it (the parent directory's mtime moves), and so does a **deleted** matrix spec.
+That is a refusal you did not need, never a green you should not have had.
 
 A third tree is not needed for `turbo test`: turbo already hashes matrix into the CLI's build task
 even though matrix has no `build` script — see
@@ -160,52 +173,24 @@ had — the same trade the matrix-spec caveat above describes.
 
 ```
 src/cli/lib/__tests__/
-  config-gate-enforcement.test.ts    # The config-gate import bans, asserted against the real eslint config
-  content-generators.ts              # Pure content renderers: renderSkillMd, renderAgentYaml, renderConfigTs, ...
-  expected-values.ts                 # Canonical expected agent/skill lists (EXPECTED_AGENTS, EXPECTED_SKILLS)
-  helpers.test.ts                    # Tests for helpers themselves
-  packaging.test.ts                  # The publish surface: files block, tarball contents, entry globs
-  spec-gates.test.ts                 # Five gates over the suite itself — see "Spec Gates" below
-  test-constants.ts                  # Keyboard escape sequences, timing delays
-  test-fixtures.ts                   # Canonical skill registry (SKILLS), test categories
-  test-fs-utils.ts                   # createTempDir, cleanupTempDir, fileExists, directoryExists
+  <top-level files>                  # Support modules and whole-suite gate specs — not enumerated here, see below
   factories/                         # Object creation factories
     index.ts                         # Barrel re-export of all factories
     agent-factories.ts               # createMockAgent, createMockAgentConfig, createMockCompiledAgentData
     category-factories.ts            # createMockCategory
     config-factories.ts              # buildSourceConfig, buildProjectConfig, buildWizardResult, buildGateReport, ...
     matrix-factories.ts              # createMockMatrix, createComprehensiveMatrix, createBasicMatrix, ...
-    plugin-factories.ts              # createCompileContext, createMockCompileConfig, createMockMarketplace, ...
+    plugin-factories.ts              # createMockCompileConfig, createMockMarketplace, createMockMarketplacePlugin
     seed-factories.ts                # buildSeedSkill, buildSeedPayload, buildSeedExternalSkill, UPSTREAM_SKILL_NAME
     skill-factories.ts               # createMockSkill, createMockExtractedSkill, createMockSkillEntry, ...
     skill-factories.test.ts          # Tests for the taxonomy contract those factories enforce
     stack-factories.ts               # createMockResolvedStack, createMockStack, createMockRawStacksConfig, ...
-  helpers/                           # Test utility functions
-    index.ts                         # Barrel re-export + parseTestFrontmatter
-    cli-runner.ts                    # CLI_ROOT, runCliCommand
-    config-io.ts                     # readTestYaml, readTestJson, readTestTsConfig, writeTestTsConfig, writeCorruptTestConfig, writeTestPackageJson
-    config-comparison.ts             # normalizeGlobalConfig (order-insensitive config-text normalizer)
-    config-source-sections.ts        # extractNamedSection, extractScopeSections (config.ts section extractors)
-    disk-writers.ts                  # writeTestSkill, writeSourceSkill, writeTestAgent, writeSourceAgent, writeTestInstalledPluginsRegistry, writeTestPluginManifest
-    element-at.ts                    # elementAt, firstElement — tests only
-    generated-types.ts               # readGeneratedUnion: reads one alias body out of generated types source
-    isolated-home.ts                 # setupIsolatedHome, useFakeHome
-    journey-page.ts                  # The reader for standards/e2e/user-journeys.md — see "Spec Gates" below
-    silence-console.ts               # silenceConsole (suppresses console output during a test body)
-    test-dir-setup.ts                # createTestDirs, cleanupTestDirs, PluginTestDirs type
-    wizard-simulation.ts             # buildSkillConfig, buildSkillConfigs, simulateSkillSelections, FACTORY_DEFAULT_SCOPE, ...
-    config-comparison.test.ts        # Tests for normalizeGlobalConfig
-    config-source-sections.test.ts   # Tests for the section extractors
-    element-at.test.ts               # Tests for the indexed accessors
-    generated-types.test.ts          # Tests for the union reader
-    index.test.ts                    # Tests for parseTestFrontmatter
-    journey-page.test.ts             # Tests for the journey-page reader's three-kind classification
-  assertions/                        # Test assertion helpers
+  helpers/                           # Test utility functions — not enumerated here, see below
+  assertions/                        # Test assertion helpers — exports live in factories.md
     index.ts                         # Barrel re-export of all assertions
-    agent-assertions.ts              # parseCompiledAgent, expectAgentCompilation, expectValidAgentMarkdown, expectCompiledAgents
+    agent-assertions.ts
     agent-assertions.test.ts         # Tests for the agent assertion helpers
-    config-assertions.ts             # expectConfigSkills, expectConfigAgents, expectSkillConfigs, expectAgentConfigs
-    install-assertions.ts            # expectInstallResult
+    config-assertions.ts
   mock-data/                         # Extracted test fixtures (shared across test files)
     mock-agents.ts                   # AGENT_DEFS, agent config maps, DEFAULT_TEST_AGENTS
     mock-categories.ts               # Category definitions with domain overrides
@@ -245,14 +230,7 @@ src/cli/lib/__tests__/
     plugins/                         # Plugin fixture directories (valid-plugin, invalid-plugin-*)
     skills/                          # Skill fixture files
     stacks/                          # Stack fixture files (default/)
-  integration/                       # project: "integration"
-    compilation-pipeline.test.ts
-    consumer-stacks-matrix.integration.test.ts
-    install-mode-round-trip.integration.test.ts
-    install-mode.integration.test.ts
-    installation.test.ts
-    stack-agent-roster.integration.test.ts
-    wizard-flow.integration.test.tsx
+  integration/                       # project: "integration" — not enumerated here, see below
   user-journeys/                     # project: "integration"
     config-precedence.test.ts
     edit-recompile.test.ts
@@ -260,6 +238,34 @@ src/cli/lib/__tests__/
 
 Note: there is NO `test/fixtures/` directory at the project root. All fixtures are in
 `src/cli/lib/__tests__/fixtures/`, and that directory has no `configs/` or `matrix/` subdirectory.
+
+**Three of the blocks above are deliberately left unenumerated, and completing any of them here
+would be a mistake.** `helpers/` is the largest directory in this tree — larger than `commands/` —
+and a third of it is judge modules that exist only to be driven by the spec beside them, so the
+filename tells a reader nothing and every entry would need a sentence to earn its line. An inventory
+of that size drifts within a fortnight, which is the same reason the co-located specs below are not
+listed either. The **top level** and **`integration/`** are the same fault caught later: both were
+hand-kept lists that the tree outgrew — the top level named ten of twenty-five files and
+`integration/` seven of nine, and in both cases a reader who greps for a name they cannot find here
+concludes it does not exist.
+
+Re-derive each instead of reading a list:
+
+```
+find src/cli/lib/__tests__ -maxdepth 1 -type f | sort   # the top level
+ls src/cli/lib/__tests__/helpers/
+ls src/cli/lib/__tests__/integration/
+```
+
+For `helpers/` a second place answers, and it is enforced: [factories.md](./factories.md)
+§ Helper Functions names every symbol the directory exports and which module holds it, read against
+the DIRECTORY by `scripts/check-enumeration-drift.ts`, so a helper landing without a row turns the
+suite red — which a tree here cannot do. The top level's support modules are bound the same way:
+`content-generators.ts` and `test-fs-utils.ts` each have a `factories.md` table held to their
+exports, and `test-fixtures.ts`'s `SKILLS` registry is held by [mock-data.md](./mock-data.md).
+`assertions/` is bound on the same terms — `factories.md` § Assertion Helpers is read against that
+DIRECTORY too, which is why the tree above names its files and not their exports.
+`integration/` has no enforced roster; the `ls` is the whole answer.
 
 **Every other spec under `src/cli/` is co-located with the source it covers** — beside the module
 (`src/cli/lib/compiler.test.ts`), or in a `__tests__/` directory beside it
@@ -444,7 +450,7 @@ The consequence for a test: `lastFrame()` after such an exit returns the blank t
 
 This is not theoretical. Both column-geometry snapshots in `src/cli/components/wizard/source-grid.test.tsx` were regenerated with `-u` when the Sources grid's scope gutter was removed, both came back green, and both encoded a layout the owner had not asked for. Nothing else caught it: `tsc`, ESLint, Prettier, 57 unit tests and every E2E spec touching the Sources grid were green against the wrong layout. **Geometry has no other gate.**
 
-**Before committing a regenerated column-geometry snapshot, derive the intended column starts from the component's own width constants and check them against the emitted frame by index.** For `source-grid.tsx` those are `SCOPE_COL_WIDTH` (11), `SKILL_NAME_WIDTH` (26, widened from 24 by exactly the two-column marker width), and `SOURCE_COL_WIDTH` (18), plus a 2-column chevron prefix:
+**Before committing a regenerated column-geometry snapshot, derive the intended column starts from the component's own width constants and check them against the emitted frame by index.** For `source-grid.tsx` those are `SCOPE_COL_WIDTH` (11), `SKILL_NAME_WIDTH` (26, widened from 24 by exactly the two-column marker width), and `INSTALL_MODE_COL_WIDTH` (18), plus a 2-column chevron prefix:
 
 | Column        | Expected start (grouped / flat) | Emitted           |
 | ------------- | ------------------------------- | ----------------- |
@@ -455,7 +461,7 @@ This is not theoretical. Both column-geometry snapshots in `src/cli/components/w
 
 The flat branch must be the grouped one shifted left by exactly `SCOPE_COL_WIDTH`. State the derivation in the test's JSDoc so the next reader can re-check it without re-deriving it.
 
-> **Cross-ownership note.** The prescriptive form of this rule is **rule 6.17a in `.ai-docs/standards/clean-code-standards.md`**, which requires a whole-frame `toMatchInlineSnapshot()` per layout branch but stops short of requiring that a regenerated one be _read_. That file is owned by convention-keeper, not codex-keeper, so the extension is **proposed, not applied** — recorded here (in a codex-keeper file) so the gap is not lost. The suggestion that introduced 6.17a named this exact risk (_"a reviewer who rubber-stamps snapshot updates gets nothing"_) and shipped without an obligation closing it; the failure occurred one day later, on the very component the rule was written for. See `.ai-docs/agent-findings/2026-07-31-column-geometry-snapshots-regenerated-never-verified.md`.
+> **Cross-ownership note — the extension above LANDED; what is missing is a gate, not a rule.** The prescriptive form is **rule 6.17a in `.ai-docs/standards/clean-code-standards.md`**, and it no longer stops at requiring the snapshot to exist: it requires the regeneration to re-derive the intended column starts from the component's own width constants and to state the derivation in the test's JSDoc, which `source-grid.test.tsx` now carries beside both snapshots. This paragraph read _"proposed, not applied"_ for weeks after that was false, which is the same failure one level up — a note recording a gap is only as good as the pass that returns to it. **The open half is enforcement:** a bare `vitest -u` is a review-time convention with nothing behind it, and neither `eslint.config.js`, the spec gates nor CI can tell a snapshot that was re-derived from one that was regenerated and waved through. Whether that becomes a mechanical check is an owner decision (`todo/cli.md` CLI-366), not a documentation gap. The suggestion that introduced 6.17a named this exact risk (_"a reviewer who rubber-stamps snapshot updates gets nothing"_) and shipped without an obligation closing it; the failure occurred one day later, on the very component the rule was written for. See `.ai-docs/agent-findings/2026-07-31-column-geometry-snapshots-regenerated-never-verified.md`.
 
 **E2E specs use no snapshots at all** (zero `toMatchSnapshot` / `toMatchInlineSnapshot` occurrences under `e2e/`), so this rule is component-test territory only.
 
@@ -526,24 +532,42 @@ Used by `src/cli/lib/configuration/__tests__/config-writer.test.ts`. A separate 
 
 ## Spec Gates (`src/cli/lib/__tests__/spec-gates.test.ts`)
 
-Five gates in the `unit` project, over the suite and its config rather than over the product. They
+Eight gates in the `unit` project, over the suite and its config rather than over the product. They
 exist because each answers a question nothing else in the repository asks, and every one of them was
 written after the silence it closes had already cost something.
 
-| Gate                                                       | What it asserts                                                                                                                                                             |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| every spec belongs to a configured project                 | Every `e2e/**/*.test.ts` on disk is claimed by a project's `include` in `e2e/vitest.config.ts`. `e2e/smoke/` sat outside every include for months and rotted                |
-| every configured project is opened by a package script     | Each project name appears as `--project <name>` in some `package.json` script. A project no script names runs only when the OTHER project is asked for, and never otherwise |
-| a journey's from-scratch specs are from scratch            | A row of `standards/e2e/user-journeys.md` whose every named spec opens from a fixture-written config must carry the `TO TEST` marker                                        |
-| every named spec carries the directory it lives in         | A name a run cannot be pointed at is not proof                                                                                                                              |
-| every non-spec name is one the gate has been told about    | Anything the From-scratch column names that no spec answers to must appear in `RECOGNISED_NON_SPEC_NAMES` with its reason                                                   |
-| a verdict that cannot fail is refused before it is trusted | Lints one real file per separately-ruled `no-restricted-syntax` zone against the LOADED `eslint.config.js`, for every shape in `ESCAPE_SHAPES`                              |
-| the shared base refuses a value compared against itself    | Lints under `packages/eslint-config/base.js` ALONE, which is the only way to tell a rule the base carries from one this package adds on top                                 |
+| Gate                                                       | What it asserts                                                                                                                                                                                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| every spec belongs to a configured project                 | Every `e2e/**/*.test.ts` on disk is claimed by a project's `include` in `e2e/vitest.config.ts`. `e2e/smoke/` sat outside every include for months and rotted                                                                         |
+| every configured project is opened by a package script     | Each project name appears as `--project <name>` in some `package.json` script. A project no script names runs only when the OTHER project is asked for, and never otherwise                                                          |
+| every spec it collects is a spec that runs                 | No `e2e/**` file carries an unconditional skip form. A file both a config and a script reach is as unrun as one neither reaches when its own `describe` is skipped, and it reads exactly like a passing file until somebody opens it |
+| a journey's from-scratch specs are from scratch            | A row of `standards/e2e/user-journeys.md` whose every named spec opens from a fixture-written config must carry the `TO TEST` marker                                                                                                 |
+| every named spec carries the directory it lives in         | A name a run cannot be pointed at is not proof                                                                                                                                                                                       |
+| every non-spec name is one the gate has been told about    | Anything the From-scratch column names that no spec answers to must appear in `RECOGNISED_NON_SPEC_NAMES` with its reason                                                                                                            |
+| a verdict that cannot fail is refused before it is trusted | Lints one real file per separately-ruled `no-restricted-syntax` zone against the LOADED `eslint.config.js`, for every shape in `ESCAPE_SHAPES`                                                                                       |
+| the shared base refuses a value compared against itself    | Lints under `packages/eslint-config/base.js` ALONE, which is the only way to tell a rule the base carries from one this package adds on top                                                                                          |
 
 Both halves of the config are **loaded, never restated**: `e2eProjects()` imports
 `e2e/vitest.config.ts` and reads its `projects`, and the ESLint gates construct an `ESLint` instance
 over the real `cwd`. A second copy of an include glob or a selector here could not tell a config
 that stopped matching a file from one that never did.
+
+### `spec-filenames.test.ts` — the one ban no ESLint selector can reach
+
+A ninth gate, in its own file because its subject is not the config. Task IDs are banned from a
+`describe`, an `it` and an assertion message, and each of those is a string a `no-restricted-syntax`
+selector can match; a FILENAME is not — no rule sees the path it is linting as text — so the one
+place the ban was unenforceable is the one place it was broken. `d227-same-scope-tombstone-duplicate.test.ts`
+carried its ticket in its name for a month while every `describe` inside it said what it pins.
+
+The gate holds every `src/**`, `e2e/**` and `scripts/**` spec basename against the tracker ID shapes
+(`d227`, `d-227`, `cli-551`, `p4-17`), with the prefix roster **stated rather than derived**: `todo/`
+sits above this package and does not ship with it, so a roster read from there would answer clean in
+a published checkout for the reason that it could not see anything. Two hand-written rosters sit
+beside the tree scan, one the recogniser must condemn and one it must leave alone — the second is the
+subject guard, because a recogniser answering `false` to everything satisfies the tree-wide assertion
+without reading a single name, and a floor under the glob's match count is what stops an empty scan
+reporting a clean tree.
 
 ### `ESCAPE_SHAPES` and the zones it is run against
 
@@ -626,14 +650,91 @@ already made more than once against this very table.
 | `check-enumeration-drift.ts`    | Every document claiming to enumerate a source symbol exhaustively still names what that symbol holds — see below                                                                |
 | `check-findings-frontmatter.ts` | Every `agent-findings/` file carries frontmatter a YAML parser can read, against `agent-findings/TEMPLATE.md`'s schema                                                          |
 | `check-finding-citations.ts`    | Every finding cited by basename from OUTSIDE `.ai-docs/` still exists — `todo/` for all citations, `changelogs/` for bracketed links only                                       |
+| `check-briefing-contract.ts`    | Every pointer the two `CLAUDE.md` files and `standards/briefing.md` write still resolves, and every standard is named by `DOCUMENTATION_MAP.md`                                 |
+| `check-spec-name-vocabulary.ts` | Every spec filename is built from the vocabulary its own suite declares                                                                                                         |
+| `refusal-expectations.ts`       | Every refusal these suites assert names a message the run can read — see below                                                                                                  |
 | `check-screen-sentinels.ts`     | Every `e2e/pages/constants.ts` literal a step page object WAITS on still reads the string the product paints — drift there times out rather than asserting                      |
 | `check-spawn-doors.ts`          | Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK`, followed through the local declarations a spawn's env expression names                          |
+| `check-symbol-citations.ts`     | Every `@link` citation in this package's TypeScript resolves to a symbol the type checker can find — see below                                                                  |
 | `check-shared-eslint-config.ts` | Every workspace extends `@workspace/eslint-config` rather than restating its rules                                                                                              |
 | `check-shared-tsconfig.ts`      | Every workspace extends `@workspace/typescript-config`, or declares it holds no TypeScript                                                                                      |
 | `check-shared-vitest-config.ts` | Every workspace extends `@workspace/vitest-config`, or states in its manifest why it does not — which `packages/cli` does, in `package.json`'s `//no-shared-vitest-config` note |
 | `generate-json-schemas.ts`      | The JSON Schema generator — `check` names every file in `src/schemas/` that differs from what it emits                                                                          |
 | `generate-matrix-package.ts`    | The matrix package generator                                                                                                                                                    |
 | `generate-source-types.ts`      | The union type code generator                                                                                                                                                   |
+
+### `check-symbol-citations.ts` — the only check here that builds a TypeScript program
+
+Every other check in this directory reads source with `ts.createSourceFile`, which is syntax alone.
+This one resolves `PROJECTS` with `ts.getParsedCommandLineOfConfigFile`, builds a `ts.Program` per
+project and asks `checker.getSymbolAtLocation` of every `JSDocLink` node — the same symbol table an
+editor answers Go-to-Definition from. That is why it costs seconds rather than milliseconds, and why
+it is the only instrument that sees a citation whose contents are not an entity name at all.
+
+**Its roster is held against `package.json`, not against a copy of itself.** `typecheckedProjects()`
+reads the `typecheck` script and parses each `&&`-separated `tsc` invocation, so a fourth project
+added there and not to `PROJECTS` reddens by name rather than narrowing the walk in silence. A bare
+`tsc --noEmit` reads `tsconfig.json`; a `-p` followed by nothing is refused rather than skipped.
+
+**Three limits, each a decision rather than an omission.** A citation in a `//` line comment holds no
+`JSDocLink` node, so neither this walk nor an editor can resolve one — a fixed-string grep and this
+check will disagree by exactly those. Every other workspace is out of scope; none of their programs
+is built here. And `.d.ts` files are excluded whichever tree they are in.
+
+**Backticks do not make a citation prose.** The JSDoc parser does not read them, so a citation
+written inside backticks is judged like any other — which is what makes writing one to illustrate the
+rule a defect in the document that does it. `check-symbol-citations.test.ts` assembles its fixture
+citations at runtime for that reason, and no line in it can be copied into a docblock as-is.
+
+### `refusal-expectations.ts` — a refusal is only asserted if the assertion can fail for its reason
+
+Two halves. `expectRefusal` is what a suite here calls instead of `toThrow`; `vacuousThrowAssertions`
+is the scan that says no suite under `scripts/` has gone back to the bare matcher.
+
+The shape both exist for: `expect(run).toThrow(SOME_CONSTANT)` where the test file IMPORTS a constant
+its module does not export. At runtime that name is `undefined`, `toThrow(undefined)` is vitest's
+"threw anything at all", and the assertion passes against a check refusing for an entirely different
+reason. `tsc` catches it — TS2305 — but `tsc` is not what a red-first step runs.
+
+**`toThrow(new RegExp(CONSTANT))` is not the repair, and reads exactly like it.** It was proposed on
+the reasoning that an absent export would raise a `TypeError` rather than match. It does not:
+
+```
+node -e 'console.log(String(new RegExp(undefined)), /(?:)/.test("any error at all"))'
+```
+
+prints `/(?:)/ true` — the empty pattern, a substring of every error message. The scan condemns that
+shape and the `RegExp(...)` spelling without `new`, because the `new` is optional in the language and
+would otherwise be a one-character escape from the whole check.
+
+INTERPOLATING a constant into a pattern is deliberately not condemned. An absent export becomes the
+literal text `undefined` there, which matches no real message, so such an assertion goes red rather
+than passing on anything.
+
+### A gate that reads a tree outside its own package must name that tree in `turbo.json`
+
+Otherwise it replays a cached pass describing a tree it never opened, which is the same green a
+fully-resolving tree gives.
+
+`$TURBO_DEFAULT$` is every file in the package and stops at the package boundary. Two checks here
+read past it — `check-finding-citations.ts` walks `todo/`, and `check-briefing-contract.ts` follows
+the root `CLAUDE.md`'s links — and both sit outside every workspace, so a change confined to either
+left `agents-inc#test`'s hash byte-identical. `packages/cli/turbo.json` names them in the `test`
+task's `inputs`. Note that `.ai-docs/` needs no entry and never did: it is INSIDE the package, so the
+default set already carries it.
+
+What the task actually hashes, which is the only thing that settles this:
+
+```
+npx turbo run test --dry=json --filter=agents-inc
+```
+
+The `inputs` map it prints is every file whose content feeds the hash. `"the task that runs these
+scans"` in `check-finding-citations.test.ts` holds the rule, deriving the required entries from the
+checkers' own exported paths rather than from a list — so a scope row that reaches outside the
+package fails that assertion instead of quietly going stale. It parses `turbo.json` rather than
+searching it as text, because that file carries `//` comments explaining itself and a substring check
+for an entry is satisfied by a comment mentioning it.
 
 ### `check-enumeration-drift.ts`
 

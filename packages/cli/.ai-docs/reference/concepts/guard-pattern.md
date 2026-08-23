@@ -176,7 +176,7 @@ other four producers of the same rule.
 - When the agent is new this session (`agent ∉ existingStack`): include (full ownership-derived stack).
 - Otherwise (existing agent): keep a skill already present in that agent's prior category assignment; additionally admit a skill in `newlyAddedSkillIds` OR a `(agent, skillId)` pair whose scope-compatibility was gained this session (`scopeEligibilityGained`, keyed by `scopeEligibilityKey(agent, skillId)`); omit everything else (respecting the user's prior per-agent curation).
 
-**Outcome:** Silent — the triple is dropped from the output. See [config-generator reference docs](../config/configuration.md) for the D-220 delta-pipeline context.
+**Outcome:** Silent — the triple is dropped from the output. See [config-generator reference docs](../config/configuration.md) for the per-agent curation delta-pipeline context.
 
 ### 11. Pre-Wizard Saved-Skill Metadata Refusal (`ensureSavedSkillsReadable`)
 
@@ -208,7 +208,7 @@ Two rules in this codebase resolve the _same shape_ of conflict — one exclusiv
 - In the guard case the **user is the aggressor**: the keypress is an attempt to displace a shared install that every project reads. Refusing upholds the rule that a globally installed item is immutable from project scope, in every flow including `init`.
 - In the masking case the conflict is **pushed in**: a global install has landed on top of pre-existing project state, without the project asking. Letting global win there would silently uninstall the user's own skill — a strictly worse failure than hiding a global entry the user never chose to receive.
 
-**The mask is not an exception to immutability.** Masking never removes the global entry and never writes into `~/.claude-src/config.ts`; it only records, in the project's own config, that this project cannot show that global install. The global install stays intact for every other project, and the mask is dropped automatically once the collision clears (`dropOrphanedDerivedMasks`). Backlog item **D-276** — allowing a user to _deliberately_ select a skill that conflicts with a global one in an exclusive category — is filed with the same constraint: the global entry is masked, never removed.
+**The mask is not an exception to immutability.** Masking never removes the global entry and never writes into `~/.claude-src/config.ts`; it only records, in the project's own config, that this project cannot show that global install. The global install stays intact for every other project, and the mask is dropped automatically once the collision clears (`dropOrphanedDerivedMasks`).
 
 > See [tombstone-pattern.md](./tombstone-pattern.md) "Mask vs. Tombstone" for the persisted shape and the provenance argument, and "Creation outside the wizard — derived conflict masks" for the full predicate table.
 
@@ -300,6 +300,12 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 
 `toastMessage: string | null` is rendered by `toast.tsx`. It is auto-cleared after `TOAST_DURATION_MS` (2000ms) by the effect in `wizard.tsx` that watches `toastMessage` changes.
 
+**The channel is not guards-only, so a toast on screen is not evidence a guard fired.**
+`showWarningsAsToast` in `wizard-store.ts` routes any `warn()` raised by a change the user
+triggered from a painted frame into the same field, summarised by `skillsLeftOutToast`. Its two
+call sites are in `stack-selection.tsx`. See [`../store-map.md`](../store-map.md) →
+"Mid-Session Warnings"; the table below stays the guard inventory and nothing else.
+
 ## Summary Table
 
 | Guard                              | Action / Layer                                                                    | Outcome | Text / Note                                                                                                                                                     |
@@ -316,7 +322,7 @@ Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
 | Scope silent (no focused id)       | `HOTKEY_SCOPE` / wizard.tsx                                                       | Silent  | Scenario B race surface — see Silent Guards section                                                                                                             |
 | Install-mode scope authority       | `setInstallMode` / store                                                          | Silent  | Project-context call against an inherited global slot (`isInheritedGlobalSlot`) — see Install-Mode Scope Authority                                              |
 | Tombstone-aware removal            | `applySkillRemoval` / store                                                       | Silent  | Shapes removal output; collapses dual-scope pairs (resolved)                                                                                                    |
-| Stack-build ownership              | `shouldIncludeTriple` / config-generator                                          | Silent  | D-220 delta pipeline predicate                                                                                                                                  |
+| Stack-build ownership              | `shouldIncludeTriple` / config-generator                                          | Silent  | Per-agent curation delta pipeline predicate                                                                                                                     |
 | Cross-scope conflict mask          | `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` / config-gate propagate | Silent  | Write-time, not a keypress guard. Project's own skill wins locally — deliberately asymmetric with the exclusive-swap refusal above                              |
 | Warn-and-return                    | `setInstallMode` / `populateFromSkillIds`                                         | Warn    | Programmatic-misuse logs, plus the per-skill unresolvable report                                                                                                |
 

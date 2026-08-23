@@ -61,10 +61,9 @@ Four surfaces, four owners, and they do not overlap:
 **This doc owns the packaging counts** (entry globs, published-tarball figures). No other doc restates
 them; re-derive with the commands named in each section rather than quoting them from an index.
 
-**This doc is the natural home for one live inconsistency and two verified traps.** All three are
-stated below as facts, not warnings: `config/` is copied by the build and listed for publication but
-does not exist; command discovery reads `dist/`, so a source-only change adds no command; and the
-built `config-loader` cannot resolve the very import path `exports./config` advertises.
+**This doc is the natural home for two verified traps.** Both are stated below as facts, not
+warnings: command discovery reads `dist/`, so a source-only change adds no command; and the built
+`config-loader` cannot resolve the very import path `exports./config` advertises.
 
 ---
 
@@ -314,22 +313,22 @@ addressable entry points — nothing may import them by path.
 
 ---
 
-## 5. `onSuccess` — the two asset copies
+## 5. `onSuccess` — the asset copy
 
-`tsup.config.ts` -> `onSuccess` performs two `fs.copy` calls, each guarded by `fs.pathExists` and
-each preceded by an `fs.remove` of its destination:
+`tsup.config.ts` -> `onSuccess` performs one `fs.copy`, guarded by `fs.pathExists` and preceded by
+an `fs.remove` of its destination:
 
-| Source        | Destination        | Reason recorded in the config                                              | Status today          |
-| ------------- | ------------------ | -------------------------------------------------------------------------- | --------------------- |
-| `config/`     | `dist/config/`     | _"so it's available regardless of how PROJECT_ROOT resolves at runtime"_   | **No-op — see below** |
-| `src/agents/` | `dist/src/agents/` | _"so eject command can find them regardless of how PROJECT_ROOT resolves"_ | Copies 115 files      |
+| Source        | Destination        | Reason recorded in the config                                              | Status today     |
+| ------------- | ------------------ | -------------------------------------------------------------------------- | ---------------- |
+| `src/agents/` | `dist/src/agents/` | _"so eject command can find them regardless of how PROJECT_ROOT resolves"_ | Copies 115 files |
 
-### The `fs.remove` before each copy is load-bearing
+### The `fs.remove` before the copy is load-bearing
 
 `fs.copy` **merges**: it writes what the source has and removes nothing the source has dropped. And
-`clean: true` does not reach either destination — it clears only tsup's own outputs. So until the
-`fs.remove` calls were added, a deleted agent survived every incremental build. That is not a
-tidiness problem: `prepublishOnly` runs a plain `build` with no preceding `rm -rf dist`, `dist/`
+`clean: true` does not close that gap. It globs `**/*` over the whole `outDir` and unlinks every
+match whatever emitted it, but it only ever unlinks — directories are left standing, and `**/*`
+matches no dotfile — so an emptied agent directory survives the clean and then survives the merge.
+That is not a tidiness problem: `prepublishOnly` runs a plain `build` with no preceding `rm -rf dist`, `dist/`
 publishes wholesale, and `loadAllAgents()` discovers agents by globbing `**/metadata.yaml` under the
 resolved agents dir — so a retired agent sat on a path the loader really does read, carrying an id
 no longer in the `AgentName` union. It was observed twice: four retired PM directories after the PM
@@ -341,7 +340,7 @@ binary read the stale copies as shipped. `packaging.test.ts` is the tripwire: it
 entry set under `dist/src/agents/` **equals** the set under `src/agents/`. Set equality, not a
 subset — a subset assertion passes on precisely this failure mode.
 
-Anyone adding a third `onSuccess` copy inherits the same default. Mirror, do not merge.
+Anyone adding a second `onSuccess` copy inherits the same default. Mirror, do not merge.
 
 ### What "regardless of how PROJECT_ROOT resolves" means
 
@@ -368,11 +367,9 @@ through a root-level chunk.
 
 ### `config/` does not exist in this repository
 
-`ls config/` returns `ENOENT`. The `pathExists` guard means the first copy is a **silent no-op**, and
-`npm pack` confirms the `"config/"` entry in `files` contributes **zero files** to the tarball.
-
-This matters beyond the dead code, because two reference docs cite `config/`-prefixed paths without
-saying whose repository they belong to:
+`ls config/` returns `ENOENT`, and `files` in `package.json` does not name it either. This matters
+because two reference docs cite `config/`-prefixed paths without saying whose repository they belong
+to:
 
 | Doc                                       | Cites                                                 |
 | ----------------------------------------- | ----------------------------------------------------- |
@@ -401,7 +398,6 @@ quoting them. The `--ignore-scripts` is load-bearing: `prepare` runs husky, whic
 | -------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `dist/`        | 321   | 5.67 MB                                                           | 103 code files, 103 sourcemaps, plus the 115-file `dist/src/agents/` copy           |
 | `assets/`      | 3     | 2.48 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                 |
-| `config/`      | **0** | —                                                                 | Directory absent (§5)                                                               |
 | `src/agents/`  | 115   | 0.60 MB                                                           | Agent partials and `_templates/` Liquid sources                                     |
 | `src/schemas/` | 12    | 0.04 MB                                                           | Generated JSON Schemas                                                              |
 | root files     | 4     | 0.12 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
@@ -487,10 +483,7 @@ const CONFIG_EXPORTS_PATH = path.resolve(
   "../../config-exports.ts",
 );
 // ... createJiti(import.meta.url, {
-//       alias: {
-//         "agents-inc/config": CONFIG_EXPORTS_PATH,
-//         "@agents-inc/cli/config": CONFIG_EXPORTS_PATH, // pre-0.150.0 spelling, REPO-24
-//       },
+//       alias: { "agents-inc/config": CONFIG_EXPORTS_PATH },
 //     })
 ```
 
@@ -504,8 +497,7 @@ jiti does not fall back to normal resolution when an alias target is missing; pr
 this repo's jiti, an alias pointing at a non-existent file throws
 `Error: Cannot find module '<target>'`, which `loadConfig` rewraps as
 `Failed to load config from '<configPath>'`. So under the built CLI, any hand-written
-`.claude-src/config.ts` that imports `agents-inc/config` fails to load — under either spelling, since
-both alias keys resolve to the same missing path.
+`.claude-src/config.ts` that imports `agents-inc/config` fails to load.
 
 Nothing in the generated-config path is affected (see Gap 1), which is why this has stayed invisible.
 `src/cli/lib/__tests__/helpers/config-io.ts` carries the same alias with a `../../../` walk correct
@@ -562,7 +554,7 @@ All four are `dependencies`, not `devDependencies`, because they load at runtime
 | `@oclif/plugin-warn-if-update-available` | Version-staleness warning. Writes `version` and `last-warning` into `config.cacheDir`. No `warn-if-update-available` block is configured, so its defaults apply (`timeoutInDays: 60`) |
 
 **`~/.cache/agents-inc` is written by two independent derivations.** oclif's `cacheDir` comes from
-`oclif.dirname`; the CLI's own `CACHE_DIR` in `src/cli/consts.ts` is
+`oclif.dirname`; the CLI's own `cacheRoot()` in `src/cli/consts.ts` answers
 `path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME)` and backs the fetched-source cache in
 `src/cli/lib/loading/source-fetcher.ts`. They coincide by matching strings, not by construction —
 renaming `oclif.dirname` moves oclif's half only.
@@ -620,8 +612,8 @@ patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `d
 
 ## 10. Traps
 
-1. **`config/` is copied by `onSuccess` and listed in `files`, and does not exist.** Both are no-ops.
-   `config/`-prefixed paths in other reference docs are _source-repo_ paths (§5).
+1. **`config/` does not exist in this repository.** `config/`-prefixed paths in other reference docs
+   are _source-repo_ paths (§5).
 2. **A new command is invisible until `npm run build`.** Discovery reads `dist/commands`, and an
    empty discovery is silent (§8).
 3. **A new non-code asset is invisible to the build entirely.** The entry globs match `.ts`/`.tsx`

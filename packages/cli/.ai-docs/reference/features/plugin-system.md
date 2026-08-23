@@ -37,17 +37,16 @@ last_validated: 2026-07-30
 
 ## Files
 
-| File                        | Path                                            | Purpose                                                          |
-| --------------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
-| `plugin-manifest.ts`        | `src/cli/lib/plugins/plugin-manifest.ts`        | Generate plugin.json manifests                                   |
-| `plugin-manifest-finder.ts` | `src/cli/lib/plugins/plugin-manifest-finder.ts` | Find plugin manifest in directory                                |
-| `plugin-finder.ts`          | `src/cli/lib/plugins/plugin-finder.ts`          | Locate plugin directories and files                              |
-| `plugin-info.ts`            | `src/cli/lib/plugins/plugin-info.ts`            | Plugin info formatting/display                                   |
-| `plugin-validator.ts`       | `src/cli/lib/plugins/plugin-validator.ts`       | Validate plugin structure/content                                |
-| `plugin-discovery.ts`       | `src/cli/lib/plugins/plugin-discovery.ts`       | Discover all installed plugins                                   |
-| `plugin-settings.ts`        | `src/cli/lib/plugins/plugin-settings.ts`        | Plugin settings/paths resolution                                 |
-| `plugin-ref.ts`             | `src/cli/lib/plugins/plugin-ref.ts`             | Plugin-ref construction (`{id}@{marketplace}`) and scope mapping |
-| `index.ts`                  | `src/cli/lib/plugins/index.ts`                  | Barrel exports                                                   |
+| File                  | Path                                      | Purpose                                                          |
+| --------------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `plugin-manifest.ts`  | `src/cli/lib/plugins/plugin-manifest.ts`  | Generate plugin.json manifests                                   |
+| `plugin-finder.ts`    | `src/cli/lib/plugins/plugin-finder.ts`    | Locate plugin directories and files                              |
+| `plugin-info.ts`      | `src/cli/lib/plugins/plugin-info.ts`      | Plugin info formatting/display                                   |
+| `plugin-validator.ts` | `src/cli/lib/plugins/plugin-validator.ts` | Validate plugin structure/content                                |
+| `plugin-discovery.ts` | `src/cli/lib/plugins/plugin-discovery.ts` | Discover all installed plugins                                   |
+| `plugin-settings.ts`  | `src/cli/lib/plugins/plugin-settings.ts`  | Plugin settings/paths resolution                                 |
+| `plugin-ref.ts`       | `src/cli/lib/plugins/plugin-ref.ts`       | Plugin-ref construction (`{id}@{marketplace}`) and scope mapping |
+| `index.ts`            | `src/cli/lib/plugins/index.ts`            | Barrel exports                                                   |
 
 ## Plugin Structure
 
@@ -97,26 +96,17 @@ this way, and the installed cache copy of `plugin.json` keeps the field verbatim
 
 All location functions are in `src/cli/lib/plugins/plugin-finder.ts`:
 
-| Function                   | Purpose                                     |
-| -------------------------- | ------------------------------------------- |
-| `getUserPluginsDir()`      | User-level plugins dir                      |
-| `getCollectivePluginDir()` | Collective (shared) plugins dir             |
-| `getProjectPluginsDir()`   | Project-level plugins: `.claude/plugins/`   |
-| `getPluginSkillsDir()`     | Skills subdirectory within a plugin         |
-| `getPluginAgentsDir()`     | Agents subdirectory within a plugin         |
-| `getPluginManifestPath()`  | Path to plugin.json within a plugin dir     |
-| `readPluginManifest()`     | Read and parse plugin.json from a dir       |
-| `getPluginSkillIds()`      | Extract SkillIds from plugin SKILL.md files |
+| Function                  | Purpose                                   |
+| ------------------------- | ----------------------------------------- |
+| `getUserPluginsDir()`     | User-level plugins dir                    |
+| `getProjectPluginsDir()`  | Project-level plugins: `.claude/plugins/` |
+| `getPluginAgentsDir()`    | Agents subdirectory within a plugin       |
+| `getPluginManifestPath()` | Path to plugin.json within a plugin dir   |
+| `readPluginManifest()`    | Read and parse plugin.json from a dir     |
 
 Note: `getPluginManifestPath()` is defined once (in `plugin-finder.ts`) and re-exported via the `plugins/index.ts` barrel; the skill and agent plugin compilers (`skill-plugin-compiler.ts`, `agent-plugin-compiler.ts`) import it from `../plugins` to resolve the output manifest path.
 
 Plugin manifest directory: `.claude-plugin/` (`PLUGIN_MANIFEST_DIR` from `src/cli/consts.ts`)
-
-## Plugin Manifest Finder
-
-**File:** `src/cli/lib/plugins/plugin-manifest-finder.ts`
-
-**Function:** `findPluginManifest(startDir)` - Walks up from `startDir` looking for `.claude-plugin/plugin.json`. Returns the manifest path or `null`.
 
 ## Plugin Discovery
 
@@ -130,12 +120,11 @@ Discovers all installed skill plugins in a project directory:
 4. Loads skills from each verified plugin directory via `loadPluginSkills`
 5. Returns `SkillDefinitionMap` (alias for `Partial<Record<SkillId, SkillDefinition>>`); later plugins override earlier
 
-All three discovery functions swallow their own errors and degrade to an empty result — discovery is advisory, never a hard failure.
+Both discovery functions swallow their own errors and degrade to an empty result — discovery is advisory, never a hard failure.
 
 | Function                       | Returns    | Purpose                                                     |
 | ------------------------------ | ---------- | ----------------------------------------------------------- |
 | `discoverAllPluginSkills(dir)` | skill map  | Full skill definitions from every enabled + verified plugin |
-| `hasIndividualPlugins(dir)`    | `boolean`  | Any verified plugin exists (init guard)                     |
 | `listPluginNames(dir)`         | `string[]` | Verified plugin KEYS (`{id}@{marketplace}`), not bare names |
 
 ## Plugin Info
@@ -144,20 +133,10 @@ All three discovery functions swallow their own errors and degrade to an empty r
 
 | Function                      | Purpose                                                                          |
 | ----------------------------- | -------------------------------------------------------------------------------- |
-| `getPluginInfo(projectDir?)`  | `PluginInfo` from `listPluginNames()`, or `null` when no plugins are enabled     |
-| `formatPluginDisplay()`       | Format plugin info for terminal display                                          |
 | `getInstallationInfo()`       | `InstallationInfo` from `detectInstallation()`, or `null` when nothing installed |
 | `formatInstallationDisplay()` | Format installation info for terminal display (used by `list`)                   |
 
 ```typescript
-type PluginInfo = {
-  name: string; // always DEFAULT_PLUGIN_NAME
-  version: string; // always DEFAULT_DISPLAY_VERSION ("0.0.0") — placeholder, not a real version
-  skillCount: number;
-  agentCount: number; // always 0 on this path
-  path: string;
-};
-
 type InstallationInfo = {
   mode: InstallMode;
   name: string;
@@ -221,26 +200,28 @@ Individual frontmatter validators (exported):
 | `generateSkillPluginManifest()` | Generate manifest for a skill plugin  |
 | `generateAgentPluginManifest()` | Generate manifest for an agent plugin |
 | `writePluginManifest()`         | Write plugin.json to disk             |
-| `getPluginDir()`                | Get plugin output directory path      |
 
 Options types:
 
 - `SkillManifestOptions`
 - `AgentManifestOptions`
 
-## Stack Plugin Compilation — removed
+## Stack Plugin Compilation — there is none
 
-There is no stack→plugin compiler. `compileStackPlugin()`, its `installStackAsPlugin()` /
-`compileStackToTemp()` wrappers in `stack-installer.ts`, and everything only they reached
-(`StackPluginOptions`, `CompiledStackPlugin`, `printStackCompilationSummary`,
-`generateStackPluginManifest`, `StackManifestOptions`, `convertStackToCompileConfig`) were deleted
-in CLI-459: no command, operation or wizard path ever called any of it, and its specs reported
-green over behaviour no user could reach.
+**A stack is never bundled as a plugin.** The only two plugin kinds this CLI builds are skill
+plugins and agent plugins (Manifest Generation above); there is no third builder, no
+`stack-installer.ts`, and no manifest shape for a stack. The check is that no module named for one
+exists and nothing imports one:
 
-Stacks reach a project through the **install path**, not through a plugin bundle — `loadStackById`
-seeds `existingStack` in `local-installer.ts`, and agents compile through
-`writeCompiledAgentsByScope`. Skill and agent plugins are still built; see Manifest Generation above
-and [compilation-pipeline.md](./compilation-pipeline.md).
+```
+ls src/cli/lib/stacks/
+grep -rn 'StackPlugin\|stack-installer' src e2e scripts
+```
+
+Stacks reach a project through the **install path** instead: `loadStackById` (`lib/stacks/`) is
+called from `local-installer.ts`, whose `existingStack` is merged into the config the wizard result
+produces, and the agents that result names compile through `writeCompiledAgentsByScope`. See
+[compilation-pipeline.md](./compilation-pipeline.md).
 
 ## Stale Plugin Pruning (`build plugins`)
 
@@ -356,20 +337,45 @@ override is judged by the same `validateKebabCaseName` rule and refused separate
 derived name is a fact about their package — its way out is the flag, not a package rename.
 
 **These are producer-side enforcement of what the consumer already refuses, and the correspondence
-is close to exact.** Of the constraints `marketplaceSchema` places on a manifest — `name.min(1)`,
-`version.min(1)`, `owner.name.min(1)` (via `marketplaceOwnerSchema`) and `plugins.min(1)` — three
-have a matching pre-write refusal in the table above, so the same file cannot be written by this
-command and then thrown on by `fetchMarketplace` reading it. `claude plugin marketplace add` holds
-its own half, rejecting `/`, `\`, `.` and `..` in a marketplace name.
+is close to exact.** Of the constraints `marketplaceSchema` places on a manifest —
+`name.min(1).regex(KEBAB_CASE_PATTERN)`, `version.min(1)`, `owner.name.min(1)` (via
+`marketplaceOwnerSchema`) and `plugins.min(1)` — three have a matching pre-write refusal in the table
+above, so the same file cannot be written by this command and then thrown on by `fetchMarketplace`
+reading it. `claude plugin marketplace add` holds its own half, rejecting `/`, `\`, `.` and `..` in a
+marketplace name.
 
 **`version` is the one that does not correspond.** `packageJsonSchema` types it `z.string()` with no
 minimum, and `generateMarketplace` defaults it with `??`, which an empty string passes through — so
 a package.json carrying `"version": ""` produces a manifest this CLI writes and then throws on.
 
-**`marketplaceSchema.name` is deliberately still `z.string().min(1)`** rather than the stricter
-kebab-case rule the command applies — that schema parses third-party marketplaces as well as ones
-this CLI wrote, so tightening it would change what loads, which is a separate decision with a
-separate blast radius.
+### A marketplace name is kebab-case on LOAD as well as on publish
+
+`marketplaceSchema.name` in `src/cli/lib/schemas.ts` is
+`z.string().min(1).regex(KEBAB_CASE_PATTERN, …)`, so a `marketplace.json` whose name is not
+kebab-case is refused when it is READ — not only when this CLI would write one. The rule is
+lowercase letters, numbers and hyphens, starting with a letter; `KEBAB_CASE_PATTERN` in
+`src/cli/consts.ts` is the single definition and additionally forbids a doubled or trailing hyphen.
+
+**Both directions of the rule are the same constant**, which is the point: the emit side reaches it
+through `validateKebabCaseName` (`src/cli/lib/validate-kebab-name.ts`), called by
+`resolvePublishableName` in `src/cli/commands/build/marketplace.ts`, and the load side through the
+`regex` check above, called from `fetchMarketplace` in `src/cli/lib/loading/source-fetcher.ts` via
+`marketplaceSchema.safeParse`. A manifest this CLI publishes is therefore always one it can read
+back, and a third-party manifest is held to what Claude Code will register it under rather than to
+something only this CLI cares about.
+
+Two authoring consequences:
+
+| Situation                                              | What happens                                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| A hand-written `marketplace.json` named `@scope/thing` | Refused at load. The remedy is renaming the manifest's `name`, not a flag — nothing overrides a load |
+| A manifest built by `build marketplace`                | Cannot reach this refusal: `resolvePublishableName` already refused the same name pre-write          |
+
+The refusal text is `MARKETPLACE_NAME_REFUSAL` in `schemas.ts`, worded to match
+`marketplaceNameNotPublishable` in `src/cli/utils/messages.ts` so the two directions of one rule
+cannot come to say different things. It is attached as a `message` on the `regex` check rather than
+written as a `refine` on purpose — a refinement is unrepresentable in JSON Schema, and
+`src/schemas/marketplace.schema.json` would silently lose the `pattern` an editor validates against.
 
 ### Marketplace Commands (via Claude CLI)
 
@@ -439,7 +445,7 @@ Two distinct plugin-ref shapes exist. They are NOT interchangeable -- each is co
 1. **Tombstones are filtered before `buildCompileAgents` in every live path.** `init`, `edit`, and `compile` all route through the operations-layer `compileAgents` -> `recompileAgents`, which calls `filterExcludedEntries(projectConfig)` (`agent-recompiler.ts`) -- keeping only `!s.excluded` skills -- BEFORE `buildCompileAgents`. The tombstone is dropped, so `sourceById` never sees two entries for one id.
 2. **Config ordering makes last-write-wins safe even without the filter.** `generateProjectConfigWithInlinedGlobal` (`config-writer.ts`) always emits global entries first, project (active) entries second; the active project entry (serialized last) wins the map.
 
-The only callers that pass an unfiltered config straight into `buildCompileAgents` are `installEject` and `installPluginConfig` (`local-installer.ts`), and both are currently dead code (no command or operation calls them). Empirically confirmed by the E2E regression test `e2e/lifecycle/dual-scope-mixed-source-compiled-ref.e2e.test.ts`, which compiles a genuine dual-scope mixed-source config via `cc compile` and asserts the correct per-scope ref format in both directions. The format decision itself is `pluginRefFor` in `compiler.ts` (`source === undefined || "eject"` -> bare id; otherwise `id:id`).
+Empirically confirmed by the E2E regression test `e2e/lifecycle/dual-scope-mixed-source-compiled-ref.e2e.test.ts`, which compiles a genuine dual-scope mixed-source config via `cc compile` and asserts the correct per-scope ref format in both directions. The format decision itself is `pluginRefFor` in `compiler.ts` (`source === undefined || "eject"` -> bare id; otherwise `id:id`).
 
 ## Installation Modes
 
@@ -447,16 +453,21 @@ The only callers that pass an unfiltered config straight into `buildCompileAgent
 
 Skills installed as Claude Code plugins, agents compiled to `.claude/agents/`.
 
-**Function:** `installPluginConfig()` in `src/cli/lib/installation/local-installer.ts`
-(Re-exported from `src/cli/lib/installation/index.ts`)
+**Entry point:** `BaseCommand.installPluginSkillsReported()` (`src/cli/base-command.ts`), reached
+from `init.tsx` directly and from `applyPluginChanges()` in `edit.tsx`.
 
 ### Eject Mode
 
 Skills copied locally via eject workflow.
 
-**Function:** `installEject()` (Re-exported from `src/cli/lib/installation/index.ts`)
+**Entry point:** `copyLocalSkills()` (`src/cli/lib/operations/skills/copy-local-skills.ts`), reached
+via `copyEjectSkillsStep()` in `init.tsx` and directly from `applyPluginChanges()` in `edit.tsx`.
 
-> **Note (dead code):** `installPluginConfig()` and `installEject()` are still exported and re-exported but have NO command/operation callers — `grep -rn 'installEject(' packages/cli/src --include='*.ts' --include='*.tsx'` returns the declaration, the barrel re-export and test files only. The live install paths run through the command steps (`installPluginsStep`/`copyEjectSkillsStep` in `init.tsx`, `applyPluginChanges` in `edit.tsx`) and the operations layer, then compile agents via `compileAgents` -> `recompileAgents`. These two wrappers are the only paths that would bypass `filterExcludedEntries` before `buildCompileAgents`.
+Both modes then share the same tail: `writeProjectConfig()`
+(`src/cli/lib/operations/project/write-project-config.ts`) followed by
+`compileAgentsAllScopes()` (`src/cli/lib/operations/project/compile-agents-all-scopes.ts`), which
+compiles agents through `compileAgents` -> `recompileAgents`. There is no separate install-side
+compile surface.
 
 ### Scope-Aware Installation
 
@@ -485,7 +496,12 @@ type GateReport = {
    *  could not reach. */
   propagated: { updated: string[]; skipped: string[] };
   /** The recompile the GATE already performed in `propagated.updated`. */
-  recompile: { recompiledCount: number; failedCount: number; warnings: string[] };
+  recompile: {
+    rewrittenCount: number;
+    unchangedCount: number;
+    failedCount: number;
+    warnings: string[];
+  };
 };
 ```
 
@@ -503,14 +519,11 @@ type GateReport = {
 
 **Project-branch write gate:** the project `config.ts` is written when `projectInstallationExists` OR the reconciled project split has any skills/agents. Creating a project config holding only `import globalConfig` + `{ ...globalConfig }` is pointless, so that case is skipped with a `verbose()` note.
 
-**Callers of `writeScopedFromWizard` (exactly two):**
+**`writeScopedFromWizard` has exactly one caller:** `writeProjectConfig()`
+(`src/cli/lib/operations/project/write-project-config.ts`). `init` and `edit` reach the gate only
+through it.
 
-| Caller                                                                            | Path                                                                                           |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `writeProjectConfig()` — `src/cli/lib/operations/project/write-project-config.ts` | The LIVE path. `init` and `edit` reach the gate only through here.                             |
-| `writeConfigAndCompileAgents()` (private, `local-installer.ts`)                   | Only reached from `installEject` / `installPluginConfig` — both dead code (see the note above) |
-
-Both pass `!isHomeDirectory(projectDir)` as `projectInstallationExists`. In the project branch that argument is therefore always `true`, so the `hasProjectItems` disjunct and the skip branch are currently unreachable in production — the parameter name describes an intent no caller supplies. `writeProjectConfig` re-exposes the result as `ConfigWriteResult.propagation`.
+It passes `!isHomeDirectory(projectDir)` as `projectInstallationExists`. In the project branch that argument is therefore always `true`, so the `hasProjectItems` disjunct and the skip branch are unreachable in production — the parameter name describes an intent no caller supplies. `writeProjectConfig` re-exposes the result as `ConfigWriteResult.propagation`.
 
 Key config-write functions, now in `src/cli/lib/config-gate/` (`index.ts` is the module's only public surface; nothing below is re-exported by `installation/index.ts`):
 
@@ -529,12 +542,12 @@ Key config-write functions, now in `src/cli/lib/config-gate/` (`index.ts` is the
 | `writeProjectConfigPair()`                                                 | private  | The ONE writer of a project's `config.ts` + `config-types.ts`, used by both emitting sites        |
 | `propagateGlobalChangesToProjects()`                                       | private  | Rewrite every registered project's `config.ts` + `config-types.ts` against fresh global data      |
 | `pruneGlobalEntriesFromRegisteredProjects()`                               | private  | Global-uninstall variant: propagates an EMPTIED global config so all global rows/tombstones drop  |
-| `registerProjectPath()` / `deregisterProjectPath()`                        | private  | Maintain the global `projects[]` registry (deregistration is reached via `mutateGlobal`)          |
+| `registerProjectPath()`                                                    | private  | Maintain the global `projects[]` registry (deregistration is `mutateGlobal`'s own mutation)       |
 | `resolveEffectiveGlobalConfig()`                                           | private  | Merge + register; returns `{ config, globalDataChanged, changed }`                                |
 | `reconcileProjectSplitAgainstGlobal()`                                     | private  | Cross-scope masking + self-heal — see Cross-Scope Reconciliation below                            |
 | `classifyGlobalChange()` / `consequenceTier()`                             | private  | Decide what a write owes: T1 propagate+recompile, T2 config-half fan-out, T3 nothing, T4 no write |
 | `writeGlobalPair()` / `writeGlobalConfigHalf()` / `writeGlobalTypesHalf()` | private  | The only writers of `~/.claude-src/config.ts` and `config-types.ts`; token-held, write-if-changed |
-| `buildProjectTypesExtras()` / `buildConfigTypesBackgroundData()`           | private  | Inputs for `regenerateConfigTypes` (project extends global unions)                                |
+| `buildProjectTypesExtras()`                                                | private  | Input for `regenerateConfigTypes` (project extends global unions)                                 |
 
 Path resolution lives outside both modules: `resolveInstallPaths(projectDir, scope)` (returns `InstallPaths`), `installBaseDir()`, `getProjectConfigPath()` in `src/cli/lib/installation/install-base-dir.ts`, and `isHomeDirectory()` in `src/cli/lib/installation/is-home-directory.ts`.
 
@@ -554,7 +567,7 @@ The recompile is **inside the write**, not caller-side: a caller that must remem
 
 `recompileRegisteredProjectAgents` passes `skills` explicitly (from `discoverInstalledSkills`) — without it `recompileAgents` falls back to `discoverAllPluginSkills`, which sees plugin skills only and would strip every global-local and project-local skill from the compiled agents.
 
-`PropagatedRecompileSummary` — `{ recompiledCount: number; failedCount: number; warnings: string[] }`.
+`PropagatedRecompileSummary` — `{ rewrittenCount: number; unchangedCount: number; failedCount: number; warnings: string[] }`. A project the fan-out visited whose agents all came back byte-identical is `unchangedCount`, not a recompile.
 
 ### Detection
 
@@ -590,9 +603,7 @@ Install mode is derived at runtime from the skills array via `deriveInstallMode(
 
 **per-skill `source` is authoritative for compilation:** Aggregate `installMode` is a UI/logging convenience, NOT the input that drives agent compilation. `compileAgentForPlugin` (`src/cli/lib/compiler.ts`) calls `pluginRefFor(skill)` for each `SkillReference` and attaches `pluginRef` only when `skill.source` is a non-eject, non-undefined marketplace name. Mixed-mode agents (plugin and eject skills under the same agent) and dual-scope skills (same id, different scope, different sources) each render correctly from per-skill `source`.
 
-**`installMode` reaches only its genuine consumers:** no compile-path wrapper carries the mode. `compileAndWriteAgents` (private in `local-installer.ts`) and `RecompileAgentsOptions` (`agent-recompiler.ts`) have no `installMode` parameter, there is no `CompileAndWriteParams` type, and neither `installEject` nor `installPluginConfig` passes `deriveInstallMode(...)`. Aggregate `installMode` lives in exactly two places: `init.tsx` computes `deriveInstallMode(activeSkills)` to drive the install plan/logging (`logInstallPlan`, choosing `copyEjectSkillsStep` vs `installPluginsStep`), and `SkillSource.installMode?` (`src/cli/types/matrix.ts`) is a per-source UI descriptor.
-
-**Function:** `getInstallationOrThrow()` in `src/cli/lib/installation/installation.ts` - Same as `detectInstallation()` but throws if no installation found.
+**`installMode` reaches only its genuine consumers:** no compile-path wrapper carries the mode. `RecompileAgentsOptions` (`agent-recompiler.ts`) has no `installMode` parameter and there is no `CompileAndWriteParams` type. Aggregate `installMode` lives in exactly two places: `init.tsx` computes `deriveInstallMode(activeSkills)` to drive the install plan/logging (`logInstallPlan`, and whether `copyEjectSkillsStep` runs), and `SkillSource.installMode?` (`src/cli/types/matrix.ts`) is a per-source UI descriptor.
 
 ## Cross-Scope Reconciliation (Masking)
 
@@ -734,7 +745,7 @@ Two scope-keyed skips guard the global registration in both directions:
 - **project -> global:** uninstall the `"project"`-scope registration, then install at `"user"` scope.
 - **global -> project:** keep the global registration (other projects still need it), just install the added project scope.
 
-**Type:** `PluginScopeMigrationResult` — `{ migrated: SkillId[], failed: Array<{ id: SkillId; error: string }> }`. Per-skill install/uninstall errors accumulate in `failed`; the caller (`applyScopeChanges` in `edit.tsx`) warns per failure. The marketplace is resolved first via `requireMarketplaceOrExit()`, and only when at least one plugin-mode scope change exists.
+**Type:** `PluginScopeMigrationResult` — `{ migrated: SkillId[], failed: Array<{ id: SkillId; error: string }> }`. Per-skill install/uninstall errors accumulate in `failed`; the caller (`applyScopeChanges` in `edit.tsx`) reports each through `reportIncompleteWork`, which warns AND ends the run on `EXIT_CODES.COMPLETED_WITH_FAILURES`. It is not the diagnostic a bare uninstall failure is: the call installs at the new scope, so a failure leaves the skill registered at neither. The marketplace is resolved first via `requireMarketplaceOrExit()`, and only when at least one plugin-mode scope change exists.
 
 ## Operations Layer (Plugin Operations)
 
@@ -750,7 +761,7 @@ Plugin-related operations extracted to `src/cli/lib/operations/`:
 
 **Helper:** `pluginInstallFailureError(failedCount)` (exported from the same file) returns the canonical hard-error message callers pass to `this.error()`: _"Failed to install N plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, run '<CLI_INVOKE_COMMAND> update' to refresh the marketplace, or switch affected skills to eject mode."_
 
-**Hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, callers MUST `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced at every per-skill install site: `installPluginsStep` (`init.tsx`), `applyPluginChanges` (newly-added skills, `edit.tsx`), and `applyMigrations` (eject->plugin migrations, `edit.tsx` — the same guard covers the migration path via `MigrationResult.pluginInstalls.failed`). Uninstall failures are diagnostic-only (no orphan state). See the CLAUDE.md rule ("NEVER let plugin install per-skill failures silently produce orphan config entries").
+**Hard-error contract (callers):** When `PluginInstallResult.failed` is non-empty, the run MUST `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs — a new caller inherits that rather than writing its own copy. Otherwise `config.ts` claims plugin installation for skills that `claude plugin install` rejected, producing orphan entries that no `cc` command can self-heal (`detectInstallation` trusts `config.ts`). Enforced once, in `BaseCommand.reportPluginInstalls`, which every per-skill install site reaches: `handleInstallation` (`init.tsx`), `applyPluginChanges` (newly-added skills, `edit.tsx`), and `applyMigrations` (eject->plugin migrations, `edit.tsx` — the same guard covers the migration path via `MigrationResult.pluginInstalls.failed`). Uninstall failures are diagnostic-only (no orphan state). See the CLAUDE.md rule ("NEVER let plugin install per-skill failures silently produce orphan config entries").
 
 ### Uninstall Plugin Skills
 
@@ -819,26 +830,25 @@ For each `config.skills` entry it emits the primary key `buildMarketplacePluginR
 
 ### `src/cli/lib/plugins/index.ts`
 
-| Source module               | Re-exported symbols                                                                                                                                                                    |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `plugin-manifest.ts`        | `SkillManifestOptions`, `AgentManifestOptions`, `generateSkillPluginManifest`, `generateAgentPluginManifest`, `writePluginManifest`, `getPluginDir`                                    |
-| `plugin-manifest-finder.ts` | `findPluginManifest`                                                                                                                                                                   |
-| `plugin-ref.ts`             | `buildMarketplacePluginRef`, `parseMarketplacePluginRef`, `toClaudePluginScope`                                                                                                        |
-| `plugin-finder.ts`          | `getUserPluginsDir`, `getCollectivePluginDir`, `getProjectPluginsDir`, `getPluginSkillsDir`, `getPluginAgentsDir`, `getPluginManifestPath`, `readPluginManifest`, `getPluginSkillIds`  |
-| `plugin-info.ts`            | `PluginInfo`, `InstallationInfo`, `getPluginInfo`, `formatPluginDisplay`, `getInstallationInfo`, `formatInstallationDisplay`                                                           |
-| `plugin-validator.ts`       | `validatePluginStructure`, `validatePluginManifest`, `validateSkillFrontmatter`, `validateAgentFrontmatter`, `validatePlugin`, `validateAllPlugins`, `printPluginValidationResult`     |
-| `plugin-discovery.ts`       | `discoverAllPluginSkills`, `hasIndividualPlugins`, `listPluginNames`                                                                                                                   |
-| `plugin-settings.ts`        | `PluginKey`, `ResolvedPlugin`, `getEnabledPluginKeys`, `getInstalledPluginsRegistryPath`, `listRegisteredPluginInstalls`, `resolvePluginInstallPaths`, `getVerifiedPluginInstallPaths` |
+| Source module         | Re-exported symbols                                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugin-manifest.ts`  | `SkillManifestOptions`, `AgentManifestOptions`, `generateSkillPluginManifest`, `generateAgentPluginManifest`, `writePluginManifest`                                                    |
+| `plugin-ref.ts`       | `buildMarketplacePluginRef`, `parseMarketplacePluginRef`, `toClaudePluginScope`                                                                                                        |
+| `plugin-finder.ts`    | `getUserPluginsDir`, `getProjectPluginsDir`, `getPluginAgentsDir`, `getPluginManifestPath`, `readPluginManifest`                                                                       |
+| `plugin-info.ts`      | `InstallationInfo`, `getInstallationInfo`, `formatInstallationDisplay`                                                                                                                 |
+| `plugin-validator.ts` | `validatePluginStructure`, `validatePluginManifest`, `validateSkillFrontmatter`, `validateAgentFrontmatter`, `validatePlugin`, `validateAllPlugins`, `printPluginValidationResult`     |
+| `plugin-discovery.ts` | `discoverAllPluginSkills`, `listPluginNames`                                                                                                                                           |
+| `plugin-settings.ts`  | `PluginKey`, `ResolvedPlugin`, `getEnabledPluginKeys`, `getInstalledPluginsRegistryPath`, `listRegisteredPluginInstalls`, `resolvePluginInstallPaths`, `getVerifiedPluginInstallPaths` |
 
 ### `src/cli/lib/installation/index.ts`
 
-| Source module          | Re-exported symbols                                                                                                                                                                                                                                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `installation.ts`      | `InstallMode`, `Installation`, `detectGlobalInstallation`, `INSTALL_MODE_LABELS`, `detectInstallation`, `detectProjectInstallation`, `getInstallationOrThrow`, `deriveInstallMode`                                                                                                                                          |
-| `local-installer.ts`   | `EjectInstallOptions`, `EjectInstallResult`, `PluginConfigResult`, `installEject`, `installPluginConfig`, `buildAndMergeConfig`, `setConfigMetadata`, `buildEjectSkillsMap`, `buildCompileAgents`, `buildAgentScopeMap` — **no config-pair writer is re-exported here**; that surface is `src/cli/lib/config-gate/index.ts` |
-| `install-base-dir.ts`  | `installBaseDir`, `resolveInstallPaths`, `InstallPaths`                                                                                                                                                                                                                                                                     |
-| `is-home-directory.ts` | `isHomeDirectory`                                                                                                                                                                                                                                                                                                           |
-| `mode-migrator.ts`     | `SkillMigration`, `MigrationPlan`, `MigrationResult`, `detectMigrations`, `executeMigration`                                                                                                                                                                                                                                |
+| Source module          | Re-exported symbols                                                                                                                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `installation.ts`      | `InstallMode`, `Installation`, `declaresNoContent`, `detectGlobalInstallation`, `INSTALL_MODE_LABELS`, `INSTALL_MODE_DESCRIPTIONS`, `detectInstallation`, `detectProjectInstallation`, `deriveInstallMode` |
+| `local-installer.ts`   | `buildAndMergeConfig`, `setConfigMetadata`, `buildCompileAgents`, `buildAgentScopeMap` — **no config-pair writer is re-exported here**; that surface is `src/cli/lib/config-gate/index.ts`                 |
+| `install-base-dir.ts`  | `installBaseDir`, `resolveInstallPaths`, `InstallPaths`                                                                                                                                                    |
+| `is-home-directory.ts` | `isHomeDirectory`                                                                                                                                                                                          |
+| `mode-migrator.ts`     | `EjectCopyResult`, `SkillMigration`, `MigrationPlan`, `MigrationResult`, `detectMigrations`, `ejectCopyFailureError`, `executeMigration`                                                                   |
 
 **Exported by the module but deliberately absent from the barrel** — importers take these by direct path, or not at all:
 
@@ -850,8 +860,8 @@ For each `config.skills` entry it emits the primary key `buildMarketplacePluginR
 
 ## Known Limitations
 
-| Task                      | Status        | Anchor                                                                                                                                                   | Limitation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D-276** (`todo/cli.md`) | Ready for Dev | `maskCollidingGlobalSkills` / `reconcileProjectSplitAgainstGlobal` (`config-gate/propagate.ts`) vs `toggleTechnology` (`src/cli/stores/wizard-store.ts`) | The masking machinery is only reachable from ONE ordering — the project already owned the conflicting skill and a global install landed on top. The wizard cannot express the opposite intent: the exclusive-swap guard computes `wouldDropLockedSkill` from `isGloballyLockedSkill` and returns `TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED`, so a project with a global React cannot choose Angular at all. D-276 will allow the swap, default the new skill to project scope, and let the existing mask fire. It is explicitly NOT an exception to global immutability — the global entry is masked, never removed. |
+| Limitation                                  | Anchor                                                                                                                                                   | Detail                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Exclusive-category swap over a global skill | `maskCollidingGlobalSkills` / `reconcileProjectSplitAgainstGlobal` (`config-gate/propagate.ts`) vs `toggleTechnology` (`src/cli/stores/wizard-store.ts`) | The masking machinery is only reachable from ONE ordering — the project already owned the conflicting skill and a global install landed on top. The wizard cannot express the opposite intent: the exclusive-swap guard computes `wouldDropLockedSkill` from `isGloballyLockedSkill` and returns `TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED`, so a project with a global React cannot choose Angular at all. |
 
 Two confirm-step display quirks that were open against this area are now closed inside `computeScopeDiff` (`lib/wizard/scope-diff.ts`), and both are worth knowing because the shapes that produced them still exist. An UNRECONCILED both-scopes config could list one skill under Global as both unchanged and removed — an inherited global the project claims WITHOUT a tombstone occupies no slot in current, so it was admitted as inherited and matched as removed at once; `removedGlobalSkills` and `uniqueExcludedGlobalSkills` now both dedupe against `inheritedSkillIdSet`, so the Global section renders at most one row per skill. And a dropped mask was reported as a removal — removal candidates now come from the ACTIVE baseline alone, so a baseline tombstone is never one, because it masked a global install rather than being one and its slot held nothing to delete. `scope-diff.test.ts` pins both against a control ("a global entry nothing claims any more" still reports the removal), which is what separates the guards from a diff that has stopped reporting removals at all.

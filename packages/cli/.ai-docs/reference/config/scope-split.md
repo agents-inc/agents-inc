@@ -12,8 +12,6 @@ keywords:
     SplitConfigResult,
     tombstone-routing,
     per-agent-curation,
-    D-220,
-    D-223,
     reconcileProjectSplitAgainstGlobal,
     splitAgentStack,
   ]
@@ -104,13 +102,15 @@ The second row is reachable: a `(project skill, global sub-agent)` assignment is
 
 ### Scalar / Array Fields
 
-| Field             | Global split                                                                                                                                                                                  | Project split                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `name`            | `GLOBAL_CONFIG_NAME` (`"global"`)                                                                                                                                                             | `config.name` (preserved)                                                          |
-| `selectedDomains` | `config.selectedDomains` — carried by the `...config` spread, then re-set by an explicit conditional key                                                                                      | `config.selectedDomains` — carried by the `...config` spread and **never cleared** |
-| everything else   | `...config` spread (`description`, `author`, `marketplace`, `marketplaceName`, `agentsSource`, `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile`, `rulesFile`, `projects`) | `...config` spread                                                                 |
+| Field             | Global split                                                                                                                                                                                  | Project split                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `name`            | `GLOBAL_CONFIG_NAME` (`"global"`)                                                                                                                                                             | `config.name` (preserved)                                    |
+| `selectedDomains` | `config.selectedDomains` — carried by the `...config` spread                                                                                                                                  | `config.selectedDomains` — carried by the `...config` spread |
+| everything else   | `...config` spread (`description`, `author`, `marketplace`, `marketplaceName`, `agentsSource`, `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile`, `rulesFile`, `projects`) | `...config` spread                                           |
 
-**`selectedDomains` reaches BOTH halves. Read the assignment list, not the function's doc comment.** The project literal is `{ ...config, name, agents, skills, stack }` — it overrides four keys and no more, so the spread's `selectedDomains` survives verbatim. The global literal adds `...(config.selectedDomains !== undefined && { selectedDomains: config.selectedDomains })`, which re-sets a key the spread already placed and is therefore a no-op in every branch. The function's own doc comment says the project half "inherits them from global at runtime, so its own key is cleared rather than duplicated"; nothing in the body clears it. Both the comment and this table said so until 2026-08-18. What the emitted file shows is the writer's decision, not the split's: `generateProjectConfigWithInlinedGlobal` recomputes the project `config.ts`'s `selectedDomains` as the deduplicated union of the global and project values (`partitionInlinedConfigEntries`), and `generateProjectConfigWithGlobalImport` emits `...(globalConfig.selectedDomains ?? [])` followed by the project's own — so the duplication is invisible downstream on both writer paths, which is why a split that carries it has never been observable in an emitted config.
+**`selectedDomains` reaches BOTH halves, and that is the intended model: a project owns its own domain selection rather than inheriting the global one.** Both literals have the shape `{ ...config, name, agents, skills, stack }` — four keys overridden and no more — so the spread's `selectedDomains` survives verbatim on each side. Neither literal re-states the key, because neither needs to.
+
+What the emitted file shows is the writer's decision, not the split's: `generateProjectConfigWithInlinedGlobal` recomputes the project `config.ts`'s `selectedDomains` as the deduplicated union of the global and project values (`partitionInlinedConfigEntries`), and `generateProjectConfigWithGlobalImport` emits `...(globalConfig.selectedDomains ?? [])` followed by the project's own. Both writer paths deduplicate, so carrying the key to both halves is not observable as duplication in any emitted config.
 
 There is no per-split selected-agent list: `ProjectConfig` carries no flat agent-name field, and each half's selected set is derived from its own non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`.
 
@@ -156,7 +156,7 @@ Note: the split result is not re-merged. The global half feeds `mergeGlobalConfi
 
 No caller parses these keys — they are opaque membership tokens. Changing the delimiter would require updating both sites; the shared helper guarantees they agree.
 
-## The D-220 Delta Pipeline
+## The Per-Agent Curation Delta Pipeline
 
 `generateProjectConfigFromSkills` accepts two optional opt-in delta sets that govern per-agent stack curation:
 
@@ -165,7 +165,17 @@ No caller parses these keys — they are opaque membership tokens. Changing the 
 | `newlyAddedSkillIds`     | `computeNewlyAddedSkillIds`     | Skills new to this session (not in prior `existing.config.skills`). Admits them to every existing agent's stack that is scope-compatible. |
 | `scopeEligibilityGained` | `computeScopeEligibilityGained` | `(agent, skill)` pairs whose scope-compatibility flipped this session. Admits pure scope-flip cases that a skill-id-only diff misses.     |
 
-When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally — legacy pre-D-220 behavior where every scope-compatible skill lands on every existing agent. Passing an empty array (vs `undefined`) is the opt-in signal: preservation rule applies, delta sets happen to be empty.
+When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally. That is **not** seed-everything: `buildAgentStack` runs a third filter, `isPreservedOrRelevant`, after this one and independently of the opt-in, so a skill arriving this session still lands only where the shared resolver targets it. Passing an empty array (vs `undefined`) is the opt-in signal: preservation rule applies, delta sets happen to be empty.
+
+**The three filters, in `buildAgentStack`'s own order**, over every `(agent, category, skillId)` triple:
+
+| Order | Filter                  | Refuses                                                                                        |
+| ----- | ----------------------- | ---------------------------------------------------------------------------------------------- |
+| 1     | `isScopeCompatible`     | A pair the scope rule forbids — private, delegating to `isScopePairCompatible`                 |
+| 2     | `shouldIncludeTriple`   | A skill absent from this agent's prior curated list that no delta set admits (the table below) |
+| 3     | `isPreservedOrRelevant` | A triple the prior save does not carry AND that `isRelevantPair` does not target at this agent |
+
+Filter 3 is two-tier: `priorLoadState` answering anything at all lets the triple ride through verbatim, cross-domain included, because that is the user's curation; otherwise `isRelevantPair` calls `resolveAssignment` from `@workspace/matrix`, the same targeting the editor's default assignments read. Full treatment: [features/configuration.md](../features/configuration.md) -> "Which agents a skill lands on".
 
 **`shouldIncludeTriple` decision table** (when `newlyAddedSkillIds` is provided):
 
@@ -176,7 +186,7 @@ When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` un
 | present                        | no                              | yes                                                                           | APPEND  |
 | present                        | no                              | no                                                                            | OMIT    |
 
-The OMIT branch is the load-bearing D-220 semantic: a user who previously removed a skill from one agent's curated list keeps it removed across subsequent edits, even when other agents still carry it. See `changelogs/0.137.0.md` D-220 entry.
+The OMIT branch is the load-bearing curation semantic: a user who previously removed a skill from one agent's curated list keeps it removed across subsequent edits, even when other agents still carry it.
 
 ## Invariants and Caller Contracts
 
@@ -187,7 +197,7 @@ The OMIT branch is the load-bearing D-220 semantic: a user who previously remove
 
 ## Anchors
 
-- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `splitAgentStack` (private), `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
+- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isPreservedOrRelevant` / `isRelevantPair` (both private), `splitAgentStack` (private), `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
 - `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained` — `src/cli/lib/installation/local-installer.ts`.
 - `isActiveAt`, `activeAgentScopeMap`, `activeSkillScopeMap`, `effectivelyExcludedSkillIds` — `src/cli/lib/configuration/scope-predicates.ts` (shared predicates consumed by the generator and the delta helpers).
 - Post-split reconciliation applied to the project half before every write: `reconcileProjectSplitAgainstGlobal` — `src/cli/lib/config-gate/propagate.ts`.

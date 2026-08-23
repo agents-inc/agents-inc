@@ -17,7 +17,7 @@ last_validated: 2026-08-09
 
 All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.4.3"` in `package.json`) — `.passthrough()` and `.strict()` are still the idioms in use; the file does not use `z.looseObject` / `z.strictObject`.
 
-**34 exported schemas** — `grep -cE "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`. The
+**34 exported schemas** — `grep -cP "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`. The
 four tables below partition them exactly; every exported schema appears in one, and none appears in
 two. **Re-derive the four sub-counts and their membership in the same pass as the total** — a total
 corrected alone over stale sub-tables is how this document drifts, because each table then reads as
@@ -59,7 +59,11 @@ disagreeing on every name in it.
 
 `effortLevelSchema` has four consumers (`agentYamlConfigSchema`, `projectConfigLoaderSchema.agents`, `agentYamlGenerationSchema`, `agentFrontmatterValidationSchema`) — the full `model` / `effort` chain is in [features/model-and-effort.md](../features/model-and-effort.md).
 
-There is no standalone `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, or `skillSourceTypeSchema` in `schemas.ts`. `SkillId` / `Domain` values are accepted via inline `z.string() as z.ZodType<...>` casts inside the object schemas that consume them (e.g. `boundSkillSchema`, `skillFrontmatterLoaderSchema`, `skillAssignmentSchema`, `matrixRawMetadataSchema`).
+There is no standalone `skillIdSchema`, `domainSchema`, `categorySchema`, `agentNameSchema`, `boundSkillSchema` or `skillSourceTypeSchema` in `schemas.ts`. `SkillId` / `Domain` / `Category` / `AgentName` values are accepted via inline `z.string() as z.ZodType<...>` casts inside the object schemas that consume them (`skillAssignmentSchema`, `skillFrontmatterLoaderSchema`, `skillAssignmentElementSchema`, `agentYamlConfigSchema`, `categoryDefinitionSchema`, `matrixRawMetadataSchema`, `projectConfigLoaderSchema`).
+
+```
+grep -n 'as z.ZodType<\(SkillId\|Domain\|Category\|AgentName\)>' src/cli/lib/schemas.ts
+```
 
 #### Why slugs and categories are strict but skill IDs are not
 
@@ -89,16 +93,18 @@ The rationale is written inline in source at `skillFrontmatterLoaderSchema`:
 | Schema                         | Validates                 | Pattern                               |
 | ------------------------------ | ------------------------- | ------------------------------------- |
 | `skillFrontmatterLoaderSchema` | SKILL.md frontmatter      | Lenient object (no `.passthrough()`)  |
-| `skillMetadataLoaderSchema`    | metadata.yaml             | `.passthrough()` + superRefine        |
+| `skillMetadataLoaderSchema`    | metadata.yaml             | `.passthrough()`                      |
 | `projectConfigLoaderSchema`    | .claude-src/config.ts     | `.passthrough()` (no `version` field) |
 | `projectSourceConfigSchema`    | Source config             | `.passthrough()`                      |
-| `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()` + superRefine        |
+| `localRawMetadataSchema`       | Local skill metadata.yaml | `.passthrough()`                      |
 | `localSkillMetadataSchema`     | Local skill forkedFrom    | `.passthrough()`                      |
 | `settingsFileSchema`           | settings.yaml             | `.passthrough()`                      |
 
 `localRawMetadataSchema` is the schema behind the **single judgment of whether a `metadata.yaml` describes its skill**: `readSkillMetadata` (`lib/loading/loader.ts`) runs it after the YAML parse, and `compile`, the `config-types.ts` regeneration pass and `doctor` all take their verdict from that one call. `doctor` layers `validateSkillMetadata`'s stricter published-skill checks on the fields it returns, never beside them.
 
-The `superRefine` on `skillMetadataLoaderSchema` and `localRawMetadataSchema` is the module-internal `validateCategoryField`: it delegates to `categoryPathSchema` by default, and requires only kebab-case when the record carries `custom: true`. `matrixRawMetadataSchema` (Structural table) deliberately does **not** run it — see its doc comment in source.
+**One `category` field, one schema, for every metadata reader.** `skillMetadataLoaderSchema`, `localRawMetadataSchema` and `matrixRawMetadataSchema` (Structural table) all validate `category` with `categoryPathSchema` directly — no `superRefine` and no per-caller branch on `custom: true`. `categoryPathSchema` itself accepts the `local` pseudo-category, any member of the generated `CATEGORIES` array, and any `KEBAB_CASE_PATTERN` string for a custom category. Whether a category is one this installation actually DECLARES is asked where the declarations are — `mergeLocalSkillsIntoMatrix` — not at this boundary; `skillMetadataLoaderSchema`'s own doc comment states the rule.
+
+The one `superRefine` in `schemas.ts` is `renamedFieldGuard`, over `refuseRenamedFields`.
 
 **A `projectConfigLoaderSchema` failure is never silent.** `loadProjectConfigFromDir` in `src/cli/lib/configuration/project-config.ts` throws `ConfigLoadError` on a schema violation — it must not `verbose()`-log the `safeParse` failure and return `null`, which would be indistinguishable from "no config file". See [core-types.md](./core-types.md#configloaderror-srcclilibconfigurationproject-configts) for the three-way missing / content-less / unloadable distinction.
 

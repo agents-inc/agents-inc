@@ -20,6 +20,8 @@ keywords:
     dual-scope,
     lock-icon,
     isEditingFromGlobalScope,
+    resolveEditRoot,
+    EditRoot,
     isInitMode,
     isGlobalRoot,
     refuseProjectScopedContentAtHome,
@@ -67,7 +69,7 @@ Skills and agents can exist at two scopes: `"project"` and `"global"`. This affe
 
 **Function:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/install-base-dir.ts`
 
-Delegates to `installBaseDir(projectDir, scope)` (same file): uses `os.homedir()` for `"global"`, `projectDir` for `"project"`. Defaults to `"project"` when `scope` is omitted. `os.homedir()` is called at runtime (not the `GLOBAL_INSTALL_ROOT` import-time constant in `consts.ts`) so the path agrees with mocked home directories in tests.
+Delegates to `installBaseDir(projectDir, scope)` (same file): uses `os.homedir()` for `"global"`, `projectDir` for `"project"`. Defaults to `"project"` when `scope` is omitted. `os.homedir()` is called at runtime so the path agrees with mocked home directories in tests — as `globalInstallRoot()` in `consts.ts` now does too, having been an import-time constant.
 
 **Returned paths** (`InstallPaths` type, `install-base-dir.ts`):
 
@@ -134,10 +136,11 @@ type ScopedEntry = { scope?: SkillScope; excluded?: boolean };
 | `activeAgentScopeMap`         | `(agents: readonly AgentScopeConfig[] \| undefined) => Map<AgentName, SkillScope>` | Scope of each non-excluded agent, keyed by name.                                                                                               |
 | `effectivelyExcludedSkillIds` | `(skills: readonly SkillConfig[]) => Set<SkillId>`                                 | Ids with an excluded entry that no same-id active entry rescues (an excluded-global + active-project pair is NOT effectively excluded).        |
 
-The full export list is owned and **drift-bound** by
-[features/configuration.md](../features/configuration.md), whose table
-`scripts/check-enumeration-drift.ts` diffs against this module row by row. This one is a second copy
-with nothing binding it — check it against the owner before trusting it.
+The full export list is owned by
+[features/configuration.md](../features/configuration.md). The table above is a second copy of it,
+and `scripts/check-enumeration-drift.ts` diffs **both** against this module row by row — one
+registry row per document, because each copy is separately wrong. So a ninth export cannot land
+without reddening this table as well as the owner's.
 
 **Consumers — every non-test importer, not a selection.** Re-derive with
 `grep -rln scope-predicates src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'`:
@@ -226,10 +229,11 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 
 **How `isEditingFromGlobalScope` is computed:**
 
-- Both `init.tsx` and `edit.tsx` now use the shared `isHomeDirectory(dir)` helper (`src/cli/lib/installation/is-home-directory.ts`), which compares `fs.realpathSync(dir)` against `fs.realpathSync(os.homedir())` (falling back to plain string equality when a path cannot be resolved). This resolves symlinks on both sides, so the earlier init-vs-edit asymmetry is gone.
-  - `init.tsx`: `isEditingFromGlobalScope: isHomeDirectory(projectDir)`.
-  - `edit.tsx`: `isEditingFromGlobalScope: isHomeDirectory(cwd)`.
-- `GLOBAL_INSTALL_ROOT = os.homedir()` from `src/cli/consts.ts` is evaluated at import time; runtime callers use `os.homedir()` directly (or `isHomeDirectory`) so test home-dir mocks apply.
+- Both `init.tsx` and `edit.tsx` use the shared `isHomeDirectory(dir)` helper (`src/cli/lib/installation/is-home-directory.ts`), which compares `fs.realpathSync(dir)` against `fs.realpathSync(os.homedir())` (falling back to plain string equality when a path cannot be resolved). This resolves symlinks on both sides, so the earlier init-vs-edit asymmetry is gone.
+  - `init.tsx`: `isEditingFromGlobalScope: isGlobalRoot`, which is `isHomeDirectory(projectDir)` — `init` is TOLD which directory to install into, so that directory is the subject.
+  - `edit.tsx`: `isEditingFromGlobalScope: editRoot.isGlobal`. `edit` is told nothing: `resolveEditRoot(installation, cwd, setupRequested)` answers which installation the run is editing, and `isGlobal` is `isHomeDirectory` of THAT root. The root is `installation.projectDir` — the installation `detectProject` found, which is the only root with a config to edit — except under `--project-setup`, where `cc init` run in a directory declares that directory the installation being set up and the root is `cwd`.
+- **The question is asked once per `edit` run and every layer reads the answer.** It used to be asked six times, three of them off `process.cwd()`, and a run started in a directory holding no installation disagreed with itself: the wizard offered the scope toggle for a project that did not exist while `writeProjectConfig` saw a project context and wrote a `.claude-src/` pair beside an unrelated checkout. See [commands/edit.md](../commands/edit.md) -> Invariants -> "One directory, decided once".
+- Nothing derives the home directory at import time. `globalInstallRoot()` and `cacheRoot()` in `src/cli/consts.ts` are functions, and every other caller reaches `os.homedir()` directly (or `isHomeDirectory`), so test home-dir mocks apply everywhere. Both were `export const … = os.homedir()`; `src/cli/lib/__tests__/home-dir-read-at-call-time.test.ts` refuses that declaration shape across `src/cli/`, and `reference/utilities.md` carries why.
 
 **Actions with guards:**
 
@@ -272,7 +276,7 @@ Preselection upholds this too: a saved tombstone is preserved only when the rebu
 
 Both the build step (CategoryGrid) and agent step (StepAgents) show dual-scope badges when a scope toggle creates a tombstone:
 
-- **CategoryGrid** (`category-grid.tsx`): `CategoryOption.secondaryScope` renders a second `[G]`/`[P]` badge next to the primary scope badge.
+- **CategoryGrid** (`category-grid.tsx`): `CategoryOption.secondaryScope` renders a second badge next to the primary one. Both are space-padded `" G "` / `" P "` in `CLI_COLORS.WARNING` on `CLI_COLORS.LABEL_BG` — **not** the bracket form; `formatScopeTag`'s `[G]`/`[P]` is `StepAgents` only.
 - **StepAgents** (`step-agents.tsx`): Derives the primary + secondary badges via `deriveScopeBadges(agentConfig, excludedConfig)` and `formatScopeTag()` from `src/cli/lib/wizard/scope-diff.ts` — a tombstone at the OTHER scope renders as a secondary `[G]`/`[P]` badge.
 
 ### Lock Icon for Read-Only Skills
@@ -304,12 +308,12 @@ Conflating them is how a project-scope run deletes a global install while its co
 
 Every keystroke-driven caller reaches the writer through the wizard store, and the store refuses to deselect a live global entry at all — so a wizard-produced `removedSkills` / `removedAgents` never carries one, and on that path the store is the whole of the protection. **`edit --from <id>` bypasses the store**: a payload states a roster directly, and the apply is destructive. `reconcileSharedConfig` (`src/cli/lib/seed/seed-apply.ts`) therefore puts back what the run may not remove **into the result, before the diff is taken**, which is the only place the diff can see it. Two reasons, separately remedied and separately disclosed in the confirm:
 
-| Reason           | Predicate                                                                  | Remedy the plan names               |
-| ---------------- | -------------------------------------------------------------------------- | ----------------------------------- |
-| Inherited global | `authority === "owned" && isActiveAt(entry, "global")`                     | `uninstall` from the home directory |
-| Authored here    | `skillsAuthoredHere` — an ejected skill directory carrying no `forkedFrom` | `edit`                              |
+| Reason        | Predicate                                                                                                                | Remedy the plan names      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| Authored here | `ReconcileOptions.authoredHere` — from `skillsAuthoredHere`, an ejected skill directory with no `forkedFrom`             | `edit`                     |
+| Unplaceable   | `ReconcileOptions.unplaceable` — `SeedMapping.skippedSkillIds`, an id the payload NAMED that this catalogue cannot place | `update`, then apply again |
 
-At the home root `authority` is `"all"` and there is no inherited entry: a global-context run owns the whole config, so the scope half drops out while the authorship half still holds. See [`commands/edit.md`](../commands/edit.md).
+**Scope is not one of the two.** `ReconcileOptions` carries no authority word, so no entry is kept here for being globally installed: a project-scope apply REMOVES a globally-installed entry this configuration leaves out, after disclosing the fan-out with `globallyInstalledRemoved` (`src/cli/utils/messages.ts`). Where both reasons cover one entry, authorship wins the split (`reasonKept`) — a skill nobody installed cannot be removed by any shared configuration from anywhere, while an unplaceable id is inert only for as long as this installation reads this catalogue. See [`commands/edit.md`](../commands/edit.md).
 
 ### The removal paths from the wizard
 

@@ -113,7 +113,7 @@ src/cli/
                             #   REQUIRES the gate token (asserted in writeIfChanged); mints none
       classify.ts           # classifyGlobalChange() -> GlobalChangeSet; consequenceTier() -> T1..T4
       propagate.ts          # propagateGlobalChangesToProjects(), writeProjectConfigPair(), pruneGlobalEntriesFromRegisteredProjects(),
-                            #   resolveEffectiveGlobalConfig(), mergeGlobalConfigs(), register/deregisterProjectPath(),
+                            #   resolveEffectiveGlobalConfig(), mergeGlobalConfigs(), registerProjectPath(),
                             #   reconcileProjectSplitAgainstGlobal() (section 16), buildProjectTypesExtras()
       recompile.ts          # recompilePropagated() — lazy import of operations/project/recompile-project-agents
       gate-token.ts         # AsyncLocalStorage write privilege + GlobalPairWriteViolation
@@ -124,16 +124,16 @@ src/cli/
       define-config.ts      # defineConfig() helper re-exported through agents-inc/config
       default-categories.ts # defaultCategories — category definitions, pinned 1:1 against the generated `Category` union
     installation/           # Install mode detection, local installer, mode migrator
-      installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), getInstallationOrThrow(), deriveInstallMode()
+      installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), deriveInstallMode()
       install-base-dir.ts   # resolveInstallPaths(projectDir, scope), installBaseDir() — scope-aware base dir
       is-home-directory.ts  # isHomeDirectory() — symlink-safe global-install-root check
-      local-installer.ts    # installEject(), installPluginConfig(), buildAndMergeConfig(), buildCompileAgents(),
+      local-installer.ts    # buildAndMergeConfig(), setConfigMetadata(), buildCompileAgents(),
                             #   buildAgentScopeMap() — every config-pair writer lives in config-gate/
       mode-migrator.ts      # detectMigrations(), executeMigration() — install-mode migration
     loading/                # YAML/frontmatter loading, source fetching, multi-source
       source-loader.ts      # loadSkillsMatrixFromSource() — SourceLoadOptions: skipExtraSources, matrixOnly, devMode
     matrix/                 # Skills matrix loading, resolving, health checks
-      matrix-provider.ts    # getSkillById(), getSkillBySlug() asserting lookups
+      matrix-provider.ts    # getSkillById() asserting lookup, initializeMatrix(), findStack()
       skill-resolution.ts   # synthesizeCategory(), mergeMatrixWithSkills() — resolveRelationships is internal
     operations/             # Composable building blocks for CLI commands
       source/               # loadSource(), ensureMarketplace(), requireMarketplace()
@@ -324,7 +324,6 @@ The `src/cli/types/generated/matrix.ts` file contains the full `BUILT_IN_MATRIX`
 `src/cli/lib/matrix/matrix-provider.ts` provides safe skill lookups:
 
 - `getSkillById(id)` — asserting lookup by SkillId
-- `getSkillBySlug(slug)` — asserting lookup by SkillSlug
 
 `src/cli/lib/matrix/skill-resolution.ts` exports `synthesizeCategory()` and `mergeMatrixWithSkills()`. The unified `resolveRelationships()` traversal is module-private and invoked inside `mergeMatrixWithSkills()`.
 
@@ -413,7 +412,7 @@ The authoritative plugin-reference format is **per-skill**, not per-agent.
 - Compiled agent skill refs are derived per-skill by `pluginRefFor()` (a module-private function in `src/cli/lib/compiler.ts`) as `${id}:${id}`, emitted only when the skill's own `Skill.source` is a marketplace name (not `undefined` and not `"eject"`). The per-skill value gates whether a plugin ref is emitted — it is not part of the ref string. There is no whole-agent `installMode`.
 - Mixed installs are expressed by different `Skill.source` values across the skills of a single agent.
 - Plugin install shell commands still use the registration form `{skillId}@{marketplace}`; the compiled-agent body uses the `${id}:${id}` pluginRef form.
-- Hard-error contract: if `installPluginSkills` returns non-empty `failed`, the command MUST hard-error before writing config (`init.tsx::installPluginsStep`, `edit.tsx::applyPluginChanges`) — no silent plugin→eject fallback.
+- Hard-error contract: if `installPluginSkills` returns non-empty `failed`, the command MUST hard-error before writing config — one guard, `BaseCommand.reportPluginInstalls`, reached from `init.tsx::handleInstallation` and `edit.tsx::applyPluginChanges` — no silent plugin→eject fallback.
 
 ### 14. Projects Array Lifecycle (Global Config Only)
 
@@ -426,10 +425,10 @@ The authoritative plugin-reference format is **per-skill**, not per-agent.
 
 **A write that propagates recompiles the propagated projects itself**, inside `config-gate`, and returns a `GateReport` whose `recompile` field the command renders. Callers cannot forget it, because there is nothing left for them to do — a config-only propagation would leave each registered project's compiled `.claude/agents/<name>.md` referencing a removed or re-scoped global skill.
 
-| Function                             | File                                                 | Behavior                                                                                                                                                                    |
-| ------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `recompileRegisteredProjectAgents()` | `lib/operations/project/recompile-project-agents.ts` | Recompiles ONE registered project at `scopeFilter: "project"`. Passes discovered `skills` explicitly so global-local/project-local skills are not stripped.                 |
-| `recompilePropagatedProjectAgents()` | `lib/operations/project/recompile-project-agents.ts` | Loops the above over every propagated dir sequentially with per-project failure isolation; returns `PropagatedRecompileSummary { recompiledCount, failedCount, warnings }`. |
+| Function                             | File                                                 | Behavior                                                                                                                                                                                   |
+| ------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `recompileRegisteredProjectAgents()` | `lib/operations/project/recompile-project-agents.ts` | Recompiles ONE registered project at `scopeFilter: "project"`. Passes discovered `skills` explicitly so global-local/project-local skills are not stripped.                                |
+| `recompilePropagatedProjectAgents()` | `lib/operations/project/recompile-project-agents.ts` | Loops the above over every propagated dir sequentially with per-project failure isolation; returns `PropagatedRecompileSummary { rewrittenCount, unchangedCount, failedCount, warnings }`. |
 
 Scope is project-only by design: the global agents were already recompiled by the triggering operation's own pass.
 
@@ -494,9 +493,20 @@ Supporting reconcilers in the same module: `retainProjectOwnedSkills()` / `retai
 | `compile`                   | `commands/compile.ts`                      | Hard-errors before any write (`detectInstallations()` catches and calls `this.error`). |
 | `detectProject()`           | `lib/operations/project/detect-project.ts` | Converts to `null` so `doctor` / `edit` report a config problem rather than crashing.  |
 | `detectInstallationInDir()` | `lib/installation/installation.ts`         | No longer fabricates an installation from an unloadable config.                        |
-| `uninstall`                 | `commands/uninstall.tsx`                   | `deregisterProjectPath()` failure (incl. `ConfigLoadError`) warns and continues.       |
+| `uninstall`                 | `commands/uninstall.tsx`                   | Deregistration failure (incl. `ConfigLoadError`) warns and continues.                  |
 
 A content-less config (no skills and no agents) reads as **not installed**, so `init` routes to the setup wizard instead of the dashboard.
+
+**The SETTINGS reader of the same file holds the same line.** `loadSourceConfig` (private in
+`configuration/config.ts`, behind `loadProjectSourceConfig` / `loadGlobalSourceConfig`) reads
+`.claude-src/config.ts` for the marketplace, `skillsDir`, `agentsDir` and the rest; a file that is
+not there answers `null`, and every way of failing to load one that IS there raises. It does not
+throw `ConfigLoadError` — it hands on `ConfigSchemaError` / `ConfigDefaultExportError` as themselves
+and wraps everything else in `configUnreadableError(...)`, the same message `BaseCommand`'s
+`ensureConfigReadable` prints for the roster loader. `src/cli/lib/configuration/__tests__/config-readers-agree.test.ts`
+holds all four readers of this file to the two-state contract and asserts the roster, so a fifth
+cannot land untested. Per-call-site abort/degrade postures are in
+[features/configuration.md](./features/configuration.md) § `loadSourceConfig`.
 
 ### 18. Terminal-Size Gate: Two Enforcement Points, One Constant
 

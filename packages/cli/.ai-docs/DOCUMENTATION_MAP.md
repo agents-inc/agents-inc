@@ -72,7 +72,7 @@ Descriptive: how the CLI works and where its pieces live.
 | `reference/features/skills-and-matrix.md`      | Skills matrix loading, categories, resolution, install-mode tagging                                                   |
 | `reference/skills/skill-primitives.md`         | Function inventory for `src/cli/lib/skills/`                                                                          |
 | `reference/features/built-in-catalogue.md`     | `defaultStacks` / `defaultRules` fallback data and when it is bypassed                                                |
-| `reference/features/source-fetch-and-cache.md` | giget fetch, cache key derivation, ID-targeted read path                                                              |
+| `reference/features/source-fetch-and-cache.md` | giget fetch, cache key derivation, `SKILL.md` read path                                                               |
 | `reference/features/compilation-pipeline.md`   | Liquid templates, agent assembly, output validation                                                                   |
 | `reference/features/agent-system.md`           | Agent templates, partials, `metadata.yaml`, Liquid compilation                                                        |
 | `reference/features/model-and-effort.md`       | The model/effort tuning axis end to end, and why it lives on the sub-agent                                            |
@@ -142,6 +142,7 @@ workspaces on the other side of the repository.
 | `standards/e2e/`                      | E2E sub-standards: structure, assertions, page objects, test data, patterns, anti-patterns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `standards/e2e/user-journeys.md`      | The journeys the suite must cover, the four assertion surfaces each owes, per-journey coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `standards/typescript-types-bible.md` | Type-authoring rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `standards/briefing.md`               | How a brief states a fact and what a report owes back: re-derivation, command-not-count, provenance, the required corrections field, where the per-dispatch tally of those corrections is kept, and what cannot be mechanised because a brief is never a tracked file                                                                                                                                                                                                                                                                                                                                        |
 | `standards/prompt-bible.md`           | Prompt phrasing, XML tags, delegation shape                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `standards/loop-prompts-bible.md`     | Loop cadence, iteration discipline, synthesis passes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `standards/skill-atomicity-bible.md`  | Skill decomposition rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -154,7 +155,8 @@ workspaces on the other side of the repository.
 
 `agent-findings/` holds dated point-in-time evidence — the deliberate exception to the
 current-state rule. It is not swept, re-validated or pruned. See `agent-findings/README.md` for the
-pipeline and `agent-findings/TEMPLATE.md` for the frontmatter schema.
+pipeline, its "Reading a Finding" section for what a finding the tree has moved past is and is not,
+and `agent-findings/TEMPLATE.md` for the frontmatter schema.
 
 `agent-suggestions/` holds forward-looking proposals; see its `README.md` for the status enum.
 
@@ -168,7 +170,7 @@ because what a total counts is the half that drifts silently. "TypeScript files"
 `.tsx` here, `.d.ts` included; `src/cli/` has both extensions and `e2e/` has none of the second, so
 a reader who guesses wrong is right about one of them and cannot tell which.
 
-- **`src/cli/`:** 398 TypeScript files — 165 specs (`*.test.ts(x)`), the rest production and test
+- **`src/cli/`:** 406 TypeScript files — 172 specs (`*.test.ts(x)`), the rest production and test
   support.
 
   ```
@@ -290,6 +292,7 @@ one is the only way it runs**:
 | `check-findings-frontmatter` | Every `agent-findings/` block parses, declares a `root_cause` read out of `TEMPLATE.md`'s own frontmatter, and is not an uncross-linked duplicate                                                                                                                                           |
 | `check-screen-sentinels`     | An `e2e/pages/constants.ts` literal a page object WAITS on against the string the product paints — drift there times out rather than asserting                                                                                                                                              |
 | `check-spawn-doors`          | Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK`. Judged per DOOR, following a spawn's env expression through the local declarations it names, and recognising a door by the binary path it hands the spawn rather than by the constant it reaches it through |
+| `check-symbol-citations`     | Every `@link` citation in this package's TypeScript resolves to a symbol, asked of the type checker over the three tsconfig projects `typecheck` names. The only check here that builds a `ts.Program`; a citation in a `//` comment is outside it, and so is every other workspace         |
 
 **A documentation edit can turn that suite red, and that is the point.** After changing any document
 that states a list, run `npx vitest run --project unit scripts/` from `packages/cli`. Which document

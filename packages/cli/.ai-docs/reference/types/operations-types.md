@@ -34,8 +34,6 @@ Two barrels expose operation types, and they are **not** equivalent:
 
 Types reachable only through `index.js` (absent from `types.ts`): `MarketplaceRequirement`, `CompileAllScopesOptions`, `PropagatedRecompileSummary`.
 
-`CopyLocalSkillsOptions` is exported from its own module (`operations/skills/copy-local-skills.ts`) but surfaced by **neither** barrel — import it from the module path.
-
 ## Operations Layer Types
 
 The operations layer defines focused option/result types per operation:
@@ -51,13 +49,12 @@ The operations layer defines focused option/result types per operation:
 
 ### Skill Operations
 
-| Type                     | File                                           | Purpose                                                                  |
-| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| `DiscoveredSkills`       | `operations/skills/discover-skills.ts`         | Result of skill discovery (local + marketplace)                          |
-| `CopyLocalSkillsOptions` | `operations/skills/copy-local-skills.ts`       | Options for copying local skills (module path only — see Export Surface) |
-| `SkillCopyResult`        | `operations/skills/copy-local-skills.ts`       | Result of copying local skills                                           |
-| `PluginInstallResult`    | `operations/skills/install-plugin-skills.ts`   | Result of plugin skill installation                                      |
-| `PluginUninstallResult`  | `operations/skills/uninstall-plugin-skills.ts` | Result of plugin skill uninstallation                                    |
+| Type                    | File                                           | Purpose                                         |
+| ----------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| `DiscoveredSkills`      | `operations/skills/discover-skills.ts`         | Result of skill discovery (local + marketplace) |
+| `SkillCopyResult`       | `operations/skills/copy-local-skills.ts`       | Result of copying local skills                  |
+| `PluginInstallResult`   | `operations/skills/install-plugin-skills.ts`   | Result of plugin skill installation             |
+| `PluginUninstallResult` | `operations/skills/uninstall-plugin-skills.ts` | Result of plugin skill uninstallation           |
 
 ### Project Operations
 
@@ -84,7 +81,7 @@ type PluginInstallResult = {
 };
 ```
 
-`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills that `claude plugin install` rejected produces orphan entries. Enforced by `installPluginsStep` (init) and `applyPluginChanges` (edit).
+`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills that `claude plugin install` rejected produces orphan entries. Enforced by `installPluginSkillsReported` (`BaseCommand`, called by both `init` and `edit`) and `applyPluginChanges` (edit).
 
 ### `PluginUninstallResult`
 
@@ -166,7 +163,14 @@ Unlike `CompileAgentsOptions`, `skills` and `agentScopeMap` are **required** —
 
 ```typescript
 type PropagatedRecompileSummary = {
-  recompiledCount: number;
+  /** Projects where at least one compiled agent's content actually moved. */
+  rewrittenCount: number;
+  /**
+   * Projects the fan-out reached whose agents all came back byte-identical. They
+   * were visited and left alone, which is a different fact from being recompiled
+   * and the one the old single count could not tell apart.
+   */
+  unchangedCount: number;
   failedCount: number;
   /** Per-project warnings in processing order — the caller surfaces them via warn(). */
   warnings: string[];
@@ -179,13 +183,14 @@ Returned by `recompilePropagatedProjectAgents(projectDirs)`, which loops `recomp
 
 | Per-project outcome                        | Effect on the summary                                                     |
 | ------------------------------------------ | ------------------------------------------------------------------------- |
-| Success (`result.failed` empty)            | `recompiledCount++`                                                       |
+| Succeeded, at least one agent rewritten    | `rewrittenCount++`                                                        |
+| Succeeded, every agent byte-identical      | `unchangedCount++`                                                        |
 | Compile ran but `result.failed` non-empty  | `failedCount++`, that result's `warnings` appended, loop continues        |
 | Threw (unreadable config, broken template) | `failedCount++`, `Could not recompile agents in <dir>: <reason>` appended |
 
-Nothing here throws or short-circuits: one project's unreadable config must not abort the loop or leave the remaining projects stale. Projects are processed **sequentially** so `warnings` keeps a deterministic per-project order. Both `init` and `edit` `warn()` every entry and then log the counts (`edit` colours the ` (N failed)` suffix with `CLI_COLORS.WARNING`).
+Nothing here throws or short-circuits: one project's unreadable config must not abort the loop or leave the remaining projects stale. Projects are processed **sequentially** so `warnings` keeps a deterministic per-project order. Rendering is not per-command: `reportPropagatedRecompile(report)` on `BaseCommand` `warn()`s every entry and then logs `propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount)` uncoloured, returning early when `report.propagated.updated` is empty. All four fan-out commands reach it — `init`, `edit`, `compile`, `uninstall`.
 
-`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes and writes no agent into `~/.claude/agents`, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` still `ensureDir`s the global agents directory unconditionally at entry; that is an idempotent `mkdir -p`, not a write.)
+`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes and writes no agent into `~/.claude/agents`, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` creates neither target directory up front — `writeFile` makes a target's parent on the way past, so `~/.claude/agents/` appears only when an agent actually routes into it.)
 
 ### `LoadedSource`
 
@@ -223,10 +228,12 @@ type ConfigWriteOptions = {
   sourceResult: SourceLoadResult;
   projectDir: string;
   sourceFlag?: string;
-  agents?: Partial<Record<AgentName, AgentDefinition>>; // pre-loaded; loads from CLI + source when omitted
+  agentDefs?: AgentDefs; // what loadAgentDefs() answered; asks for itself when omitted
   authoritativeScope?: AuthoritativeScope; // Scenario C
 };
 ```
+
+`agentDefs` takes the WHOLE `AgentDefs` value rather than the roster map inside it, so the only thing a caller can hand over is what `loadAgentDefs()` produced — this function emits the `AgentName` / `SelectedAgentName` unions from whatever roster it is given, and a bare `Partial<Record<AgentName, AgentDefinition>>` made a roster different from the CLI's own a representable argument. Deleting the option instead would cost `edit` a second uncached walk-and-parse of `src/agents/` per run, because it needs `sourcePath` off the same value for its compile pass. `edit` is the only production caller that passes it.
 
 `authoritativeScope` (type `AuthoritativeScope = "all" | "owned"`, from `src/cli/lib/configuration/config-merger.ts`) governs how `cc edit`'s new config treats absent entries: `"all"` (global edit) drops any deselected entry, `"owned"` (project edit) drops deselected project-owned entries only, `undefined` (init) keeps the additive union-preserve merge. Threaded into `buildAndMergeConfig()` by `writeProjectConfig`.
 
@@ -304,23 +311,11 @@ Unlike `detectProject`, this operation **lets `ConfigLoadError` propagate**. Its
 
 ```typescript
 type AgentDefs = {
-  agents: Partial<Record<AgentName, AgentDefinition>>; // CLI defaults + source overrides (source wins)
+  agents: Partial<Record<AgentName, AgentDefinition>>; // the CLI's own src/agents/, never the marketplace's
   sourcePath: string;
   agentSourcePaths: AgentSourcePaths; // { agentsDir, sourcePath }
 };
 ```
-
-### `CopyLocalSkillsOptions`
-
-```typescript
-type CopyLocalSkillsOptions = {
-  // eject installer only — before copying, delete an already-present local skill
-  // whose config names a non-eject source so a stale ejected copy is replaced
-  deleteAlternateSourceSkills?: boolean;
-};
-```
-
-Passed to `copyLocalSkills(skills, projectDir, sourceResult, options)`. Defaults `deleteAlternateSourceSkills` to `false`; `init`/`edit` leave it off, only the eject installer sets it. Applied per-scope inside `copyScopedLocalSkills`, which calls `deleteLocalSkill` for any skill whose `source !== EJECT_SOURCE` before re-copying.
 
 ### `SkillCopyResult`
 

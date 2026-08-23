@@ -10,11 +10,16 @@ related:
 last_validated: 2026-08-18
 ---
 
-# Type System (Pointer)
+# Type System
 
-> **Pointer.** The content lives in the files below. This path is kept because inbound links (CLAUDE.md, agent findings, other docs) still use it — do not delete it without sweeping those references first.
+> **A body that also redirects — not a stub.** It owns the five union member counts and the
+> `AGENT_NAMES` roster, and nothing else states them: `standards/documentation-bible.md`'s
+> count-ownership table names this file, and `scripts/check-enumeration-drift.ts` binds
+> `AGENT_NAMES` to `src/cli/types/generated/source-types.ts` here. A correction to a count or to
+> that roster belongs on this page. Everything else redirects to `types/*`, and those rows are the
+> only half that behaves like a pointer.
 
-## Where the content lives now
+## Where the rest of the content lives
 
 | Topic                                                                                   | File                                                     |
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------- |

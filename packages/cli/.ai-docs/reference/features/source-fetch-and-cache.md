@@ -21,14 +21,12 @@ keywords:
     fetch-record,
     fromCache,
     source-cache,
-    CACHE_DIR,
+    cacheRoot,
     XDG_CACHE_HOME,
     GIGET_AUTH,
-    loadSkillsByIds,
     loadSkillsFromDir,
     LoadSkillsFromDirOptions,
     loadPluginSkills,
-    buildIdToDirectoryPathMap,
   ]
 related:
   - reference/features/skills-and-matrix.md
@@ -53,7 +51,7 @@ readable directory on disk, and keep the result cached so a second load costs no
 | --------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `src/cli/lib/loading/source-fetcher.ts` | Fetch + cache. The only module in the repo that calls `giget`                                      |
 | `src/cli/lib/loading/loader.ts`         | Reads skills/agents off whatever directory the fetcher produced (frontmatter, not matrix metadata) |
-| `src/cli/consts.ts`                     | `CACHE_DIR`, `CACHE_HASH_LENGTH`, `CACHE_READABLE_PREFIX_LENGTH`                                   |
+| `src/cli/consts.ts`                     | `cacheRoot()`, `CACHE_HASH_LENGTH`, `CACHE_READABLE_PREFIX_LENGTH`                                 |
 | `src/cli/lib/configuration/config.ts`   | `isLocalSource()` — decides which branch of `fetchFromSource` runs                                 |
 
 ### Ownership boundary
@@ -63,7 +61,7 @@ elsewhere and are **not restated here** — cite the owner, do not copy the valu
 
 | Topic                                                                                                 | Owner                                     |
 | ----------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `CACHE_DIR`'s value                                                                                   | `reference/utilities.md`                  |
+| `cacheRoot()`'s value                                                                                 | `reference/utilities.md`                  |
 | `marketplace.json` size / depth / schema chain, `MAX_MARKETPLACE_FILE_SIZE`, `MAX_JSON_NESTING_DEPTH` | `reference/boundary-map.md`               |
 | `SourceLoadOptions`                                                                                   | `reference/features/skills-and-matrix.md` |
 | The skill-id namespace rule and the collision guard a fetched source meets AFTER extraction           | `reference/features/skills-and-matrix.md` |
@@ -89,7 +87,7 @@ entry it left is legitimate. Nothing in this layer inspects a skill id.
 | `getGigetCacheDir`               | function | `source-fetcher.ts` | **no**                        |
 | `fetchRecordPath`                | function | `source-fetcher.ts` | **no**                        |
 | `MarketplaceManifestAbsentError` | class    | `source-fetcher.ts` | **no**                        |
-| `loadSkillsByIds`                | function | `loader.ts`         | yes                           |
+| `MarketplaceNameRefusedError`    | class    | `source-fetcher.ts` | **no**                        |
 | `LoadSkillsFromDirOptions`       | type     | `loader.ts`         | yes                           |
 | `loadSkillsFromDir`              | function | `loader.ts`         | yes                           |
 | `loadPluginSkills`               | function | `loader.ts`         | yes                           |
@@ -250,9 +248,9 @@ collapse" exists specifically to pin that pair apart. Do not "simplify" this to 
 
 **Consumers:**
 
-| Consumer                       | Where               | Uses                                                        |
-| ------------------------------ | ------------------- | ----------------------------------------------------------- |
-| `getCacheDir` (module-private) | `source-fetcher.ts` | `path.join(CACHE_DIR, "sources", sanitized \|\| "unknown")` |
+| Consumer                       | Where               | Uses                                                          |
+| ------------------------------ | ------------------- | ------------------------------------------------------------- |
+| `getCacheDir` (module-private) | `source-fetcher.ts` | `path.join(cacheRoot(), "sources", sanitized \|\| "unknown")` |
 
 `getGigetCacheDir` does **not** use it — that function reproduces giget's own naming, not ours.
 
@@ -263,11 +261,11 @@ string input").
 ### Cache layout, and the two places it is encoded
 
 ```
-$CACHE_DIR/sources/<sanitizeSourceForCache(source)>/        ← ours, extracted tree (getCacheDir)
+cacheRoot()/sources/<sanitizeSourceForCache(source)>/       ← ours, extracted tree (getCacheDir)
 <gigetCacheRoot>/<providerName>/<templateName>/*.tar.gz     ← giget's, tarball + ETag (getGigetCacheDir)
 ```
 
-`CACHE_DIR` is owned by `reference/utilities.md`. `gigetCacheRoot` is `$XDG_CACHE_HOME/giget` when
+`cacheRoot()` is owned by `reference/utilities.md`. `gigetCacheRoot` is `$XDG_CACHE_HOME/giget` when
 that variable is set, else `~/.cache/giget` (`getGigetCacheDir`'s `gigetCacheRoot`).
 
 ## `getGigetCacheDir` — the replicated algorithm
@@ -465,44 +463,26 @@ What belongs to _this_ doc:
   `.claude-plugin/` **directory**, which called a plugin repository shipping only `plugin.json`
   readable and left the absence to surface from `readFileSafe` as an ENOENT. The distinct type is
   what lets `resolveMarketplaceLabels` report a manifest that is not there apart from one that is
-  there and refused — every other throw from this function is the second kind.
+  there and refused.
+- A manifest that parses and names the marketplace something outside `KEBAB_CASE_PATTERN` throws
+  `MarketplaceNameRefusedError`, decided by `refusesTheName` — which reads the Zod issue's PATH,
+  never its message. That name is the namespace Claude Code registers every plugin under, so a
+  name it will not accept leaves a marketplace that loads and can install nothing, and
+  `resolveMarketplaceLabels` ABORTS on it rather than labelling by the ref. Every OTHER refusal
+  from this function leaves the marketplace installable and merely unnameable, stays a bare
+  `Error`, and its reader degrades.
 - It returns `MarketplaceFetchResult` (`src/cli/types/plugins.ts`), whose `fromCache` is forwarded
   straight from `FetchResult` in the return literal. **`FetchResult.fromCache` is a required
   `boolean`**, so there is nothing to default; the `?? false` that used to sit here is gone and must
   not be re-added — it read as evidence the field could be `undefined`.
 
-## `loader.ts` — the ID-targeted read path
+## `loader.ts` — the `SKILL.md` read path
 
 `loader.ts` reads `SKILL.md` frontmatter off a directory the fetcher produced. It is **not** the
 matrix path: `extractAllSkills` (`matrix-loader.ts`, documented in
 `reference/features/skills-and-matrix.md` § Data Flow) globs `**/metadata.yaml` across the whole source;
-the functions below glob `**/SKILL.md` and, for `loadSkillsByIds`, resolve a caller-supplied ID list.
-`loadSkillsByIds` does not read `metadata.yaml` at all. `loadSkillsFromDir` reads it under
+the functions below glob `**/SKILL.md`. `loadSkillsFromDir` reads `metadata.yaml` under
 `requireMetadata` and refuses the skill directory when it describes no skill — see the table below.
-
-### `loadSkillsByIds(skillIds, projectRoot)`
-
-Returns `SkillDefinitionMap` (`Partial<Record<SkillId, SkillDefinition>>`,
-`src/cli/types/skills.ts`). Reads from `path.join(projectRoot, DIRS.skills)` — i.e. `src/skills`
-under the source root.
-
-1. **`buildIdToDirectoryPathMap`** globs `**/SKILL.md`, parses each frontmatter in parallel, and
-   emits **two keys per skill**: `frontmatter.name → dirPath` and
-   `dirPath → dirPath`. A skill is therefore addressable by machine id _or_ by its directory path.
-2. **`expandDirectoryRef`** handles an id that is not a key: it keeps every key whose
-   _value_ starts with `` `${skillId}/` ``, so `web/framework` expands to its children. Zero matches →
-   `warn("Unknown skill reference '<id>'")` and an empty list.
-3. `unique()` (remeda) dedupes the flattened id list.
-4. Per id: read `SKILL.md`, `parseFrontmatter`, key the result under **`frontmatter.name`** (the
-   `canonicalId` binding), not under the requested id.
-
-**Every failure is a `warn` + `continue`** — the unresolved-id, missing-frontmatter and read-error
-paths all take it. The function never throws and
-never reports which ids it dropped — a caller that needs "did I get everything" must diff its request
-against `Object.keys()` of the result.
-
-Emitted `SkillDefinition.path` is `` `${DIRS.skills}/${directoryPath}/` `` with a trailing slash,
-pinned as `"src/skills/good-skill/"` in `loader.test.ts`'s `loadSkillsByIds` block.
 
 ### `LoadSkillsFromDirOptions` / `loadSkillsFromDir`
 
@@ -522,8 +502,8 @@ whose `metadata.yaml` exists but describes no skill. Only ever non-empty under `
 | Missing directory                | `directoryExists(skillsDir)`    | returns `{}` — **not** an error                                                    |
 | `requireMetadata: true`          | `fileExists(metadataPath)`      | `warn`s by name and skips: "Add metadata.yaml to register it with the CLI"         |
 | metadata.yaml describes no skill | `readSkillMetadata(...).usable` | pushed onto `unusableMetadata` and skipped — the SKILL.md is never reached         |
+| placeholder `category`           | `namesPlaceholderCategory(...)` | `verbose` and skipped — intact file, so nothing to report or refuse a run over     |
 | Emitted `path`                   | `displayPath`                   | `` `${pathPrefix}/${relativePath}/` ``, or `` `${relativePath}/` `` when no prefix |
-| Frontmatter guard                | `!frontmatter?.name`            | stricter than `loadSkillsByIds`, which only checks `!frontmatter`                  |
 | Read failure                     | the per-file `catch`            | `verbose`, not `warn` — quieter than every other path in this file                 |
 
 **`readSkillMetadata` is the single judgment of whether a `metadata.yaml` describes its skill**, and
@@ -536,13 +516,12 @@ refuses the run, discovery skips the skill, doctor reports it — but what they 
 not. `doctor` layers its stricter published-skill schema on the fields the judgment returns, never
 beside them.
 
-**Do not read the `?.name` / `|| ""` asymmetry as two different contracts.**
-`skillFrontmatterLoaderSchema` (`src/cli/lib/schemas.ts`) already declares `name` and
-`description` as required `z.string()`, so a non-`null` return from `parseFrontmatter` always has
-both. The only input the two guards disagree on is an **empty-string** `name`, which
-`loadSkillsFromDir` skips on `!frontmatter?.name` and `loadSkillsByIds` — whose guard is the looser
-`!frontmatter` — would accept and key the map under `""`. No fixture produces one; treat it as
-latent, not as a behaviour to rely on.
+**`namesPlaceholderCategory` (`loader.ts`) is the second shared verdict**, one question over: whether
+the skill a file describes can be reached at all. This function and `extractLocalSkill` both call it,
+so neither can load what the other refuses. Only `extractLocalSkill` warns — it is the pass every
+command reaches, so the sentence telling a user which field to fix is stated once per run rather than
+once per reader, and this function skips at `verbose`. `reference/skills/skill-primitives.md` owns
+the split.
 
 **`requireMetadata` is the local-vs-plugin distinction**, spelled out in the type's own JSDoc: local
 skills must be registered with a `metadata.yaml`; plugin skills carry none. The two callers set it
@@ -573,22 +552,17 @@ constructed.
 
 ### `fetchMarketplace`
 
-| Caller                                                                      | File                                          | Note                                                                                                                                                                                 |
-| --------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `resolveMarketplaceLabels` (called by `loadFromLocal` and `loadFromRemote`) | `lib/loading/source-loader.ts`                | source label lookup — classifies the throw into a three-member `ManifestState` (`absent` / `unreadable` / `named`), verbose for the first and `warn` naming the cause for the second |
-| `ensureMarketplace`                                                         | `lib/operations/source/ensure-marketplace.ts` | lazy name resolution                                                                                                                                                                 |
+| Caller                                                                      | File                                          | Note                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolveMarketplaceLabels` (called by `loadFromLocal` and `loadFromRemote`) | `lib/loading/source-loader.ts`                | source label lookup — classifies the throw into a four-member `ManifestState` (`absent` / `refused` / `unreadable` / `named`): verbose for `absent`, a re-thrown `MarketplaceNameRefusedError` for `refused`, and `warn` naming the cause for `unreadable` |
+| `ensureMarketplace`                                                         | `lib/operations/source/ensure-marketplace.ts` | lazy name resolution                                                                                                                                                                                                                                       |
 
-### `loadSkillsByIds` / `loadSkillsFromDir`
+### `loadSkillsFromDir`
 
-| Callee                                       | Caller                                                                    | Purpose                                                                   |
-| -------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `loadSkillsByIds`                            | `installPluginConfig` (`lib/installation/local-installer.ts`)             | stack skill metadata for compilation, read from `sourceResult.sourcePath` |
-| `loadSkillsFromDir`                          | `discoverLocalProjectSkills` (`lib/operations/skills/discover-skills.ts`) | local `.claude/skills` discovery, `requireMetadata: true`                 |
-| `loadSkillsFromDir` (via `loadPluginSkills`) | `discoverAllPluginSkills` (`lib/plugins/plugin-discovery.ts`)             | plugin skill discovery                                                    |
-
-`installPluginConfig` (`local-installer.ts`) carries a documented boundary cast
-(`as Partial<Record<SkillId, LocalResolvedSkill>>`) because `LocalResolvedSkill` extends
-`SkillDefinition`.
+| Callee                                       | Caller                                                                    | Purpose                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `loadSkillsFromDir`                          | `discoverLocalProjectSkills` (`lib/operations/skills/discover-skills.ts`) | local `.claude/skills` discovery, `requireMetadata: true` |
+| `loadSkillsFromDir` (via `loadPluginSkills`) | `discoverAllPluginSkills` (`lib/plugins/plugin-discovery.ts`)             | plugin skill discovery                                    |
 
 ## Invariants
 
@@ -597,9 +571,11 @@ constructed.
 2. **The cache key is a pure function of the source string** — `sanitizeSourceForCache` takes no
    clock, env, or fs input. The same source always maps to the same directory, across processes and
    machines.
-3. **`CACHE_DIR` is resolved once, at module load of `consts.ts`, from `os.homedir()`.**
+3. **`cacheRoot()` reads `os.homedir()` when it is called, not when `consts.ts` loads.**
    A subprocess with a different `HOME` gets a different cache root, which is what lets an E2E run
-   of the real binary have a cache of its own rather than the developer's.
+   of the real binary have a cache of its own rather than the developer's. It was a `const`, and
+   that froze the home of whichever process first imported the module — which in a test run is
+   whichever spec got there first. `reference/utilities.md` carries the full account.
 4. **`source-fetcher.ts` is the only module in `src/` that imports `giget`** (grep-verified).
    Any new network fetch of a source belongs behind `fetchFromSource`, not beside it.
 5. **`getGigetCacheDir` returning `undefined` is a success, not a failure** — `clearGigetCache`
@@ -616,7 +592,7 @@ asks whether the SOURCE changed, not whether the extraction finished. If `downlo
 killed mid-extract, the record beside the directory is never written, so the next load reads
 `unrecorded` and re-fetches — but a directory left by an OLDER complete fetch whose record still
 matches comes back `current` with `fromCache: true` and no warning. Recovery is deleting
-`$CACHE_DIR/sources/<key>` by hand. Do not add an emptiness check without deciding what an
+`<cacheRoot()>/sources/<key>` by hand. Do not add an emptiness check without deciding what an
 intentionally-empty source means.
 
 **Trap 2 — `subdir` is not part of the cache key.** `fetchFromRemoteSource`'s `cacheDir` keys on
@@ -639,13 +615,6 @@ returns `true` for anything without a `REMOTE_PROTOCOLS` prefix, so
 throws "Local marketplace not found". Sources must carry `github:` / `gh:` / `https://` explicitly;
 `DEFAULT_SOURCE` does (`config.ts`, `"github:agents-inc/skills"`).
 
-**Trap 5 — `loadSkillsByIds` reads a directory-expanded skill twice.** `buildIdToDirectoryPathMap`
-stores two keys per skill and `expandDirectoryRef` filters on the _value_, so expanding a parent
-directory yields both the id key and the path key for each child. `unique()` cannot collapse them —
-they are different strings. The output map is still correct (both write `skills[canonicalId]`), but
-each `SKILL.md` is read twice and each `verbose` line prints twice. Do not "fix" the duplicate log by de-duplicating on `canonicalId` after the read; de-duplicate
-the id list before it.
-
 ## Test surface
 
 Four files. Run them rather than reading a total off this page: `npm test` builds `dist/` first,
@@ -655,18 +624,18 @@ a fortnight.
 | File                                                        | Covers (by describe block)                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/cli/lib/loading/source-fetcher.test.ts`                | `fetchFromSource with local paths` (incl. `subdir` and the not-found throw); `remote source URL validation` (`isLocalSource` classification); `sanitizeSourceForCache` determinism/collision/length/Unicode/empty; `fetchMarketplace security validation`; `getGigetCacheDir` per-provider, `XDG_CACHE_HOME`, ref, subdir, dot-sanitisation |
-| `src/cli/lib/loading/source-fetcher-revalidation.test.ts`   | the only tests that exercise the **remote** branch — `giget`, `CACHE_DIR` and the global `fetch` are all mocked. One per verdict (`current` twice: matched ETag, and a record carrying none), plus the once-per-run memo and the record written after a download                                                                            |
+| `src/cli/lib/loading/source-fetcher-revalidation.test.ts`   | the only tests that exercise the **remote** branch — `giget`, `cacheRoot` and the global `fetch` are all mocked. One per verdict (`current` twice: matched ETag, and a record carrying none), plus the once-per-run memo and the record written after a download                                                                            |
 | `src/cli/lib/loading/source-fetcher-unknown-fields.test.ts` | `warnUnknownFields` on `marketplace.json`, positive **and** silence guard                                                                                                                                                                                                                                                                   |
-| `src/cli/lib/loading/loader.test.ts`                        | `parseFrontmatter`, the agent loaders, `loadSkillsByIds`, `loadPluginSkills`                                                                                                                                                                                                                                                                |
+| `src/cli/lib/loading/loader.test.ts`                        | `parseFrontmatter`, the agent loaders, `loadPluginSkills`                                                                                                                                                                                                                                                                                   |
 
 **How the remote branch is made testable** (`source-fetcher-revalidation.test.ts`'s module-mock block):
-`CACHE_DIR` is
-replaced through a **getter** on a `vi.mock` of `../../consts`, because the value must be read _after_
-`beforeEach` assigns the temp dir — a plain property would capture `undefined`. `giget` is mocked to a
-bare `downloadTemplate: vi.fn()`, and the revalidation HEAD is stubbed per test with
-`vi.stubGlobal("fetch", …)` returning a real `Response` (`new Response(null, { headers })` — the
-codebase's assertion rules refuse a cast-shaped fake). Copy this pattern rather than inventing
-another; a static mock of `CACHE_DIR` cannot work.
+`cacheRoot` is replaced with `() => mockCacheDir` on a `vi.mock` of `../../consts`. A function reads
+the temp dir when the code under test asks for it, which is what the mock needs — it used to be a
+getter over the `CACHE_DIR` constant for the same reason, and the getter existed only because the
+export was a value. `giget` is mocked to a bare `downloadTemplate: vi.fn()`, and the revalidation
+HEAD is stubbed per test with `vi.stubGlobal("fetch", …)` returning a real `Response`
+(`new Response(null, { headers })` — the codebase's assertion rules refuse a cast-shaped fake). Copy
+this pattern rather than inventing another.
 
 **What no spec exercises**, re-derivable by grepping the four files above for each name:
 `createDetailedFetchError`'s five branches — no assertion names any of its message texts — and

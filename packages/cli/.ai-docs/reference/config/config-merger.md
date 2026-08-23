@@ -29,7 +29,7 @@ last_validated: 2026-08-18
 
 # Config Merger Contract
 
-> Merge semantics for `ProjectConfig` — the invariants that `writeScopedFromWizard`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline(see D-220, and the agent findings under `.ai-docs/agent-findings/`).
+> Merge semantics for `ProjectConfig` — the invariants that `writeScopedFromWizard`, `cc edit`, and cross-project propagation rely on. Two distinct merge functions live in two modules and obey two different policies. Mixing them up is the recurring source of data-loss bugs in the config pipeline; see the agent findings under `.ai-docs/agent-findings/`.
 
 ## The Two Merge Functions
 
@@ -140,7 +140,7 @@ This is the load-bearing "merger is authoritative for names" invariant (April-20
 
 ### `projects` Field Preservation
 
-`mergeConfigs` **preserves** `existingConfig.projects`. The base `const merged = { ...newConfig }` only copies fields present on `newConfig`, and `newConfig.projects` is always `undefined` (the `projects` array is maintained exclusively by `registerProjectPath` / `deregisterProjectPath` in `config-gate/propagate.ts`), so a final guard copies it forward:
+`mergeConfigs` **preserves** `existingConfig.projects`. The base `const merged = { ...newConfig }` only copies fields present on `newConfig`, and `newConfig.projects` is always `undefined` (the `projects` array is maintained exclusively by `registerProjectPath` in `config-gate/propagate.ts` and by the gate's own `deregister-project` mutation), so a final guard copies it forward:
 
 ```typescript
 if (existingConfig.projects && !newConfig.projects) {

@@ -14,7 +14,6 @@ keywords:
     slot-occupancy,
     buildCompileAgents,
     dual-scope,
-    D-223,
   ]
 related:
   - reference/concepts/scope-system.md
@@ -74,7 +73,7 @@ Two senses of the same persisted shape. **They are byte-identical on disk.** Use
 - `SkillConfig.excluded?: boolean` in `src/cli/types/config.ts`
 - `AgentScopeConfig.excluded?: boolean` in `src/cli/types/config.ts`
 
-## Dual-Scope Semantics (D-223)
+## Dual-Scope Semantics
 
 A "dual-scope" shape is the pair:
 
@@ -137,7 +136,7 @@ Supporting rules, each verified in `config-gate/propagate.ts`:
 
 The project-owned-wins rule is deliberately asymmetric with the guard where a user-initiated radio swap refuses to displace a globally-locked skill: a mask is applied when a global install lands on pre-existing project state, where letting the global win would silently uninstall the user's own skill.
 
-### 2. Preservation (D-223)
+### 2. Preservation
 
 On wizard reopen, `populateFromSkillIds(skillIds, savedConfigs)` must preserve tombstones that accompany active entries. The function:
 
@@ -174,7 +173,7 @@ Tombstones must survive every hop from wizard-store to disk:
 2. **`splitConfigByScope`** — routes tombstones to the **project** split (not global). This is why `mergeGlobalConfigs` never sees a tombstone and does not need tombstone-handling logic. See [scope-split.md](../config/scope-split.md) "Tombstone Routing Rationale".
 3. **`mergeGlobalConfigs`** — additive, ignores any `excluded` on the incoming side. Tombstones are project-local.
 4. **`generateProjectConfigWithInlinedGlobal`** (`config-writer.ts`) — Excluded global entries (tombstones) replace their active global counterparts in the **inlined global section** of the project config. The active project entry appears separately in the project section. Both are preserved in the snapshot (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`.
-5. **`buildCompileAgents`** (`installation/local-installer.ts`) — **A tombstone must already be gone by the time a config reaches this function, and nothing inside it enforces that.** It builds `sourceById`, a `Map<SkillId, string>` from `config.skills` keyed by **id alone**, so a dual-scope pair — active project entry plus global tombstone, each carrying its own `origin` — collapses last-write-wins onto one value, which then decides that skill's compiled reference format through `SkillReference.source` and `pluginRefFor`. The guard is entirely **caller-side**: `recompileAgents` calls `filterExcludedEntries` first, which is the path every command takes through the operations-layer `compileAgents`. A new caller that assembles a config itself and hands it straight in re-opens the collapse silently, and `writeConfigAndCompileAgents` — the shared install tail behind the export-only `installEject` / `installPluginConfig` — is the shape that already does. Why the collapse is nonetheless unreachable today, and the ordering that would make it benign even unfiltered, is [`features/compilation-pipeline.md` § Dual-Scope `sourceById` Collapse](../features/compilation-pipeline.md#dual-scope-sourcebyid-collapse----verified-unreachable-in-production) — that section owns the analysis; this entry owns the invariant a tombstone author has to honour.
+5. **`buildCompileAgents`** (`installation/local-installer.ts`) — **A tombstone must already be gone by the time a config reaches this function, and nothing inside it enforces that.** It builds `sourceById`, a `Map<SkillId, string>` from `config.skills` keyed by **id alone**, so a dual-scope pair — active project entry plus global tombstone, each carrying its own `origin` — collapses last-write-wins onto one value, which then decides that skill's compiled reference format through `SkillReference.source` and `pluginRefFor`. The guard is entirely **caller-side**: `recompileAgents` is its only production caller and calls `filterExcludedEntries` first, which is the path every command takes through the operations-layer `compileAgents`. A new caller that assembles a config itself and hands it straight in re-opens the collapse silently. Why the collapse is nonetheless unreachable today, and the ordering that would make it benign even unfiltered, is [`features/compilation-pipeline.md` § Dual-Scope `sourceById` Collapse](../features/compilation-pipeline.md#dual-scope-sourcebyid-collapse----verified-unreachable-in-production) — that section owns the analysis; this entry owns the invariant a tombstone author has to honour.
 
 ## Role in the Info-Panel Diff
 

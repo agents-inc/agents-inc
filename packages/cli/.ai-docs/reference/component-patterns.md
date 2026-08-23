@@ -18,6 +18,7 @@ related:
   - reference/store-map.md
   - reference/wizard/state-transitions.md
   - reference/features/wizard-flow.md
+  - reference/concepts/scope-system.md
   - reference/concepts/tombstone-pattern.md
   - reference/concepts/guard-pattern.md
   - reference/commands/index.md
@@ -142,26 +143,26 @@ the first and throws for the second; collapsing them into one `??` is what hid t
 
 ## Color Constants (CLI_COLORS in `src/cli/consts.ts`)
 
-The keys, exhaustive and in source order. `reference/utilities.md` carries the same list for the leaf-constant surface, so this is a SECOND writable copy — both are therefore bound to `src/cli/consts.ts` by `scripts/check-enumeration-drift.ts`, which is what stops one being repaired while the other is not.
+The keys **and the hex each one holds**, exhaustive and in source order, bound to `src/cli/consts.ts` by `scripts/check-enumeration-drift.ts`. `reference/utilities.md` carries the same list for the leaf-constant surface, so this is a SECOND writable copy and it is bound too, which is what stops one being repaired while the other is not — but only this copy has a Value column, so only this one is read as pairs. Write each value bare and backticked: a quoted cell (`"#99FFFF"`) is a different string from what the source holds and every row of the table reads as drifted.
 
 | Constant    | Value     | Usage                             |
 | ----------- | --------- | --------------------------------- |
-| `PRIMARY`   | "#99FFFF" | Headers, focus                    |
-| `SUCCESS`   | "#90EE90" | Checkmarks, success               |
-| `ERROR`     | "#DC343B" | Errors                            |
-| `WARNING`   | "#E6A817" | Warnings                          |
-| `INFO`      | "#3B82F6" | Info text                         |
-| `NEUTRAL`   | "#888888" | Dimmed text                       |
-| `FOCUS`     | "#87CEFA" | Focused elements                  |
-| `UNFOCUSED` | "#FFFFFF" | Unfocused elements                |
-| `WHITE`     | "#FFFFFF" | Default text                      |
-| `BLACK`     | "#000000" | Dark backgrounds                  |
-| `DIM`       | "#666666" | Dimmed/muted text                 |
-| `GRAY_1`    | "#ddd"    | Light gray                        |
-| `LABEL_BG`  | "#383838" | Background for scope/focus labels |
-| `TOAST_BG`  | "#EEEEEE" | Toast background                  |
-| `TOAST_FG`  | "#000000" | Toast foreground                  |
-| `HOVER_BG`  | "#333333" | Hover background                  |
+| `PRIMARY`   | `#99FFFF` | Headers, focus                    |
+| `SUCCESS`   | `#90EE90` | Checkmarks, success               |
+| `ERROR`     | `#DC343B` | Errors                            |
+| `WARNING`   | `#E6A817` | Warnings                          |
+| `INFO`      | `#3B82F6` | Info text                         |
+| `NEUTRAL`   | `#888888` | Dimmed text                       |
+| `FOCUS`     | `#87CEFA` | Focused elements                  |
+| `UNFOCUSED` | `#FFFFFF` | Unfocused elements                |
+| `WHITE`     | `#FFFFFF` | Default text                      |
+| `BLACK`     | `#000000` | Dark backgrounds                  |
+| `DIM`       | `#666666` | Dimmed/muted text                 |
+| `GRAY_1`    | `#ddd`    | Light gray                        |
+| `LABEL_BG`  | `#383838` | Background for scope/focus labels |
+| `TOAST_BG`  | `#EEEEEE` | Toast background                  |
+| `TOAST_FG`  | `#000000` | Toast foreground                  |
+| `HOVER_BG`  | `#333333` | Hover background                  |
 
 ## UI Symbols (UI_SYMBOLS in `src/cli/consts.ts`)
 
@@ -290,7 +291,7 @@ Internal component within `category-grid.tsx` that renders a single skill option
 
 **Compatibility labels:** `getCompatibilityLabel()` returns labels shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(discouraged)`, or the unmet-requirements reason.
 
-> The sibling export in that module, `validateBuildStep()`, returns `valid: true` on both branches. Its only references outside its own module are the `src/cli/lib/wizard/index.ts` barrel that re-exports it and two spec files (`build-step-logic.test.ts`, `step-build.test.tsx`) — no component and no command calls it. Re-derive with `grep -rn validateBuildStep src/`. See [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
+> The sibling export in that module, `validateBuildStep()`, names the first required category the active domain leaves empty. `StepBuild`'s own `handleContinue` calls it on ENTER, puts the message in a toast through `setToastMessage`, and calls `onContinue` either way — **advisory, never a gate**, which is how every other wizard validation behaves. The toast is painted by `WizardLayout` outside `renderStep`, so it survives the unmount that advancing causes. Re-derive its callers with `grep -rn validateBuildStep src/`. See [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
 
 **Cell ordering:** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order`.
 
@@ -388,7 +389,11 @@ Four character hotkeys, and each is bound on exactly the steps its row names. Be
 
 What the load said before Ink took the terminal, **and what store hydration said after it**. A load that opens a wizard buffers its `warn()` output instead of writing it to stderr (`lib/operations/source/load-source.ts` — stderr is what the wizard's own `clearTerminal` wipes), and the buffer arrives here as the `startupMessages` prop. **This band is the only place those lines are ever seen**, the source-unreachable warning among them; before it existed the prop was accepted and dropped.
 
-**Two windows fill it, not one.** `hydrateIntoStartupBand` in `src/cli/components/wizard/run-wizard-session.tsx` reopens buffer mode around `hydrateWizardStore()` and concatenates what it drains onto the load's own, so the prop is `[...loaded, ...drained]`. The store's own warnings (`resolveSkillForPopulation` in `src/cli/stores/wizard-store.ts` — an installed skill the source no longer carries, or one whose category no domain claims) are raised after the load's buffer is drained and before the first frame paints, so this band is their only surface too. **Order matters for what is painted**: hydration's messages are appended, so where the load already produced `MAX_PAINTED_STARTUP_MESSAGES` of them a hydration warning lands in the `... and N more` tail.
+**Two windows fill it, not one.** `hydrateIntoStartupBand` in `src/cli/components/wizard/run-wizard-session.tsx` reopens buffer mode around `hydrateWizardStore()` and concatenates what it drains onto the load's own, so the prop is `[...loaded, ...drained]`. The store's own warnings (`resolveSkillForPopulation` in `src/cli/stores/wizard-store.ts` — an installed skill the source no longer carries, or one whose category no domain claims) are raised after the load's buffer is drained and before the first frame paints, so this band is their only surface too.
+
+**Arrival order does not decide what is painted — level does.** `startupBand` sorts warnings and errors ahead of info before applying the budget, so the rows go to the messages a user may have to act on and the info lines are what collapse into `... and N more`. Without that, `edit`'s two unconditional info lines — `Loaded N skills` and `Found N installed skills`, both pushed before anything can warn — took two of the three roomy rows and the whole cramped budget, so exactly one warning was ever readable and on a short terminal none was. `warn` and `error` share a rank, and the sort is stable, so the sequence a load raised them in survives among themselves and among the info lines.
+
+**The band claims no more rows for a warning than it already had.** Space is made by evicting info, never by growing: the band is `flexShrink={0}` inside a root box sized to `terminalHeight`, so a band that grew with the warning count would push the frame past the bottom of the screen and its own header off the top — which is what `assertWizardScreenIsWhollyVisible` in `e2e/pages/base-step.ts` fails the interactive suite on. Where the warnings alone overrun the budget they collapse too, last, after every info line has already collapsed. The counter is exact in every case; nothing is ever silently dropped.
 
 **Placement.** Between `WizardTabs` and the step content, outside the `showInfo` branch — so a warning is readable whether the step or the `I` overlay is showing. It sits below the tab bar's absolutely-positioned dropdown, which floats into the bar's own `marginBottom`.
 
@@ -398,7 +403,11 @@ What the load said before Ink took the terminal, **and what store hydration said
 
 **It paints at most `MAX_PAINTED_STARTUP_MESSAGES` (3) and counts the rest** as `... and N more`. Not speculative: a source whose `skill-rules.ts` names slugs it does not ship warns once per unresolved slug, and the E2E fixture source produces 2384 of them — unbounded, the band would swallow the whole wizard. The default marketplace produces none, so a healthy install shows no band at all.
 
-**Below `LOGO_MIN_TERMINAL_ROWS` the budget drops to one message** (`MAX_PAINTED_STARTUP_MESSAGES_CRAMPED`), on the same measurement the logo gate rests on: a terminal too short to spare six rows for decoration cannot spare four for news either. The first message is the one kept because the fetch speaks before anything is parsed — an unreachable source is always message one. Found by the E2E suite, not by reading: at `TERMINAL_SIZE.SHORT` a four-row band left the confirm summary a one-row viewport, which is what `wizard-overflow-affordance` and `confirm-step-info-panel-parity` caught.
+**Below `LOGO_MIN_TERMINAL_ROWS` the budget drops to one message** (`MAX_PAINTED_STARTUP_MESSAGES_CRAMPED`), on the same measurement the logo gate rests on: a terminal too short to spare six rows for decoration cannot spare four for news either. That single row goes to the first warning where there is one, and only to an info line when nothing warned. Found by the E2E suite, not by reading: at `TERMINAL_SIZE.SHORT` a four-row band left the confirm summary a one-row viewport, which is what `wizard-overflow-affordance` and `confirm-step-info-panel-parity` caught.
+
+**The budget counts MESSAGES, not rows.** A message longer than the terminal is wide wraps, so one warning can occupy three or four rows — measured at 80 columns, the source-absent warning takes four. That is intended and is why the message count is kept small, but it means the band's height is a property of the wording as much as of the budget.
+
+**A warning raised AFTER the mount does not belong here** and does not reach here. See `showWarningsAsToast` under the store map: a message raised while the user is interacting takes the toast, because this band is a prop fixed at mount and a startup message is the only thing it describes.
 
 ## SummaryPanel (`src/cli/components/wizard/summary-panel.tsx`)
 

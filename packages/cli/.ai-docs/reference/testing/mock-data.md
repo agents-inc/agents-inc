@@ -15,7 +15,7 @@ keywords:
 related:
   - reference/testing/factories.md
   - reference/testing/infrastructure.md
-last_validated: 2026-07-30
+last_validated: 2026-08-23
 ---
 
 # Mock Data Constants
@@ -69,11 +69,32 @@ Base category fixtures for spread-based customization:
 
 Pre-built test data constants extracted from individual test files. Use these instead of inline `createMock*()` calls.
 
+**An unbound list here goes wrong in every direction without a gate noticing**: a name that no
+longer exists anywhere in the tree, a family named only by its `HEALTH_*` prefix, a live export
+mentioned nowhere. The short-list failure is the expensive one — a reader who greps for a constant
+they cannot find here concludes it does not exist and writes a duplicate. So a module below is
+either enumerated exhaustively and bound to its exports by `scripts/check-enumeration-drift.ts`, or
+not enumerated at all.
+
+`mock-matrices.ts`, `mock-skills.ts` and `mock-stacks.ts` are therefore deliberately left
+unenumerated, and completing any of them here would be a mistake. Each exports scores of
+self-describing constants — `REACT_SCSS_HONO_MATRIX` tells a reader what it holds and a line beside
+it would not — so an inventory of that size buys nothing a `grep` does not, and drifts within a
+fortnight. Re-derive per module instead of reading a list:
+
+```
+grep -hoP '^export (?:const|function|type) \K\w+' src/cli/lib/__tests__/mock-data/<module>.ts
+```
+
+The four modules that are still named exhaustively are named because each row states something its
+export name does not — which schema validates a fixture, what a constant is for. Each of those lists
+is bound to its module's `const` exports by `scripts/check-enumeration-drift.ts`, so a constant added
+to one of them cannot land without a line here naming it — and the same command settles any doubt.
+
 ### mock-agents.ts
 
 - `AGENT_DEFS` - Canonical agent metadata (webDev, apiDev, webTester, reviewer)
 - `RESOLVE_AGENTS_DEFINITIONS` - Agent definitions for resolver tests
-- `WEB_DEV_NO_SKILLS`, `API_DEV_NO_SKILLS`, `WEB_DEV_WITH_REACT`, `WEB_DEV_WITH_PRELOADED_REACT`, `WEB_DEV_WITH_VITEST`, `TWO_AGENTS_SHARED_SKILL` - Pre-built agent config maps
 - `DEFAULT_TEST_AGENTS` - TestAgent array for `createTestSource()`
 
 ### mock-categories.ts
@@ -84,35 +105,21 @@ Pre-built test data constants extracted from individual test files. Use these in
 
 ### mock-matrices.ts
 
-- `EMPTY_MATRIX`, `SINGLE_REACT_MATRIX`, `WEB_PAIR_MATRIX`, `FULLSTACK_PAIR_MATRIX`, `WEB_TRIO_MATRIX`, `FULLSTACK_TRIO_MATRIX`, `VITEST_REACT_HONO_MATRIX`, `REACT_SCSS_MATRIX`, `REACT_SCSS_HONO_MATRIX`, `SCSS_HONO_REACT_MATRIX`, `HONO_REACT_MATRIX`, `REACT_ZUSTAND_HONO_MATRIX` - Pre-built matrix constants
-- `ALL_SKILLS_*_MATRIX` - Full skills with various category configurations (TEST_CATEGORIES, WEB_FRAMEWORK, WEB_PAIR_CATEGORIES, FULLSTACK_CATEGORIES, WEB_AND_API, METHODOLOGY, METHODOLOGY_BARE, MULTI_DOMAIN)
-- `HEALTH_*_MATRIX` - Matrix fixtures for health-check tests (HEALTHY, SINGLE_SKILL, MISSING_DOMAIN, MULTIPLE_MISSING_DOMAINS, UNKNOWN_CATEGORY, ORPHAN_SKILL_WITH_MISSING_DOMAIN, UNRESOLVED_COMPATIBLE_WITH, UNRESOLVED_CONFLICTS_WITH, UNRESOLVED_REQUIRES, MULTIPLE_UNRESOLVED_REFS, ALL_REFS_RESOLVED, PARTIAL_UNRESOLVED_REQUIRES)
-- `buildMultiSourceMatrix()` - Factory for multi-source matrices
-- `MERGE_BASIC_MATRIX`, `CONFLICT_MATRIX`, `ALTERNATIVES_MATRIX`, `REQUIRES_MATRIX` - MatrixConfig fixtures
-- `LOCAL_SKILL_MATRIX`, `MIXED_LOCAL_REMOTE_MATRIX` - Local skill matrix fixtures
-- `METHODOLOGY_MATRIX`, `VITEST_MATRIX`, `MULTI_STYLING_MATRIX` - Single-domain matrix fixtures
-- `CATEGORY_GRID_MATRIX`, `REACT_HONO_FRAMEWORK_API_MATRIX`, `REACT_HONO_WEB_API_DOMAINS_MATRIX` - Specialized matrix fixtures
-- `CATEGORY_EXCLUSIVITY_MATRIX` - The only fixture whose categories carry REAL `exclusive` / `required` flags. `createMockMatrix`'s default categories map is empty, so every category reads as "undefined flags" and exclusivity rules can never fire — use this whenever the flags must be live. Shape: two frameworks in an exclusive **and required** category (`web-framework`: react, vue), two client-state skills in an exclusive but **optional** one (`web-client-state`: zustand, pinia), two styling skills in a non-exclusive one (`web-styling`: scss, tailwind), plus a non-exclusive `web-testing` (vitest). The exclusive+optional category is the one shape that separates "exclusive" from "exclusive AND required" rules.
-- `BUILD_STEP_*_MATRIX` - Build step logic test matrices
-- `WEB_AND_API_SKILLS_COMPILE_CONFIG`, `WEB_SKILLS_API_NONE_COMPILE_CONFIG`, `WEB_ONLY_COMPILE_CONFIG` - CompileConfig fixtures
-- `TOOLING_AND_FRAMEWORK_CONFIG`, `CI_CD_CONFIG`, `FRAMEWORK_AND_STYLING_CONFIG`, `OBSERVABILITY_CONFIG`, `FRAMEWORK_AND_TESTING_CONFIG`, `EMPTY_MATRIX_CONFIG`, `UNRESOLVED_CONFLICT_MATRIX` - MatrixConfig fixtures
+`MatrixConfig` and compile-config fixtures. Not enumerated — see above.
+
+`CATEGORY_EXCLUSIVITY_MATRIX` is the one that needs a sentence: it is the only fixture whose
+categories carry REAL `exclusive` / `required` flags. `createMockMatrix`'s default categories map is
+empty, so every category reads as "undefined flags" and exclusivity rules can never fire — use this
+whenever the flags must be live. Shape: two frameworks in an exclusive **and required** category
+(`web-framework`: react, vue), two client-state skills in an exclusive but **optional** one
+(`web-client-state`: zustand, pinia), two styling skills in a non-exclusive one (`web-styling`:
+scss, tailwind), plus a non-exclusive `web-testing` (vitest). The exclusive+optional category is the
+one shape that separates "exclusive" from "exclusive AND required" rules.
 
 ### mock-skills.ts
 
-- `REACT_SKILL`, `REACT_SKILL_PRELOADED`, `VITEST_SKILL`, `VITEST_SINGLE_FILE_SKILL` - Skill entry constants
-- `DEFAULT_TEST_SKILLS`, `EXTRA_DOMAIN_TEST_SKILLS`, `ALL_TEST_SKILLS` - TestSkill arrays
-- `INIT_SKILL_IDS`, `INIT_TEST_SKILLS` - Filtered skills for init tests
-- `INSTALL_MODE_SKILLS`, `LOCAL_SKILL_VARIANTS` - Install-mode test skills (marketplace content vs a local customization of the same skill)
-- `HEALTH_*_SKILL` - Health-check skill variants (7 constants: ORPHAN_SKILL, UNRESOLVED_COMPATIBLE_WITH_SKILL, UNRESOLVED_CONFLICTS_WITH_SKILL, UNRESOLVED_REQUIRES_SKILL, MULTIPLE_UNRESOLVED_REFS_SKILL, ALL_REFS_RESOLVED_SKILL, PARTIAL_UNRESOLVED_REQUIRES_SKILL)
-- `CATEGORY_GRID_SKILLS` - 30-entry array for category grid tests
-- `IMPORT_*_SKILL` - Import source skill constants (REACT_PATTERNS, TESTING_UTILS, API_SECURITY) + `ImportSourceSkill` type
-- `MULTI_SOURCE_*_SKILLS` - Multi-source skill entries (PUBLIC, ACME, INTERNAL) + `MultiSourceSkillEntry` type
-- `COMPILE_LOCAL_SKILL`, `DOCKER_TOOLING_SKILL`, `DATADOG_OBSERVABILITY_SKILL` - Individual TestSkill constants
-- `CI_CD_SKILLS`, `DISCOURAGES_RELATIONSHIP_SKILLS`, `REQUIRES_RELATIONSHIP_SKILLS`, `RESOLUTION_PIPELINE_SKILLS` - TestSkill arrays for relationship tests
-- `VALID_LOCAL_SKILL`, `SKILL_WITHOUT_METADATA`, `SKILL_WITHOUT_METADATA_CUSTOM` - Edge case test skills
-- `LOCAL_SKILL_BASIC`, `LOCAL_SKILL_FORKED`, `LOCAL_SKILL_FORKED_MINIMAL` - Local skill test variants
-- `REACT_CONFLICTS_VUE`, `VUE_CONFLICTS_REACT`, `ZUSTAND_CONFLICTS_PINIA`, `PINIA_CONFLICTS_ZUSTAND` - Conflict relationship skills
-- `REACT_REQUIRES_ZUSTAND`, `VUE_DISCOURAGES_SCSS`, `ZUSTAND_UNIVERSAL`, `REACT_LOCAL` - Relationship and scope variant skills
+`TestSkill` and `ResolvedSkill` fixtures — relationship variants, install-mode variants, local-skill
+variants, and the arrays `createTestSource()` consumes. Not enumerated — see above.
 
 ### mock-sources.ts
 
@@ -120,8 +127,7 @@ Pre-built test data constants extracted from individual test files. Use these in
 
 ### mock-stacks.ts
 
-- `FULLSTACK_STACK`, `WEB_REACT_AND_SCSS_STACK`, `EMPTY_AGENTS_STACK`, `SHARED_CATEGORY_STACK`, `STACK_WITH_EMPTY_AGENTS`, `MULTI_METHODOLOGY_STACK`, `STACK_WITH_EMPTY_CATEGORY`, `MANY_CATEGORIES_STACK`, `LOCAL_SKILL_STACK`, `COMPILATION_TEST_STACK` - Stack objects
-- `CUSTOM_TEST_STACKS`, `PHILOSOPHY_TEST_STACKS`, `OVERRIDING_TEST_STACKS`, `MARKETPLACE_TEST_STACKS`, `MARKETPLACE_FULLSTACK_TEST_STACKS`, `PIPELINE_TEST_STACKS`, `MULTI_TEST_STACKS` - TestStack arrays for `createTestSource()`
+`Stack` objects, and `TestStack` arrays for `createTestSource()`. Not enumerated — see above.
 
 ### mock-source-files.ts
 
@@ -133,3 +139,7 @@ On-disk file shape fixtures for published-source validation tests (spread for ne
 - `VALID_SKILL_RULES_FILE` - config/skill-rules.ts default export (validated by `skillRulesFileSchema`)
 - `VALID_STACKS_CONFIG_FILE` - config/stacks.ts default export (validated by `stacksConfigSchema`)
 - `VALID_PACKAGE_JSON_FILE` - minimal package.json for `build marketplace` tests
+
+**Each bound row reads `const` exports only.** Every export of the bound modules is a `const` today,
+so the reading is total; a function or a type added to one of them would be a member no row can see,
+and needs a row of its own rather than a line in the list above.

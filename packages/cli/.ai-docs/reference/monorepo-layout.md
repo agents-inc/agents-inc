@@ -219,15 +219,16 @@ correct root Vitest run**, and the file exists so that asking for one fails loud
 quietly doing something else.
 
 With no config there at all, `npx vitest run` from the root fell back to Vitest's own defaults and
-collected 360 files across four workspaces with none of the setup each workspace declares — 327 of
+collected files across all four workspaces with none of the setup each workspace declares — most of
 them `packages/cli`'s, run without `vitest.setup.ts`, which is the file that replaces
 `os.homedir()` with a temp directory. The suite passed while reading the developer's real
-`~/.claude`, and it swept in all 184 PTY-driven e2e specs, which have a config of their own.
+`~/.claude`, and it swept in the PTY-driven e2e specs as well, which have a config of their own.
 
 Delegating (`projects: ["packages/*", "apps/*"]`) was tried and measured before the throw was
 chosen. It does preserve each workspace's `setupFiles`, but **Vitest cannot nest projects**, so
 `packages/cli`'s own three — `unit`, `integration`, `commands`, with the includes and the retry that
-separate them — are discarded with no warning, and the run collected 328 CLI files against turbo's 144. The file carries the numbers and the reasoning.
+separate them — are discarded with no warning, and the run collected more CLI files than turbo runs.
+The file carries the numbers and the reasoning.
 
 Nothing below the root is affected: Vitest resolves its config from the directory it runs in and
 never walks up, so `turbo test` never loads this file.

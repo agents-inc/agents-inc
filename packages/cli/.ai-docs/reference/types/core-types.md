@@ -75,7 +75,7 @@ export type SkillId = (typeof SKILL_MAP)[SkillSlug];
 ```
 
 - Derived from `SKILL_MAP` constant (slug-to-ID mapping), not a template literal
-- No dedicated `skillIdSchema` exists. At parse boundaries `SkillId` is validated with a lenient `z.string() as z.ZodType<SkillId>` cast (see `skillFrontmatterLoaderSchema`, `boundSkillSchema` in `src/cli/lib/schemas.ts`) — intentionally permissive because local/custom skills carry non-builtin IDs
+- No dedicated `skillIdSchema` exists. At parse boundaries `SkillId` is validated with a lenient `z.string() as z.ZodType<SkillId>` cast (see `skillAssignmentSchema`, `skillFrontmatterLoaderSchema` and `skillAssignmentElementSchema` in `src/cli/lib/schemas.ts`) — intentionally permissive because local/custom skills carry non-builtin IDs
 - One `SkillId` and one `SkillSlug` per `SKILL_MAP` entry; the union sizes are owned by [`type-system.md`](../type-system.md) ("Counts")
 - Re-exported from `src/cli/types/skills.ts`
 - Examples: `"web-framework-react"`, `"meta-methodology-research-methodology"`, `"api-database-drizzle"`, `"ai-provider-anthropic-sdk"`, `"desktop-framework-electron"`
@@ -209,17 +209,19 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 ## Named Aliases (Composite Types)
 
-| Alias                    | Definition                                                                                         | File        |
-| ------------------------ | -------------------------------------------------------------------------------------------------- | ----------- |
-| `CategorySelections`     | `Partial<Record<Category, SkillId[]>>`                                                             | `skills.ts` |
-| `ResolvedCategorySkills` | `Partial<Record<Category, SkillId>>`                                                               | `skills.ts` |
-| `DomainSelections`       | `Partial<Record<Domain, Partial<Record<Category, SkillId[]>>>>`                                    | `matrix.ts` |
-| `CategoryMap`            | `Partial<Record<Category, CategoryDefinition>>`                                                    | `matrix.ts` |
-| `SkillSlugMap`           | `{ slugToId: Partial<Record<SkillSlug, SkillId>>; idToSlug: Partial<Record<SkillId, SkillSlug>> }` | `matrix.ts` |
-| `StackAgentConfig`       | `Partial<Record<Category, SkillAssignment[]>>`                                                     | `stacks.ts` |
-| `PluginSkillRef`         | `` `${SkillId}:${SkillId}` ``                                                                      | `skills.ts` |
-| `SkillDefinitionMap`     | `Partial<Record<SkillId, SkillDefinition>>`                                                        | `skills.ts` |
-| `SkillAlias`             | `string`                                                                                           | `matrix.ts` |
+| Alias                    | Definition                                                                                         | File         |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | ------------ |
+| `CategorySelections`     | `Partial<Record<Category, SkillId[]>>`                                                             | `skills.ts`  |
+| `ResolvedCategorySkills` | `Partial<Record<Category, SkillId>>`                                                               | `skills.ts`  |
+| `DomainSelections`       | `Partial<Record<Domain, Partial<Record<Category, SkillId[]>>>>`                                    | `matrix.ts`  |
+| `CategoryMap`            | `Partial<Record<Category, CategoryDefinition>>`                                                    | `matrix.ts`  |
+| `SkillSlugMap`           | `{ slugToId: Partial<Record<SkillSlug, SkillId>>; idToSlug: Partial<Record<SkillId, SkillSlug>> }` | `matrix.ts`  |
+| `StackAgentConfig`       | `Partial<Record<Category, SkillAssignment[]>>`                                                     | `stacks.ts`  |
+| `PluginSkillRef`         | `` `${SkillId}:${SkillId}` ``                                                                      | `skills.ts`  |
+| `SkillDefinitionMap`     | `Partial<Record<SkillId, SkillDefinition>>`                                                        | `skills.ts`  |
+| `SkillAlias`             | `string`                                                                                           | `matrix.ts`  |
+| `MarketplaceOwner`       | `PluginAuthor` — the same shape under the name `marketplace.json` spells it                        | `plugins.ts` |
+| `MarketplaceMetadata`    | `{ pluginRoot?: string }` — the directory a `marketplace.json` resolves plugin sources against     | `plugins.ts` |
 
 Note: There is no `SkillRef` type alias. The type in `skills.ts` is `SkillReference` (an object type, not an alias).
 
@@ -391,14 +393,12 @@ Per-agent skills mapping — the value type of `CompileConfig.agents` and of the
 ```typescript
 export type CompileAgentConfig = {
   skills?: SkillReference[];
+  /** Config-level model override, preferred over the agent definition's own value. */
+  model?: ModelName;
+  /** Config-level effort override, preferred over the agent definition's own value. */
+  effort?: EffortLevel;
 };
 ```
-
-### CompileContext (`src/cli/types/config.ts`)
-
-Compilation context passed through pipeline:
-
-- `stackId`, `verbose`, `projectRoot`, `outputDir`
 
 ### ValidationResult (`src/cli/types/config.ts`)
 
@@ -537,13 +537,21 @@ Steers whether a skill renders as a single editable `SourceRow`, a locked global
 
 ## Types Documented Elsewhere (cross-references, not duplicated here)
 
-| Type / area                                                   | Lives in                                                         | Documented in                                             |
-| ------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
-| `CompilationResult`, `PropagatedRecompileSummary` (recompile) | `src/cli/lib/operations/project/recompile-project-agents.ts`     | [operations-types.md](./operations-types.md)              |
-| `LoadedSource`, `PluginInstallResult`, `ConfigChanges`        | `src/cli/lib/operations/**`                                      | [operations-types.md](./operations-types.md)              |
-| `WizardState` and every store action signature                | `src/cli/stores/wizard-store.ts`                                 | [store-map.md](../store-map.md)                           |
-| `InstallationInfo`, `PluginInfo`, `Marketplace*`              | `src/cli/lib/plugins/plugin-info.ts`, `src/cli/types/plugins.ts` | [features/plugin-system.md](../features/plugin-system.md) |
-| `ScopedEntry` and the scope predicates                        | `src/cli/lib/configuration/scope-predicates.ts`                  | [concepts/scope-system.md](../concepts/scope-system.md)   |
+| Type / area                                                   | Lives in                                                     | Documented in                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `CompilationResult`, `PropagatedRecompileSummary` (recompile) | `src/cli/lib/operations/project/recompile-project-agents.ts` | [operations-types.md](./operations-types.md)                                |
+| `LoadedSource`, `PluginInstallResult`, `ConfigChanges`        | `src/cli/lib/operations/**`                                  | [operations-types.md](./operations-types.md)                                |
+| `WizardState` and every store action signature                | `src/cli/stores/wizard-store.ts`                             | [store-map.md](../store-map.md)                                             |
+| `InstallationInfo`, `PluginInfo`                              | `src/cli/lib/plugins/plugin-info.ts`                         | [features/plugin-system.md](../features/plugin-system.md)                   |
+| `Marketplace`, `MarketplacePlugin`, `PluginManifest`          | `src/cli/types/plugins.ts`                                   | [features/plugin-system.md](../features/plugin-system.md)                   |
+| `MarketplaceFetchResult`                                      | `src/cli/types/plugins.ts`                                   | [features/source-fetch-and-cache.md](../features/source-fetch-and-cache.md) |
+| `MarketplaceRemoteSource`                                     | `src/cli/types/plugins.ts`                                   | [leaf-exports.md](../leaf-exports.md) § 3                                   |
+| `PluginAuthor`, `AgentHookAction`                             | `src/cli/types/plugins.ts`, `src/cli/types/agents.ts`        | [zod-schemas.md](./zod-schemas.md) — each has a bridge schema row           |
+| `AgentFrontmatter`                                            | `src/cli/types/agents.ts`                                    | [features/agent-system.md](../features/agent-system.md)                     |
+| `RelationshipDefinitions`, `SkillRulesConfig`                 | `src/cli/types/matrix.ts`                                    | [features/skills-and-matrix.md](../features/skills-and-matrix.md)           |
+| `SkillAlternative`                                            | `src/cli/types/matrix.ts`                                    | [features/built-in-catalogue.md](../features/built-in-catalogue.md)         |
+| `SkillRelation`, `SkillRequirement`                           | `src/cli/types/matrix.ts`                                    | [leaf-exports.md](../leaf-exports.md) § 2                                   |
+| `ScopedEntry` and the scope predicates                        | `src/cli/lib/configuration/scope-predicates.ts`              | [concepts/scope-system.md](../concepts/scope-system.md)                     |
 
 ## Type Narrowing Rules
 

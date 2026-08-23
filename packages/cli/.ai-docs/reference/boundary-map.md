@@ -27,9 +27,9 @@ last_validated: 2026-07-30
 | `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                    |
 | `src/cli/lib/config-gate/`                         | The only code permitted to write `~/.claude-src/config.ts` + `config-types.ts` — `index.ts` is its whole public surface (section 3.4a)  |
 | `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it) |
-| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`)                                                                                              |
+| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`); `.claude-src/config.ts` SETTINGS load boundary — raises for a corrupt-but-present config    |
 | `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                          |
-| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` load boundary; `ConfigLoadError` for corrupt-but-present configs                                                |
+| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` ROSTER load boundary; `ConfigLoadError` for corrupt-but-present configs                                         |
 | `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                  |
 | `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                         |
 | `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                           |
@@ -166,7 +166,7 @@ Default size limit: `MAX_CONFIG_FILE_SIZE` (1 MB, in `consts.ts`).
 | **Direction**  | IN                                                                                                                                                                                                                                                                                                                                                             |
 | **Data**       | `.claude-src/config.ts`, plus `config/stacks.ts`, `config/skill-categories.ts`, `config/skill-rules.ts` — **paths in a skills-source / marketplace repo, not in this repository** (this repo has no `config/` directory; the CLI's own fallbacks are `lib/configuration/default-*.ts`, see [features/built-in-catalogue.md](./features/built-in-catalogue.md)) |
 | **Validation** | Optional Zod schema via `schema.safeParse()`                                                                                                                                                                                                                                                                                                                   |
-| **Mechanism**  | jiti dynamic import with module cache disabled, alias for `agents-inc/config` (and the pre-0.150.0 `@agents-inc/cli/config`)                                                                                                                                                                                                                                   |
+| **Mechanism**  | jiti dynamic import with module cache disabled, alias for `agents-inc/config`                                                                                                                                                                                                                                                                                  |
 
 Callers. **The `Wrote it` column is a trust boundary, not a provenance note** — see the split below
 the table:
@@ -174,7 +174,7 @@ the table:
 | Caller                       | File                              | Schema Used                                            | Wrote it        |
 | ---------------------------- | --------------------------------- | ------------------------------------------------------ | --------------- |
 | `loadProjectConfigFromDir()` | `configuration/project-config.ts` | `projectConfigLoaderSchema` (via raw load + safeParse) | The CLI         |
-| `loadGlobalSourceConfig()`   | `configuration/config.ts`         | `projectSourceConfigSchema`                            | The CLI         |
+| `loadSourceConfig()`         | `configuration/config.ts`         | `projectSourceConfigSchema`                            | The CLI         |
 | `validateTsConfig()`         | `source-validator.ts` (internal)  | Passed by caller for each config file                  | A source author |
 | `loadSkillCategories()`      | `matrix/matrix-loader.ts`         | `skillCategoriesFileSchema`                            | A source author |
 | `loadSkillRules()`           | `matrix/matrix-loader.ts`         | `skillRulesFileSchema`                                 | A source author |
@@ -189,10 +189,18 @@ its category keys are re-keyed to what the catalogue names today. Treating the t
 type error and not a test failure — it compiles, and it silently rewrites every stack author's
 grouping.
 
+`loadSourceConfig()` is private and covers BOTH public settings readers — `loadProjectSourceConfig(dir)`
+and `loadGlobalSourceConfig()` differ only in the directory and the scope label they hand it. It is
+the CLI's own file and takes the same missing-vs-corrupt posture as the roster loader beside it: a
+file that is not there answers `null`, and every way of failing to load one that IS there raises.
+`features/configuration.md` § `loadSourceConfig` holds the per-call-site abort/degrade table.
+
 The two normalizers that carry the split, their callers and the specs holding each half are owned by
 [`features/configuration.md`](./features/configuration.md) § the persisted/authored table. This
 document states only that the boundary divides here, so § 3.4a's config-gate door and
-`loadProjectConfigFromDir` above are the same posture and `loadStacks` is not.
+`loadProjectConfigFromDir` above are the same posture and `loadStacks` is not. Of the six rows,
+only those two reach a normalizer at all: `loadStacks` runs `normalizeAgentConfig`,
+`loadProjectConfigFromDir` runs `normalizeStackRecord`, and the other four read what they parsed.
 
 **Missing vs corrupt:** `loadProjectConfigFromDir()` returns `null` **only** when the config file does not exist. Once the file exists, three failure modes throw `ConfigLoadError(configPath, reason)` instead of degrading to `null`:
 
@@ -304,7 +312,7 @@ Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values bef
 | `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists       | `<project>/.claude-src/config-types.ts` |
 | `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                             | Returns string                          |
 | `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`                    | Returns string                          |
-| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads matrix+agents for regen)                                            | Loads in background                     |
+| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads the marketplace matrix and the CLI's own sub-agent roster)          | Loads in background                     |
 | `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
 | `reconcileTypesFromDisk()`           | `config-gate/index.ts`                 | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
 
@@ -314,9 +322,9 @@ Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values bef
 
 ### 3.3 Skill Copier
 
-| Function                                                          | File                     | What It Writes                                    | Where                        |
-| ----------------------------------------------------------------- | ------------------------ | ------------------------------------------------- | ---------------------------- |
-| `copySkillsToPluginFromSource()` / `copySkillsToLocalFlattened()` | `skills/skill-copier.ts` | Skill directories (SKILL.md, metadata.yaml, etc.) | `.claude/skills/<skill-id>/` |
+| Function                       | File                     | What It Writes                                    | Where                        |
+| ------------------------------ | ------------------------ | ------------------------------------------------- | ---------------------------- |
+| `copySkillsToLocalFlattened()` | `skills/skill-copier.ts` | Skill directories (SKILL.md, metadata.yaml, etc.) | `.claude/skills/<skill-id>/` |
 
 Path traversal validation via `validateSkillPath()` in `skill-copier.ts` -- resolves paths and verifies they stay within the expected parent directory.
 
@@ -324,11 +332,7 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 
 ### 3.4 Local Installer
 
-| Function                  | File                              | What It Writes                | Where                                        |
-| ------------------------- | --------------------------------- | ----------------------------- | -------------------------------------------- |
-| `compileAndWriteAgents()` | `installation/local-installer.ts` | Compiled agent markdown files | `.claude/agents/<name>.md` (project or `~/`) |
-
-`local-installer.ts` writes no config file. Every scoped-config writer lives in `config-gate/`; this module builds and merges configs (`buildAndMergeConfig`, `buildCompileAgents`, `buildAgentScopeMap`) and hands them to the gate.
+**`local-installer.ts` touches no filesystem write boundary at all** — it imports no `fs` surface. It builds and merges configs (`buildAndMergeConfig`, `setConfigMetadata`, `buildCompileAgents`, `buildAgentScopeMap`) and hands them on; every scoped-config writer lives in `config-gate/`, and compiled agent markdown is written by `writeCompiledAgentsByScope()` (§3.5).
 
 ### 3.4a The config-gate — the only writer of the global pair
 
@@ -367,10 +371,10 @@ For the two uncovered families the check is still by hand: write a throwaway fil
 
 ### 3.5 Compiler Agent Output
 
-| Function                     | File          | What It Writes                                    | Where                          |
-| ---------------------------- | ------------- | ------------------------------------------------- | ------------------------------ |
-| `compileAgentForPlugin()`    | `compiler.ts` | Compiled agent markdown via Liquid templates      | Returns string (caller writes) |
-| `removeCompiledOutputDirs()` | `compiler.ts` | Removes `agents/`, `skills/`, `commands/` subdirs | Output directory               |
+| Function                       | File                              | What It Writes                               | Where                                                                                                                          |
+| ------------------------------ | --------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `compileAgentForPlugin()`      | `compiler.ts`                     | Compiled agent markdown via Liquid templates | Returns string (caller writes)                                                                                                 |
+| `writeCompiledAgentsByScope()` | `agents/write-compiled-agents.ts` | The rendered agent markdown                  | `<name>.md` under the global or project agents dir, per `agentScopeMap`; skipped when the bytes already match (`holdsExactly`) |
 
 Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks local `.claude-src/agents/_templates/`, legacy `.claude/templates/`, then CLI built-in `DIRS.templates`.
 
@@ -431,7 +435,7 @@ A **write-time invariant boundary**, distinct from the schema boundaries above: 
 - `.claude-src/` itself is removed only once empty (`removeDirIfEmpty`); user-owned content there (e.g. ejected templates) keeps it alive. `.claude/` follows the same rule and reports "Kept `.claude/` (contains user content)" otherwise.
 - A skill directory without a `forkedFrom` marker is **skipped with a warning** — user-created content is never deleted.
 - Plugin uninstall derives its scope per skill (`toClaudePluginScope(skillConfig?.scope)`) and goes through `claudePluginUninstallBestEffort()`, which tries the fallback scope too.
-- **A project uninstall always deregisters** itself from the global `projects[]` registry (`deregisterProjectPath`). A failure there — missing, project-less, or `ConfigLoadError`-corrupt global config — **warns and continues**; it may never fail the uninstall.
+- **A project uninstall always deregisters** itself from the global `projects[]` registry (`mutateGlobal({ kind: "deregister-project" })`). A failure there — missing, project-less, or `ConfigLoadError`-corrupt global config — **warns and continues**; it may never fail the uninstall.
 - **A global uninstall** (`isHomeDirectory(projectDir)`) additionally prunes inlined global entries from every registered project. The data it needs (global config + matrix + agent defs) is captured by `prepareGlobalPropagation()` **before** any removal, because that data lives in the config being deleted. Unreachable projects are warned and skipped and can never abort the uninstall.
 
 ---
@@ -493,11 +497,11 @@ All three validate: non-empty, length limit, no control characters (`[\x00-\x08\
 
 ### 5.2 Liquid Template Injection Prevention
 
-| Property | Value |
-| ------------ | ------------------------------ | ---- | --- | ---- |
-| **Location** | `src/cli/lib/compiler.ts` |
-| **Function** | `sanitizeCompiledAgentData()` |
-| **Pattern** | `LIQUID_SYNTAX_PATTERN`: `\{\{ | \}\} | \{% | %\}` |
+| Property     | Value                                                 |
+| ------------ | ----------------------------------------------------- |
+| **Location** | `src/cli/lib/compiler.ts`                             |
+| **Function** | `sanitizeCompiledAgentData()`                         |
+| **Pattern**  | `LIQUID_SYNTAX_PATTERN`: `\{\{ \| \}\} \| \{% \| %\}` |
 
 Sanitizes ALL user-controlled fields before Liquid template rendering:
 
@@ -651,17 +655,23 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 
 | Schema                   | File         | Used In                                                                                                  |
 | ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------- |
-| `skillIdSchema`          | `schemas.ts` | Validated against generated `SKILL_IDS` array                                                            |
-| `skillSlugSchema`        | `schemas.ts` | Validated against generated `SKILL_SLUGS` array                                                          |
-| `categorySchema`         | `schemas.ts` | Validated against generated `CATEGORIES` array                                                           |
+| `skillSlugSchema`        | `schemas.ts` | `z.enum(SKILL_SLUGS)` over the generated array                                                           |
 | `categoryPathSchema`     | `schemas.ts` | Known category, "local", or kebab-case                                                                   |
-| `domainSchema`           | `schemas.ts` | Validated against generated `DOMAINS` array                                                              |
-| `agentNameSchema`        | `schemas.ts` | Validated against generated `AGENT_NAMES` array                                                          |
 | `modelNameSchema`        | `schemas.ts` | `z.enum(MODEL_NAMES)` — five members, see [features/model-and-effort.md](./features/model-and-effort.md) |
-| `permissionModeSchema`   | `schemas.ts` | Agent permission modes                                                                                   |
+| `effortLevelSchema`      | `schemas.ts` | `z.enum(EFFORT_NAMES)`                                                                                   |
+| `permissionModeSchema`   | `schemas.ts` | `z.enum(PERMISSION_MODES)`                                                                               |
 | `skillAssignmentSchema`  | `schemas.ts` | Skill assignment objects                                                                                 |
 | `stackAgentConfigSchema` | `schemas.ts` | Per-agent stack categories                                                                               |
-| `boundSkillSchema`       | `schemas.ts` | Bound skill entries                                                                                      |
+
+**`SkillId`, `Domain`, `Category` and `AgentName` have no schema of their own.** `schemas.ts`
+imports exactly two generated union arrays — `SKILL_SLUGS` and `CATEGORIES` — and every other union
+crosses this boundary as an inline `z.string() as z.ZodType<...>` cast inside the object schema that
+consumes it. Reasoning and the full inventory are in
+[types/zod-schemas.md](./types/zod-schemas.md), which owns the schema roster.
+
+```
+grep -n 'as z.ZodType<\(SkillId\|Domain\|Category\|AgentName\)>' src/cli/lib/schemas.ts
+```
 
 ### Helper Functions
 

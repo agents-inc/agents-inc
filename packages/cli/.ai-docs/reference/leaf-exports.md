@@ -165,11 +165,12 @@ types (`ConflictRule`, `RequireRule`, all slug-keyed) are the pre-resolution inp
 
 **Do not document the resolution mechanism here.**
 [features/built-in-catalogue.md](./features/built-in-catalogue.md) owns it and covers more than this
-pass derived: `collectSymmetricGroupMembers`' `uniqueBy` dedupe and whose annotation survives it
-(`:273`), the AND-vs-OR default and
-its distribution across the built-in rules (`:238-241`), and the two slug-resolution failure modes —
-a filtered-out member vs. a whole rule dropped on `resolvedNeeds.length === 0` (`:432-433`).
-`SkillAlternative`'s shape and the `AlternativeGroup` asymmetry are at `:230-232` of the same file.
+pass derived: the `uniqueBy` dedupe and whose annotation survives it, in
+§ "`mergeRelationships` is additive, and \"source first\" means less than it sounds"; the AND-vs-OR
+default and its distribution across the built-in rules, in § "Invariants and dead fields"; and the
+two slug-resolution failure modes — a filtered-out group member vs. a whole `requires` rule dropped
+— in § "The built-in rules are narrowed to the slugs the source ships". `SkillAlternative`'s shape
+and the `AlternativeGroup` asymmetry are in § "Invariants and dead fields" of the same file.
 
 What is left to say about these two records is one thing:
 
@@ -193,7 +194,7 @@ same file is the optional one and carries the same annotation, correctly.
 **File:** `src/cli/types/plugins.ts`, reached through `types/index.ts`'s
 `export type * from "./plugins"`.
 [types/core-types.md](./types/core-types.md) already lists `PluginManifest`, `Marketplace` and
-`MarketplacePlugin` from this module (its table at `:63`); this is the gap.
+`MarketplacePlugin` from this module, in its § "Type Module Structure" table; this is the gap.
 
 ```typescript
 export type MarketplaceRemoteSource = {
@@ -210,23 +211,14 @@ It is the object half of `MarketplacePlugin.source`, whose declared type is
 **Invariant — the discriminator does not gate the payload.** The Zod bridge
 `marketplaceRemoteSourceSchema` (`lib/schemas.ts`) is a plain object with `repo`, `url` and
 `ref` **all optional**, so `{ source: "github" }` with neither `repo` nor `url` validates.
-[types/zod-schemas.md](./types/zod-schemas.md) `:145` records the schema's place in the dependency
-chain but not this leniency. It is deliberate and consistent with the rest of
-`marketplacePluginSchema` (`category` is a bare `z.string().exactOptional()` for the same reason) —
-external marketplace JSON is not the CLI's to reject on shape. The consequence is that the malformed
-case is caught at **use** time, not parse time.
+[types/zod-schemas.md](./types/zod-schemas.md) § "Module-Internal Schemas (not exported)" records
+the schema's place in the dependency chain but not this leniency. It is deliberate and consistent
+with the rest of `marketplacePluginSchema` (`category` is a bare `z.string().exactOptional()` for
+the same reason) — external marketplace JSON is not the CLI's to reject on shape.
 
-**`source: "github" | "url"` is never read.** The one consumer, `resolvePluginSource`
-(`lib/skills/skill-fetcher.ts`), discriminates on which field is _populated_, not on the
-declared kind. Its precedence — `url` → bare string → `repo` + optional `#ref` — and the throw it
-ends on are documented at [skills/skill-primitives.md](./skills/skill-primitives.md)
-§ "`skill-fetcher.ts` — glob-based skill copy" → "Contracts and traps",
-together with the sharper finding that a _diagnostic-only_ verbose call evaluates it inside a
-template literal and can therefore abort a fetch with logging off. Do not restate that here.
-
-The residue worth recording: the ladder's ordering means a source carrying **both** `url` and `repo`
-silently ignores `repo`, and `ref` is appended **only** on the `repo` arm — so
-`{ source: "url", url, ref }` drops `ref` with no warning and pins nothing.
+**`source: "github" | "url"` is read by nothing.** No module in `src/cli` narrows on it, and none
+reads `repo`, `url` or `ref` off the object either — the type survives only as the object half of
+`MarketplacePlugin.source` and as the shape `marketplaceRemoteSourceSchema` validates.
 
 ---
 
@@ -284,7 +276,7 @@ changing it will not break a user today, and no E2E will catch it either.
 ## 5. `AgentPluginOptions` — the agent compiler's options shape
 
 The **function** is documented: `compileAgentPlugin()` and `compileAllAgentPlugins()` are in
-[features/compilation-pipeline.md](./features/compilation-pipeline.md) `:319-320`, `:326`.
+[features/compilation-pipeline.md](./features/compilation-pipeline.md) § "Plugin-Mode Compilation".
 `SkillPluginOptions` is fully covered by
 [skills/skill-primitives.md](./skills/skill-primitives.md) and is **not** repeated here.
 
@@ -301,12 +293,6 @@ called only from `compileAllAgentPlugins` in the same file, which always sets bo
 command layer (`compileAgents` in `commands/build/plugins.ts`) reaches the batch
 wrapper, never the singular. Public surface, no external caller — the same posture
 skill-primitives.md records for `SkillPluginOptions`.
-
-**The stack installer's shapes used to sit here and no longer exist.** `StackInstallOptions` /
-`StackInstallResult`, and the whole `installStackAsPlugin` → `compileStackToTemp` →
-`compileStackPlugin` chain beneath them, were deleted in CLI-459 — dormant surface with green specs
-and no user-reachable caller. See [features/plugin-system.md](./features/plugin-system.md)
-§ "Stack Plugin Compilation — removed".
 
 ---
 
@@ -452,50 +438,34 @@ used by `output-validator.ts` and `plugins/plugin-validator.ts`, where `valid` _
 ### `BuildStepValidation` (`lib/wizard/build-step-logic.ts`)
 
 ```typescript
-export type BuildStepValidation = {
-  valid: boolean;
-  message?: string;
-};
+export type BuildStepValidation = { valid: true } | { valid: false; message: string };
 ```
 
 The return type of `validateBuildStep`, which
-[features/wizard-flow.md](./features/wizard-flow.md) `:207` lists by name and
-[architecture-overview.md](./architecture-overview.md) `:167` lists in the `lib/wizard` export
+[features/wizard-flow.md](./features/wizard-flow.md) lists by name and
+[architecture-overview.md](./architecture-overview.md) lists in the `lib/wizard` export
 inventory. Barrel: `lib/wizard/index.ts` exports both the type and the function.
 
-**Same invariant, more starkly: `valid` is `true` on both arms of the ternary.**
+**The union is the contract, and it is a departure from the `valid`-carrying types above it.**
+`SelectionValidation` derives `valid` from `errors.length === 0`; this one makes the derivation
+structural, so "invalid" and "carries a message" are one fact rather than two fields a producer
+has to keep in step. A caller cannot read the flag, take the happy path, and leave the message
+unread, because on the passing arm there is no message to read.
 
-```typescript
-const emptyRequired = categories.find((c) => c.required && !selections[c.id]?.length);
-return emptyRequired
-  ? {
-      valid: true,
-      message: `No skills selected in ${emptyRequired.displayName} (required category)`,
-    }
-  : { valid: true };
-```
-
-`valid: false` is unreachable. The declared `boolean` describes a shape the function never produces;
-the only information it carries is the presence or absence of `message`. A `required` category is
-therefore an **advisory** label, which makes `CategoryDefinition.required`'s own JSDoc claim ("the
-user must select at least one skill before proceeding", `types/matrix.ts`) the thing that is
-_not_ enforced.
+**Advisory all the same.** `valid: false` names an empty required category; it stops nothing. The
+sole production caller is `handleContinue` in `components/wizard/step-build.tsx`, which puts the
+message in a toast and calls `onContinue` regardless — matching `validateSelection`, whose
+conflicts and unmet requirements are reported by `BaseCommand.reportValidationErrors` as warnings
+no exit code turns on. `CategoryDefinition.required` in `types/matrix.ts` says so in its own
+JSDoc.
 
 **Only the first empty required category is reported** — `.find`, not `.filter`. Two unfilled
-required categories produce one message naming one of them.
+required categories produce one message naming the first in grid order; the next press reports the
+next one.
 
-**Zero production callers.** Grep over `src/` and `e2e/` returns the definition, the barrel
-re-export, and two test files: `lib/wizard/build-step-logic.test.ts` (**50 specs**, verified by
-running the file) and the `validateBuildStep` describe block in
-`components/wizard/step-build.test.tsx`. No wizard component calls it
-and no rendered string comes from it, so the `message` it constructs is never shown to a user. Both
-dormancy facts hold together: the function is unreachable AND could not block anything if it were
-reached.
-
-Its file-mate `buildCategoriesForDomain` is by contrast heavily used and thoroughly
-documented — see [component-patterns.md](./component-patterns.md) `:266` and
-[features/wizard-flow.md](./features/wizard-flow.md) for the deterministic-ordering
-contract. Do not infer from `validateBuildStep`'s dormancy that the module is dead.
+Its file-mate `buildCategoriesForDomain` is heavily used and thoroughly documented — see
+[component-patterns.md](./component-patterns.md) and
+[features/wizard-flow.md](./features/wizard-flow.md) for the deterministic-ordering contract.
 
 ---
 
@@ -524,13 +494,12 @@ Those three are covered only transitively.
 | --- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | 1   | Editing `METADATA_KEYS.DISPLAY_NAME` changes the error text, not the field the loader reads                       | `extractAllSkills` (`matrix-loader.ts`)                                    |
 | 2   | `SkillRequirement` is declared twice — the private alias in `matrix-resolver.ts` is not the one to edit           | the module-private `SkillRequirement` alias (`matrix-resolver.ts`)         |
-| 3   | `{ source: "github" }` with no `repo` and no `url` passes schema validation and throws at use time                | `marketplaceRemoteSourceSchema` (`schemas.ts`)                             |
-| 4   | A remote source carrying both `url` and `repo` ignores `repo`; `ref` is dropped unless the `repo` arm is taken    | `resolvePluginSource` (`skill-fetcher.ts`)                                 |
-| 5   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup  | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`     |
-| 6   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                     |
-| 7   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource` |
-| 8   | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                 |
-| 9   | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                |
+| 3   | `{ source: "github" }` with no `repo` and no `url` passes schema validation, deliberately                         | `marketplaceRemoteSourceSchema` (`schemas.ts`)                             |
+| 4   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup  | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`     |
+| 5   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                     |
+| 6   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource` |
+| 7   | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                 |
+| 8   | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                |
 
 ---
 

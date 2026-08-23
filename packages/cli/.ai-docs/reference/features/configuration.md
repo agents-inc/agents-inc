@@ -49,7 +49,7 @@ last_validated: 2026-07-30
 | `default-stacks.ts`      | `src/cli/lib/configuration/default-stacks.ts`      | Default stack definitions — see [built-in-catalogue.md](./built-in-catalogue.md)                           |
 | `index.ts`               | `src/cli/lib/configuration/index.ts`               | Barrel exports                                                                                             |
 
-**Barrel surface (`index.ts`)** — value exports only, grouped by the module each re-export block names, exhaustively and in source order: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `isPublicCatalogueCheckout`, `offersBuiltInStacks`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty` (`config-generator.ts`); `mergeConfigs`, `mergeWithExistingConfig` (`config-merger.ts`); `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` (`scope-predicates.ts`); **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig` (`project-config.ts`); `defineConfig`; `defaultCategories`; `defaultRules`; `defaultStacks`; **`ConfigDefaultExportError`**, `loadConfig` (`config-loader.ts`); `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath`, `loadConfigTypesDataInBackground` (`config-types-writer.ts`).
+**Barrel surface (`index.ts`)** — value exports only, grouped by the module each re-export block names, exhaustively and in source order: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `isPublicCatalogueCheckout`, `offersBuiltInStacks`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty` (`config-generator.ts`); `mergeConfigs`, `mergeWithExistingConfig` (`config-merger.ts`); `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` (`scope-predicates.ts`); **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig` (`project-config.ts`); `defineConfig`; `defaultCategories`; `defaultRules`; `defaultStacks`; **`ConfigDefaultExportError`**, `loadConfig` (`config-loader.ts`); `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath` (`config-types-writer.ts`).
 
 `ConfigSchemaError` is the sibling of `ConfigDefaultExportError` and is **not** on the barrel — `configuration/config.ts` imports it by path.
 
@@ -115,24 +115,60 @@ names a field the author can go and correct; a module that exports `export const
 has nothing wrong with its contents at all, and validating the module NAMESPACE against the schema
 is what once told such an author a field was missing from a file they could see it in.
 
-### `loadSourceConfig` re-raises both — it does not swallow every failure
+### `loadSourceConfig` raises every load failure — only a MISSING file is `null`
 
 `loadSourceConfig(dir, scope)` (private in `configuration/config.ts`, reached via
-`loadProjectSourceConfig` / `loadGlobalSourceConfig`) wraps `loadConfig(configPath, projectSourceConfigSchema)`
-in a `try`. Its `catch` is **selective**:
+`loadProjectSourceConfig` / `loadGlobalSourceConfig`) answers `null` for exactly two states: no file
+on disk, and a file that evaluated and declared nothing. **Every way of failing raises** (owner
+ruling 2026-08-20). Its `catch` — factored out as `readSourceConfigOrRefuse` — hands on a
+self-describing refusal as itself and wraps everything else:
 
 ```ts
-if (error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError) throw error;
-verbose(`Failed to load ${scope} config at ${configPath}: ${getErrorMessage(error)}`);
-return null;
+if (describesItsOwnFault(error)) throw error;
+throw unreadableSourceConfig(error);
 ```
 
-Only a file that could not be EVALUATED at all still returns the `null` this loader has always
-reported. A shape the schema refused, and a module whose exports are all named, are raised.
-`resolveSource` reads the return value alone, so a swallowed refusal is indistinguishable from a
-config that is not there — it would walk past that rung to `DEFAULT_SOURCE` and install from a
-marketplace nobody named. **Do not restore a bare `catch` here**; "the loader swallows every
-failure" was true of this function and is not.
+`describesItsOwnFault` admits `ConfigSchemaError` and `ConfigDefaultExportError` — the two that
+fault a LINE the author can go and correct, so re-wording them would lose information.
+`unreadableSourceConfig` covers the third state, a file that could not be evaluated at all: it
+passes `loadConfig`'s own message (which already names the file and the parser's reason, with line
+and column) to `configUnreadableError` in `utils/messages.ts`, so a `search` on a broken config
+prints the same refusal and the same way out that `ensureConfigReadable` prints for the sibling
+loader of the same file.
+
+The third state used to return `null`, and `resolveSource` reads the return value alone — so a run
+walked past that rung to `DEFAULT_SOURCE` and installed from a marketplace nobody named while a
+config naming a private one sat unread on disk. `compile` never showed it because
+`detectInstallation` refuses first; the commands that run no detection and no `ensureConfigReadable`
+did, `search` among them. **Do not restore a `return null` in that catch**, and do not add a fourth
+reader of this file without giving it the same posture —
+`src/cli/lib/configuration/__tests__/config-readers-agree.test.ts` holds all four to the contract
+and asserts the roster, so a fifth reddens it.
+
+**Every call site chose abort or degrade**, and each says which in a comment where it stands:
+
+| Call site                                                     | Posture                                                                                 |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `loadSkillsMatrixFromSource` (`loading/source-loader.ts`)     | ABORT — the marketplace every returned skill resolves against                           |
+| `loadAndMergeFromBasePath` (`loading/source-loader.ts`)       | ABORT — the marketplace's own `skillsDir` / `stacksFile`                                |
+| `fetchAgentDefinitionsFromRemote` (`agents/agent-fetcher.ts`) | ABORT — the fetched repository's `agentsDir`                                            |
+| `isSourceRepo` (`source-validator.ts`)                        | ABORT, caught — `doctor`'s `safeCheck`; its other caller asks only where no file exists |
+| `validateSource` (`source-validator.ts`)                      | ABORT, caught — `validateOneSource` turns it into an issue against that marketplace     |
+| `validateRegisteredSources` (`content-validator.ts`)          | **DEGRADE** — `readsConfig: true` stands the row down; `safeCheck` backstops            |
+| `resolveAndLogSource` (`commands/compile.ts`)                 | ABORT, unreachable — `detectInstallation` refuses the same file first                   |
+| `ensureMinimalConfig` (`commands/eject.ts`)                   | ABORT on the global half; the project half is unreachable behind a `fileExists` guard   |
+| `recordSource` (`commands/eject.ts`)                          | ABORT — see the note below                                                              |
+| `mergeWithExistingConfig` (`configuration/config-merger.ts`)  | ABORT, unreachable — `loadProjectConfig` reads the same file and throws first           |
+
+`recordSource` is the site the posture cost something real. It reads the existing config, overlays
+one scalar and hands the partial to `writeProjectPartial`. The `?? {}` on that read is still there
+and is correct — it is the fallback for a config that is not THERE, and the loader's raise is what
+keeps it from ever seeing one that is. **Were the loader to answer `null` for an unreadable file,
+that same `?? {}` would hand the writer an empty partial**, and a scalar-sized change would replace
+the user's whole `config.ts` with a two-field one under an invented name and report success. It is the only read-then-write site among the
+five `writeProjectPartial` / `mutateGlobal` callers; pinned by
+`src/cli/lib/config-gate/__tests__/write-project-partial.test.ts`, which asserts both the refusal
+and that the file on disk is unchanged, beside the empty-file control that still recovers.
 
 `loadProjectSourceConfig` derives the scope label rather than assuming it: at the home root the file
 it reads IS the global config, and a caller asking a project question there — `doctor` deciding
@@ -165,7 +201,7 @@ Two lenient repairs happen only on the success path, both with a `warn()`: a mis
 | `compile` (`src/cli/commands/compile.ts` → `detectInstallations`)                              | Catches, hard-errors with `this.error(error.message, { exit: EXIT_CODES.ERROR })` before any write |
 | `detectProject` (`src/cli/lib/operations/project/detect-project.ts`)                           | Catches, returns `null` so `doctor` reports a config problem instead of crashing                   |
 | `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`)                         | Does NOT catch — propagates, so no phantom eject installation is fabricated                        |
-| `uninstall` — GLOBAL config (`src/cli/commands/uninstall.tsx`)                                 | A corrupt global config during `deregisterProjectPath` is warned, never fatal                      |
+| `uninstall` — GLOBAL config (`src/cli/commands/uninstall.tsx`)                                 | A corrupt global config during deregistration is warned, never fatal                               |
 | `uninstall` — PROJECT config (`loadUninstallConfig`, same file)                                | Catches `ConfigLoadError` **only**, warns, returns `null`; the uninstall proceeds and exits 0      |
 | `mergeWithExistingConfig` (`config-merger.ts`)                                                 | Does NOT catch — `loadProjectConfig` throws straight through to the wizard save path               |
 
@@ -177,7 +213,13 @@ if (!(error instanceof ConfigLoadError)) throw error;
 
 so a genuine fault still propagates. Its warn text is `Could not read the project config — plugins and compiled agents it lists may be left behind: <reason>`. An unreadable config is then treated exactly like a **missing** one, because an unreadable config is precisely when a user needs to uninstall; before this, a `ConfigLoadError` escaped `run()` and the only way out was to hand-delete `.claude-src/`. Only the removal _plan_ degrades — the plugins and compiled agents the config named can no longer be identified, while file removal proceeds. Full flow in `reference/commands/index.md` → `uninstall`.
 
-**Exhaustiveness.** Four call sites in non-test `src/` narrow on the error explicitly (`error instanceof ConfigLoadError`): `base-command.ts`'s `configLoadFailure`, `compile.ts`, `detect-project.ts`, and `uninstall.tsx`'s `loadUninstallConfig`. The `uninstall` GLOBAL row is a **bare** `catch (error)` that warns on anything, so it handles a `ConfigLoadError` without naming the class. The remaining two rows (`detectInstallationInDir`, `mergeWithExistingConfig`) are statements about _absence_ of a catch and so are invisible to a grep — they are listed because propagating is itself the documented posture. Beyond these, the only other `ConfigLoadError` occurrences in non-test `src/` are the class definition and its throw sites (`configuration/project-config.ts`), the barrel re-export (`configuration/index.ts`), and one explanatory comment in `installation.ts`.
+**Exhaustiveness.** Four call sites in non-test `src/` narrow on the error explicitly (`error instanceof ConfigLoadError`): `configLoadFailure` in `configuration/project-config.ts` (which `BaseCommand.ensureConfigReadable` reaches through `findConfigLoadFailures`), `compile.ts`, `detect-project.ts`, and `uninstall.tsx`'s `loadUninstallConfig`. The `uninstall` GLOBAL row is a **bare** `catch (error)` that warns on anything, so it handles a `ConfigLoadError` without naming the class. The remaining two rows (`detectInstallationInDir`, `mergeWithExistingConfig`) are statements about _absence_ of a catch and so are invisible to a grep — they are listed because propagating is itself the documented posture.
+
+```
+grep -rn 'ConfigLoadError' src --include='*.ts' --include='*.tsx' | grep -v '\.test\.' | grep -v '__tests__'
+```
+
+The rest of that output holds no fifth posture: the class definition and its three throw sites plus `findConfigLoadFailures` (`configuration/project-config.ts`), the barrel re-export (`configuration/index.ts`), `toUnreadableConfigIssue` in `lib/content-validator.ts` — a type-only use that renders an already-collected failure as `doctor`'s content-layer row rather than catching one — and three explanatory comments, in `installation.ts`, `configuration/config-merger.ts` and `utils/messages.ts`.
 
 **`edit` and `init` never reach the rows below them.** `ensureConfigReadable` runs first in both commands and refuses an unreadable config outright, so `detectProject`'s `null` no longer stands in for one there (it still does for `doctor`), and `mergeWithExistingConfig`'s propagation is unreachable from a wizard save. Both configs a run reads are checked — the project's own and, from a project, the global one every project write inlines — because a corrupt GLOBAL config with an intact project config otherwise carried the whole wizard before failing at the write. There are no versioned migrations: the message says to recreate the configuration, names `uninstall` (which deliberately tolerates the same corruption, two rows below) and the editor URL. Full wording contract: `reference/commands/index.md` → "Unreadable configs are recreated, not edited".
 
@@ -423,13 +465,14 @@ a claim that some other input is authored, which is the one worth arguing about.
 identity.** The skill id is identity. Any lookup keyed by category is reconciled once at load, never
 at each consumer — so a change to the category vocabulary has one place to satisfy rather than a list
 of consumers to audit. [`reference/boundary-map.md`](../boundary-map.md) § 2.2 tabulates both entry
-points as callers of one `loadConfig` mechanism and marks which posture each caller is, including the
-three that reach no normalizer at all; the normalizers, their callers and the specs holding each half
-are this table's, and that document points back here for them.
+points as callers of one `loadConfig` mechanism and marks which trust posture each caller is; of its
+six rows only `loadStacks` and `loadProjectConfigFromDir` reach a normalizer at all. The
+normalizers, their callers and the specs holding each half are this table's, and that document
+points back here for them.
 
-A rename — `normalizeAuthoredAgentConfig` / `normalizePersistedStack` — would carry the distinction in
-the type system's nearest equivalent instead of in prose. It has not been done, so the doc comment on
-`normalizeStackRecord` naming itself "the PERSISTED-CONFIG boundary" is what a reader meets first.
+The names do not carry the distinction — a reader meets it first in the doc comment on
+`normalizeStackRecord`, which calls itself "the PERSISTED-CONFIG boundary" and states which entry
+points reach it.
 
 ### Merge and consumption
 
@@ -531,15 +574,15 @@ Generates `ProjectConfig` from wizard result:
 
 Required when the `selectedAgents` option (a wizard-supplied `AgentName[]`, not a config field) is non-empty: callers must pass `skillConfigs` (one `SkillConfig` per selected skill) and `agentConfigs` (one `AgentScopeConfig` per selected agent). `getScopeOrThrow` hard-errors on any missing entry — no silent scope defaulting.
 
-**D-220 per-agent curation options** (opt-in via `newlyAddedSkillIds`):
+**Per-agent curation options** (opt-in via `newlyAddedSkillIds`):
 
-| Option                   | Type                                           | Effect                                                                                                                                                                                                        |
-| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `newlyAddedSkillIds`     | `readonly SkillId[]`                           | Skills new to this session (vs prior `existing.config.skills`). Opting in (even as `[]`) activates D-220 preservation: skills absent from an existing agent's prior stack are only appended when in this set. |
-| `scopeEligibilityGained` | `ReadonlySet<string>`                          | `(agent, skillId)` pairs whose scope-compatibility flipped to compatible this session. Admits scope-flip cases that a skill-id-only diff misses. Keys built via `scopeEligibilityKey(agent, skillId)`.        |
-| `existingStack`          | `Partial<Record<AgentName, StackAgentConfig>>` | Prior stack entries. Used to preserve per-agent curation and inherit `preloaded` flags.                                                                                                                       |
+| Option                   | Type                                           | Effect                                                                                                                                                                                                                     |
+| ------------------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `newlyAddedSkillIds`     | `readonly SkillId[]`                           | Skills new to this session (vs prior `existing.config.skills`). Opting in (even as `[]`) activates per-agent curation preservation: skills absent from an existing agent's prior stack are only appended when in this set. |
+| `scopeEligibilityGained` | `ReadonlySet<string>`                          | `(agent, skillId)` pairs whose scope-compatibility flipped to compatible this session. Admits scope-flip cases that a skill-id-only diff misses. Keys built via `scopeEligibilityKey(agent, skillId)`.                     |
+| `existingStack`          | `Partial<Record<AgentName, StackAgentConfig>>` | Prior stack entries. Used to preserve per-agent curation and inherit `preloaded` flags.                                                                                                                                    |
 
-When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally (legacy pre-D-220 seed-everything behavior).
+When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally — which is not seed-everything, because `isPreservedOrRelevant` runs after it either way. See "Which agents a skill lands on" below.
 
 **Function:** `scopeEligibilityKey()` in `src/cli/lib/configuration/config-generator.ts` - Encodes `(agent, skillId)` as `` `${agent}|${skillId}` `` for set-membership lookups.
 
@@ -550,14 +593,14 @@ When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` un
 - **skills** by `scope` + `excluded` (excluded globals route to project split as tombstones)
 - **agents** by `scope` + `excluded` (excluded globals route to project as overrides)
 - **stack** by agent partition first, then global agents' entries are further split per-skill so a global agent never carries project skill ids; **both** halves always carry a `stack` key, `{}` when the derivation yielded nothing
-- **selectedDomains** carried to BOTH halves by the `...config` spread — the project half is not cleared, despite the function's own doc comment. See [scope-split.md](../config/scope-split.md) → "Scalar / Array Fields"
+- **selectedDomains** carried to BOTH halves by the `...config` spread — a project owns its own domain selection rather than inheriting the global one. See [scope-split.md](../config/scope-split.md) → "Scalar / Array Fields"
 
 > **Full partition rules, delta pipeline, and decision tables:** see [../config/scope-split.md](../config/scope-split.md).
 
 ### Which agents a skill lands on — taxonomy, not catalogue membership
 
 `buildAgentStack` in `config-generator.ts` runs three filters over every `(agent, category, skillId)`
-triple, in this order: `isScopeCompatible`, then `shouldIncludeTriple` (D-220 curation, above), then
+triple, in this order: `isScopeCompatible`, then `shouldIncludeTriple` (per-agent curation, above), then
 `isPreservedOrRelevant`. The third is the one that decides reach for a skill arriving this session,
 and it is two-tier:
 
@@ -625,7 +668,7 @@ Falls back to `scope: saved?.scope ?? "global"` and `origin: saved?.origin ?? de
 - Agents and skills are keyed by a **compound key** (`id:scope[:excluded]`), so dual-scope active/tombstone pairs coexist and scope migrations drop stale rows
 - Stack: `newConfig.stack` wins whenever defined; existing stack is kept only when `newConfig.stack` is undefined
 - `authoritativeScope` (Scenario C): a full `cc edit` drops in-authority entries that are absent from `newConfig`. A skill the wizard could not resolve from the loaded source is absent for a different reason than a deselection, but drops on the same terms — `edit` names it and says why
-- `existingConfig.projects` is preserved when `newConfig` carries none — `newConfig` never carries one, because the `projects` array is maintained exclusively by `registerProjectPath` / `deregisterProjectPath`
+- `existingConfig.projects` is preserved when `newConfig` carries none — `newConfig` never carries one, because the `projects` array is maintained exclusively by `registerProjectPath` and the gate's `deregister-project` mutation
 
 **"Absent from `newConfig`" does not mean "deselected" for a globally installed item under `authoritativeScope: "owned"`.** A project-scope edit cannot produce that absence: the wizard guards refuse the deselect and `applySkillRemoval` leaves an inherited global-active entry byte-identical. An absent global entry therefore reflects a global-scope change or a legacy config. Full contract: [../config/config-merger.md](../config/config-merger.md).
 
@@ -668,15 +711,15 @@ The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` 
 
 **File:** `src/cli/lib/configuration/config-types-writer.ts`
 
-Generates `config-types.ts` files with typed union types narrowed to installed items. Eight
-exported functions, exhaustively — the same list [config-writer.md](../config/config-writer.md)
+Generates `config-types.ts` files with typed union types narrowed to installed items. Every
+exported function, exhaustively — the same list [config-writer.md](../config/config-writer.md)
 carries, and both are bound to the module by `scripts/check-enumeration-drift.ts`:
 
 | Function                             | Purpose                                                                                   |
 | ------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `getGlobalConfigTypesPath()`         | Absolute path to the global config-types.ts when it exists, else `null`                   |
 | `assembleConfigTypesSource()`        | The single emission template all three writers route through                              |
-| `loadConfigTypesDataInBackground()`  | Kick off background matrix/agent loading                                                  |
+| `buildConfigTypesBackgroundData()`   | The one constructor for `ConfigTypesBackgroundData`, beside the type it builds            |
 | `regenerateConfigTypes()`            | Full regeneration; throws `GlobalPairWriteViolation` at `$HOME`                           |
 | `generateConfigTypesSource()`        | Standalone config-types.ts, narrowed to a config when passed one, else to the full matrix |
 | `deriveCategories()`                 | `SkillId[]` → the categories the matrix places them in, minus `LOCAL_PSEUDO_CATEGORY`     |
@@ -696,7 +739,7 @@ In `config-gate/`:
 - `propagateGlobalChangesToProjects` per-project loop → the SAME `writeProjectConfigPair`.
 - `reconcileTypesFromDisk(projectDir, config, deps, opts?)` — the scope-dispatching entry: `isHomeDirectory(projectDir)` → standalone half, otherwise `regenerateConfigTypes`. The single entry point for callers holding a persisted config and only its scope.
 
-Helpers `buildConfigTypesBackgroundData(matrix, agents)` and `buildProjectTypesExtras(config, matrix)` (both in `config-gate/propagate.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. The detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
+Helpers `buildConfigTypesBackgroundData(matrix, agents)` (beside the type, in `configuration/config-types-writer.ts`) and `buildProjectTypesExtras(config, matrix)` (`config-gate/propagate.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. The detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
 
 ### `compile` regenerates `config-types.ts`
 
@@ -757,7 +800,7 @@ One shared step now runs immediately before BOTH writes:
 - **Never throws** on a custom skill absent from the matrix: `categoryOfSkill` returns `undefined` for a missing entry and for `LOCAL_PSEUDO_CATEGORY`, and neither participates in category rules.
 - **Project-local only.** The global config passed in is read, never rewritten — a tombstone is never written into `~/.claude-src/config.ts`.
 
-**The project's own skill wins locally.** This is deliberately asymmetric with `toggleTechnology`'s exclusive-swap guard, which refuses a user-initiated swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install landed on top of pre-existing project state and letting it win would silently uninstall the user's own skill. Lifting that guard is tracked as D-276 in `todo/cli.md`.
+**The project's own skill wins locally.** This is deliberately asymmetric with `toggleTechnology`'s exclusive-swap guard, which refuses a user-initiated swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install landed on top of pre-existing project state and letting it win would silently uninstall the user's own skill.
 
 **Mask lifetime.** No store path can mint a BARE global tombstone — a project-scope deselect of a globally installed item is refused, and a domain deselect only drops what the project owns. The single remaining user route (`s`, G→P) always pairs the tombstone with an active project entry, i.e. an identity collision. Every bare mask is therefore system-derived by construction, and the retention test is one rule: **keep a mask only while the collision that would re-derive it still holds**, in `required` and optional categories alike. This replaced the earlier `exclusive && required` narrowing, which existed only because a derived mask and a deliberate exclusion were indistinguishable on disk.
 
@@ -789,6 +832,66 @@ Falls back to `DEFAULT_BRANDING` from `src/cli/consts.ts`:
 
 - Name: "Agents Inc."
 - Tagline: "AI-powered development tools"
+
+**The fallback is per-FILE, not per-field.** `loadEffectiveSourceConfig` answers with the project's
+OWN config where it has one and the global config otherwise, and `resolveBranding` reads `branding`
+off whichever of the two it was handed. A project config that exists and declares no `branding`
+therefore resolves to `DEFAULT_BRANDING` — the global config's branding is not consulted behind it.
+The global rung is reached only by a directory holding no `.claude-src/config.ts` of its own, and
+`loadOwnProjectSourceConfig` excludes the home root from counting as one, so the same file is never
+read as both rungs in a run.
+
+### Who reads `branding.name`
+
+Two readers, and every site that prints the configured name goes through one of them.
+
+| Reader                                        | Reaches                                | What it names                                                                                                                                                                                                                                                                        |
+| --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BaseCommand.resolveBrandingName(projectDir)` | `doctor`, `eject`, `uninstall`, `init` | `doctor`'s `<name> Doctor` header and `eject`'s `<name> Eject` header; `uninstall`'s `<name> Uninstall` header, its `notInstalledHere()` line, its `<name> has been uninstalled.` sign-off and its `not created by <name> CLI` skip warning; `init`'s `initSucceeded()` closing line |
+| `getDashboardData(projectDir)`                | the bare invocation's dashboard        | `DashboardData.name`, carried on the data rather than read by the formatter, which `formatDashboardText` prints as the summary's first line                                                                                                                                          |
+
+`init` and `uninstall` resolve the name once onto a `brandingName` field on the command and print
+from that; `doctor` and `eject` resolve it inline into the header call.
+
+**The dashboard's name reaches the non-interactive path only.** `showDashboard` prints
+`formatDashboardText(data)` when `process.stdin.isTTY` is false, and on a TTY renders the
+`Dashboard` component instead — which is handed `onSelect` and `onCancel` and never `data`, so it
+paints `ASCII_LOGO`. What an interactive user sees at that prompt does not follow `branding.name`.
+
+### The two postures, and why they differ
+
+`loadSourceConfig` raises for a config that EXISTS and cannot be evaluated — the standing rule that
+such a file is raised, never reported as absence. That rule is stated once above, for that
+function's own callers; `resolveBranding` inherits it, so each of ITS callers chooses abort or
+degrade in turn and says which in a comment where it stands.
+
+**`resolveBrandingName` degrades.** It catches, reports the cause through `verbose()` and returns
+`DEFAULT_BRANDING.NAME`. Three of its four commands have to survive an unreadable config precisely
+because that state is their subject: `doctor`'s whole job is naming it, `uninstall` is the way out
+of it, and `eject` already catches the same fault one method down so an ejection that landed is
+never reported as a run that did nothing. A heading is decoration, and refusing over one would turn
+the branding wiring into a new way for an unreadable config to abort three commands that survive it
+today. The cause is not swallowed — the command's own config reader reports it in full where the
+user can act on it, and reporting it twice would put a warning about the configuration above the
+one line that has to be the first thing on screen. `init` is the fourth caller and cannot reach the
+catch at all: `ensureConfigReadable` has already refused every config this would read.
+
+**`getDashboardData` aborts**, calling `resolveBranding` with no catch. Abort is already in force
+there rather than newly chosen: the `loadProjectConfig` beside it in the same `Promise.all` raises
+over the same file, so a configuration that cannot be evaluated fails the call whether branding is
+read or not. Nothing is degraded that was not already, and the dashboard is reached only once an
+installation has been detected.
+
+### `tagline` has no reader anywhere
+
+`resolveBranding` resolves it and nothing consumes the field. The docstring on `BrandingConfig`
+(`src/cli/types/config.ts`) and on `projectSourceConfigSchema` (`src/cli/lib/schemas.ts`) both say
+"Custom tagline shown in wizard header" — and the wizard header is `WizardLayout`, which paints
+`ASCII_LOGO` (on the stack step, where the terminal clears `LOGO_MIN_TERMINAL_ROWS`) and then
+`WizardTabs`, and no tagline on any step. `DEFAULT_BRANDING.TAGLINE` is likewise reached only
+by `resolveBranding` itself. A configured tagline is accepted by the schema, published in
+`src/schemas/project-source-config.schema.json`, round-tripped as passthrough data and never
+printed.
 
 ## Schema Validation
 
@@ -826,7 +929,7 @@ Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logi
 
 ## Plugin Install Failure Semantics
 
-Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::installPluginsStep` and `edit.tsx::applyPluginChanges` emit per-skill warnings and then hard-error via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
+Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::handleInstallation` and `edit.tsx::applyPluginChanges` reach `BaseCommand.reportPluginInstalls`, which emits per-skill warnings and then hard-errors via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
 
 The same guard covers the eject→plugin scope-migration path: `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `pluginInstalls.failed` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path. `ejectCopies.failed` is the plugin→eject mirror and refuses on the same terms, through `reportEjectCopies` and `ejectCopyFailureError(...)` — a different sentence for a different remedy, but the same rule: an intent this run could not honour stops it before any config records the intent.
 

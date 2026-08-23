@@ -66,7 +66,7 @@ Wizard (src/cli/components/wizard/wizard.tsx)
   |     |     |-> SkillAgentSummary (skill-agent-summary.tsx)
   |     |     |-> ScrollAffordance (scroll-affordance.tsx) - "N more above / below" hint
   |     |-> WizardFooter (inline in wizard-layout.tsx) - SPACE/ENTER/ESC key hints
-  |     |-> Toast (toast.tsx) - absolute-positioned guard/toast message
+  |     |-> Toast (toast.tsx) - absolute-positioned guard message, or a warning raised mid-session
   |
   |-> Step Components (conditional render based on store.step):
   |     |-> StepStack (step-stack.tsx) - Stack selection
@@ -93,7 +93,7 @@ Additional wizard components (not in the step render tree):
 
   Three properties are load-bearing. It is a SECOND window rather than the first one held open, because `enableBuffering()` resets the buffer; holding one window across both would have to span two modules and the command's own `this.error()` paths, where no `finally` can reach it. The `disableBuffering()` sits in a `finally`, because buffer mode is process-wide and a throw during hydration would otherwise swallow every later `warn()` in the run. And the fix is at the WINDOW rather than at the individual `warn()` call sites, which is why both warning arms — and both `init` and `edit`, which share this one entry point — are covered by construction rather than by enumeration.
 
-- `toast.tsx` - Toast notification component (styled text block with padding), rendered by `wizard-layout.tsx`
+- `toast.tsx` - Toast notification component (styled text block with padding), rendered by `wizard-layout.tsx`. Two kinds of message reach it: a guard refusing a toggle (`TOAST_MESSAGES` in `wizard-store.ts`), and a warning raised while the user is interacting, routed by `showWarningsAsToast` — see the store map. The second exists because the startup band is a prop fixed at mount, so a message raised after it cannot reach the band and stderr under a painted frame is lost.
 
 ## Wizard Props (from commands)
 
@@ -177,7 +177,7 @@ export type WizardResultV2 = {
 
 Contains non-UI logic extracted from the build step for testability:
 
-- `validateBuildStep()` - Validate build step selections (required categories). Both branches return `valid: true`, and its only references outside its own module are the `lib/wizard/index.ts` barrel plus two spec files — re-derive with `grep -rn validateBuildStep src/`. See [leaf-exports.md](../leaf-exports.md) § `BuildStepValidation`
+- `validateBuildStep()` - Names the first required category left empty, as `{ valid: false; message }`; answers `{ valid: true }` otherwise. **Advisory, not a gate** — `handleContinue` in `step-build.tsx` toasts the message and advances anyway, which is how every other wizard validation behaves. Re-derive its callers with `grep -rn validateBuildStep src/`. See [leaf-exports.md](../leaf-exports.md) § `BuildStepValidation`
 - `buildCategoriesForDomain()` - Build category row data for a domain
 
 **Grid order is deterministic.** `buildCategoriesForDomain()` orders the two axes independently: category ROWS by `cat.order`, and each row's OPTIONS by `displayName` lowercased, both with remeda's `sortBy`. **Both sorts are load-bearing.** Without the option sort, order follows matrix and `readdir` insertion order, so the grid reshuffles between runs and between source types, and a positional walk over it meant nothing. Lowercasing keeps the comparison locale-independent. Rows whose options list is empty are dropped from the result.
