@@ -1,13 +1,30 @@
-# Everything the commit hook used to run, moved here on 2026-08-07: lint, the
-# unit suites and the end-to-end suites, scoped by side — the whole CLI suite if
-# anything in the CLI changed, the whole web suite if anything in the web
+# Lint and the cross-workspace checks, scoped by side — the whole CLI side if
+# anything in the CLI changed, the whole web side if anything in the web
 # changed.
 #
-# This tier is coarse on purpose. It is the last gate before the code leaves the
-# machine, so it must not be able to miss a dependent, and scoping by side
-# cannot miss one: it never tries to work out what the dependents are. That
-# property is what lets .husky/pre-commit run a narrow changed-package filter
-# instead — the note there records why, and which miss taught it.
+# This tier is coarse on purpose. It must not be able to miss a dependent, and
+# scoping by side cannot miss one: it never tries to work out what the
+# dependents are. That property is what lets .husky/pre-commit run a narrow
+# changed-package filter instead — the note there records why, and which miss
+# taught it.
+#
+# THE SUITES LEFT THIS HOOK on 2026-08-23, on the owner's call that they are run
+# before a push rather than by it. What made the change necessary rather than
+# merely convenient is that this hook could not run them correctly: it asked for
+# `lint test test:e2e` in ONE turbo invocation, turbo runs those concurrently
+# because they do not depend on each other, and `test` and `test:e2e` each carry
+# an npm pre-hook that runs `bun run build`. Two tsup builds with `clean: true`
+# then raced on one dist/ — one enumerated the directory, the other unlinked a
+# chunk, and the first died with `ENOENT ... unlink dist/chunk-*.js` before a
+# single spec ran. The push aborted with `run failed: command exited (1)` and
+# the cause four hundred lines up in interleaved output, which is why it read as
+# no error message at all.
+#
+# So a push is now gated on lint and deps:check only. Running the suites is the
+# pusher's job, and `bun run test` / `bun run test:e2e` from the root do it —
+# separately, which is the whole point. Note that running those two together in
+# one turbo invocation reproduces the same race; the double-build is a property
+# of the two pre-hooks, not of this hook.
 
 # What is about to be pushed rather than what is staged. @{push} is where this
 # branch's commits are going, so @{push}..HEAD is everything the remote does not
@@ -76,17 +93,16 @@ fi
 # Every grep above sits inside an `if` on purpose: husky runs this with `sh -e`,
 # so a bare grep that matched nothing would fail the push on its own.
 #
-# Only packages/cli and apps/editor define test:e2e, so each side runs the
-# end-to-end suite it owns and nothing else. A push touching only docs or other
-# root files sets neither flag and runs neither suite.
+# A push touching only docs or other root files sets neither flag and lints
+# neither side.
 if [ "$run_deps" = yes ]; then
 	bun run deps:check
 fi
 
 if [ "$run_cli" = yes ]; then
-	bunx turbo run lint test test:e2e --filter=agents-inc
+	bunx turbo run lint --filter=agents-inc
 fi
 
 if [ "$run_web" = yes ]; then
-	bunx turbo run lint test test:e2e --filter='!agents-inc'
+	bunx turbo run lint --filter='!agents-inc'
 fi
