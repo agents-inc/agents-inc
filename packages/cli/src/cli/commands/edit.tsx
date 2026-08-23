@@ -100,11 +100,13 @@ import { openUrl } from "../utils/open-url.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
+  INCOMPLETE_WORK_RECOVERY,
   ERROR_MESSAGES,
   INFO_MESSAGES,
   SHARED_CONFIG_APPLY,
   SHARED_CONFIG_ONE_DIRECTION,
   STATUS_MESSAGES,
+  agentsNotCompiled,
   authoredHereKept,
   carriedSkillsWritten,
   globallyInstalledRemoved,
@@ -209,11 +211,61 @@ export { applyMigratedGlobalSources };
 type EditContext = {
   installation: Installation;
   projectConfig: ProjectConfig | null;
+  /** The detected installation's root — where this run READS its saved skills from. */
   projectDir: string;
   sourceResult: SourceLoadResult;
   startupMessages: StartupMessage[];
   currentSkillIds: SkillId[];
 };
+
+/**
+ * The one directory an `edit` run acts on, and everything every layer needs to know about it.
+ *
+ * Six layers used to answer "am I editing the global installation?" for themselves, three of
+ * them off the working directory, and they disagreed the moment the command was started
+ * outside an install. Passing this value instead of a bare path is what makes them one
+ * answer: a layer that wants a different one has to reach past the parameter it was handed.
+ */
+type EditRoot = {
+  /** Where this run writes, registers plugins and compiles into. */
+  dir: string;
+  /**
+   * True when {@link EditRoot.dir} IS the global installation, so there is no project scope to
+   * offer.
+   */
+  isGlobal: boolean;
+  /**
+   * True when this run must materialise {@link EditRoot.dir} as a project even with nothing to
+   * change.
+   */
+  isProjectSetup: boolean;
+};
+
+/**
+ * Which installation this run is editing, decided once.
+ *
+ * `edit` names no directory. It edits the installation `detectProject` found, and that
+ * installation's root is the only root that HAS a config to edit — so it is the only root
+ * this run may write to. Reading the working directory instead made a project out of
+ * whichever directory the command was started in: over a global-only install the wizard
+ * offered the project/global scope toggle for a project that did not exist, and saving
+ * wrote a `.claude-src/` pair into an unrelated checkout.
+ *
+ * `--project-setup` is an instance of that rule rather than an exception to it. It means the
+ * user ran `cc init` HERE, which declares this directory the installation being set up, so
+ * the config this run writes is what makes the claim true. At the home root there is nothing
+ * to set up and both spellings name the same directory anyway, which is why the flag alone
+ * picks the root and the resolved criterion decides whether anything is materialised.
+ */
+function resolveEditRoot(
+  installation: Installation,
+  cwd: string,
+  setupRequested: boolean,
+): EditRoot {
+  const dir = setupRequested ? cwd : installation.projectDir;
+  const isGlobal = isHomeDirectory(dir);
+  return { dir, isGlobal, isProjectSetup: setupRequested && !isGlobal };
+}
 
 /**
  * What this run is about to apply, and which producer said so.
@@ -383,11 +435,14 @@ function catalogueStatement(kept: KeptFromRoundTrip): string[] {
  * was deselected. In a project the WIZARD owns only what the project owns, because the store
  * refuses to deselect a live global entry at all — an inherited row absent from its result is
  * one it never offered, not one anybody dropped. A CONFIRMED shared configuration is the other
- * case and the reason this is not simply `isHomeDirectory`: it states a whole roster, the plan
+ * case and the reason this is not simply `editRoot.isGlobal`: it states a whole roster, the plan
  * above named every global removal and every project that reaches, and somebody answered yes.
  */
-function applyAuthority(producer: EditSelection["producer"], cwd: string): AuthoritativeScope {
-  if (isHomeDirectory(cwd)) return "all";
+function applyAuthority(
+  producer: EditSelection["producer"],
+  editRoot: EditRoot,
+): AuthoritativeScope {
+  if (editRoot.isGlobal) return "all";
   return producer === "shared" ? "all" : "owned";
 }
 
@@ -427,7 +482,20 @@ export default class Edit extends BaseCommand {
     }),
   };
 
+  /**
+   * The command in two statements: do the work, then answer for it.
+   *
+   * `applyEdit` owns every path through the edit and returns however it likes; the exit code is
+   * decided once, here, after the last of them. Deciding it inside `applyEdit` would mean
+   * deciding it at each of that method's three endings, and an ending added later would inherit
+   * the exit-0 default silently — which is the defect this pair exists to close.
+   */
   async run(): Promise<void> {
+    await this.applyEdit();
+    this.exitIfWorkIncomplete();
+  }
+
+  private async applyEdit(): Promise<void> {
     const { flags } = await this.parse(Edit);
     const cwd = process.cwd();
 
@@ -452,6 +520,9 @@ export default class Edit extends BaseCommand {
 
     const context = await this.loadContextUnderSpinner();
 
+    // Which installation this run is editing, resolved once and read by every layer below.
+    const editRoot = resolveEditRoot(context.installation, cwd, flags[EDIT_PROJECT_SETUP_FLAG]);
+
     // Still before anything renders, one layer below the config itself: an entry whose skill
     // IS installed and whose metadata.yaml describes it no longer would otherwise be dropped
     // from config.ts on the way out, over a file this refusal asks to be repaired instead.
@@ -462,8 +533,8 @@ export default class Edit extends BaseCommand {
     );
 
     const selection = payload
-      ? await this.selectionFromSharedConfig(payload, context, cwd)
-      : await this.selectionFromWizard(context, cwd);
+      ? await this.selectionFromSharedConfig(payload, context, editRoot)
+      : await this.selectionFromWizard(context, editRoot);
     if (!selection) this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
 
     const { result } = selection;
@@ -490,14 +561,6 @@ export default class Edit extends BaseCommand {
       newAgents: result.agentConfigs,
       oldAgents: context.projectConfig?.agents ?? [],
     });
-    // `cc init` inside a project means "set this project up", so the project must be
-    // materialised — `<project>/.claude-src/config.ts` + `config-types.ts` written and the
-    // path registered in the global `projects[]` — even when the wizard produced no roster
-    // change. At the home root there is no project to set up: the global install is what the
-    // dashboard was shown for, so a no-change pass there stays an inspection, as does every
-    // bare `cc edit`.
-    const isProjectSetup = flags[EDIT_PROJECT_SETUP_FLAG] && !isHomeDirectory(cwd);
-
     // The gate, at the one point where the removals are known and none has been made: after the
     // diff, above every mutation, and above the no-change return — a configuration that carries
     // its own skills still has bytes to land when the roster is unchanged.
@@ -506,7 +569,7 @@ export default class Edit extends BaseCommand {
         changes,
         selection.kept,
         { skills: activeOldSkills, agents: activeOldAgents },
-        cwd,
+        editRoot,
       );
       await this.writeCarriedSkills(selection.carried);
     }
@@ -514,12 +577,18 @@ export default class Edit extends BaseCommand {
     // One word for both halves of the write, decided once from what was actually confirmed: the
     // merger reads it for the config ROW, and the gate reads it for the global config a project
     // write commits. Deriving it twice is how the row and the disk come to disagree.
-    const authority = applyAuthority(selection.producer, cwd);
+    const authority = applyAuthority(selection.producer, editRoot);
 
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
-      if (!isProjectSetup) return;
-      await this.writeConfigAndCompile(result, context, cwd, authority);
+      // `cc init` inside a project means "set this project up", so the project must be
+      // materialised — `<project>/.claude-src/config.ts` + `config-types.ts` written and the
+      // path registered in the global `projects[]` — even when the wizard produced no roster
+      // change. At the home root there is no project to set up: the global install is what the
+      // dashboard was shown for, so a no-change pass there stays an inspection, as does every
+      // bare `cc edit`.
+      if (!editRoot.isProjectSetup) return;
+      await this.writeConfigAndCompile(result, context, editRoot, authority);
       this.logCompletionSummary(changes);
       return;
     }
@@ -541,25 +610,30 @@ export default class Edit extends BaseCommand {
       filteredResult,
       activeOldSkills,
       context,
-      cwd,
+      editRoot,
     );
-    await this.recordGlobalSourceMigrations(migratedSkillIds, filteredResult.skills, cwd, context);
-    await this.applyScopeChanges(changes, filteredResult, context, cwd);
-    await this.applySourceChanges(changes, activeOldSkills, cwd, migratedSkillIds);
-    await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, cwd);
-    await this.copyNewLocalSkills(changes, filteredResult, context, cwd);
-    await this.removeDeletedLocalSkills(changes, activeOldSkills, cwd);
-    await this.writeConfigAndCompile(result, context, cwd, authority);
-    await this.cleanupStaleAgentFiles(changes, activeOldAgents, cwd);
+    await this.recordGlobalSourceMigrations(
+      migratedSkillIds,
+      filteredResult.skills,
+      editRoot,
+      context,
+    );
+    await this.applyScopeChanges(changes, filteredResult, context, editRoot);
+    await this.applySourceChanges(changes, activeOldSkills, editRoot, migratedSkillIds);
+    await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, editRoot);
+    await this.copyNewLocalSkills(changes, filteredResult, context, editRoot);
+    await this.removeDeletedLocalSkills(changes, activeOldSkills, editRoot);
+    await this.writeConfigAndCompile(result, context, editRoot, authority);
+    await this.cleanupStaleAgentFiles(changes, activeOldAgents, editRoot);
     this.logCompletionSummary(changes);
   }
 
   /** The interactive producer: open the wizard on what is installed, return what was chosen. */
   private async selectionFromWizard(
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<EditSelection | null> {
-    const result = await this.runEditWizard(context, cwd);
+    const result = await this.runEditWizard(context, editRoot);
     if (!result) return null;
 
     return { producer: "wizard", result };
@@ -583,12 +657,12 @@ export default class Edit extends BaseCommand {
   private async selectionFromSharedConfig(
     payload: SeedPayload,
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<EditSelection> {
     const { matrix: sourceMatrix } = context.sourceResult;
     // Before the decode, because a skill the payload CARRIES answers to no catalogue: unseated,
     // its id is skipped like any other unknown one and its content is never read.
-    const carried = this.registerExternalSkillsOrFail(payload, sourceMatrix, cwd);
+    const carried = this.registerExternalSkillsOrFail(payload, sourceMatrix, editRoot.dir);
     const { result, skippedSkillIds, skippedAgentNames } = this.decodeSeedOrFail(
       payload,
       sourceMatrix,
@@ -598,7 +672,7 @@ export default class Edit extends BaseCommand {
     // all-global configuration is exactly what a global installation is for, so only the decode
     // says whether THIS one has anywhere to be written here. `init --from` asks it at the same
     // point of the same value, and a run about to be refused must not first narrate its skips.
-    this.refuseProjectScopedContentAtHome(result, cwd);
+    this.refuseProjectScopedContentAtHome(result, editRoot.dir);
 
     if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
@@ -606,7 +680,7 @@ export default class Edit extends BaseCommand {
     const reconciled = reconcileSharedConfig({
       decoded: result,
       installed: context.projectConfig,
-      authoredHere: await this.readAuthoredHere(context.projectConfig, cwd),
+      authoredHere: await this.readAuthoredHere(context.projectConfig, editRoot.dir),
       // The ids the decode above could not place. They are the skips just reported, read as
       // what STAYS rather than as what did not arrive: the payload named them, so their absence
       // from the decode is this catalogue's limit and not an instruction to delete anything.
@@ -632,12 +706,12 @@ export default class Edit extends BaseCommand {
    */
   private async readAuthoredHere(
     projectConfig: ProjectConfig | null,
-    cwd: string,
+    editRoot: string,
   ): Promise<Set<SkillId>> {
     if (!projectConfig) return new Set();
 
     try {
-      return await skillsAuthoredHere(projectConfig, cwd);
+      return await skillsAuthoredHere(projectConfig, editRoot);
     } catch (error) {
       this.warn(`Could not tell which skills were written here: ${getErrorMessage(error)}`);
       return new Set();
@@ -721,11 +795,16 @@ export default class Edit extends BaseCommand {
     changes: ConfigChanges,
     kept: string[],
     installed: InstalledEntries,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<void> {
-    const plan = isHomeDirectory(cwd)
+    const plan = editRoot.isGlobal
       ? globalScopePlan(changes, kept)
-      : projectScopePlan(changes, kept, installed, await this.otherRegisteredProjects(cwd));
+      : projectScopePlan(
+          changes,
+          kept,
+          installed,
+          await this.otherRegisteredProjects(editRoot.dir),
+        );
 
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
       <RemovalPlanConfirm
@@ -754,10 +833,10 @@ export default class Edit extends BaseCommand {
    * read leaves the disclosure counting nobody rather than failing an apply — and the statement
    * it produces then is the one that says no other project is registered.
    */
-  private async otherRegisteredProjects(cwd: string): Promise<string[]> {
+  private async otherRegisteredProjects(editRoot: string): Promise<string[]> {
     try {
       const global = await loadProjectConfigFromDir(os.homedir());
-      const here = normalizeProjectPath(cwd);
+      const here = normalizeProjectPath(editRoot);
       return (global?.config.projects ?? []).filter((projectDir) => projectDir !== here);
     } catch (error) {
       this.warn(`Could not tell which projects share this install: ${getErrorMessage(error)}`);
@@ -846,9 +925,9 @@ export default class Edit extends BaseCommand {
     }
     const { installation, config: projectConfig } = detected;
 
-    // Use installation.projectDir for reads (loading config, discovering installed skills).
-    // Use cwd for writes (config saves, plugin installs, scope migrations, recompilation output)
-    // and for the global-scope check (determining whether editing from global context).
+    // The detected installation's own root, which is what this run READS: the source it stored,
+    // and the plugins registered against it. Every WRITE goes to `EditRoot.dir` instead, and the
+    // two are the same directory unless `--project-setup` is promoting this one to a project.
     const projectDir = installation.projectDir;
 
     let sourceResult: SourceLoadResult;
@@ -904,7 +983,10 @@ export default class Edit extends BaseCommand {
     };
   }
 
-  private async runEditWizard(context: EditContext, cwd: string): Promise<WizardResultV2 | null> {
+  private async runEditWizard(
+    context: EditContext,
+    editRoot: EditRoot,
+  ): Promise<WizardResultV2 | null> {
     const { projectConfig, currentSkillIds } = context;
     const selectedAgents = projectConfig?.agents && activeAgentNames(projectConfig.agents);
 
@@ -918,7 +1000,7 @@ export default class Edit extends BaseCommand {
         installedSkillIds: currentSkillIds,
         ...(projectConfig?.skills !== undefined && { installedSkillConfigs: projectConfig.skills }),
         ...(projectConfig?.agents !== undefined && { installedAgentConfigs: projectConfig.agents }),
-        isEditingFromGlobalScope: isHomeDirectory(cwd),
+        isEditingFromGlobalScope: editRoot.isGlobal,
       },
       props: {
         version: this.config.version,
@@ -973,11 +1055,11 @@ export default class Edit extends BaseCommand {
   private async recordGlobalSourceMigrations(
     migratedSkillIds: Set<SkillId>,
     newSkills: SkillConfig[],
-    cwd: string,
+    editRoot: EditRoot,
     context: EditContext,
   ): Promise<void> {
     // A global-context edit writes the whole global config from the wizard result already.
-    if (isHomeDirectory(cwd)) return;
+    if (editRoot.isGlobal) return;
 
     const migratedSources = new Map(
       newSkills
@@ -1000,7 +1082,13 @@ export default class Edit extends BaseCommand {
       );
       this.reportPropagatedRecompile(report);
     } catch (error) {
-      this.warn(`Could not record global origin change: ${getErrorMessage(error)}`);
+      // The migration itself already happened — the skill has been copied under $HOME or had
+      // its user-scope registration moved. Only the record of it failed, so the disk and the
+      // global config now describe different installations and nothing downstream will notice.
+      this.reportIncompleteWork(
+        `Could not record global origin change: ${getErrorMessage(error)}`,
+        INCOMPLETE_WORK_RECOVERY.INSPECT_INSTALLATION,
+      );
     }
   }
 
@@ -1073,7 +1161,7 @@ export default class Edit extends BaseCommand {
     filteredResult: WizardResultV2,
     activeOldSkills: SkillConfig[],
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<Set<SkillId>> {
     const migrationPlan = detectMigrations(activeOldSkills, filteredResult.skills);
     const migratedSkillIds = new Set([
@@ -1101,7 +1189,11 @@ export default class Edit extends BaseCommand {
       this.announcePluginInstall();
     }
 
-    const migrationResult = await executeMigration(migrationPlan, cwd, context.sourceResult);
+    const migrationResult = await executeMigration(
+      migrationPlan,
+      editRoot.dir,
+      context.sourceResult,
+    );
 
     for (const warning of migrationResult.warnings) {
       this.warn(warning);
@@ -1159,7 +1251,7 @@ export default class Edit extends BaseCommand {
     changes: ConfigChanges,
     filteredResult: WizardResultV2,
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<void> {
     const { scopeChanges } = changes;
 
@@ -1167,7 +1259,7 @@ export default class Edit extends BaseCommand {
     for (const [skillId, change] of scopeChanges) {
       const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
       if (skillConfig?.origin === EJECT_SOURCE) {
-        await migrateLocalSkillScope(skillId, change.from, cwd);
+        await migrateLocalSkillScope(skillId, change.from, editRoot.dir);
       }
     }
 
@@ -1188,17 +1280,23 @@ export default class Edit extends BaseCommand {
       scopeChanges,
       filteredResult.skills,
       marketplace,
-      cwd,
+      editRoot.dir,
     );
+    // A scope migration INSTALLS the plugin at its new scope, so a failure here is not the
+    // diagnostic an uninstall failure is: the skill is registered at neither scope while the
+    // config is about to record the new one.
     for (const item of pluginScopeResult.failed) {
-      this.warn(`Failed to migrate plugin scope for ${item.id}: ${item.error}`);
+      this.reportIncompleteWork(
+        `Failed to migrate plugin scope for ${item.id}: ${item.error}`,
+        INCOMPLETE_WORK_RECOVERY.INSPECT_INSTALLATION,
+      );
     }
   }
 
   private async applySourceChanges(
     changes: ConfigChanges,
     activeOldSkills: SkillConfig[],
-    cwd: string,
+    editRoot: EditRoot,
     migratedSkillIds: Set<SkillId>,
   ): Promise<void> {
     const { sourceChanges } = changes;
@@ -1211,7 +1309,7 @@ export default class Edit extends BaseCommand {
       }
       if (change.from === EJECT_SOURCE) {
         const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-        const deleteDir = installBaseDir(cwd, oldSkill?.scope);
+        const deleteDir = installBaseDir(editRoot.dir, oldSkill?.scope);
         await deleteLocalSkill(deleteDir, skillId);
       }
     }
@@ -1222,7 +1320,7 @@ export default class Edit extends BaseCommand {
     filteredResult: WizardResultV2,
     activeOldSkills: SkillConfig[],
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<void> {
     const { addedSkills, removedSkills } = changes;
 
@@ -1245,7 +1343,7 @@ export default class Edit extends BaseCommand {
       await this.installPluginSkillsReported(
         addedPluginSkills,
         marketplace,
-        cwd,
+        editRoot.dir,
         context.sourceResult.matrix,
       );
     }
@@ -1255,7 +1353,7 @@ export default class Edit extends BaseCommand {
         removedPluginSkills,
         activeOldSkills,
         marketplace,
-        cwd,
+        editRoot.dir,
       );
       if (uninstallResult.uninstalled.length > 0) {
         this.log(
@@ -1272,7 +1370,7 @@ export default class Edit extends BaseCommand {
     changes: ConfigChanges,
     filteredResult: WizardResultV2,
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<void> {
     const { addedSkills } = changes;
 
@@ -1282,7 +1380,11 @@ export default class Edit extends BaseCommand {
     );
 
     if (addedLocalSkills.length > 0) {
-      const copyResult = await copyLocalSkills(addedLocalSkills, cwd, context.sourceResult);
+      const copyResult = await copyLocalSkills(
+        addedLocalSkills,
+        editRoot.dir,
+        context.sourceResult,
+      );
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)(localSkillsCopied(copyResult.totalCopied)));
     }
   }
@@ -1290,19 +1392,19 @@ export default class Edit extends BaseCommand {
   private async removeDeletedLocalSkills(
     changes: ConfigChanges,
     activeOldSkills: SkillConfig[],
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<void> {
     const { removedSkills } = changes;
 
     // A fully-deselected eject-mode skill is a genuine uninstall — its copied directory under
-    // .claude/skills/<id>/ must be removed from the scope it was installed at (D-233). Plugin
+    // .claude/skills/<id>/ must be removed from the scope it was installed at. Plugin
     // removals are handled by applyPluginChanges; source-change (eject->marketplace) deletions by
     // applySourceChanges. deleteLocalSkill is a no-op when the directory is absent.
     for (const skillId of removedSkills) {
       const oldSkill = activeOldSkills.find((s) => s.id === skillId);
       if (oldSkill?.origin !== EJECT_SOURCE) continue;
 
-      const deleteDir = installBaseDir(cwd, oldSkill.scope);
+      const deleteDir = installBaseDir(editRoot.dir, oldSkill.scope);
       await deleteLocalSkill(deleteDir, skillId);
     }
   }
@@ -1310,7 +1412,7 @@ export default class Edit extends BaseCommand {
   private async writeConfigAndCompile(
     result: WizardResultV2,
     context: EditContext,
-    cwd: string,
+    editRoot: EditRoot,
     authority: AuthoritativeScope,
   ): Promise<void> {
     // Load agent definitions — needed for both config-types.ts and recompilation
@@ -1334,10 +1436,10 @@ export default class Edit extends BaseCommand {
       configResult = await writeProjectConfig({
         wizardResult: result,
         sourceResult: context.sourceResult,
-        projectDir: cwd,
-        agents: agentDefsResult.agents,
+        projectDir: editRoot.dir,
+        agentDefs: agentDefsResult,
         // A full `cc edit` pass is authoritative over the roster it owns, so deselected entries
-        // are removed rather than union-preserved (D-233 Scenario C). `applyAuthority` decides
+        // are removed rather than union-preserved. `applyAuthority` decides
         // how much that is from the producer and the directory, and hands the same word to the
         // merger and to the global config the project branch of the gate commits.
         authoritativeScope: authority,
@@ -1352,9 +1454,9 @@ export default class Edit extends BaseCommand {
 
     try {
       const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
-      const { allSkills } = await discoverInstalledSkills(cwd);
+      const { allSkills } = await discoverInstalledSkills(editRoot.dir);
       const compilationResult = await compileAgentsAllScopes({
-        projectDir: cwd,
+        projectDir: editRoot.dir,
         sourcePath: agentDefsResult.sourcePath,
         skills: allSkills,
         agentScopeMap,
@@ -1375,13 +1477,23 @@ export default class Edit extends BaseCommand {
         for (const warning of warnings) {
           this.warn(warning);
         }
+        // Recorded off `failed` rather than off the warnings just printed: `warnings` also
+        // carries entries that are not failures — a scope with nothing to compile contributes
+        // one on every project-context run — and the ending must not file those as work owed.
+        this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
       } else if (compiled.length > 0) {
         this.log(chalk.hex(CLI_COLORS.NEUTRAL)(summary));
       } else {
         this.log(chalk.hex(CLI_COLORS.NEUTRAL)(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE));
       }
     } catch (error) {
-      this.warn(`Agent recompilation failed: ${getErrorMessage(error)}`);
+      // The config write above has already landed, and the recompile is the last step — so
+      // there is nothing left to abort into. What is wrong is the silence: `.claude/agents/`
+      // now describes the roster this edit replaced, and the run used to report success over it.
+      this.reportIncompleteWork(
+        `Agent recompilation failed: ${getErrorMessage(error)}`,
+        INCOMPLETE_WORK_RECOVERY.RECOMPILE,
+      );
       this.log(`You can manually recompile with '${CLI_INVOKE_COMMAND} compile'.`);
     }
 
@@ -1391,19 +1503,28 @@ export default class Edit extends BaseCommand {
   private async cleanupStaleAgentFiles(
     changes: ConfigChanges,
     oldAgents: AgentScopeConfig[],
-    cwd: string,
+    editRoot: EditRoot,
   ): Promise<void> {
-    for (const removal of planStaleAgentRemovals(changes, oldAgents, cwd)) {
+    for (const removal of planStaleAgentRemovals(changes, oldAgents, editRoot.dir)) {
       const { failed } = await removeCompiledAgents(removal);
 
+      // A compiled sub-agent this project no longer configures is still a sub-agent Claude Code
+      // loads, so a removal that did not happen is a roster the edit did not actually change.
       for (const { name, error } of failed) {
         const agentPath = path.join(removal.agentsDir, `${name}.md`);
-        this.warn(`Could not remove agent file ${agentPath}: ${error}`);
+        this.reportIncompleteWork(
+          `Could not remove agent file ${agentPath}: ${error}`,
+          INCOMPLETE_WORK_RECOVERY.DELETE_AGENT_FILE,
+        );
       }
     }
   }
 
   private logCompletionSummary(_changes: ConfigChanges): void {
+    // A run with work owed ends on the account below instead \u2014 a tick over a partial apply is
+    // the claim being withdrawn here, not an extra line beside it.
+    if (this.hasIncompleteWork) return;
+
     this.log(`\n${chalk.hex(CLI_COLORS.SUCCESS)("\u2713 Done")}\n`);
   }
 }
@@ -1573,7 +1694,7 @@ function installedScope(name: AgentName, oldAgents: AgentScopeConfig[]): SkillSc
 function planStaleAgentRemovals(
   changes: ConfigChanges,
   oldAgents: AgentScopeConfig[],
-  cwd: string,
+  editRoot: string,
 ): RemoveCompiledAgentsOptions[] {
   const supersededByGlobal = [...changes.agentScopeChanges]
     .filter(([, change]) => change.from !== "global")
@@ -1586,7 +1707,7 @@ function planStaleAgentRemovals(
 
   const stale = [...supersededByGlobal, ...deselected];
   const removalAtScope = (scope: SkillScope): RemoveCompiledAgentsOptions => ({
-    agentsDir: resolveInstallPaths(cwd, scope).agentsDir,
+    agentsDir: resolveInstallPaths(editRoot, scope).agentsDir,
     agents: stale.filter((agent) => agent.scope === scope).map((agent) => agent.name),
   });
 
