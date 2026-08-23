@@ -209,6 +209,65 @@ preloaded; an added skill filed under `web-framework` reaches the same five, all
 An agent is **on** when a pin says so, else when it holds ≥ 1 enabled skill (`isAgentOn`) — selecting
 a skill is what switches its agents on, and the roster flashes the agents a selection just reached.
 
+**A project skill never reaches a global sub-agent** (EDITOR-08, ruled 2026-08-21). A global
+sub-agent's front-matter is written to `~/.claude`, where every project on the machine sees it, while
+a project-scoped skill is installed under one project's `.claude` — so the pair names something that
+does not exist from anywhere else. The rule and its name are the **CLI's**: `isScopePairCompatible`
+in `packages/cli/src/cli/lib/configuration/config-generator.ts` decides which skills land in an
+agent's stack, and `seedToWizardResult` **throws** on a shared payload holding the pair
+(`unwritableAssignmentsError`) rather than installing a quieter configuration than the one that was
+shared. The editor could mint it because it is the one surface that consumes no generated
+config-types.
+
+**It is an error to resolve, not an action to prevent.** Nothing in the store is guarded: the
+assignment is made, either scope moves freely, and nothing is ever dropped. Refusing the skill's
+scope would put project scope out of reach entirely — every sub-agent rests at global, so a skill
+moved to project conflicts with all of them at once — and dropping the invalidated rows would make
+one badge click erase every sub-agent a skill reaches. Both were considered and rejected.
+
+Nothing derives differently either. `isAgentOn`, the where-used list, the cell's agent count, the
+install inventory, the roster pulse and `toSeedPayload` all go on reading `enabled` alone: a
+sub-agent holding a project skill is not an agent with no skills, it is an agent with a skill and a
+problem, and under-reporting it would hide what the user built while leaving the marked rows
+unexplained.
+
+What the pair costs is **Install and Share**, and the whole mechanism is one number:
+
+```ts
+summarize(config).unscopedAgentCount // sub-agents that must move to project scope
+```
+
+Distinct sub-agents rather than pairs, because that is how many clicks it takes to resolve — two
+project skills on one global sub-agent is one scope word away from working. It is deliberately a
+count and not a validation framework: there is exactly one rule today, so there is no rule registry,
+no error type, no severity and no problems panel. A second rule can be generalised for when a second
+rule exists.
+
+Three live signals, all derived from that one count, so none can stand while the others are gone:
+
+| Where                   | What it says                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| The roster's skill row  | `SCOPE_ERROR` on a marker beside the skill name — which row, and the fix                  |
+| The Install button      | disabled, and its sub-label reads `N sub-agents need project scope` instead of the counts |
+| The line above the grid | `blockedNotice` — the state, and both ways out                                            |
+
+The button says its reason rather than carrying a tooltip because a disabled button suppresses
+pointer events, so a `title` on one never opens. The line is composed in `ConfigureScreen` rather
+than in `useCatalogFirst`'s notice state: that one describes the **opening**, and a blocked line set
+once at arrival would go on saying so after the user had fixed it.
+
+**Share is blocked for the same reason Install is**, and `toSeedPayload` does **not** strip the pair.
+Stripping it would mint a payload describing a different configuration from the one on screen, and
+the recipient's `init --from` throws on the real thing — so a link minted from an unresolved
+configuration fails on someone else, which is worse than no link. Save is left alone: it is a local
+snapshot that never reaches the worker or the CLI, so it stays the place to park work in progress,
+and it round-trips exactly what was on screen.
+
+**Arriving configurations are kept verbatim.** `pruneUnknownIds` on load and `fromSeedPayload` from a
+link both keep the rows — silently losing assignments somebody shared is the one outcome the ruling
+forbids — so a payload minted before this rule existed lands in the error state with Install blocked
+and the line above the grid saying what to change.
+
 **Deselecting is not destructive.** One click removes a skill; the configuration behind it can be a
 dozen — sub-agent assignments, an install mode, a scope — and the cell gives no warning, because
 deselect reads as "not included" rather than "erase my work". A deselected entry moves to
@@ -1022,7 +1081,6 @@ tree — none of them can pass while the component is unusable with a screen rea
 
 | Item                    | State                                                                                                   |
 | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| Code splitting          | One large chunk: `vite.config.ts` sets no `manualChunks`, and the catalog dominates the second.         |
 | GitHub proxy            | `apps/server` proxies nothing GitHub-side; the catalogue and skill contents are fetched browser-direct. |
 | Docs / Settings         | Route + centred heading only. There is no Share destination — sharing lives in the roster footer.       |
 | Empty / loading / error | Only the filter's no-match line, the dialogs' status lines and the opening's notice exist. Undesigned.  |
