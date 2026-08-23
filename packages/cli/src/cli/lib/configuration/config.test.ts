@@ -1,9 +1,13 @@
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { writeTestPackageJson, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import {
+  writeCorruptTestConfig,
+  writeTestPackageJson,
+  writeTestTsConfig,
+} from "../__tests__/helpers/config-io.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import {
   buildAgentConfigs,
@@ -56,7 +60,7 @@ const MARKETPLACE_FLAG = "--marketplace";
 const OTHER_FLAG_LABEL = "--agent-marketplace";
 
 /**
- * The word CLI-463 withdraws from every message this module raises. Asserted as a whole
+ * The word withdrawn from every message this module raises. Asserted as a whole
  * word so `sourcehut:` and a path that happens to spell it are not matched.
  */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
@@ -66,6 +70,28 @@ const WITHDRAWN_NOUN = /\bsources?\b/i;
  * above: a test that reads the constant the product reads cannot fail when its value moves.
  */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
+
+/**
+ * A config file that exists and cannot be EVALUATED — the third corruption kind, distinct from a
+ * shape the schema refuses and from a module whose exports are all named. Those two already
+ * reached the caller as their own errors; this one was reported as absence.
+ */
+const UNEVALUATABLE_CONFIG = "invalid typescript content {{";
+
+/**
+ * The parser's own words for {@link UNEVALUATABLE_CONFIG}. A refusal that drops the cause leaves
+ * the reader with a file to open and no line to open it at, so the reason is asserted rather than
+ * assumed to ride along.
+ */
+const UNEVALUATABLE_CONFIG_CAUSE = "Missing semicolon";
+
+/**
+ * The clause of `configUnreadableError` naming the route that actually clears an unreadable
+ * config. Mirrored as a LITERAL for the same reason as the env var above — and the same fragment
+ * `e2e/pages/constants.ts` mirrors as `DOCTOR_TIP_RECREATE_CONFIG`, because `doctor` reports this
+ * same file with this same way out.
+ */
+const RECREATE_CONFIG_ROUTE = "still works on a config it cannot read";
 
 describe("config", () => {
   let tempDir: string;
@@ -503,18 +529,6 @@ describe("config", () => {
       expect(config).toStrictEqual({ marketplace: "github:mycompany/skills" });
     });
 
-    it("when config.ts contains invalid syntax, should return null", async () => {
-      const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        "invalid typescript content {{",
-      );
-
-      const config = await loadProjectSourceConfig(tempDir);
-      expect(config).toBeNull();
-    });
-
     it("should load marketplace from project config", async () => {
       await writeTestTsConfig(
         tempDir,
@@ -526,35 +540,46 @@ describe("config", () => {
     });
 
     /**
-     * The loader's own diagnostic for a file it could not evaluate. `doctor` runs verbose,
-     * so this line reaches a user's terminal — and `e2e/pages/constants.ts`
-     * `CONFIG_SOURCE_LOAD_NOISE` duplicates it exactly to assert its ABSENCE, which is the
-     * assertion that silently stops matching if the two drift apart.
+     * A config that EXISTS and cannot be evaluated is a state of its own, and this loader used to
+     * report it as the state next door — `null`, which is what an ABSENT file answers. Owner
+     * ruling 2026-08-20: it hard errors and says the config is unreadable.
+     *
+     * The two are not interchangeable because `resolveSource` reads the return value alone: a
+     * swallowed failure walked past this rung to the default marketplace and installed from a
+     * place nobody named, which is the whole reason the refusal exists. The ALLOWED state is
+     * pinned two specs above — an absent config still answers `null`, because that is the
+     * legitimate state `init` exists for and a guard that refused both would be indistinguishable
+     * from one that has swallowed its entire subject.
      */
-    describe("the diagnostic for a config it could not evaluate", () => {
-      const consoleSpies = silenceConsole(["log"]);
+    describe("a config that exists and cannot be evaluated", () => {
+      it("refuses rather than reporting the file absent", async () => {
+        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
-      beforeEach(() => {
-        setVerbose(true);
+        await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow();
       });
 
-      afterEach(() => {
-        setVerbose(false);
+      it("names the file it could not read", async () => {
+        const configPath = await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+
+        await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(configPath);
       });
 
-      it("should name the config it failed on without calling it a source config", async () => {
-        const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-        await mkdir(configDir, { recursive: true });
-        await writeFile(
-          path.join(configDir, STANDARD_FILES.CONFIG_TS),
-          "invalid typescript content {{",
-        );
+      it("carries the parser's own reason rather than saying only that something failed", async () => {
+        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
-        await loadProjectSourceConfig(tempDir);
+        await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(UNEVALUATABLE_CONFIG_CAUSE);
+      });
 
-        expect(consoleSpies.log).toHaveBeenCalledWith(
-          expect.stringContaining("Failed to load project config at"),
-        );
+      it("offers the route that actually clears an unreadable config", async () => {
+        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+
+        await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(RECREATE_CONFIG_ROUTE);
+      });
+
+      it("refuses without calling it a source config", async () => {
+        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+
+        await expect(loadProjectSourceConfig(tempDir)).rejects.not.toThrow(WITHDRAWN_NOUN);
       });
     });
   });
@@ -616,6 +641,47 @@ describe("config", () => {
       expect(result.source).toBe(DEFAULT_SOURCE);
     });
 
+    /**
+     * The install-repointing trap, closed for the third corruption kind. `ConfigSchemaError` and
+     * `ConfigDefaultExportError` already reached here rather than being swallowed; a file that
+     * could not be EVALUATED at all was still reported as absence, and absence is what the spec
+     * directly above resolves to `DEFAULT_SOURCE`. So on a config with a syntax error this run
+     * fetched the public marketplace while a config naming a private one sat unread on disk.
+     *
+     * Both rungs are covered because both are read on the way through, and the global one is the
+     * half nothing else would catch — a project may have no config of its own and still be
+     * repointed by an unreadable `~/.claude-src/config.ts`.
+     */
+    describe("a config that exists and cannot be evaluated", () => {
+      it("refuses rather than walking past the project rung to the default marketplace", async () => {
+        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+
+        const resolution = resolveSource({ caller: "stored", projectDir: tempDir });
+
+        await expect(resolution).rejects.toThrow(RECREATE_CONFIG_ROUTE);
+      });
+
+      it("refuses rather than walking past the global rung to the default marketplace", async () => {
+        await writeCorruptTestConfig(homeDir, UNEVALUATABLE_CONFIG);
+
+        const resolution = resolveSource({ caller: "stored", projectDir: tempDir });
+
+        await expect(resolution).rejects.toThrow(RECREATE_CONFIG_ROUTE);
+      });
+
+      it("still names the marketplace an intact project config carries", async () => {
+        await writeCorruptTestConfig(homeDir, UNEVALUATABLE_CONFIG);
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: PROJECT_CONFIG_SOURCE }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(
+          result.source,
+          "the project rung answered first, so the global config was never read",
+        ).toBe(PROJECT_CONFIG_SOURCE);
+      });
+    });
+
     it("when projectDir is undefined and no flag provided, should fall back to default source", async () => {
       const result = await resolveSource({ caller: "stored" });
 
@@ -661,8 +727,8 @@ describe("config", () => {
 
     /**
      * The label is origin-neutral on purpose — a `"stored"` caller may name a marketplace
-     * it is reading for its own sake — so it cannot say `--marketplace`, and after CLI-463
-     * it must not say "source" either.
+     * it is reading for its own sake — so it cannot say `--marketplace`, and it must not
+     * say "source" either.
      */
     it("should refuse an empty named marketplace without saying 'source'", async () => {
       await expect(

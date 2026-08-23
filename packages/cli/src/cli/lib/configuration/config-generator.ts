@@ -10,6 +10,7 @@ import type {
 } from "../../types";
 import { groupBy, indexBy, partition } from "remeda";
 import {
+  isSeedScopePairWritable,
   resolveAssignment,
   resolveLoadState,
   type LoadState,
@@ -56,7 +57,7 @@ type StackBuildInputs = {
   existingStack: Partial<Record<AgentName, StackAgentConfig>>;
   /**
    * Skills that are new to this session's top-level selection (not in the prior
-   * `existing.config.skills`). When `undefined`, the D-220 per-agent curation
+   * `existing.config.skills`). When `undefined`, the per-agent curation
    * preservation rule is disabled and every scope-compatible, resolver-relevant
    * skill lands on every existing agent (legacy behavior). When defined
    * (possibly empty), the preservation rule applies: skills NOT in an agent's
@@ -69,7 +70,7 @@ type StackBuildInputs = {
    * session — either the skill's scope was flipped so it now reaches this
    * agent, or the agent's scope was flipped so previously-filtered skills now
    * reach it. Parallel to `newlyAddedSkillIds`: when the caller opts into
-   * D-220 preservation semantics, this set admits triples that the skill-id
+   * per-agent curation preservation, this set admits triples that the skill-id
    * diff would miss. Keys are produced by `scopeEligibilityKey()`.
    */
   scopeEligibilityGained?: ReadonlySet<string>;
@@ -150,7 +151,7 @@ function isRelevantPair(skillId: SkillId, category: Category, agent: AgentName):
 
 /**
  * The relevance rule as it applies inside a stack build: a triple the prior
- * save carries is the user's curation — D-220 — and rides through wherever it
+ * save carries is the user's curation and rides through wherever it
  * sits, cross-domain included; a triple arriving this session lands only where
  * the shared resolver targets it.
  */
@@ -178,9 +179,16 @@ function getScopeOrThrow<K>(map: Map<K, SkillScope>, key: K, kind: "skill" | "ag
   return scope;
 }
 
-/** Project skills never reach global agents; global skills reach any agent. */
+/**
+ * Project skills never reach global agents; global skills reach any agent.
+ *
+ * The rule itself lives on the wire contract (`isSeedScopePairWritable` in
+ * `@workspace/matrix/seed`), because the editor and this CLI each used to carry a verbatim copy
+ * of it and a shared rule with three implementations is a rule three surfaces can disagree about.
+ * This stays as the name the CLI's own call sites read it under.
+ */
 export function isScopePairCompatible(skillScope: SkillScope, agentScope: SkillScope): boolean {
-  return !(skillScope === "project" && agentScope === "global");
+  return isSeedScopePairWritable(skillScope, agentScope);
 }
 
 function isScopeCompatible(
@@ -197,7 +205,7 @@ function isScopeCompatible(
 /**
  * Decides whether a given `(agent, category, skillId)` triple lands in the
  * agent's stack for this save. The scope filter has already run in the caller
- * — this function only enforces D-220's per-agent curation rule.
+ * — this function only enforces the per-agent curation rule.
  *
  * Branches:
  *   - `agent ∉ existingStack`  → seed branch (new agent); every scope-compatible
@@ -211,10 +219,10 @@ function isScopeCompatible(
  *         scope-compat flip).
  *       * otherwise → OMIT (respect user's prior per-agent curation removal).
  *
- * Legacy path: when `newlyAddedSkillIds` is not provided, the D-220 check is
- * disabled — every scope-compatible skill passes this gate (the relevance
+ * Legacy path: when `newlyAddedSkillIds` is not provided, the curation check
+ * is disabled — every scope-compatible skill passes this gate (the relevance
  * filter in `buildAgentStack` still applies). This preserves the contract of
- * callers that pre-date D-220.
+ * callers that pre-date per-agent curation preservation.
  */
 function shouldIncludeTriple(
   agent: AgentName,
@@ -222,7 +230,7 @@ function shouldIncludeTriple(
   skillId: SkillId,
   inputs: StackBuildInputs,
 ): boolean {
-  // Legacy path: callers that don't opt in keep the pre-D-220 behavior.
+  // Legacy path: callers that don't opt in keep the seed-everything behavior.
   if (inputs.newlyAddedSkillIds === undefined) return true;
 
   const agentExistingStack = inputs.existingStack[agent];
@@ -317,7 +325,7 @@ function buildStackForSelection(
  * - scope filter: a project-scoped skill never lands on a global-scoped agent
  * - relevance filter: a NEW triple lands only where the shared resolver targets
  *   the (skill, agent) pair — a sub-agent carries only skills it would
- *   reasonably use. Prior entries are preserved verbatim (D-220), wherever
+ *   reasonably use. Prior entries are preserved verbatim, wherever
  *   they sit.
  *
  * Load state per (agent, category, skill) triple: a triple `options.existingStack`
@@ -457,11 +465,11 @@ export function generateProjectConfigFromSkills(
     existingStack?: Partial<Record<AgentName, StackAgentConfig>>;
     /**
      * Skills new to this session (not present in the prior on-disk config).
-     * Passing this field (even as an empty array) opts into D-220's per-agent
+     * Passing this field (even as an empty array) opts into per-agent
      * curation preservation: existing agents' stack entries are treated as
      * authoritative, and skills absent from a given agent's prior stack are
      * only appended when they appear in this set (or in `scopeEligibilityGained`).
-     * When undefined, behavior falls back to pre-D-220 semantics.
+     * When undefined, behavior falls back to seed-everything semantics.
      */
     newlyAddedSkillIds?: readonly SkillId[];
     /**
@@ -525,9 +533,9 @@ export function generateProjectConfigFromSkills(
   const skillScope = buildSkillScopeMap(skillConfigs);
   const agentScope = activeAgentScopeMap(agentConfigs);
 
-  // Opt-in D-220 preservation: only when the caller provides the delta set.
+  // Opt-in per-agent curation preservation: only when the caller provides the delta set.
   // `newlyAddedSkillIds === undefined` triggers legacy seed-everything behavior
-  // (preserves pre-D-220 callers and existing unit tests that set up
+  // (preserves callers that never opt in, and existing unit tests that set up
   // `existingStack` without the new field).
   const newlyAddedSkillIdsSet: ReadonlySet<SkillId> | undefined =
     options?.newlyAddedSkillIds === undefined ? undefined : new Set(options.newlyAddedSkillIds);
@@ -635,8 +643,10 @@ function splitAgentStack(
  * Splits a ProjectConfig by scope into global and project partitions.
  * Skills with `scope: "global"` go to the global partition, `scope: "project"` to the project partition.
  * Agents are split based on which skills reference them in the stack.
- * Selected domains go to the global partition only — the project config inherits them from
- * global at runtime, so its own key is cleared rather than duplicated.
+ * Selected domains go to BOTH partitions, because a project owns its own domain selection
+ * (owner ruling 2026-08-20) — this comment used to claim the project's key was
+ * cleared, which the code has never done and which the ruling settles as the wrong behaviour
+ * rather than a missing implementation.
  */
 export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   // Every entry is either active-global or project-owned (project-scoped, or an
@@ -670,8 +680,10 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
     }
   }
 
-  // Domains are a UI/preference concept — all selected domains go in global config.
-  // Project config inherits domains from global at runtime, so it gets none.
+  // Domains ride the spread onto BOTH partitions: a project owns its own domain selection
+  // rather than inheriting the global one (owner ruling 2026-08-20). Neither literal
+  // re-states the key, because neither needs to — the spread already carries it, and the
+  // conditional re-set the global literal used to carry was a no-op over that same spread.
   //
   // `stack` is written on BOTH partitions unconditionally, and that is the whole of what
   // keeps each one to its own rows: the spread above carries the undivided stack, so an
@@ -686,7 +698,6 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
     agents: globalAgents,
     skills: globalSkills,
     stack: globalStack,
-    ...(config.selectedDomains !== undefined && { selectedDomains: config.selectedDomains }),
   };
 
   const projectConfig: ProjectConfig = {

@@ -77,8 +77,7 @@ export async function migrateLocalSkillScope(
   }
 
   const toScope: SkillScope = fromScope === "global" ? "project" : "global";
-  // installBaseDir resolves os.homedir() at runtime so test home-dir mocks apply
-  // (GLOBAL_INSTALL_ROOT was captured once at module load — a latent test-mock bug).
+  // installBaseDir resolves os.homedir() at runtime so test home-dir mocks apply.
   const fromBaseDir = installBaseDir(projectDir, fromScope);
   const toBaseDir = installBaseDir(projectDir, toScope);
 

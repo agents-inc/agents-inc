@@ -4,15 +4,14 @@ import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } fr
 import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
-import { typedKeys } from "../../utils/typed-object";
 import {
   generateBlankGlobalConfigSource,
   generateBlankGlobalConfigTypesSource,
   generateConfigSource,
 } from "../configuration/config-writer";
 import {
+  buildConfigTypesBackgroundData,
   generateConfigTypesSource,
-  type ConfigTypesBackgroundData,
   type ConfigTypesExtras,
 } from "../configuration/config-types-writer";
 import { assertGateToken } from "./gate-token.js";
@@ -38,9 +37,8 @@ export type GlobalPairPaths = {
 };
 
 /**
- * Resolves the global pair's paths. `os.homedir()` at call time, not the
- * module-load-time `GLOBAL_INSTALL_ROOT`, so the paths agree with every other
- * runtime home-dir reader and with test home mocks.
+ * Resolves the global pair's paths. `os.homedir()` at call time, so they agree
+ * with every other home-dir reader and with test home mocks.
  */
 export function globalPairPaths(): GlobalPairPaths {
   const dir = path.join(os.homedir(), CLAUDE_SRC_DIR);
@@ -69,19 +67,6 @@ async function writeIfChanged(filePath: string, source: string): Promise<boolean
   return true;
 }
 
-/** The union inputs the types writer derives its literals from. */
-function typesDataFor(
-  matrix: MergedSkillsMatrix,
-  agents: Partial<Record<AgentName, AgentDefinition>>,
-): ConfigTypesBackgroundData {
-  const agentNames = typedKeys(agents);
-  return {
-    matrix,
-    agentNames,
-    customAgentNames: agentNames.filter((name) => agents[name]?.custom === true),
-  };
-}
-
 /**
  * Standalone (non-importing) type unions narrowed to `config`'s own entries,
  * widened by `extras` — the literals a just-created skill or agent needs before
@@ -93,7 +78,7 @@ function renderStandaloneTypes(
   agents: Partial<Record<AgentName, AgentDefinition>>,
   extras?: ConfigTypesExtras,
 ): string {
-  const data = typesDataFor(matrix, agents);
+  const data = buildConfigTypesBackgroundData(matrix, agents);
   return generateConfigTypesSource(
     data.matrix,
     data.agentNames,

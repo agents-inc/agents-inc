@@ -11,6 +11,7 @@ export const METADATA_KEYS = {
   FORKED_FROM: "forkedFrom",
   CONTENT_HASH: "contentHash",
   USAGE_GUIDANCE: "usageGuidance",
+  CUSTOM: "custom",
 } as const;
 
 /**

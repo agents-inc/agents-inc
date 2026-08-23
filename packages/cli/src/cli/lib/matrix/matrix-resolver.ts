@@ -106,31 +106,6 @@ function labelOf(skillId: string): string {
   return getLabel(getSkillById(skillId as SkillId));
 }
 
-/**
- * Finds all currently selected skills that depend on the given skill.
- *
- * A skill is considered dependent if it has a requirement that would become
- * unsatisfied by removing `skillId`. For `needsAny` requirements, the skill
- * is only dependent if `skillId` is the sole remaining option satisfying
- * that requirement.
- *
- * @param skillId - The skill to check dependents for (resolved via alias lookup)
- * @param currentSelections - Currently selected skill IDs in the wizard
- * @returns Skill IDs that would lose a required dependency if `skillId` were removed
- */
-export function getDependentSkills(skillId: SkillId, currentSelections: SkillId[]): SkillId[] {
-  getSkillById(skillId); // assert the id exists in the matrix
-
-  const { resolvedSelections, selectedSet } = initializeSelectionContext(currentSelections);
-  return resolvedSelections.filter(
-    (selectedId) =>
-      selectedId !== skillId &&
-      getSkillById(selectedId).requires.some((req) =>
-        wouldLoseRequirement(req, skillId, selectedSet),
-      ),
-  );
-}
-
 type SkillRequirement = ResolvedSkill["requires"][number];
 
 /** OR (`needsAny`): met when ANY option is selected. AND: met when EVERY id is selected. */
@@ -147,22 +122,6 @@ function missingRequirementIds(
 ): SkillId[] {
   if (isRequirementMet(req, selectedSet)) return [];
   return req.needsAny ? [...req.skillIds] : req.skillIds.filter((id) => !selectedSet.has(id));
-}
-
-/**
- * True when removing `removedId` would leave this requirement unsatisfied:
- * for OR it must be the sole remaining satisfier; for AND, any required id.
- */
-function wouldLoseRequirement(
-  req: SkillRequirement,
-  removedId: SkillId,
-  selectedSet: ReadonlySet<SkillId>,
-): boolean {
-  if (req.needsAny) {
-    const satisfied = req.skillIds.filter((id) => selectedSet.has(id));
-    return satisfied.length === 1 && satisfied[0] === removedId;
-  }
-  return req.skillIds.includes(removedId);
 }
 
 /**
@@ -202,82 +161,11 @@ export function getUnmetRequiredBy(
 }
 
 /**
- * Determines whether a skill should be discouraged (shown with yellow warning)
- * in the wizard given the current selection state.
- *
- * A skill is discouraged when it has a `discourages` relationship with a
- * currently selected skill (bidirectional check).
- *
- * @param skillId - The skill to check (resolved via alias lookup)
- * @param currentSelections - Currently selected skill IDs
- * @returns true if the skill should show a discouraged warning
- */
-export function isDiscouraged(skillId: SkillId, currentSelections: SkillId[]): boolean {
-  return getDiscourageReason(skillId, currentSelections) !== undefined;
-}
-
-/**
- * Determines whether a skill is incompatible with the current selection state
- * (shown with red warning). Checks conflictsWith relationships and also
- * detects unsatisfiable requires (all required dependencies conflict with selections).
- *
- * @param skillId - The skill to check (resolved via alias lookup)
- * @param currentSelections - Currently selected skill IDs
- * @returns true if the skill has conflicts with current selections
- */
-export function isIncompatible(skillId: SkillId, currentSelections: SkillId[]): boolean {
-  return getIncompatibleReason(skillId, currentSelections) !== undefined;
-}
-
-/**
  * Checks if a selected skill has unmet dependency requirements.
  * Only meaningful for skills that are currently selected.
  */
 export function hasUnmetRequirements(skillId: SkillId, currentSelections: SkillId[]): boolean {
   return getUnmetRequirementsReason(skillId, currentSelections) !== undefined;
-}
-
-/**
- * Returns a human-readable reason why a skill is discouraged, or undefined if it is not.
- *
- * Checks discourages relationships (bidirectional), returning the first matching reason.
- *
- * @param skillId - The skill to get the discourage reason for
- * @param currentSelections - Currently selected skill IDs
- * @returns Formatted reason string or undefined
- */
-export function getDiscourageReason(
-  skillId: SkillId,
-  currentSelections: SkillId[],
-): string | undefined {
-  const skill = getSkillById(skillId);
-  const { resolvedSelections } = initializeSelectionContext(currentSelections);
-
-  return judgeSelections(resolvedSelections).discourageReasonOf(skill.id);
-}
-
-/**
- * Returns a human-readable reason why a skill is incompatible, or undefined if it is not.
- *
- * The verdict is the shared semantics' — a bidirectional conflict with
- * anything the selection reaches, or a requirement the selection has ruled out
- * (to a fixpoint, so a lost base strands everything built on it). This is the
- * selection as it stands: the pick-one swap forgiveness belongs to the grid
- * cell and lives in {@link getCellState}.
- *
- * @param skillId - The skill to get the incompatible reason for
- * @param currentSelections - Currently selected skill IDs
- * @returns Formatted reason string or undefined
- */
-export function getIncompatibleReason(
-  skillId: SkillId,
-  currentSelections: SkillId[],
-): string | undefined {
-  const skill = getSkillById(skillId);
-  const { resolvedSelections } = initializeSelectionContext(currentSelections);
-
-  const cause = judgeSelections(resolvedSelections).incompatibilityOf(skill.id);
-  return cause === undefined ? undefined : renderIncompatibility(cause);
 }
 
 /**
@@ -296,20 +184,6 @@ export function getCellState(skillId: SkillId, currentSelections: SkillId[]): Op
   return verdict.status === "incompatible"
     ? { status: "incompatible", reason: renderIncompatibility(verdict.cause) }
     : verdict;
-}
-
-/**
- * Everything the selection is necessarily built on without having been picked:
- * the requires-closure minus the selection itself. Choosing Next.js is
- * choosing React whether or not React was ever clicked; a requirement
- * offering a choice commits the user to none of its options.
- */
-export function getImpliedSkills(currentSelections: SkillId[]): SkillId[] {
-  const { resolvedSelections } = initializeSelectionContext(currentSelections);
-
-  // Boundary cast: the closure only ever adds ids read from the matrix's own
-  // `requires` tables, which type them as SkillId.
-  return judgeSelections(resolvedSelections).implied as SkillId[];
 }
 
 /**
@@ -467,47 +341,35 @@ export function validateSelection(selections: SkillId[]): SelectionValidation {
   };
 }
 
-function advisoryStateFrom(judgement: SelectionJudgement, skillId: SkillId): OptionState {
-  // Priority: incompatible > discouraged > normal
-  const cause = judgement.incompatibilityOf(skillId);
-  if (cause !== undefined) {
-    return { status: "incompatible", reason: renderIncompatibility(cause) };
-  }
-  const discourageReason = judgement.discourageReasonOf(skillId);
-  if (discourageReason !== undefined) {
-    return { status: "discouraged", reason: discourageReason };
-  }
-  return { status: "normal" };
-}
-
 /**
- * Builds a list of skill options for a category, annotated with their current
- * advisory state relative to the wizard's selection state.
+ * Builds a list of skill options for a category: which are selected, and which of
+ * those are still waiting on a requirement.
  *
- * Each skill is checked against the current selections to determine its visual
- * state in the wizard UI. States are prioritized:
- * incompatible > discouraged > normal.
+ * It deliberately states no advisory verdict. {@link getCellState} is the one that
+ * does, because a cell is judged against the selection a click on it would produce
+ * — inside a pick-one category the swap forgives a conflict that a raw per-option
+ * advisory would still report. The raw advisory this function used to carry was
+ * therefore not merely unread but the wrong answer for its only caller,
+ * `buildCategoriesForDomain` in `lib/wizard/build-step-logic.ts`, which has always
+ * called `getCellState` instead.
  *
  * @param categoryId - Category path to filter skills by
  * @param currentSelections - Currently selected skill IDs
- * @returns Array of skill options with advisory state annotations
+ * @returns Array of skill options with their selection state
  */
 export function getAvailableSkills(
   categoryId: CategoryPath,
   currentSelections: SkillId[],
 ): SkillOption[] {
-  const { resolvedSelections, selectedSet } = initializeSelectionContext(currentSelections);
-  const judgement = judgeSelections(resolvedSelections);
+  const { selectedSet } = initializeSelectionContext(currentSelections);
 
   return getSkillsByCategory(categoryId).map((skill) => {
     const isSelected = selectedSet.has(skill.id);
     return {
       id: skill.id,
-      advisoryState: advisoryStateFrom(judgement, skill.id),
       selected: isSelected,
       hasUnmetRequirements: isSelected && hasUnmetRequirements(skill.id, currentSelections),
       ...unmetRequirementsReasonFor(isSelected, skill.id, currentSelections),
-      alternatives: skill.alternatives.map((a) => a.skillId),
     };
   });
 }

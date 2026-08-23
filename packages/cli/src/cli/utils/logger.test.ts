@@ -4,7 +4,6 @@ import {
   drainBuffer,
   enableBuffering,
   log,
-  pushBufferMessage,
   setVerbose,
   verbose,
   warn,
@@ -198,17 +197,6 @@ describe("buffering", () => {
 
     const second = drainBuffer();
     expect(second).toHaveLength(0);
-  });
-
-  it("pushBufferMessage adds messages with specified level", () => {
-    enableBuffering();
-    pushBufferMessage("info", "info message");
-    pushBufferMessage("error", "error message");
-
-    const messages = drainBuffer();
-    expect(messages).toHaveLength(2);
-    expect(messages[0]).toStrictEqual({ level: "info", text: "info message" });
-    expect(messages[1]).toStrictEqual({ level: "error", text: "error message" });
   });
 
   it("enableBuffering resets any previous buffer", () => {

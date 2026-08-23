@@ -1,4 +1,4 @@
-import { DEFAULT_SELECTION_OPTIONS } from "@workspace/matrix";
+import { seedAgentScope } from "@workspace/matrix";
 
 import { AGENT_NAMES } from "../../types/agents.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../consts.js";
@@ -9,7 +9,7 @@ import { orderDomains } from "../wizard/domain-order.js";
 
 import type { WizardResultV2 } from "../../components/wizard/wizard.js";
 import type { AgentName } from "../../types/agents.js";
-import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config.js";
+import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
 import type {
   Category,
   Domain,
@@ -89,16 +89,6 @@ function readAgentMap(agents: SeedPayload["agents"]): SeedAgentMap {
   }
 
   return { known, switchedOff, unknown };
-}
-
-/**
- * Where a sub-agent's front-matter is written is the payload's to say, per agent and
- * independently of any skill's scope: an entry may pin its agent into the project, and one that
- * names no scope goes to the user's own ~/.claude — the shared selection default, spelled once in
- * the matrix so the editor and this decode cannot disagree about it.
- */
-function seedAgentScope(entry: SeedAgent | undefined): SkillScope {
-  return entry?.scope ?? DEFAULT_SELECTION_OPTIONS.scope;
 }
 
 /**
@@ -232,6 +222,10 @@ export function seedToWizardResult(payload: SeedPayload, matrix: MergedSkillsMat
       agentConfigs: selectedAgents.map((name) => agentScopeConfig(name, agentMap.known.get(name))),
       assignedStack,
       selectedStackId: payload.stackId,
+      // Spread-conditional rather than passed through, because absent and present-holding-undefined
+      // are different files on disk: a config describing itself with no key is not one describing
+      // itself with an empty sentence, and the writer emits whichever key it is handed.
+      ...(payload.description !== undefined && { description: payload.description }),
       domainSelections,
       selectedDomains: orderDomains(Object.keys(domainSelections) as Domain[]),
       // Nothing was dropped from a *saved config* — the skipped ids came off the wire and are

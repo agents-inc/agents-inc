@@ -1,6 +1,7 @@
 import path from "path";
 import { groupBy, unique } from "remeda";
 import type {
+  AgentDefinition,
   AgentName,
   Category,
   CategoryPath,
@@ -18,12 +19,11 @@ import { GlobalPairWriteViolation } from "../config-gate/gate-token.js";
 import { activeAgentNames, activeProjectAgentNames } from "./scope-predicates";
 import {
   CLAUDE_SRC_DIR,
-  CLI_INVOKE_COMMAND,
-  GLOBAL_INSTALL_ROOT,
+  globalInstallRoot,
   LOCAL_PSEUDO_CATEGORY,
   STANDARD_FILES,
 } from "../../consts";
-import { directoryExists, fileExists, writeFile } from "../../utils/fs";
+import { fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { bytewise } from "../../utils/string";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
@@ -59,7 +59,7 @@ export type ConfigTypesExtras = {
  */
 export async function getGlobalConfigTypesPath(): Promise<string | null> {
   const globalConfigTypesPath = path.join(
-    GLOBAL_INSTALL_ROOT,
+    globalInstallRoot(),
     CLAUDE_SRC_DIR,
     STANDARD_FILES.CONFIG_TYPES_TS,
   );
@@ -75,7 +75,7 @@ export async function getGlobalConfigTypesPath(): Promise<string | null> {
  */
 function computeGlobalTypesImportPath(projectDir: string): string {
   const projectClaudeSrc = path.join(projectDir, CLAUDE_SRC_DIR);
-  const globalClaudeSrc = path.join(GLOBAL_INSTALL_ROOT, CLAUDE_SRC_DIR);
+  const globalClaudeSrc = path.join(globalInstallRoot(), CLAUDE_SRC_DIR);
   const relativePath = path.relative(projectClaudeSrc, globalClaudeSrc);
   // Convert to POSIX separators for TypeScript imports
   return relativePath.split(path.sep).join("/");
@@ -223,8 +223,9 @@ function formatSkillUnion(skills: SkillId[]): string {
  *
  * The union is over WHICH skill may be assigned; exclusivity is about HOW MANY, so an exclusive
  * category emits a bare `SkillAssignment<...>` (no array) however long its candidate list is. A
- * category the matrix does not declare is not treated as exclusive — same rule the installer
- * applies, on the same reasoning: a constraint must fire on a flag the data actually carries.
+ * category the matrix does not declare is not treated as exclusive, on the same reasoning
+ * `isExclusiveCategory` (`config-writer.ts`) and `buildProjectCollisionTest`
+ * (`config-gate/propagate.ts`) take: a constraint must fire on a flag the data actually carries.
  */
 function generateStackAgentConfig(
   skillsByCategory: Map<Category, SkillId[]>,
@@ -336,44 +337,25 @@ export type ConfigTypesBackgroundData = {
 };
 
 /**
- * Kicks off background loading of the matrix and agents needed for config-types.ts regeneration.
- * Returns a promise that resolves with the loaded data. Callers should NOT await this immediately;
- * instead, pass the promise to `regenerateConfigTypes` after the main operation completes.
+ * The one constructor for {@link ConfigTypesBackgroundData}, beside the type it builds.
  *
- * @param sourceFlag Optional --marketplace flag value
- * @param projectDir The project root directory
+ * Only `customAgentNames` is derived, and that derivation is the whole reason this is a function
+ * rather than an object literal at each call site: it was written out three times — here, in
+ * `config-gate/pair-writer.ts` and in `config-gate/propagate.ts` — and three producers of one
+ * value are three things that can disagree about which sub-agents an emitted `AgentName` union
+ * files under its `// Custom` heading. Closing two of the three would have been worse than
+ * closing none: the two that agree make the third read as rigorous while it drifts.
  */
-export function loadConfigTypesDataInBackground(
-  sourceFlag: string | undefined,
-  projectDir: string,
-): Promise<ConfigTypesBackgroundData> {
-  // Dynamic imports to avoid circular dependency issues at module load time
-  const promise = (async (): Promise<ConfigTypesBackgroundData> => {
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    if (!(await directoryExists(claudeSrcDir))) {
-      throw new Error(`${CLAUDE_SRC_DIR}/ not found — run '${CLI_INVOKE_COMMAND} init' first`);
-    }
-
-    const { loadSkillsMatrixFromSource } = await import("../loading/source-loader");
-    const { loadMergedAgents } = await import("../loading/loader");
-
-    const sourceResult = await loadSkillsMatrixFromSource({
-      ...(sourceFlag !== undefined && { sourceFlag }),
-      projectDir,
-      skipExtraSources: true,
-    });
-
-    const allAgents = await loadMergedAgents(sourceResult.sourcePath);
-    const agentNames = typedKeys<AgentName>(allAgents);
-    const customAgentNames = agentNames.filter((name) => allAgents[name]?.custom === true);
-
-    return { matrix: sourceResult.matrix, agentNames, customAgentNames };
-  })();
-
-  // Prevent unhandled rejection if the command exits before awaiting this promise
-  promise.catch(() => {});
-
-  return promise;
+export function buildConfigTypesBackgroundData(
+  matrix: MergedSkillsMatrix,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+): ConfigTypesBackgroundData {
+  const agentNames = typedKeys<AgentName>(agents);
+  return {
+    matrix,
+    agentNames,
+    customAgentNames: agentNames.filter((name) => agents[name]?.custom === true),
+  };
 }
 
 /**
@@ -381,7 +363,7 @@ export function loadConfigTypesDataInBackground(
  * that were just created (e.g., a new skill or agent). Errors propagate to callers.
  *
  * @param projectDir The project root directory
- * @param backgroundData Promise from loadConfigTypesDataInBackground
+ * @param backgroundData Promise of the data {@link buildConfigTypesBackgroundData} assembles
  * @param extras Optional extra skill IDs or agent names to include (for just-created entities)
  */
 export async function regenerateConfigTypes(

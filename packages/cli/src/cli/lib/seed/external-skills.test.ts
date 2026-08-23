@@ -49,6 +49,24 @@ const SECOND_EXTERNAL_ID = "external-web-framework-worktrees" as SkillId;
 const WEB_DEV = "web-developer";
 
 /**
+ * The `agents` entry a project-scoped skill's assignment has to be paired with. Absent, a
+ * sub-agent rests at the shared selection default and a project skill has nowhere to be written
+ * on it.
+ *
+ * **Seven files declare this name and none exports it, by decision rather than by oversight** —
+ * `grep -rn "const PINNED_TO_PROJECT" src e2e --include='*.ts'` is the census, and this note is
+ * here because the previous wording ("spelled the way the `init-from-*` specs spell it") reads
+ * like a shared import a reader would go looking for. It is not one, and it should not become
+ * one. The sites fail the same-reason-to-change test in `clean-code-standards.md` 8.8: each
+ * states `"project"` precisely so its own subject stays observable no matter what
+ * `DEFAULT_SELECTION_OPTIONS.scope` becomes, so there is no future in which they move together.
+ * And the value is an OBJECT — `agents: { [WEB_DEV]: PINNED_TO_PROJECT }` hands over the
+ * identity, which is CLAUDE.md's ban on exporting a shared constant callers receive by identity.
+ * A two-token literal is the cheaper half of that trade.
+ */
+const PINNED_TO_PROJECT = { scope: "project" } as const;
+
+/**
  * A fresh matrix per spec rather than a shared constant from `mock-matrices.ts`: registration
  * writes the payload's entries INTO the matrix it is given, exactly as the local-skill merge
  * does, and a module-level constant would carry one spec's added skill into every later one.
@@ -75,8 +93,14 @@ describe("registerExternalSkills", () => {
 
   it("seats the payload's own catalogue entry under the category the sharer confirmed", () => {
     const payload = buildSeedPayload({
-      skills: { [EXTERNAL_ID]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }) },
+      skills: {
+        [EXTERNAL_ID]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+      },
       external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
+      // Stated on both sides because the localPath below names the project: a project skill never
+      // reaches a sub-agent resting at the shared selection default, so an assignment left to pair
+      // itself with one would be a configuration nothing in this product can hand out.
+      agents: { [WEB_DEV]: PINNED_TO_PROJECT },
     });
 
     registerExternalSkills(payload, matrix, projectDir);
@@ -93,9 +117,24 @@ describe("registerExternalSkills", () => {
       custom: true,
       localPath: path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID),
     });
-    // Claimed on the identity axis too — `getSkillBySlug` is an asserting lookup, so an entry
-    // the slug map does not carry throws for anything that addresses a skill by slug.
+    // Claimed on the identity axis too — an entry the slug map does not carry is invisible to
+    // anything that addresses a skill by slug.
     expect(matrix.slugMap.idToSlug[EXTERNAL_ID]).toBe(EXTERNAL_ID);
+  });
+
+  it("seats an entry the decode that runs immediately after it can still read", () => {
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill({ assignments: { [WEB_DEV]: "lazy" } }) },
+      external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
+    });
+
+    registerExternalSkills(payload, matrix, projectDir);
+
+    // Registration is the first half of the install and the decode is the very next step, so a
+    // payload this function seats and that one throws on is one no install can reach the end of.
+    // The pair is what decides it, and neither half is stated here: this is the payload the
+    // factories compose when a caller says nothing about scope on either side.
+    expect(() => seedToWizardResult(payload, matrix)).not.toThrow();
   });
 
   it("returns the scope each entry names, so its bytes are written where its skill row says", () => {
@@ -144,9 +183,14 @@ describe("registerExternalSkills", () => {
 
   it("gives the seated skill the same reach a catalogue skill has", () => {
     const payload = buildSeedPayload({
-      skills: { [EXTERNAL_ID]: buildSeedSkill({ assignments: { [WEB_DEV]: "preloaded" } }) },
+      skills: {
+        [EXTERNAL_ID]: buildSeedSkill({
+          scope: "project",
+          assignments: { [WEB_DEV]: "preloaded" },
+        }),
+      },
       external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
-      agents: { [WEB_DEV]: { scope: "project" } },
+      agents: { [WEB_DEV]: PINNED_TO_PROJECT },
     });
 
     registerExternalSkills(payload, matrix, projectDir);

@@ -1,5 +1,3 @@
-import path from "path";
-import { DIRS, STANDARD_FILES } from "../consts";
 import type {
   AgentConfig,
   AgentDefinition,
@@ -11,19 +9,9 @@ import type {
   SkillReference,
   StackAgentConfig,
 } from "../types";
-import { fileExists } from "../utils/fs";
 import { verbose } from "../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../utils/typed-object";
 import { resolveAgentConfigToSkills } from "./stacks/stacks-loader";
-
-export async function resolveClaudeMd(projectRoot: string, stackId: string): Promise<string> {
-  const stackClaude = path.join(projectRoot, DIRS.stacks, stackId, STANDARD_FILES.CLAUDE_MD);
-  if (await fileExists(stackClaude)) return stackClaude;
-
-  throw new Error(
-    `Stack '${stackId}' is missing required ${STANDARD_FILES.CLAUDE_MD} file. Expected at: ${stackClaude}`,
-  );
-}
 
 export function resolveSkillReference(
   ref: SkillReference,

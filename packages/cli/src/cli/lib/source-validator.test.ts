@@ -12,12 +12,21 @@ import {
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import {
   DIRS,
+  MARKETPLACE_JSON,
+  PLUGIN_MANIFEST_DIR,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   STACKS_FILE_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
+  marketplaceManifestPath,
 } from "../consts";
+import {
+  createMockMarketplace,
+  createMockMarketplacePlugin,
+} from "./__tests__/factories/plugin-factories.js";
+import { firstElement } from "./__tests__/helpers/element-at.js";
+import { SKILL_SLUGS } from "../types/generated/source-types";
 import {
   renderConfigTs,
   renderAgentYaml,
@@ -34,6 +43,40 @@ import {
 
 /** The yaml parser's own words for what renderUnparseableMetadataYaml() writes. */
 const PARSER_REASON = "Nested mappings are not allowed";
+
+/**
+ * A marketplace name Claude Code will not register plugins under, and the same name
+ * written the way it accepts.
+ */
+const MANIFEST_NAME_REFUSED = "Acme_Skills";
+const MANIFEST_NAME_ACCEPTED = "acme-skills";
+
+/** The manifest as a reader of the report has to type it, which is the form `file` carries. */
+const MARKETPLACE_MANIFEST_PATH = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
+
+/** Two slugs a marketplace author writes for skills they ship, which no catalogue carries. */
+const MARKETPLACE_OWN_SLUG = "acme-react";
+const OTHER_MARKETPLACE_OWN_SLUG = "acme-vue";
+
+/**
+ * A slug the generated catalogue really carries, read off the union rather than typed, so
+ * a refusal that hands the whole union back reddens whatever the catalogue holds that day.
+ * The rule under test names neither of the two above, so its presence means one thing only.
+ */
+const A_CATALOGUE_SLUG: string = firstElement(SKILL_SLUGS);
+
+/** Gives a source a `.claude-plugin/marketplace.json` publishing under `name`. */
+async function writeMarketplaceManifest(sourceDir: string, name: string): Promise<void> {
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace([createMockMarketplacePlugin("web-framework-react")]),
+      name,
+    }),
+  );
+}
 
 describe("source-validator", () => {
   describe("isSnakeCase", () => {
@@ -326,6 +369,65 @@ describe("source-validator", () => {
         );
         expect(cliDescriptionIssues).toHaveLength(1);
         expect(cliDescriptionIssues[0]?.severity).toBe("error");
+      });
+    });
+
+    /**
+     * The metadata half of the class `skill-rules.ts` already carries: a closed union refusing a
+     * marketplace's own name, answered with somebody else's catalogue. An author meets this one
+     * FIRST — a `metadata.yaml` is written before a rule is.
+     *
+     * The pair is the point. The refusal on its own cannot tell a rule scoped to the catalogue
+     * from one that has swallowed every published slug, because both leave the report identical;
+     * the accepted case beside it is what says `custom: true` really is a way through, rather
+     * than a mechanism named in a message and honoured nowhere.
+     */
+    describe("a slug metadata.yaml declares", () => {
+      /** Writes one skill whose metadata is the valid file with the named fields replaced. */
+      async function writeSkillWithMetadata(fields: Record<string, unknown>): Promise<void> {
+        const skillDir = path.join(skillsDir, "acme-web-framework-react");
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd("acme-web-framework-react", "React"),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          stringifyYaml({ ...VALID_EMBEDDED_SKILL_METADATA_FILE, ...fields }),
+        );
+      }
+
+      it("names the mechanism that carries it when the catalogue does not", async () => {
+        await writeSkillWithMetadata({ slug: MARKETPLACE_OWN_SLUG });
+
+        const result = await validateSource(sourceDir);
+
+        const slugErrors = result.issues.filter(
+          (issue) => issue.severity === "error" && issue.message.includes("slug"),
+        );
+        expect(slugErrors).toHaveLength(1);
+        expect(slugErrors[0]?.message, "the slug the author wrote must be named").toContain(
+          MARKETPLACE_OWN_SLUG,
+        );
+        expect(
+          slugErrors[0]?.message,
+          "the one way through is the whole of what the reader needs, and nothing said it",
+        ).toContain("custom: true");
+        expect(
+          result.issues.map((issue) => issue.message).join("\n"),
+          "a catalogue of names the author did not write is not an answer to what they did",
+        ).not.toContain(A_CATALOGUE_SLUG);
+      });
+
+      it("is accepted under that mechanism, so the message names a real way through", async () => {
+        await writeSkillWithMetadata({ slug: MARKETPLACE_OWN_SLUG, custom: true });
+
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((issue) => issue.severity === "error"),
+          "a skill declaring itself the marketplace's own is judged by the relaxed schema",
+        ).toStrictEqual([]);
       });
     });
 
@@ -648,6 +750,84 @@ describe("source-validator", () => {
         expect(rulesErrors).toHaveLength(1);
         expect(rulesErrors[0]?.message).toContain("version");
         expect(rulesErrors[0]?.message).not.toContain("default export");
+      });
+
+      /**
+       * `skill-rules.ts` names skills by SLUG, and the schema holds every one of them to
+       * this CLI's own generated catalogue — so a marketplace author naming a skill they
+       * themselves ship is refused with a list of every slug someone else ships. The list
+       * is not the answer to their question and does not contain one.
+       */
+      it("should say why a rule may not name this marketplace's own skill, not list the catalogue", async () => {
+        const configDir = path.join(sourceDir, "config");
+        await mkdir(configDir, { recursive: true });
+        await writeFile(
+          path.join(sourceDir, SKILL_RULES_PATH),
+          renderConfigTs({
+            ...VALID_SKILL_RULES_FILE,
+            relationships: {
+              conflicts: [
+                { skills: [MARKETPLACE_OWN_SLUG, OTHER_MARKETPLACE_OWN_SLUG], reason: "Both" },
+              ],
+              discourages: [],
+              requires: [],
+              alternatives: [],
+            },
+          }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        const rulesErrors = result.issues.filter(
+          (i) => i.file === SKILL_RULES_PATH && i.severity === "error",
+        );
+        expect(rulesErrors).toHaveLength(1);
+        expect(rulesErrors[0]?.message, "the slug the author wrote must be named").toContain(
+          MARKETPLACE_OWN_SLUG,
+        );
+        expect(rulesErrors[0]?.message, "the rule the slug broke must be stated").toContain(
+          "public catalogue",
+        );
+        expect(
+          result.issues.map((i) => i.message).join("\n"),
+          "a catalogue of names the author did not write is not an answer to what they did",
+        ).not.toContain(A_CATALOGUE_SLUG);
+      });
+    });
+
+    /**
+     * The name a marketplace publishes under is the namespace Claude Code registers every
+     * plugin in, so `doctor` reporting that marketplace as validated says a marketplace
+     * nothing can be installed from is healthy. The accepted-name spec beside it is what
+     * separates a guard scoped to the name from one that has swallowed every manifest.
+     */
+    describe("the name marketplace.json publishes under", () => {
+      it("should be an error against the manifest when Claude Code would not register it", async () => {
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_REFUSED);
+
+        const result = await validateSource(sourceDir);
+
+        const manifestErrors = result.issues.filter(
+          (i) => i.file === MARKETPLACE_MANIFEST_PATH && i.severity === "error",
+        );
+        expect(manifestErrors).toHaveLength(1);
+        expect(
+          manifestErrors[0]?.message,
+          "the refusal must state the rule, not the regex",
+        ).toContain("kebab-case");
+        expect(
+          result.issues.map((i) => i.file),
+          "no other file may be blamed for a defect written in the manifest",
+        ).not.toContain(SKILL_CATEGORIES_PATH);
+      });
+
+      it("should raise nothing against a manifest whose name Claude Code accepts", async () => {
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_ACCEPTED);
+
+        const result = await validateSource(sourceDir);
+
+        expect(result.issues.filter((i) => i.file === MARKETPLACE_MANIFEST_PATH)).toStrictEqual([]);
+        expect(result.errorCount).toBe(0);
       });
     });
   });

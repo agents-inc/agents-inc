@@ -140,7 +140,7 @@ function slugsNamedByRules(relationships: RelationshipDefinitions): SkillSlug[] 
  *
  * Asked of the rules rather than counted off the resolution pass, because that
  * pass walks every rule once per skill: one typo would otherwise be reported as
- * many findings as the source has skills, which is the noise CLI-471 removed.
+ * many findings as the source has skills, which is the noise this removed.
  */
 function collectUnresolvedSlugs(
   relationships: RelationshipDefinitions,
@@ -292,8 +292,8 @@ function resolveSlugsOrSkip(slugs: SkillSlug[], resolve: ResolveId, context: str
  * Keeping what resolved would apply a requirement nobody wrote: under AND an
  * unresolved need narrows the rule to the survivors, under OR it takes an
  * alternative away — and either is presented to the user under the author's own
- * `reason`. A source's rules are its own (CLI-471 narrows the CLI's built-ins to
- * what a source ships and leaves the source's untouched), so they are taken
+ * `reason`. A source's rules are its own (the CLI's built-ins are narrowed to
+ * what a source ships, and the source's are left untouched), so they are taken
  * whole or not at all. The slug is warned here and reported by
  * `checkMatrixHealth`, which is where the author reads it.
  */

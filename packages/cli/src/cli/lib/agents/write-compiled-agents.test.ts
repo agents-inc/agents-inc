@@ -11,12 +11,16 @@ import { writeCompiledAgentsByScope } from "./write-compiled-agents";
 import { compileAgentForPlugin } from "../compiler.js";
 import { resolveInstallPaths } from "../installation/install-base-dir";
 import { createMockAgentConfig } from "../__tests__/factories/agent-factories";
+import { createMockSkillEntry } from "../__tests__/factories/skill-factories";
 import {
   cleanupTempDir,
   createTempDir,
   directoryExists,
   fileExists,
 } from "../__tests__/test-fs-utils";
+import { SKILLS } from "../__tests__/test-fixtures";
+import { EJECT_SOURCE } from "../../consts";
+import { firstElement } from "../__tests__/helpers/element-at";
 import type { AgentConfig, AgentName, SkillScope } from "../../types";
 
 const PROJECT_AGENT: AgentName = "web-developer";
@@ -126,5 +130,39 @@ describe("writeCompiledAgentsByScope", () => {
 
     expect(await fileExists(path.join(projectAgentsDir(), `${PROJECT_AGENT}.md`))).toBe(true);
     expect(await fileExists(path.join(globalAgentsDir(), `${GLOBAL_AGENT}.md`))).toBe(true);
+  });
+
+  /**
+   * Each skill's own `source` is what decides whether the compiler emits `${id}:${id}` or a
+   * bare id, and this pass is the only thing between the resolver that attaches it and the
+   * compiler that reads it. A mixed-mode sub-agent is normal, so the two are asserted per
+   * skill rather than per agent.
+   */
+  describe("what reaches the compiler", () => {
+    it("forwards a marketplace-sourced skill with its source intact", async () => {
+      const pluginSkill = createMockSkillEntry(SKILLS.react.id, false, { source: "agents-inc" });
+
+      await writeAgents({
+        [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT, [pluginSkill]),
+      });
+
+      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
+      const [name, agent] = firstElement(mockCompileAgentForPlugin.mock.calls);
+      expect(name).toBe(PROJECT_AGENT);
+      expect(agent.skills).toStrictEqual([pluginSkill]);
+    });
+
+    it("forwards an ejected skill with its source intact", async () => {
+      const ejectSkill = createMockSkillEntry(SKILLS.react.id, false, { source: EJECT_SOURCE });
+
+      await writeAgents({
+        [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT, [ejectSkill]),
+      });
+
+      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
+      const [name, agent] = firstElement(mockCompileAgentForPlugin.mock.calls);
+      expect(name).toBe(PROJECT_AGENT);
+      expect(agent.skills).toStrictEqual([ejectSkill]);
+    });
   });
 });

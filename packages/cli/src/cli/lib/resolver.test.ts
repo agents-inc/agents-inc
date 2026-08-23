@@ -5,16 +5,12 @@ import { Liquid } from "liquidjs";
 import {
   resolveSkillReference,
   resolveSkillReferences,
-  resolveClaudeMd,
   buildSkillRefsFromConfig,
   resolveAgentSkillRefs,
   resolveAgents,
 } from "./resolver";
-import { DIRS, STANDARD_FILES } from "../consts";
-import {
-  expectAgentCompilation,
-  parseCompiledAgent,
-} from "./__tests__/assertions/agent-assertions";
+import { expectAgentCompilation } from "./__tests__/assertions/agent-assertions";
+import { parseCompiledAgentSections } from "./__tests__/helpers/compiled-agent-sections.js";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import {
   createMockSkillEntry,
@@ -86,40 +82,6 @@ const RESOLVE_AGENTS_SKILL_MAP: Record<string, SkillDefinition> = {
   "api-framework-hono": HONO_DEFINITION,
   "api-database-drizzle": DRIZZLE_DEFINITION,
 };
-
-describe("resolveClaudeMd", () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    tempDir = await createTempDir("resolve-claudemd-test-");
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
-
-  it("should return stack CLAUDE.md path when it exists", async () => {
-    const stackDir = path.join(tempDir, DIRS.stacks, "my-stack");
-    await mkdir(stackDir, { recursive: true });
-    await writeFile(path.join(stackDir, STANDARD_FILES.CLAUDE_MD), "# Claude config");
-
-    const result = await resolveClaudeMd(tempDir, "my-stack");
-
-    expect(result).toBe(path.join(tempDir, DIRS.stacks, "my-stack", STANDARD_FILES.CLAUDE_MD));
-  });
-
-  it("should throw when stack CLAUDE.md does not exist", async () => {
-    await expect(resolveClaudeMd(tempDir, "nonexistent-stack")).rejects.toThrow(
-      "Stack 'nonexistent-stack' is missing required CLAUDE.md file",
-    );
-  });
-
-  it("should include expected path in error message", async () => {
-    const expectedPath = path.join(tempDir, DIRS.stacks, "missing-stack", STANDARD_FILES.CLAUDE_MD);
-
-    await expect(resolveClaudeMd(tempDir, "missing-stack")).rejects.toThrow(expectedPath);
-  });
-});
 
 describe("buildSkillRefsFromConfig", () => {
   it("should build skill references from agent stack config", () => {
@@ -218,7 +180,7 @@ describe("resolveSkillReference", () => {
       description: "React component patterns",
       usage: "when building React components",
       preloaded: true,
-      // D-217: resolver propagates `source` from SkillReference onto the
+      // The resolver propagates `source` from SkillReference onto the
       // resolved Skill so the compiler can emit per-skill pluginRef formats.
       // Absent on the input → absent on the output, no `source` key at all
       // (see dedicated test below).
@@ -259,7 +221,7 @@ describe("resolveSkillReference", () => {
 
     expect(result).not.toBeNull();
     // The resolver must thread `source` through so the compiler can key off it
-    // per-skill — this is the D-217 contract.
+    // per-skill — that is the contract this asserts.
     expect(result!.source).toBe("agents-inc");
   });
 
@@ -295,7 +257,7 @@ describe("resolveSkillReferences", () => {
         description: "React component patterns",
         usage: "for components",
         preloaded: false,
-        // D-217: see resolveSkillReference test above for shape rationale.
+        // See the resolveSkillReference test above for shape rationale.
       },
       {
         id: "web-state-zustand",
@@ -426,9 +388,9 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       ];
 
       const output = await compileAgentWithSkills(skills);
-      const { preloadedSkillIds } = parseCompiledAgent(output);
+      const { preloadedRefs } = parseCompiledAgentSections(output);
 
-      expect(preloadedSkillIds.length).toBeGreaterThan(0);
+      expect(preloadedRefs.length).toBeGreaterThan(0);
     });
 
     it("should list preloaded skill IDs in the skills array", async () => {
@@ -450,9 +412,8 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
         preloadedSkills: ["web-framework-react"],
         noDynamicSkills: ["web-framework-react"],
       });
-      const { body } = parseCompiledAgent(output);
-      expect(body).toContain("<skills_note>");
-      expect(body).toContain("All skills for this agent are preloaded via frontmatter");
+      expect(output).toContain("<skills_note>");
+      expect(output).toContain("All skills for this agent are preloaded via frontmatter");
     });
 
     it("should include multiple preloaded skills in frontmatter", async () => {
@@ -473,9 +434,9 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       const skills = [makeSkill("web-testing-vitest", false)];
 
       const output = await compileAgentWithSkills(skills);
-      const { preloadedSkillIds } = parseCompiledAgent(output);
+      const { preloadedRefs } = parseCompiledAgentSections(output);
 
-      expect(preloadedSkillIds).toStrictEqual([]);
+      expect(preloadedRefs).toStrictEqual([]);
     });
   });
 
@@ -494,9 +455,8 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       const skills = [makeSkill("web-testing-vitest", false)];
 
       const output = await compileAgentWithSkills(skills);
-      const { body } = parseCompiledAgent(output);
 
-      expect(body).toContain('Invoke: `skill: "web-testing-vitest"`');
+      expect(output).toContain('Invoke: `skill: "web-testing-vitest"`');
     });
 
     it("should NOT include dynamic skills in frontmatter skills array", async () => {
@@ -520,29 +480,26 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       ];
 
       const output = await compileAgentWithSkills(skills);
-      const { body } = parseCompiledAgent(output);
 
-      expect(body).toContain("Use when: when working with vitest");
-      expect(body).toContain("Use when: when working with turborepo");
+      expect(output).toContain("Use when: when working with vitest");
+      expect(output).toContain("Use when: when working with turborepo");
     });
 
     it("should include skill_activation_protocol section for dynamic skills", async () => {
       const skills = [makeSkill("web-testing-vitest", false)];
 
       const output = await compileAgentWithSkills(skills);
-      const { body } = parseCompiledAgent(output);
 
-      expect(body).toContain("<skill_activation_protocol>");
-      expect(body).toContain("## Available Skills (Require Loading)");
+      expect(output).toContain("<skill_activation_protocol>");
+      expect(output).toContain("## Available Skills (Require Loading)");
     });
 
     it("should include description for each dynamic skill", async () => {
       const skills = [makeSkill("web-testing-vitest", false)];
 
       const output = await compileAgentWithSkills(skills);
-      const { body } = parseCompiledAgent(output);
 
-      expect(body).toContain("Description: web-testing-vitest skill description");
+      expect(output).toContain("Description: web-testing-vitest skill description");
     });
   });
 
@@ -576,8 +533,7 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       expectAgentCompilation(output, {
         dynamicSkills: ["web-testing-vitest", "web-build-turborepo"],
       });
-      const { body } = parseCompiledAgent(output);
-      expect(body).toContain("<skill_activation_protocol>");
+      expect(output).toContain("<skill_activation_protocol>");
     });
 
     it("when mixed skills exist, should exclude preloaded skills from body invocations", async () => {
@@ -592,17 +548,16 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
   describe("empty skills handling", () => {
     it("when no skills exist, should not include skills field in frontmatter", async () => {
       const output = await compileAgentWithSkills([]);
-      const { preloadedSkillIds } = parseCompiledAgent(output);
+      const { preloadedRefs } = parseCompiledAgentSections(output);
 
-      expect(preloadedSkillIds).toStrictEqual([]);
+      expect(preloadedRefs).toStrictEqual([]);
     });
 
     it("when no skills exist, should show skills_note instead of activation protocol", async () => {
       const output = await compileAgentWithSkills([]);
-      const { body } = parseCompiledAgent(output);
 
-      expect(body).toContain("<skills_note>");
-      expect(body).not.toContain("<skill_activation_protocol>");
+      expect(output).toContain("<skills_note>");
+      expect(output).not.toContain("<skill_activation_protocol>");
     });
   });
 });

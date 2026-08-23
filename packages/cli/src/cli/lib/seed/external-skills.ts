@@ -159,8 +159,8 @@ function seatExternalSkill(
   };
 
   matrix.skills[id] = externalCatalogueEntry(install);
-  // Completes the map over the matrix: `getSkillBySlug` is an asserting lookup, so an entry the
-  // slug map does not carry throws for anything that addresses a skill by slug.
+  // Completes the map over the matrix: an entry the slug map does not carry is invisible to
+  // anything that addresses a skill by slug.
   claimSlug(matrix.slugMap, externalSlug(id), id);
 
   return [install];

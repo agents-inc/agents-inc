@@ -24,11 +24,15 @@ const EJECTED_SKILL = "web-framework-react" satisfies SkillId;
 const MARKETPLACE = "agents-inc";
 
 /**
- * The pseudo-category a local skill declares when it belongs to no marketplace category. It is
- * the one `mergeLocalSkillsIntoMatrix` deliberately adds no `matrix.categories` entry for, so a
- * skill wearing it loads into the catalogue and still has no domain to be placed under.
+ * The pseudo-category a local skill declares when it belongs to no marketplace category. It
+ * belongs to no domain, so local-skill discovery refuses the skill and the catalogue the
+ * wizard resolves the saved roster against never carries it — which is the entry's fate this
+ * module has to name, rather than calling the install missing.
  */
 const UNPLACEABLE_CATEGORY = "local";
+
+/** The category {@link EJECTED_SKILL} is stated to belong to — one a domain does claim. */
+const PLACEABLE_CATEGORY = "web-framework";
 
 /** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
@@ -61,7 +65,8 @@ describe("unresolved-skill-entries", () => {
     return skillDir;
   }
 
-  const healthyMetadata = (): string => renderMetadataYaml({ contentHash: "unresolved-test" });
+  const healthyMetadata = (): string =>
+    renderMetadataYaml({ category: PLACEABLE_CATEGORY, contentHash: "unresolved-test" });
 
   describe("unresolvedSkillRemovalReasons", () => {
     it("names the source a marketplace-sourced entry is no longer present in", async () => {
@@ -158,9 +163,10 @@ describe("unresolved-skill-entries", () => {
     });
 
     it("blames the category when the install is intact and the source still cannot place it", async () => {
-      // Everything a local skill needs is here and readable, so the catalogue DOES carry it —
-      // the only way left for the wizard to have skipped it is a category no domain claims,
-      // which is what the reason has to say rather than calling the skill missing.
+      // Everything a local skill needs is here and readable, so what this source cannot place is
+      // the category the install declares — the placeholder, which local discovery refuses
+      // outright, so the catalogue never carried the skill either. Either way the reason has to
+      // name the category rather than call the install missing.
       const skillDir = await installLocalSkill(
         projectDir,
         EJECTED_SKILL,

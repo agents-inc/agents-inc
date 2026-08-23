@@ -12,9 +12,7 @@ vi.mock("../../consts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../consts")>();
   return {
     ...actual,
-    get CACHE_DIR() {
-      return mockCacheDir;
-    },
+    cacheRoot: () => mockCacheDir,
   };
 });
 

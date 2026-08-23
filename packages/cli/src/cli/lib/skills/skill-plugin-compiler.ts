@@ -41,7 +41,18 @@ function sanitizeSkillName(name: string): string {
   return name.replace(/\+/g, "-");
 }
 
-async function readSkillMetadata(skillPath: string): Promise<SkillMetadata | null> {
+/**
+ * The optional `author` and `category` a skill's metadata.yaml lends the plugin manifest.
+ *
+ * Not the `readSkillMetadata` exported from `loading/loader.ts` one import away, whose name this
+ * carried until the two proved impossible to tell apart in prose. That one is handed the
+ * metadata.yaml's own PATH and answers a verdict — the single judgment of whether a file describes
+ * its skill, which `compile`, config-types generation and `doctor` all defer to — and it warns
+ * about nothing. This is handed the skill DIRECTORY, answers null for a file that is absent as
+ * readily as for one nothing can be read out of, and warns on the way past both, because the
+ * compile it feeds runs either way with two manifest fields left off.
+ */
+async function readPluginSkillMetadata(skillPath: string): Promise<SkillMetadata | null> {
   const metadataPath = path.join(skillPath, STANDARD_FILES.METADATA_YAML);
 
   if (!(await fileExists(metadataPath))) {
@@ -117,7 +128,7 @@ export async function compileSkillPlugin(
 
   verbose(`Compiling skill plugin: ${skillName} from ${skillPath}`);
 
-  const metadata = await readSkillMetadata(skillPath);
+  const metadata = await readPluginSkillMetadata(skillPath);
 
   const pluginDir = path.join(outputDir, skillName);
   const skillsDir = path.join(pluginDir, "skills", skillName);

@@ -13,4 +13,3 @@ export const setVerbose = vi.fn();
 export const enableBuffering = vi.fn();
 export const drainBuffer = vi.fn((): StartupMessage[] => []);
 export const disableBuffering = vi.fn();
-export const pushBufferMessage = vi.fn();

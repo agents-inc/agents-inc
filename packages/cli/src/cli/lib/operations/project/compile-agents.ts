@@ -83,7 +83,7 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
  * lingers after recompile. An authoritative, scope-UNfiltered pass owns its
  * entire `outputDir` (its resolved roster is the full set for that directory),
  * so it prunes built-in agents no longer compiled there. A scope-FILTERED pass
- * (the hasBoth two-pass compile, or the D-240 registered-project recompile)
+ * (the hasBoth two-pass compile, or the registered-project recompile)
  * sees only one scope's agents and must never delete another scope's files, so
  * it skips pruning. Removing the stale files and tidying the directory they
  * emptied is one operation's job, not this pass's.

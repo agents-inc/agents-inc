@@ -5,11 +5,12 @@ import {
   cleanupTestSource,
   type TestDirs,
 } from "../__tests__/fixtures/create-test-source";
-import { installEject } from "../installation/local-installer";
+import { installThroughOperations } from "../__tests__/helpers/install-through-operations.js";
+import { writeProjectConfig } from "../operations/project/write-project-config.js";
 import {
   validateSelection,
   getAvailableSkills,
-  isIncompatible,
+  getCellState,
   hasUnmetRequirements,
   getUnmetRequirementsReason,
 } from ".";
@@ -364,25 +365,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       expect(firstElement(validation.errors).message).toContain("Choose one frontend framework");
     });
 
-    it("should mark conflicting skill from another source as incompatible", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      const reactSkill = matrix.skills["web-framework-react"]!;
-      reactSkill.conflictsWith = [
-        {
-          skillId: "web-framework-vue-composition-api",
-          reason: "Choose one frontend framework",
-        },
-      ];
-
-      // React selected, vue should be incompatible
-      const incompatible = isIncompatible("web-framework-vue-composition-api", [
-        "web-framework-react",
-      ]);
-      expect(incompatible).toBe(true);
-    });
-
     it("should enforce category exclusivity across multi-source skills", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
@@ -429,7 +411,7 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       expect(ids).not.toContain("api-framework-hono");
 
       // None should be discouraged or selected initially
-      expect(available.every((o) => o.advisoryState.status === "normal")).toBe(true);
+      expect(available.every((o) => getCellState(o.id, []).status === "normal")).toBe(true);
       expect(available.every((o) => !o.selected)).toBe(true);
     });
   });
@@ -437,8 +419,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
 
 describe("Integration: Multi-Source Install Pipeline", () => {
   let dirs: TestDirs;
-
-  const PIPELINE_SKILL_COUNT = 5;
 
   function buildPipelineMatrix(): MergedSkillsMatrix {
     return createMatrixFromTestSkills(RESOLUTION_PIPELINE_SKILLS, (skill) => ({
@@ -475,23 +455,30 @@ describe("Integration: Multi-Source Install Pipeline", () => {
     );
     const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
 
-    const installResult = await installEject({
+    const {
+      copied,
+      config: configResult,
+      compilation,
+    } = await installThroughOperations({
       wizardResult,
       sourceResult,
       projectDir: dirs.projectDir,
     });
 
-    // Verify all skills were copied
-    expect(installResult.copiedSkills).toHaveLength(PIPELINE_SKILL_COUNT);
+    // Verify all skills were copied — named, because a count cannot see a swap
+    expect(copied.projectCopied.map((skill) => skill.skillId).sort()).toStrictEqual(
+      [...selectedSkills].sort(),
+    );
 
     // Verify config contains all selected skills
     // Boundary cast: config parse returns `unknown`
-    const config = await readTestTsConfig<ProjectConfig>(installResult.configPath);
+    const config = await readTestTsConfig<ProjectConfig>(configResult.configPath);
 
     expectConfigSkills(config, selectedSkills);
 
     // Verify agents were compiled
-    expect(installResult.compiledAgents).toHaveLength(2);
+    expect([...compilation.compiled].sort()).toStrictEqual(["api-developer", "web-developer"]);
+    expect(compilation.failed).toStrictEqual([]);
   });
 
   it("should preserve source selections through the config write", async () => {
@@ -506,7 +493,7 @@ describe("Integration: Multi-Source Install Pipeline", () => {
       marketplace: "test-marketplace",
     });
 
-    const installResult = await installEject({
+    const configResult = await writeProjectConfig({
       wizardResult,
       sourceResult,
       projectDir: dirs.projectDir,
@@ -514,7 +501,7 @@ describe("Integration: Multi-Source Install Pipeline", () => {
     });
 
     // Boundary cast: config parse returns `unknown`
-    const config = await readTestTsConfig<ProjectConfig>(installResult.configPath);
+    const config = await readTestTsConfig<ProjectConfig>(configResult.configPath);
 
     // Source metadata should be preserved
     expect(config.marketplace).toBe("github:test-org/skills");

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { AgentDefinition, AgentName } from "../../../types";
 import type { WizardResultV2 } from "../../../components/wizard/wizard";
 import type { SourceLoadResult } from "../../loading/source-loader";
-import { createMockAgent } from "../../__tests__/factories/agent-factories";
+import { buildAgentDefs, createMockAgent } from "../../__tests__/factories/agent-factories";
 import {
   buildGateReport,
   buildWizardResult,
@@ -46,8 +46,8 @@ vi.mock("../../config-gate/index.js", () => ({
   writeScopedFromWizard: vi.fn(),
 }));
 
-vi.mock("../../loading/index.js", () => ({
-  loadMergedAgents: vi.fn(),
+vi.mock("./load-agent-defs.js", () => ({
+  loadAgentDefs: vi.fn(),
 }));
 
 vi.mock("../../../utils/fs.js", () => ({
@@ -56,14 +56,14 @@ vi.mock("../../../utils/fs.js", () => ({
 
 import { writeProjectConfig } from "./write-project-config";
 import { buildAndMergeConfig, resolveInstallPaths } from "../../installation/index.js";
-import { loadMergedAgents } from "../../loading/index.js";
+import { loadAgentDefs } from "./load-agent-defs.js";
 import { ensureBlankPair, writeScopedFromWizard } from "../../config-gate/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 
 const mockBuildAndMergeConfig = vi.mocked(buildAndMergeConfig);
 const mockWriteScopedFromWizard = vi.mocked(writeScopedFromWizard);
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
-const mockLoadMergedAgents = vi.mocked(loadMergedAgents);
+const mockLoadAgentDefs = vi.mocked(loadAgentDefs);
 const mockEnsureBlankPair = vi.mocked(ensureBlankPair);
 const mockEnsureDir = vi.mocked(ensureDir);
 
@@ -93,7 +93,7 @@ describe("write-project-config", () => {
       merged: false,
     });
 
-    mockLoadMergedAgents.mockResolvedValue({});
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}));
     mockEnsureBlankPair.mockResolvedValue(false);
     mockWriteScopedFromWizard.mockResolvedValue(buildGateReport());
     mockEnsureDir.mockResolvedValue(undefined);
@@ -103,7 +103,7 @@ describe("write-project-config", () => {
   });
 
   it("should build, merge, and write config in project context", async () => {
-    mockLoadMergedAgents.mockResolvedValue({});
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}));
 
     const result = await writeProjectConfig({
       wizardResult,
@@ -140,7 +140,7 @@ describe("write-project-config", () => {
 
   it("should skip ensureBlankPair when installing from homedir", async () => {
     const homeDir = "/home/user";
-    mockLoadMergedAgents.mockResolvedValue({});
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}));
 
     // Both resolve to the same path -> not a project context
     mockRealpathSync.mockReturnValue(homeDir);
@@ -169,6 +169,13 @@ describe("write-project-config", () => {
     });
   });
 
+  /**
+   * The option takes the WHOLE `AgentDefs` value rather than a bare roster map, so the
+   * only thing a caller can hand over is what `loadAgentDefs` answered. It used to take
+   * `Partial<Record<AgentName, AgentDefinition>>` — any map at all — which made "a roster
+   * different from the one the CLI would load" a representable argument, and the sub-agent
+   * unions this function emits are built from whatever it is given.
+   */
   it("should use pre-loaded agents when provided", async () => {
     const preloadedAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": createMockAgent("web-developer"),
@@ -178,10 +185,10 @@ describe("write-project-config", () => {
       wizardResult,
       sourceResult,
       projectDir,
-      agents: preloadedAgents,
+      agentDefs: buildAgentDefs(preloadedAgents),
     });
 
-    expect(mockLoadMergedAgents).not.toHaveBeenCalled();
+    expect(mockLoadAgentDefs).not.toHaveBeenCalled();
     expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
@@ -192,13 +199,20 @@ describe("write-project-config", () => {
     });
   });
 
-  it("should load merged agents when not provided", async () => {
-    const mergedAgents: Partial<Record<AgentName, AgentDefinition>> = {
+  /**
+   * The sub-agent roster the emitted `AgentName` / `SelectedAgentName` unions are built from, and
+   * the one thing about it that matters: it is the CLI's own, taken from `loadAgentDefs` and NOT
+   * from the marketplace `sourceResult` names. This site loaded `loadMergedAgents(sourcePath)`
+   * until 2026-08-21, which made `init` emit a different config-types.ts from the one `edit` and
+   * `compile` emit for the same config.
+   */
+  it("loads the CLI's own sub-agent roster when none is provided, never the marketplace's", async () => {
+    const cliAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": createMockAgent("web-developer"),
       "api-developer": createMockAgent("api-developer"),
     };
 
-    mockLoadMergedAgents.mockResolvedValue(mergedAgents);
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs(cliAgents));
 
     await writeProjectConfig({
       wizardResult,
@@ -206,11 +220,11 @@ describe("write-project-config", () => {
       projectDir,
     });
 
-    expect(mockLoadMergedAgents).toHaveBeenCalledWith(sourceResult.sourcePath);
+    expect(mockLoadAgentDefs).toHaveBeenCalledWith();
     expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
-      agents: mergedAgents,
+      agents: cliAgents,
       projectDir,
       projectConfigPath: configPath,
       projectInstallationExists: true,

@@ -8,14 +8,8 @@ export {
 } from "./skill-resolution";
 
 export {
-  getDependentSkills,
   getUnmetRequiredBy,
-  isDiscouraged,
-  getDiscourageReason,
-  isIncompatible,
-  getIncompatibleReason,
   getCellState,
-  getImpliedSkills,
   hasUnmetRequirements,
   getUnmetRequirementsReason,
   validateSelection,
@@ -25,10 +19,4 @@ export {
 
 export { type MatrixHealthIssue, checkMatrixHealth } from "./matrix-health-check";
 
-export {
-  matrix,
-  initializeMatrix,
-  getSkillById,
-  getSkillBySlug,
-  findStack,
-} from "./matrix-provider";
+export { matrix, initializeMatrix, getSkillById, findStack } from "./matrix-provider";

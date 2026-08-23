@@ -51,7 +51,7 @@ import {
 } from "./exec";
 
 /**
- * The word CLI-463 withdraws from the user-facing surface, as a whole word so
+ * The word withdrawn from the user-facing surface, as a whole word so
  * `resource` and a path that happens to spell it are not matched.
  */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
@@ -158,7 +158,7 @@ describe("exec argument validation", () => {
     /**
      * The four refusals narrate around the value they were handed. Each one is a
      * `Marketplace ...` sentence, so the qualifier "source" in front of it is the word
-     * CLI-463 takes out — including the one in the character-set explanation.
+     * withdrawn — including the one in the character-set explanation.
      */
     it.each([
       ["empty", ""],

@@ -5,22 +5,12 @@ import { mkdir, writeFile } from "fs/promises";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { buildProjectConfig } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
-import {
-  CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
-  CLI_INVOKE_COMMAND,
-  PLUGINS_SUBDIR,
-  STANDARD_FILES,
-} from "../../consts";
+import { CLAUDE_DIR, CLAUDE_SRC_DIR, PLUGINS_SUBDIR, STANDARD_FILES } from "../../consts";
 
 // Mock logger (suppress verbose/warn output during tests)
 vi.mock("../../utils/logger");
 
-import {
-  detectInstallation,
-  detectProjectInstallation,
-  getInstallationOrThrow,
-} from "./installation";
+import { detectInstallation, detectProjectInstallation } from "./installation";
 import { renderConfigTs } from "../__tests__/content-generators";
 
 const LOCAL_CONFIG = buildProjectConfig({
@@ -188,36 +178,6 @@ describe("installation", () => {
       expect(result).not.toBeNull();
 
       expect(result!.projectDir).toBe(tempDir);
-    });
-  });
-
-  describe("getInstallationOrThrow", () => {
-    it("returns installation when found", async () => {
-      await createLocalProject(tempDir);
-
-      const result = await getInstallationOrThrow(tempDir);
-
-      expect(result.mode).toBe("eject");
-
-      expect(result.projectDir).toBe(tempDir);
-    });
-
-    it("throws error when no installation found", async () => {
-      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(
-        "No Agents Inc. installation found",
-      );
-    });
-
-    it("error message suggests running init", async () => {
-      await expect(getInstallationOrThrow(tempDir)).rejects.toThrow(`${CLI_INVOKE_COMMAND} init`);
-    });
-
-    it("returns plugin installation when config has installMode: plugin", async () => {
-      await createPluginProject(tempDir);
-
-      const result = await getInstallationOrThrow(tempDir);
-
-      expect(result.mode).toBe("plugin");
     });
   });
 });

@@ -13,7 +13,7 @@ export const NOTHING_RECOMPILED: PropagatedRecompileSummary = {
  *
  * Imported lazily: `recompile-project-agents` lives in the operations layer,
  * which imports back into `installation`, so a static import here would form a
- * load-time cycle (same rule as `installEject`'s `copyLocalSkills` import).
+ * load-time cycle.
  * Per-project failure isolation lives in `recompilePropagatedProjectAgents` and
  * is unchanged by running it from inside the write.
  */

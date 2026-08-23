@@ -1,9 +1,10 @@
 import { MATRIX_VERSION } from "@workspace/matrix";
-import { SEED_VERSION, seedPayloadSchema } from "@workspace/matrix/seed";
-import { beforeEach, describe, expect, it } from "vitest";
+import { SEED_VERSION, installableSeedPayloadSchema } from "@workspace/matrix/seed";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configToSeedPayload } from "./config-to-seed";
 import { seedToWizardResult } from "./seed-to-wizard";
+import { isScopePairCompatible } from "../configuration/config-generator";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
@@ -15,6 +16,16 @@ import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
 
 import type { ContentReading } from "./external-skills";
+
+/**
+ * The scope rule is replaceable here and nowhere else, so one spec can stand the mapper's own
+ * catalogue-aware check down and see what the wire alone would do with the pair it was guarding.
+ * Every other spec in this file runs the real rule straight through the same `vi.fn`.
+ */
+vi.mock("../configuration/config-generator", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../configuration/config-generator")>();
+  return { ...original, isScopePairCompatible: vi.fn(original.isScopePairCompatible) };
+});
 
 /**
  * The inverse of `seed-to-wizard.ts`: an installed `ProjectConfig` back onto the wire, so the CLI
@@ -37,6 +48,8 @@ const PRIVATE_MARKETPLACE = "acme-internal";
 const OTHER_MARKETPLACE = "beta-internal";
 /** The id an added skill is minted under at intake — outside every catalogue, by construction. */
 const CARRIED_ID = "external-web-framework-brainstorming";
+/** What a config records about itself: a stack's own sentence, saved at install and never its id. */
+const SHARED_DESCRIPTION = "Minimal stack for E2E testing";
 
 /**
  * An installation with no added skills: nothing to carry, and nothing it cannot carry.
@@ -131,14 +144,19 @@ describe("configToSeedPayload", () => {
   });
 
   describe("the envelope", () => {
-    it("mints a payload the contract's own schema accepts", () => {
+    it("mints a payload the store's own POST schema accepts", () => {
       const config = buildProjectConfig({
         skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
         agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      const parsed = seedPayloadSchema.safeParse(configToSeedPayload(config, CARRIES_NOTHING));
+      // The INSTALLABLE half, which is what the worker's POST route declares. Held against the
+      // lenient one this would pass for a payload the store would refuse — and the CLI is a
+      // minting client, so what it can hand over is the only question worth asking of it.
+      const parsed = installableSeedPayloadSchema.safeParse(
+        configToSeedPayload(config, CARRIES_NOTHING),
+      );
 
       expect(parsed.success).toBe(true);
       expect(parsed.data?.v).toBe(SEED_VERSION);
@@ -155,6 +173,32 @@ describe("configToSeedPayload", () => {
       // Naming an id the config never stored would make the receiver overlay a stack's own
       // preload flags over the curation this payload carries in full.
       expect(configToSeedPayload(config, CARRIES_NOTHING).stackId).toBeNull();
+    });
+
+    it("carries the description the config records, which is all a resolvable stack id supplied", () => {
+      const config = buildProjectConfig({
+        description: SHARED_DESCRIPTION,
+        skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
+      });
+
+      // The description and the stack's `preloaded` overlay are the only two things a resolvable
+      // `stackId` did on the receiving side, and the assignments above already carry the second.
+      // Carrying the first directly is what leaves nothing for the id to add.
+      expect(configToSeedPayload(config, CARRIES_NOTHING).description).toBe(SHARED_DESCRIPTION);
+    });
+
+    it("leaves the description off a config that describes itself with nothing", () => {
+      const config = buildProjectConfig({
+        skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
+      });
+
+      // Absent rather than empty, for the reason the marketplace ref is: an id is the hash of its
+      // body, so a key meaning what its absence already means would remint every ordinary payload.
+      expect(configToSeedPayload(config, CARRIES_NOTHING)).not.toHaveProperty("description");
     });
 
     it("names the marketplace its plugin skills are fetched from", () => {
@@ -354,8 +398,32 @@ describe("configToSeedPayload", () => {
 
       // The decoder refuses this same pair on the way in. Minting it anyway would produce an id
       // that cannot be installed, which is the one outcome a share must never have.
+      //
+      // The wording is asserted, not just the two names: the schema below refuses the same pair
+      // and names the same two, so a test happy with either message could not tell which one
+      // reached the sharer — and only this one names both remedies.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
-        new RegExp(`${SKILLS.react.id}[\\s\\S]*${WEB_DEV}`),
+        new RegExp(
+          `cannot be shared as it stands[\\s\\S]*` +
+            `${SKILLS.react.id} -> ${WEB_DEV}: a project-scoped skill never reaches`,
+        ),
+      );
+    });
+
+    it("refuses the pair on the wire's own terms when the catalogue-aware rule stops seeing it", () => {
+      const config = buildProjectConfig({
+        skills: [buildSkillConfig(SKILLS.react.id, { scope: "project", origin: EJECT_SOURCE })],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
+      });
+
+      // The mapper's own rule stood down, which is the drift the shared contract exists to make
+      // impossible: with it gone, the only thing between this config and a minted id is the
+      // schema the store's POST route declares — so that is the schema this parses against.
+      vi.mocked(isScopePairCompatible).mockReturnValueOnce(true);
+
+      expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
+        new RegExp(`"${SKILLS.react.id}"[\\s\\S]*"assignments"[\\s\\S]*"${WEB_DEV}"`),
       );
     });
 

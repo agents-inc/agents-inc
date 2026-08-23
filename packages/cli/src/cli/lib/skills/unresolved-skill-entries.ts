@@ -127,8 +127,11 @@ async function classifySavedSkill(
   // live metadata.yaml, or renamed under a directory that was not, lands here.
   if (!(await skillMdNames(skillDir, id))) return { kind: "not-installed-there", skillDir };
 
-  // Everything about the install is intact, so the skill IS in the catalogue and the wizard
-  // still could not place it: a category no domain claims, which is the only way left.
+  // Everything about the install is intact, so what could not be placed is the category this
+  // metadata.yaml declares — whichever arm brought the id here. `resolveSkillForPopulation` in
+  // `stores/wizard-store.ts` returns null both for a skill the catalogue does not carry and for
+  // one it carries under a category no domain claims, and an intact install arrives by either:
+  // local discovery refuses the placeholder category before the catalogue is built.
   return { kind: "unplaceable-category", skillDir, category: read.metadata.category };
 }
 

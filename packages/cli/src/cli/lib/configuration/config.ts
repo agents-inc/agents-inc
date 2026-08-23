@@ -10,6 +10,7 @@ import {
   PUBLIC_CATALOGUE_PACKAGE,
   STANDARD_FILES,
 } from "../../consts";
+import { configUnreadableError } from "../../utils/messages";
 import { projectSourceConfigSchema } from "../schemas";
 import type { ProjectConfig, SourceEntry } from "../../types";
 import { ConfigDefaultExportError, ConfigSchemaError, loadConfig } from "./config-loader";
@@ -55,6 +56,29 @@ export type ResolveSourceRequest = {
   projectDir?: string | undefined;
 };
 
+/**
+ * Reads the settings config at `dir`, or answers `null` when there is none to read.
+ *
+ * **A file that EXISTS and cannot be loaded is raised, never reported as absence** (owner ruling
+ * 2026-08-20). `resolveSource` reads the return value alone, so a swallowed failure was
+ * indistinguishable from a config that is not there: the run walked past this rung to
+ * {@link DEFAULT_SOURCE} and installed from a marketplace nobody named, while the config naming a
+ * private one sat unread on disk. All three ways a config can fail are on the loud side of that
+ * line now — a shape the schema refused, a module whose exports are all named, and a file that
+ * could not be evaluated at all, which was the one still reported as `null`.
+ *
+ * A MISSING file keeps its `null`, and that is the whole of what `null` means here: the legitimate
+ * state `init` exists for, and the state `edit` reports as "no installation".
+ *
+ * Every call site chose a posture and states it where it stands. All but one ABORT: the marketplace
+ * a run installs from is not a thing to guess at, and the two sites that read this file to locate a
+ * marketplace's own skills or agent partials would otherwise walk a tree it says is elsewhere. The
+ * exception is `validateRegisteredSources`, which DEGRADES — a command whose job is naming what is
+ * wrong here has to survive the thing it is naming, so `doctor`'s `safeCheck` turns the raise into
+ * a failed row and its `readsConfig: true` rows stand down before reaching here at all. Two further
+ * sites are unreachable rather than chosen: `mergeWithExistingConfig` loads the full config first,
+ * and `ensureMinimalConfig` reads only where the file is absent.
+ */
 async function loadSourceConfig(
   dir: string,
   scope: "project" | "global",
@@ -67,25 +91,55 @@ async function loadSourceConfig(
     return null;
   }
 
-  let data: Partial<ProjectConfig> | null;
-  try {
-    data = await loadConfig(configPath, projectSourceConfigSchema);
-  } catch (error) {
-    // A shape the schema refused is raised, never reported as absence. `resolveSource` reads the
-    // return value alone, so a swallowed refusal is indistinguishable from a config that is not
-    // there — it walks past this rung to DEFAULT_SOURCE and installs from a marketplace nobody
-    // named. A file that could not be evaluated at all stays the "no config" this loader has
-    // always reported it as. A file whose exports are all named is on the loud side of that same
-    // line: it evaluated, and everything it says is a statement about this install.
-    if (error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError)
-      throw error;
-    verbose(`Failed to load ${scope} config at ${configPath}: ${getErrorMessage(error)}`);
-    return null;
-  }
+  const data = await readSourceConfigOrRefuse(configPath);
   if (!data) return null;
 
   verbose(`Loaded ${scope} config from ${dir}`);
   return data;
+}
+
+/**
+ * The config at `configPath`, or `null` when it evaluated and declared nothing.
+ *
+ * Every way of failing raises. Split out from {@link loadSourceConfig} so that function's own body
+ * reads as the two states it answers — no file, or a config — with the third state, a file that
+ * will not load, named once here rather than assembled from a `let` and a `try`.
+ */
+async function readSourceConfigOrRefuse(
+  configPath: string,
+): Promise<Partial<ProjectConfig> | null> {
+  try {
+    return await loadConfig(configPath, projectSourceConfigSchema);
+  } catch (error) {
+    if (describesItsOwnFault(error)) throw error;
+    throw unreadableSourceConfig(error);
+  }
+}
+
+/**
+ * Whether a load failure already names the field or the export at fault, and so is handed on as
+ * itself rather than re-worded.
+ *
+ * The two it admits fault a LINE of a file the user still owns and can go and correct. Everything
+ * else says only that the file would not evaluate, which is what {@link unreadableSourceConfig}
+ * exists to turn into a way out.
+ */
+function describesItsOwnFault(error: unknown): boolean {
+  return error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError;
+}
+
+/**
+ * The refusal for a config that exists and cannot be evaluated.
+ *
+ * `loadConfig` already names the file and the parser's own reason — `Failed to load config from
+ * '<path>': ParseError: Missing semicolon` — so the cause is handed straight to
+ * {@link configUnreadableError} rather than restated. That builder is what `BaseCommand`'s
+ * `ensureConfigReadable` prints for the OTHER loader of this very file, so both readers refuse it
+ * in one vocabulary and offer the one route that clears it: `uninstall` still works on a config it
+ * cannot read.
+ */
+function unreadableSourceConfig(cause: unknown): Error {
+  return new Error(configUnreadableError(getErrorMessage(cause)), { cause });
 }
 
 /**
@@ -258,7 +312,7 @@ export async function resolveBranding(projectDir?: string): Promise<ResolvedBran
  * {@link ResolvedConfig} (source string plus where it came from). This is the shape the
  * surfaces that LIST sources want — `search` and `doctor` — and there is exactly one of
  * them: the registered-extras array this used to return alongside it was withdrawn with
- * the marketplace axis (CLI-450).
+ * the marketplace axis itself.
  */
 export async function resolvePrimarySourceEntry(projectDir?: string): Promise<SourceEntry> {
   const resolvedConfig = await resolveSource({ caller: "stored", projectDir });

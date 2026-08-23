@@ -1,4 +1,3 @@
-import os from "os";
 import path from "path";
 import { discoverAllPluginSkills } from "../../plugins/index.js";
 import { isHomeDirectory } from "../../installation/is-home-directory.js";
@@ -6,7 +5,7 @@ import { isHomeDirectory } from "../../installation/is-home-directory.js";
 // plugins/plugin-discovery can share it without an operations↔plugins cycle.
 import { loadSkillsFromDir, type LoadedSkills } from "../../loading/index.js";
 import { verbose } from "../../../utils/logger.js";
-import { GLOBAL_INSTALL_ROOT, LOCAL_SKILLS_PATH } from "../../../consts.js";
+import { globalInstallRoot, LOCAL_SKILLS_PATH } from "../../../consts.js";
 import { typedEntries, typedKeys } from "../../../utils/typed-object.js";
 import type { UnusableSkillMetadata } from "../../loading/index.js";
 import type { SkillDefinition, SkillDefinitionMap, SkillId } from "../../../types/index.js";
@@ -70,7 +69,9 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
   const isGlobalProject = isHomeDirectory(projectDir);
 
   // 1. Global plugins
-  const globalPluginSkills = isGlobalProject ? {} : await discoverAllPluginSkills(os.homedir());
+  const globalPluginSkills = isGlobalProject
+    ? {}
+    : await discoverAllPluginSkills(globalInstallRoot());
   const globalPluginSkillCount = typedKeys<SkillId>(globalPluginSkills).length;
   if (globalPluginSkillCount > 0) {
     verbose(`  Found ${globalPluginSkillCount} skills from global plugins`);
@@ -79,7 +80,7 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
   // 2. Global local skills
   const globalLocal = isGlobalProject
     ? NO_LOCAL_SKILLS
-    : await discoverLocalProjectSkills(GLOBAL_INSTALL_ROOT);
+    : await discoverLocalProjectSkills(globalInstallRoot());
   const globalLocalSkillCount = typedKeys<SkillId>(globalLocal.skills).length;
   if (globalLocalSkillCount > 0) {
     verbose(`  Found ${globalLocalSkillCount} global local skills from ~/.claude/skills/`);

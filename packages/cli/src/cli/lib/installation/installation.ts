@@ -2,14 +2,7 @@ import os from "os";
 import path from "path";
 import { fileExists } from "../../utils/fs";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
-import {
-  CLAUDE_DIR,
-  CLI_INVOKE_COMMAND,
-  DEFAULT_BRANDING,
-  PLUGINS_SUBDIR,
-  STANDARD_DIRS,
-  EJECT_SOURCE,
-} from "../../consts";
+import { CLAUDE_DIR, PLUGINS_SUBDIR, STANDARD_DIRS, EJECT_SOURCE } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
 import type { ProjectConfig, SkillConfig } from "../../types/config";
 import type { InstallMode } from "../../types/matrix";
@@ -134,18 +127,4 @@ export async function detectInstallation(
 
   // 2. Fall back to global (home directory)
   return detectGlobalInstallation();
-}
-
-export async function getInstallationOrThrow(
-  projectDir: string = process.cwd(),
-): Promise<Installation> {
-  const installation = await detectInstallation(projectDir);
-
-  if (!installation) {
-    throw new Error(
-      `No ${DEFAULT_BRANDING.NAME} installation found.\nRun '${CLI_INVOKE_COMMAND} init' to create one.`,
-    );
-  }
-
-  return installation;
 }

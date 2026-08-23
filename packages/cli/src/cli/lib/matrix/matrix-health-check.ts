@@ -111,7 +111,7 @@ function checkSkillRelationRefs(matrix: MergedSkillsMatrix): MatrixHealthIssue[]
  * states nothing — resolution drops the reference — so the source shipped a rule
  * that cannot act, which is a defect in the source rather than an advisory about
  * it. The CLI's own built-in rules are narrowed to the slugs a source ships
- * before resolution (CLI-471), so nothing here can be the CLI's doing.
+ * before resolution, so nothing here can be the CLI's doing.
  *
  * `error` is the AUTHOR's verdict, and it is the only one this module can reach: a matrix says
  * what is wrong with it and cannot say who is reading. Someone who merely installed from the

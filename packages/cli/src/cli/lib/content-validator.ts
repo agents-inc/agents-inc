@@ -130,12 +130,16 @@ async function countExistingConfigs(projectDir: string): Promise<number> {
 /**
  * Validates the marketplace this installation reads from when it is local, plus the current
  * directory when that is itself a skills source repository — that repository is the content a
- * marketplace author runs this against, and it is not the source they read skills from (D-210).
+ * marketplace author runs this against, and it is not the source they read skills from.
  * A remote marketplace is recorded as skipped rather than fetched.
  *
  * Each one is validated as the reader's own or as someone else's — see {@link readerFor}.
  */
 export async function validateRegisteredSources(projectDir: string): Promise<ContentValidation> {
+  // DEGRADE on an unreadable config. This pass declares `readsConfig: true`, so `doctor` stands it
+  // down before it runs whenever the config check has already reported the file — and if it is
+  // reached anyway, `safeCheck` turns the throw into a failed row rather than an aborted run. A
+  // command whose job is naming what is wrong here must survive the thing it is naming.
   const primary = await resolvePrimarySourceEntry(projectDir);
   const registered = [primary];
   const remote = registered.filter((source) => !isLocalSource(source.url));

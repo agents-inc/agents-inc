@@ -4,10 +4,7 @@ export {
   generateSkillPluginManifest,
   generateAgentPluginManifest,
   writePluginManifest,
-  getPluginDir,
 } from "./plugin-manifest";
-
-export { findPluginManifest } from "./plugin-manifest-finder";
 
 export {
   buildMarketplacePluginRef,
@@ -17,20 +14,14 @@ export {
 
 export {
   getUserPluginsDir,
-  getCollectivePluginDir,
   getProjectPluginsDir,
-  getPluginSkillsDir,
   getPluginAgentsDir,
   getPluginManifestPath,
   readPluginManifest,
-  getPluginSkillIds,
 } from "./plugin-finder";
 
 export {
-  type PluginInfo,
   type InstallationInfo,
-  getPluginInfo,
-  formatPluginDisplay,
   getInstallationInfo,
   formatInstallationDisplay,
 } from "./plugin-info";
@@ -45,7 +36,7 @@ export {
   printPluginValidationResult,
 } from "./plugin-validator";
 
-export { discoverAllPluginSkills, hasIndividualPlugins, listPluginNames } from "./plugin-discovery";
+export { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
 
 export {
   type PluginKey,

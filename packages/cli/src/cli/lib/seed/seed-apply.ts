@@ -48,10 +48,6 @@ const NOTHING_KEPT: KeptFromRoundTrip = {
   unplaceableSkillIds: [],
 };
 
-export function hasKeptEntries(kept: KeptFromRoundTrip): boolean {
-  return kept.authoredSkillIds.length > 0 || kept.unplaceableSkillIds.length > 0;
-}
-
 /**
  * Puts back what this run may not remove, so the destructive apply removes only what it may.
  *

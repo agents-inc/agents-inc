@@ -17,6 +17,9 @@ import { SKILLS } from "../__tests__/test-fixtures.js";
 /** An id no catalog in these specs knows, so the decode has to skip it. */
 const UNKNOWN_SKILL_ID = "web-framework-does-not-exist";
 
+/** What a config records about itself: a stack's own sentence, saved at install and never its id. */
+const SHARED_DESCRIPTION = "Minimal stack for E2E testing";
+
 /**
  * The `agents` map is the only place a shared configuration can say anything about a sub-agent
  * that no skill mentions, so these cover the four ways an agent can reach — or fail to reach —
@@ -199,6 +202,47 @@ describe("seedToWizardResult", () => {
     expect(result.assignedStack).toStrictEqual({
       "web-developer": { "web-framework": [sa(SKILLS.react.id)] },
     });
+  });
+
+  /**
+   * The description is what a resolvable `stackId` used to supply, and the payload now carries it
+   * directly. Both halves matter: a payload that has one hands the install pipeline a sentence to
+   * write, and a payload that does not must hand it nothing rather than an empty string — a config
+   * describing itself with `""` is a different file from one describing itself with no key.
+   */
+  it("carries a description the payload states onto the wizard result", () => {
+    const payload = buildSeedPayload({
+      description: SHARED_DESCRIPTION,
+      skills: {
+        [SKILLS.react.id]: buildSeedSkill({
+          scope: "global",
+          assignments: { "web-developer": "lazy" },
+        }),
+      },
+    });
+
+    const { result } = seedToWizardResult(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
+
+    expect(result.description).toBe(SHARED_DESCRIPTION);
+    expect(
+      result.selectedStackId,
+      "the id stays null: recording one makes the receiver overlay that stack's own agents over the curation being shared",
+    ).toBeNull();
+  });
+
+  it("leaves the description off a result decoded from a payload that states none", () => {
+    const payload = buildSeedPayload({
+      skills: {
+        [SKILLS.react.id]: buildSeedSkill({
+          scope: "global",
+          assignments: { "web-developer": "lazy" },
+        }),
+      },
+    });
+
+    const { result } = seedToWizardResult(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
+
+    expect(result).not.toHaveProperty("description");
   });
 
   it("skips an agent name in the map this CLI does not know, and reports it by name", () => {

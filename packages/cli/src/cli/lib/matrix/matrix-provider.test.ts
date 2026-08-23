@@ -1,16 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-  matrix,
-  initializeMatrix,
-  getSkillById,
-  getSkillBySlug,
-  findStack,
-} from "./matrix-provider";
+import { matrix, initializeMatrix, getSkillById, findStack } from "./matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockResolvedStack } from "../__tests__/factories/stack-factories.js";
-import type { SkillId, SkillSlug } from "../../types";
+import type { SkillId } from "../../types";
 
 describe("matrix-provider", () => {
   beforeEach(() => {
@@ -51,23 +45,6 @@ describe("matrix-provider", () => {
       initializeMatrix(createMockMatrix(SKILLS.react));
       expect(() => getSkillById("web-framework-nonexistent" as SkillId)).toThrow(
         "Skill not found: web-framework-nonexistent",
-      );
-    });
-  });
-
-  describe("getSkillBySlug", () => {
-    it("should resolve slug to skill", () => {
-      const custom = createMockMatrix(SKILLS.react);
-      initializeMatrix(custom);
-
-      const skill = getSkillBySlug("react");
-      expect(skill).toBe(custom.skills["web-framework-react"]);
-    });
-
-    it("should throw for a nonexistent slug", () => {
-      initializeMatrix(createMockMatrix(SKILLS.react));
-      expect(() => getSkillBySlug("nonexistent" as SkillSlug)).toThrow(
-        "Skill not found for slug: nonexistent",
       );
     });
   });

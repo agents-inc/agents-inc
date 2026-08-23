@@ -117,25 +117,32 @@ describe("writeProjectPartial", () => {
     });
   });
 
-  it("uses the fallback name when the config file is invalid", async () => {
+  /**
+   * The `?? {}` in `saveSource` is a fallback for a config that is not THERE, and it used to catch
+   * a config that is there and unreadable as well — so a scalar-sized change to a corrupt config
+   * replaced the whole file with a two-field one under an invented name, and reported success. It
+   * refuses now (owner ruling 2026-08-20): a file nobody can read is not a file to overwrite.
+   *
+   * The empty-file case below is the control this refusal is meaningless without. An empty
+   * `config.ts` declares no exports to have opinions about, loads as absence, and is still
+   * recovered under the fallback name — so the guard is scoped to unreadable rather than to
+   * "anything already on disk".
+   */
+  it("refuses to overwrite a config file it cannot read, rather than inventing a fresh one", async () => {
     const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
     await mkdir(configDir, { recursive: true });
-    await writeFile(
-      path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      "invalid typescript content {{",
+    const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+    const corruptSource = "invalid typescript content {{";
+    await writeFile(configPath, corruptSource);
+
+    await expect(saveSource(tempDir, "github:my-org/skills", "recovered-project")).rejects.toThrow(
+      configPath,
     );
 
-    await saveSource(tempDir, "github:my-org/skills", "recovered-project");
-
-    const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-    const config = await readTestTsConfig<Record<string, unknown>>(configPath);
-
-    expect(config).toStrictEqual({
-      name: "recovered-project",
-      skills: [],
-      agents: [],
-      marketplace: "github:my-org/skills",
-    });
+    expect(
+      await readFile(configPath, "utf-8"),
+      "the user's file is still theirs — a refusal that had already written is not a refusal",
+    ).toBe(corruptSource);
   });
 
   it("uses the fallback name when the config file is empty", async () => {
@@ -163,7 +170,7 @@ describe("writeProjectPartial", () => {
   });
 
   /**
-   * D-308 — the round trip every scalar caller performs: read the config with
+   * The round trip every scalar caller performs: read the config with
    * the LENIENT loader, overlay one scalar, write it back through this entry.
    *
    * The writer compacts an exclusive category to its BARE value on the way out

@@ -57,7 +57,13 @@ export type CategoryDefinition = {
   domain?: Domain;
   /** If true, only one skill can be selected in this category (radio behavior). */
   exclusive: boolean;
-  /** If true, the user must select at least one skill before proceeding. */
+  /**
+   * If true, leaving this category empty is worth telling the user about.
+   *
+   * ADVISORY, not a gate: `validateBuildStep` names the first such category in a toast as the
+   * build step is left and the wizard advances anyway, which is how every other wizard
+   * validation behaves. Nothing anywhere refuses to proceed on it.
+   */
   required: boolean;
   /** Display order within domain (lower = earlier) */
   order: number;
@@ -280,16 +286,12 @@ export type OptionState =
  */
 export type SkillOption = {
   id: SkillId;
-  /** Advisory state computed from matrix relationships (incompatible > discouraged > normal) */
-  advisoryState: OptionState;
   /** True if this skill is currently selected by the user */
   selected: boolean;
   /** True when this skill is selected but has unmet dependency requirements */
   hasUnmetRequirements: boolean;
   /** Explains which requirements are unmet (only set when hasUnmetRequirements is true) */
   unmetRequirementsReason?: string;
-  /** Other skills that serve the same purpose (for "or try X" hints) */
-  alternatives: SkillId[];
 };
 
 /** Result of validating the current skill selections */

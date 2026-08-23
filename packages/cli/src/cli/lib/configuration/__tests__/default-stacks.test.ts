@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { typedEntries, typedKeys } from "../../../utils/typed-object";
+import { typedEntries, typedFromEntries, typedKeys } from "../../../utils/typed-object";
 import { defaultStacks } from "../default-stacks";
 import { BUILT_IN_MATRIX } from "../../../types/generated/matrix";
 import type { AgentName, Category, ResolvedSkill, SkillAssignment, SkillId } from "../../../types";
@@ -33,28 +33,184 @@ const SHARED_ALIAS_MEMBERS = {
 const SHARED_ALIAS_CATEGORIES = typedKeys(SHARED_ALIAS_MEMBERS);
 
 /**
- * The sub-agents the whole catalogue assigns to, which the document states as a count. Named
- * here instead: a count cannot tell a retired agent from a swapped one, and the two retired
- * names it once carried were exactly that shape.
+ * The sub-agents the whole catalogue assigns to, and how many stacks each one appears on — which
+ * the document states as a count and then as a sentence ("six appear in all 17, two in 16 …").
+ *
+ * One constant for both halves, keyed by name rather than counted: a count cannot tell a retired
+ * agent from a swapped one, and the two retired names this list once carried were exactly that
+ * shape. The tally is the half that had nothing holding it at all, and it is the half that says
+ * whether a stack quietly stopped assigning to an agent it still declares elsewhere.
  *
  * Fewer than `AGENT_NAMES` on purpose — five built-ins sit on no stack at all, which is the
  * document's own claim in the same paragraph.
  */
-const EXPECTED_STACK_AGENT_NAMES = [
-  "agent-summoner",
-  "api-developer",
-  "api-researcher",
-  "cli-developer",
-  "cli-researcher",
-  "cli-tester",
-  "codex-keeper",
-  "pm",
-  "reviewer",
-  "skill-summoner",
-  "web-developer",
-  "web-researcher",
-  "web-tester",
-] as const satisfies readonly AgentName[];
+const EXPECTED_STACKS_PER_AGENT = {
+  "agent-summoner": 17,
+  "api-developer": 15,
+  "api-researcher": 15,
+  "cli-developer": 8,
+  "cli-researcher": 1,
+  "cli-tester": 8,
+  "codex-keeper": 17,
+  pm: 17,
+  reviewer: 17,
+  "skill-summoner": 17,
+  "web-developer": 16,
+  "web-researcher": 17,
+  "web-tester": 16,
+} as const satisfies Partial<Record<AgentName, number>>;
+
+/**
+ * How many sub-agents each stack assigns to. The document states the distinct values ("8, 9, 10
+ * or 12") and names two of them in its stack table, and nothing held either reading — the table's
+ * `cli-ink-oclif` note said 10 against a stack of 9 until an audit read it by hand.
+ *
+ * Keyed by stack id, so the keys are also the stack roster the document lists rather than counts.
+ */
+const EXPECTED_AGENT_COUNT_PER_STACK = {
+  "nextjs-fullstack": 12,
+  "nextjs-t3-stack": 10,
+  "nextjs-supabase-fullstack": 12,
+  "nextjs-turborepo-fullstack": 12,
+  "react-old-school": 8,
+  "react-hono-fullstack": 12,
+  "remix-fullstack": 10,
+  "sveltekit-fullstack": 10,
+  "solidjs-fullstack": 10,
+  "astro-content-fullstack": 10,
+  "vue-modern-fullstack": 10,
+  "nuxt-fullstack": 10,
+  "angular-modern-fullstack": 10,
+  "nextjs-ai-saas": 12,
+  "nextjs-saas-starter": 12,
+  "expo-mobile-fullstack": 12,
+  "cli-ink-oclif": 9,
+} as const satisfies Record<string, number>;
+
+/**
+ * The (stack, sub-agent) pairs where a stack names an agent and files nothing under it.
+ *
+ * Named rather than absorbed. The tally above counts DECLARED slots, which is the reading the
+ * document's own invocation takes, and under it `cli-developer` and `cli-tester` sit on "the same
+ * 8" — while seven of `cli-tester`'s eight are `{}`, so `cli-ink-oclif` is the only stack that
+ * hands it a skill. A count cannot say which of the two readings it is, and an empty slot is the
+ * only shape that makes them differ, so the difference is pinned by name instead of averaged away.
+ */
+const EXPECTED_EMPTY_AGENT_SLOTS = [
+  "expo-mobile-fullstack > cli-tester",
+  "nextjs-ai-saas > cli-tester",
+  "nextjs-fullstack > cli-tester",
+  "nextjs-saas-starter > cli-tester",
+  "nextjs-supabase-fullstack > cli-tester",
+  "nextjs-turborepo-fullstack > cli-tester",
+  "react-hono-fullstack > cli-tester",
+] as const;
+
+/**
+ * Every category the catalogue files an assignment under, which the document states as a count.
+ * Members rather than the count, for the reason the roster above is: two categories exchanged
+ * leave 35 intact, and a stack keyed under a category its skill has left is the stale-key shape
+ * that goes schema-invalid the moment the enum regenerates.
+ */
+const EXPECTED_ASSIGNED_CATEGORIES = [
+  "ai-orchestration",
+  "ai-patterns",
+  "ai-provider",
+  "api-analytics",
+  "api-api",
+  "api-auth",
+  "api-baas",
+  "api-cms",
+  "api-commerce",
+  "api-email",
+  "api-observability",
+  "api-orm",
+  "api-vector-db",
+  "cli-framework",
+  "infra-ci-cd",
+  "meta-design",
+  "meta-reviewing",
+  "mobile-framework",
+  "shared-lint",
+  "shared-monorepo",
+  "shared-task-runner",
+  "shared-tooling",
+  "web-accessibility",
+  "web-client-state",
+  "web-e2e",
+  "web-forms",
+  "web-framework",
+  "web-meta-framework",
+  "web-mocking",
+  "web-routing",
+  "web-rpc",
+  "web-server-state",
+  "web-styling",
+  "web-testing",
+  "web-tooling",
+] as const satisfies readonly Category[];
+
+/**
+ * Every skill the catalogue names, which the document states as a count. Members again, and here
+ * the members buy a second thing the count cannot: the clause binds each id to the generated
+ * `SkillId` union, so a marketplace retiring a skill reddens the line that owns its name rather
+ * than scattering unassignable-union errors across the consumers of an inferred type.
+ */
+const EXPECTED_ASSIGNED_SKILL_IDS = [
+  "ai-orchestration-vercel-ai-sdk",
+  "ai-patterns-tool-use-patterns",
+  "ai-provider-anthropic-sdk",
+  "api-analytics-posthog-analytics",
+  "api-auth-better-auth-drizzle-hono",
+  "api-auth-nextauth",
+  "api-baas-supabase",
+  "api-cms-sanity",
+  "api-commerce-stripe",
+  "api-database-drizzle",
+  "api-database-prisma",
+  "api-email-resend-react-email",
+  "api-flags-posthog-flags",
+  "api-framework-hono",
+  "api-observability-axiom-pino-sentry",
+  "api-vector-db-pinecone",
+  "cli-framework-oclif-ink",
+  "infra-ci-cd-github-actions",
+  "meta-design-expressive-typescript",
+  "meta-reviewing-cli-reviewing",
+  "meta-reviewing-reviewing",
+  "mobile-framework-expo",
+  "mobile-framework-react-native",
+  "shared-monorepo-pnpm-workspaces",
+  "shared-monorepo-turborepo",
+  "shared-tooling-eslint-prettier",
+  "shared-tooling-git-hooks",
+  "shared-tooling-typescript-config",
+  "web-accessibility-web-accessibility",
+  "web-data-fetching-trpc",
+  "web-forms-zod-validation",
+  "web-framework-angular-standalone",
+  "web-framework-react",
+  "web-framework-solidjs",
+  "web-framework-svelte",
+  "web-framework-vue-composition-api",
+  "web-meta-framework-astro",
+  "web-meta-framework-nextjs",
+  "web-meta-framework-nuxt",
+  "web-meta-framework-remix",
+  "web-meta-framework-sveltekit",
+  "web-mocks-msw",
+  "web-routing-react-router",
+  "web-server-state-react-query",
+  "web-state-ngrx-signalstore",
+  "web-state-pinia",
+  "web-state-redux-toolkit",
+  "web-state-zustand",
+  "web-styling-scss-modules",
+  "web-styling-tailwind",
+  "web-testing-playwright-e2e",
+  "web-testing-vitest",
+  "web-tooling-vite",
+] as const satisfies readonly SkillId[];
 
 /** Flat list of every (stack, agent, category) combination for parameterized tests */
 const agentCategoryCases = defaultStacks.flatMap((stack) =>
@@ -86,18 +242,107 @@ function slotsFiledUnder(category: Category): SkillAssignment[][] {
     );
 }
 
+/**
+ * How a (stack, sub-agent) pair is spelled. One definition because two derivations below must
+ * agree on it, and a failure prints it — so it reads the way the misfiling spec's message does.
+ */
+function agentSlotLabel(stackId: string, agentName: AgentName): string {
+  return `${stackId} > ${agentName}`;
+}
+
+/** Every sub-agent name the catalogue declares, once per stack that declares it. */
+const declaredAgentNames = defaultStacks.flatMap((stack) => typedKeys(stack.agents));
+
+/** How many stacks declare one sub-agent, whether or not they file anything under it. */
+function stacksDeclaring(agentName: AgentName): number {
+  return declaredAgentNames.filter((name) => name === agentName).length;
+}
+
+/** The document's per-agent tally: each declared sub-agent against the stacks naming it. */
+const stacksPerAgent = typedFromEntries(
+  [...new Set(declaredAgentNames)].map(
+    (agentName) => [agentName, stacksDeclaring(agentName)] as const,
+  ),
+);
+
+/** The document's per-stack tally, keyed by the stack ids its table lists. */
+const agentCountPerStack = Object.fromEntries(
+  defaultStacks.map((stack) => [stack.id, typedKeys(stack.agents).length]),
+);
+
+/** Every (stack, sub-agent) pair the catalogue declares. */
+const declaredAgentSlots = defaultStacks.flatMap((stack) =>
+  typedKeys(stack.agents).map((agentName) => agentSlotLabel(stack.id, agentName)),
+);
+
+/** The same pairs, restricted to those filing at least one category — what the cases above visit. */
+const filledAgentSlots = new Set(
+  agentCategoryCases.map((slot) => agentSlotLabel(slot.stackId, slot.agentName)),
+);
+
+/** Declared and unfilled: the pairs where the two tallies above disagree. */
+const emptyAgentSlots = declaredAgentSlots.filter((slot) => !filledAgentSlots.has(slot)).sort();
+
+/** Every category the catalogue files an assignment under. */
+const assignedCategories = [...new Set(agentCategoryCases.map((slot) => slot.category))].sort();
+
+/** Every skill the catalogue names, whichever slot names it. */
+const assignedSkillIds = [...new Set(everyAssignment.map((assignment) => assignment.id))].sort();
+
 describe("defaultStacks", () => {
   it("has the expected number of stacks", () => {
     expect(defaultStacks).toHaveLength(EXPECTED_STACK_COUNT);
   });
 
-  it("assigns skills to the sub-agents the catalogue document names", () => {
-    const assigned = [...new Set(agentCategoryCases.map((slot) => slot.agentName))].sort();
+  it("reaches the sub-agents the catalogue document names, on the stack counts it states", () => {
+    expect(
+      stacksPerAgent,
+      "built-in-catalogue.md names which sub-agents the catalogue reaches, which built-ins it leaves empty, and how many stacks each one appears on",
+    ).toStrictEqual(EXPECTED_STACKS_PER_AGENT);
+  });
+
+  it("gives each stack the number of sub-agents the catalogue document states", () => {
+    expect(
+      agentCountPerStack,
+      "built-in-catalogue.md states the distinct per-stack agent counts, and names two of them in its stack table",
+    ).toStrictEqual(EXPECTED_AGENT_COUNT_PER_STACK);
+  });
+
+  // The pin needs the filled case beside it: an empty list and a catalogue that files nothing at
+  // all read identically here, and only `cli-ink-oclif` keeps `cli-tester` from being the second.
+  it("names the stacks that declare a sub-agent and then file nothing under it", () => {
+    expect(
+      emptyAgentSlots,
+      "a declared slot holding no category is why the declared tally and the assigning one differ",
+    ).toStrictEqual([...EXPECTED_EMPTY_AGENT_SLOTS]);
+    expect(
+      filledAgentSlots.has(agentSlotLabel("cli-ink-oclif", "cli-tester")),
+      "the one stack that does hand cli-tester a skill — without it the pin above says nothing",
+    ).toBe(true);
+  });
+
+  it("files assignments under exactly the categories the catalogue document names", () => {
+    expect(
+      assignedCategories,
+      "built-in-catalogue.md states how many distinct categories this catalogue assigns under",
+    ).toStrictEqual([...EXPECTED_ASSIGNED_CATEGORIES]);
+  });
+
+  // The misfiling spec below reads the matrix too, but its lookup drops an id the matrix does
+  // not carry — so a stale id passes that spec rather than failing it. This is where one fails.
+  // Both assertions belong here together: the roster alone cannot say the ids are real, and the
+  // membership check alone is satisfied for free by the empty list a broken derivation hands it.
+  it("names exactly the skills the catalogue document states, all of them in the vendored matrix", () => {
+    const absent = assignedSkillIds.filter((id) => !(id in BUILT_IN_MATRIX.skills));
 
     expect(
-      assigned,
-      "built-in-catalogue.md names which sub-agents the catalogue reaches and which built-ins it leaves empty",
-    ).toStrictEqual([...EXPECTED_STACK_AGENT_NAMES].sort());
+      assignedSkillIds,
+      "built-in-catalogue.md states how many distinct skill ids this catalogue names",
+    ).toStrictEqual([...EXPECTED_ASSIGNED_SKILL_IDS]);
+    expect(
+      absent,
+      "a stack naming a skill the matrix does not carry is dropped silently at generation and warns once per occurrence at runtime, so this is the only place it fails",
+    ).toStrictEqual([]);
   });
 
   it("holds the assignment total the catalogue document states", () => {

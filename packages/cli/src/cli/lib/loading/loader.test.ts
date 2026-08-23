@@ -10,14 +10,13 @@ import {
   loadAllAgents,
   loadMergedAgents,
   loadProjectAgents,
-  loadSkillsByIds,
   loadPluginSkills,
   loadSkillsFromDir,
 } from "./loader";
 import { readFile, glob, directoryExists, fileExists } from "../../utils/fs";
 import { warn } from "../../utils/logger";
+import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import { renderSkillMd, renderAgentYaml } from "../__tests__/content-generators";
-import type { SkillId } from "../../types";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
 
 describe("parseFrontmatter", () => {
@@ -512,102 +511,6 @@ describe("loadProjectAgents", () => {
   });
 });
 
-describe("loadSkillsByIds", () => {
-  it("should warn for unknown skill references", async () => {
-    // buildIdToDirectoryPathMap returns empty -- no SKILL.md files found
-    vi.mocked(glob).mockResolvedValue([]);
-
-    const result = await loadSkillsByIds([{ id: "nonexistent-skill" as SkillId }], "/project");
-
-    expect(result).toStrictEqual({});
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("Unknown skill reference 'nonexistent-skill'"),
-    );
-  });
-
-  it("should warn when skill not found in directory map after expansion", async () => {
-    // buildIdToDirectoryPathMap: skill "my-skill" maps to "my-skill" directory
-    vi.mocked(glob).mockResolvedValue(["my-skill/SKILL.md"]);
-    vi.mocked(readFile)
-      // First call: buildIdToDirectoryPathMap reads the SKILL.md
-      .mockResolvedValueOnce(renderSkillMd("my-skill", "A skill"))
-      // Second call: loadSkillsByIds reads the SKILL.md again, but this time readFile throws
-      .mockRejectedValueOnce(new Error("ENOENT"));
-
-    const result = await loadSkillsByIds([{ id: "my-skill" as SkillId }], "/project");
-
-    // The skill should be skipped due to the readFile error
-    expect(result).toStrictEqual({});
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Could not load skill 'my-skill'"));
-  });
-
-  it("should warn and skip skill with invalid frontmatter", async () => {
-    // buildIdToDirectoryPathMap: SKILL.md found with valid frontmatter
-    vi.mocked(glob).mockResolvedValue(["bad-skill/SKILL.md"]);
-    // Second call: loadSkillsByIds reads SKILL.md — this time invalid frontmatter
-    vi
-      .mocked(readFile)
-      // First call: buildIdToDirectoryPathMap reads SKILL.md — valid frontmatter
-      .mockResolvedValueOnce(renderSkillMd("bad-skill", "A skill")).mockResolvedValueOnce(`---
-description: missing name field
----
-
-Content`);
-
-    const result = await loadSkillsByIds([{ id: "bad-skill" as SkillId }], "/project");
-
-    expect(result).toStrictEqual({});
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("Skipping 'bad-skill': missing or invalid frontmatter"),
-    );
-  });
-
-  it("should warn and skip skill when readFile throws", async () => {
-    // buildIdToDirectoryPathMap: SKILL.md found
-    vi.mocked(glob).mockResolvedValue(["error-skill/SKILL.md"]);
-    vi.mocked(readFile)
-      // First call: buildIdToDirectoryPathMap reads SKILL.md -- valid
-      .mockResolvedValueOnce(renderSkillMd("error-skill", "A skill"))
-      // Second call: loadSkillsByIds reads SKILL.md -- throws (permission error, etc.)
-      .mockRejectedValueOnce(new Error("EACCES: permission denied"));
-
-    const result = await loadSkillsByIds([{ id: "error-skill" as SkillId }], "/project");
-
-    expect(result).toStrictEqual({});
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("Could not load skill 'error-skill'"),
-    );
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("EACCES: permission denied"));
-  });
-
-  it("should load valid skills and skip ones with errors", async () => {
-    vi.mocked(glob).mockResolvedValue(["good-skill/SKILL.md", "bad-skill/SKILL.md"]);
-    vi.mocked(readFile)
-      // buildIdToDirectoryPathMap: reads both SKILL.md files
-      .mockResolvedValueOnce(renderSkillMd("good-skill", "Good skill"))
-      .mockResolvedValueOnce(renderSkillMd("bad-skill", "Bad skill"))
-      // loadSkillsByIds: reads them again
-      .mockResolvedValueOnce(renderSkillMd("good-skill", "Good skill"))
-      .mockRejectedValueOnce(new Error("Disk failure"));
-
-    const result = await loadSkillsByIds(
-      [{ id: "good-skill" as SkillId }, { id: "bad-skill" as SkillId }],
-      "/project",
-    );
-
-    // Verify loaded skill has correct shape
-    expect(result["good-skill" as SkillId]).toStrictEqual({
-      id: "good-skill",
-      description: "Good skill",
-      path: "src/skills/good-skill/",
-    });
-    // Failed skill should not be present
-    expect(result["bad-skill" as SkillId]).toBeUndefined();
-    expect(Object.keys(result)).toStrictEqual(["good-skill"]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Could not load skill 'bad-skill'"));
-  });
-});
-
 describe("loadPluginSkills", () => {
   it("should return empty object when skills directory does not exist", async () => {
     vi.mocked(directoryExists).mockResolvedValue(false);
@@ -640,6 +543,18 @@ describe("loadPluginSkills", () => {
 
     expect(result).toStrictEqual({});
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Skipping"));
+  });
+
+  it("should skip a SKILL.md it cannot read and keep loading the rest", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["good-skill/SKILL.md", "unreadable-skill/SKILL.md"]);
+    vi.mocked(readFile)
+      .mockResolvedValueOnce(renderSkillMd("good-skill", "Good skill"))
+      .mockRejectedValueOnce(new Error("EACCES: permission denied"));
+
+    const result = await loadPluginSkills("/path/to/plugin");
+
+    expect(Object.keys(result)).toStrictEqual(["good-skill"]);
   });
 
   it("should load multiple skills from plugin", async () => {
@@ -679,6 +594,18 @@ const USABLE_METADATA = [
 
 /** Unparseable: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_METADATA = `{{{ this is not: valid: yaml: "at all`;
+
+/**
+ * A metadata.yaml describing its skill in every field, wearing the placeholder
+ * category no domain claims — the one shape a reader can find nothing wrong with
+ * and still have nowhere to put.
+ */
+const PLACEHOLDER_CATEGORY_METADATA = [
+  "displayName: React",
+  "slug: react",
+  "domain: web",
+  `category: ${LOCAL_PSEUDO_CATEGORY}`,
+].join("\n");
 
 describe("readSkillMetadata", () => {
   it("returns the fields of a metadata.yaml that describes its skill", async () => {
@@ -825,5 +752,28 @@ describe("loadSkillsFromDir with requireMetadata", () => {
       description: "React patterns",
       path: ".claude/skills/web-framework-react/",
     });
+  });
+
+  it("skips the skill whose metadata.yaml names the placeholder category", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
+    vi.mocked(fileExists).mockResolvedValue(true);
+    vi.mocked(readFile)
+      .mockResolvedValueOnce(PLACEHOLDER_CATEGORY_METADATA)
+      .mockResolvedValueOnce(renderSkillMd("web-framework-react", "React patterns"));
+
+    const result = await loadSkillsFromDir("/project/.claude/skills", {
+      pathPrefix: ".claude/skills",
+      requireMetadata: true,
+    });
+
+    expect(
+      result.skills,
+      "local-skill discovery refuses this file, so counting the skill here prints a discovery total beside a refusal about the same skill",
+    ).toStrictEqual({});
+    expect(
+      result.unusableMetadata,
+      "the file describes its skill in every field — the skill is the thing with nowhere to go, so nothing here is repairable",
+    ).toStrictEqual([]);
   });
 });

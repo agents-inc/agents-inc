@@ -16,7 +16,7 @@ vi.mock("./plugin-settings", async (importOriginal) => ({
   getVerifiedPluginInstallPaths: mockGetVerifiedPluginInstallPaths,
 }));
 
-import { discoverAllPluginSkills, hasIndividualPlugins, listPluginNames } from "./plugin-discovery";
+import { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
 
 describe("plugin-discovery", () => {
   const REACT_SKILL_ID = "web-framework-react";
@@ -149,53 +149,6 @@ describe("plugin-discovery", () => {
       mockGetVerifiedPluginInstallPaths.mockResolvedValue([]);
 
       await discoverAllPluginSkills("/my/project");
-
-      expect(mockGetVerifiedPluginInstallPaths).toHaveBeenCalledWith("/my/project");
-    });
-  });
-
-  describe("hasIndividualPlugins", () => {
-    it("should return false when no plugins are verified", async () => {
-      mockGetVerifiedPluginInstallPaths.mockResolvedValue([]);
-
-      const result = await hasIndividualPlugins("/project");
-
-      expect(result).toBe(false);
-    });
-
-    it("should return true when verified plugins exist", async () => {
-      mockGetVerifiedPluginInstallPaths.mockResolvedValue([
-        { pluginKey: "react@my-marketplace", installPath: "/cache/react" },
-      ]);
-
-      const result = await hasIndividualPlugins("/project");
-
-      expect(result).toBe(true);
-    });
-
-    it("should return true with multiple verified plugins", async () => {
-      mockGetVerifiedPluginInstallPaths.mockResolvedValue([
-        { pluginKey: "react@my-marketplace", installPath: "/cache/react" },
-        { pluginKey: "zustand@my-marketplace", installPath: "/cache/zustand" },
-      ]);
-
-      const result = await hasIndividualPlugins("/project");
-
-      expect(result).toBe(true);
-    });
-
-    it("should return false when getVerifiedPluginInstallPaths throws", async () => {
-      mockGetVerifiedPluginInstallPaths.mockRejectedValue(new Error("Unexpected error"));
-
-      const result = await hasIndividualPlugins("/project");
-
-      expect(result).toBe(false);
-    });
-
-    it("should pass projectDir to getVerifiedPluginInstallPaths", async () => {
-      mockGetVerifiedPluginInstallPaths.mockResolvedValue([]);
-
-      await hasIndividualPlugins("/my/project");
 
       expect(mockGetVerifiedPluginInstallPaths).toHaveBeenCalledWith("/my/project");
     });

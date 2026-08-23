@@ -111,6 +111,10 @@ export default class Compile extends BaseCommand {
   private async resolveAndLogSource(projectDir: string): Promise<void> {
     this.log(STATUS_MESSAGES.RESOLVING_SOURCE);
     try {
+      // ABORT on an unreadable config, and unreachable with one: `detectInstallation` reads the
+      // same file first and already hard-errors, at both scopes — verified by hand at both.
+      // The posture is recorded anyway, because what makes it unreachable is a guard in another
+      // command's private helper rather than anything visible from here.
       const sourceConfig = await resolveSource({ caller: "stored", projectDir });
       this.log(`Marketplace: ${sourceConfig.sourceOrigin}`);
     } catch (error) {

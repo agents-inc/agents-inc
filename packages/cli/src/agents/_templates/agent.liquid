@@ -2,10 +2,10 @@
 name: {{ agent.name }}
 description: {{ agent.description }}
 tools: {{ agent.tools | join: ", " }}
-{% if agent.disallowed_tools.size > 0 %}disallowedTools: {{ agent.disallowed_tools | join: ", " }}
+{% if agent.disallowedTools.size > 0 %}disallowedTools: {{ agent.disallowedTools | join: ", " }}
 {% endif %}model: {{ agent.model | default: "inherit" }}
 {% if agent.effort %}effort: {{ agent.effort }}
-{% endif %}permissionMode: {{ agent.permission_mode | default: "default" }}
+{% endif %}permissionMode: {{ agent.permissionMode | default: "default" }}
 {% if preloadedSkillIds.size > 0 %}skills:
 {% for skillId in preloadedSkillIds %}  - {{ skillId }}
 {% endfor %}{% endif %}---

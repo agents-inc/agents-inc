@@ -49,10 +49,6 @@ export function disableBuffering(): void {
   messageBuffer = [];
 }
 
-export function pushBufferMessage(level: StartupMessage["level"], text: string): void {
-  messageBuffer.push({ level, text });
-}
-
 // Always visible (not gated by verbose mode).
 // Used for issues the user should know about, like unresolved references.
 //
@@ -67,9 +63,12 @@ export function pushBufferMessage(level: StartupMessage["level"], text: string):
 export type WarnOptions = {
   /**
    * When true, suppresses this warning in a UNIT run — the gate reads `VITEST` from the
-   * environment of the process evaluating it, so it can only ever mean that. Both E2E runners
-   * hand the spawned binary `VITEST: undefined`, so an E2E run of the real binary is a test
-   * environment in which this warning IS printed.
+   * environment of the process evaluating it, so it can only ever mean that. Every E2E runner
+   * hands the spawned binary `VITEST: undefined`, so an E2E run of the real binary is a test
+   * environment in which this warning IS printed. Which runners those are is not a number worth
+   * carrying here — it said "Both" while there were three, and the third was clearing nothing at
+   * all; `src/cli/lib/__tests__/e2e-runner-environment.test.ts` derives the roster and is the
+   * only place that count is correct by construction.
    */
   suppressInTest?: boolean;
 };

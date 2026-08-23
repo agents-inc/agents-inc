@@ -14,6 +14,7 @@ import { isActiveAt } from "../configuration/scope-predicates";
 import { splitConfigByScope } from "../configuration/config-generator";
 import { generateConfigSource } from "../configuration/config-writer";
 import {
+  buildConfigTypesBackgroundData,
   regenerateConfigTypes,
   type ConfigTypesExtras,
 } from "../configuration/config-types-writer";
@@ -34,7 +35,6 @@ import {
   writeGlobalTypesHalf,
 } from "./pair-writer.js";
 import {
-  buildConfigTypesBackgroundData,
   buildProjectTypesExtras,
   mergeGlobalConfigs,
   normalizeProjectPath,
@@ -73,7 +73,7 @@ export type GateReport = {
 /**
  * The gate's public entry points are the ONLY code that mints the pair-write
  * privilege, and each one holds it across its whole consequence flow rather than
- * around the individual write (D-309).
+ * around the individual write.
  *
  * `pair-writer.ts` used to open the token inside each of its own functions, which
  * meant reaching that module by any route — a dynamic import, a re-export — came
@@ -199,8 +199,8 @@ export type WizardWriteArgs = {
 export async function writeScopedFromWizard(args: WizardWriteArgs): Promise<GateReport> {
   return withGateToken(async () => {
     const { finalConfig, matrix, agents, projectDir, projectConfigPath } = args;
-    // Use os.homedir() at runtime (not GLOBAL_INSTALL_ROOT constant) so the path
-    // agrees with getGlobalConfigImportPath() which also calls os.homedir() at runtime
+    // os.homedir() at call time, so the path agrees with getGlobalConfigImportPath(),
+    // which reaches the same home through globalInstallRoot()
     const homeDir = os.homedir();
     const deps: LoadedGateDeps = { matrix, agents };
 
@@ -297,7 +297,7 @@ async function writeFromProjectContext(
 
 /**
  * Regenerates a single scope's config-types.ts from its persisted config,
- * matching the wizard write path exactly (D-228 writer selection):
+ * matching the wizard write path's writer selection exactly:
  * - global scope (home dir): standalone unions narrowed to the config's entries
  * - project scope: import-and-extend form (falls back to standalone when no
  *   global config-types.ts exists)
@@ -554,7 +554,7 @@ export type WriteProjectPartialOptions = {
  * exclusive category in its BARE form (`"web-framework": "web-framework-react"`,
  * no array) — so on a load / re-emit round trip `compactCategories`, which keeps
  * only non-empty arrays, drops the category and the user silently loses an
- * assignment they never touched (D-308).
+ * assignment they never touched.
  *
  * Normalizing at this boundary rather than inside the writer keeps the fix on the
  * one path that can present a denormalized stack: the full loader

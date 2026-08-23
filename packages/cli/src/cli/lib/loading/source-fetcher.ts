@@ -6,7 +6,7 @@ import path from "path";
 import type { z } from "zod";
 
 import {
-  CACHE_DIR,
+  cacheRoot,
   CACHE_HASH_LENGTH,
   CACHE_READABLE_PREFIX_LENGTH,
   MAX_MARKETPLACE_FILE_SIZE,
@@ -35,7 +35,7 @@ import {
   validateNestingDepth,
   warnUnknownFields,
 } from "../schemas";
-import type { MarketplaceFetchResult } from "../../types";
+import type { Marketplace, MarketplaceFetchResult } from "../../types";
 
 /** Safe name pattern: alphanumeric, hyphens, underscores, dots, spaces, @, / (no shell metacharacters) */
 const SAFE_NAME_PATTERN = /^[a-zA-Z0-9@._/ -]+$/;
@@ -74,7 +74,7 @@ export function sanitizeSourceForCache(source: string): string {
 
 function getCacheDir(source: string): string {
   const sanitized = sanitizeSourceForCache(source) || "unknown";
-  return path.join(CACHE_DIR, "sources", sanitized);
+  return path.join(cacheRoot(), "sources", sanitized);
 }
 
 export async function fetchFromSource(
@@ -116,7 +116,7 @@ async function fetchFromLocalSource(source: string, subdir?: string): Promise<Fe
  * Compute the giget tarball cache directory for a source.
  *
  * Replicates giget's internal cache path logic:
- *   `{cacheRoot}/{providerName}/{templateName}`
+ *   `{gigetCacheRoot}/{providerName}/{templateName}`
  *
  * where templateName is `repo.replace("/", "-")` sanitized to `[a-zA-Z0-9-]`.
  * Returns undefined if the source format doesn't match giget's git URI pattern.
@@ -435,6 +435,51 @@ function createDetailedFetchError(error: unknown, source: string): Error {
  */
 export class MarketplaceManifestAbsentError extends Error {}
 
+/**
+ * Thrown when the manifest is there, parses, and names the marketplace something this
+ * CLI refuses to publish under.
+ *
+ * A type of its own for the reason {@link MarketplaceManifestAbsentError} is one, and
+ * one step further: this is the only manifest defect whose remedy is not "repair the
+ * file so the marketplace can be named" but "there is nothing to install here at all".
+ * The name is the namespace Claude Code registers every plugin under, so a name it will
+ * not accept leaves a marketplace that loads and can install nothing — which is the
+ * state `build marketplace` refuses to publish and this is the same rule read on load.
+ * Every other refusal in {@link fetchMarketplace} leaves the marketplace installable
+ * and merely unnameable, so it stays an ordinary `Error` and its reader degrades.
+ */
+export class MarketplaceNameRefusedError extends Error {}
+
+/**
+ * The manifest field whose value a load then USES, spelled against the type so a rename
+ * of it fails here rather than silently stopping the refusal below from firing.
+ */
+const MANIFEST_NAME_FIELD: keyof Marketplace = "name";
+
+/**
+ * Whether a manifest's refusal is about its name.
+ *
+ * Read off the issue's PATH rather than its text, for the reason
+ * {@link MarketplaceManifestAbsentError} is a type: a message is prose that gets
+ * rewritten, and a caller matching on one is a caller that stops working silently.
+ */
+function refusesTheName(issues: readonly z.ZodIssue[]): boolean {
+  return issues.some((issue) => issue.path.length === 1 && issue.path[0] === MANIFEST_NAME_FIELD);
+}
+
+/**
+ * A refused manifest as the throw its readers tell apart — see
+ * {@link MarketplaceNameRefusedError} for which refusal earns which type. The message is
+ * one sentence either way: what separates them is the remedy, not the wording.
+ */
+function manifestRefusal(marketplacePath: string, issues: readonly z.ZodIssue[]): Error {
+  const message =
+    `Invalid ${MARKETPLACE_JSON} at: ${marketplacePath}\n\n` +
+    `Validation errors: ${formatZodIssues([...issues])}`;
+
+  return refusesTheName(issues) ? new MarketplaceNameRefusedError(message) : new Error(message);
+}
+
 export async function fetchMarketplace(source: string): Promise<MarketplaceFetchResult> {
   const result = await fetchFromSource(source, {
     subdir: "", // Root of repo
@@ -469,10 +514,7 @@ export async function fetchMarketplace(source: string): Promise<MarketplaceFetch
   const validation = marketplaceSchema.safeParse(parsed);
 
   if (!validation.success) {
-    throw new Error(
-      `Invalid marketplace.json at: ${marketplacePath}\n\n` +
-        `Validation errors: ${formatZodIssues(validation.error.issues)}`,
-    );
+    throw manifestRefusal(marketplacePath, validation.error.issues);
   }
 
   const marketplace = validation.data;

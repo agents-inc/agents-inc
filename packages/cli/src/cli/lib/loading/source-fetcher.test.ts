@@ -21,7 +21,7 @@ import { elementAt } from "../__tests__/helpers/element-at.js";
  */
 const MARKETPLACE_FLAG = "--marketplace";
 
-/** The word CLI-463 withdraws from the user-facing surface, as a whole word. */
+/** The word withdrawn from the user-facing surface, as a whole word. */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
 describe("source-fetcher", () => {

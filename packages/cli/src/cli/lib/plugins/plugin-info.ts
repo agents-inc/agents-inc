@@ -1,8 +1,7 @@
 import { readdir } from "fs/promises";
 import type { Dirent } from "fs";
 
-import { DEFAULT_DISPLAY_VERSION, DEFAULT_PLUGIN_NAME } from "../../consts";
-import { verbose } from "../../utils/logger";
+import { DEFAULT_PLUGIN_NAME } from "../../consts";
 import { typedKeys } from "../../utils/typed-object";
 import { loadProjectConfig } from "../configuration";
 import {
@@ -16,18 +15,9 @@ import {
 } from "../installation";
 import type { SkillDefinitionMap } from "../../types";
 import type { SkillScope } from "../../types/config";
-import { getProjectPluginsDir } from "./plugin-finder";
-import { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
+import { discoverAllPluginSkills } from "./plugin-discovery";
 
 const AGENT_FILE_EXTENSION = ".md";
-
-export type PluginInfo = {
-  name: string;
-  version: string;
-  skillCount: number;
-  agentCount: number;
-  path: string;
-};
 
 export type InstallationInfo = {
   mode: InstallMode;
@@ -38,34 +28,6 @@ export type InstallationInfo = {
   /** Every directory that actually holds compiled agents; empty when no scope has any. */
   agentDirs: string[];
 };
-
-export async function getPluginInfo(projectDir?: string): Promise<PluginInfo | null> {
-  const dir = projectDir ?? process.cwd();
-
-  try {
-    const pluginNames = await listPluginNames(dir);
-    if (pluginNames.length > 0) {
-      return {
-        name: DEFAULT_PLUGIN_NAME,
-        version: DEFAULT_DISPLAY_VERSION,
-        skillCount: pluginNames.length,
-        agentCount: 0,
-        path: getProjectPluginsDir(dir),
-      };
-    }
-  } catch {
-    verbose("Failed to list plugins for plugin info");
-  }
-
-  return null;
-}
-
-export function formatPluginDisplay(info: PluginInfo): string {
-  return `Plugin: ${info.name} v${info.version}
-  Skills: ${info.skillCount}
-  Agents: ${info.agentCount}
-  Path:   ${info.path}`;
-}
 
 export async function getInstallationInfo(): Promise<InstallationInfo | null> {
   const installation = await detectInstallation();

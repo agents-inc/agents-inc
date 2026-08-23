@@ -133,8 +133,6 @@ async function resolveLocalCopiedSkill(
   };
 }
 
-export type CopyProgressCallback = (completed: number, total: number) => void;
-
 /**
  * Copies every selected skill, and reports the ones that could not be copied BY ID.
  *
@@ -193,34 +191,6 @@ function copyFailureMessage(failures: CopyFailure[], attempted: number): string 
   const lines = failures.map((failure) => `  ${failure.skillId}: ${failure.problem}`);
 
   return `Could not copy ${failures.length} of ${attempted} skills:\n${lines.join("\n")}`;
-}
-
-export async function copySkillsToPluginFromSource(
-  selectedSkillIds: SkillId[],
-  pluginDir: string,
-  sourceResult: SourceLoadResult,
-  sourceSelections?: Partial<Record<SkillId, string>>,
-  onProgress?: CopyProgressCallback,
-): Promise<CopiedSkill[]> {
-  const total = selectedSkillIds.length;
-  let completed = 0;
-
-  return copyEachSkill(selectedSkillIds, async (skillId) => {
-    const skill = getSkillById(skillId);
-
-    const selectedSource = sourceSelections?.[skillId];
-    const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
-
-    const result =
-      skill.local && skill.localPath && !userSelectedRemote
-        ? await resolveLocalCopiedSkill(skill, skill.localPath)
-        : await copySkillFromSource(skill, pluginDir, sourceResult);
-
-    completed++;
-    onProgress?.(completed, total);
-
-    return result;
-  });
 }
 
 function getFlattenedSkillDestPath(skill: ResolvedSkill, localSkillsDir: string): string {

@@ -17,7 +17,7 @@ type PermissionConfig = NonNullable<SettingsFile["permissions"]>;
  *
  * settings.json belongs to Claude Code, which adds keys on its own release schedule. This CLI
  * consumes `permissions` and owns nothing else in the file, so it stays silent about every other
- * field rather than warning about settings it has no standing to judge (D-304).
+ * field rather than warning about settings it has no standing to judge.
  */
 async function readSettingsPermissions(filePath: string): Promise<PermissionConfig | undefined> {
   if (!(await fileExists(filePath))) return undefined;

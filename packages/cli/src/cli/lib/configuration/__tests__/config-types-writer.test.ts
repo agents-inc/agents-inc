@@ -1,18 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
+import { fileURLToPath } from "url";
 import { mkdir, readFile, writeFile } from "fs/promises";
 
-// Override GLOBAL_INSTALL_ROOT to a non-existent path so getGlobalConfigTypesPath
-// returns null. This prevents the dev machine's real ~/.claude-src/ from affecting tests.
-vi.mock("../../../consts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../../../consts")>();
-  return { ...mod, GLOBAL_INSTALL_ROOT: "/tmp/nonexistent-global-root" };
-});
-
 import {
+  buildConfigTypesBackgroundData,
   generateConfigTypesSource,
   generateProjectConfigTypesSource,
-  loadConfigTypesDataInBackground,
   regenerateConfigTypes,
   type ConfigTypesBackgroundData,
 } from "../config-types-writer";
@@ -33,11 +27,15 @@ import {
   SCSS_HONO_REACT_MATRIX,
   HONO_REACT_MATRIX,
 } from "../../__tests__/mock-data/mock-matrices";
-import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND, STANDARD_FILES } from "../../../consts";
+import { createMockAgent } from "../../__tests__/factories/agent-factories.js";
+import { AGENT_DEFS } from "../../__tests__/mock-data/mock-agents.js";
+import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { generateConfigSource } from "../config-writer";
+import { glob } from "../../../utils/fs";
 import { bytewise } from "../../../utils/string";
 
 import type {
+  AgentDefinition,
   AgentName,
   CategoryDefinition,
   CategoryPath,
@@ -814,14 +812,6 @@ describe("regenerateConfigTypes", () => {
     expect(content).toContain('"web-framework-react"');
   });
 
-  it("throws when .claude-src/ does not exist", async () => {
-    const data = loadConfigTypesDataInBackground(undefined, tempDir);
-
-    await expect(regenerateConfigTypes(tempDir, data)).rejects.toThrow(
-      `${CLAUDE_SRC_DIR}/ not found — run '${CLI_INVOKE_COMMAND} init' first`,
-    );
-  });
-
   it("includes extra skill IDs in the generated output", async () => {
     const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
     await mkdir(claudeSrcDir, { recursive: true });
@@ -1078,21 +1068,23 @@ describe("generateProjectConfigTypesSource", () => {
 describe("regenerateConfigTypes with global install", () => {
   let tempDir: string;
   let globalDir: string;
-  let consts: typeof import("../../../consts");
+  let savedHome: string | undefined;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-regen-project-types-test-");
-    // Create a fake global install root that simulates ~/.claude-src/config-types.ts
+    // A global install root the test owns, reached through HOME rather than through a
+    // module-load constant. `globalInstallRoot()` reads os.homedir() at call time and the
+    // setup file's spy honours an overridden HOME, so this is the same mechanism every other
+    // scope-aware reader uses — where the Object.defineProperty this replaced was a second one,
+    // grown around a constant that could not be moved.
     globalDir = await createTempDir("cc-regen-global-root-test-");
-    consts = await import("../../../consts");
-    Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", { value: globalDir, writable: true });
+    savedHome = process.env.HOME;
+    process.env.HOME = globalDir;
   });
 
   afterEach(async () => {
-    Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-      value: "/tmp/nonexistent-global-root",
-      writable: true,
-    });
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
     await cleanupTempDir(tempDir);
     await cleanupTempDir(globalDir);
   });
@@ -1250,11 +1242,11 @@ describe("regenerateConfigTypes with global install", () => {
  * generated types accept ids that resolve to nothing and stop being the
  * hand-edit guard they exist to be.
  *
- * These specs drive that branch through the same seam the sibling
- * `describe("regenerateConfigTypes")` block above uses: `GLOBAL_INSTALL_ROOT` is
- * mocked to a nonexistent path, so `getGlobalConfigTypesPath()` returns null and
- * the writer takes the identical `else` branch a $HOME call takes. Everything
- * from `generateConfigTypesSource` onward is byte-for-byte the same code.
+ * These specs drive that branch by leaving HOME alone: the setup file points
+ * `os.homedir()` at an empty per-file temp directory, so `getGlobalConfigTypesPath()`
+ * finds no global config-types.ts, returns null, and the writer takes the identical
+ * `else` branch a $HOME call takes. Everything from `generateConfigTypesSource`
+ * onward is byte-for-byte the same code.
  *
  * The `extras` assertions are not decoration: `new skill` / `new agent` pass the
  * just-created id as an extra precisely because it is not in the config yet, so
@@ -1345,5 +1337,142 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
       content,
       "an agent definition the config does not install must not appear in the union",
     ).not.toContain('"api-developer"');
+  });
+});
+
+/**
+ * `ConfigTypesBackgroundData` is the union inputs every config-types.ts writer derives its
+ * literals from, and it had THREE producers computing the same two lines: `typesDataFor`
+ * (`config-gate/pair-writer.ts`), `buildConfigTypesBackgroundData` (`config-gate/propagate.ts`)
+ * and an inline block inside a third that loaded for itself and that no command reached.
+ *
+ * Closing two of the three would leave the shape that produced them: two producers that agree
+ * make the third look rigorous while it drifts, which is the mixed-matcher defect CLAUDE.md
+ * names. So the constructor lives once, beside the type, and the roster below is the gate —
+ * every production module that names the type or its derived field is listed with the posture it
+ * takes, and the roster is asserted against a walk of `src/cli`. A fourth producer reddens this
+ * file and its author has to say which side it is on.
+ */
+describe("buildConfigTypesBackgroundData", () => {
+  const CUSTOM_AGENT_DEFS: Partial<Record<AgentName, AgentDefinition>> = {
+    [AGENT_DEFS.webDev.name]: createMockAgent(AGENT_DEFS.webDev.title),
+    [AGENT_DEFS.apiDev.name]: createMockAgent(AGENT_DEFS.apiDev.title, { custom: true }),
+  };
+
+  it("rosters every sub-agent it is handed", () => {
+    expect(
+      buildConfigTypesBackgroundData(EMPTY_MATRIX, CUSTOM_AGENT_DEFS).agentNames,
+    ).toStrictEqual([AGENT_DEFS.webDev.name, AGENT_DEFS.apiDev.name]);
+  });
+
+  it("names as custom exactly the ones whose definition carries the flag", () => {
+    expect(
+      buildConfigTypesBackgroundData(EMPTY_MATRIX, CUSTOM_AGENT_DEFS).customAgentNames,
+      "the custom set drives the // Custom section comment in the emitted AgentName union",
+    ).toStrictEqual([AGENT_DEFS.apiDev.name]);
+  });
+
+  it("carries the matrix through untouched, because it derives nothing from it", () => {
+    expect(buildConfigTypesBackgroundData(EMPTY_MATRIX, CUSTOM_AGENT_DEFS).matrix).toBe(
+      EMPTY_MATRIX,
+    );
+  });
+});
+
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
+
+describe("every producer of ConfigTypesBackgroundData", () => {
+  /** What a module does with the type. Only the first builds one. */
+  type ProducerPosture =
+    /** Declares the type and the one constructor for it. */
+    | "the one constructor"
+    /** Calls the constructor and reads the value; builds nothing of its own. */
+    | "calls the constructor"
+    /** Re-exports the type and builds nothing. */
+    | "re-export only"
+    /** Builds its own. Named, not tolerated silently. */
+    | "its own constructor";
+
+  type BackgroundDataReader = {
+    /** Path relative to the package root. */
+    file: string;
+    posture: ProducerPosture;
+    /** Why that posture is the right one here. */
+    why: string;
+  };
+
+  const READERS = [
+    {
+      file: "src/cli/lib/config-gate/index.ts",
+      posture: "calls the constructor",
+      why: "`writeScopeConfigTypes` wraps the gate deps it already loaded and hands them to `regenerateConfigTypes`.",
+    },
+    {
+      file: "src/cli/lib/config-gate/pair-writer.ts",
+      posture: "calls the constructor",
+      why: "`renderStandaloneTypes` needs the same three values to call `generateConfigTypesSource`; it built them itself as `typesDataFor` until this roster landed.",
+    },
+    {
+      file: "src/cli/lib/config-gate/propagate.ts",
+      posture: "calls the constructor",
+      why: "`writeProjectConfigPair` regenerates a propagated project's types from the matrix and agents the fan-out already loaded. It declared its own `buildConfigTypesBackgroundData` until this roster landed.",
+    },
+    {
+      file: "src/cli/lib/configuration/index.ts",
+      posture: "re-export only",
+      why: "The configuration barrel.",
+    },
+    {
+      file: "src/cli/lib/configuration/config-types-writer.ts",
+      posture: "the one constructor",
+      why: "The type is declared here, so the constructor is too. Every producer is handed the matrix and the agent roster it builds from; none loads them for itself.",
+    },
+  ] as const satisfies readonly BackgroundDataReader[];
+
+  /**
+   * The two names a module must reach for to build one: the type it would annotate the value
+   * with, and the one field it cannot fill without deriving something. A module naming neither
+   * holds no `ConfigTypesBackgroundData`, so the walk is exhaustive over the class.
+   */
+  const CONSTRUCTION_TOKENS = ["ConfigTypesBackgroundData", "customAgentNames"];
+
+  /** A spec or a test-support module: neither ships, so neither is bound by the rule. */
+  function isTestSource(file: string): boolean {
+    return file.includes("/__tests__/") || /\.test\.tsx?$/.test(file);
+  }
+
+  async function readSource(file: string): Promise<string> {
+    return readFile(path.join(PACKAGE_ROOT, file), "utf-8");
+  }
+
+  async function productionFilesNaming(tokens: readonly string[]): Promise<string[]> {
+    const files = await glob("src/cli/**/*.{ts,tsx}", PACKAGE_ROOT);
+    const production = files.filter((file) => !isTestSource(file));
+    const verdicts = await Promise.all(
+      production.map(async (file) => {
+        const source = await readSource(file);
+        return tokens.some((token) => source.includes(token)) ? [file] : [];
+      }),
+    );
+    return verdicts.flat().sort(bytewise);
+  }
+
+  it("is one of the modules rostered here, so a fourth producer cannot land unjudged", async () => {
+    expect(
+      await productionFilesNaming(CONSTRUCTION_TOKENS),
+      "a module that builds or reads this type and is not rostered above is one nothing holds to the rule",
+    ).toStrictEqual(READERS.map((reader) => reader.file).sort(bytewise));
+  });
+
+  /**
+   * The half that reads the tree rather than the roster above. `agents[name]?.custom === true` is
+   * the derivation itself — the one line a second constructor cannot avoid writing — so a module
+   * carrying it has computed the custom set for itself whatever posture its roster row claims.
+   */
+  it("derives the custom set in exactly one module", async () => {
+    expect(
+      await productionFilesNaming(["?.custom === true"]),
+      "two modules deriving which sub-agents are custom is two answers to one question",
+    ).toStrictEqual(["src/cli/lib/configuration/config-types-writer.ts"]);
   });
 });

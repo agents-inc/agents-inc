@@ -1,5 +1,4 @@
 import fs from "fs";
-import os from "os";
 import { isDeepEqual, unique } from "remeda";
 import type {
   AgentDefinition,
@@ -23,7 +22,7 @@ import {
 } from "../configuration/scope-predicates";
 import { generateConfigSource, type ConfigSourceOptions } from "../configuration/config-writer";
 import {
-  type ConfigTypesBackgroundData,
+  buildConfigTypesBackgroundData,
   type ConfigTypesExtras,
   deriveCategories,
   deriveDomains,
@@ -208,9 +207,9 @@ export function mergeGlobalConfigs(
 
 /**
  * The single normalization for every value compared against the global config's
- * `projects` array — the one written by {@link registerProjectPath}, the one
- * filtered by {@link deregisterProjectPath}, and the current-project skip in
- * {@link propagateGlobalChangesToProjects}. Symlinks are resolved, so an entry
+ * `projects` array — the one written by {@link registerProjectPath}, the one the
+ * gate's `deregister-project` mutation filters against, and the current-project
+ * skip in {@link propagateGlobalChangesToProjects}. Symlinks are resolved, so an entry
  * stored under one of them matches byte-for-byte under the others. The two ends
  * normalizing differently is what left symlinked layouts (macOS `/tmp`, a
  * `~/dev/repo` pointing at `/data/repo`) registered forever after an uninstall.
@@ -252,39 +251,6 @@ async function registerProjectPath(
   }
 
   return { config: { ...globalConfig, projects: [...valid, normalizedPath] }, changed: true };
-}
-
-/**
- * Removes a project directory from the global config's `projects` array.
- * Loads global config, removes the path, and writes back if changed.
- * Paths are normalized via {@link normalizeProjectPath} — the same rule
- * {@link registerProjectPath} stored them under, so the filter matches.
- *
- * REQUIRES the gate's write token; it does not mint one (D-309). No production
- * path reaches this — `mutateGlobal`'s `deregister-project` variant replaced it
- * at the only call site — so there is no entry point to move the mint up to, and
- * private code opening the privilege for its own caller is exactly what D-309
- * closed. Its remaining callers are specs, which take the token explicitly the
- * same way they do to seed a global-pair fixture.
- */
-export async function deregisterProjectPath(projectDir: string): Promise<void> {
-  const homeDir = os.homedir();
-  const existingGlobal = await loadProjectConfigFromDir(homeDir);
-  if (!existingGlobal?.config.projects?.length) return;
-
-  const normalizedPath = normalizeProjectPath(projectDir);
-  const filtered = existingGlobal.config.projects.filter((p) => p !== normalizedPath);
-
-  if (filtered.length === existingGlobal.config.projects.length) return;
-
-  const updatedConfig = { ...existingGlobal.config, projects: filtered };
-  const globalConfigPath = getProjectConfigPath(homeDir);
-  // The one write in this module that targets the global pair rather than a
-  // project's, so the one the caller's token has to cover. Config half only: the
-  // registration list is not inlined anywhere, so the types sibling would come
-  // out byte-identical.
-  await writeConfigFile(updatedConfig, globalConfigPath);
-  verbose(`Deregistered project ${normalizedPath} from global config`);
 }
 
 function isProjectScopedEntry(entry: ScopedEntry): boolean {
@@ -408,7 +374,7 @@ function buildProjectCollisionTest(
  * visible again once the collision that produced it is gone.
  *
  * A derived mask and a user-authored tombstone are BYTE-IDENTICAL in config.ts — both are
- * `{ id, scope: "global", excluded: true }` — but since D-277 the wizard can no longer mint
+ * `{ id, scope: "global", excluded: true }` — but the wizard can no longer mint
  * the second kind on its own: a project-scope deselect of a globally-installed skill is
  * refused, and a domain deselect only drops what the project owns. The one user route to a
  * global tombstone is the `s` scope toggle (G→P), which always pairs the tombstone with an
@@ -427,7 +393,7 @@ function dropOrphanedDerivedMasks(
 }
 
 /**
- * Agent mirror of {@link dropOrphanedDerivedMasks}, identity collisions only (D-277): agents
+ * Agent mirror of {@link dropOrphanedDerivedMasks}, identity collisions only: agents
  * have no categories, so the project-scoped sibling with the same name is the only thing a
  * mask can be justified by.
  */
@@ -443,7 +409,7 @@ function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): 
  * alongside what it already owns at project scope. Two collision kinds, both keyed
  * against the SAME live global config:
  *
- * 1. IDENTITY — the project owns the same id at project scope (D-268). Without the
+ * 1. IDENTITY — the project owns the same id at project scope. Without the
  *    mask, `partitionInlinedConfigEntries` re-inlines the global copy as a SECOND
  *    active entry, leaving one id active at BOTH scopes instead of rendering the
  *    dual-scope `[P][G]` pair.
@@ -452,8 +418,8 @@ function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): 
  *    alone cannot see this, so a project owning Vue plus a global install of React
  *    ends up with two active skills in a category that permits one.
  *
- * The project-owned skill wins locally. This is DELIBERATELY ASYMMETRIC with D-260,
- * where a user-initiated radio swap in `toggleTechnology` refuses to displace a
+ * The project-owned skill wins locally. This is DELIBERATELY ASYMMETRIC with the `s`
+ * round trip, where a user-initiated radio swap in `toggleTechnology` refuses to displace a
  * globally-locked skill: there the user is actively trying to drop a shared install,
  * whereas here the collision is PUSHED IN by a global install landing on pre-existing
  * project state. Letting global win would silently uninstall the user's own skill.
@@ -482,7 +448,7 @@ function maskCollidingGlobalSkills(
 }
 
 /**
- * Agent mirror of {@link maskCollidingGlobalSkills}, identity collisions only (D-259).
+ * Agent mirror of {@link maskCollidingGlobalSkills}, identity collisions only.
  * Agents have no categories, so there is no grouping dimension to reconcile.
  */
 function maskCollidingGlobalAgents(
@@ -651,7 +617,7 @@ export async function writeProjectConfigPair(
   // `import type { SkillId as GlobalSkillId, ... }` and extends with any
   // project-scoped items the project owns. Without this, a global-scope install
   // would overwrite the project's import-form types with the standalone/inlined
-  // form (D-216 Regression #1 / D-228).
+  // form.
   await regenerateConfigTypes(
     projectDir,
     Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)),
@@ -724,7 +690,7 @@ export async function propagateGlobalChangesToProjects(
       // Derive project split: project-scoped entries plus tombstones that still
       // correspond to a live global install. Tombstones whose global entry has been
       // removed are dropped here so the project stops referencing a global item that
-      // no longer exists (D-233 Scenario C). The stack is reconciled against the same
+      // no longer exists. The stack is reconciled against the same
       // now-current global data so a project-scoped agent stops referencing a global
       // skill that was just removed at global scope. `projectConfig.skills` (pre-
       // reconciliation) is used to detect removed globals because the removed entry
@@ -869,15 +835,6 @@ function matchGlobalToSession(
 
   const config = mergeConfigs(globalSplit, existingGlobalConfig, { authoritativeScope: "all" });
   return { config, changed: !isDeepEqual(config, existingGlobalConfig) };
-}
-
-export function buildConfigTypesBackgroundData(
-  matrix: MergedSkillsMatrix,
-  agents: Partial<Record<AgentName, AgentDefinition>>,
-): ConfigTypesBackgroundData {
-  const agentNames = typedKeys(agents);
-  const customAgentNames = agentNames.filter((name) => agents[name]?.custom === true);
-  return { matrix, agentNames, customAgentNames };
 }
 
 /** Category keys the emitted stack holds, across every agent it configures. */

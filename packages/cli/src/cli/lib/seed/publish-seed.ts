@@ -16,8 +16,8 @@ export type PublishSeedResult = { ok: true; id: string } | { ok: false; error: s
 /**
  * Stores a configuration and returns the id it was given.
  *
- * The outbound half of the boundary {@link import("./fetch-seed.js").fetchSeedConfig} owns the
- * inbound half of, and it keeps the same posture: every failure is a message rather than a throw.
+ * The outbound half of the boundary `fetchSeedConfig` in `fetch-seed.ts` owns the inbound half
+ * of, and it keeps the same posture: every failure is a message rather than a throw.
  * Nothing local has been written by the time this runs, so there is nothing to roll back and the
  * caller's only job is to explain.
  *

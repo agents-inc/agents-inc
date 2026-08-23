@@ -1,19 +1,18 @@
 import { parse as parseYaml } from "yaml";
 import path from "path";
-import { unique } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
 import { extractFrontmatter } from "../../utils/frontmatter";
 import { glob, readFile, directoryExists, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { CLAUDE_SRC_DIR, DIRS, STANDARD_DIRS, STANDARD_FILES, PROJECT_ROOT } from "../../consts";
-import type {
-  AgentDefinition,
-  AgentName,
-  SkillDefinition,
-  SkillDefinitionMap,
-  SkillFrontmatter,
-  SkillId,
-} from "../../types";
+import {
+  CLAUDE_SRC_DIR,
+  DIRS,
+  LOCAL_PSEUDO_CATEGORY,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+  PROJECT_ROOT,
+} from "../../consts";
+import type { AgentDefinition, AgentName, SkillDefinitionMap, SkillFrontmatter } from "../../types";
 import {
   describeMetadataSchemaFailure,
   formatZodIssues,
@@ -22,7 +21,7 @@ import {
   agentYamlConfigSchema,
 } from "../schemas";
 import type { LocalRawMetadata } from "../skills/local-skill-loader";
-import { typedKeys } from "../../utils/typed-object";
+import { METADATA_KEYS } from "../metadata-keys";
 
 /** A skill's metadata.yaml as the fields a skill is described by, or why it describes none. */
 export type SkillMetadataRead =
@@ -64,6 +63,25 @@ export async function readSkillMetadata(metadataPath: string): Promise<SkillMeta
   }
 
   return { usable: true, metadata: validated.data };
+}
+
+/**
+ * Whether this metadata names the `local` placeholder instead of a real category.
+ *
+ * `local` is a trapdoor rather than a category: it belongs to no domain, so a skill wearing it
+ * joins no grid tab and is dropped from every sub-agent's stack. Both passes that read an
+ * installed skill's metadata.yaml share this verdict — the local-skill discovery behind the
+ * wizard's matrix, and the discovery behind `compile`'s skill count. One reader loading what the
+ * other refused is what printed a discovery total beside a refusal about the same skill, in a
+ * single run.
+ *
+ * The sibling of {@link readSkillMetadata}, one question over: that one asks whether the file
+ * describes a skill at all, this one whether the skill it describes can be reached. A file can
+ * pass the first and fail this, which is why the two verdicts are separate and why this one is
+ * not repairable — nothing in the file is malformed.
+ */
+export function namesPlaceholderCategory(metadata: LocalRawMetadata): boolean {
+  return metadata.category === LOCAL_PSEUDO_CATEGORY;
 }
 
 function isFieldMapping(value: unknown): value is Record<string, unknown> {
@@ -178,96 +196,6 @@ export async function loadProjectAgents(
   });
 }
 
-async function buildIdToDirectoryPathMap(
-  skillsDir: string,
-): Promise<Partial<Record<SkillId, string>>> {
-  const files = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
-  const parsed = await Promise.all(
-    files.map(async (file) => {
-      const fullPath = path.join(skillsDir, file);
-      return { file, frontmatter: parseFrontmatter(await readFile(fullPath), fullPath) };
-    }),
-  );
-
-  // Each skill is reachable by its frontmatter name AND its directory path
-  return Object.fromEntries(
-    parsed
-      .filter((entry): entry is { file: string; frontmatter: SkillFrontmatter } =>
-        Boolean(entry.frontmatter?.name),
-      )
-      .flatMap(({ file, frontmatter }) => {
-        const directoryPath = file.replace(`/${STANDARD_FILES.SKILL_MD}`, "");
-        return [
-          [frontmatter.name, directoryPath],
-          [directoryPath, directoryPath],
-        ];
-      }),
-  );
-}
-
-export async function loadSkillsByIds(
-  skillIds: Array<{ id: SkillId }>,
-  projectRoot: string,
-): Promise<SkillDefinitionMap> {
-  const skills: SkillDefinitionMap = {};
-  const skillsDir = path.join(projectRoot, DIRS.skills);
-
-  const idToDirectoryPath = await buildIdToDirectoryPathMap(skillsDir);
-
-  /** A directory reference expands to every skill under it; warns when nothing matches. */
-  const expandDirectoryRef = (skillId: SkillId): SkillId[] => {
-    const childSkills = typedKeys(idToDirectoryPath).filter((id) =>
-      idToDirectoryPath[id]?.startsWith(`${skillId}/`),
-    );
-    if (childSkills.length === 0) {
-      warn(`Unknown skill reference '${skillId}'`);
-      return [];
-    }
-    verbose(`Expanded directory '${skillId}' to ${childSkills.length} skills`);
-    return childSkills;
-  };
-
-  const uniqueSkillIds = unique(
-    skillIds.flatMap(({ id }) => (idToDirectoryPath[id] ? [id] : expandDirectoryRef(id))),
-  );
-
-  for (const skillId of uniqueSkillIds) {
-    const directoryPath = idToDirectoryPath[skillId];
-    if (!directoryPath) {
-      warn(`Could not find skill '${skillId}': no matching skill found`);
-      continue;
-    }
-
-    const skillPath = path.join(skillsDir, directoryPath);
-    const skillMdPath = path.join(skillPath, STANDARD_FILES.SKILL_MD);
-
-    try {
-      const content = await readFile(skillMdPath);
-      const frontmatter = parseFrontmatter(content, skillMdPath);
-
-      if (!frontmatter) {
-        warn(`Skipping '${skillId}': missing or invalid frontmatter`);
-        continue;
-      }
-
-      const canonicalId = frontmatter.name;
-      const skillDef: SkillDefinition = {
-        id: canonicalId,
-        path: `${DIRS.skills}/${directoryPath}/`,
-        description: frontmatter.description,
-      };
-
-      skills[canonicalId] = skillDef;
-
-      verbose(`Loaded skill: ${canonicalId} (from ${directoryPath})`);
-    } catch (error) {
-      warn(`Could not load skill '${skillId}': ${getErrorMessage(error)}`);
-    }
-  }
-
-  return skills;
-}
-
 export type LoadSkillsFromDirOptions = {
   /** Path prefix recorded on each skill's `path` (e.g. LOCAL_SKILLS_PATH or "skills"). */
   pathPrefix?: string;
@@ -337,10 +265,18 @@ export async function loadSkillsFromDir(
       // A metadata.yaml that describes no skill is reported to the caller rather
       // than loaded around: the local-skill discovery behind config-types
       // generation refuses the same file, and compile refuses the whole run over it.
-      const metadata = await readSkillMetadata(metadataPath);
-      if (!metadata.usable) {
-        unusableMetadata.push({ skillDirName, metadataPath, reason: metadata.reason });
+      const read = await readSkillMetadata(metadataPath);
+      if (!read.usable) {
+        unusableMetadata.push({ skillDirName, metadataPath, reason: read.reason });
         verbose(`  Unusable ${STANDARD_FILES.METADATA_YAML} in '${skillDirName}'`);
+        continue;
+      }
+
+      // Skipped rather than reported, and silently: the file is intact, so there is nothing
+      // here to repair or refuse a run over — and the sentence telling the user which field
+      // to fix is `extractLocalSkill`'s, which every command reaching here also runs.
+      if (namesPlaceholderCategory(read.metadata)) {
+        verbose(`  Placeholder ${METADATA_KEYS.CATEGORY} in '${skillDirName}'`);
         continue;
       }
     }

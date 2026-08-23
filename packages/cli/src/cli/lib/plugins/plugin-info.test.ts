@@ -3,11 +3,8 @@ import path from "path";
 import type { Dirent } from "fs";
 import { describe, it, expect, vi } from "vitest";
 import {
-  getPluginInfo,
-  formatPluginDisplay,
   getInstallationInfo,
   formatInstallationDisplay,
-  type PluginInfo,
   type InstallationInfo,
 } from "./plugin-info";
 import type { Installation } from "../installation";
@@ -25,14 +22,8 @@ vi.mock("fs/promises", () => ({
   readdir: vi.fn(),
 }));
 
-vi.mock("./plugin-finder", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./plugin-finder")>()),
-  getProjectPluginsDir: vi.fn(),
-}));
-
 vi.mock("./plugin-discovery", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./plugin-discovery")>()),
-  listPluginNames: vi.fn(),
   discoverAllPluginSkills: vi.fn().mockResolvedValue({}),
 }));
 
@@ -49,8 +40,7 @@ vi.mock("../configuration", async (importOriginal) => ({
 }));
 
 import { readdir } from "fs/promises";
-import { getProjectPluginsDir } from "./plugin-finder";
-import { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
+import { discoverAllPluginSkills } from "./plugin-discovery";
 import { directoryExists } from "../../utils/fs";
 import { detectInstallation } from "../installation";
 import { loadProjectConfig } from "../configuration";
@@ -59,8 +49,6 @@ import { createMockSkillDefinition } from "../__tests__/factories/skill-factorie
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 
 const mockedReaddir = vi.mocked(readdir);
-const mockedGetProjectPluginsDir = vi.mocked(getProjectPluginsDir);
-const mockedListPluginNames = vi.mocked(listPluginNames);
 const mockedDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
 const mockedDirectoryExists = vi.mocked(directoryExists);
 const mockedDetectInstallation = vi.mocked(detectInstallation);
@@ -83,87 +71,6 @@ const PROJECT_PLUGIN_SKILLS: SkillDefinitionMap = {
 };
 
 describe("plugin-info", () => {
-  describe("getPluginInfo", () => {
-    it("should return null when no plugins exist", async () => {
-      mockedListPluginNames.mockResolvedValue([]);
-
-      const result = await getPluginInfo();
-
-      expect(result).toBeNull();
-    });
-
-    it("should return plugin info with skill count from plugin names", async () => {
-      mockedListPluginNames.mockResolvedValue(["react@my-marketplace", "zustand@my-marketplace"]);
-      const pluginsDir = path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR);
-      mockedGetProjectPluginsDir.mockReturnValue(pluginsDir);
-
-      const result = await getPluginInfo();
-
-      expect(result).toStrictEqual({
-        name: DEFAULT_PLUGIN_NAME,
-        version: "0.0.0",
-        skillCount: 2,
-        agentCount: 0,
-        path: pluginsDir,
-      });
-    });
-
-    it("should return null when listPluginNames throws", async () => {
-      mockedListPluginNames.mockRejectedValue(new Error("ENOENT"));
-
-      const result = await getPluginInfo();
-
-      expect(result).toBeNull();
-    });
-
-    it("should accept custom projectDir", async () => {
-      mockedListPluginNames.mockResolvedValue(["react@marketplace"]);
-      const customPluginsDir = path.join("/custom", CLAUDE_DIR, PLUGINS_SUBDIR);
-      mockedGetProjectPluginsDir.mockReturnValue(customPluginsDir);
-
-      const result = await getPluginInfo("/custom");
-
-      expect(mockedListPluginNames).toHaveBeenCalledWith("/custom");
-      expect(result).not.toBeNull();
-      expect(result!.path).toBe(customPluginsDir);
-    });
-  });
-
-  describe("formatPluginDisplay", () => {
-    it("should format plugin info correctly", () => {
-      const pluginsDir = path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR);
-      const info: PluginInfo = {
-        name: "my-plugin",
-        version: "1.2.3",
-        skillCount: 5,
-        agentCount: 3,
-        path: pluginsDir,
-      };
-
-      const result = formatPluginDisplay(info);
-
-      expect(result).toContain("Plugin: my-plugin v1.2.3");
-      expect(result).toContain("Skills: 5");
-      expect(result).toContain("Agents: 3");
-      expect(result).toContain(`Path:   ${pluginsDir}`);
-    });
-
-    it("should format info with zero counts", () => {
-      const info: PluginInfo = {
-        name: "empty-plugin",
-        version: "0.0.0",
-        skillCount: 0,
-        agentCount: 0,
-        path: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
-      };
-
-      const result = formatPluginDisplay(info);
-
-      expect(result).toContain("Skills: 0");
-      expect(result).toContain("Agents: 0");
-    });
-  });
-
   describe("getInstallationInfo", () => {
     it("should return null when no installation is detected", async () => {
       mockedDetectInstallation.mockResolvedValue(null);

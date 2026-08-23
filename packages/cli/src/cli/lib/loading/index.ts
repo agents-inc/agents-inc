@@ -3,12 +3,12 @@ export {
   type LoadedSkills,
   type SkillMetadataRead,
   type UnusableSkillMetadata,
+  namesPlaceholderCategory,
   parseFrontmatter,
   readSkillMetadata,
   loadAllAgents,
   loadMergedAgents,
   loadProjectAgents,
-  loadSkillsByIds,
   loadPluginSkills,
   loadSkillsFromDir,
 } from "./loader";

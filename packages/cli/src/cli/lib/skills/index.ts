@@ -1,5 +1,3 @@
-export { fetchSkills } from "./skill-fetcher";
-
 export {
   type ForkedFromMetadata,
   type LocalSkillMetadata,
@@ -10,10 +8,8 @@ export {
 
 export {
   type CopiedSkill,
-  type CopyProgressCallback,
   copySkill,
   copySkillFromSource,
-  copySkillsToPluginFromSource,
   copySkillsToLocalFlattened,
 } from "./skill-copier";
 

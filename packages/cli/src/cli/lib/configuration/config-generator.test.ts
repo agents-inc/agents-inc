@@ -1902,9 +1902,15 @@ describe("config-generator", () => {
      * inherited whenever the derivation yields nothing, because the override guarding the
      * spread is conditional and the spread underneath it is not.
      *
+     * The assertion reads `result.global.stack` with no `?? {}` fallback, and that is the whole
+     * of what makes it an assertion about an EMPTY stack rather than about a missing one: the
+     * two states are what the function's own doc comment calls load-bearing, because the merger
+     * reads an absent stack as no statement and keeps the stale one. A `?? {}` launders them
+     * together, and a conditional `stack` key then satisfies this `it` unchanged.
+     *
      * See `.ai-docs/agent-findings/2026-08-17-the-global-split-carries-the-whole-stack-when-no-global-agent-survives.md`.
      */
-    it("gives the global partition no stack when no global agent survives", () => {
+    it("gives the global partition an empty stack when no global agent survives", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"]),
         agents: buildAgentConfigs(["web-developer"]),
@@ -1921,8 +1927,8 @@ describe("config-generator", () => {
       // stack row left names a sub-agent the global partition does not install.
       expectConfigAgents(result.global, []);
       expect(
-        result.global.stack ?? {},
-        "a stack row for a sub-agent the global config does not declare is not the global config's",
+        result.global.stack,
+        "an empty stack says the derivation ran and yielded nothing; an absent one says nothing at all, and the merger keeps the stale rows",
       ).toStrictEqual({});
     });
 
@@ -1931,7 +1937,7 @@ describe("config-generator", () => {
      * unconditional spread, so a derivation that yields nothing inherits the whole config's
      * stack on either — and a fix that closes one side leaves the mirror live.
      */
-    it("gives the project partition no stack when no project agent survives", () => {
+    it("gives the project partition an empty stack when no project agent survives", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
           scope: "global",
@@ -1951,9 +1957,39 @@ describe("config-generator", () => {
       // the project partition does not install.
       expectConfigAgents(result.project, []);
       expect(
-        result.project.stack ?? {},
-        "a stack row for a sub-agent the project config does not declare is not the project config's",
+        result.project.stack,
+        "an empty stack says the derivation ran and yielded nothing; an absent one says nothing at all, and the merger keeps the stale rows",
       ).toStrictEqual({});
+    });
+
+    /**
+     * The ruling this pins (owner, 2026-08-20): a project owns its own domain
+     * selection rather than inheriting the global one.
+     *
+     * It is pinned on BOTH partitions deliberately. The field was uncovered here until this
+     * test, which is exactly why the function's own doc comment could claim for months that
+     * the project half was cleared while the code copied it — both project writers recompute
+     * the field before writing, so no emitted config could tell the two stories apart.
+     */
+    it("carries selectedDomains onto both partitions, because a project owns its own domains", () => {
+      const config = buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: "agents-inc",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        selectedDomains: ["web"],
+      });
+
+      const result = splitConfigByScope(config);
+
+      expect(result.global.selectedDomains, "the global partition keeps the selection").toEqual([
+        "web",
+      ]);
+      expect(
+        result.project.selectedDomains,
+        "the project partition keeps its OWN selection — it does not inherit global's",
+      ).toEqual(["web"]);
     });
   });
 

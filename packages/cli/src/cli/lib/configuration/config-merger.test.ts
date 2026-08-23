@@ -1000,7 +1000,7 @@ describe("config-merger", () => {
 
       it("should drop existing tombstone when new config is authoritative for the id (active only)", () => {
         // newConfig carries only the active project entry — it does NOT carry
-        // the existing tombstone forward. Per D-221 semantics, newConfig is
+        // the existing tombstone forward. The merge treats newConfig as
         // authoritative for every id it references: the stale tombstone is
         // dropped on the next merge because the wizard did not emit it.
         // Skills at unrelated ids remain untouched.
@@ -1176,7 +1176,7 @@ describe("config-merger", () => {
         // A real installed skill absent from the currently-loaded source matrix is skipped by the
         // wizard (populateFromSkillIds) and never reaches newConfig. It is removed like any other
         // absent owned entry — `edit` names it and says why rather than the config keeping an
-        // entry the same run's summary announced as gone (CLI-450).
+        // entry the same run's summary announced as gone.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
@@ -1305,8 +1305,8 @@ describe("config-merger", () => {
 
       it("should drop existing tombstone when new config is authoritative for the name (active only)", () => {
         // newConfig carries only the active project entry — it does NOT carry
-        // the existing global:excluded tombstone forward. Per D-221 semantics,
-        // newConfig is authoritative for every name it references: the stale
+        // the existing global:excluded tombstone forward. The merge treats
+        // newConfig as authoritative for every name it references: the stale
         // tombstone is dropped on the next merge because the wizard did not
         // emit it (this is exactly how P→G scope migration cleans up).
         // Agents at unrelated names remain untouched.

@@ -179,7 +179,7 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   const pluginSkills = await discoverAllPluginSkills(projectDir);
   const skillIds = typedKeys<SkillId>(pluginSkills);
 
-  // D-160: Also discover global plugins when editing from a project directory.
+  // Also discover global plugins when editing from a project directory.
   // Follows the same global+project merge pattern as local skills in source-loader.ts.
   const homeDir = os.homedir();
   if (!isHomeDirectory(projectDir)) {

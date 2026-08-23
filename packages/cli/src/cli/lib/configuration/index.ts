@@ -71,5 +71,4 @@ export {
   generateProjectConfigTypesSource,
   getGlobalConfigTypesPath,
   type ConfigTypesBackgroundData,
-  loadConfigTypesDataInBackground,
 } from "./config-types-writer";

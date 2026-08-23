@@ -5,6 +5,8 @@ import { z } from "zod";
 import { glob, readFile, fileExists, directoryExists } from "../utils/fs";
 import {
   DIRS,
+  MARKETPLACE_JSON,
+  PLUGIN_MANIFEST_DIR,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
@@ -25,6 +27,7 @@ import { parseFrontmatter } from "./loading/loader";
 import { ConfigDefaultExportError, loadConfig, loadProjectSourceConfig } from "./configuration";
 import { checkMatrixHealth, type MatrixHealthIssue } from "./matrix";
 import { loadSkillsMatrixFromSource } from "./loading/source-loader";
+import { MarketplaceNameRefusedError } from "./loading/source-fetcher";
 import { matrix } from "./matrix/matrix-provider";
 import { getErrorMessage } from "../utils/errors";
 import { formatZodErrors } from "./schema-validator";
@@ -63,6 +66,9 @@ export type MarketplaceReader = "author" | "consumer";
  * A marketplace author's checkout answers yes; a consumer project answers no.
  */
 export async function isSourceRepo(dir: string): Promise<boolean> {
+  // ABORT on an unreadable config, and it is caught rather than fatal at both callers: `doctor`
+  // reaches this through `safeCheck`, so the throw becomes a failed row instead of an aborted
+  // command, and its other caller asks only where no config file exists at all.
   const sourceConfig = await loadProjectSourceConfig(dir);
   return directoryExists(path.join(dir, sourceConfig?.skillsDir ?? SKILLS_DIR_PATH));
 }
@@ -212,6 +218,9 @@ export async function validateSource(
     return buildResult(issues, 0);
   }
 
+  // ABORT on an unreadable config, caught by `validateOneSource`, which turns it into an issue
+  // against this marketplace. Defaulting past it would validate whatever sits at `src/skills/` and
+  // call a marketplace whose skills live elsewhere empty.
   const sourceProjectConfig = await loadProjectSourceConfig(resolvedPath);
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
   const skillsDir = path.join(resolvedPath, skillsDirRelPath);
@@ -312,9 +321,15 @@ function checkMetadataSchema(rawMetadata: unknown, relPath: string): SourceValid
 }
 
 /**
+ * The manifest as a reader of the report has to type it — the location half of the row
+ * `doctor` prints, and therefore the file they open.
+ */
+const MARKETPLACE_MANIFEST_PATH = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
+
+/**
  * Whether every relationship the source declares resolves to a skill it actually holds.
- * A source whose categories/rules could not be loaded is a warning rather than a failure: the
- * per-skill checks above already reported what they found, and this pass simply could not run.
+ * A load that did not complete is reported by {@link matrixLoadFailure}, which decides
+ * whether the failure is this marketplace's fault or merely this pass's.
  */
 async function checkCrossReferences(
   resolvedPath: string,
@@ -326,14 +341,36 @@ async function checkCrossReferences(
       toSourceIssue(healthIssue, resolvedPath, reader),
     );
   } catch (error) {
-    return [
-      {
-        severity: "warning",
-        file: SKILL_CATEGORIES_PATH,
-        message: `Cross-reference validation skipped: failed to load categories/rules: ${getErrorMessage(error)}`,
-      },
-    ];
+    return [matrixLoadFailure(error)];
   }
+}
+
+/**
+ * A load this pass could not complete, as the finding a reader can act on.
+ *
+ * Two answers, because the two failures are not one event. A manifest naming the
+ * marketplace something Claude Code registers no plugin under leaves nothing here
+ * installable, so it is this marketplace's own ERROR, against the file that holds the
+ * name — without it the Marketplaces row counted such a marketplace as validated and
+ * printed a tick beneath `doctor`'s own warning about that same file, and a warning above
+ * a tick is what a reader stops believing. Everything else leaves the marketplace
+ * installable and only leaves this pass unable to run, so it stays a warning against the
+ * file it was reading. Read off the throw's TYPE, so nothing here matches on a sentence.
+ */
+function matrixLoadFailure(error: unknown): SourceValidationIssue {
+  if (error instanceof MarketplaceNameRefusedError) {
+    return {
+      severity: "error",
+      file: MARKETPLACE_MANIFEST_PATH,
+      message: getErrorMessage(error),
+    };
+  }
+
+  return {
+    severity: "warning",
+    file: SKILL_CATEGORIES_PATH,
+    message: `Cross-reference validation skipped: failed to load categories/rules: ${getErrorMessage(error)}`,
+  };
 }
 
 /**

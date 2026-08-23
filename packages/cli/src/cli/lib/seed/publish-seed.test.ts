@@ -1,3 +1,4 @@
+import { installableSeedPayloadSchema } from "@workspace/matrix/seed";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { publishSeedConfig } from "./publish-seed";
@@ -47,6 +48,16 @@ function jsonResponse(body: unknown, status: number): Response {
 describe("publishSeedConfig", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("posts a configuration the store's own POST schema would accept", () => {
+    // Every assertion below sends `PAYLOAD`, and every one of them holds for any bytes at all —
+    // a stubbed `fetch` records what it was handed without judging it. So nothing else in this
+    // file can notice a fixture the endpoint would refuse, and a fixture that stands in for "a
+    // shared configuration" while being unmintable teaches that shape to everything copying it.
+    const mintable = installableSeedPayloadSchema.safeParse(PAYLOAD);
+    expect(mintable.success ? [] : mintable.error.issues.map((issue) => issue.path.join("."))) //
+      .toStrictEqual([]);
   });
 
   it("posts the payload to the configs endpoint and returns the id the store minted", async () => {

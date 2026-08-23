@@ -576,8 +576,15 @@ function compactAssignment(assignment: unknown): unknown {
 
 /**
  * True when the active matrix DECLARES this category as holding at most one skill. Read from the
- * matrix singleton so a source repo's category overrides are honoured. A category the matrix does
- * not declare is deliberately NOT treated as exclusive — the same rule local-installer applies.
+ * matrix singleton so a source repo's category overrides are honoured.
+ *
+ * A category the matrix does not declare is deliberately NOT treated as exclusive, and that is a
+ * real choice rather than a default: the wizard's toggle handler reads the same flag as
+ * `?? true` (`components/hooks/use-build-step-props.ts`), so an undeclared category IS exclusive
+ * while a selection is being made. A rule that REFUSES a write must only fire on a flag the data
+ * actually carries. `buildProjectCollisionTest` (`config-gate/propagate.ts`) takes the same side
+ * on the same reasoning, and `generateStackAgentConfig` (`config-types-writer.ts`) reads the flag
+ * for the emitted union's `[]` suffix.
  */
 function isExclusiveCategory(category: string): boolean {
   // Boundary cast: category keys come from JSON-cleaned config data, not the Category union

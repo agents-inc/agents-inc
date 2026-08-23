@@ -7,7 +7,6 @@ export {
   INSTALL_MODE_DESCRIPTIONS,
   detectInstallation,
   detectProjectInstallation,
-  getInstallationOrThrow,
 } from "./installation";
 
 /**
@@ -17,14 +16,8 @@ export {
  * barrel that re-exported the raw writers would be a supported way around it.
  */
 export {
-  type EjectInstallOptions,
-  type EjectInstallResult,
-  type PluginConfigResult,
-  installEject,
-  installPluginConfig,
   buildAndMergeConfig,
   setConfigMetadata,
-  buildEjectSkillsMap,
   buildCompileAgents,
   buildAgentScopeMap,
 } from "./local-installer";

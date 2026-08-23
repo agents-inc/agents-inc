@@ -1,4 +1,3 @@
-import os from "os";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
@@ -12,7 +11,6 @@ vi.mock("../../installation/index.js", () => ({
 
 vi.mock("../../skills/index.js", () => ({
   copySkillsToLocalFlattened: vi.fn(),
-  deleteLocalSkill: vi.fn(),
 }));
 
 vi.mock("../../../utils/fs.js", () => ({
@@ -21,13 +19,12 @@ vi.mock("../../../utils/fs.js", () => ({
 
 import { copyLocalSkills } from "./copy-local-skills";
 import { resolveInstallPaths } from "../../installation/index.js";
-import { copySkillsToLocalFlattened, deleteLocalSkill } from "../../skills/index.js";
+import { copySkillsToLocalFlattened } from "../../skills/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
 const mockCopySkillsToLocalFlattened = vi.mocked(copySkillsToLocalFlattened);
 const mockEnsureDir = vi.mocked(ensureDir);
-const mockDeleteLocalSkill = vi.mocked(deleteLocalSkill);
 
 const PROJECT_DIR = "/tmp/test-project";
 
@@ -171,53 +168,5 @@ describe("copyLocalSkills", () => {
 
     expect(result.totalCopied).toBe(2);
     expect(result.totalCopied).toBe(result.projectCopied.length + result.globalCopied.length);
-  });
-
-  describe("deleteAlternateSourceSkills", () => {
-    it("deletes only the skills whose source is not eject", async () => {
-      const skills = [
-        buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
-        buildSkillConfig("web-styling-tailwind", { scope: "project", origin: "eject" }),
-      ];
-
-      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
-        deleteAlternateSourceSkills: true,
-      });
-
-      expect(mockDeleteLocalSkill).toHaveBeenCalledTimes(1);
-      expect(mockDeleteLocalSkill).toHaveBeenCalledWith(PROJECT_DIR, "web-framework-react");
-    });
-
-    it("treats an empty source as an alternate source rather than silently skipping it", async () => {
-      const skills = [buildSkillConfig("web-framework-react", { scope: "project", origin: "" })];
-
-      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
-        deleteAlternateSourceSkills: true,
-      });
-
-      expect(mockDeleteLocalSkill).toHaveBeenCalledWith(PROJECT_DIR, "web-framework-react");
-    });
-
-    it("deletes global-scoped skills relative to the home directory", async () => {
-      const skills = [
-        buildSkillConfig("api-framework-hono", { scope: "global", origin: "agents-inc" }),
-      ];
-
-      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT, {
-        deleteAlternateSourceSkills: true,
-      });
-
-      expect(mockDeleteLocalSkill).toHaveBeenCalledWith(os.homedir(), "api-framework-hono");
-    });
-
-    it("deletes nothing when the option is off", async () => {
-      const skills = [
-        buildSkillConfig("web-framework-react", { scope: "project", origin: "agents-inc" }),
-      ];
-
-      await copyLocalSkills(skills, PROJECT_DIR, MOCK_SOURCE_RESULT);
-
-      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
-    });
   });
 });

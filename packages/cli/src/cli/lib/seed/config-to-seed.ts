@@ -1,5 +1,9 @@
 import { MATRIX_VERSION } from "@workspace/matrix";
-import { SEED_VERSION, seedModelSchema, seedPayloadSchema } from "@workspace/matrix/seed";
+import {
+  SEED_VERSION,
+  installableSeedPayloadSchema,
+  seedModelSchema,
+} from "@workspace/matrix/seed";
 
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts.js";
 import { isScopePairCompatible } from "../configuration/config-generator.js";
@@ -214,7 +218,7 @@ function toSeedAgent(agent: AgentScopeConfig): SeedAgent {
  * Turns the installation this directory records into the payload the config store holds, so the
  * CLI can mint an id rather than only consume one.
  *
- * The inverse of {@link import("./seed-to-wizard.js").seedToWizardResult}, and held to it: a
+ * The inverse of `seedToWizardResult` in `seed-to-wizard.ts`, and held to it: a
  * payload minted here and decoded there has to describe the same install. That is why the scope
  * of every skill and sub-agent travels per entry rather than being implied, why the whole stack
  * is carried as per-`(skill, sub-agent)` assignments, and why nothing here leans on a wire default
@@ -227,6 +231,10 @@ function toSeedAgent(agent: AgentScopeConfig): SeedAgent {
  * `stackId` is always null. A saved config records a stack's expansion and never the id it came
  * from, and the assignments above carry that expansion in full; naming an id this module invented
  * would make the receiver overlay a stack's own preload flags over the curation being shared.
+ *
+ * `description` is what a resolvable id would have supplied that the assignments do not, so it is
+ * carried directly instead. That is the whole of the trade: the sentence travels, the roster the id
+ * would have dragged behind it does not.
  *
  * `marketplace` is the one field carried for the payload rather than for an entry, because the
  * receiver loads one catalogue before it reads a single skill row — see {@link readMarketplace}.
@@ -256,10 +264,19 @@ export function configToSeedPayload(config: ProjectConfig, carried: ContentReadi
   // Parsed rather than merely assembled, exactly as the web app's encoder is: it makes "the JSON
   // the store will hold" literal, and it is the one gate that catches a field whose values have
   // drifted out of the wire's enums since this module last named them.
-  return seedPayloadSchema.parse({
+  //
+  // The INSTALLABLE half of the contract, which is the schema the store's POST route declares —
+  // the lenient one exists for READING links already out in the world, and this module only ever
+  // mints. It refuses nothing the refusal above permits, and that is the point: it is the belt
+  // over those braces, so the day this module's own rule and the wire's disagree, the mint fails
+  // loudly here instead of minting an id that cannot be installed.
+  return installableSeedPayloadSchema.parse({
     v: SEED_VERSION,
     matrixVersion: MATRIX_VERSION,
     stackId: null,
+    // Absent rather than empty, for the reason the marketplace ref is: an id is the hash of its
+    // body, so a key meaning what its absence already means would remint every ordinary payload.
+    ...(config.description !== undefined && { description: config.description }),
     ...(marketplace.ref !== undefined && { marketplace: marketplace.ref }),
     skills: Object.fromEntries(
       skills.map((skill) => [skill.id, toSeedSkill(skill, assignments.get(skill.id))]),

@@ -97,7 +97,7 @@ export default class Search extends BaseCommand {
  * Every skill the catalog can offer: the marketplace matrix, which `loadSource` has already
  * merged the on-disk local skills into. There is no second source to reach for — the
  * registered-extras array this used to fan out over was withdrawn with the marketplace axis
- * (CLI-450), so the read is one load and no network beyond it.
+ * itself, so the read is one load and no network beyond it.
  */
 async function loadSearchableSkills(): Promise<ResolvedSkill[]> {
   const { sourceResult } = await loadSource({ projectDir: process.cwd() });

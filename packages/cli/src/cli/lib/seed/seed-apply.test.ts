@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { reconcileSharedConfig, hasKeptEntries } from "./seed-apply";
+import { reconcileSharedConfig, type KeptFromRoundTrip } from "./seed-apply";
 import { seedToWizardResult } from "./seed-to-wizard";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import {
@@ -40,6 +40,14 @@ import type { SkillId } from "../../types/index.js";
  * `deleteLocalSkill` call, so an entry left in the removal set is deleted from disk whatever the
  * merger does with the row.
  */
+
+/**
+ * Nothing kept, spelled as the whole shape rather than as a "did anything survive" flag.
+ *
+ * A boolean over the two arrays cannot say WHICH reason answered, so an authorship keep read as
+ * a catalogue keep — and the two have different remedies and different user-facing sentences.
+ */
+const NOTHING_KEPT: KeptFromRoundTrip = { authoredSkillIds: [], unplaceableSkillIds: [] };
 
 const REACT = SKILLS.react.id;
 const ZUSTAND = SKILLS.zustand.id;
@@ -108,7 +116,7 @@ describe("reconcileSharedConfig", () => {
       // The destructive rule, stated positively: the project's own skill the payload left out
       // does NOT come back, so the diff downstream reports it as removed.
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
 
     it("leaves an inherited global skill the payload omits in the removal set too", () => {
@@ -132,7 +140,7 @@ describe("reconcileSharedConfig", () => {
       // somebody made rather than one this module has to second-guess. What the SCOPE decides
       // is who else the removal reaches, which the confirm says and this does not.
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
 
     it("leaves an inherited global sub-agent the payload omits in the removal set", () => {
@@ -155,7 +163,7 @@ describe("reconcileSharedConfig", () => {
       // directory, so with scope gone there is nothing left that can keep a sub-agent.
       expect(result.agentConfigs).toStrictEqual(decodedFor(REACT).agentConfigs);
       expect(result.selectedAgents).toStrictEqual([WEB_DEV]);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
 
     it("keeps a skill written here, which no payload ever carried", () => {
@@ -198,8 +206,7 @@ describe("reconcileSharedConfig", () => {
         ...decodedFor(REACT).skills,
         buildSkillConfig(ZUSTAND, { scope: "global" }),
       ]);
-      expect(kept.authoredSkillIds).toStrictEqual([ZUSTAND]);
-      expect(hasKeptEntries(kept)).toBe(true);
+      expect(kept).toStrictEqual({ authoredSkillIds: [ZUSTAND], unplaceableSkillIds: [] });
     });
 
     it("adds nothing back for an entry the payload itself carries", () => {
@@ -218,7 +225,7 @@ describe("reconcileSharedConfig", () => {
       // Immune from removal is not immune from being MENTIONED: the payload names this id, so
       // there is nothing to keep and nothing to disclose — only one entry, the payload's.
       expect(result.skills).toStrictEqual(decodedFor(REACT, "global").skills);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
 
     it("keeps a tombstone's id out of both halves, because it is installed nowhere", () => {
@@ -240,7 +247,7 @@ describe("reconcileSharedConfig", () => {
       // An excluded entry is a statement about something that is NOT installed here, so there
       // are no files to protect and nothing to tell the user is staying.
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
   });
 
@@ -266,8 +273,7 @@ describe("reconcileSharedConfig", () => {
       // deletes an installed skill because the catalogue moved — the one thing being named
       // rules out, and the difference between deleting on intent and deleting on failure.
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT, UNPLACEABLE]);
-      expect(kept.unplaceableSkillIds).toStrictEqual([UNPLACEABLE]);
-      expect(hasKeptEntries(kept)).toBe(true);
+      expect(kept).toStrictEqual({ authoredSkillIds: [], unplaceableSkillIds: [UNPLACEABLE] });
     });
 
     it("keeps it at global scope as well, where nothing else would have", () => {
@@ -339,7 +345,7 @@ describe("reconcileSharedConfig", () => {
       // no files to protect and nothing to tell the user is staying, whichever reason would
       // otherwise have protected it.
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
   });
 
@@ -454,7 +460,7 @@ describe("reconcileSharedConfig", () => {
       });
 
       expect(result).toStrictEqual(decoded);
-      expect(hasKeptEntries(kept)).toBe(false);
+      expect(kept).toStrictEqual(NOTHING_KEPT);
     });
 
     it("keeps nothing off a wizard result that carries no assigned stack", () => {

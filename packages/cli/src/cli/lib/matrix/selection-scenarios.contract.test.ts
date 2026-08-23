@@ -18,13 +18,19 @@
  * on it would produce — forgiving what the swap resolves and keeping what it
  * does not. The rule itself lives in `@workspace/matrix`'s shared selection
  * semantics; this runner holds the CLI's rendering of it to the contract.
+ *
+ * A scenario's `implied` set is read here through the verdicts it produces
+ * rather than asserted on its own. Nothing the CLI ships asks the catalogue
+ * what a selection implies — the closure only ever reaches a user as a cell
+ * that stayed offerable or stopped being one, which is what `inReach` and
+ * `outOfReach` below are: Expo's chain to React is what rules Vue's forms out,
+ * and Nuxt's to Vue is what rules Radix out.
  */
 
 import { SELECTION_SCENARIOS, type SelectionScenario } from "@workspace/matrix";
 import { describe, expect, it } from "vitest";
 import type { OptionState, SkillId } from "../../types/index.js";
 import { buildCategoriesForDomain } from "../wizard/build-step-logic.js";
-import { getImpliedSkills } from "./matrix-resolver.js";
 import { getCategoryDomain, getSkillById } from "./matrix-provider.js";
 
 function cellStatusOf(skillId: SkillId, selection: readonly SkillId[]): OptionState["status"] {
@@ -45,7 +51,13 @@ function cellStatusOf(skillId: SkillId, selection: readonly SkillId[]): OptionSt
 function assertScenario(scenario: SelectionScenario): void {
   const { selection } = scenario;
 
-  expect([...getImpliedSkills([...selection])].sort()).toStrictEqual([...scenario.implied].sort());
+  // Subject guard. `implied` is the one field this runner reads only through
+  // its consequences, so a scenario stating nothing else is one this side
+  // passes without rendering a single cell.
+  expect(
+    [...scenario.outOfReach, ...scenario.inReach, ...scenario.discouraged],
+    "the scenario names no cell, so the grid is never asked anything",
+  ).not.toStrictEqual([]);
 
   for (const skillId of scenario.outOfReach) {
     expect(cellStatusOf(skillId, selection), `${skillId} must be ruled out`).toBe("incompatible");

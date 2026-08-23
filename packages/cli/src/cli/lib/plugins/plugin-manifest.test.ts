@@ -5,7 +5,6 @@ import {
   generateAgentPluginManifest,
   generateSkillPluginManifest,
   writePluginManifest,
-  getPluginDir,
 } from "./plugin-manifest";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
@@ -331,26 +330,6 @@ describe("plugin-manifest", () => {
 
       expect(content).toContain('  "name"');
       expect(content).toContain('  "description"');
-    });
-  });
-
-  describe("getPluginDir", () => {
-    it("should return .claude-plugin subdirectory", () => {
-      const result = getPluginDir("/some/output/dir");
-
-      expect(result).toBe("/some/output/dir/.claude-plugin");
-    });
-
-    it("should handle paths with trailing slash", () => {
-      const result = getPluginDir("/some/output/dir/");
-
-      expect(result).toBe("/some/output/dir/.claude-plugin");
-    });
-
-    it("should handle relative paths", () => {
-      const result = getPluginDir("dist/plugins");
-
-      expect(result).toBe(path.join("dist/plugins", PLUGIN_MANIFEST_DIR));
     });
   });
 });

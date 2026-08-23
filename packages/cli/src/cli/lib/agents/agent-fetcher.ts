@@ -38,6 +38,9 @@ export async function fetchAgentDefinitionsFromRemote(
 
   const result = await fetchFromSource(source, { subdir: "" });
 
+  // ABORT on an unreadable config. It names the directory the fetched repository keeps its agent
+  // partials in; defaulting past it compiles agents from whatever happens to sit at `DIRS.agents`,
+  // or reports partials missing from a repository that has them.
   const sourceProjectConfig = options.agentsDir
     ? undefined
     : await loadProjectSourceConfig(result.path);

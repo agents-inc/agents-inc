@@ -6,7 +6,7 @@ import type { SkillId, SkillSlug } from "../../types";
  */
 export type AuditVerdict = "constrained-via-exclusivity-or-requires" | "universal";
 
-/** SKILLS-01 phase 4 rides this manifest — one audit, two products. */
+/** The framework-adapter classification rides this manifest — one audit, two products. */
 export type SkillClass = "A" | "B" | "C";
 
 /** Worksheet batch that produced a verdict — provenance for the adversarial pass. */
@@ -30,19 +30,19 @@ export type SkillAuditEntry = {
   verdict: AuditVerdict;
   batch: BatchId;
   /**
-   * SKILLS-01 classification. Omitted for the framework skills themselves
+   * Framework-adapter classification. Omitted for the framework skills themselves
    * (react, nextjs, react-native, electron, tauri, …) which are the binding targets.
    * class A → frameworks: []; class B → exactly one; class C → the adapter set.
    */
   classification?: { class: SkillClass; frameworks: SkillSlug[] };
   /** Cited sources — recorded wherever the entry changed a rule. */
   sources?: string[];
-  /** Anything the current vocabulary cannot express, handed to D-306 rather than invented here. */
+  /** Anything the current vocabulary cannot express, deferred rather than invented here. */
   deferredToD306?: string;
 };
 
 /**
- * Every catalog skill's audit verdict, one entry per skill (CLI-389).
+ * Every catalog skill's audit verdict, one entry per skill.
  *
  * Total record, not `Partial`: the type checker enforces "every SkillId appears" at compile
  * time, so the "empty = unaudited, or nobody looked?" ambiguity is unrepresentable for

@@ -67,7 +67,3 @@ export async function writePluginManifest(
 
   return manifestPath;
 }
-
-export function getPluginDir(outputDir: string): string {
-  return path.join(outputDir, PLUGIN_DIR_NAME);
-}

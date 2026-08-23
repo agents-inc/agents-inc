@@ -1,55 +1,47 @@
-import { mkdir, writeFile, readFile, realpath, symlink } from "fs/promises";
+import { mkdir, writeFile, readFile, readdir, realpath, symlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Override GLOBAL_INSTALL_ROOT to a non-existent path so getGlobalConfigTypesPath()
-// returns null in the default case — the dev machine's real ~/.claude-src/ must
-// never affect tests. Individual tests that need the global-types-import form
-// override this via Object.defineProperty inside a scoped describe block.
-vi.mock("../../consts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../../consts")>();
-  return { ...mod, GLOBAL_INSTALL_ROOT: "/tmp/nonexistent-global-root" };
-});
-
 import { resolveInstallPaths } from "./install-base-dir";
-import {
-  installEject,
-  buildEjectSkillsMap,
-  buildCompileAgents,
-  buildAgentScopeMap,
-  setConfigMetadata,
-} from "./local-installer";
+import { buildCompileAgents, buildAgentScopeMap, setConfigMetadata } from "./local-installer";
+// The live config write, and the one `commands/init.tsx` calls. A second entry point over the
+// same two steps — `buildAndMergeConfig`, then the gate's `writeScopedFromWizard` — used to sit
+// beside it in `local-installer.ts` with no caller anywhere in `src/cli/`, which is what these
+// specs stood on.
+import { writeProjectConfig } from "../operations/project/write-project-config.js";
 // The pair writers this file exercises live in config-gate now and are no longer
 // re-exported by `local-installer`, which is the point of the enforcement guard:
 // nothing outside the gate may reach them through a public surface. A test is
 // allowed the deep import — it is asserting on the implementation.
 import {
-  deregisterProjectPath as deregisterProjectPathUngated,
   mergeGlobalConfigs,
   propagateGlobalChangesToProjects,
   pruneGlobalEntriesFromRegisteredProjects,
   writeConfigFile as writeConfigFileUngated,
 } from "../config-gate/propagate.js";
 import { withGateToken } from "../config-gate/gate-token.js";
-import { writeScopeConfigTypes, writeScopedFromWizard } from "../config-gate/index.js";
+import {
+  mutateGlobal,
+  writeScopeConfigTypes,
+  writeScopedFromWizard,
+  type GateDeps,
+  type GateReport,
+} from "../config-gate/index.js";
 import type {
   AgentDefinition,
   AgentName,
   MergedSkillsMatrix,
   ProjectConfig,
-  Skill,
   SkillId,
 } from "../../types";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import {
-  createMockCopiedSkill,
-  createMockSkillEntry,
-} from "../__tests__/factories/skill-factories";
+import {} from "../__tests__/factories/skill-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories";
 import {
+  buildGateReport,
   buildWizardResult,
   buildProjectConfig,
   buildSourceResult,
@@ -61,8 +53,8 @@ import { readTestTsConfig } from "../__tests__/helpers/config-io";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
 import { loadSkillsFromAllSources } from "../loading";
 import { DEFAULT_SOURCE, defaultStacks } from "../configuration";
+import { NO_CHANGES } from "../config-gate/classify.js";
 import { fileExists } from "../../utils/fs";
-import { expectInstallResult } from "../__tests__/assertions/index.js";
 import { SKILLS } from "../__tests__/test-fixtures";
 import {
   CATEGORY_EXCLUSIVITY_MATRIX,
@@ -82,15 +74,9 @@ import {
   STANDARD_FILES,
 } from "../../consts";
 import { generateConfigSource } from "../configuration/config-writer";
-import { firstElement } from "../__tests__/helpers/element-at.js";
 import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants";
 
 // Mock heavy dependencies that involve file system operations outside our temp dir
-vi.mock("../skills/skill-copier", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../skills/skill-copier")>()),
-  copySkillsToLocalFlattened: vi.fn().mockResolvedValue([]),
-}));
-
 vi.mock("../loading/loader", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../loading/loader")>()),
   loadAllAgents: vi.fn().mockResolvedValue({}),
@@ -106,14 +92,7 @@ vi.mock("../stacks/stacks-loader", async (importOriginal) => {
 
 vi.mock("../resolver", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../resolver")>()),
-  resolveAgents: vi.fn().mockResolvedValue({}),
   buildSkillRefsFromConfig: vi.fn().mockReturnValue([]),
-}));
-
-vi.mock("../compiler", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../compiler")>()),
-  createLiquidEngine: vi.fn().mockResolvedValue({}),
-  compileAgentForPlugin: vi.fn().mockResolvedValue("# compiled agent content"),
 }));
 
 vi.mock("../configuration/config-generator", async (importOriginal) => {
@@ -131,8 +110,8 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
     buildStackProperty: vi.fn().mockReturnValue({}),
     // Use real splitConfigByScope for scope-aware config writing
     splitConfigByScope: original.splitConfigByScope,
-    // Use real scopeEligibilityKey — pure string helper used by buildEjectConfig's
-    // D-220 delta computation.
+    // Use real scopeEligibilityKey — pure string helper used by buildInstallConfig's
+    // delta computation.
     scopeEligibilityKey: original.scopeEligibilityKey,
     // Use real isScopePairCompatible — pure scope rule used by computeScopeEligibilityGained
     isScopePairCompatible: original.isScopePairCompatible,
@@ -153,18 +132,28 @@ function writeConfigFile(...args: Parameters<typeof writeConfigFileUngated>): Pr
 }
 
 /**
- * Deregisters a project, holding the gate's write token.
- *
- * Same standing-in-for-the-gate arrangement as `writeConfigFile` above. Since
- * D-309 no `pair-writer` or `propagate` function mints the privilege on its own
- * behalf — the gate's PUBLIC entry points do — and `deregisterProjectPath` has no
- * public entry left (`mutateGlobal({ kind: "deregister-project" })` replaced it
- * in production), so its remaining callers, all specs, supply the token.
+ * The loaders a deregistration must never reach. It inlines nothing into a project
+ * config, so it classifies below the tier `resolveGateDeps` loads for — and a throw
+ * is what turns that into an assertion rather than an assumption.
  */
-function deregisterProjectPath(
-  ...args: Parameters<typeof deregisterProjectPathUngated>
-): Promise<void> {
-  return withGateToken(() => deregisterProjectPathUngated(...args));
+const DEPS_A_DEREGISTRATION_MUST_NOT_NEED: GateDeps = {
+  loadMatrix: () => {
+    throw new Error("a deregistration must not need the matrix");
+  },
+  loadAgents: () => {
+    throw new Error("a deregistration must not need the agent definitions");
+  },
+};
+
+/**
+ * Drops a project's registration through the gate entry point `uninstall` calls,
+ * which mints its own write token.
+ */
+function deregisterProjectPath(projectDir: string): Promise<GateReport> {
+  return mutateGlobal(
+    { kind: "deregister-project", projectDir },
+    DEPS_A_DEREGISTRATION_MUST_NOT_NEED,
+  );
 }
 
 /**
@@ -200,9 +189,6 @@ async function regenerateScopeConfigTypes(
   await writeScopeConfigTypes(projectDir, config, { matrix, agents });
 }
 
-// Access the mock to verify installMode is passed through
-const mockCompileAgentForPlugin = vi.mocked((await import("../compiler")).compileAgentForPlugin);
-const mockResolveAgents = vi.mocked((await import("../resolver")).resolveAgents);
 const mockBuildSkillRefs = vi.mocked((await import("../resolver")).buildSkillRefsFromConfig);
 const mockGenerateProjectConfig = vi.mocked(
   (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
@@ -230,24 +216,29 @@ describe("local-installer", () => {
     await cleanupTempDir(tempDir);
   });
 
-  describe("installEject", () => {
-    useFakeHome(() => tempDir);
+  describe("writeProjectConfig", () => {
+    const fakeHome = useFakeHome(() => tempDir);
+    const fakeHomeDir = (): string => fakeHome.dir;
 
-    it("should create required directories", async () => {
+    it("should create the config directory and seed the global pair it inherits from", async () => {
       const matrix = EMPTY_MATRIX;
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      await installEject({
+      await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
       });
 
-      // Verify directories were created
-      expect(await fileExists(path.join(tempDir, CLAUDE_DIR, "skills"))).toBe(true);
-      expect(await fileExists(path.join(tempDir, CLAUDE_DIR, "agents"))).toBe(true);
       expect(await fileExists(path.join(tempDir, CLAUDE_SRC_DIR))).toBe(true);
+      // A project write also ensures the global pair exists, because the project config
+      // resolves against it. `.claude/skills/` and `.claude/agents/` are NOT this operation's:
+      // the copy step makes the first and the compile pass makes the second.
+      expect(
+        await fileExists(path.join(fakeHomeDir(), CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS)),
+      ).toBe(true);
+      expect(await fileExists(path.join(tempDir, CLAUDE_DIR, "skills"))).toBe(false);
     });
 
     it("should write config to .claude-src/config.ts", async () => {
@@ -255,7 +246,7 @@ describe("local-installer", () => {
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -279,7 +270,7 @@ describe("local-installer", () => {
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      await installEject({
+      await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -307,7 +298,7 @@ describe("local-installer", () => {
         },
       });
 
-      await installEject({
+      await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -331,7 +322,7 @@ describe("local-installer", () => {
         marketplace: "my-marketplace",
       });
 
-      await installEject({
+      await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -354,14 +345,13 @@ describe("local-installer", () => {
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
       });
 
       expect(result).toStrictEqual({
-        copiedSkills: [],
         config: {
           name: path.basename(tempDir),
           agents: [],
@@ -369,10 +359,15 @@ describe("local-installer", () => {
           marketplace: tempDir,
         },
         configPath: path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-        compiledAgents: [],
         wasMerged: false,
-        skillsDir: path.join(tempDir, LOCAL_SKILLS_PATH),
-        agentsDir: path.join(tempDir, CLAUDE_DIR, "agents"),
+        // Both halves of both pairs: the project's config.ts and config-types.ts, and the
+        // global pair a project write seeds beside them.
+        filesWritten: 4,
+        // `projectsChanged` is the one thing this write moved in the global config: it
+        // registered this project, and nothing else about the global install changed.
+        propagation: buildGateReport([], {
+          changes: { ...NO_CHANGES, projectsChanged: true },
+        }),
       });
     });
 
@@ -395,18 +390,14 @@ describe("local-installer", () => {
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
       });
 
-      expectInstallResult(result, {
-        copiedSkillIds: [],
-        compiledAgents: [],
-        wasMerged: true,
-      });
-      expect(result.mergedConfigPath).toBe(
+      expect(result.wasMerged).toBe(true);
+      expect(result.existingConfigPath).toBe(
         path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
       );
       // Existing name should take precedence
@@ -422,7 +413,7 @@ describe("local-installer", () => {
       );
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -442,113 +433,14 @@ describe("local-installer", () => {
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
       });
 
-      expectInstallResult(result, {
-        copiedSkillIds: [],
-        compiledAgents: [],
-        wasMerged: false,
-      });
-      expect(result.mergedConfigPath).toBeUndefined();
-    });
-
-    it("should pass per-skill source on skills to compileAgentForPlugin in plugin mode", async () => {
-      // D-217: installMode is gone — per-skill `source` on each Skill drives
-      // pluginRef attachment. Seed resolveAgents with a skill carrying a
-      // marketplace source and assert the agent arg forwards it.
-      const pluginSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
-        source: "agents-inc",
-      });
-      mockResolveAgents.mockResolvedValueOnce({
-        "web-developer": {
-          name: "web-developer",
-          title: "Web Dev",
-          description: "A dev",
-          tools: ["Read"],
-          skills: [pluginSkill],
-        },
-      });
-
-      // Override generateProjectConfigFromSkills to return plugin-sourced skills
-      mockGenerateProjectConfig.mockReturnValueOnce(
-        buildProjectConfig({
-          name: "agents-inc",
-          skills: buildSkillConfigs([TEST_SKILL_ID], { origin: "agents-inc" }),
-        }),
-      );
-
-      const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(
-        buildSkillConfigs([TEST_SKILL_ID], { origin: "agents-inc" }),
-      );
-      const sourceResult = buildSourceResult(matrix, tempDir);
-
-      mockCompileAgentForPlugin.mockClear();
-
-      await installEject({
-        wizardResult,
-        sourceResult,
-        projectDir: tempDir,
-      });
-
-      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
-      const [name, agent, ...rest] = firstElement(mockCompileAgentForPlugin.mock.calls);
-      expect(name).toBe("web-developer");
-      // Only the first two positional args carry behavioural contract; the last
-      // two (sourcePath, engine) are infra and asserted only by arity.
-      expect(rest).toHaveLength(2);
-      expect(agent.skills).toStrictEqual([pluginSkill]);
-      // Explicit per-skill assertion: every skill carries a non-"eject" source
-      // (i.e., a marketplace name) so the compiler attaches pluginRef.
-      for (const skill of agent.skills) {
-        expect(skill.source).toBe("agents-inc");
-      }
-    });
-
-    it("should pass per-skill source on skills to compileAgentForPlugin in eject mode", async () => {
-      // D-217: installMode is gone — per-skill `source: "eject"` tells the
-      // compiler to emit a bare id (no pluginRef). Seed resolveAgents with an
-      // ejected skill and assert the agent arg forwards it.
-      const ejectSkill: Skill = createMockSkillEntry(TEST_SKILL_ID, false, {
-        source: "eject",
-      });
-      mockResolveAgents.mockResolvedValueOnce({
-        "web-developer": {
-          name: "web-developer",
-          title: "Web Dev",
-          description: "A dev",
-          tools: ["Read"],
-          skills: [ejectSkill],
-        },
-      });
-
-      const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(
-        buildSkillConfigs([TEST_SKILL_ID], { origin: "eject" }),
-      );
-      const sourceResult = buildSourceResult(matrix, tempDir);
-
-      mockCompileAgentForPlugin.mockClear();
-
-      await installEject({
-        wizardResult,
-        sourceResult,
-        projectDir: tempDir,
-      });
-
-      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
-      const [name, agent, ...rest] = firstElement(mockCompileAgentForPlugin.mock.calls);
-      expect(name).toBe("web-developer");
-      expect(rest).toHaveLength(2);
-      expect(agent.skills).toStrictEqual([ejectSkill]);
-      // Explicit per-skill assertion: every skill has source === "eject".
-      for (const skill of agent.skills) {
-        expect(skill.source).toBe("eject");
-      }
+      expect(result.wasMerged).toBe(false);
+      expect(result.existingConfigPath).toBeUndefined();
     });
 
     it("should write valid config with satisfies ProjectConfig", async () => {
@@ -556,7 +448,7 @@ describe("local-installer", () => {
       const wizardResult = buildWizardResult(buildSkillConfigs([TEST_SKILL_ID]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
-      await installEject({
+      await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -613,7 +505,7 @@ describe("local-installer", () => {
       });
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -660,7 +552,7 @@ describe("local-installer", () => {
       });
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -725,7 +617,7 @@ describe("local-installer", () => {
       });
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -787,7 +679,7 @@ describe("local-installer", () => {
       );
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -822,7 +714,7 @@ describe("local-installer", () => {
         sourceConfig: { source: TEST_CUSTOM_SOURCE_URL, sourceOrigin: "flag" },
       });
 
-      const install = installEject({ wizardResult, sourceResult, projectDir: tempDir });
+      const install = writeProjectConfig({ wizardResult, sourceResult, projectDir: tempDir });
       await expect(install).rejects.toThrow(BUILT_IN_STACK_ID);
       await expect(install).rejects.toThrow(TEST_CUSTOM_SOURCE_URL);
 
@@ -868,7 +760,7 @@ describe("local-installer", () => {
       );
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
-      const result = await installEject({
+      const result = await writeProjectConfig({
         wizardResult,
         sourceResult,
         projectDir: tempDir,
@@ -913,7 +805,7 @@ describe("local-installer", () => {
       );
       const sourceResult = buildSourceResult(EMPTY_MATRIX, homeDir);
 
-      const result = await installEject({ wizardResult, sourceResult, projectDir: homeDir });
+      const result = await writeProjectConfig({ wizardResult, sourceResult, projectDir: homeDir });
 
       const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       const config = await readTestTsConfig<ProjectConfig>(configPath);
@@ -987,7 +879,7 @@ describe("local-installer", () => {
       });
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
-      const result = await installEject({ wizardResult, sourceResult, projectDir: tempDir });
+      const result = await writeProjectConfig({ wizardResult, sourceResult, projectDir: tempDir });
 
       // A scope change moves WHERE a sub-agent lives, never WHAT it knows.
       expect(result.config.stack?.["web-developer"]).toStrictEqual({
@@ -1135,63 +1027,6 @@ describe("local-installer", () => {
       expect(result.skillsDir).toBe(`/my/project/${LOCAL_SKILLS_PATH}`);
       expect(result.agentsDir).toBe(`/my/project/${CLAUDE_DIR}/agents`);
       expect(result.configPath).toBe(`/my/project/${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
-    });
-  });
-
-  describe("buildEjectSkillsMap", () => {
-    it("should map copied skills that exist in the matrix", () => {
-      initializeMatrix(SINGLE_REACT_MATRIX);
-
-      const copiedSkills = [createMockCopiedSkill("web-framework-react")];
-
-      const result = buildEjectSkillsMap(copiedSkills);
-
-      expect(result["web-framework-react"]).toStrictEqual({
-        id: "web-framework-react",
-        description: SINGLE_REACT_MATRIX.skills["web-framework-react"]!.description,
-        path: "/project/.claude/skills/web-framework-react",
-        content: "",
-      });
-    });
-
-    it("should filter out copied skills not in the matrix", () => {
-      initializeMatrix(EMPTY_MATRIX);
-
-      // web-nonexistent-skill is a deliberately-invalid id (not a matrix member) — cast stays
-      const copiedSkills = [createMockCopiedSkill("web-nonexistent-skill" as SkillId)];
-
-      const result = buildEjectSkillsMap(copiedSkills);
-
-      expect(result).toStrictEqual({});
-    });
-
-    it("should return empty map when no skills are copied", () => {
-      initializeMatrix(SINGLE_REACT_MATRIX);
-
-      const result = buildEjectSkillsMap([]);
-
-      expect(result).toStrictEqual({});
-    });
-
-    it("should handle mixed copied skills — some in matrix, some not", () => {
-      initializeMatrix(SINGLE_REACT_MATRIX);
-
-      const copiedSkills = [
-        createMockCopiedSkill("web-framework-react"),
-        // web-nonexistent-skill is a deliberately-invalid id (not a matrix member) — cast stays
-        createMockCopiedSkill("web-nonexistent-skill" as SkillId),
-      ];
-
-      const result = buildEjectSkillsMap(copiedSkills);
-
-      expect(result).toStrictEqual({
-        "web-framework-react": {
-          id: "web-framework-react",
-          description: SINGLE_REACT_MATRIX.skills["web-framework-react"]!.description,
-          path: "/project/.claude/skills/web-framework-react",
-          content: "",
-        },
-      });
     });
   });
 
@@ -2104,48 +1939,17 @@ describe("local-installer", () => {
     });
   });
 
-  // D-216 / D-228: writeScopedConfigs must emit project config-types.ts that
+  // writeScopedConfigs must emit project config-types.ts that
   // imports from the global install's config-types.ts (not an inlined standalone
-  // union). Requires overriding GLOBAL_INSTALL_ROOT so getGlobalConfigTypesPath()
-  // points at a test-controlled global dir.
+  // union). The fake home IS the global install root: getGlobalConfigTypesPath()
+  // reads globalInstallRoot(), which answers os.homedir() at call time.
   describe("writeScopedConfigs — project config-types imports from global", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
-    let savedHome: string | undefined;
-    let fakeHome: string;
-    let consts: typeof import("../../consts");
-
-    beforeEach(async () => {
-      savedHome = process.env.HOME;
-      fakeHome = path.join(tempDir, "fake-home");
-      await mkdir(fakeHome, { recursive: true });
-      process.env.HOME = fakeHome;
-
-      // Point GLOBAL_INSTALL_ROOT at the fake home so getGlobalConfigTypesPath()
-      // detects the seeded global config-types.ts file inside the test's tempDir.
-      consts = await import("../../consts");
-      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-        value: fakeHome,
-        writable: true,
-      });
-    });
-
-    afterEach(() => {
-      // Restore the default mocked GLOBAL_INSTALL_ROOT so other tests don't pick
-      // up the fake home after this block finishes.
-      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-        value: "/tmp/nonexistent-global-root",
-        writable: true,
-      });
-      if (savedHome !== undefined) {
-        process.env.HOME = savedHome;
-      } else {
-        delete process.env.HOME;
-      }
-    });
+    const fakeHomeHandle = useFakeHome(() => tempDir);
 
     it("emits project config-types.ts with import from global and extended SkillId union", async () => {
       // Seed a global config-types.ts so getGlobalConfigTypesPath() returns non-null
-      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
       await mkdir(globalClaudeSrc, { recursive: true });
       await writeFile(
         path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -2208,7 +2012,7 @@ describe("local-installer", () => {
 
     it("extends the global alias even when every item is global-scoped (pure propagation case)", async () => {
       // Seed a global config-types.ts so getGlobalConfigTypesPath() returns non-null
-      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
       await mkdir(globalClaudeSrc, { recursive: true });
       await writeFile(
         path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -2259,15 +2063,27 @@ describe("local-installer", () => {
       expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-developer"');
     });
 
-    it("falls back to standalone config-types when no global install exists", async () => {
-      // Intentionally do NOT create fakeHome/.claude-src/config-types.ts. With the
-      // default GLOBAL_INSTALL_ROOT override in place, getGlobalConfigTypesPath()
-      // returns null and regenerateConfigTypes falls back to the standalone path.
-      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-        value: "/tmp/nonexistent-global-root",
-        writable: true,
-      });
-
+    /**
+     * This site used to claim the opposite — that a project write with nothing global-scoped
+     * falls back to the STANDALONE form — and it was green only because the test's
+     * `Object.defineProperty` pointed the READER (`GLOBAL_INSTALL_ROOT`) at
+     * `/tmp/nonexistent-global-root` while the WRITER (`globalPairPaths()`, always
+     * `os.homedir()`) wrote under the fake home. The two never diverged in production, where
+     * the constant WAS `os.homedir()` in the same process, so the state that spec pinned had
+     * no run that could produce it. Reconciling the reader onto call-time `globalInstallRoot()`
+     * is what made it unreachable in the suite too.
+     *
+     * What the same call actually does is asserted here instead: it establishes the global
+     * pair before generating the project's types — a first project install writes
+     * `~/.claude-src/` whether or not anything is global-scoped, because that file is where the
+     * project's own path is registered. So from a project context the import form is not a
+     * branch, it is the only outcome.
+     *
+     * The standalone branch is real and is driven where it IS reachable: at $HOME, by
+     * `configuration/__tests__/config-types-writer.test.ts` -> "regenerateConfigTypes —
+     * standalone unions narrow to the on-disk config".
+     */
+    it("establishes the global pair first, so the project types take the import form", async () => {
       const projectDir = path.join(tempDir, "project-standalone");
       const projectConfigPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       await mkdir(path.dirname(projectConfigPath), { recursive: true });
@@ -2286,6 +2102,12 @@ describe("local-installer", () => {
         false,
       );
 
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
+      expect(
+        (await readdir(globalClaudeSrc)).sort(),
+        "the write that generates the project types creates the global pair it then imports from",
+      ).toStrictEqual([STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS].sort());
+
       const projectTypesPath = path.join(
         projectDir,
         CLAUDE_SRC_DIR,
@@ -2293,9 +2115,8 @@ describe("local-installer", () => {
       );
       const typesContent = await readFile(projectTypesPath, "utf-8");
 
-      // Standalone form: inlined unions, no "as GlobalSkillId" import
-      expect(typesContent).not.toContain("as GlobalSkillId");
-      expect(typesContent).toContain('"web-framework-react"');
+      expect(typesContent).toContain("SkillId as GlobalSkillId");
+      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-framework-react"');
     });
 
     /**
@@ -2317,7 +2138,7 @@ describe("local-installer", () => {
      * nothing that would cover the global one's category or domain.
      */
     it("extends the global unions with the global-scoped entries config.ts inlines", async () => {
-      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
       await mkdir(globalClaudeSrc, { recursive: true });
       await writeFile(
         path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -2387,7 +2208,7 @@ describe("local-installer", () => {
      * to it, so only the domains array itself can put it in the union.
      */
     it("covers a domain the config still names after its last skill row is gone", async () => {
-      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
       await mkdir(globalClaudeSrc, { recursive: true });
       await writeFile(
         path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -2470,28 +2291,9 @@ describe("local-installer", () => {
       expect(typesContent).not.toContain('"api-framework-hono"');
     });
 
+    // The enclosing useFakeHome already points HOME — and so globalInstallRoot() — at the
+    // directory these specs seed a global config-types.ts into.
     describe("project scope with a global install present", () => {
-      let consts: typeof import("../../consts");
-
-      beforeEach(async () => {
-        // Point GLOBAL_INSTALL_ROOT at the fake home so getGlobalConfigTypesPath()
-        // detects the seeded global config-types.ts file inside the test's tempDir.
-        consts = await import("../../consts");
-        Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-          value: fakeHomeHandle.dir,
-          writable: true,
-        });
-      });
-
-      afterEach(() => {
-        // Restore the default mocked GLOBAL_INSTALL_ROOT so other tests don't pick
-        // up the fake home after this block finishes.
-        Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-          value: "/tmp/nonexistent-global-root",
-          writable: true,
-        });
-      });
-
       it("writes the import-and-extend form and leaves config.ts untouched", async () => {
         const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
         await mkdir(globalClaudeSrc, { recursive: true });
@@ -2550,8 +2352,8 @@ describe("local-installer", () => {
     });
 
     it("falls back to standalone unions at project scope when no global types exist", async () => {
-      // GLOBAL_INSTALL_ROOT keeps its default mocked value (/tmp/nonexistent-global-root),
-      // so getGlobalConfigTypesPath() returns null and the standalone path runs.
+      // Nothing seeds a global config-types.ts under the fake home, so
+      // getGlobalConfigTypesPath() finds none and the standalone path runs.
       const projectDir = path.join(tempDir, "project-standalone");
       await mkdir(path.join(projectDir, CLAUDE_SRC_DIR), { recursive: true });
 
@@ -2621,7 +2423,7 @@ describe("local-installer", () => {
     });
   });
 
-  describe("deregisterProjectPath", () => {
+  describe("dropping a project's registration", () => {
     const fakeHomeHandle = useFakeHome(() => tempDir);
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
@@ -2694,16 +2496,18 @@ describe("local-installer", () => {
       const anyDir = path.join(tempDir, "any-dir");
       await mkdir(anyDir, { recursive: true });
 
-      // Should not throw
-      await expect(deregisterProjectPath(anyDir)).resolves.toBeUndefined();
+      const report = await deregisterProjectPath(anyDir);
+
+      expect(report.globalWritten).toBe(false);
     });
 
     it("should do nothing when no global config exists", async () => {
       const anyDir = path.join(tempDir, "any-dir");
       await mkdir(anyDir, { recursive: true });
 
-      // No global config on disk — should not throw
-      await expect(deregisterProjectPath(anyDir)).resolves.toBeUndefined();
+      const report = await deregisterProjectPath(anyDir);
+
+      expect(report.globalWritten).toBe(false);
     });
 
     /**
@@ -3084,37 +2888,18 @@ describe("local-installer", () => {
     });
   });
 
-  // D-216 / D-228: propagateGlobalChangesToProjects writes PROJECT config-types.ts
+  // propagateGlobalChangesToProjects writes PROJECT config-types.ts
   // for every registered project when a global-scope change happens. Those project
   // types files must use the same global-aware import-and-extend form that
   // writeScopedConfigs uses during project init/edit — otherwise a global edit
   // would flip every project's types file from import-form back to standalone.
   describe("propagateGlobalChangesToProjects — project config-types imports from global", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
-    let fakeHome: string;
-    let consts: typeof import("../../consts");
-
-    beforeEach(async () => {
-      fakeHome = path.join(tempDir, "fake-home");
-      await mkdir(fakeHome, { recursive: true });
-
-      consts = await import("../../consts");
-      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-        value: fakeHome,
-        writable: true,
-      });
-    });
-
-    afterEach(() => {
-      Object.defineProperty(consts, "GLOBAL_INSTALL_ROOT", {
-        value: "/tmp/nonexistent-global-root",
-        writable: true,
-      });
-    });
+    const fakeHomeHandle = useFakeHome(() => tempDir);
 
     it("emits import-and-extend project config-types when global install exists", async () => {
       // Seed a global config-types.ts so the global-aware branch kicks in
-      const globalClaudeSrc = path.join(fakeHome, CLAUDE_SRC_DIR);
+      const globalClaudeSrc = path.join(fakeHomeHandle.dir, CLAUDE_SRC_DIR);
       await mkdir(globalClaudeSrc, { recursive: true });
       await writeFile(
         path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -3169,10 +2954,9 @@ describe("local-installer", () => {
 
   // Global uninstall: every inlined global-scoped entry a registered project
   // carries must be pruned (skills, agents, selectedAgents, stack refs) while
-  // project-scoped entries survive untouched. The mocked GLOBAL_INSTALL_ROOT
-  // points at a nonexistent path, matching the post-uninstall state where the
-  // global config-types.ts is already gone — regenerated project types must be
-  // the standalone form.
+  // project-scoped entries survive untouched. No global config-types.ts is
+  // seeded under the home in force, matching the post-uninstall state where it
+  // is already gone — regenerated project types must be the standalone form.
   describe("pruneGlobalEntriesFromRegisteredProjects", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 

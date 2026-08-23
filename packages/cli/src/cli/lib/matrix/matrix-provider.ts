@@ -6,9 +6,8 @@ import type {
   ResolvedSkill,
   ResolvedStack,
   SkillId,
-  SkillSlug,
 } from "../../types";
-import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object";
+import { typedKeys, typedValues } from "../../utils/typed-object";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
 export let matrix: MergedSkillsMatrix = BUILT_IN_MATRIX;
@@ -35,26 +34,9 @@ export function getSkillDisplayName(id: SkillId): string {
   return matrix.skills[id]?.displayName ?? id;
 }
 
-/** Asserting skill lookup by slug — resolves slug to ID, throws if not found. */
-export function getSkillBySlug(slug: SkillSlug): ResolvedSkill {
-  const id = matrix.slugMap.slugToId[slug];
-  if (!id) throw new Error(`Skill not found for slug: ${slug}`);
-  return getSkillById(id);
-}
-
 /** All resolved skills in the current matrix (skips sparse-record holes). */
 export function allSkills(): ResolvedSkill[] {
   return typedValues(matrix.skills);
-}
-
-/** Returns IDs of all custom skills in the current matrix. */
-export function getCustomSkillIds(): Set<SkillId> {
-  return new Set(
-    typedEntries(matrix.skills)
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
-      .filter(([_, skill]) => skill?.custom)
-      .map(([id]) => id),
-  );
 }
 
 /** Look up a category's domain from the matrix (handles auto-synthesized categories for custom skills). */

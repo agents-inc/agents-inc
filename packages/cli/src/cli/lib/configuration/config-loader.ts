@@ -95,18 +95,18 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
 
   let namespace: unknown;
   try {
+    // A fresh engine per call, and the module cache stays off, because one run both writes a
+    // config and reads it back: `init` writes `config.ts`, loads it, writes it again and loads
+    // it twice more, and `compile` re-reads that same file from every path that needs it —
+    // installation detection, source resolution, each stack warning, the recompile, and the
+    // config-types refresh. A cache spanning a run would answer each read that follows a write
+    // with the module as it stood BEFORE it, which is a config the user never wrote. What the
+    // cache would save has never been measured, and its ceiling is a few hundred milliseconds
+    // on a command already waiting on the network and the disk.
     const jiti = createJiti(import.meta.url, {
       moduleCache: false,
       interopDefault: true,
-      // Both spellings on purpose. `@agents-inc/cli/config` is the package name the CLI published
-      // under until 0.150.0, and a config hand-written against the documentation of the day imports
-      // it — but nothing answers to that name in node_modules now that the CLI ships as
-      // `agents-inc`, so dropping the key would stop such a config loading on upgrade. Removing it
-      // once nobody is on the old package: REPO-24 in todo/repo.md.
-      alias: {
-        "agents-inc/config": CONFIG_EXPORTS_PATH,
-        "@agents-inc/cli/config": CONFIG_EXPORTS_PATH,
-      },
+      alias: { "agents-inc/config": CONFIG_EXPORTS_PATH },
     });
 
     namespace = await jiti.import(configPath);

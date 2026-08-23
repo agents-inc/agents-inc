@@ -1,48 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { fileURLToPath } from "url";
-import { chmod, mkdir, readFile as fsReadFile, stat, writeFile as fsWrite } from "fs/promises";
-import type { AgentConfig, Skill, SkillId } from "../types";
-import { DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../consts";
-import { printOutputValidationResult } from "./output-validator";
+import { mkdir, readFile as fsReadFile, writeFile as fsWrite } from "fs/promises";
+import type { AgentConfig } from "../types";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { createMockSkillEntry } from "./__tests__/factories/skill-factories";
 import {
   createMockAgentConfig,
   createMockCompiledAgentData,
 } from "./__tests__/factories/agent-factories";
-import { createCompileContext } from "./__tests__/factories/plugin-factories";
-import {
-  WEB_DEV_NO_SKILLS,
-  API_DEV_NO_SKILLS,
-  WEB_DEV_WITH_REACT,
-  WEB_DEV_WITH_PRELOADED_REACT,
-  WEB_DEV_WITH_VITEST,
-  TWO_AGENTS_SHARED_SKILL,
-} from "./__tests__/mock-data/mock-agents.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Fixture root: __tests__/fixtures/ colocated with test helpers
 const FIXTURES_ROOT = path.resolve(__dirname, "__tests__/fixtures");
-
-// Mock resolver — returns a fixture CLAUDE.md path based on projectRoot
-vi.mock("./resolver", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./resolver")>()),
-  resolveClaudeMd: vi
-    .fn()
-    .mockImplementation(async (projectRoot: string) =>
-      path.join(projectRoot, "src/stacks/default/CLAUDE.md"),
-    ),
-}));
-
-// Mock output-validator — compiler tests focus on compilation, not validation
-vi.mock("./output-validator", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./output-validator")>()),
-  validateCompiledAgent: vi.fn().mockReturnValue({ valid: true, errors: [], warnings: [] }),
-  printOutputValidationResult: vi.fn(),
-}));
 
 // Mock logger (suppress output during tests)
 vi.mock("../utils/logger", async (importOriginal) => ({
@@ -55,12 +27,7 @@ vi.mock("../utils/logger", async (importOriginal) => ({
 
 import {
   compileAgentForPlugin,
-  compileAllAgents,
-  compileAllSkills,
-  copyClaudeMdToOutput,
-  compileAllCommands,
   createLiquidEngine,
-  removeCompiledOutputDirs,
   sanitizeLiquidSyntax,
   sanitizeCompiledAgentData,
   buildAgentTemplateContext,
@@ -70,10 +37,14 @@ import {
   hasProvenanceMarker,
   stampProvenanceMarker,
 } from "./agents/agent-provenance.js";
-import { validateCompiledAgent } from "./output-validator";
 import { warn } from "../utils/logger";
-import type { CompiledAgentData } from "../types";
+import { CLAUDE_SRC_DIR, DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
+import type { CompiledAgentData, PluginSkillRef, SkillId } from "../types";
 import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
+import {
+  parseCompiledAgentSections,
+  type CompiledAgentDynamicEntry,
+} from "./__tests__/helpers/compiled-agent-sections.js";
 
 /**
  * Copies fixture files into a temp directory matching the project layout
@@ -110,87 +81,125 @@ async function createProjectFromFixtures(): Promise<string> {
     await fsWrite(path.join(apiDevDir, file), content);
   }
 
-  // Template
-  const templatesDir = path.join(tempDir, "src/agents/_templates");
+  return tempDir;
+}
+
+/**
+ * Puts the fixture template where a project's own override lives — the first root
+ * {@link createLiquidEngine} resolves `agent` from, and where `eject templates` writes.
+ *
+ * Called by the one spec whose subject is the override, and nowhere else: a project built
+ * with this in place renders every agent through the fixture, and the shipped-template
+ * assertions below would then be describing the fixture instead.
+ */
+async function installProjectTemplateOverride(projectDir: string): Promise<void> {
+  const templatesDir = path.join(
+    projectDir,
+    CLAUDE_SRC_DIR,
+    STANDARD_DIRS.AGENTS,
+    path.basename(DIRS.templates),
+  );
   await mkdir(templatesDir, { recursive: true });
   const templateContent = await fsReadFile(
     path.join(FIXTURES_ROOT, "agents/_templates/agent.liquid"),
     "utf-8",
   );
   await fsWrite(path.join(templatesDir, "agent.liquid"), templateContent);
-
-  // Skills (folder-based)
-  const reactSkillDir = path.join(tempDir, "skills/web-framework-react");
-  await mkdir(reactSkillDir, { recursive: true });
-  const skillContent = await fsReadFile(
-    path.join(FIXTURES_ROOT, "skills/web-framework-react/SKILL.md"),
-    "utf-8",
-  );
-  await fsWrite(path.join(reactSkillDir, STANDARD_FILES.SKILL_MD), skillContent);
-
-  // Skills (single-file)
-  const skillsDir = path.join(tempDir, "skills");
-  const vitestContent = await fsReadFile(
-    path.join(FIXTURES_ROOT, "skills/web-testing-vitest.md"),
-    "utf-8",
-  );
-  await fsWrite(path.join(skillsDir, "web-testing-vitest.md"), vitestContent);
-
-  // Commands
-  const commandsDir = path.join(tempDir, "src/commands");
-  await mkdir(commandsDir, { recursive: true });
-  for (const file of ["deploy.md", "test.md"] as const) {
-    const content = await fsReadFile(path.join(FIXTURES_ROOT, "commands", file), "utf-8");
-    await fsWrite(path.join(commandsDir, file), content);
-  }
-
-  // CLAUDE.md for stack
-  const stackDir = path.join(tempDir, "src/stacks/default");
-  await mkdir(stackDir, { recursive: true });
-  const claudeContent = await fsReadFile(
-    path.join(FIXTURES_ROOT, "stacks/default/CLAUDE.md"),
-    "utf-8",
-  );
-  await fsWrite(path.join(stackDir, "CLAUDE.md"), claudeContent);
-
-  return tempDir;
 }
 
-function contextForProject(projectRoot: string) {
-  return createCompileContext({
-    projectRoot,
-    outputDir: path.join(projectRoot, `.claude/plugins/${DEFAULT_PLUGIN_NAME}`),
-  });
-}
+/** The line only the fixture template emits, and therefore the one that says which rendered. */
+const PROJECT_TEMPLATE_MARKER = "Rendered by the project's own agent template.";
 
-// Error-path / test-specific skill entries (not shared)
+/**
+ * A frontmatter key the SHIPPED template emits unconditionally and the fixture template emits
+ * never — how an override that REPLACED the shipped template is told from one whose output was
+ * merely added to.
+ */
+const SHIPPED_TEMPLATE_KEY = "permissionMode:";
 
-const MISSING_SKILL: Skill = {
-  // Boundary cast: fictional skill ID for testing missing-skill error paths
-  ...createMockSkillEntry("web-missing-skill" as SkillId),
-  path: "skills/missing.md",
-};
+/** A sub-agent whose own metadata carries Liquid syntax, so the sanitiser has something to strip. */
+const WEB_DEV_LIQUID_INJECTION: AgentConfig = createMockAgentConfig("web-developer", [], {
+  name: '{{ "INJECTED" }}',
+  title: "{% assign x = 1 %}Injected",
+});
 
-// Error-path / test-specific agent maps (not shared)
+/**
+ * A sub-agent carrying BOTH optional permission fields, so a template that never reads one
+ * has something to lose. A fixture leaving either unset would satisfy the emission assertions
+ * from the template's own defaults and prove nothing about the lookup.
+ */
+const WEB_DEV_TUNED_PERMISSIONS: AgentConfig = createMockAgentConfig("web-developer", [], {
+  permissionMode: "plan",
+  disallowedTools: ["Bash", "WebFetch"],
+});
 
-const WEB_DEV_NONEXISTENT_PATH: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [], {
-    path: "nonexistent-agent",
-  }),
-};
+/** A marketplace name — anything but {@link EJECT_SOURCE} is what earns a skill its `pluginRef`. */
+const MARKETPLACE_ORIGIN = "agents-inc";
 
-const WEB_DEV_MISSING_SKILL: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [MISSING_SKILL]),
-};
+/**
+ * Four skills that interleave the two loads and sit in no alphabetical order, so a template
+ * that sorted them, grouped them by load or swapped a neighbouring pair shows up in the
+ * membership rather than only in a count. The pair below differ in `source` alone: one
+ * renders every skill as a plugin ref, the other renders every skill as a bare id.
+ */
+const WEB_DEV_PLUGIN_SKILLS: AgentConfig = createMockAgentConfig("web-developer", [
+  createMockSkillEntry("web-testing-vitest", false, { source: MARKETPLACE_ORIGIN }),
+  createMockSkillEntry("web-framework-react", true, { source: MARKETPLACE_ORIGIN }),
+  createMockSkillEntry("web-state-zustand", false, { source: MARKETPLACE_ORIGIN }),
+  createMockSkillEntry("web-styling-tailwind", true, { source: MARKETPLACE_ORIGIN }),
+]);
 
-const WEB_DEV_LIQUID_INJECTION: Record<string, AgentConfig> = {
-  "web-developer": createMockAgentConfig("web-developer", [], {
-    name: '{{ "INJECTED" }}',
-    title: "{% assign x = 1 %}Injected",
-  }),
-};
+const WEB_DEV_EJECTED_SKILLS: AgentConfig = createMockAgentConfig("web-developer", [
+  createMockSkillEntry("web-testing-vitest", false, { source: EJECT_SOURCE }),
+  createMockSkillEntry("web-framework-react", true, { source: EJECT_SOURCE }),
+  createMockSkillEntry("web-state-zustand", false, { source: EJECT_SOURCE }),
+  createMockSkillEntry("web-styling-tailwind", true, { source: EJECT_SOURCE }),
+]);
 
-const COMPILED_OUTPUT = "---\nname: test\n---\n# Compiled output";
+const PLUGIN_PRELOADED_REFS = [
+  "web-framework-react:web-framework-react",
+  "web-styling-tailwind:web-styling-tailwind",
+] as const satisfies readonly PluginSkillRef[];
+
+/**
+ * The heading is the BARE id in plugin mode too — only the `Invoke:` line carries the ref.
+ * An expectation written in the ref form on both fields reads one of the two lines and
+ * describes the other wrongly.
+ */
+const PLUGIN_DYNAMIC_ENTRIES = [
+  { id: "web-testing-vitest", invokeRef: "web-testing-vitest:web-testing-vitest" },
+  { id: "web-state-zustand", invokeRef: "web-state-zustand:web-state-zustand" },
+] as const satisfies readonly CompiledAgentDynamicEntry[];
+
+const EJECTED_PRELOADED_REFS = [
+  "web-framework-react",
+  "web-styling-tailwind",
+] as const satisfies readonly SkillId[];
+
+const EJECTED_DYNAMIC_ENTRIES = [
+  { id: "web-testing-vitest", invokeRef: "web-testing-vitest" },
+  { id: "web-state-zustand", invokeRef: "web-state-zustand" },
+] as const satisfies readonly CompiledAgentDynamicEntry[];
+
+/**
+ * Every section the shipped template opens at the top level, in the order it opens them —
+ * the fixture agent's `identity.md`, `playbook.md` and `output.md` contribute the headings
+ * and carry no tags of their own, so this list is the template's own structure.
+ */
+const SHIPPED_TEMPLATE_SECTIONS = [
+  "# web-developer agent",
+  "<role>",
+  "<core_principles>",
+  "<methodologies>",
+  "<critical_requirements>",
+  "<skill_activation_protocol>",
+  "## Workflow",
+  "## Standards and Conventions",
+  "## Examples",
+  "## Output Format",
+  "<critical_reminders>",
+] as const;
+
 const STUB_OUTPUT = "---\nname: test\n---\n# output";
 
 describe("compiler", () => {
@@ -204,226 +213,59 @@ describe("compiler", () => {
     await cleanupTempDir(projectDir);
   });
 
-  describe("compileAllAgents", () => {
-    describe("output directory and file writing", () => {
-      it("when compiling agents, should create the agents output directory", async () => {
-        const engine = { renderFile: vi.fn().mockResolvedValue(COMPILED_OUTPUT) };
+  /**
+   * What the compile reads off disk before it renders anything. The template is handed the
+   * agent's own `identity.md` and `playbook.md`, plus an `output.md` that is optional and
+   * resolved from the agent's directory first — so a spec that only counted the call could not
+   * tell a populated context from an empty one.
+   */
+  describe("reading agent source files", () => {
+    it("when compiling an agent, should pass agent data to template engine", async () => {
+      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
 
-        const ctx = contextForProject(projectDir);
-        await compileAllAgents(WEB_DEV_WITH_PRELOADED_REACT, ctx, engine as never);
+      await compileAgentForPlugin(
+        "api-developer",
+        createMockAgentConfig("api-developer"),
+        projectDir,
+        engine as never,
+      );
 
-        const dirStat = await stat(path.join(ctx.outputDir, "agents"));
-        expect(dirStat.isDirectory()).toBe(true);
-      });
-
-      // The render is what the template produced; the file is what the compiler wrote, and
-      // between them sits the provenance stamp every compiled agent carries.
-      it("when compiling agents, should write the stamped compiled agent to the output file", async () => {
-        const engine = { renderFile: vi.fn().mockResolvedValue(COMPILED_OUTPUT) };
-
-        const ctx = contextForProject(projectDir);
-        await compileAllAgents(WEB_DEV_WITH_PRELOADED_REACT, ctx, engine as never);
-
-        const outputPath = path.join(ctx.outputDir, "agents/web-developer.md");
-        const content = await fsReadFile(outputPath, "utf-8");
-        expect(content).toBe(stampProvenanceMarker(COMPILED_OUTPUT, await cliVersion()));
-      });
+      expect(engine.renderFile).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({
+          identity: expect.stringContaining("API Developer"),
+          playbook: expect.stringContaining("Design the API"),
+        }),
+      );
     });
 
-    describe("reading agent source files", () => {
-      it("when compiling an agent, should pass agent data to template engine", async () => {
-        const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
+    it("when compiling an agent, should read optional output.md file", async () => {
+      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
 
-        const ctx = contextForProject(projectDir);
-        await compileAllAgents(API_DEV_NO_SKILLS, ctx, engine as never);
+      await compileAgentForPlugin(
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine as never,
+      );
 
-        expect(engine.renderFile).toHaveBeenCalledWith(
-          "agent",
-          expect.objectContaining({
-            identity: expect.stringContaining("API Developer"),
-            playbook: expect.stringContaining("Design the API"),
-          }),
-        );
-      });
-
-      it("when compiling an agent, should read optional output.md file", async () => {
-        const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
-
-        const ctx = contextForProject(projectDir);
-        await compileAllAgents(WEB_DEV_NO_SKILLS, ctx, engine as never);
-
-        expect(engine.renderFile).toHaveBeenCalledWith(
-          "agent",
-          expect.objectContaining({
-            output: expect.any(String),
-          }),
-        );
-      });
+      expect(engine.renderFile).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({ output: expect.any(String) }),
+      );
     });
 
-    describe("error handling", () => {
-      it("when agent file read fails, should throw descriptive error with agent name", async () => {
-        const engine = { renderFile: vi.fn() };
+    it("when the agent directory is absent, should reject naming the path it could not read", async () => {
+      const engine = { renderFile: vi.fn() };
 
-        await expect(
-          compileAllAgents(
-            WEB_DEV_NONEXISTENT_PATH,
-            contextForProject(projectDir),
-            engine as never,
-          ),
-        ).rejects.toThrow(/Failed to compile agent 'web-developer'/);
-      });
-    });
-
-    describe("output validation", () => {
-      it("when compilation has warnings, should call validateCompiledAgent", async () => {
-        vi.mocked(validateCompiledAgent).mockReturnValue({
-          valid: true,
-          errors: [],
-          warnings: ["Missing <role> section"],
-        });
-
-        const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
-
-        await compileAllAgents(WEB_DEV_NO_SKILLS, contextForProject(projectDir), engine as never);
-
-        // Validation sees the bytes that were written, stamp included — not the raw render.
-        expect(validateCompiledAgent).toHaveBeenCalledWith(
-          stampProvenanceMarker(STUB_OUTPUT, await cliVersion()),
-        );
-      });
-
-      it("when validation has warnings, should print validation result", async () => {
-        vi.mocked(validateCompiledAgent).mockReturnValue({
-          valid: true,
-          errors: [],
-          warnings: ["Missing <role> section"],
-        });
-
-        const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
-
-        await compileAllAgents(WEB_DEV_NO_SKILLS, contextForProject(projectDir), engine as never);
-
-        expect(printOutputValidationResult).toHaveBeenCalledWith(
-          "web-developer",
-          expect.objectContaining({ warnings: ["Missing <role> section"] }),
-        );
-      });
-    });
-  });
-
-  describe("compileAllSkills", () => {
-    it("copies folder-based skills with SKILL.md", async () => {
-      const ctx = contextForProject(projectDir);
-      await compileAllSkills(WEB_DEV_WITH_REACT, ctx);
-
-      const outputPath = path.join(ctx.outputDir, "skills/web-framework-react/SKILL.md");
-      const content = await fsReadFile(outputPath, "utf-8");
-      expect(content).toContain("React Framework");
-    });
-
-    it("copies single-file skills", async () => {
-      const ctx = contextForProject(projectDir);
-      await compileAllSkills(WEB_DEV_WITH_VITEST, ctx);
-
-      const outputPath = path.join(ctx.outputDir, "skills/web-testing-vitest/SKILL.md");
-      const content = await fsReadFile(outputPath, "utf-8");
-      expect(content).toContain("Vitest Testing");
-    });
-
-    it("deduplicates skills across agents", async () => {
-      const ctx = contextForProject(projectDir);
-      await compileAllSkills(TWO_AGENTS_SHARED_SKILL, ctx);
-
-      const outputPath = path.join(ctx.outputDir, "skills/web-framework-react/SKILL.md");
-      const content = await fsReadFile(outputPath, "utf-8");
-      expect(content).toContain("React Framework");
-    });
-
-    it("throws descriptive error when skill file is missing", async () => {
       await expect(
-        compileAllSkills(WEB_DEV_MISSING_SKILL, contextForProject(projectDir)),
-      ).rejects.toThrow(/Failed to compile skill 'web-missing-skill'/);
-    });
-  });
-
-  describe("copyClaudeMdToOutput", () => {
-    it("reads resolved CLAUDE.md and writes to output", async () => {
-      const ctx = contextForProject(projectDir);
-      await copyClaudeMdToOutput(ctx);
-
-      const outputPath = path.join(ctx.outputDir, "../CLAUDE.md");
-      const content = await fsReadFile(outputPath, "utf-8");
-      expect(content).toContain("Project-level instructions for Claude");
-    });
-  });
-
-  describe("compileAllCommands", () => {
-    it("skips when commands directory does not exist", async () => {
-      const emptyProject = await createTempDir("compiler-no-cmds-");
-
-      const ctx = contextForProject(emptyProject);
-      await compileAllCommands(ctx);
-
-      await expect(stat(path.join(ctx.outputDir, "commands"))).rejects.toThrow();
-
-      await cleanupTempDir(emptyProject);
-    });
-
-    it("copies command files to output directory", async () => {
-      const ctx = contextForProject(projectDir);
-      await compileAllCommands(ctx);
-
-      const deployContent = await fsReadFile(
-        path.join(ctx.outputDir, "commands/deploy.md"),
-        "utf-8",
-      );
-      expect(deployContent).toContain("Deploy the application");
-
-      const testContent = await fsReadFile(path.join(ctx.outputDir, "commands/test.md"), "utf-8");
-      expect(testContent).toContain("Run the test suite");
-    });
-
-    it("skips when no command files found", async () => {
-      const emptyProject = await createTempDir("compiler-empty-cmds-");
-      await mkdir(path.join(emptyProject, "src/commands"), { recursive: true });
-
-      const ctx = contextForProject(emptyProject);
-      await compileAllCommands(ctx);
-
-      await expect(stat(path.join(ctx.outputDir, "commands"))).rejects.toThrow();
-
-      await cleanupTempDir(emptyProject);
-    });
-
-    it("throws descriptive error when command file read fails", async () => {
-      const brokenProject = await createTempDir("compiler-bad-cmd-");
-      const cmdDir = path.join(brokenProject, "src/commands");
-      await mkdir(cmdDir, { recursive: true });
-      await fsWrite(path.join(cmdDir, "deploy.md"), "content");
-      await chmod(path.join(cmdDir, "deploy.md"), 0o000);
-
-      await expect(compileAllCommands(contextForProject(brokenProject))).rejects.toThrow(
-        /Failed to compile command 'deploy\.md'/,
-      );
-
-      await chmod(path.join(cmdDir, "deploy.md"), 0o644);
-      await cleanupTempDir(brokenProject);
-    });
-  });
-
-  describe("removeCompiledOutputDirs", () => {
-    it("removes agents, skills, and commands directories", async () => {
-      const outputDir = path.join(projectDir, "output-test");
-      await mkdir(path.join(outputDir, "agents"), { recursive: true });
-      await mkdir(path.join(outputDir, "skills"), { recursive: true });
-      await mkdir(path.join(outputDir, "commands"), { recursive: true });
-
-      await removeCompiledOutputDirs(outputDir);
-
-      await expect(stat(path.join(outputDir, "agents"))).rejects.toThrow();
-      await expect(stat(path.join(outputDir, "skills"))).rejects.toThrow();
-      await expect(stat(path.join(outputDir, "commands"))).rejects.toThrow();
+        compileAgentForPlugin(
+          "web-developer",
+          createMockAgentConfig("web-developer", [], { path: "nonexistent-agent" }),
+          projectDir,
+          engine as never,
+        ),
+      ).rejects.toThrow(/nonexistent-agent/);
     });
   });
 
@@ -434,10 +276,48 @@ describe("compiler", () => {
       expect(typeof engine.renderFile).toBe("function");
     });
 
-    it("checks for local template overrides when projectDir provided", async () => {
+    /**
+     * A project's own `agent.liquid` shadowing the shipped one is the whole of what the root
+     * hierarchy is for, and what `eject templates` sells — and the pair is what makes either
+     * half a claim. An engine renders whatever is in front of it, so "the marker arrived"
+     * says nothing on its own about which template the compile chose.
+     */
+    it("renders a project's own agent template in place of the shipped one", async () => {
+      await installProjectTemplateOverride(projectDir);
       const engine = await createLiquidEngine(projectDir);
 
-      expect(typeof engine.renderFile).toBe("function");
+      const compiled = await compileAgentForPlugin(
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine,
+      );
+
+      expect(compiled, "the project's own template is the one that rendered").toContain(
+        PROJECT_TEMPLATE_MARKER,
+      );
+      expect(
+        compiled,
+        "an override replaces the shipped template rather than adding to it, so the frontmatter it does not write is not written",
+      ).not.toContain(SHIPPED_TEMPLATE_KEY);
+    });
+
+    it("renders the shipped template when the project has no override", async () => {
+      const engine = await createLiquidEngine(projectDir);
+
+      const compiled = await compileAgentForPlugin(
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine,
+      );
+
+      expect(compiled, "a project with no template of its own gets the shipped one").toContain(
+        SHIPPED_TEMPLATE_KEY,
+      );
+      expect(compiled, "nothing rendered the fixture template here").not.toContain(
+        PROJECT_TEMPLATE_MARKER,
+      );
     });
   });
 
@@ -623,12 +503,137 @@ describe("compiler", () => {
     });
   });
 
+  /**
+   * The SHIPPED template rendered by a REAL engine, asserting the VALUE of each optional
+   * frontmatter field rather than the presence of its key, and the MEMBERSHIP of each skill
+   * list rather than its length.
+   *
+   * Presence is not a test of the first two. `permissionMode` is emitted unconditionally
+   * behind a `default:` filter, so its key survives a lookup that resolves to nothing and a
+   * `toHaveProperty("permissionMode")` stays green while the agent's own setting is discarded.
+   * `disallowedTools` is the same failure with the opposite tell — the whole line vanishes — so
+   * the third case below is the control that says an absent field is what suppressed it.
+   *
+   * Length is not a test of the skill lists either: a count cannot see a swap, and the order
+   * of a sub-agent's skills IS the order its config declared them in, so a template that
+   * sorted or regrouped them would leave every count intact.
+   *
+   * `createLiquidEngine()` is called with no `projectDir` deliberately: a project-local
+   * `_templates/` override would shadow the shipped template and the assertions would describe
+   * the fixture instead.
+   */
+  describe("shipped agent template", () => {
+    it("emits the permissionMode the agent carries, not the template default", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_TUNED_PERMISSIONS,
+        projectDir,
+        engine,
+      );
+
+      expect(output).toContain("permissionMode: plan");
+    });
+
+    it("emits disallowedTools when the agent carries them", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_TUNED_PERMISSIONS,
+        projectDir,
+        engine,
+      );
+
+      expect(output).toContain("disallowedTools: Bash, WebFetch");
+    });
+
+    it("falls back to the default permissionMode and omits disallowedTools when neither is set", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine,
+      );
+
+      expect(output).toContain("permissionMode: default");
+      expect(output).not.toContain("disallowedTools:");
+    });
+
+    it("preloads exactly the skills the agent marks preloaded, in declaration order", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_PLUGIN_SKILLS,
+        projectDir,
+        engine,
+      );
+
+      expect(parseCompiledAgentSections(output).preloadedRefs).toStrictEqual([
+        ...PLUGIN_PRELOADED_REFS,
+      ]);
+    });
+
+    it("activates exactly the skills the agent leaves dynamic, in declaration order", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_PLUGIN_SKILLS,
+        projectDir,
+        engine,
+      );
+
+      expect(parseCompiledAgentSections(output).dynamicEntries).toStrictEqual([
+        ...PLUGIN_DYNAMIC_ENTRIES,
+      ]);
+    });
+
+    it("renders an ejected skill as its bare id on both sides", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_EJECTED_SKILLS,
+        projectDir,
+        engine,
+      );
+      const { preloadedRefs, dynamicEntries } = parseCompiledAgentSections(output);
+
+      expect(preloadedRefs).toStrictEqual([...EJECTED_PRELOADED_REFS]);
+      expect(dynamicEntries).toStrictEqual([...EJECTED_DYNAMIC_ENTRIES]);
+    });
+
+    it("opens its own sections in order around the agent's prose", async () => {
+      const engine = await createLiquidEngine();
+
+      const output = await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_PLUGIN_SKILLS,
+        projectDir,
+        engine,
+      );
+
+      expect(parseCompiledAgentSections(output).sectionOrder).toStrictEqual([
+        ...SHIPPED_TEMPLATE_SECTIONS,
+      ]);
+    });
+  });
+
   describe("template injection prevention (integration)", () => {
     it("when agent.name contains Liquid syntax, should not execute it", async () => {
       const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
 
-      const ctx = contextForProject(projectDir);
-      await compileAllAgents(WEB_DEV_LIQUID_INJECTION, ctx, engine as never);
+      await compileAgentForPlugin(
+        "web-developer",
+        WEB_DEV_LIQUID_INJECTION,
+        projectDir,
+        engine as never,
+      );
 
       const renderCall = elementAt(
         firstElement(engine.renderFile.mock.calls),

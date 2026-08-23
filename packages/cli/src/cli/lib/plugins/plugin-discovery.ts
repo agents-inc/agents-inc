@@ -54,22 +54,6 @@ export async function discoverAllPluginSkills(projectDir: string): Promise<Skill
 }
 
 /**
- * Checks whether any plugins are enabled in settings.json.
- *
- * @param projectDir - Absolute path to the project root
- * @returns true if at least one plugin is enabled in settings.json
- */
-export async function hasIndividualPlugins(projectDir: string): Promise<boolean> {
-  try {
-    const pluginPaths = await getVerifiedPluginInstallPaths(projectDir);
-    return pluginPaths.length > 0;
-  } catch (error) {
-    verbose(`Failed to check for individual plugins: ${getErrorMessage(error)}`);
-    return false;
-  }
-}
-
-/**
  * Lists the keys of all enabled plugins.
  *
  * @param projectDir - Absolute path to the project root
