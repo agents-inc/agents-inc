@@ -169,6 +169,39 @@ describe("toSeedPayload", () => {
     expect(fromSeedPayload(payload).skills[SKILL]!.assignments).toEqual({})
   })
 
+  // The payload is what is on screen, and nothing quietly less. A row the two
+  // scopes rule out is an ERROR the user has to resolve — not a row to strip on
+  // the way out, which would mint a link describing a different configuration
+  // from the one that was shared. Share and Install are blocked while one
+  // stands (see `summarize().unscopedAgentCount`), so the only door this
+  // payload leaves by is Save — a local snapshot that must round-trip exactly.
+  it("carries a row the two scopes rule out rather than stripping it", () => {
+    const projectSkill = {
+      ...config(),
+      skills: {
+        [SKILL]: { ...config().skills[SKILL]!, scope: "project" as const },
+      },
+    }
+
+    expect(toSeedPayload(projectSkill).skills[SKILL]!.assignments).toEqual({
+      [AGENT]: "preloaded",
+    })
+  })
+
+  it("carries it once the sub-agent is pinned to the project too", () => {
+    const bothProject = {
+      ...config(),
+      skills: {
+        [SKILL]: { ...config().skills[SKILL]!, scope: "project" as const },
+      },
+      agents: { [AGENT]: { on: true, scope: "project" as const } },
+    }
+
+    expect(toSeedPayload(bothProject).skills[SKILL]!.assignments).toEqual({
+      [AGENT]: "preloaded",
+    })
+  })
+
   // An agent switched on by its assignments is already implied by them, so
   // repeating `on` would be the one place the payload could contradict itself.
   it("travels a derived-on agent's overrides without a pin", () => {
@@ -292,6 +325,31 @@ describe("fromSeedPayload", () => {
 
     expect(restored.stackId).toBe(null)
     expect(Object.keys(restored.skills)).toEqual([SKILL])
+  })
+
+  // The second of the two doors a configuration holding the bad pair arrives
+  // through, and the one the ruling is emphatic about: silently dropping
+  // assignments somebody SHARED is the outcome that must not happen. Every
+  // payload minted before this rule existed can carry one, so the import keeps
+  // it verbatim — what changes is that it no longer counts, and the screen says
+  // so above the grid.
+  it("keeps an assignment the two scopes rule out rather than dropping it", () => {
+    const payload = toSeedPayload(config())
+    const shared = {
+      ...payload,
+      skills: {
+        [SKILL]: {
+          ...payload.skills[SKILL]!,
+          scope: "project" as const,
+          assignments: { [AGENT]: "preloaded" as const },
+        },
+      },
+      agents: {},
+    }
+
+    expect(fromSeedPayload(shared).skills[SKILL]!.assignments).toEqual({
+      [AGENT]: { load: "preloaded", enabled: true },
+    })
   })
 
   // The agents map is as exposed to catalogue drift as the skills map, and it

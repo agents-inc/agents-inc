@@ -1,5 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi"
-import { seedPayloadSchema } from "@workspace/matrix/seed"
+import {
+  SEED_VERSION,
+  installableSeedPayloadSchema,
+  seedPayloadSchema,
+} from "@workspace/matrix/seed"
 import {
   SKILL_INDEX_FRESHNESS_HEADER,
   skillIndexSchema,
@@ -9,7 +13,7 @@ import { cors } from "hono/cors"
 import { messageOf } from "./log"
 import { freshnessOf, readSkillIndex, secondsUntilStale } from "./skill-index"
 
-import type { RouteHandler } from "@hono/zod-openapi"
+import type { RouteHandler, RouteHook } from "@hono/zod-openapi"
 import type { Context } from "hono"
 
 // This worker's own bindings, named once. `Env` is the global `wrangler types`
@@ -64,7 +68,15 @@ const createConfigRoute = createRoute({
   tags: ["Configs"],
   request: {
     body: {
-      content: { "application/json": { schema: seedPayloadSchema } },
+      // The INSTALLABLE schema, not the base one, and the asymmetry with the
+      // GET below is the point. Storing is where a link is created, so a
+      // configuration nobody could install must be refused before it has an
+      // address; reading has to stay lenient, because links holding the pair
+      // are already out in the world and the editor's whole repair flow
+      // depends on being able to open one.
+      content: {
+        "application/json": { schema: installableSeedPayloadSchema },
+      },
       required: true,
     },
   },
@@ -74,6 +86,15 @@ const createConfigRoute = createRoute({
       content: { "application/json": { schema: configIdSchema } },
     },
     400: { description: "Body is not a valid seed payload" },
+    // Split out of the 400 above rather than added to it. The two refusals ask
+    // different things of the caller: a malformed body is a bug nobody reading
+    // it can fix, while a payload naming another seed version is a browser tab
+    // running a bundle from before the last deploy — which one hard reload
+    // fixes. A status is the only part of this answer a client is guaranteed to
+    // read, so it is where the difference has to live.
+    409: {
+      description: "Body names a seed version this worker does not serve",
+    },
     413: { description: "Body exceeds the size cap" },
     503: { description: "The store refused the write" },
   },
@@ -170,6 +191,43 @@ const logKvFailure = (operation: string, error: unknown) =>
 // are not the bytes that were hashed into it, so the id is logged alongside.
 const logCorruptPayload = (id: string, error: unknown) =>
   console.error({ event: "corrupt_payload", id, message: messageOf(error) })
+
+// `v` is `z.literal(SEED_VERSION)`, so every way of getting it wrong — an
+// older number, a newer one, or no `v` at all — arrives as one issue on this
+// one path. That is exactly the question worth asking: the body is addressed to
+// a contract this worker does not serve, and no amount of retrying it changes
+// that.
+const namesAnotherSeedVersion = (error: z.ZodError) =>
+  error.issues.some((issue) => issue.path.length === 1 && issue.path[0] === "v")
+
+// The shape `@hono/zod-openapi` hands a validation hook, read off the library's
+// own type so it cannot drift. The return type below is narrowed by hand because
+// `RouteHook` also admits `void`, which the route registration does not.
+type BodyValidation = Parameters<
+  RouteHook<typeof createConfigRoute, WorkerEnv>
+>[0]
+
+// Runs on the POST's body validation and only ever *narrows*: returning
+// nothing hands the request back to the validator's own 400, so a body that is
+// malformed at the current version answers exactly as it did before this
+// existed.
+//
+// The sentence matters as much as the status. `409` is what a client branches
+// on, but a person reading this by hand — from a console, from curl — is the
+// one who most needs to be told that reloading is the whole fix.
+const refuseAnotherSeedVersion = (
+  validation: BodyValidation,
+  c: Context<WorkerEnv>
+): Response | undefined => {
+  if (validation.success || !namesAnotherSeedVersion(validation.error)) {
+    return undefined
+  }
+
+  return c.text(
+    `Reload the page: this configuration names another version of the sharing contract, and this service serves v${String(SEED_VERSION)}`,
+    409
+  )
+}
 
 const createConfig: RouteHandler<typeof createConfigRoute, WorkerEnv> = async (
   c
@@ -346,7 +404,7 @@ const tunnelEnvelope: RouteHandler<typeof tunnelRoute, WorkerEnv> = async (
 // exactly that type, so a route dropped out of this chain would vanish from
 // the editor's API surface rather than fail here.
 const api = app
-  .openapi(createConfigRoute, createConfig)
+  .openapi(createConfigRoute, createConfig, refuseAnotherSeedVersion)
   .openapi(getConfigRoute, getConfig)
   .openapi(skillIndexRoute, getSkillIndex)
   .openapi(tunnelRoute, tunnelEnvelope)

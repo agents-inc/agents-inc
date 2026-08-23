@@ -4,11 +4,18 @@ import { expect, test } from "../fixtures"
 import {
   DOMAINS,
   EXCLUSIVE_CATEGORY,
+  SINGLE_AGENT_SKILL,
   STACKS,
   STACK_MEMBER_SKILL,
 } from "../support/catalog"
 import { stubMarketplaceCatalog } from "../support/marketplace"
-import { STORED_ID, stubCreateConfig } from "../support/sharing"
+import {
+  OUT_OF_DATE,
+  STORED_ID,
+  STORE_UNAVAILABLE,
+  stubCreateConfig,
+  stubCreateConfigRefusal,
+} from "../support/sharing"
 
 import type { ConfigurePage } from "../pages/configure-page"
 
@@ -108,6 +115,40 @@ test.describe("install dialog", () => {
   })
 })
 
+// The SECOND door on `createSharedConfig` (SERVER-04), and it was never
+// touched. Minting happens when this dialog OPENS, so a tab running a bundle
+// from before the last deploy is refused here exactly as the Share button is —
+// and the line under the command is the only surface that can say so. It said
+// "id unavailable — this command starts a fresh wizard" for all three
+// refusals, which told the one reader with a remedy nothing about it.
+test.describe("install dialog when the id cannot be minted", () => {
+  test("a stale page is told to reload", async ({ configure, page }) => {
+    await stubCreateConfigRefusal(page, OUT_OF_DATE)
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "out of date — reload the page for an id"
+    )
+  })
+
+  // The other two have no remedy, so the note says what the command on screen
+  // will do instead — and must not send anyone to reload a page that is fine.
+  test("a refused store says what the command will do instead", async ({
+    configure,
+    page,
+  }) => {
+    await stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "id unavailable — this command starts a fresh wizard"
+    )
+    await expect(configure.installDialog.root).not.toContainText("out of date")
+  })
+})
+
 // The agents pane follows the derived on/off state, pins included.
 test.describe("install dialog with pins", () => {
   test.beforeEach(async ({ page }) => {
@@ -168,11 +209,19 @@ test.describe("install dialog counts", () => {
     await expect(configure.installDialog.footerNote).toContainText("1 ejected")
   })
 
+  // Two clicks rather than one since EDITOR-08: a project-scoped skill on a
+  // sub-agent resting at global blocks Install outright, so the sub-agent
+  // carrying it has to move too. `SINGLE_AGENT_SKILL` is the stack's one skill
+  // that reaches a single sub-agent, which is what keeps that to one extra
+  // click instead of seven.
   test("a skill set to project moves to the Project group", async ({
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
-    await configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).flipScope()
+    await configure
+      .skillIn(web, SINGLE_AGENT_SKILL.category, SINGLE_AGENT_SKILL.name)
+      .flipScope()
+    await configure.roster.scopeControl(SINGLE_AGENT_SKILL.agentId).click()
 
     await configure.roster.installButton.click()
 

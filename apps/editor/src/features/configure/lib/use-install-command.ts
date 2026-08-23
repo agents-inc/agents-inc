@@ -7,6 +7,7 @@ import { useCatalogStore } from "@/stores/catalog-store"
 import { toSeedPayload } from "./seed"
 
 import type { ConfigSelection } from "./derive"
+import type { ShareRefusal, ShareResult } from "@/lib/api/configs"
 
 const COPIED_DECAY_MS = 2_000
 
@@ -21,13 +22,67 @@ const BASE_COMMAND = "npx agents-inc init"
 const ID_FLAG = "--from"
 
 export type InstallCommand =
-  { status: "minting" } | { status: "ready"; id: string } | { status: "failed" }
+  | { status: "minting" }
+  | { status: "ready"; id: string }
+  // The refusal travels rather than collapsing into a bare "failed", for the
+  // reason the Share button's narrations exist (SERVER-04): one of the three
+  // has a remedy and the other two do not, and a surface that cannot tell them
+  // apart cannot mention it.
+  | { status: "failed"; refusal: ShareRefusal }
+
+/**
+ * Every ending the line under the command has to speak for.
+ *
+ * `copied` is here and not on `InstallCommand` because copying is not an
+ * outcome of minting — the command is on screen and copyable whether or not an
+ * id ever arrived.
+ */
+type InstallNote = "minting" | "ready" | "copied" | ShareRefusal
+
+/**
+ * The whole vocabulary, keyed by ending, so a new one cannot reach the dialog
+ * without someone choosing its words — `Record` makes an unlisted member a type
+ * error rather than a blank line.
+ *
+ * It lives beside the hook rather than beside the markup for the same reason
+ * the Share button's does: a table at the render site can only see the coarse
+ * status, which is exactly how three refusals came to share one sentence and
+ * how the one a reload fixes came to read like the two nothing fixes.
+ */
+export const COMMAND_NOTES = {
+  minting: "preparing your id",
+  ready: "click to copy",
+  copied: "copied",
+  // The only ending that names an action. Re-opening the dialog mints again
+  // and is refused again, so without the reload no id ever arrives.
+  "out-of-date": "out of date — reload the page for an id",
+  refused: "id unavailable — this command starts a fresh wizard",
+  unreachable: "offline — this command starts a fresh wizard",
+} as const satisfies Record<InstallNote, string>
 
 // What was minted, and for which configuration. Storing the key alongside the
 // result is what lets both `command` and `copied` be *derived* rather than
 // reset: changing the selection makes the old id stale by comparison, with no
 // effect writing state back on the way through.
-type Minted = { key: string; id: string | null }
+type Minted = { key: string; result: ShareResult }
+
+// Whether what is on screen was minted for what is on screen. Anything else is
+// still in flight, including a result for a selection that has since moved.
+const toCommand = (minted: Minted | null, key: string): InstallCommand => {
+  if (minted?.key !== key) return { status: "minting" }
+  if (!minted.result.ok) {
+    return { status: "failed", refusal: minted.result.refusal }
+  }
+
+  return { status: "ready", id: minted.result.id }
+}
+
+const noteFor = (command: InstallCommand, copied: boolean): string => {
+  if (copied) return COMMAND_NOTES.copied
+  if (command.status === "failed") return COMMAND_NOTES[command.refusal]
+
+  return COMMAND_NOTES[command.status]
+}
 
 // The install dialog's whole job is handing over a command that carries the
 // configuration, which means the configuration has to exist server-side first.
@@ -78,7 +133,7 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
       seedPayloadSchema.parse(JSON.parse(serialized))
     ).then((result) => {
       if (stale) return
-      setMinted({ key: serialized, id: result.ok ? result.id : null })
+      setMinted({ key: serialized, result })
     })
 
     return () => {
@@ -95,12 +150,7 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
     return () => clearTimeout(timer)
   }, [copied])
 
-  const command: InstallCommand =
-    minted?.key !== serialized
-      ? { status: "minting" }
-      : minted.id === null
-        ? { status: "failed" }
-        : { status: "ready", id: minted.id }
+  const command = toCommand(minted, serialized)
 
   const text =
     command.status === "ready"
@@ -117,5 +167,5 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
     }
   }
 
-  return { command, copied, copy, text }
+  return { command, copied, copy, note: noteFor(command, copied), text }
 }

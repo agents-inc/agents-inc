@@ -53,6 +53,13 @@ it serves, so parsing here is the step the real response has already been throug
 that drifts from the contract fails at import, in every consumer, instead of in whichever assertion
 happens to read the field that moved.
 
+The schema is not the whole of what a fixture can get wrong, though. `STORED_PAYLOAD` parsed
+perfectly while pinning a **project**-scoped skill onto a sub-agent resting at global — a pair
+`init --from` throws on rather than installs (`seedToWizardResult` → `unwritableAssignmentsError`),
+so the canonical "a configuration the worker holds" fixture described a link nobody could use. Its
+`web-developer` entry now carries `scope: "project"`, and that key is load-bearing rather than
+flavour. A fixture is a claim about a real response, and the contract only checks the shape of one.
+
 This is also why the package does not import `apps/server`. Its `AppType` is consumable, but only
 as the emitted declaration — the worker's source names `Env` from `wrangler types`, and pulling that
 in redefines DOM globals such as `Element` and `Response` in whatever consumes it. The shared schema

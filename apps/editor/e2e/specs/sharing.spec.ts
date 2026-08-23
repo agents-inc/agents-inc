@@ -2,16 +2,25 @@ import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
   DEAD_LINK_ID,
+  OUT_OF_DATE,
   STORED_ID,
   STORED_PAYLOAD,
+  STORE_UNAVAILABLE,
   captureCreateConfig,
   stubCreateConfig,
+  stubCreateConfigRefusal,
   stubGetConfig,
   stubGetConfigMissing,
 } from "../support/sharing"
 
 const SEED_VERSION = 5
 const REACT_ID = "web-framework-react"
+
+// Longer than `RESET_DELAY_MS` in `use-share-link.ts`, with room for a render
+// after it. The one fixed wait in this suite, and here it IS the assertion
+// rather than a workaround for a flaky one: what is being checked is that
+// nothing happens.
+const PAST_THE_DECAY_WINDOW_MS = 3_000
 
 test.describe("sharing a configuration", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
@@ -76,7 +85,55 @@ test.describe("sharing a configuration", () => {
     expect(body!.agents).toEqual({ "api-developer": { on: true } })
   })
 
-  test("a failed store reads as failure and recovers", async ({
+  // The stale tab, and the one ending that names an action. This bundle
+  // predates the last deploy, so it mints a seed version the worker no longer
+  // serves and is refused on this click and on every click after it — which is
+  // why the words say what to do, and why they have to survive being looked
+  // away from. Every other ending clears itself inside the window below.
+  test("a stale page is told to reload, and the instruction stays", async ({
+    configure,
+    page,
+  }) => {
+    await stubCreateConfigRefusal(page, OUT_OF_DATE)
+    await configure
+      .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
+      .toggle()
+
+    await configure.roster.shareButton.click()
+
+    const instruction = configure.roster.root.getByRole("button", {
+      name: "Out of date — reload",
+    })
+    await expect(instruction).toBeVisible()
+
+    await page.waitForTimeout(PAST_THE_DECAY_WINDOW_MS)
+    await expect(instruction).toBeVisible()
+  })
+
+  // The worker answered and would not take it — an outage, a quota, or a bug
+  // here. Nothing to do but try later, so it reports and clears.
+  test("a refused store reads as failure and recovers", async ({
+    configure,
+    page,
+  }) => {
+    await stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
+    await configure
+      .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
+      .toggle()
+
+    await configure.roster.shareButton.click()
+
+    await expect(
+      configure.roster.root.getByRole("button", { name: "Sharing failed" })
+    ).toBeVisible()
+    // The terminal state decays back to an actionable button.
+    await expect(configure.roster.shareButton).toBeVisible()
+  })
+
+  // Aborting is the request never getting an answer at all, which is the
+  // unreachable path and not a refusal — the worker never saw it. Retrying is
+  // the whole of what a laptop off the network can do, so the words say so.
+  test("an unreachable worker reads as offline and recovers", async ({
     configure,
     page,
   }) => {
@@ -88,7 +145,7 @@ test.describe("sharing a configuration", () => {
     await configure.roster.shareButton.click()
 
     await expect(
-      configure.roster.root.getByRole("button", { name: "Sharing failed" })
+      configure.roster.root.getByRole("button", { name: "Offline — try again" })
     ).toBeVisible()
     // The terminal state decays back to an actionable button.
     await expect(configure.roster.shareButton).toBeVisible()

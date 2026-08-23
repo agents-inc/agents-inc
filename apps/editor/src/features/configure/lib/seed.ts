@@ -28,6 +28,14 @@ import type { ConfigSelection } from "./derive"
 // nothing the panel shows recessed may travel: rows switched off are dropped,
 // and so are rows on pinned-off agents — the CLI must never install what the
 // sharer's own counts exclude.
+//
+// A row whose two scopes cannot meet is NOT one of those, and the distinction
+// is EDITOR-08's. It is an error the user has to resolve, counted on screen
+// like any other row, so stripping it here would mint a payload describing a
+// different configuration from the one on screen — the same silent degradation
+// one door along. Share and Install are blocked while one stands instead
+// (`summarize().unscopedAgentCount`), which leaves Save as the only door this
+// payload takes: a local snapshot, which has to round-trip exactly.
 const travelling = (entry: SkillEntry, isOn: (agentId: string) => boolean) =>
   Object.entries(entry.assignments).filter(
     ([agentId, assignment]) => assignment.enabled && isOn(agentId)

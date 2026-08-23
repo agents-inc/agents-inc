@@ -295,7 +295,9 @@ const select = (state: PersistedConfig, skillId: string) => {
   }
 }
 
-// The agents an entry actually reaches — a switched-off row does not pulse.
+// The agents an entry actually reaches — a switched-off row does not pulse. A
+// row the two scopes rule out does: the selection really did reach that
+// sub-agent, and the roster marks it as the problem it is.
 const liveAgentIds = (entry: SkillEntry | undefined) =>
   Object.entries(entry?.assignments ?? {})
     .filter(([, assignment]) => assignment.enabled)
@@ -585,6 +587,13 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       cycleAssignment: (skillId, agentId) => {
+        // No scope guard here, and none on the two scope toggles either
+        // (EDITOR-08). A project skill on a global sub-agent is an ERROR to
+        // resolve rather than an action to prevent: refusing the skill's scope
+        // would put project scope out of reach entirely — every sub-agent rests
+        // at global — and refusing the assignment would be a click that
+        // silently does nothing. What the pair costs is Install and Share,
+        // which `summarize().unscopedAgentCount` gates.
         const configured = configure(get(), skillId, (entry) => ({
           ...entry,
           assignments: cycled(entry.assignments, agentId),

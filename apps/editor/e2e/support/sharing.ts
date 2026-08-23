@@ -83,6 +83,35 @@ export const DRIFTED_MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
   RETIRED_SKILL_ID,
 ])
 
+/** The id a link carrying a pair the two scopes rule out is addressed by. */
+export const OUT_OF_SCOPE_IMPORT_ID = "AcmeSc_4"
+
+/**
+ * A configuration minted before the scope rule existed.
+ *
+ * A project-scoped skill assigned to a sub-agent the payload says nothing about
+ * — so that agent rests at global, where a project skill can never reach it.
+ * Every payload the editor minted up to now could carry one, and the CLI's own
+ * `--from` decode throws on it rather than installing quietly around it, so
+ * these links are out in the world and cannot be installed.
+ *
+ * On the public catalogue deliberately: what this exercises is the arrival, and
+ * a marketplace to seat first would only add a second thing that could fail.
+ */
+export const OUT_OF_SCOPE_PAYLOAD = seedPayloadSchema.parse({
+  v: SEED_VERSION,
+  matrixVersion: "1.0.0",
+  stackId: null,
+  skills: {
+    "web-framework-react": {
+      install: "plugin",
+      scope: "project",
+      assignments: { "web-developer": "preloaded" },
+    },
+  },
+  agents: {},
+})
+
 export const stubCreateConfig = (page: Page) =>
   page.route(`${WORKER_ORIGIN}/configs`, (route) =>
     route.fulfill({ status: 201, json: { id: STORED_ID } })
@@ -125,3 +154,24 @@ export const stubGetConfigMissing = (page: Page, id: string) =>
   page.route(`${WORKER_ORIGIN}/configs/${id}`, (route) =>
     route.fulfill({ status: 404, body: NO_CONFIG_BODY })
   )
+
+/**
+ * The two statuses the POST refuses with, and they are two rather than one
+ * because only the first names something the person at the keyboard can do
+ * (SERVER-04): the tab is running a bundle from before the last deploy, and a
+ * reload is the whole fix. Both of the app's doors on `createSharedConfig` —
+ * the Share button and the install dialog's mint — read them.
+ */
+export const OUT_OF_DATE = 409
+export const STORE_UNAVAILABLE = 503
+
+/**
+ * The POST refusing, named by the status it refuses with.
+ *
+ * Fulfilled with a status and nothing else on purpose. `createSharedConfig`
+ * branches on the status alone and never reads a refusal's body, so a body
+ * invented here would be a claim about what the worker sends that no assertion
+ * ever checks — and `@workspace/api-mocks` mirrors the bodies that ARE read.
+ */
+export const stubCreateConfigRefusal = (page: Page, status: number) =>
+  page.route(`${WORKER_ORIGIN}/configs`, (route) => route.fulfill({ status }))

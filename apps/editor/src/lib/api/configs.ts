@@ -24,8 +24,32 @@ const api = hc<AppType>(API_URL)
 // deployed, and this is the seam where that assumption stops being free.
 const createdSchema = z.object({ id: z.string().min(1) })
 
+/**
+ * Why a share did not produce a link, and nothing about how to say so.
+ *
+ * Three members rather than a message, because these are three different
+ * situations for the person at the keyboard and only one of them names an
+ * action. The words belong to whatever is doing the telling — a button has
+ * room for three of them and a dialog has room for a sentence — so composing
+ * one here would only be a string nothing renders, which is what was here
+ * before.
+ *
+ * - `out-of-date` — this tab is running a bundle from before the last deploy,
+ *   so it mints a seed version the worker no longer serves. It fails on this
+ *   click and on every click after it, and a reload is the whole fix.
+ * - `refused` — the worker answered and would not take it: an outage, a quota,
+ *   or a bug here. Nothing to do but try later.
+ * - `unreachable` — the request never got an answer at all.
+ */
+export type ShareRefusal = "out-of-date" | "refused" | "unreachable"
+
 export type ShareResult =
-  { ok: true; id: string } | { ok: false; error: string }
+  { ok: true; id: string } | { ok: false; refusal: ShareRefusal }
+
+// The status the worker spends on "your payload names a seed version I do not
+// serve". Its own code rather than a 400, because a 400 is a bug nobody reading
+// it can fix and this one is a hard reload — see `apps/server/src/index.ts`.
+const OUT_OF_DATE = 409
 
 export type SharedConfigResult =
   { ok: true; payload: SeedPayload } | { ok: false; error: string }
@@ -35,24 +59,34 @@ export const createSharedConfig = async (
 ): Promise<ShareResult> => {
   try {
     const response = await api.configs.$post({ json: payload })
+
+    // Reported under its own name, and the split is the point of the metric
+    // rather than tidiness: this is not a bug in the worker and not an outage,
+    // it is how many open tabs a deploy has left behind — which rises after a
+    // release and decays on its own, unlike everything below it.
+    if (response.status === OUT_OF_DATE) {
+      reportIssue("Share POST refused a stale page", { status: OUT_OF_DATE })
+      return { ok: false, refusal: "out-of-date" }
+    }
+
     if (!response.ok) {
       // Every one of these is a bug or an outage — the payload was built from
       // the contract's own schema, so the worker should never refuse it. 413
       // in particular means a real config outgrew the size cap.
       reportIssue("Share POST rejected", { status: response.status })
-      return { ok: false, error: `sharing failed (${response.status})` }
+      return { ok: false, refusal: "refused" }
     }
 
     const parsed = createdSchema.safeParse(await response.json())
     if (!parsed.success) {
       reportIssue("Share POST returned an unreadable body")
-      return { ok: false, error: "sharing failed (unreadable response)" }
+      return { ok: false, refusal: "refused" }
     }
 
     return { ok: true, id: parsed.data.id }
   } catch {
     reportIssue("Share POST could not reach the worker")
-    return { ok: false, error: "sharing service unreachable" }
+    return { ok: false, refusal: "unreachable" }
   }
 }
 

@@ -3,12 +3,16 @@ import {
   STORED_ID,
   STORED_PAYLOAD,
   UNREADABLE_CONFIG_ID,
+  WORKER_ORIGIN,
   storeRefusedHandler,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
+import { http, HttpResponse } from "msw"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
+
+import type { ReportingSink } from "@/lib/observability/report"
 
 import { createSharedConfig, fetchSharedConfig } from "./configs"
 
@@ -21,7 +25,30 @@ import { createSharedConfig, fetchSharedConfig } from "./configs"
 // `reportIssue` is the seam this module reports through, so a recording sink is
 // both what keeps the suite quiet and what lets the one deliberate silence — a
 // 404 — be asserted rather than assumed.
-const sink = { issue: vi.fn(), error: vi.fn() }
+// Typed to the sink's own contract rather than left as bare `vi.fn()`, so a
+// test that reads back what was reported gets the arguments' types with it.
+const sink = {
+  issue: vi.fn<ReportingSink["issue"]>(),
+  error: vi.fn<ReportingSink["error"]>(),
+}
+
+const CREATE_CONFIG_URL = `${WORKER_ORIGIN}/configs`
+
+// The worker's answer to a payload naming a seed version it does not serve.
+// Defined here rather than beside the other config handlers because it is the
+// only response in the set that describes the CALLER rather than the worker:
+// what is stale is this bundle, and the worker is behaving perfectly.
+const staleBundleHandler = http.post(CREATE_CONFIG_URL, () =>
+  HttpResponse.text(
+    "Reload the page: this configuration names another version of the sharing contract",
+    { status: 409 }
+  )
+)
+
+/** Offline, DNS, a proxy that dropped it — no answer at all rather than a bad one. */
+const unreachableWorkerHandler = http.post(CREATE_CONFIG_URL, () =>
+  HttpResponse.error()
+)
 
 beforeEach(() => {
   setReportingSink(sink)
@@ -34,18 +61,60 @@ describe("createSharedConfig", () => {
     expect(result).toStrictEqual({ ok: true, id: STORED_ID })
   })
 
-  // The worker answers 503 when KV refuses the write. Every non-2xx here is an
-  // outage or a bug — the payload came from the contract's own schema — so
-  // unlike the GET's 404 this one is reported.
-  it("reads a refused write as a failure carrying the status", async () => {
+  // The worker answers 503 when KV refuses the write. Nothing the person at the
+  // keyboard can do about it, and nothing they can be told to do — which is
+  // exactly what separates it from the 409 below.
+  it("reads a refused write as a refusal nobody can act on", async () => {
     configMockServer.use(storeRefusedHandler)
 
     const result = await createSharedConfig(STORED_PAYLOAD)
 
-    expect(result).toStrictEqual({ ok: false, error: "sharing failed (503)" })
+    expect(result).toStrictEqual({ ok: false, refusal: "refused" })
     expect(sink.issue).toHaveBeenCalledWith("Share POST rejected", {
       status: 503,
     })
+  })
+
+  // The one refusal with an action attached. This tab is running a bundle from
+  // before the last deploy: it mints the version it was BUILT with, its own
+  // bundled schema accepts that, and the worker refuses it — on this click and
+  // on every click after it, until the page is reloaded. Folded in with the
+  // above it is a word the user cannot act on; told apart it is an instruction.
+  it("reads a 409 as this page being out of date", async () => {
+    configMockServer.use(staleBundleHandler)
+
+    const result = await createSharedConfig(STORED_PAYLOAD)
+
+    expect(result).toStrictEqual({ ok: false, refusal: "out-of-date" })
+  })
+
+  // Reported under its own name rather than with the refusals above. It is not
+  // a bug in the worker and not an outage — it is how often a deploy leaves
+  // open tabs behind, which is a number worth watching on its own.
+  it("reports a stale bundle apart from a worker that refused", async () => {
+    configMockServer.use(staleBundleHandler)
+
+    await createSharedConfig(STORED_PAYLOAD)
+
+    expect(sink.issue).toHaveBeenCalledWith("Share POST refused a stale page", {
+      status: 409,
+    })
+  })
+
+  // Offline, DNS, a proxy that dropped it. The fetch throws rather than
+  // answering, so this is the one failure that never reaches a status at all.
+  it("reads an unreachable worker as its own refusal", async () => {
+    configMockServer.use(unreachableWorkerHandler)
+
+    const result = await createSharedConfig(STORED_PAYLOAD)
+
+    expect(result).toStrictEqual({ ok: false, refusal: "unreachable" })
+    // The message alone, since this one carries no context to assert on — what
+    // is worth pinning is that it is reported under its own name and not with
+    // the two above.
+    expect(sink.issue.mock.calls.map(([message]) => message)).toStrictEqual([
+      "Share POST could not reach the worker",
+    ])
   })
 })
 

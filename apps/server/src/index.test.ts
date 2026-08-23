@@ -1,4 +1,5 @@
 import { SELF, env } from "cloudflare:test"
+import { SEED_VERSION } from "@workspace/matrix/seed"
 import { hc } from "hono/client"
 import { describe, expect, it } from "vitest"
 
@@ -34,7 +35,12 @@ const payload = (): SeedPayload => ({
     },
   },
   agents: {
-    "web-developer": { model: "haiku", effort: "max" },
+    // Pinned into the project, and load-bearing rather than flavour: the skill
+    // above is project-scoped, and a project skill never reaches a sub-agent
+    // whose front-matter is written to ~/.claude. Without the pin this is a
+    // payload the wire now refuses, which is not what the canonical "a valid
+    // configuration" fixture should be.
+    "web-developer": { model: "haiku", effort: "max", scope: "project" },
     "api-developer": { on: true },
   },
 })
@@ -71,9 +77,72 @@ describe("POST /configs", () => {
     expect(response.status).toBe(400)
   })
 
+  // The one refusal on this route a caller can do something about, and the
+  // reason it needs a status of its own. The writer here is a long-lived
+  // browser tab: it mints the version it was BUILT with, its own bundled schema
+  // accepts that, and a worker deployed since refuses it — forever, identically,
+  // on every click. Folded into the 400 above it is indistinguishable from a
+  // malformed body, which is what let this reach the tracker as a console
+  // screenshot rather than as something the app said.
+  it("answers a payload minted by an older build with 409, not a generic 400", async () => {
+    const response = await post({ ...payload(), v: SEED_VERSION - 1 })
+
+    expect(response.status).toBe(409)
+  })
+
+  // A version this worker has never served is the same situation seen from the
+  // other side — a tab built against a bump that has not deployed yet — and
+  // wants the same answer, so the rule is "not our version" rather than "older".
+  it("answers a payload from a version it has never served the same way", async () => {
+    const response = await post({ ...payload(), v: SEED_VERSION + 1 })
+
+    expect(response.status).toBe(409)
+  })
+
+  // The status is only half of it: nothing downstream can turn `409` into words
+  // on its own, and a caller reading the body by hand is the person who needs
+  // the sentence most.
+  it("names reloading as the fix in the body it sends", async () => {
+    const response = await post({ ...payload(), v: SEED_VERSION - 1 })
+
+    expect(await response.text()).toContain("Reload")
+  })
+
+  // The control. Without it, a rule that answered 409 for every refusal would
+  // pass all three assertions above — and the whole point is that the two are
+  // told apart.
+  it("keeps 400 for a body that is malformed at the current version", async () => {
+    const response = await post({ ...payload(), skills: "not-a-record" })
+
+    expect(response.status).toBe(400)
+  })
+
   // Well past `MAX_BODY_BYTES`, which is sized for a payload carrying several
   // external skills' whole directories — the largest real one measures 84 KB.
   const OVERSIZED_FIELD_CHARS = 1_200_000
+
+  // The store is where a bad link stops being one person's mistake and becomes
+  // an address other people paste. A project-scoped skill assigned to a
+  // sub-agent resting at global scope has nowhere to be written on whoever
+  // installs it, so minting an id for one produces a link that fails at the
+  // recipient — worse than no link at all.
+  it("refuses a project skill assigned to a sub-agent resting at global", async () => {
+    const response = await post({
+      ...payload(),
+      agents: { "web-developer": { model: "haiku", effort: "max" } },
+    })
+
+    expect(response.status).toBe(400)
+  })
+
+  // The control for the refusal above. Both outcomes leave KV untouched from
+  // outside, so a refusal pinned on its own cannot tell a rule that fires on
+  // the pair from one that has swallowed every payload.
+  it("stores the same configuration once the sub-agent is pinned", async () => {
+    const response = await post(payload())
+
+    expect(response.status).toBe(201)
+  })
 
   it("refuses an oversized body before parsing it", async () => {
     const oversized = {
@@ -219,6 +288,40 @@ describe("CORS", () => {
 
     expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
+
+  // The class, not one status. A refusal a browser cannot READ is a refusal
+  // that reaches the app as a network error, so every answer this route can
+  // give has to carry the header — and a refusal produced by middleware ahead
+  // of the handler (the size cap) or *inside* the validator (the version
+  // mismatch) is exactly where that is easy to lose. Listed as bodies rather
+  // than as statuses so each row provokes its own answer for real.
+  const REFUSED_BODIES = {
+    "malformed at the current version": { v: SEED_VERSION, skills: "no" },
+    "minted by another build": { ...payload(), v: SEED_VERSION - 1 },
+    "a project skill on a globally-scoped sub-agent": {
+      ...payload(),
+      agents: { "web-developer": { model: "haiku", effort: "max" } },
+    },
+  }
+
+  it.each(Object.entries(REFUSED_BODIES))(
+    "lets the web app read a refusal of a body %s",
+    async (_description, body) => {
+      const response = await SELF.fetch(`${BASE}/configs`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:5173",
+        },
+        body: JSON.stringify(body),
+      })
+
+      expect(response.ok).toBe(false)
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "http://localhost:5173"
+      )
+    }
+  )
 })
 
 // The tunnel exists so browser tracking prevention cannot silently drop error

@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { summarize } from "@/features/configure/lib/derive"
+
 import { unknownSavedIds, useConfigStore, withoutWrites } from "./config-store"
 
 import type { PersistStorage, StorageValue } from "zustand/middleware"
 
-import type { PersistedConfig, SkillEntry } from "./persisted-schema"
+import {
+  isAgentOn,
+  type PersistedConfig,
+  type SkillEntry,
+} from "./persisted-schema"
 
 // The slot a shared configuration runs on.
 //
@@ -201,6 +207,137 @@ describe("an action the catalogue refuses", () => {
   })
 })
 
+// A project-scoped skill on a sub-agent whose front-matter is written to
+// ~/.claude is the one pair the config model cannot express: the agent file is
+// visible from every project, and the skill exists in one. The CLI's `init
+// --from` THROWS on a payload holding one, so this is not a preference — a
+// configuration carrying one is a configuration nobody can install.
+//
+// The store does not stop any of it. Every verb here is unguarded on purpose:
+// the pair is an ERROR to resolve rather than an action to prevent, and the
+// three ways to make one — assign, move the skill, move the sub-agent — are all
+// things a user may legitimately do on the way to a configuration that works.
+// What the pair costs is Install and Share, and it is `summarize` that says so.
+describe("the scope rule in the store", () => {
+  // Every sub-agent rests at global, so a skill moved to project conflicts with
+  // all of them until one is pinned the other way — which is why REFUSING the
+  // move would put project scope out of reach, and why DROPPING the rows would
+  // cost the whole assignment set to one badge click.
+  const asProject = () => {
+    const store = useConfigStore.getState()
+    store.reset()
+    store.toggleSkill(KNOWN_SKILL)
+    store.setSkillOption(KNOWN_SKILL, { scope: "project" })
+  }
+
+  const assignments = () =>
+    useConfigStore.getState().skills[KNOWN_SKILL]?.assignments ?? {}
+
+  const unresolved = () =>
+    summarize(useConfigStore.getState()).unscopedAgentCount
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  // The control: without it every assertion below is green against a skill that
+  // never reached any sub-agent in the first place.
+  it("gives a freshly picked skill sub-agents to lose", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(Object.keys(assignments()).length).toBeGreaterThan(0)
+    expect(unresolved()).toBe(0)
+  })
+
+  it("keeps every assignment when the skill moves to project", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+    const before = assignments()
+
+    useConfigStore.getState().setSkillOption(KNOWN_SKILL, { scope: "project" })
+
+    expect(assignments()).toStrictEqual(before)
+    expect(unresolved()).toBeGreaterThan(0)
+  })
+
+  // The other side of the same pair. Moving the sub-agent back to global is the
+  // agent-side way in, and it must cost no more than the skill-side one.
+  it("keeps them when the sub-agent moves to global instead", () => {
+    asProject()
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { scope: "project" })
+    const before = assignments()
+
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { scope: "global" })
+
+    expect(assignments()).toStrictEqual(before)
+  })
+
+  // The sub-agent is on throughout — it holds a skill, which is exactly why the
+  // pair is a problem. What moves is the error count, and one scope word moves
+  // it by exactly one: the skill reaches five sub-agents and each is its own
+  // click, which is what makes the number the count of clicks remaining.
+  it("clears one sub-agent per scope word, from the sub-agent's side", () => {
+    asProject()
+    expect(isAgentOn(useConfigStore.getState(), KNOWN_AGENT)).toBe(true)
+    const before = unresolved()
+    expect(before).toBeGreaterThan(1)
+
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { scope: "project" })
+
+    expect(isAgentOn(useConfigStore.getState(), KNOWN_AGENT)).toBe(true)
+    expect(unresolved()).toBe(before - 1)
+  })
+
+  // The skill's side is the other way out, and it clears every row at once —
+  // one click against however many sub-agents the skill reaches.
+  it("clears every sub-agent at once from the skill's side", () => {
+    asProject()
+    expect(unresolved()).toBeGreaterThan(1)
+
+    useConfigStore.getState().setSkillOption(KNOWN_SKILL, { scope: "global" })
+
+    expect(unresolved()).toBe(0)
+  })
+
+  // Assigning is not refused either. A user pointing the ••• panel at a
+  // sub-agent is asking for a configuration, and the answer is the row plus the
+  // error beside it — not a click that silently does nothing.
+  it("assigns a project skill to a sub-agent resting at global", () => {
+    asProject()
+    // A sub-agent the auto-assignment rule did not reach, so this is a pair the
+    // store creates from nothing rather than one it leaves alone.
+    const unassigned = "api-tester"
+    expect(assignments()[unassigned]).toBeUndefined()
+
+    useConfigStore.getState().cycleAssignment(KNOWN_SKILL, unassigned)
+
+    expect(assignments()[unassigned]).toStrictEqual({
+      load: "lazy",
+      enabled: true,
+    })
+  })
+
+  it("cycles an erroring row like any other", () => {
+    asProject()
+    const before = assignments()[KNOWN_AGENT]!
+
+    useConfigStore.getState().cycleAssignment(KNOWN_SKILL, KNOWN_AGENT)
+
+    expect(assignments()[KNOWN_AGENT]).not.toStrictEqual(before)
+  })
+
+  it("assigns freely once the sub-agent is pinned to the project", () => {
+    asProject()
+    useConfigStore.getState().setAgentOption("api-tester", { scope: "project" })
+
+    useConfigStore.getState().cycleAssignment(KNOWN_SKILL, "api-tester")
+
+    expect(assignments()["api-tester"]).toStrictEqual({
+      load: "lazy",
+      enabled: true,
+    })
+  })
+})
+
 // A prune that drops nothing must not be a change.
 //
 // `set` is what writes: persist wraps it, so a store action that replaces the
@@ -325,8 +462,12 @@ const readingASlotHolding = async (blob: string) => {
   const { setReportingSink } = await import("@/lib/observability/report")
   setReportingSink(sink)
 
-  const { readSavedConfig } = await import("./config-store")
+  const { readSavedConfig, useConfigStore: store } =
+    await import("./config-store")
   await readSavedConfig()
+  // The store the read landed in, so a caller can ask what survived it rather
+  // than only what was reported about it.
+  return store
 }
 
 afterEach(() => {
@@ -425,5 +566,50 @@ describe("the pruned-ids door", () => {
       "Pruned saved ids the catalog no longer knows",
       { droppedIds: 0, droppedStack: true }
     )
+  })
+})
+
+// The first of the two doors a configuration already holding the bad pair
+// arrives through: this browser's own slot, read once the catalogue is seated.
+//
+// Silently dropping assignments somebody saved — or shared — is the one outcome
+// this must not have, so the pair survives the read intact and stops being LIVE
+// instead. `pruneUnknownIds` is untouched: it drops ids nothing can place, and
+// both halves of this pair are ids the catalogue knows perfectly well.
+describe("a saved configuration holding the bad pair", () => {
+  const HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT = JSON.stringify({
+    state: {
+      stackId: null,
+      skills: {
+        [KNOWN_SKILL]: {
+          install: "plugin",
+          scope: "project",
+          assignments: { [KNOWN_AGENT]: { load: "preloaded", enabled: true } },
+        },
+      },
+      remembered: {},
+      agents: {},
+    },
+    version: 8,
+  })
+
+  it("keeps the assignment rather than dropping it on the way in", async () => {
+    const store = await readingASlotHolding(
+      HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT
+    )
+
+    expect(store.getState().skills[KNOWN_SKILL]?.assignments).toStrictEqual({
+      [KNOWN_AGENT]: { load: "preloaded", enabled: true },
+    })
+  })
+
+  it("arrives as an error to resolve rather than as an absence", async () => {
+    const store = await readingASlotHolding(
+      HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT
+    )
+
+    // On, because it holds the skill — and blocked, because it cannot carry it.
+    expect(isAgentOn(store.getState(), KNOWN_AGENT)).toBe(true)
+    expect(summarize(store.getState()).unscopedAgentCount).toBe(1)
   })
 })

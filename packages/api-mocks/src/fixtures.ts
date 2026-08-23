@@ -52,6 +52,14 @@ export const STORE_REFUSED_BODY = "Could not store this config"
 // step the real response has already been through — and a fixture that drifts
 // from the contract fails at import in every consumer rather than in whichever
 // assertion happens to read the changed field.
+//
+// `web-developer` is pinned into the project, and that is load-bearing rather
+// than flavour: the skill below is project-scoped, and a project skill never
+// reaches a sub-agent whose front-matter is written to ~/.claude. Without the
+// pin this fixture is a payload `init --from` THROWS on
+// (`seedToWizardResult` -> `unwritableAssignmentsError`), which is not what the
+// canonical "a configuration the worker holds" fixture should be — it is the
+// EDITOR-08 defect, frozen into the one payload both suites read.
 export const STORED_PAYLOAD = seedPayloadSchema.parse({
   v: 5,
   matrixVersion: "1.0.0",
@@ -64,7 +72,7 @@ export const STORED_PAYLOAD = seedPayloadSchema.parse({
     },
   },
   agents: {
-    "web-developer": { model: "haiku", effort: "max" },
+    "web-developer": { model: "haiku", effort: "max", scope: "project" },
     "api-developer": { on: true },
   },
 })
