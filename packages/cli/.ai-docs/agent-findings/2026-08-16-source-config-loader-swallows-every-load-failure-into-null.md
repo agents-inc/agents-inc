@@ -12,27 +12,22 @@ reporting_agent: cli-tester
 category: architecture
 domain: cli
 root_cause: enforcement-gap
-status: partial
-partial_note: >-
-  The load-bearing half of the defect is DEAD; the general posture question this finding raised is
-  not. `loadSourceConfig` in `src/cli/lib/configuration/config.ts` no longer swallows every
-  failure — it re-raises `ConfigSchemaError` and `ConfigDefaultExportError` before the
-  `verbose` + `return null`, under a comment that restates this finding's rule ("a swallowed
-  refusal is indistinguishable from a config that is not there — it walks past this rung to
-  DEFAULT_SOURCE and installs from a marketplace nobody named"). So the CLI-501 trap the finding
-  was written to prevent is closed: `src/cli/lib/__tests__/user-journeys/config-precedence.test.ts`
-  -> "a config carrying a field name from before the rename" now has two specs asserting that
-  `resolveSource({ caller: "stored" })` REJECTS rather than repointing, one for the top-level key
-  and one for a skill entry's provenance key. What landed is the finding's own "narrower
-  alternative", and it says of itself that it "closes CLI-501 without settling the general
-  posture, and leaves the two loaders disagreeing" — which is still true. A parse or evaluation
-  failure is still reported as absence here, while the sibling `loadProjectConfigFromDir` on the
-  same file raises `ConfigLoadError` for anything but a missing file. The primary recommendation
-  under "What to do" — `null` for a missing file, propagate everything else, with a tolerant mode
-  asked for explicitly by callers such as `doctor` that report rather than refuse — is unadopted.
-  One residue worth naming: the JSDoc above that describe block in `config-precedence.test.ts`
-  still opens "`loadSourceConfig` turns every load failure into `null`", which the specs beneath
-  it now disprove.
+status: resolved
+resolved_by: >-
+  The general posture this finding asked for landed 2026-08-20, under the owner ruling that a
+  source config which exists and cannot be evaluated must hard error and say so. `loadSourceConfig`
+  now raises every load failure and answers `null` only for a missing file, which is this finding's
+  primary "What to do" recommendation rather than its narrower alternative — and the two loaders of
+  the same file no longer disagree. The tolerant caller it predicted exists and asks for it
+  explicitly: `validateRegisteredSources` is the one DEGRADE posture, because `doctor` reports
+  rather than refuses, and it reaches the raise through a `readsConfig: true` row and `safeCheck`.
+  The refusal reuses `configUnreadableError`, the vocabulary `ensureConfigReadable` already prints
+  for the sibling loader. The spec this finding named as asserting the swallow — "should return null
+  for invalid TypeScript in project config" — is retargeted to assert the refusal, and the stale
+  JSDoc residue it flagged in `config-precedence.test.ts` is corrected. Recurrence is now held by a
+  test rather than by prose: `src/cli/lib/configuration/__tests__/config-readers-agree.test.ts`
+  holds all four readers of `.claude-src/config.ts` to the same contract and asserts the roster
+  against what the two modules export, so a fifth reader cannot land with the old posture.
 ---
 
 # The source-config loader swallows every load failure into `null`

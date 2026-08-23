@@ -12,7 +12,16 @@ reporting_agent: codex-keeper
 category: architecture
 domain: shared
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: >-
+  Owner ruling 2026-08-20 took neither proposed option and settled a third: duplication across
+  documents is allowed, and the checker watches both copies. Implemented as a SECOND REGISTRY ROW
+  rather than a multi-document field — `RegistryEntry` is unchanged, and the two rows share one
+  `source` the way the two `STEP_TEXT` rows above them already do, because each copy is separately
+  wrong. `scope-system.md`'s line saying the table is "a second copy with nothing binding it" was
+  corrected in the same change; it now says both are bound. Non-vacuity proved by mutation —
+  deleting the `activeAgentScopeMap` row from that table reports drift naming the scope-system
+  claim alone.
 ---
 
 ## What Was Wrong

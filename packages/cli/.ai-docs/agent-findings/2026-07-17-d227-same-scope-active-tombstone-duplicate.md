@@ -11,7 +11,7 @@ category: architecture
 domain: cli
 root_cause: convention-undocumented
 status: resolved
-resolved_by: "Preselection now drops a saved tombstone whose (id, scope) slot the rebuild has just filled with an active entry, at all three sites that preserved them unconditionally: survivesRosterRebuild (preselectAgentsFromDomains), agentTombstonesOutsideRebuild (preselectAgentsFromStack) and skillTombstonesOutsideRebuild (populateFromSkillIds), all in wizard-store.ts. Four specs in src/cli/stores/d227-same-scope-tombstone-duplicate.test.ts pin the corrected shape on both the agent and the skill path; three of them were it.fails and are now plain assertions."
+resolved_by: "Preselection now drops a saved tombstone whose (id, scope) slot the rebuild has just filled with an active entry, at all three sites that preserved them unconditionally: survivesRosterRebuild (preselectAgentsFromDomains), agentTombstonesOutsideRebuild (preselectAgentsFromStack) and skillTombstonesOutsideRebuild (populateFromSkillIds), all in wizard-store.ts. Four specs in src/cli/stores/preselection-rebuild-one-entry-per-slot.test.ts pin the corrected shape on both the agent and the skill path; three of them were it.fails and are now plain assertions."
 ---
 
 ## What Was Wrong

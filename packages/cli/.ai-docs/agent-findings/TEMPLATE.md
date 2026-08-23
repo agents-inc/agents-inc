@@ -210,6 +210,11 @@ KNOWN GAP: status backfill — CLOSED 2026-07-30
 <!--
 How to resolve a finding:
 - Edit this file in place. Do NOT move or rename it (cross-links break silently).
+- Edit the FRONTMATTER only. The body is dated evidence and stays as written even after the tree
+  has moved past it; where a lifecycle claim turns out false, append a `## Correction` section
+  rather than rewriting what the body said. `README.md` -> "Reading a Finding" is the rule, and it
+  binds a reader as much as an editor: a finding that no longer describes the tree is history, not
+  a defect to raise.
 - Add BOTH `status: resolved` AND `resolved_by: <short note>` to the frontmatter — always paired.
 - The `resolved_by:` note should cite the mechanism of resolution (commit hash, PR, doc update, standards section, superseding finding).
 - See `README.md` → "Resolution Model (authoritative)" for the full rule.

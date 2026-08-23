@@ -6,6 +6,51 @@ last_validated: 2026-08-19
 
 Sub-agents capture anti-pattern findings during refactoring and review work. A `convention-keeper` agent synthesizes them into documentation updates.
 
+## Reading a Finding
+
+**A finding is dated evidence, not a live claim.** Everything in its body describes the tree as it
+stood on the `date:` in its frontmatter, and nothing there is maintained afterwards. "What Was
+Wrong" says what was wrong that day; "Fix Applied" says what was done that day. Both stay correct as
+written however far the code has moved since.
+
+**So a finding that no longer matches today's tree is neither stale nor a defect.** A symbol it names
+that nothing declares now, a path in `affected_files:` that is gone, a spec it quotes that was
+repointed afterwards — that is the tree moving, which is what trees do. None of it is owed an audit,
+a repair or a tracker row. Rows have been opened against findings whose only fault was being older
+than the code they describe, and stopping that is what this section is for. **Where a finding and
+the tree disagree, believe the tree and leave the finding alone.**
+
+**Do not "correct" a body to match current code.** The body is the only surviving record of what was
+observed and what was done; rewriting it deletes that record and puts in its place a fresh claim with
+exactly the lifespan of the one it replaced — wrong again within weeks, and with nothing left to
+compare it against. The reasoning is the one behind "prefer deleting a claim to rewriting it": every
+rewrite is a new claim that can rot. Here the old claim is not even wrong. It is a true statement
+about a date.
+
+**One field is live, and it is `status:`.** It is edited in place after the fact, on the same file at
+the same path — written `open`, moved to `partial` when half the work lands, to `resolved` or
+`superseded` when it closes. `2026-07-17-d227-same-scope-active-tombstone-duplicate.md` has carried
+three different values over five weeks against a body that never moved. `partial_note:` travels with
+it and is live for the same reason: "Resolution Model (authoritative)" below binds it to be
+re-derived by any pass that opens the file at all. Everything else in the frontmatter is dated like
+the body — `affected_files:` names the tree the finding was written against, and `resolved_by:`
+records the mechanism that closed it on the day it closed.
+
+`scripts/check-findings-frontmatter.ts` reports dangling `affected_files:` entries and lifecycle
+notes naming symbols the tree no longer declares, and its suite holds both to the set already on
+disk. A red there means a NEW one arrived. It is not a worklist against the ones already pinned.
+
+**When the LIVE half is wrong, correct the field and append — never edit the body in place.** Set the
+status the tree supports, re-derive the note beside it, and where the old claim would have misled a
+reader, add a short correction at the END of the body naming what it asserted and what is actually
+true. The same d227 file is the worked example: a false supersession was replaced in the frontmatter
+and answered in a `## Correction` section, with the original body left exactly as written.
+
+**Reading a finding is safe; following one is not.** Re-derive before acting on a Proposed Standard —
+`.ai-docs/standards/documentation-bible.md` → "Agent Findings" carries that rule, and "Writing a
+Finding" below carries the different one for a proposal that was wrong the day it was written. This
+section covers the third case, which is the common one: a finding that was right, and is old.
+
 ## Pipeline
 
 ```

@@ -17,7 +17,29 @@ reporting_agent: qa-orchestrator (multi-agent live-CLI sweep)
 category: testing
 domain: cli
 root_cause: enforcement-gap
-status: open
+status: partial
+partial_note: >-
+  Re-derived 2026-08-20 against source. The requires-enforcement item is RULED and its
+  compatibility/matrix bullet is CORRECTED; the marketplace-repo content items are not this
+  repository and stay open. RULED - the advisory model is the intended behaviour and stays. A skill
+  breaking a `requires`, `conflicts` or `discourages` rule is labelled in the grid, stays fully
+  selectable, installs, and draws a warning after the fact. Strict-block, a dependency cascade and a
+  grid filter were all considered and none is adopted; treat a proposal for any of them as a product
+  change rather than a bug fix. The model is now documented as intended behaviour in
+  reference/features/skills-and-matrix.md under "Every relationship is ADVISORY". CORRECTED - this
+  finding's "the edit grid makes requires-gated skills unreachable via navigation" is FALSE against
+  current source and was describing the withdrawn `f` incompatible-filter. Nothing skips or blocks a
+  gated cell - `useFocusedListItem` is a generic 2D focus hook, `category-grid.tsx` passes it only
+  `findValidCol` (`wrapOptionIndex` over the option count, consulting no state) and no `skipRow`,
+  `useCategoryGridInput` sends SPACE to whatever cell is focused, and `toggleTechnology` refuses only
+  on scope ownership and the last-skill-in-a-required-exclusive-category guard. The E2E-infrastructure
+  bullet's "horizontal nav skips disabled/incompatible cells and SPACE on guarded cells is a silent
+  no-op" is stale for the same reason, whatever remains true of the page object's other claims. The
+  `f` filter is WITHDRAWN rather than flag-gated - no feature-flag constant of any name survives
+  under `src/`, `hotkeys.ts` binds nothing to `f`, and `e2e/interactive/edit-wizard-navigation.e2e.test.ts`
+  pins the key inert by asserting the screen is byte-identical across the press. Also stale - the
+  init/edit asymmetry this finding recorded is gone; `reportValidationErrors` on `BaseCommand` is
+  called by both `commands/init.tsx` and `commands/edit.tsx`.
 ---
 
 # QA sweep of the uncommitted working tree (v0.144.1 banner), 2026-07-28/29

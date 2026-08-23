@@ -13,13 +13,22 @@ reporting_agent: cli-developer
 category: typescript
 domain: cli
 root_cause: rule-not-specific-enough
-status: partial
-partial_note: >-
-  The command half landed 2026-08-19: `build marketplace` now validates the name derived from
-  package.json with the same `validateKebabCaseName` it always applied to `--name`, refuses before
-  anything is written, and names every offending character. The schema half is untouched and is what
-  keeps this finding open — `marketplaceSchema.name` is still `z.string().min(1)`, so a
-  `marketplace.json` this CLI did not write still parses with a name Claude Code rejects.
+status: resolved
+resolved_by: >-
+  The schema half landed 2026-08-20 under the owner ruling that the CLI piggybacks on whatever
+  Claude Code accepts as a marketplace name. `marketplaceSchema.name` is now
+  `z.string().min(1).regex(KEBAB_CASE_PATTERN, { message: MARKETPLACE_NAME_REFUSAL })`, so a
+  third-party `marketplace.json` naming `@acme/skills` is refused when it is READ and not only when
+  this CLI would write one — the "separate decision with a separate blast radius" this finding
+  deferred, taken and accepted. This finding's own prediction that tightening the schema would
+  regenerate `src/schemas/marketplace.schema.json` held: it gained the `pattern` an editor validates
+  against. The message is carried on the `regex` check rather than in a `refine` because a
+  refinement is unrepresentable in JSON Schema and `z.toJSONSchema` drops it silently, which would
+  have cost that file the very `pattern` this finding wanted. Agreement across all three judges of a
+  kebab name is now held by
+  `src/cli/lib/__tests__/kebab-name-judges-agree.test.ts`. The residue — one rule with four
+  user-facing SPELLINGS and only the regex shared — is filed separately as
+  2026-08-20-marketplace-name-rule-enforced-on-emit-and-not-on-load.md.
 ---
 
 ## What Was Wrong
