@@ -1,0 +1,30 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // Deliberately `build`, NOT `^build` — the same distinction packages/cli
+    // draws for its own e2e suite, and for the same reason. The root declares
+    // `test` as `^build`, which means "build the packages I depend on"; that
+    // is right for a suite that imports source. This one is not a suite. It
+    // opens a browser against THIS workspace's dist/ and measures what the
+    // built pages actually render at, so without the caret there is nothing
+    // for it to look at and it exits 1 on a clean checkout saying so.
+    "test": {
+      "dependsOn": ["build"],
+      // The second half of `test` reads another workspace's source —
+      // check-cli-claims.ts binds the command reference to
+      // packages/cli/src/cli/commands/** — and turbo cannot know that. The
+      // usual mechanism does not apply: a workspace DEPENDENCY gets a task
+      // node in the graph whose hash feeds this one (see the measurement in
+      // packages/cli/turbo.json), but this site does not depend on the CLI and
+      // is not going to. Without this line a CLI-only commit leaves every file
+      // turbo hashes for this task byte-identical, so the run replays from
+      // cache and reports clean about a roster that has just changed — which
+      // is precisely the drift the check exists to catch, arriving from
+      // precisely the direction it cannot see. `../` inputs are accepted and
+      // really are hashed on turbo 2.10.8; `$TURBO_DEFAULT$` stays because
+      // naming an input replaces the default set rather than adding to it.
+      "inputs": ["$TURBO_DEFAULT$", "../../packages/cli/src/cli/commands/**"]
+    }
+  }
+}
