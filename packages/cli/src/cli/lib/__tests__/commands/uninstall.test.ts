@@ -21,7 +21,13 @@ import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
 } from "../../../consts";
-import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillId } from "../../../types";
+import type {
+  AgentScopeConfig,
+  BrandingConfig,
+  ProjectConfig,
+  SkillConfig,
+  SkillId,
+} from "../../../types";
 import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
 import { cliVersion, stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { renderAgentMd } from "../content-generators.js";
@@ -68,6 +74,18 @@ const MARKETPLACE_NAME = "agents-inc";
 const OTHER_MARKETPLACE_NAME = "custom-source";
 
 /**
+ * A `branding.name` a project config supplies, sharing no substring with
+ * {@link DEFAULT_BRANDING.NAME} so neither half of a paired assertion can be satisfied by the
+ * other's output.
+ */
+const WHITE_LABEL_NAME = "Northwind";
+
+/** The preserved-directory warning, minus the name of the tool it says did not create it. */
+function notCreatedBy(brandingName: string): string {
+  return `not created by ${brandingName} CLI`;
+}
+
+/**
  * Creates a .claude-src/config.ts with source configuration.
  */
 async function createProjectConfig(
@@ -78,11 +96,16 @@ async function createProjectConfig(
     extraSources?: Array<{ name: string; url: string }>;
     agents?: AgentScopeConfig[];
     skills?: SkillConfig[];
+    branding?: BrandingConfig;
   },
 ): Promise<string> {
   const config: Record<string, unknown> = {
     marketplace: options?.marketplace ?? TEST_SOURCE,
   };
+
+  if (options?.branding) {
+    config.branding = options.branding;
+  }
 
   if (options?.marketplaceName) {
     config.marketplaceName = options.marketplaceName;
@@ -337,6 +360,39 @@ describe("uninstall command", () => {
       expect(await directoryExists(userSkillDir)).toBe(true);
       expect(output).toContain("Skipping 'web-tooling-custom'");
       expect(output).toContain("not created by");
+    });
+
+    /**
+     * The one branded line `uninstall` prints that is neither its heading nor its sign-off. It
+     * claims which tool did NOT write the directory being kept, so under a white label it has to
+     * name the tool the user knows. Paired with the default below: the configured half alone
+     * passes on a line hardcoded to the fixture, and the default half alone passes on wiring that
+     * never landed.
+     */
+    it("should name the configured branding in the preserved-skill warning", async () => {
+      await createProjectConfig(projectDir, { branding: { name: WHITE_LABEL_NAME } });
+      const skillsDir = await createProjectSkillsDir(projectDir);
+      await createUserSkill(skillsDir, "web-tooling-custom" as SkillId);
+
+      const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+
+      const output = stdout + stderr;
+      expect(output).toContain(notCreatedBy(WHITE_LABEL_NAME));
+      expect(output, "the configured name replaces the shipped one").not.toContain(
+        DEFAULT_BRANDING.NAME,
+      );
+    });
+
+    it("should name the shipped branding in the preserved-skill warning when none is configured", async () => {
+      await createProjectConfig(projectDir);
+      const skillsDir = await createProjectSkillsDir(projectDir);
+      await createUserSkill(skillsDir, "web-tooling-custom" as SkillId);
+
+      const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+
+      const output = stdout + stderr;
+      expect(output).toContain(notCreatedBy(DEFAULT_BRANDING.NAME));
+      expect(output).not.toContain(WHITE_LABEL_NAME);
     });
 
     it("should preserve skills without metadata.yaml", async () => {

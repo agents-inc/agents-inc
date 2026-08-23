@@ -5,7 +5,6 @@ import { BaseCommand } from "../base-command.js";
 import { copy, ensureDir, directoryExists, fileExists, listDirectories } from "../utils/fs.js";
 import {
   CLAUDE_SRC_DIR,
-  DEFAULT_BRANDING,
   DIRS,
   LOCAL_SKILLS_PATH,
   PROJECT_ROOT,
@@ -28,7 +27,8 @@ import {
 } from "../lib/config-gate/index.js";
 import { isHomeDirectory } from "../lib/installation/index.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
-import { INFO_MESSAGES } from "../utils/messages.js";
+import { INCOMPLETE_WORK_RECOVERY, INFO_MESSAGES } from "../utils/messages.js";
+import { getErrorMessage } from "../utils/errors.js";
 import type { MergedSkillsMatrix, SkillId } from "../types/index.js";
 import { typedKeys } from "../utils/typed-object.js";
 
@@ -102,15 +102,31 @@ export default class Eject extends BaseCommand {
     const ejectType = this.validateEjectType(args.type);
     const outputBase = await this.resolveOutputBase(flags, projectDir);
 
-    this.printHeader(flags.output ? outputBase : undefined);
+    this.printHeader(
+      await this.resolveBrandingName(projectDir),
+      flags.output ? outputBase : undefined,
+    );
 
     const sourceResult = await this.loadSourceIfNeeded(ejectType, projectDir);
     await this.executeEject(ejectType, outputBase, flags, projectDir, sourceResult);
     await this.ensureConfig(projectDir, sourceResult);
 
+    this.reportEnding();
+  }
+
+  /**
+   * The command's last word.
+   *
+   * `Eject complete!` claims the whole eject landed, so it is withheld whenever part of it did
+   * not — the account {@link BaseCommand.exitIfWorkIncomplete} prints replaces that tick rather
+   * than sitting under it, and carries the non-zero exit with it.
+   */
+  private reportEnding(): void {
     this.log("");
-    this.logSuccess("Eject complete!");
+    if (!this.hasIncompleteWork) this.logSuccess("Eject complete!");
     this.log("");
+
+    this.exitIfWorkIncomplete();
   }
 
   private validateEjectType(typeArg: string | undefined): EjectType {
@@ -151,9 +167,9 @@ export default class Eject extends BaseCommand {
     return path.join(projectDir, CLAUDE_SRC_DIR);
   }
 
-  private printHeader(outputBase?: string): void {
+  private printHeader(brandingName: string, outputBase?: string): void {
     this.log("");
-    this.log(`${DEFAULT_BRANDING.NAME} Eject`);
+    this.log(`${brandingName} Eject`);
     this.log("");
 
     if (outputBase) {
@@ -209,16 +225,36 @@ export default class Eject extends BaseCommand {
     }
   }
 
+  /**
+   * The convenience step after the eject: a minimal `config.ts` so a later `compile` has
+   * something to read.
+   *
+   * It can refuse, and by the time it does the ejection has already landed — the templates,
+   * partials or skills are on disk and stay there. So the throw is caught rather than left to
+   * become the process's exit code: an `ERROR` tells the caller nothing landed and the run can
+   * be repeated, which is the wrong instruction for a tree that now holds an ejection. What is
+   * owed is the account and `EXIT_CODES.COMPLETED_WITH_FAILURES`.
+   *
+   * The refusal itself is right and is not weakened here: `ensureMinimalConfig` will not invent
+   * a config recording a marketplace it read out of a file it could not evaluate.
+   */
   private async ensureConfig(
     projectDir: string,
     sourceResult: SourceLoadResult | undefined,
   ): Promise<void> {
-    const configResult = await ensureMinimalConfig({
-      projectDir,
-      ...(sourceResult !== undefined && { sourceResult }),
-    });
-    if (configResult.created) {
-      this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
+    try {
+      const configResult = await ensureMinimalConfig({
+        projectDir,
+        ...(sourceResult !== undefined && { sourceResult }),
+      });
+      if (configResult.created) {
+        this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
+      }
+    } catch (error) {
+      this.reportIncompleteWork(
+        `Could not create ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}: ${getErrorMessage(error)}`,
+        INCOMPLETE_WORK_RECOVERY.INSPECT_INSTALLATION,
+      );
     }
   }
 
@@ -504,6 +540,10 @@ async function ensureMinimalConfig(
     return { configPath: tsConfigPath, created: false };
   }
 
+  // ABORT on an unreadable config. The project has none — the guard above returned for that — so
+  // what these two can meet is an unreadable GLOBAL config, and the file about to be invented
+  // would record a marketplace read from nowhere. The second call is unreachable for the same
+  // reason the guard exists: this project's own config is not there to be unreadable.
   const resolvedConfig =
     sourceResult?.sourceConfig ?? (await resolveSource({ caller: "stored", projectDir }));
   const existingProjectConfig = await loadProjectSourceConfig(projectDir);
@@ -551,6 +591,9 @@ async function recordSource(projectDir: string, source: string): Promise<void> {
     return;
   }
 
+  // ABORT on an unreadable config. The `?? {}` is a fallback for a config that is not THERE; on
+  // one that is there and unreadable it would hand the writer an empty partial, and this scalar
+  // write would replace the user's whole file with a two-field one under an invented name.
   const existing = (await loadProjectSourceConfig(projectDir)) ?? {};
   await writeProjectPartial(
     projectDir,

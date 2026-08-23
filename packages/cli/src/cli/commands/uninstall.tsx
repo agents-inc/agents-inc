@@ -47,6 +47,7 @@ import {
   UNINSTALL_PLAN,
   compiledAgentsRemoval,
   localSkillsRemoval,
+  notInstalledHere,
   unmarkedAgentsKept,
   registeredProjectsUpdated,
   registeredProjectUpdateSkipped,
@@ -233,6 +234,19 @@ function sectionWithItems(label: string, items: string[]): RemovalPlanSection[] 
 const UNINSTALL_CONFIRM_MESSAGE = "Are you sure you want to uninstall?";
 
 export default class Uninstall extends BaseCommand {
+  /**
+   * The name this run prints itself under, resolved once in {@link run} because three separate
+   * lines carry it: the heading, the sign-off, and the warning naming the tool a preserved
+   * directory was not created by. The last of those sits three calls below the resolution, and
+   * threading a display string through `executeUninstall` -> `removeLocalFiles` ->
+   * `removePlannedSkills` would widen three signatures to deliver one word.
+   *
+   * A plain `string` holding the shipped default rather than an optional every reader would have
+   * to answer for. `run` replaces it before the first line is printed, so what a user sees is
+   * always what their configuration says.
+   */
+  private brandingName: string = DEFAULT_BRANDING.NAME;
+
   static summary = `Remove ${DEFAULT_BRANDING.NAME} from this project`;
 
   static description = `Uninstall ${DEFAULT_BRANDING.NAME} from this project. Removes CLI-managed skills (matched by marketplace), compiled agents, plugins, and the .claude-src/ config manifest (config.ts + config-types.ts). User-created content is preserved.`;
@@ -253,6 +267,7 @@ export default class Uninstall extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(Uninstall);
     const projectDir = process.cwd();
+    this.brandingName = await this.resolveBrandingName(projectDir);
 
     this.printHeader();
 
@@ -280,14 +295,14 @@ export default class Uninstall extends BaseCommand {
 
   private printHeader(): void {
     this.log("");
-    this.log(`${DEFAULT_BRANDING.NAME} Uninstall`);
+    this.log(`${this.brandingName} Uninstall`);
     this.log("");
   }
 
   private reportNothingToUninstall(): void {
     this.warn("Nothing to uninstall.");
     this.log("");
-    this.log(INFO_MESSAGES.NOT_INSTALLED);
+    this.log(notInstalledHere(this.brandingName));
     this.log("");
     this.log(INFO_MESSAGES.NO_CHANGES_MADE);
   }
@@ -444,7 +459,7 @@ export default class Uninstall extends BaseCommand {
 
   private reportSuccess(): void {
     this.log("");
-    this.log(`${DEFAULT_BRANDING.NAME} has been uninstalled.`);
+    this.log(`${this.brandingName} has been uninstalled.`);
     this.log("");
     this.logSuccess(SUCCESS_MESSAGES.UNINSTALL_COMPLETE);
     this.log("");
@@ -510,7 +525,7 @@ export default class Uninstall extends BaseCommand {
     const result = await removeMatchingSkills(
       entry,
       (dirName) => this.log(`  Uninstalled skill '${dirName}'`),
-      (dirName) => this.warn(`Skipping '${dirName}': not created by ${DEFAULT_BRANDING.NAME} CLI`),
+      (dirName) => this.warn(`Skipping '${dirName}': not created by ${this.brandingName} CLI`),
     );
     if (result.removedCount === 0) return;
 
@@ -630,7 +645,7 @@ export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null)
  * cannot be parsed (`ConfigLoadError`) is reported through `onLoadFailed` and
  * then treated exactly like a missing one — an unreadable config is precisely
  * when a user needs to uninstall, so it must never fail the run. Same posture as
- * the `deregisterProjectPath` call site. Only the plan degrades: the plugins and
+ * the `deregister-project` mutation's call site above. Only the plan degrades: the plugins and
  * compiled agents the config named can no longer be identified, while file
  * removal proceeds. Any other failure is a real fault and still propagates.
  */

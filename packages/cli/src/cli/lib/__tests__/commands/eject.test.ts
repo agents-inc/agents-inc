@@ -12,7 +12,8 @@ import { parseTestFrontmatter } from "../helpers/index.js";
 import { SKILLS } from "../test-fixtures";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
-import { installEject, installPluginConfig } from "../../installation/local-installer";
+import { installThroughOperations } from "../helpers/install-through-operations.js";
+import { writeProjectConfig } from "../../operations/project/write-project-config.js";
 import { copySkillsToLocalFlattened } from "../../skills/skill-copier";
 import Eject from "../../../commands/eject";
 import {
@@ -448,7 +449,7 @@ describe("eject command", () => {
       const { error } = await runCliCommand(["eject", "skills", "--source", "/nonexistent/path"]);
 
       // The flag is withdrawn, not merely ignored: silently accepting it would eject from one
-      // source while recording another in config.ts (CLI-450).
+      // source while recording another in config.ts.
       expect(error?.message).toContain("--source");
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
@@ -571,11 +572,11 @@ describe("eject skills from initialized project", () => {
     dirs = await createTestSource();
     process.chdir(dirs.projectDir);
 
-    // Run installEject to create a real initialized project with 2 skills
+    // Run the live install to create a real initialized project with 2 skills
     const installMatrix = buildEjectMatrix();
     initializeMatrix(installMatrix);
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
-    await installEject({
+    await installThroughOperations({
       wizardResult: buildWizardResult(buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS)),
       sourceResult: installSource,
       projectDir: dirs.projectDir,
@@ -689,9 +690,9 @@ describe("eject skills from initialized project", () => {
   });
 });
 
-// Plugin mode uses installPluginConfig which writes config and agents but does
-// NOT copy skills to .claude/skills/. Therefore, when ejecting skills from a
-// plugin mode project, ALL source skills should be eligible (none are local).
+// Plugin mode writes config and agents but does NOT copy skills to .claude/skills/ — the
+// skills live in installed plugins. Therefore, when ejecting skills from a plugin mode
+// project, ALL source skills should be eligible (none are local).
 
 describe("eject in plugin mode", () => {
   let dirs: TestDirs;
@@ -702,12 +703,12 @@ describe("eject in plugin mode", () => {
     dirs = await createTestSource();
     process.chdir(dirs.projectDir);
 
-    // Use installPluginConfig for plugin mode: writes config and agents
-    // but does NOT copy skills to .claude/skills/ (skills live in plugins)
+    // Plugin mode is the config write ALONE — `init` skips its copy step when no skill is
+    // ejected, so nothing lands under .claude/skills/ and every source skill stays eligible.
     const installMatrix = buildEjectMatrix();
     initializeMatrix(installMatrix);
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
-    await installPluginConfig({
+    await writeProjectConfig({
       wizardResult: buildWizardResult(
         buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS, { origin: "agents-inc" }),
       ),

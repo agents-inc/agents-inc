@@ -28,6 +28,7 @@ import {
 import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
+import { resolveBranding } from "../lib/configuration/config.js";
 import {
   type InstallMode,
   detectInstallation,
@@ -59,10 +60,12 @@ import { EXIT_CODES } from "../lib/exit-codes.js";
 import type { AgentName, MergedSkillsMatrix, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
-  SUCCESS_MESSAGES,
+  INCOMPLETE_WORK_RECOVERY,
   STATUS_MESSAGES,
+  agentsNotCompiled,
   carriedSkillsWritten,
   globalScopedAgentsHint,
+  initSucceeded,
   sharedConfigExistingInstall,
   sharedConfigGlobalInstall,
   skippedUnknownAgents,
@@ -80,19 +83,39 @@ const DASHBOARD_OPTIONS = [
 /** The commands offered by the project dashboard (single source: DASHBOARD_OPTIONS). */
 export type DashboardCommand = (typeof DASHBOARD_OPTIONS)[number]["value"];
 
+/**
+ * The dashboard's title: {@link ASCII_LOGO} for an installation resting on the shipped branding,
+ * and the configured name in its place for one that white-labels it.
+ *
+ * **The logo gives way rather than sitting above the name, because it spells the shipped name.**
+ * `branding.name` replaces a heading everywhere else it is read — every configured leg of
+ * `commands/branding-name-reaches-headings` asserts {@link DEFAULT_BRANDING.NAME} is ABSENT — so
+ * painting `AGENTS INC` in block capitals above `Northwind` would leave the vendor's name at the
+ * most prominent surface the product has, which is the one thing white-labelling is for.
+ *
+ * The default path is untouched by construction: {@link resolveBranding} answers
+ * {@link DEFAULT_BRANDING.NAME} for a configuration with no `branding` key, so an unbranded
+ * install takes the logo arm. A configuration naming the shipped name explicitly takes it too —
+ * it asked for the shipped name and gets the shipped presentation of it.
+ */
+const DashboardTitle: React.FC<{ name: string }> = ({ name }) =>
+  name === DEFAULT_BRANDING.NAME ? <Text>{ASCII_LOGO}</Text> : <Text bold>{name}</Text>;
+
 type DashboardProps = {
+  /** The resolved branding name, as {@link DashboardData.name} carries it. */
+  name: string;
   onSelect: (command: DashboardCommand) => void;
   onCancel: () => void;
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ onSelect, onCancel }) => {
+const Dashboard: React.FC<DashboardProps> = ({ name, onSelect, onCancel }) => {
   const { exit } = useApp();
   const { rows: terminalHeight } = useTerminalDimensions();
 
   return (
     <Box flexDirection="column" height={terminalHeight}>
       <Box marginBottom={1}>
-        <Text>{ASCII_LOGO}</Text>
+        <DashboardTitle name={name} />
       </Box>
       <SelectList
         items={DASHBOARD_OPTIONS}
@@ -113,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onSelect, onCancel }) => {
 export function formatDashboardText(data: DashboardData): string {
   const modeLabel = INSTALL_MODE_LABELS[data.mode];
   const lines = [
-    DEFAULT_BRANDING.NAME,
+    data.name,
     "",
     `  Skills:       ${data.skillCount} installed`,
     `  Agents:       ${data.agentCount} compiled`,
@@ -148,7 +171,11 @@ export async function showDashboard(
   // terminal before unmount (dashboard occupies the full height).
   const selectedCommand = await promptValue<DashboardCommand | null>(
     (resolve) => (
-      <Dashboard onSelect={(command) => resolve(command)} onCancel={() => resolve(null)} />
+      <Dashboard
+        name={data.name}
+        onSelect={(command) => resolve(command)}
+        onCancel={() => resolve(null)}
+      />
     ),
     { onExit: null, clearOnResolve: true },
   );
@@ -258,6 +285,14 @@ function sharedConfigSourceFlags(flags: SourceFlags, payload: SeedPayload): Sour
 }
 
 export default class Init extends BaseCommand {
+  /**
+   * The name this run prints itself under, resolved once on {@link install}'s spine because the
+   * closing line is printed several calls below it. Same shape and same reason as `uninstall`'s
+   * field: a plain `string` holding the shipped default rather than an optional every reader
+   * would have to answer for.
+   */
+  private brandingName: string = DEFAULT_BRANDING.NAME;
+
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
   static description =
     "Interactive wizard to set up skills and agents. Supports Plugin Mode (native install) and Eject Mode (copy to .claude/).";
@@ -286,11 +321,25 @@ export default class Init extends BaseCommand {
   };
 
   /**
+   * The command in two statements: do the work, then answer for it.
+   *
+   * {@link install} owns every path through the setup and returns however it likes; the exit
+   * code is decided once, here, after the last of them. Deciding it inside would mean deciding
+   * it at each of that method's endings, and an ending added later would inherit the exit-0
+   * default silently — which is the defect this pair exists to close. `edit` is two statements
+   * for the same reason.
+   */
+  async run(): Promise<void> {
+    await this.install();
+    this.exitIfWorkIncomplete();
+  }
+
+  /**
    * One spine, two producers. The wizard and a shared id differ only in *where the selection
    * comes from* — everything after it (the empty guard, the install pipeline) is identical, so it
    * lives here once rather than being written twice and drifting.
    */
-  async run(): Promise<void> {
+  private async install(): Promise<void> {
     const { flags } = await this.parse(Init);
     const projectDir = process.cwd();
 
@@ -298,6 +347,11 @@ export default class Init extends BaseCommand {
     // to inline the global one. One that exists but cannot be read is recreated, not installed
     // over, and saying so here is what keeps the raw loader error off the screen.
     await this.ensureConfigReadable(projectDir);
+
+    // Read once on the spine, because the closing line is printed several calls below it. The
+    // degrade arm of `resolveBrandingName` cannot fire here: the line above has already refused
+    // every config this would read.
+    this.brandingName = await this.resolveBrandingName(projectDir);
 
     // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
     // *that* configuration, so it overrides an existing installation instead.
@@ -741,11 +795,42 @@ export default class Init extends BaseCommand {
       skills: allSkills,
       agentScopeMap,
     });
-    this.log(`Compiled ${compileResult.compiled.length} agents\n`);
+    this.reportCompilation(compileResult);
 
     this.reportPropagatedRecompile(configResult.propagation);
 
     return { configResult, compileResult, agentScopeMap };
+  }
+
+  /**
+   * What the compile pass did, including the half this command used to drop.
+   *
+   * It read `compiled` and nothing else, so a pass that lost a sub-agent printed a number that
+   * looked perfectly right — `compiled` counts successes, so it is correct either way — and the
+   * failures reached no surface at all: no count, no reason, no exit code. A user's FIRST
+   * install could silently land a roster missing a sub-agent.
+   *
+   * The compile is the last thing `init` does, so a failure here cannot be answered by aborting:
+   * the skills are on disk and `config.ts` and `config-types.ts` describe them. What is owed is
+   * the account, which {@link BaseCommand.exitIfWorkIncomplete} prints and answers for.
+   */
+  private reportCompilation(compileResult: CompilationResult): void {
+    const { compiled, failed, warnings } = compileResult;
+    const summary = `Compiled ${compiled.length} agents`;
+
+    if (failed.length === 0) {
+      this.log(`${summary}\n`);
+      return;
+    }
+
+    this.log(`${summary} (${failed.length} failed)\n`);
+    for (const warning of warnings) {
+      this.warn(warning);
+    }
+    // Recorded off `failed` rather than off the warnings just printed: `warnings` also carries
+    // entries that are not failures — a scope with nothing to compile contributes one on every
+    // project-context run — and the ending must not file those as work owed.
+    this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
   }
 
   private reportSuccess(
@@ -756,7 +841,10 @@ export default class Init extends BaseCommand {
     pluginModeSucceeded: boolean,
     copyResult: SkillCopyResult | null,
   ): void {
-    this.log(`${SUCCESS_MESSAGES.INIT_SUCCESS}\n`);
+    // A run with work owed ends on the failure account instead — `initialized successfully!`
+    // over a roster missing a sub-agent is the claim being withdrawn, not a line beside it.
+    // Where the install landed is still reported below: that is what the account is about.
+    if (!this.hasIncompleteWork) this.log(`${initSucceeded(this.brandingName)}\n`);
 
     const isEjectOutput =
       installMode === "eject" || (installMode === "mixed" && !pluginModeSucceeded);
@@ -924,6 +1012,19 @@ function customizationSteps(split: AgentScopeSplit, globalConfigPath: string): s
 }
 
 export type DashboardData = {
+  /**
+   * The name the dashboard is titled with — `branding.name` where the configuration supplies one
+   * and {@link DEFAULT_BRANDING.NAME} otherwise. Carried on the data rather than read by either
+   * consumer so {@link formatDashboardText} stays a pure function of what it is handed, and so
+   * the one place that reaches a configuration is the one that already loads it.
+   *
+   * **Both of {@link showDashboard}'s branches read it, and that is the invariant to keep.** This
+   * field was resolved for the piped branch alone for as long as it was, while the `Dashboard`
+   * component was handed only its callbacks and painted {@link ASCII_LOGO} — so the dashboard a
+   * person actually sees was the one surface `branding.name` never reached, and every spec on the
+   * subject drove through a pipe and could not see it.
+   */
+  name: string;
   skillCount: number;
   agentCount: number;
   mode: InstallMode;
@@ -938,7 +1039,15 @@ export type DashboardData = {
  * project directory puts every skill and agent under HOME.
  */
 export async function getDashboardData(projectDir: string): Promise<DashboardData> {
-  const [info, loaded] = await Promise.all([getInstallationInfo(), loadProjectConfig(projectDir)]);
+  // ABORT is the posture on `resolveBranding`, and it is the one already in force: the
+  // `loadProjectConfig` beside it raises for the same file, so a configuration that cannot be
+  // evaluated fails this call whether branding is read or not. Nothing is degraded here that was
+  // not already, and the dashboard is only reached once an installation has been detected.
+  const [info, loaded, branding] = await Promise.all([
+    getInstallationInfo(),
+    loadProjectConfig(projectDir),
+    resolveBranding(projectDir),
+  ]);
 
   const activeSkills = loaded?.config.skills.filter((s) => !s.excluded);
   const skillCount = info?.skillCount ?? 0;
@@ -946,5 +1055,11 @@ export async function getDashboardData(projectDir: string): Promise<DashboardDat
   const mode = info?.mode ?? (activeSkills ? deriveInstallMode(activeSkills) : "eject");
   const source = loaded?.config.marketplace;
 
-  return { skillCount, agentCount, mode, ...(source !== undefined && { source }) };
+  return {
+    name: branding.name,
+    skillCount,
+    agentCount,
+    mode,
+    ...(source !== undefined && { source }),
+  };
 }

@@ -33,9 +33,20 @@ export const ERROR_MESSAGES = {
 
 export const SUCCESS_MESSAGES = {
   UNINSTALL_COMPLETE: "Uninstall complete!",
-  INIT_SUCCESS: `${DEFAULT_BRANDING.NAME} initialized successfully!`,
   PLUGIN_COMPILE_COMPLETE: "Plugin compile complete!",
 } as const;
+
+/**
+ * `init`'s closing line, under the name the run prints itself as.
+ *
+ * A builder rather than a constant because it carries `branding.name`, which is per-installation
+ * and cannot be baked in at module load. `init` is its one caller and resolves the name once on
+ * its own spine, through `BaseCommand.resolveBrandingName`, which is where the default comes
+ * from.
+ */
+export function initSucceeded(brandingName: string): string {
+  return `${brandingName} initialized successfully!`;
+}
 
 export const STATUS_MESSAGES = {
   INSTALLING_PLUGINS: "Installing skill plugins...",
@@ -78,7 +89,6 @@ export const INFO_MESSAGES = {
   NO_AGENTS_TO_RECOMPILE: "No agents to recompile",
   NO_PLUGIN_INSTALLATION: "No plugin installation found.",
   NO_LOCAL_INSTALLATION: "No local installation found.",
-  NOT_INSTALLED: `${DEFAULT_BRANDING.NAME} is not installed in this project.`,
   CONFIG_TYPES_REFRESHED: `Refreshed ${STANDARD_FILES.CONFIG_TYPES_TS}`,
   /**
    * `update` refreshes marketplaces and stops there. An ejected skill is a copy the
@@ -90,6 +100,18 @@ export const INFO_MESSAGES = {
   /** Printed under the destination `eject agent-partials` just named, so it names files only. */
   AGENT_PARTIALS_CUSTOMIZABLE: `Each sub-agent directory there holds ${AGENT_PARTIAL_FILES.join(", ")} — edit those to customize that sub-agent.`,
 } as const;
+
+/**
+ * What `uninstall` reports when the directory holds nothing of this CLI's, under the name the run
+ * prints itself as.
+ *
+ * A builder for the same reason as {@link initSucceeded}, and it matters more here: `uninstall`
+ * heads its output with the configured name and signs off with it, so a constant would put the
+ * shipped name in the middle of a run that says the configured one twice around it.
+ */
+export function notInstalledHere(brandingName: string): string {
+  return `${brandingName} is not installed in this project.`;
+}
 
 /** Closing line of a plugin install, printed wherever one runs. */
 export function pluginsInstalled(count: number): string {
@@ -122,6 +144,70 @@ export function localSkillsCopied(count: number): string {
  */
 export function recompileSummary(rewritten: number, unchanged: number, subject: string): string {
   return `${rewritten} ${subject} rewritten, ${unchanged} unchanged`;
+}
+
+/**
+ * The sub-agents a recompile pass could not write, named rather than counted.
+ *
+ * Read off the pass's `failed` roster rather than off the prose it also returns: that roster is
+ * the structured answer to "which ones did not land", while `warnings` carries entries that are
+ * not failures at all — a scope with nothing to compile contributes one on every project-context
+ * run, and a summary built from the prose would file that as work owed.
+ */
+export function agentsNotCompiled(agentNames: readonly AgentName[]): string {
+  return `${agentNames.length} sub-agent(s) did not compile: ${agentNames.join(", ")}`;
+}
+
+/**
+ * One thing a run set out to do and did not, paired with the one command that finishes it.
+ *
+ * Both halves are required. A run that names the failure and no way out has told the user their
+ * installation is wrong and left them holding it, and one that names a remedy without saying
+ * what it remedies is advice about nothing.
+ */
+export type IncompleteWork = {
+  /** What did not happen, in the words it was warned about with where they exist. */
+  what: string;
+  /** The single next thing that finishes it. */
+  recovery: string;
+};
+
+/**
+ * The ways out a command names when it finishes with work undone.
+ *
+ * One sentence per KIND of leftover state rather than one per failure site: what a person does
+ * about a plugin registration that outlived the skill it was for is the same whichever of the
+ * moments left it there, and three spellings of the same instruction read as three different
+ * instructions.
+ */
+export const INCOMPLETE_WORK_RECOVERY = {
+  RECOMPILE: `Run '${CLI_INVOKE_COMMAND} compile' — the compiled agents on disk are stale until you do.`,
+  INSPECT_INSTALLATION: `Run '${CLI_INVOKE_COMMAND} doctor' to see what this installation is left holding.`,
+  DELETE_AGENT_FILE:
+    "Delete the file by hand — Claude Code loads a compiled sub-agent this project no longer configures.",
+} as const;
+
+/**
+ * The account a command ends on when its work landed and part of it did not.
+ *
+ * It restates warnings the run already printed, deliberately: each was emitted where it
+ * happened, which is where it is explicable and where the screens of output after it bury it.
+ * This block is what a person reads after the fact, and the only place a non-zero exit from a
+ * command that finished is explained.
+ *
+ * The lead-in claims the changes above LANDED, because that is the whole difference between
+ * this ending and a refusal, and it is the sentence a reader would dispute.
+ */
+export function completedWithFailures(failures: readonly IncompleteWork[]): string {
+  return [
+    `Completed with ${failures.length} failure(s) — the changes above landed, these did not:`,
+    ...failures.flatMap(failureLines),
+  ].join("\n");
+}
+
+/** One failure as two lines, the remedy indented under the failure it answers. */
+function failureLines({ what, recovery }: IncompleteWork): string[] {
+  return [`  ${what}`, `    ${recovery}`];
 }
 
 /**
@@ -590,7 +676,7 @@ export function unplaceableKept(skillIds: readonly SkillId[]): string {
  * `doctor` is named last and deliberately: it reports this same file as its own finding, with the
  * same way out. It could not be named until it did — it used to call a config that exists but
  * cannot be read `.claude-src/config.ts not found` and send the reader to `init`, contradicting
- * every line below (CLI-430).
+ * every line below.
  */
 export function configUnreadableError(configLoadFailure: string): string {
   return [

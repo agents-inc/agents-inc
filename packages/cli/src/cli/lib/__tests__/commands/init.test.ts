@@ -6,9 +6,40 @@ import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { getDashboardData, formatDashboardText } from "../../../commands/init";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
+import {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  DEFAULT_BRANDING,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
 import { renderConfigTs } from "../content-generators";
 import { EXPECTED_SKILLS } from "../expected-values";
+import type { BrandingConfig } from "../../../types";
+
+/**
+ * A `branding.name` a project config supplies, sharing no substring with
+ * {@link DEFAULT_BRANDING.NAME} so neither half of a paired assertion can be satisfied by the
+ * other's output.
+ */
+const WHITE_LABEL_NAME = "Northwind";
+
+/**
+ * Writes the `.claude-src/config.ts` the dashboard reads: a project declaring no skills, carrying
+ * a `branding` block only when one is named — the two states the title line is asserted over.
+ */
+async function writeDashboardConfig(projectDir: string, branding?: BrandingConfig): Promise<void> {
+  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(
+    path.join(configDir, STANDARD_FILES.CONFIG_TS),
+    renderConfigTs({
+      name: "test-project",
+      skills: [],
+      ...(branding !== undefined && { branding }),
+    }),
+  );
+}
 
 describe("init command", () => {
   let projectDir: string;
@@ -105,6 +136,35 @@ describe("init command", () => {
       expect(text).toContain("github:agents-inc/skills");
     });
 
+    /**
+     * The dashboard's title line follows `branding.name`. Paired with the default below because
+     * neither half means anything alone: the configured one passes on a title hardcoded to the
+     * fixture, and the default one passes on a title that reads no config at all.
+     */
+    it("should title the dashboard with the configured branding name", async () => {
+      await writeDashboardConfig(projectDir, { name: WHITE_LABEL_NAME });
+
+      const data = await getDashboardData(projectDir);
+      expect(data.name).toBe(WHITE_LABEL_NAME);
+
+      const text = formatDashboardText(data);
+      expect(text).toContain(WHITE_LABEL_NAME);
+      expect(text, "the configured name replaces the shipped one").not.toContain(
+        DEFAULT_BRANDING.NAME,
+      );
+    });
+
+    it("should title the dashboard with the shipped name when no branding is configured", async () => {
+      await writeDashboardConfig(projectDir);
+
+      const data = await getDashboardData(projectDir);
+      expect(data.name).toBe(DEFAULT_BRANDING.NAME);
+
+      const text = formatDashboardText(data);
+      expect(text).toContain(DEFAULT_BRANDING.NAME);
+      expect(text).not.toContain(WHITE_LABEL_NAME);
+    });
+
     it("should not modify existing config when already initialized", async () => {
       const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
       await mkdir(configDir, { recursive: true });
@@ -164,13 +224,16 @@ describe("init command", () => {
   describe("formatDashboardText", () => {
     it("should format dashboard with all fields", () => {
       const text = formatDashboardText({
+        name: WHITE_LABEL_NAME,
         skillCount: 12,
         agentCount: 3,
         mode: "plugin",
         source: TEST_SOURCE_URL,
       });
 
-      expect(text).toContain("Agents Inc.");
+      // The title is the name the formatter was HANDED, which is what makes this a formatter of
+      // its data rather than of a constant. `getDashboardData` is where that name is resolved.
+      expect(text).toContain(WHITE_LABEL_NAME);
       expect(text).toContain("12 installed");
       expect(text).toContain("3 compiled");
       expect(text).toContain("Plugin");
@@ -183,6 +246,7 @@ describe("init command", () => {
 
     it("should omit source line when not configured", () => {
       const text = formatDashboardText({
+        name: DEFAULT_BRANDING.NAME,
         skillCount: 0,
         agentCount: 0,
         mode: "eject",
@@ -194,6 +258,7 @@ describe("init command", () => {
 
     it("should show Eject for eject mode", () => {
       const text = formatDashboardText({
+        name: DEFAULT_BRANDING.NAME,
         skillCount: 5,
         agentCount: 2,
         mode: "eject",
@@ -204,6 +269,7 @@ describe("init command", () => {
 
     it("should show Plugin for plugin mode", () => {
       const text = formatDashboardText({
+        name: DEFAULT_BRANDING.NAME,
         skillCount: 5,
         agentCount: 2,
         mode: "plugin",

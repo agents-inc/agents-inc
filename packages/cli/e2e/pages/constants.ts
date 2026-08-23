@@ -35,7 +35,7 @@ export const STEP_TEXT = {
   DOMAIN_META: "Methodology",
   DOMAIN_MOBILE: "Mobile",
   BUILD: "Framework", // First category visible in build step
-  BUILD_FOOTER: "Labels", // Build-step-only footer hint (the Labels indicator) — always rendered on first build frame. (The "Filter incompatible" hint that previously anchored this sentinel is gated off behind FEATURE_FLAGS.FILTER_INCOMPATIBLE.)
+  BUILD_FOOTER: "Labels", // Build-step-only footer hint (the Labels indicator) — always rendered on first build frame. (The "Filter incompatible" hint that previously anchored this sentinel went with the FEATURE it belonged to, deleted in 95738763 — not gated off. `FEATURE_FLAGS` has no hits under `src/`, so there is no flag to switch back on, and `interactive/edit-wizard-navigation` pins both halves: the hint is absent, and pressing F leaves the frame identical.)
   SCOPE: "Scope", // Build/agents-step footer hotkey label — rendered only for genuine project-scope edits (hidden when isEditingFromGlobalScope is true).
   CATEGORY_FRAMEWORK: "Framework", // Category label passed as an argument, not a step sentinel like BUILD
   // THE SOURCES STEP'S SCREEN SENTINEL — `wizard-layout.tsx`'s `STEP_DROPDOWN_LABEL.sources`,
@@ -58,6 +58,11 @@ export const STEP_TEXT = {
   INIT_SUCCESS: "initialized successfully",
   EDIT_SUCCESS: "Done",
   EDIT_UNCHANGED: "No changes made",
+  // The third ending, beside the two above: the run finished, the changes landed, and part of
+  // what it set out to do did not. The sentinel is the disputable half of the lead-in — that
+  // the changes ABOVE landed is exactly what separates this from a refusal, and a match on
+  // "Completed with" alone could not tell the two apart.
+  COMPLETED_WITH_FAILURES: "the changes above landed, these did not",
   COMPILE_SUCCESS: "Compiled",
   COMPILE_COMPLETE: "compile complete", // Matches "Global/Project compile complete!" (case-sensitive)
   CONFIG_LOAD_FAILED: "could not be loaded", // Corrupt-config error phrase from ConfigLoadError
@@ -84,6 +89,21 @@ export const STEP_TEXT = {
   // numbers differ: one names files this run wrote, the other files it left alone.
   AGENTS_REWRITTEN: "agents rewritten",
   UNCHANGED: "unchanged",
+  // The two ways a recompile can leave `edit` with work owed: some sub-agents refused to be
+  // written, or the pass threw before it could report on any of them. Both end on the same
+  // remedy, whose sentinel is the claim about DISK rather than the command name — "run compile"
+  // is advice this CLI gives in a dozen places, and only this one says why.
+  AGENTS_NOT_COMPILED: "did not compile",
+  RECOMPILATION_FAILED: "Agent recompilation failed",
+  RECOMPILE_STALE_REMEDY: "the compiled agents on disk are stale until you do",
+  // The qualifier `init` appends to its compile count when part of the pass did not land —
+  // `Compiled 1 agents (1 failed)`. Anchored on the word in FRONT of the parenthesis, because
+  // three other lines end in the same qualifier and none of them is this one: `edit` and
+  // `compile` both append it to "…, N unchanged", and so does the propagated-recompile summary,
+  // so a bare `(1 failed)` is satisfied by a line that is not the one under test. The count is
+  // spelled out for the reason `UNINSTALL_AGENTS_KEPT_ONE` spells its own: one sabotaged
+  // sub-agent that reports two failures is wrong in a way a count-free fragment cannot see.
+  COMPILED_WITH_FAILURES: "agents (1 failed)",
   COMPILE_GLOBAL_SCOPE_HINT: "global-scoped — run", // Stable fragment of the project-context compile hint
   CONFIG_TYPES_REFRESHED: "Refreshed config-types.ts", // Per-pass compile line after config-types regeneration
   SKILL_NOT_FOUND_WARNING: "is configured but was not found", // Compile warning for a config-listed skill with no installed files
@@ -93,6 +113,11 @@ export const STEP_TEXT = {
   // suite, so it is only assertable here because neither runner hands the spawned
   // binary its own `VITEST`.
   STACK_SKILL_ABSENT_FROM_MATRIX: "not found in matrix",
+  // What `extractLocalSkill` warns about an installed skill whose metadata.yaml states the
+  // `local` pseudo-category: the value belongs to no domain, so the skill joins no matrix
+  // category and no sub-agent can be given it. Anchored on the clause that names the fault
+  // rather than the whole line, which carries the skill's directory name and metadata path.
+  LOCAL_SKILL_PLACEHOLDER_CATEGORY: "is a placeholder, not a real category",
   COMPILE_PASS_NO_SKILLS: "No skills found for", // Per-pass zero-skill line: "No skills found for global/project pass, skipping"
   // The line a load prints when revalidation found the remote source had moved on, and the
   // one it prints instead when it could not ask at all and served the cached copy anyway.
@@ -103,6 +128,11 @@ export const STEP_TEXT = {
   // against the whole public catalogue, are narrowed to the source's slugs first — so
   // a fixture shipping ten skills must produce none of these.
   UNRESOLVED_SLUG: "Unresolved slug",
+  // What `claimSlug` warns when two skills in one matrix publish the same slug. First claim
+  // wins and the loser gets no entry in EITHER direction, so the warning is the only trace
+  // that a skill has become unreachable by slug — the fixture's own namespace is what keeps
+  // it out of the catalogue's way, and this is how a spec sees that it still does.
+  DUPLICATE_SLUG: "Duplicate slug",
   // Hard error when every compile pass discovered zero skills. Kept to the clause that
   // separates it from COMPILE_PASS_NO_SKILLS above — both open on the same four words —
   // because it opens an oclif error box, and a longer fragment straddles the wrap.
@@ -251,6 +281,12 @@ export const STEP_TEXT = {
   DOCTOR_CONFIG_IS_VALID: "is valid",
   DOCTOR_SOURCE_LOCAL: "Connected to local:",
   DOCTOR_SKILLS_AVAILABLE: "skills available",
+  // The provenance line the same row prints, whole, for a directory that names no marketplace:
+  // `doctor` resolves the default and FETCHES it, and the row used to report only the cache
+  // directory it landed in. Spelled end to end rather than in halves because both halves are the
+  // claim — which marketplace was reached, and that reaching it went to the network.
+  DOCTOR_MARKETPLACE_DEFAULT_FETCHED:
+    "Fetched github:agents-inc/skills over the network — nothing here names one, so this is the default",
   // The `checkAgentsCompiled` warn message, split at the count the caller composes.
   DOCTOR_AGENTS_NEED_RECOMPILATION: "recompilation",
   // Tips from the `TIPS` table in src/cli/commands/doctor.ts, each anchored on the
@@ -325,12 +361,14 @@ export const STEP_TEXT = {
   DOCTOR_SKIPPED_CONFIG_INVALID: "Skipped (config invalid)",
   DOCTOR_NO_SKILLS_CONFIGURED: "No skills configured",
   DOCTOR_NO_AGENTS_CONFIGURED: "No agents configured",
-  // The config loader's own diagnostic for the same file, emitted once per read. doctor runs
-  // verbose, so these used to interleave with the rows above; the finding carries the reason now
-  // and nothing re-reads the file to print it again. Duplicated verbatim from `loadSourceConfig`
-  // in src/cli/lib/configuration/config.ts — the spec below asserts its ABSENCE, which is the
-  // assertion that silently stops matching if the two drift apart.
-  CONFIG_SOURCE_LOAD_NOISE: "Failed to load project config",
+  // The opening of the loader's own reason, from `loadConfig` in
+  // src/cli/lib/configuration/config-loader.ts. It is what the finding QUOTES: the row reads
+  // `<path>: exists but could not be loaded: Failed to load config from '<path>': <parser reason>`.
+  // Asserted PRESENT, and deliberately so — this slot previously held the sibling loader line
+  // asserted ABSENT, which stopped matching in silence the moment that line became a throw and
+  // went on passing. A sentinel copied from source dies loudly when asserted present and silently
+  // when asserted absent, so the reason is pinned by what the finding DOES carry.
+  CONFIG_LOAD_REASON: "Failed to load config from",
 
   // UI elements
   FOOTER_SELECT: "select", // Footer text used for stable render detection
@@ -426,9 +464,32 @@ export const STEP_TEXT = {
   // apart from the grid's own text in a full-session output match.
   VALIDATION_REQUIRES: "requires:",
 
+  // The build grid's OTHER selection refusal, and the one no spec had ever asserted:
+  // `toggleTechnology` in stores/wizard-store.ts declines to deselect a skill that is the
+  // only one the matrix gives a required exclusive category, because the category would
+  // then have no way back to a valid state. Three lifecycle specs were pressing Space into
+  // this refusal and passing on its silence — see
+  // `.ai-docs/agent-findings/2026-08-21-three-specs-pressed-space-at-a-wizard-that-refuses.md`.
+  // The sentinel is the whole sentence: the clause a reader would dispute is the reason, not
+  // the word "Cannot".
+  ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",
+
   // Scope warnings
   GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",
   GLOBAL_AGENTS_BLOCKED: "Global agents cannot be changed from project scope",
+  // The `s` refusal emitted by the COMPONENT rather than by a store guard:
+  // `toggleFocusedScope` in `components/wizard/wizard.tsx` returns before it reaches the store
+  // when the session is editing the global install, where there is no second scope to move a
+  // row to. `toggleSkillScope`'s own `isEditingFromGlobalScope` early return sits behind this
+  // one and no production call reaches it.
+  SCOPE_TOGGLE_BLOCKED: "Scope toggle unavailable in global context",
+  // The OTHER `s` refusal, and this one is the store's: `wouldOverwriteGlobalEject` in
+  // `stores/wizard-store.ts` turns the press away when the live entry is a project EJECT, the
+  // hydration snapshot holds an ACTIVE global eject and no tombstone masks it — collapsing the
+  // pair would land the project copy on top of the global one. Reachable, and reached: it is
+  // why `ProjectBuilder.editable` carries `globalSkillsSource`, since every collapse spec built
+  // on the fixture's default eject/eject pair presses into this refusal instead.
+  ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",
 
   // The two halves of the scope filter's own reporting. The rule — a project-scoped
   // skill never reaches a global-scoped sub-agent — is correct and enforced at four
@@ -515,6 +576,29 @@ export const UNCHANGED_MARKER = "•";
 export const CLI_INVOKE_COMMAND = "npx agents-inc";
 
 /**
+ * The two names a run can print itself under, and the heading noun each command adds to one.
+ *
+ * `DEFAULT_NAME` is `DEFAULT_BRANDING.NAME` from `src/cli/consts.ts`, mirrored for the reason
+ * every other value in this block is: a spec that imports the constant the product printed with
+ * moves both sides together and can no longer fail. `WHITE_LABEL_NAME` is a spec's own fixture —
+ * a `branding.name` a project config supplies, deliberately sharing no substring with the
+ * default, so neither half of a paired assertion can be satisfied by the other's output.
+ *
+ * The nouns are separate because the heading is composed: `<name> Doctor`, and the whole line is
+ * what a spec asserts. Matching the noun alone would pass on a heading that still carried the
+ * shipped name, and matching the name alone would pass on any line that happened to mention it.
+ */
+export const BRANDING = {
+  DEFAULT_NAME: "Agents Inc.",
+  WHITE_LABEL_NAME: "Northwind",
+  DOCTOR_HEADING_NOUN: "Doctor",
+  EJECT_HEADING_NOUN: "Eject",
+  UNINSTALL_HEADING_NOUN: "Uninstall",
+  /** The closing line `uninstall` signs off with, minus the name that opens it. */
+  UNINSTALL_SIGN_OFF: "has been uninstalled.",
+} as const;
+
+/**
  * The stack step's tab. Named on its own because it is the one tab a flow can
  * lack: a source that ships no stacks gives the wizard no stack step, and a bar
  * that still drew this label would advertise a step the run never has.
@@ -583,6 +667,13 @@ export const TIMEOUTS = {
  */
 export const KEYS = {
   TAB: "\t",
+  /**
+   * Written by `TerminalSession.space()`. Named here because Space is the one
+   * key whose press COUNT is a contract: it toggles, so a spec proving a
+   * landed press was not re-pressed has to filter the ledger by the same byte
+   * the page object wrote.
+   */
+  SPACE: " ",
 } as const;
 
 export const INTERNAL_DELAYS = {
@@ -608,6 +699,13 @@ export const EXIT_CODES = {
   INVALID_ARGS: 2,
   NETWORK_ERROR: 3,
   CANCELLED: 4,
+  /**
+   * The command ran to the end and part of what it set out to do did not happen — the work
+   * that could land did, and the output names the rest. Asserting it rather than `not.toBe(0)`
+   * is what separates a partial apply from a refusal that changed nothing; both are non-zero
+   * and only this tells a spec which one it drove.
+   */
+  COMPLETED_WITH_FAILURES: 5,
   UNKNOWN_COMMAND: 127,
 } as const;
 

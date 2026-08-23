@@ -17,6 +17,7 @@ import { validateSource } from "../../source-validator";
 import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
 import { validatePlugin } from "../../plugins/plugin-validator";
 import {
+  MARKETPLACE_JSON,
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
   PLUGINS_SUBDIR,
@@ -27,7 +28,12 @@ import {
   SKILL_RULES_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
+  marketplaceManifestPath,
 } from "../../../consts";
+import {
+  createMockMarketplace,
+  createMockMarketplacePlugin,
+} from "../factories/plugin-factories.js";
 import type { RelationshipDefinitions } from "../../../types";
 import { testMarketplaceSkillId, type TestSkill } from "../fixtures/create-test-source";
 import { renderAgentMd, renderConfigTs, renderSkillMd } from "../content-generators";
@@ -86,6 +92,29 @@ const UNRELATED_INSTALLED_SKILL_ID = "web-framework-vue-composition-api";
 
 /** A marketplace name rather than the eject origin, which is what makes a skill plugin-mode. */
 const PLUGIN_MODE_ORIGIN = "agents-inc";
+
+/**
+ * A marketplace name Claude Code will not register plugins under, and the same name
+ * written the way it accepts.
+ */
+const MANIFEST_NAME_REFUSED = "Acme_Skills";
+const MANIFEST_NAME_ACCEPTED = "acme-skills";
+
+/** The Marketplaces row's clean verdict — the tick a refused manifest must not earn. */
+const MARKETPLACES_ROW_CLEAN = "1 marketplace validated";
+
+/** Gives a source a `.claude-plugin/marketplace.json` publishing under `name`. */
+async function writeMarketplaceManifest(sourceDir: string, name: string): Promise<void> {
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace([createMockMarketplacePlugin(CONFIGURED_SKILL_ID)]),
+      name,
+    }),
+  );
+}
 
 /** A registry file the JSON parser refuses, so nothing can be read out of it. */
 const UNPARSEABLE_REGISTRY = "{ not valid json !!!";
@@ -490,6 +519,39 @@ describe("doctor content checks", () => {
       expect(error).toBeUndefined();
       expect(stdout).toContain("1 marketplace validated");
       expect(stdout).toContain(primarySourceDir);
+    });
+
+    /**
+     * A green tick printed under a warning about the same file is worse than no row at all —
+     * the row is the summary a reader trusts, and it contradicts the line above it. The
+     * accepted-name spec beside this one is what says the row still ticks for a marketplace
+     * whose only difference is a name Claude Code registers plugins under.
+     */
+    describe("a marketplace naming itself something Claude Code cannot register", () => {
+      it("should refuse rather than tick, and name the manifest holding the name", async () => {
+        const sourceDir = await setupValidatedProject(tempDir, projectDir);
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_REFUSED);
+
+        const { stdout, error } = await runCliCommand(["doctor"]);
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(stdout, "a refused marketplace must not be counted as validated").not.toContain(
+          MARKETPLACES_ROW_CLEAN,
+        );
+        expect(stdout).toMatch(/1 marketplace: [1-9]\d* errors?/);
+        expect(stdout, "the manifest holding the name must be named").toContain(MARKETPLACE_JSON);
+        expect(stdout, "the refusal must state the rule, not the regex").toContain("kebab-case");
+      });
+
+      it("should tick for the same marketplace once its name is one Claude Code accepts", async () => {
+        const sourceDir = await setupValidatedProject(tempDir, projectDir);
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_ACCEPTED);
+
+        const { stdout, error } = await runCliCommand(["doctor"]);
+
+        expect(error).toBeUndefined();
+        expect(stdout).toContain(MARKETPLACES_ROW_CLEAN);
+      });
     });
 
     it("should exit with ERROR when a registered source path does not exist", async () => {
@@ -1198,6 +1260,10 @@ describe("doctor content checks", () => {
       expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
       expect(stdout).toContain(ROW_MARKETPLACE_REACHABLE);
       expect(stdout).toContain(`Connected to local: ${sourceDir}`);
+      expect(
+        stdout,
+        "the row says which marketplace it read and how this run came to read that one",
+      ).toContain(`Read ${sourceDir} from disk — named by this project's configuration`);
     });
 
     it("reports the compiled agents and the eject-mode skill that never reached disk", async () => {

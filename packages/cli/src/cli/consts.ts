@@ -55,10 +55,30 @@ export function marketplaceManifestPath(dir: string): string {
 }
 export const DEFAULT_PLUGIN_NAME = "agents-inc";
 
-/** Home directory used as the root for global installations */
-export const GLOBAL_INSTALL_ROOT = os.homedir();
+/**
+ * Home directory used as the root for global installations, read when it is asked for.
+ *
+ * A `const` here froze whichever home was in force when this module was first imported, and the
+ * damage was invisible: `runCliCommand` drives oclif through `dist/`, a SECOND module graph first
+ * imported by whichever spec runs a command first, so the value settled on that spec's fake home
+ * and every later spec in the file wrote under a directory its own `afterEach` had removed — the
+ * writes succeeding, into the wrong tree. In the `src` graph it was worse still: `consts.ts` is
+ * imported while vitest collects, before any hook has redirected the home, so the constant held
+ * the DEVELOPER'S own home in every unit test that read it.
+ *
+ * Every other home-dir reader in the codebase already calls `os.homedir()` at call time —
+ * `installBaseDir`, `isHomeDirectory`, `globalPairPaths` — each with its own note saying why.
+ * This is that rule arriving at the constants file, and `home-dir-read-at-call-time.test.ts`
+ * refuses the frozen shape from coming back.
+ */
+export function globalInstallRoot(): string {
+  return os.homedir();
+}
 
-export const CACHE_DIR = path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
+/** Root of the CLI's own cache, read at call time for the reason {@link globalInstallRoot} carries. */
+export function cacheRoot(): string {
+  return path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
+}
 
 /**
  * Promoted invocation prefix shown in user-facing messages (e.g. "Run '<CLI_INVOKE_COMMAND> init'").
@@ -125,7 +145,6 @@ export const DIRS = {
   skills: SKILLS_DIR_PATH,
   stacks: "src/stacks",
   templates: "src/agents/_templates",
-  commands: "src/commands",
 } as const;
 
 /** Single source for the metadata file name shared by skill and agent metadata. */
@@ -160,7 +179,6 @@ export const STANDARD_DIRS = {
   SCRIPTS: "scripts",
   SKILLS: "skills",
   AGENTS: "agents",
-  COMMANDS: "commands",
   /** Legacy per-project template override directory (`.claude/templates`). */
   TEMPLATES: "templates",
 } as const;

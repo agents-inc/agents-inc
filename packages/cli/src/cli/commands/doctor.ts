@@ -7,6 +7,8 @@ import {
   effectivelyExcludedSkillIds,
   loadProjectConfigFromDir,
   validateProjectConfig,
+  SOURCE_ENV_VAR,
+  type ResolvedConfig,
 } from "../lib/configuration";
 import { loadSource, detectProject, type DetectedProject } from "../lib/operations";
 import { matrix } from "../lib/matrix/matrix-provider";
@@ -32,6 +34,7 @@ import {
   type ContentIssue,
   type ContentValidation,
 } from "../lib/content-validator";
+import type { SourceLoadResult } from "../lib/loading";
 import type { MergedSkillsMatrix, ProjectConfig, SkillConfig } from "../types";
 import { fileExists, directoryExists } from "../utils/fs";
 import {
@@ -44,7 +47,6 @@ import {
   UI_SYMBOLS,
 } from "../consts";
 import { countBy, unique } from "remeda";
-import { setVerbose } from "../utils/logger";
 
 type CheckKind =
   | "config"
@@ -468,21 +470,58 @@ async function checkPluginSkillsInstalled(
   };
 }
 
+/**
+ * How a marketplace came to be the one this run reads, in the words each rung earns.
+ *
+ * The `default` sentence is the one that had to exist. With no configuration anywhere the resolver
+ * falls back to the public catalogue and this check FETCHES it, so the report a bare directory gets
+ * describes a network round trip to a marketplace nobody named — which is the row doing its job,
+ * since reachability is its whole subject, and it was doing it without saying so. The other four
+ * rungs are here because the map is exhaustive against the union rather than a default with
+ * exceptions; `doctor` takes no marketplace flag and reads no environment variable, so it reaches
+ * the first two through nothing today.
+ */
+const MARKETPLACE_CHOSEN_BY = {
+  flag: "named by this run",
+  env: `named by ${SOURCE_ENV_VAR}`,
+  project: "named by this project's configuration",
+  global: "named by the global configuration",
+  default: "nothing here names one, so this is the default",
+} as const satisfies Record<ResolvedConfig["sourceOrigin"], string>;
+
+/** How this run got hold of that marketplace — off disk, or over the wire. */
+function howItWasReached(source: string, isLocal: boolean): string {
+  return isLocal ? `Read ${source} from disk` : `Fetched ${source} over the network`;
+}
+
+/**
+ * The row for a marketplace this run did reach.
+ *
+ * `message` names where the skills were read FROM, which for a remote marketplace is the cache
+ * directory it was unpacked into; the provenance line beneath it names the marketplace itself.
+ * Both, because neither answers the other's question: a cache path says nothing about whose
+ * catalogue it holds, and a ref says nothing about what is on disk to inspect.
+ */
+function reachedMarketplace(result: SourceLoadResult): CheckResult {
+  const { source, sourceOrigin } = result.sourceConfig;
+  const skillCount = Object.keys(matrix.skills).length;
+  const sourceLabel = result.isLocal ? "local" : "remote";
+
+  return {
+    kind: "source",
+    status: "pass",
+    message: `Connected to ${sourceLabel}: ${result.sourcePath}`,
+    details: [
+      `${skillCount} skills available`,
+      `${howItWasReached(source, result.isLocal)} — ${MARKETPLACE_CHOSEN_BY[sourceOrigin]}`,
+    ],
+  };
+}
+
 async function checkSourceReachable(projectDir: string): Promise<CheckResult> {
   try {
-    const { sourceResult: result } = await loadSource({
-      projectDir,
-    });
-
-    const skillCount = Object.keys(matrix.skills).length;
-    const sourceLabel = result.isLocal ? "local" : "remote";
-
-    return {
-      kind: "source",
-      status: "pass",
-      message: `Connected to ${sourceLabel}: ${result.sourcePath}`,
-      details: [`${skillCount} skills available`],
-    };
+    const { sourceResult } = await loadSource({ projectDir });
+    return reachedMarketplace(sourceResult);
   } catch (error) {
     const message = getErrorMessage(error);
     return {
@@ -816,10 +855,15 @@ export default class Doctor extends BaseCommand {
 
   async run(): Promise<void> {
     await this.parse(Doctor);
-    setVerbose(true);
     const projectDir = process.cwd();
 
-    this.printHeader();
+    // The shared `verbose()` logger stays OFF, and nothing here switches it on. `doctor` used to,
+    // for the whole run — the mechanical residue of a `--verbose` flag whose removal was meant to
+    // make each row's own DETAILS unconditional, which `formatCheckLine` does on its own. What the
+    // logger added on top of that was the loaders' trace, spliced between the section headings and
+    // the rows they head: for a directory holding nothing, 27 lines of it, every one restating a
+    // row printed underneath it.
+    this.printHeader(await this.resolveBrandingName(projectDir));
     const contentResults = await this.runContentChecks(projectDir);
     const operationalResults = await this.runOperationalChecks(projectDir, contentResults);
     const results = [...contentResults, ...operationalResults];
@@ -831,9 +875,9 @@ export default class Doctor extends BaseCommand {
     }
   }
 
-  private printHeader(): void {
+  private printHeader(brandingName: string): void {
     this.log("");
-    this.log(`${DEFAULT_BRANDING.NAME} Doctor`);
+    this.log(`${brandingName} Doctor`);
     this.log("");
     this.log(`${SECTION_INDENT}Checking configuration health...`);
     this.log("");

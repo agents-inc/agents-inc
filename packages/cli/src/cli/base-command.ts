@@ -3,10 +3,13 @@ import { Command } from "@oclif/core";
 import chalk from "chalk";
 import { unique } from "remeda";
 
-import { CLI_COLORS, MIN_TERMINAL_SIZE } from "./consts.js";
+import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
+import { verbose } from "./utils/logger.js";
 import {
+  completedWithFailures,
   configUnreadableError,
+  type IncompleteWork,
   pluginsInstalled,
   propagatedRecompileSummary,
   savedSkillMetadataUnusableError,
@@ -23,6 +26,7 @@ import {
 } from "./utils/terminal.js";
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
+import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory } from "./lib/installation/index.js";
 import type { WizardResultV2 } from "./components/wizard/wizard.js";
 import { getStackSkillIds } from "./lib/stacks/index.js";
@@ -145,6 +149,19 @@ function projectScopedContent(result: WizardResultV2): {
  * so it is declared in `init` as `--marketplace` and the six opt-outs went with it.
  */
 export abstract class BaseCommand extends Command {
+  /**
+   * Everything this run set out to do and did not, in the order it hit them.
+   *
+   * Non-empty is the whole of the exit-code decision — see {@link exitIfWorkIncomplete}. It is
+   * deliberately not a boolean: a non-zero exit whose output does not say what failed and what
+   * finishes it is worse than the silent success it replaces.
+   *
+   * Private, with {@link hasIncompleteWork} the only reading a subclass gets. A command records
+   * through the two methods below and asks whether anything is owed; the list itself is this
+   * class's, because it is this class that answers for it.
+   */
+  private readonly incompleteWork: IncompleteWork[] = [];
+
   async init(): Promise<void> {
     await super.init();
     await this.ensureTerminalSize();
@@ -167,6 +184,35 @@ export abstract class BaseCommand extends Command {
   protected handleError(error: unknown): never {
     const message = getErrorMessage(error);
     this.error(message, { exit: EXIT_CODES.ERROR });
+  }
+
+  /**
+   * The name this run prints itself under: `branding.name` where a config supplies one, and
+   * {@link DEFAULT_BRANDING.NAME} everywhere else.
+   *
+   * **DEGRADE is the posture, and it is chosen here for every command that prints a name.**
+   * `loadSourceConfig` raises for a config that exists and cannot be evaluated, and three of the
+   * four callers must survive precisely that state: `doctor`'s whole job is naming it,
+   * `uninstall` is the only way out of it, and `eject` already catches the same fault one method
+   * down so an ejection that landed is never reported as a run that did nothing. A heading is
+   * decoration — nothing about a display name is worth refusing a command over, and refusing
+   * here would turn the branding wiring into a new way for an unreadable config to abort three
+   * commands that survive it today. `init` is the fourth caller and cannot reach the catch at
+   * all: {@link ensureConfigReadable} has already refused every config this would read.
+   *
+   * The cause is not swallowed: it goes to `verbose`, and the command's own config reader reports
+   * it in full where the user needs to act on it. Reporting it twice would put a warning about
+   * the configuration above a heading, which is the one line that has to be the first thing on
+   * screen.
+   */
+  protected async resolveBrandingName(projectDir: string): Promise<string> {
+    try {
+      const branding = await resolveBranding(projectDir);
+      return branding.name;
+    } catch (error) {
+      verbose(`Could not read branding from the config: ${getErrorMessage(error)}`);
+      return DEFAULT_BRANDING.NAME;
+    }
   }
 
   protected logSuccess(message: string): void {
@@ -419,5 +465,58 @@ export abstract class BaseCommand extends Command {
     if (skillIds.length === 0 && agentNames.length === 0) return;
 
     this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames), { exit: EXIT_CODES.ERROR });
+  }
+
+  /** Whether this run owes an account — the one thing a command may ask about the list. */
+  protected get hasIncompleteWork(): boolean {
+    return this.incompleteWork.length > 0;
+  }
+
+  /**
+   * Warns about work this run attempted and did not complete, and records it for the ending.
+   *
+   * Both halves, always. The warning stays at the point of failure because that is where it is
+   * explicable and where the surrounding output says what was being attempted; the record is
+   * what decides the exit code, and a failure the user is told about while the process reports
+   * success is exactly the state this closes.
+   *
+   * What it must never do is abort. Every caller sits past the point where the mutation it is
+   * reporting on has already happened, so stopping would relabel a state already committed to
+   * disk rather than prevent it — and would abandon the steps after it that can still land.
+   *
+   * The `recovery` sentences live in `INCOMPLETE_WORK_RECOVERY` in `utils/messages.ts`. One
+   * spelling per remedy is what matters; three spellings of "run compile" read as three
+   * different instructions.
+   */
+  protected reportIncompleteWork(what: string, recovery: string): void {
+    this.warn(what);
+    this.recordIncompleteWork(what, recovery);
+  }
+
+  /**
+   * The recording half alone, for a caller that has already said its piece: a recompile warns
+   * once per failed sub-agent with the compiler's own reason, so the ending names the roster
+   * those reasons belong to instead of repeating any of them.
+   */
+  protected recordIncompleteWork(what: string, recovery: string): void {
+    this.incompleteWork.push({ what, recovery });
+  }
+
+  /**
+   * The command's last word: what did not happen, what finishes it, and a non-zero exit.
+   *
+   * `this.exit` raises oclif's `ExitError`, which the framework carries to the process exit
+   * code and prints nothing for — so the account printed here is the whole of the output, with
+   * none of the `Error:` framing `this.error` would add to a command that in fact completed.
+   *
+   * A command that records must call this, or it files failures into a list nothing reads —
+   * which is the original silence wearing the mechanism built to close it, and is what
+   * `failure-reporting-classification.test.ts` holds every command in `src/cli/commands/` to.
+   */
+  protected exitIfWorkIncomplete(): void {
+    if (!this.hasIncompleteWork) return;
+
+    this.log(`\n${chalk.hex(CLI_COLORS.WARNING)(completedWithFailures(this.incompleteWork))}\n`);
+    this.exit(EXIT_CODES.COMPLETED_WITH_FAILURES);
   }
 }
