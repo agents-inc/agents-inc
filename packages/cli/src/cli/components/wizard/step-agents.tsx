@@ -25,22 +25,47 @@ type FocusId = AgentName | "continue";
 type ListRow =
   { type: "header"; label: string } | { type: "spacer" } | { type: "agent"; agent: AgentItem };
 
+/**
+ * The sub-agents a loaded source's stacks name, as the strings a stack file spells them.
+ *
+ * `typedKeys` types them `AgentName` because `ResolvedStack.skills` is keyed by it, but the keys
+ * arrive from a marketplace's own YAML and nothing between there and here narrows them — which
+ * is exactly the claim the filter below has to test.
+ */
+function agentIdsNamedByStacks(matrix: MergedSkillsMatrix): string[] {
+  return unique(matrix.suggestedStacks.flatMap((stack) => typedKeys(stack.skills)));
+}
+
+/**
+ * The rows a loaded source adds to the built-in grid.
+ *
+ * Narrowed with `isAgentName` and deliberately NOT cast to it. A row here is a name the user can
+ * put into `config.agents`, and only the CLI's own `src/agents/` declares a sub-agent a compile
+ * pass can honour — that directory is the whole of the roster (owner ruling 2026-08-21) and is
+ * what `AGENT_NAMES` is generated from. So a stack naming an agent the CLI does not ship
+ * contributes nothing: offering it a row wrote a name that reached `AgentName`,
+ * `SelectedAgentName` and `ProjectAgentName` alike and then left `compile` with no definition to
+ * compile.
+ */
+function selectableSourceAgents(matrix: MergedSkillsMatrix): AgentName[] {
+  return agentIdsNamedByStacks(matrix)
+    .filter(isAgentName)
+    .filter((agentName) => !BUILT_IN_AGENT_IDS.has(agentName));
+}
+
 function buildAgentGroups(matrix: MergedSkillsMatrix): AgentGroup[] {
-  const customAgentIds: string[] = unique(
-    matrix.suggestedStacks.flatMap((stack) => typedKeys(stack.skills)),
-  ).filter((agentName) => !BUILT_IN_AGENT_IDS.has(agentName));
+  const customAgentIds = selectableSourceAgents(matrix);
 
   if (customAgentIds.length === 0) return BUILT_IN_AGENT_GROUPS;
 
   // Group custom agents by explicit domain (from metadata.yaml) or kebab prefix fallback
   const customItems = customAgentIds.map((agentId) => {
-    const explicitDomain = isAgentName(agentId) ? matrix.agentDefinedDomains?.[agentId] : undefined;
+    const explicitDomain = matrix.agentDefinedDomains?.[agentId];
     const domainKey = explicitDomain ?? (agentId.split("-")[0] || "custom");
     return {
       groupLabel: getDomainDisplayName(domainKey),
       item: {
-        // Boundary cast: custom agent names from marketplace stacks are not in the AgentName union
-        id: agentId as AgentName,
+        id: agentId,
         label: toTitleCase(agentId),
         description: "Custom agent",
       },

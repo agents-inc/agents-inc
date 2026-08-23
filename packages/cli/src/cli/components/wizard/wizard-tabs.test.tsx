@@ -1,17 +1,33 @@
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WizardStep } from "../../stores/wizard-store";
-import { WizardTabs, wizardTabsFor, formatStepLabel, type WizardTabsProps } from "./wizard-tabs";
+import { WizardTabs, wizardTabsFor, type WizardTabsProps } from "./wizard-tabs";
 
 /** Every step the wizard has, in order — the flow a marketplace that ships stacks runs. */
 const FULL_STEP_FLOW: WizardStep[] = ["stack", "domains", "build", "sources", "agents", "confirm"];
 
 /**
- * The `sources` step's tab, mirrored as a literal for the same reason
- * `e2e/pages/constants.ts` mirrors it — importing `WIZARD_STEP_LABELS` would move both
- * sides at once and assert nothing.
+ * The label the bar paints for each step, spelled out here rather than read back out of the
+ * component's own `WIZARD_STEP_LABELS`.
+ *
+ * An expectation taken from the table under test agrees with it however it changes: a WRONG
+ * label moves both sides at once, so every assertion built that way can detect a MISSING tab
+ * and nothing else. `e2e/pages/constants.ts` `WIZARD_TAB_LABELS` mirrors the same set for the
+ * same reason, so a label moves in all three places or in none.
+ *
+ * The `sources` tab is named for what a user picks on the step — where each skill comes from —
+ * and NOT for the config field the step writes. Renaming it to that field's noun was proposed
+ * and withdrawn by the owner, so a later reader should read the mismatch with `SkillConfig.origin`
+ * as deliberate rather than as a rename left half-finished.
  */
-const SOURCES_TAB_LABEL = "Sources";
+const WIZARD_TAB_LABEL = {
+  stack: "Stack",
+  domains: "Domains",
+  build: "Skills",
+  sources: "Sources",
+  agents: "Agents",
+  confirm: "Confirm",
+} as const satisfies Record<WizardStep, string>;
 
 const renderWizardTabs = (props: Partial<WizardTabsProps> = {}) => {
   const defaultProps: WizardTabsProps = {
@@ -38,12 +54,12 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("domains"));
-      expect(output).toContain(formatStepLabel("build"));
-      expect(output).toContain(formatStepLabel("sources"));
-      expect(output).toContain(formatStepLabel("agents"));
-      expect(output).toContain(formatStepLabel("confirm"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.domains);
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
+      expect(output).toContain(WIZARD_TAB_LABEL.sources);
+      expect(output).toContain(WIZARD_TAB_LABEL.agents);
+      expect(output).toContain(WIZARD_TAB_LABEL.confirm);
     });
 
     it("should render with custom steps", () => {
@@ -79,7 +95,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
     });
 
     it("should mark first step as current by default", () => {
@@ -90,7 +106,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
     });
 
     it("should update current step when changed", () => {
@@ -101,7 +117,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("confirm"));
+      expect(output).toContain(WIZARD_TAB_LABEL.confirm);
     });
   });
 
@@ -114,7 +130,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
     });
 
     it("should render multiple completed steps", () => {
@@ -125,8 +141,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
     });
 
     it("should render current step separately from completed steps", () => {
@@ -137,7 +153,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
     });
   });
 
@@ -150,9 +166,9 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("domains"));
-      expect(output).toContain(formatStepLabel("build"));
-      expect(output).toContain(formatStepLabel("sources"));
+      expect(output).toContain(WIZARD_TAB_LABEL.domains);
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
+      expect(output).toContain(WIZARD_TAB_LABEL.sources);
     });
 
     it("should render steps after current", () => {
@@ -163,7 +179,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("confirm"));
+      expect(output).toContain(WIZARD_TAB_LABEL.confirm);
     });
   });
 
@@ -177,7 +193,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
     });
 
     it("should handle multiple skipped steps", () => {
@@ -189,8 +205,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build"));
-      expect(output).toContain(formatStepLabel("sources"));
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
+      expect(output).toContain(WIZARD_TAB_LABEL.sources);
     });
 
     it("should prioritize completed over skipped when step is in both arrays", () => {
@@ -202,8 +218,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
     });
   });
 
@@ -216,7 +232,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
     });
 
     it("should prioritize current over skipped", () => {
@@ -228,7 +244,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("build"));
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
     });
 
     it("should prioritize completed over skipped", () => {
@@ -240,7 +256,7 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
     });
   });
 
@@ -250,8 +266,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("confirm"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.confirm);
     });
 
     it("should include step labels", () => {
@@ -260,7 +276,7 @@ describe("WizardTabs component", () => {
 
       const output = lastFrame();
       FULL_STEP_FLOW.forEach((step) => {
-        expect(output).toContain(formatStepLabel(step));
+        expect(output).toContain(WIZARD_TAB_LABEL[step]);
       });
     });
   });
@@ -274,8 +290,8 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("confirm"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.confirm);
     });
 
     it("should handle empty skipped steps", () => {
@@ -287,9 +303,9 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("build"));
-      expect(output).toContain(formatStepLabel("sources"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
+      expect(output).toContain(WIZARD_TAB_LABEL.sources);
     });
 
     it("should handle all steps completed", () => {
@@ -300,11 +316,11 @@ describe("WizardTabs component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain(formatStepLabel("stack"));
-      expect(output).toContain(formatStepLabel("domains"));
-      expect(output).toContain(formatStepLabel("build"));
-      expect(output).toContain(formatStepLabel("sources"));
-      expect(output).toContain(formatStepLabel("confirm"));
+      expect(output).toContain(WIZARD_TAB_LABEL.stack);
+      expect(output).toContain(WIZARD_TAB_LABEL.domains);
+      expect(output).toContain(WIZARD_TAB_LABEL.build);
+      expect(output).toContain(WIZARD_TAB_LABEL.sources);
+      expect(output).toContain(WIZARD_TAB_LABEL.confirm);
     });
 
     it("should handle single step", () => {
@@ -325,25 +341,22 @@ describe("WizardTabs component", () => {
    * The tab bar's own labels, which `e2e/pages/constants.ts` `WIZARD_TAB_LABELS` mirrors
    * as a whole set — a spec naming two of six cannot tell a complete bar from one that
    * dropped the steps it did not mention, so the label and the mirror move together.
-   *
-   * The tab is named for what a user picks on the step — where each skill comes from — and
-   * NOT for the config field the step writes. Renaming it to that field's noun was proposed
-   * and withdrawn by the owner, so a later reader should read the mismatch with
-   * `SkillConfig.origin` as deliberate rather than as a rename left half-finished.
    */
   describe("the vocabulary the tabs are labelled in", () => {
-    it("should label the sources step after where each skill comes from", () => {
-      expect(formatStepLabel("sources")).toBe(SOURCES_TAB_LABEL);
+    it("should label every step in the flow, each spelled as the E2E mirror spells it", () => {
+      expect(wizardTabsFor(FULL_STEP_FLOW)).toStrictEqual(
+        FULL_STEP_FLOW.map((id) => ({ id, label: WIZARD_TAB_LABEL[id] })),
+      );
     });
 
-    it("should paint that label onto the bar, spelled as the E2E mirror spells it", () => {
+    it("should paint those labels onto the bar", () => {
       const { lastFrame, unmount } = renderWizardTabs();
       cleanup = unmount;
 
-      // Every other tab assertion here reads its label back through `formatStepLabel`, so it
-      // moves with the component and cannot fail on a rename. This one is the literal the
-      // E2E tab-bar mirror carries, matched against the bar as painted.
-      expect(lastFrame()).toContain(SOURCES_TAB_LABEL);
+      const output = lastFrame();
+      for (const step of FULL_STEP_FLOW) {
+        expect(output).toContain(WIZARD_TAB_LABEL[step]);
+      }
     });
   });
 });

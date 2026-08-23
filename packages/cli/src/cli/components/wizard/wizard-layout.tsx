@@ -111,6 +111,43 @@ const STARTUP_MESSAGE_COLOR = {
 } as const satisfies Record<StartupMessage["level"], string>;
 
 /**
+ * Which messages claim the band's rows first. A warning is news the user may have to act on;
+ * an info line is a count they can live without, and `edit` buffers two of those before
+ * anything else can speak — so in arrival order the whole cramped budget went to "Loaded N
+ * skills" and no warning was legible at all.
+ *
+ * Warnings and errors share a rank so that their own order survives: the sort below is stable,
+ * and the sequence a load raised them in is the only thing that says which came first.
+ */
+const STARTUP_MESSAGE_RANK = {
+  error: 0,
+  warn: 0,
+  info: 1,
+} as const satisfies Record<StartupMessage["level"], number>;
+
+function warningsBeforeInfo(messages: StartupMessage[]): StartupMessage[] {
+  return [...messages].sort(
+    (a, b) => STARTUP_MESSAGE_RANK[a.level] - STARTUP_MESSAGE_RANK[b.level],
+  );
+}
+
+type StartupBand = {
+  painted: StartupMessage[];
+  counted: number;
+};
+
+/**
+ * The band's whole decision: which rows are painted, and how many messages the counter stands
+ * for. Warnings and errors claim rows first, info fills whatever is left, and anything past the
+ * budget is counted rather than dropped — so the counter is exact for every input, including the
+ * one where the warnings alone overrun the budget and collapse last.
+ */
+function startupBand(messages: StartupMessage[], budget: number): StartupBand {
+  const painted = warningsBeforeInfo(messages).slice(0, budget);
+  return { painted, counted: messages.length - painted.length };
+}
+
+/**
  * What the load said before Ink took the terminal.
  *
  * `warn()` writes to stderr, which the wizard's own `clearTerminal` would wipe,
@@ -121,6 +158,16 @@ const STARTUP_MESSAGE_COLOR = {
  * It sits above the step rather than over it, and does not shrink: a warning
  * compressed by Yoga overprints into an unreadable row, which is worse than the
  * row it would have cost the step.
+ *
+ * Nor does it GROW. A warning must be legible, but the budget it is legible
+ * within is fixed, so the space is made by evicting the info lines rather than
+ * by taking rows from the step: this band is `flexShrink={0}` inside a root box
+ * sized to the terminal, so a band that grew with the warning count would push
+ * the frame past the bottom of the screen and its own header off the top —
+ * which is the defect `assertWizardScreenIsWhollyVisible` in
+ * `e2e/pages/base-step.ts` exists to fail on. Where the warnings alone overrun
+ * the budget they collapse too, last, and the counter still accounts for every
+ * message that was not painted.
  */
 const StartupMessages: React.FC<{ messages: StartupMessage[]; terminalHeight: number }> = ({
   messages,
@@ -128,8 +175,7 @@ const StartupMessages: React.FC<{ messages: StartupMessage[]; terminalHeight: nu
 }) => {
   if (messages.length === 0) return null;
 
-  const painted = messages.slice(0, paintedStartupMessageCount(terminalHeight));
-  const counted = messages.length - painted.length;
+  const { painted, counted } = startupBand(messages, paintedStartupMessageCount(terminalHeight));
 
   return (
     <Box flexDirection="column" flexShrink={0} paddingX={1}>

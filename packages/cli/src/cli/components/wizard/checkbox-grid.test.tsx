@@ -281,6 +281,26 @@ describe("CheckboxGrid component", () => {
 
       expect(onToggle).toHaveBeenCalledWith("alpha");
     });
+
+    it("should toggle through the latest onToggle after a re-render replaces it", async () => {
+      const supersededOnToggle = vi.fn();
+      const latestOnToggle = vi.fn();
+
+      const { stdin, rerender, unmount } = render(
+        <CheckboxGrid {...defaultProps} onToggle={supersededOnToggle} />,
+      );
+      cleanup = unmount;
+      await delay(RENDER_DELAY_MS);
+
+      rerender(<CheckboxGrid {...defaultProps} onToggle={latestOnToggle} />);
+      await delay(RENDER_DELAY_MS);
+
+      stdin.write(SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      expect(latestOnToggle).toHaveBeenCalledWith("alpha");
+      expect(supersededOnToggle).not.toHaveBeenCalled();
+    });
   });
 
   describe("custom props", () => {

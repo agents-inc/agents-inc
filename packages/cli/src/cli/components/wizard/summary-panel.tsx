@@ -18,7 +18,7 @@ import { getStackName } from "./utils.js";
 /**
  * The Marketplace row's value: the distinct marketplaces the summarised skills come from.
  *
- * `SkillConfig.origin` is authoritative for where a skill came from (D-217) and holds exactly one
+ * `SkillConfig.origin` is authoritative for where a skill came from, and holds exactly one
  * of two things: {@link EJECT_SOURCE}, meaning the files were copied locally, or the marketplace's
  * own name as its `marketplace.json` declares it — which is why a project initialised from a
  * different marketplace names that marketplace here without any extra plumbing.

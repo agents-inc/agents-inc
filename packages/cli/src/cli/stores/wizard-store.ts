@@ -35,7 +35,7 @@ import type {
   ResolvedSkill,
 } from "../types/index.js";
 import type { SourceOption, SourceRow } from "../components/wizard/source-grid.js";
-import { warn } from "../utils/logger.js";
+import { disableBuffering, drainBuffer, enableBuffering, warn } from "../utils/logger.js";
 import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../utils/typed-object.js";
 
 /** The whole of what a skill no marketplace carries can be installed as. */
@@ -51,6 +51,27 @@ const TOAST_MESSAGES = {
   ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",
   GLOBAL_AGENTS_LOCKED: "Global agents cannot be changed from project scope",
 } as const;
+
+/**
+ * What a population run past the mount could not place, in one line.
+ *
+ * Short by necessity rather than by preference: `Toast` in `components/wizard/toast.tsx` paints
+ * its message on one row plus padding, absolutely positioned at the foot of a frame already
+ * sized to the terminal,
+ * so a toast as wide as the warning it stands for would wrap and break the frame it is drawn
+ * in. Nothing is discarded by keeping it short — `unresolvableSkillIds` still carries every id,
+ * which is what `edit` names each one from afterwards.
+ *
+ * It states the outcome rather than the cause, because two causes arrive here: a skill the
+ * loaded source does not carry, and one whose category no domain claims. Both end the same way,
+ * which is the sentence both warnings already close on — the wizard has no screen to put the
+ * skill on, so it is left out of this session's selection.
+ */
+function skillsLeftOutToast(count: number): string {
+  return count === 1
+    ? "1 skill was left out — this source cannot place it"
+    : `${count} skills were left out — this source cannot place them`;
+}
 
 /** First defined source among candidates, else the default public source. */
 function resolveEffectiveSource(...candidates: Array<string | undefined>): string {
@@ -104,7 +125,7 @@ function hasGlobalTombstone(configs: SkillConfig[], id: SkillId): boolean {
 }
 
 /**
- * D-233 Scenario B: a dual-scope pair — an active project entry plus a global tombstone for
+ * A dual-scope pair — an active project entry plus a global tombstone for
  * the same skill. The shape the `[P][G]` row renders from; removal collapses it to a single
  * inherited-global entry, re-selection rebuilds it.
  */
@@ -198,7 +219,7 @@ function isInheritedGlobalSlot(
 /**
  * Rewrites the origin of the ACTIVE entry at (id, scope), leaving every other entry untouched —
  * in particular a dual-scope skill's excluded global tombstone, which keeps describing the
- * masked global install (D-262).
+ * masked global install.
  */
 function withActiveEntryOrigin(
   configs: SkillConfig[],
@@ -212,7 +233,7 @@ function withActiveEntryOrigin(
 }
 
 /**
- * Removes deselected skills, honouring what the project is allowed to remove (D-277).
+ * Removes deselected skills, honouring what the project is allowed to remove.
  *
  * An entry the project OWNS — project-scoped, or the project's own global tombstone — is
  * dropped. An entry the project merely INHERITS (an active global-scope entry the hydration
@@ -222,12 +243,11 @@ function withActiveEntryOrigin(
  * like any other so an accidental add stays undoable.
  *
  * `installedSkillConfigs` is `null` when editing FROM global scope, where the config being
- * edited IS the global one: nothing is inherited, so every removal is a genuine uninstall
- * (D-233 Scenario C).
+ * edited IS the global one: nothing is inherited, so every removal is a genuine uninstall.
  *
  * Dual-scope entries (an active project entry paired with a global tombstone) collapse to a
  * single inherited-global entry so the `[G]` badge keeps rendering after the project half is
- * dropped (D-233 Scenario B).
+ * dropped.
  */
 function applySkillRemoval(
   configs: SkillConfig[],
@@ -282,7 +302,7 @@ function reconcileSkillConfigs(
 ): SkillConfig[] {
   // Editing from global scope has no project overlay, so a removal is a genuine uninstall.
   // Pass null so applySkillRemoval DROPS the skill rather than retaining it as an inherited
-  // global install the project may not touch (D-233 Scenario C).
+  // global install the project may not touch.
   const effectiveInstalled = isEditingFromGlobalScope ? null : installedSkillConfigs;
   let result = applySkillRemoval(configs, removed, effectiveInstalled);
 
@@ -290,7 +310,7 @@ function reconcileSkillConfigs(
     // Dual-scope restore: re-selecting a skill that is globally installed (recorded as a
     // tombstone in the project snapshot) with no current project entry re-creates BOTH a
     // fresh project entry and a global tombstone — mirroring toggleSkillScope's G->P path
-    // so the row renders `[P][G]` again (D-233 Scenario B second spacebar).
+    // so the row renders `[P][G]` again on a second spacebar.
     if (
       !isEditingFromGlobalScope &&
       hasGlobalTombstone(installedSkillConfigs ?? [], id) &&
@@ -333,27 +353,27 @@ function reconcileSkillConfigs(
 
 /** True when configs hold an active (non-excluded) project-scope entry for the agent. */
 function agentHasProjectActive(configs: AgentScopeConfig[], name: AgentName): boolean {
-  return configs.some((ac) => ac.name === name && ac.scope === "project" && !ac.excluded);
+  return configs.some((ac) => ac.name === name && isActiveAt(ac, "project"));
 }
 
 /** True when configs hold an active (non-excluded) global-scope entry for the agent. */
 function agentHasGlobalActive(configs: AgentScopeConfig[], name: AgentName): boolean {
-  return configs.some((ac) => ac.name === name && ac.scope === "global" && !ac.excluded);
+  return configs.some((ac) => ac.name === name && isActiveAt(ac, "global"));
 }
 
 /** True when configs hold an excluded global-scope tombstone for the agent. */
 function agentHasGlobalTombstone(configs: AgentScopeConfig[], name: AgentName): boolean {
-  return configs.some((ac) => ac.name === name && ac.scope === "global" && ac.excluded);
+  return configs.some((ac) => ac.name === name && isGlobalTombstone(ac));
 }
 
-/** Agent side of isDualScopePair (D-233): active project entry + global tombstone for the same agent. */
+/** Agent side of isDualScopePair: active project entry + global tombstone for the same agent. */
 function isDualScopeAgentPair(configs: AgentScopeConfig[], name: AgentName): boolean {
   return agentHasProjectActive(configs, name) && agentHasGlobalTombstone(configs, name);
 }
 
 /**
  * Excluded tombstone entries. Preserved across reconcile/preselect merges so a dual-scope
- * pair's tombstone half survives (D-223/D-227) and the pair can be restored later.
+ * pair's tombstone half survives and the pair can be restored later.
  */
 function collectTombstones<T extends { excluded?: boolean }>(configs: T[]): T[] {
   return configs.filter((entry) => entry.excluded);
@@ -395,7 +415,7 @@ function skillTombstonesOutsideRebuild(
  * Applies an agent toggle: deselect removes the agent's entries; select restores an excluded
  * entry or adds a new one.
  *
- * A deselect never masks a globally-installed agent (D-277). Every reachable deselect here is
+ * A deselect never masks a globally-installed agent. Every reachable deselect here is
  * one the project owns — an active global install and a live `[P][G]` pair are both refused
  * upstream in `toggleAgent`, and a global-scope edit owns everything it can see — so the only
  * correct outcome is a clean removal.
@@ -436,11 +456,11 @@ function applyAgentToggle(
  *
  * - Every excluded tombstone whose slot the rebuild leaves free, so a dual-scope pair (active
  *   entry plus a tombstone at the other scope) survives preselection — the agent-side mirror of
- *   the D-223 fix in `populateFromSkillIds`. Deliberately NOT filtered by roster membership
- *   (D-227); the slot test is what keeps a tombstone from landing beside an active entry it
+ *   the dual-scope fix in `populateFromSkillIds`. Deliberately NOT filtered by roster
+ *   membership; the slot test is what keeps a tombstone from landing beside an active entry it
  *   cannot be masking.
  * - Every entry the project does not own, so a globally-installed agent outside the selected
- *   domains' roster is never silently uninstalled by a project edit (D-277).
+ *   domains' roster is never silently uninstalled by a project edit.
  *
  * Entries the roster itself rebuilds are excluded — `buildAgentConfigForName` re-derives those.
  */
@@ -456,7 +476,7 @@ function survivesRosterRebuild(
 }
 
 /**
- * D-233: restores the `[P][G]` pair when re-selecting an inherited-global agent row whose
+ * Restores the `[P][G]` pair when re-selecting an inherited-global agent row whose
  * global install is recorded as a tombstone in the project snapshot — mirrors
  * reconcileSkillConfigs' restore branch.
  */
@@ -491,7 +511,7 @@ function nextSelectedAgents(
 
 /** Builds a SkillConfig for a resolved skill ID, preferring saved config values. */
 function buildSkillConfigForId(id: SkillId, savedConfigs?: SkillConfig[] | null): SkillConfig {
-  // Prefer project-scoped entry over global when duplicates exist (D-198 defensive fix)
+  // Prefer project-scoped entry over global when duplicates exist (defensive)
   const saved =
     savedConfigs?.find((sc) => sc.id === id && !sc.excluded && sc.scope === "project") ??
     savedConfigs?.find((sc) => sc.id === id && !sc.excluded);
@@ -505,7 +525,7 @@ function buildSkillConfigForId(id: SkillId, savedConfigs?: SkillConfig[] | null)
 /**
  * Builds an active AgentScopeConfig for a name, preferring a saved project-scoped
  * active entry. Mirrors buildSkillConfigForId on the agent path so preselection can
- * separate active-entry construction from tombstone preservation (D-227).
+ * separate active-entry construction from tombstone preservation.
  */
 function buildAgentConfigForName(
   name: AgentName,
@@ -671,7 +691,7 @@ function buildInstallModeOptions(
 }
 
 /**
- * D-257: the snapshot slots this session has emptied — an `(id, scope)` the hydration snapshot
+ * The snapshot slots this session has emptied — an `(id, scope)` the hydration snapshot
  * holds ACTIVE that no live config entry occupies any more. The emptying leaves nothing behind to
  * render from: a PROJECT skill is dropped outright (applySkillRemoval leaves no tombstone, unlike
  * the global case), and so is ANY skill deselected while editing from global scope, where
@@ -681,7 +701,7 @@ function buildInstallModeOptions(
  * `computeScopeDiff`, which the confirm step classifies removals with, has no global-scope gate
  * either, so neither surface may have one.
  *
- * Keyed per `(id, scope)` SLOT, mirroring `computeScopeDiff`'s removal match (D-271) — removal is a
+ * Keyed per `(id, scope)` SLOT, mirroring `computeScopeDiff`'s removal match — removal is a
  * property of the slot, not of the id. Collapsing a dual-scope `[P][G]` pair to `[G]` empties the
  * PROJECT slot while the global one survives, so the skill renders twice on BOTH surfaces (`-` at
  * Project, `•`/lock at Global) instead of the survivor masking the loss. A tombstone OCCUPIES its
@@ -712,9 +732,9 @@ function collectRemovedInstalledEntries(
 }
 
 /**
- * D-258: every `(id, scope)` slot the hydration snapshot occupies — the baseline a Sources row is
+ * Every `(id, scope)` slot the hydration snapshot occupies — the baseline a Sources row is
  * "added" against, and the direct counterpart of `computeScopeDiff`'s `prevSkillKeySet`. Tombstones
- * count as occupied, exactly as that set does (D-232), so re-reading a stored tombstone never flags
+ * count as occupied, exactly as that set does, so re-reading a stored tombstone never flags
  * a spurious addition.
  *
  * A missing snapshot (a first `init`, nothing installed at either scope) collapses to the EMPTY set
@@ -730,7 +750,7 @@ function collectInstalledSkillSlots(
 }
 
 /**
- * D-258: the `{ added: true }` fragment for a row whose SLOT is new this session, `{}` otherwise —
+ * The `{ added: true }` fragment for a row whose SLOT is new this session, `{}` otherwise —
  * spread into the row so the Sources tab flags it with the info panel's added-diff marker (`+`).
  * Keying on the id alone would miss a skill adopted at project scope while it stays installed
  * globally: the id is old, but the project slot is new — which is exactly how `classifyDiffRow`
@@ -778,12 +798,12 @@ type SourceRowContext = {
   configEntry: SkillConfig | undefined;
   installedSkillConfigs: SkillConfig[] | null;
   isEditingFromGlobalScope: boolean;
-  /** D-258: `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from. */
+  /** `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from. */
   installedSkillSlots: ReadonlySet<string>;
 };
 
 /**
- * D-257: the inert row for a snapshot slot this session emptied. Carries the PERSISTED scope and
+ * The inert row for a snapshot slot this session emptied. Carries the PERSISTED scope and
  * source so the row stays visible and shows what saving removes. Deliberately NOT readOnly: that
  * renders a lock, which reads as "installed globally" rather than "about to be removed". Carries no
  * added flag either — the slot it renders comes FROM the snapshot, so it can never be new this
@@ -996,7 +1016,7 @@ export type WizardState = {
    * source matrix this session (`populateFromSkillIds` skipped them, warning per skill). The
    * wizard cannot represent them, so they are absent from its result and the merge removes them
    * like any other absent entry — this list is what lets `edit` name each one and say why it went
-   * rather than dropping it in silence (CLI-450).
+   * rather than dropping it in silence.
    */
   unresolvableSkillIds: SkillId[];
 
@@ -1451,7 +1471,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       );
 
       // Preserve excluded entries so they flow through to wizard result.
-      // D-223: allow an excluded tombstone to coexist with an active entry for the
+      // Allow an excluded tombstone to coexist with an active entry for the
       // same skill id at a different scope (render layer computes secondaryScope
       // from the pair) — and only at a different one.
       const excludedConfigs = skillTombstonesOutsideRebuild(savedConfigs ?? [], skillConfigs);
@@ -1478,7 +1498,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
           selectedDomains: state.selectedDomains.filter((d) => d !== domain),
           domainSelections: remainingSelections,
           // Global-scope edit: no overlay, so deselecting a domain uninstalls its skills cleanly
-          // rather than tombstoning them in the global config (D-233 Scenario C).
+          // rather than tombstoning them in the global config.
           skillConfigs: applySkillRemoval(
             state.skillConfigs,
             removedSkillIds,
@@ -1635,6 +1655,13 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   toggleSkillScope: (skillId) =>
     set((state) => {
+      // Unreachable in production and deliberately uncovered here. `toggleFocusedScope` in
+      // components/wizard/wizard.tsx is the only caller of this action and of toggleAgentScope,
+      // and it emits the refusal toast and returns before either is called — so a unit spec
+      // aimed at this line pins a state the product cannot enter, and stays green if the
+      // component guard is deleted. The refusal a user can reach is asserted through the `s`
+      // key in e2e/interactive/edit-wizard-navigation.e2e.test.ts, beside the project-scope
+      // toggle it must not swallow.
       if (state.isEditingFromGlobalScope) return state;
 
       const config = state.skillConfigs.find((sc) => sc.id === skillId && !sc.excluded);
@@ -1678,7 +1705,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       // Moving project → global: always drop any excluded global tombstone for this id.
       // An active entry at global scope supersedes any tombstone at the same scope — the
       // invariant "no active + tombstone at the same (id, scope)" must hold. Unconditional
-      // removal (not gated on wasInstalledGlobally) heals the D-224 case where the prior
+      // removal (not gated on wasInstalledGlobally) heals the case where the prior
       // G→P produced a tombstone that installedSkillConfigs-derived wasInstalledGlobally
       // cannot see (because its `!sc.excluded` filter ignores the tombstone itself).
       return { skillConfigs: rescoped.filter((sc) => !(sc.id === skillId && sc.excluded)) };
@@ -1788,6 +1815,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
 
   toggleAgentScope: (agentName) =>
     set((state) => {
+      // Unreachable in production for the same reason as toggleSkillScope's — see it.
       if (state.isEditingFromGlobalScope) return state;
 
       const config = state.agentConfigs.find((ac) => ac.name === agentName && !ac.excluded);
@@ -1858,7 +1886,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       const globalAgents = state.globalAgentPreselections?.agents ?? [];
       const mergedAgents = [...new Set([...stackAgents, ...globalAgents])].sort();
       const merged = mergedAgents.map((name) => buildAgentConfigForName(name, savedConfigs));
-      // Preserve dual-scope tombstones, same invariant as preselectAgentsFromDomains (D-227).
+      // Preserve dual-scope tombstones, same invariant as preselectAgentsFromDomains.
       const excludedConfigs = agentTombstonesOutsideRebuild(savedConfigs, merged);
       return {
         selectedAgents: mergedAgents,
@@ -1925,7 +1953,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     // Every skill with a LIVE config entry or selection. Internally disjoint by construction, so no
     // skill contributes live rows twice.
     const liveSkillIds = [...inheritedSkillIds, ...selectedTechnologies, ...excludedGlobalIds];
-    // D-258: the slot baseline additions are measured against. Each emitted row checks its OWN
+    // The slot baseline additions are measured against. Each emitted row checks its OWN
     // `(id, scope)` slot, so a skill adopted at a second scope registers as added on the newly
     // occupied row alone — the same classification the confirm step's computeScopeDiff makes.
     const installedSkillSlots = collectInstalledSkillSlots(state.installedSkillConfigs);
@@ -1941,7 +1969,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       });
     });
 
-    // D-257/D-271: slots the session emptied. A skill may appear in BOTH lists — a collapsed
+    // Slots the session emptied. A skill may appear in BOTH lists — a collapsed
     // dual-scope pair keeps its surviving global row and gains a project pending-removal row — so
     // rows are no longer disjoint per SKILL. They stay disjoint per `(id, scope)` SLOT: a snapshot
     // slot a live row already renders never gets a removal row on top of it.
@@ -1965,6 +1993,37 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     return rows;
   },
 }));
+
+/**
+ * Runs a change the user triggered from a painted frame, with anything it warned about shown as
+ * a toast.
+ *
+ * `warn()` writes to stderr, and stderr under a mounted wizard is where a message goes to be
+ * lost: the frame is sized to the terminal and starts at the top of an empty buffer, so the next
+ * repaint pushes the line off the top of the screen. That is the same loss the startup band
+ * exists to prevent before the mount, and the one `assertWizardScreenIsWhollyVisible` in
+ * `e2e/pages/base-step.ts` fails the interactive suite on. The band is deliberately the wrong
+ * home for it — a message raised mid-session is not a startup message — so it takes the
+ * wizard's own transient channel instead.
+ *
+ * FOR CALL SITES PAST THE MOUNT ONLY, which is why the routing lives at the call site rather
+ * than inside the actions themselves. {@link WizardState.populateFromSkillIds} and
+ * {@link WizardState.startFromScratch} are each reached from hydration as well, where buffering is
+ * already on and the band IS the right home; a window opened around either one there would reset
+ * the buffer the load filled and close it again before hydration had finished speaking into it.
+ */
+export function showWarningsAsToast(change: () => void): void {
+  enableBuffering();
+  try {
+    change();
+    const warnings = drainBuffer();
+    if (warnings.length > 0) {
+      useWizardStore.getState().setToastMessage(skillsLeftOutToast(warnings.length));
+    }
+  } finally {
+    disableBuffering();
+  }
+}
 
 export type HydrateOptions = {
   initialStep?: WizardStep;

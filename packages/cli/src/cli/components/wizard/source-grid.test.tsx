@@ -421,6 +421,28 @@ describe("SourceGrid component", () => {
 
       expect(onSelect).toHaveBeenCalledWith("web-state-zustand", "plugin");
     });
+
+    it("should select through the latest onSelect after a re-render replaces it", async () => {
+      const supersededOnSelect = vi.fn();
+      const latestOnSelect = vi.fn();
+
+      const { stdin, rerender, unmount } = render(
+        <SourceGrid {...defaultProps} onSelect={supersededOnSelect} />,
+      );
+      cleanup = unmount;
+      await delay(RENDER_DELAY_MS);
+
+      rerender(<SourceGrid {...defaultProps} onSelect={latestOnSelect} />);
+      await delay(RENDER_DELAY_MS);
+
+      stdin.write(SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      // This handler carries a hand-maintained dependency array; dropping onSelect from it
+      // would route the install-mode switch through a superseded closure.
+      expect(latestOnSelect).toHaveBeenCalledWith("web-framework-react", "eject");
+      expect(supersededOnSelect).not.toHaveBeenCalled();
+    });
   });
 
   describe("edge cases", () => {

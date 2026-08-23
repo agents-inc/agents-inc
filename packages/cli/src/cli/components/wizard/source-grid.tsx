@@ -63,7 +63,7 @@ export type SourceRow = {
    */
   disabled?: boolean;
   /**
-   * Skill selected this session but absent from the hydration snapshot (D-258). Renders inline in
+   * Skill selected this session but absent from the hydration snapshot. Renders inline in
    * its normal position with the info panel's added marker (`+`) in green, and stays a normal
    * selectable/editable row — unlike `disabled`/`readOnly`, an added row is NOT inert.
    */

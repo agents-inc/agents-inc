@@ -23,6 +23,7 @@ import { SKILLS } from "../../lib/__tests__/test-fixtures";
 import { createMockSkill } from "../../lib/__tests__/factories/skill-factories";
 import { buildCategoryMap, createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
+import { useWizardStore } from "../../stores/wizard-store";
 import {
   WEB_FRAMEWORK_CATEGORY,
   WEB_STYLING_CATEGORY,
@@ -76,6 +77,10 @@ describe("StepBuild component", () => {
 
   beforeEach(() => {
     initializeMatrix(defaultMatrix);
+    // The continue advisory writes a toast into the shared store, so both fields are
+    // reset here rather than in the one describe that reads them: a toast surviving
+    // into the next test would make the silent case pass or fail on its predecessor.
+    useWizardStore.setState({ domainSelections: {}, toastMessage: null });
   });
 
   afterEach(() => {
@@ -515,11 +520,10 @@ describe("StepBuild component", () => {
       const selections: CategorySelections = { "web-framework": ["web-framework-react"] };
 
       const result = validateBuildStep(categories, selections);
-      expect(result.valid).toBe(true);
-      expect(result.message).toBeUndefined();
+      expect(result).toStrictEqual({ valid: true });
     });
 
-    it("should return advisory message when required category has no selection", () => {
+    it("should report invalid when a required category has no selection", () => {
       const categories: GridCategoryRow[] = [
         {
           id: "web-framework",
@@ -532,8 +536,10 @@ describe("StepBuild component", () => {
       const selections: CategorySelections = {};
 
       const result = validateBuildStep(categories, selections);
-      expect(result.valid).toBe(true);
-      expect(result.message).toContain("Framework");
+      expect(result).toStrictEqual({
+        valid: false,
+        message: "No skills selected in Framework (required category)",
+      });
     });
 
     it("should return valid when optional categories have no selections", () => {
@@ -558,7 +564,7 @@ describe("StepBuild component", () => {
       expect(result.valid).toBe(true);
     });
 
-    it("should return advisory message for first missing required category", () => {
+    it("should name the first missing required category", () => {
       const categories: GridCategoryRow[] = [
         {
           id: "web-framework",
@@ -578,42 +584,57 @@ describe("StepBuild component", () => {
       const selections: CategorySelections = {};
 
       const result = validateBuildStep(categories, selections);
-      expect(result.valid).toBe(true);
-      expect(result.message).toContain("Framework"); // Should be the first one
+      expect(result).toStrictEqual({
+        valid: false,
+        message: "No skills selected in Framework (required category)",
+      });
     });
   });
 
-  describe("validation on continue", () => {
-    it("should call onContinue even without required selection (advisory only)", async () => {
+  /**
+   * Neither assertion here means anything without the other. `onContinue` alone cannot tell a
+   * validator that warned from one that was never called, and the toast alone cannot tell an
+   * advisory from a block — both leave the same trace on the surface the other test reads.
+   *
+   * The web domain's two required categories are Framework and Styling, so the silent case has
+   * to fill BOTH: leaving Styling empty toasts about Styling instead and reads as a pass for
+   * the first category only.
+   */
+  describe("required-category advisory on continue", () => {
+    it("names the empty required category and continues anyway", async () => {
       const onContinue = vi.fn();
-      const { stdin, unmount } = renderStepBuild({
-        onContinue,
-      });
+      const { stdin, unmount } = renderStepBuild({ onContinue });
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-
-      // Press Enter to continue without selecting required framework
       stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
-      // Validation is advisory — onContinue is always called
+      expect(useWizardStore.getState().toastMessage).toBe(
+        "No skills selected in Framework (required category)",
+      );
       expect(onContinue).toHaveBeenCalled();
     });
 
-    it("should call onContinue when validation passes", async () => {
-      const onContinue = vi.fn();
-      const { stdin, unmount } = renderStepBuild({
-        onContinue,
+    it("stays silent and continues when every required category is filled", async () => {
+      useWizardStore.setState({
+        domainSelections: {
+          web: {
+            "web-framework": [SKILLS.react.id],
+            "web-styling": [SKILLS.tailwind.id],
+          },
+        },
+        toastMessage: null,
       });
+      const onContinue = vi.fn();
+      const { stdin, unmount } = renderStepBuild({ onContinue });
       cleanup = unmount;
 
       await delay(RENDER_DELAY_MS);
-
-      // Press Enter to continue with required selections
       stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
+      expect(useWizardStore.getState().toastMessage).toBeNull();
       expect(onContinue).toHaveBeenCalled();
     });
   });

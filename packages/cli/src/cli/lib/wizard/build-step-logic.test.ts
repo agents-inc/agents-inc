@@ -49,10 +49,12 @@ describe("validateBuildStep", () => {
     expect(result).toStrictEqual({ valid: true });
   });
 
-  it("should return advisory message when required category has no selections", () => {
+  it("should report invalid when a required category has no selections", () => {
     const result = validateBuildStep([requiredCategory], {});
-    expect(result.valid).toBe(true);
-    expect(result.message).toContain("Framework");
+    expect(result).toStrictEqual({
+      valid: false,
+      message: "No skills selected in Framework (required category)",
+    });
   });
 
   it("should return valid when required category has selections", () => {
@@ -62,7 +64,7 @@ describe("validateBuildStep", () => {
     expect(result).toStrictEqual({ valid: true });
   });
 
-  it("should return advisory message for first missing required category", () => {
+  it("should name the first missing required category", () => {
     const anotherRequired: CategoryRow = {
       id: "web-client-state",
       displayName: "State Management",
@@ -71,8 +73,10 @@ describe("validateBuildStep", () => {
       options: [],
     };
     const result = validateBuildStep([requiredCategory, anotherRequired], {});
-    expect(result.valid).toBe(true);
-    expect(result.message).toContain("Framework");
+    expect(result).toStrictEqual({
+      valid: false,
+      message: "No skills selected in Framework (required category)",
+    });
   });
 
   it("should handle empty categories array", () => {
@@ -93,7 +97,6 @@ describe("validateBuildStep", () => {
       "web-client-state": ["web-state-zustand"],
     });
     expect(result).toStrictEqual({ valid: true });
-    expect(result.message).toBeUndefined();
   });
 
   it("should skip optional categories when checking for missing selections", () => {
@@ -101,18 +104,19 @@ describe("validateBuildStep", () => {
       "web-framework": ["web-framework-react"],
     });
     expect(result).toStrictEqual({ valid: true });
-    expect(result.message).toBeUndefined();
   });
 
   it("should treat empty array selections the same as missing key", () => {
     const result = validateBuildStep([requiredCategory], {
       "web-framework": [],
     });
-    expect(result.valid).toBe(true);
-    expect(result.message).toContain("Framework");
+    expect(result).toStrictEqual({
+      valid: false,
+      message: "No skills selected in Framework (required category)",
+    });
   });
 
-  it("should return advisory for second required category when first is satisfied", () => {
+  it("should name the second required category when the first is satisfied", () => {
     const secondRequired: CategoryRow = {
       id: "web-styling",
       displayName: "Styling",
@@ -123,8 +127,10 @@ describe("validateBuildStep", () => {
     const result = validateBuildStep([requiredCategory, secondRequired], {
       "web-framework": ["web-framework-react"],
     });
-    expect(result.valid).toBe(true);
-    expect(result.message).toContain("Styling");
+    expect(result).toStrictEqual({
+      valid: false,
+      message: "No skills selected in Styling (required category)",
+    });
   });
 });
 

@@ -1,5 +1,7 @@
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createMockMatrix } from "../../lib/__tests__/factories/matrix-factories";
+import { createMockResolvedStack } from "../../lib/__tests__/factories/stack-factories";
 import { EMPTY_MATRIX } from "../../lib/__tests__/mock-data/mock-matrices";
 import {
   ARROW_DOWN,
@@ -10,9 +12,13 @@ import {
   SPACE,
   delay,
 } from "../../lib/__tests__/test-constants";
-import { initializeMatrix } from "../../lib/matrix/matrix-provider";
+import { initializeMatrix, matrix } from "../../lib/matrix/matrix-provider";
 import { useWizardStore } from "../../stores/wizard-store";
+import { AGENT_NAMES } from "../../types/generated/source-types";
+import { typedKeys } from "../../utils/typed-object";
 import { StepAgents } from "./step-agents";
+
+import type { Category, SkillId } from "../../types/index";
 
 describe("StepAgents component", () => {
   let cleanup: (() => void) | undefined;
@@ -207,5 +213,96 @@ describe("StepAgents component", () => {
       const updatedStore = useWizardStore.getState();
       expect(updatedStore.selectedAgents).not.toContain("web-developer");
     });
+  });
+});
+
+/**
+ * A sub-agent id a marketplace's stack names and the CLI's own `src/agents/` does not declare.
+ *
+ * Plain `string`, deliberately not cast to `AgentName`: that union is generated from that
+ * directory by `scripts/generate-source-types.ts`, so a marketplace's own name is outside it by
+ * construction — which is the whole reason a grid row offering one is a defect.
+ */
+const MARKETPLACE_ONLY_AGENT = "fixture-only-agent";
+
+/** How `buildAgentGroups` would label a custom row, and the group header it would sit under. */
+const MARKETPLACE_ONLY_AGENT_LABEL = "Fixture Only Agent";
+
+/** A built-in the same stack names, so the fixture is not simply an empty stack. */
+const A_BUILT_IN_AGENT_THE_STACK_NAMES = "web-developer";
+
+/**
+ * A marketplace stack's agent keys, typed as the `string`s they arrive as.
+ *
+ * `ResolvedStack.skills` is keyed by `AgentName`, and the whole subject here is a key that is
+ * not one — so the fixture is typed at the boundary the YAML actually crosses rather than cast
+ * through the union it is meant to fall outside of.
+ */
+const FIXTURE_STACK_SKILLS: Record<string, Partial<Record<Category, SkillId[]>>> = {
+  [MARKETPLACE_ONLY_AGENT]: {},
+  [A_BUILT_IN_AGENT_THE_STACK_NAMES]: {},
+};
+
+/**
+ * The grid may only offer sub-agents the CLI itself defines.
+ *
+ * A row here is a name the user can put into `config.agents`, and only `src/agents/` declares a
+ * sub-agent that a compile pass can honour — `loadAgentDefs` is the single definition of that
+ * roster, CLI-only by owner ruling 2026-08-21. So a marketplace stack naming an agent the CLI
+ * does not ship must produce no row at all: offering one writes a config entry that reaches
+ * `AgentName`, `SelectedAgentName` and `ProjectAgentName` alike and then compiles to nothing.
+ */
+describe("a sub-agent only a marketplace's stack names", () => {
+  let cleanup: (() => void) | undefined;
+
+  beforeEach(() => {
+    initializeMatrix(
+      createMockMatrix(
+        {},
+        {
+          suggestedStacks: [
+            createMockResolvedStack("fixture-stack", "Fixture Stack", {
+              skills: FIXTURE_STACK_SKILLS,
+            }),
+          ],
+        },
+      ),
+    );
+  });
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  /**
+   * The control, and the half without which the assertion below means nothing: it would read
+   * identically against a fixture whose stack names no agent at all. This proves the loaded
+   * matrix really does carry the name, and that the name is outside the compile-time roster.
+   */
+  it("is carried by the loaded matrix and is outside AGENT_NAMES", () => {
+    expect(
+      matrix.suggestedStacks.flatMap((stack) => typedKeys(stack.skills)),
+      "the fixture stack has to name it, or the grid has nothing to refuse",
+    ).toContain(MARKETPLACE_ONLY_AGENT);
+
+    expect(
+      (AGENT_NAMES as readonly string[]).includes(MARKETPLACE_ONLY_AGENT),
+      "the generated roster is built from the CLI's own src/agents/ — a marketplace name is not in it",
+    ).toBe(false);
+  });
+
+  it("gets no grid row, because nothing could compile the name the row would write", () => {
+    const { lastFrame, unmount } = render(<StepAgents />);
+    cleanup = unmount;
+
+    expect(lastFrame()).not.toContain(MARKETPLACE_ONLY_AGENT_LABEL);
+  });
+
+  it("still leaves the built-in the same stack names on the grid", () => {
+    const { lastFrame, unmount } = render(<StepAgents />);
+    cleanup = unmount;
+
+    expect(lastFrame()).toContain("Web Developer");
   });
 });

@@ -35,12 +35,11 @@ export type ScopeDiff = {
  *
  * The diff baseline keeps tombstones as first-class entries. A tombstone
  * occupies the (id, scope) slot: it means "the global install still exists but
- * is silenced at project scope" (D-223 dual-scope indicator). Treating the slot
+ * is silenced at project scope" — the dual-scope indicator. Treating the slot
  * as occupied — for both the previous-key set (isNew detection) and removal
  * (slot-occupancy match) — prevents a dual-scope G→P toggle from rendering a
- * spurious `-` at Global (D-230) or a spurious `+` at Global on the next edit
- * when the stored tombstone is re-read (D-232). See D-225 investigation 09 for
- * the full derivation; mode-change (`~`) tracking filters to active baseline
+ * spurious `-` at Global or a spurious `+` at Global on the next edit
+ * when the stored tombstone is re-read; mode-change (`~`) tracking filters to active baseline
  * entries because tombstones don't represent a live install.
  *
  * Occupying a slot is not the same as filling it, which is why removal reads the
@@ -102,7 +101,7 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   // Slot-occupancy match over the ACTIVE baseline: an installed entry at
   // (id, scope) is considered removed only if nothing — active OR tombstone —
   // occupies that slot in current. A current tombstone at the same key keeps the
-  // slot occupied (dual-scope indicator, not a removal). See D-230 / D-232.
+  // slot occupied (dual-scope indicator, not a removal).
   //
   // A baseline TOMBSTONE is never a removal candidate. It masks a global install
   // rather than being one, so its slot held nothing to delete and dropping it
@@ -178,8 +177,7 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
 /**
  * The `(id, scope)` SLOT key this module diffs on. Exported so every surface that computes its own
  * session diff — notably the wizard store's Sources tab — keys on the same slot rather than on the
- * id alone, which is what let one skill read as added on one surface and unchanged on the other
- * (todo/D-271 secondary hardening).
+ * id alone, which is what let one skill read as added on one surface and unchanged on the other.
  */
 export function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string {
   return `${id}:${scope}`;
@@ -207,7 +205,7 @@ export function formatScopeTag(scope: SkillScope): "[G]" | "[P]" {
 }
 
 /**
- * D-223: derives the primary + secondary scope badges for a row from its active
+ * Derives the primary + secondary scope badges for a row from its active
  * entry and its excluded tombstone. A tombstone at the OTHER scope renders as a
  * secondary badge (`[P][G]`); a same-scope tombstone renders nothing extra.
  */

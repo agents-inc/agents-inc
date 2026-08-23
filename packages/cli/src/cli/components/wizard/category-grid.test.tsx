@@ -1005,7 +1005,7 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain("(discouraged)");
+      expect(output).toContain("(discouraged: Complex for most apps)");
     });
 
     it("should hide compatibility labels when showLabels is false", () => {
@@ -1013,9 +1013,11 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      // Labels should not be visible when toggle is off
+      // Labels should not be visible when toggle is off. The opening paren is
+      // deliberately unclosed: the annotation now carries `: <reason>` before its
+      // own `)`, so matching the closed word would pass on a label that leaked.
       expect(output).not.toContain("(selected)");
-      expect(output).not.toContain("(discouraged)");
+      expect(output).not.toContain("(discouraged");
     });
 
     it("should show discouraged label for focused discouraged option when showLabels is true", () => {
@@ -1033,7 +1035,80 @@ describe("CategoryGrid component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      expect(output).toContain("(discouraged)");
+      expect(output).toContain("(discouraged: Prefer the alternative)");
+    });
+  });
+
+  describe("the reason behind an advisory verdict", () => {
+    it("should name what a skill conflicts with rather than only that it is incompatible", () => {
+      const categories: CategoryRow[] = [
+        createCategory("web-framework", "Framework", [
+          createOption("web-framework-react", {
+            state: { status: "incompatible", reason: "conflicts with Vue Composition Api" },
+          }),
+          createOption("web-framework-solidjs"),
+        ]),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ categories, showLabels: true });
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain("(incompatible: conflicts with Vue Composition Api)");
+    });
+
+    it("should carry the author's own words for a discouraged skill", () => {
+      const categories: CategoryRow[] = [
+        createCategory("web-client-state", "Client State", [
+          createOption("web-state-redux-toolkit", {
+            state: { status: "discouraged", reason: "Complex for most apps" },
+          }),
+          createOption("web-state-zustand"),
+        ]),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ categories, showLabels: true });
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain("(discouraged: Complex for most apps)");
+    });
+
+    it("should state an unreachable requirement in full rather than abbreviating it", () => {
+      const categories: CategoryRow[] = [
+        createCategory("web-framework", "Framework", [
+          createOption("web-framework-react", {
+            state: {
+              status: "incompatible",
+              reason:
+                "requires Vue Composition Api or SolidJS (all conflict with current selection)",
+            },
+          }),
+        ]),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ categories, showLabels: true });
+      cleanup = unmount;
+
+      // The widest cell the shipped catalogue can produce still renders whole: the
+      // tag grows to fit and neighbours wrap, exactly as unmetRequirementsReason does.
+      expect(lastFrame()).toContain(
+        "(incompatible: requires Vue Composition Api or SolidJS (all conflict with current selection))",
+      );
+    });
+
+    it("should leave an unfocused cell to its colour rather than painting every reason at once", () => {
+      const categories: CategoryRow[] = [
+        createCategory("web-framework", "Framework", [
+          createOption("web-framework-react"),
+          createOption("web-framework-vue-composition-api", {
+            state: { status: "incompatible", reason: "conflicts with React" },
+          }),
+        ]),
+      ];
+
+      const { lastFrame, unmount } = renderGrid({ categories, showLabels: true });
+      cleanup = unmount;
+
+      expect(lastFrame()).not.toContain("conflicts with React");
     });
   });
 

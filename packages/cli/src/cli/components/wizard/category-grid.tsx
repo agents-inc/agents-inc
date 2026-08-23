@@ -66,15 +66,29 @@ type SkillTagProps = {
   showLabels: boolean;
 };
 
+/**
+ * The verdict word and the reason behind it — `(incompatible: conflicts with Vue
+ * Composition Api)`. Every advisory state but `normal` carries a reason, so the
+ * status discriminant narrows to the two that have one to state.
+ *
+ * The word leads rather than the reason: it is the only carrier of the verdict
+ * once colour is off, a `discourages` rule's reason is free-form author prose
+ * that need not identify itself as a discouragement, and `CELL_ANNOTATION` in
+ * `e2e/pages/steps/build-step.ts` anchors cell-label parsing on that keyword.
+ *
+ * Nothing is elided. A long reason grows the tag and wraps inside its border,
+ * which is what `unmetRequirementsReason` above already does.
+ */
+const advisoryAnnotation = (state: OptionState): string | null =>
+  state.status === "normal" ? null : `(${state.status}: ${state.reason})`;
+
 const getCompatibilityLabel = (option: CategoryOption): string | null => {
   if (option.selected && option.hasUnmetRequirements && option.unmetRequirementsReason) {
     return `(${option.unmetRequirementsReason})`;
   }
   if (option.selected) return null;
   if (option.requiredBy) return `(required by ${option.requiredBy})`;
-  if (option.state.status === "incompatible") return "(incompatible)";
-  if (option.state.status === "discouraged") return "(discouraged)";
-  return null;
+  return advisoryAnnotation(option.state);
 };
 
 const STATUS_COLORS: Partial<Record<OptionState["status"], string>> = {

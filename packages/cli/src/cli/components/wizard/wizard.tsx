@@ -50,14 +50,22 @@ export type WizardResultV2 = {
    */
   assignedStack?: Partial<Record<AgentName, StackAgentConfig>>;
   selectedStackId: string | null;
+  /**
+   * What the written config should record about itself, when the producer already knows.
+   *
+   * A shared configuration installed with `init --from` does: its payload carries the sharer's own
+   * description, because it names no stack for the install to resolve one out of. The wizard leaves
+   * this undefined and the install pipeline takes the applied stack's description instead — there
+   * IS a loaded stack on that path, and it is the authority on its own sentence.
+   */
+  description?: string;
   domainSelections: DomainSelections;
   selectedDomains: Domain[];
   /**
    * Skill ids from the saved config that could not be resolved against the loaded source matrix
    * this session. The wizard could not represent them, so they are absent from `skills` and the
    * merge removes their config entries. Carried out of the wizard so the command can NAME each
-   * removal and say why it happened — a removal the user never asked for must never be silent
-   * (CLI-450).
+   * removal and say why it happened — a removal the user never asked for must never be silent.
    */
   unresolvableSkillIds: SkillId[];
   cancelled: boolean;

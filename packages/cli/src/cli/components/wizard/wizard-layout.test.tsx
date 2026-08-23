@@ -331,6 +331,302 @@ describe("WizardLayout startup messages", () => {
   });
 });
 
+/**
+ * The two INFO lines `edit` buffers before anything else can speak: the load's own count, then
+ * the installation's. They are why the band's ordering matters at all — they are raised FIRST,
+ * so a band that paints in arrival order spends its whole cramped budget on them and shows the
+ * user no warning whatsoever, and spends two of its three roomy rows on them.
+ */
+const EDIT_INFO_LINES = [
+  { level: "info", text: "Loaded 9 skills (marketplace)" },
+  { level: "info", text: "Found 4 installed skills" },
+] as const satisfies readonly StartupMessage[];
+
+/**
+ * Warnings in the order they were raised, all short enough to survive one line at 80 columns —
+ * a wrapped line is one `toContain` cannot see, which would pass or fail for the wrong reason.
+ */
+const RAISED_WARNINGS = [
+  { level: "warn", text: "Skipping 'alpha': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'bravo': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'charlie': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'delta': missing SKILL.md" },
+  { level: "warn", text: "Skipping 'echo': missing SKILL.md" },
+] as const satisfies readonly StartupMessage[];
+
+const RAISED_ERROR = { level: "error", text: "Could not read 'foxtrot'" } as const;
+
+/**
+ * Distinct one-line messages per level, so a frame can be asked about each one by name. Short
+ * enough to survive 80 columns unwrapped, because `toContain` cannot see a line Ink has folded.
+ */
+const warningAt = (index: number): StartupMessage => ({
+  level: "warn",
+  text: `Skipping 'skill-${index}': missing SKILL.md`,
+});
+const infoAt = (index: number): StartupMessage => ({
+  level: "info",
+  text: `Loaded ${index} skills (marketplace)`,
+});
+
+const countUp = (total: number, build: (index: number) => StartupMessage): StartupMessage[] =>
+  Array.from({ length: total }, (_unused, index) => build(index));
+
+/**
+ * THE ORDERING INVARIANT, stated for every mix rather than for one message list.
+ *
+ * The recurrence this exists to stop is a producer adding another unconditional info line —
+ * exactly what `edit`'s pair of them did — and silently retaking the row a warning needs. A test
+ * naming today's message list cannot see that; a table over the shapes can, because the expected
+ * painted counts are written out rather than derived, so a new info line moves a number here
+ * before it moves anything a user sees.
+ *
+ * Read a row as: given this many warnings and this many info lines at this geometry, these are
+ * the ones with a row and this is what the counter stands for.
+ */
+const BAND_SHAPES = [
+  {
+    label: "roomy, info only",
+    geometry: ROOMY,
+    warnings: 0,
+    infos: 3,
+    paintedWarnings: 0,
+    paintedInfos: 3,
+    counted: 0,
+  },
+  {
+    label: "roomy, one warning under two info",
+    geometry: ROOMY,
+    warnings: 1,
+    infos: 3,
+    paintedWarnings: 1,
+    paintedInfos: 2,
+    counted: 1,
+  },
+  {
+    label: "roomy, warnings fill two of three rows",
+    geometry: ROOMY,
+    warnings: 2,
+    infos: 2,
+    paintedWarnings: 2,
+    paintedInfos: 1,
+    counted: 1,
+  },
+  {
+    label: "roomy, warnings fill the budget exactly",
+    geometry: ROOMY,
+    warnings: 3,
+    infos: 2,
+    paintedWarnings: 3,
+    paintedInfos: 0,
+    counted: 2,
+  },
+  {
+    label: "roomy, warnings overrun the budget",
+    geometry: ROOMY,
+    warnings: 5,
+    infos: 2,
+    paintedWarnings: 3,
+    paintedInfos: 0,
+    counted: 4,
+  },
+  {
+    label: "cramped, info only",
+    geometry: AT_MINIMUM,
+    warnings: 0,
+    infos: 2,
+    paintedWarnings: 0,
+    paintedInfos: 1,
+    counted: 1,
+  },
+  {
+    label: "cramped, one warning takes the only row",
+    geometry: AT_MINIMUM,
+    warnings: 1,
+    infos: 2,
+    paintedWarnings: 1,
+    paintedInfos: 0,
+    counted: 2,
+  },
+  {
+    label: "cramped, warnings overrun the only row",
+    geometry: AT_MINIMUM,
+    warnings: 2,
+    infos: 2,
+    paintedWarnings: 1,
+    paintedInfos: 0,
+    counted: 3,
+  },
+] as const;
+
+/**
+ * A warning must be legible, and the band is fixed-height, so the two claims meet as an
+ * eviction: warnings and errors take the rows first and the info lines collapse into the
+ * counter. The band does NOT grow to fit them — `assertWizardScreenIsWhollyVisible` in
+ * `e2e/pages/base-step.ts` fails the moment the frame stops fitting the terminal, and a band
+ * that grew with the warning count is exactly how a wizard paints itself off the top of the
+ * screen. So warnings get first claim on the rows that exist rather than unlimited rows, and
+ * where the warnings alone overrun them they collapse too — last, after every info line.
+ */
+describe("WizardLayout startup band priority", () => {
+  let cleanup: (() => void) | undefined;
+
+  afterEach(() => {
+    cleanup?.();
+    cleanup = undefined;
+  });
+
+  it("paints the warnings ahead of the info lines that were buffered before them", async () => {
+    const [alpha, bravo] = RAISED_WARNINGS;
+    const [loaded, found] = EDIT_INFO_LINES;
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      ...EDIT_INFO_LINES,
+      alpha,
+      bravo,
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output, "every warning must be legible in the band").toContain(alpha.text);
+    expect(output, "every warning must be legible in the band").toContain(bravo.text);
+    // The third row is left for the first info line: warnings take precedence, not the band.
+    expect(output).toContain(loaded.text);
+    expect(output, "an info line is what collapses when the band runs out of rows").not.toContain(
+      found.text,
+    );
+    expect(output).toContain("and 1 more");
+  });
+
+  it("paints the warning rather than the info lines where one row is spare", async () => {
+    const [alpha] = RAISED_WARNINGS;
+    const [loaded, found] = EDIT_INFO_LINES;
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      ...EDIT_INFO_LINES,
+      alpha,
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, AT_MINIMUM);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output, "the one row a short terminal spares belongs to the warning").toContain(
+      alpha.text,
+    );
+    expect(output).not.toContain(loaded.text);
+    expect(output).not.toContain(found.text);
+    expect(output).toContain("and 2 more");
+    // The footer proves the step kept its chrome under the reordered band.
+    expect(output).toContain(FOOTER_LABEL);
+  });
+
+  it("gives an error the same claim on the band as a warning", async () => {
+    const [loaded, found] = EDIT_INFO_LINES;
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      ...EDIT_INFO_LINES,
+      RAISED_ERROR,
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, AT_MINIMUM);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output, "an error outranks an info line exactly as a warning does").toContain(
+      RAISED_ERROR.text,
+    );
+    expect(output).not.toContain(loaded.text);
+    expect(output).not.toContain(found.text);
+    expect(output).toContain("and 2 more");
+  });
+
+  it("collapses warnings only once every info line has already collapsed", async () => {
+    const [alpha, bravo, charlie, delta, echo] = RAISED_WARNINGS;
+    const [loaded, found] = EDIT_INFO_LINES;
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      ...EDIT_INFO_LINES,
+      ...RAISED_WARNINGS,
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, ROOMY);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    // Three rows, five warnings: the band holds its size and the earliest three win it.
+    expect(output).toContain(alpha.text);
+    expect(output).toContain(bravo.text);
+    expect(output).toContain(charlie.text);
+    expect(output, "a warning collapses only after every info line has").not.toContain(delta.text);
+    expect(output).not.toContain(echo.text);
+    expect(output).not.toContain(loaded.text);
+    expect(output).not.toContain(found.text);
+    expect(output, "the counter must account for all four unpainted messages").toContain(
+      "and 4 more",
+    );
+  });
+
+  it("pins the ordering itself, over every mix of levels at both budgets", async () => {
+    for (const shape of BAND_SHAPES) {
+      const warnings = countUp(shape.warnings, warningAt);
+      const infos = countUp(shape.infos, infoAt);
+      // Info FIRST, which is the adversarial order and the one `edit` actually produces.
+      const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([...infos, ...warnings]);
+
+      resizeTo(stdout, shape.geometry);
+      await delay(RENDER_DELAY_MS);
+      const output = lastFrame();
+
+      for (const [index, message] of warnings.entries()) {
+        const shouldPaint = index < shape.paintedWarnings;
+        expect(
+          output?.includes(message.text),
+          `${shape.label}: warning ${index} ${shouldPaint ? "must" : "must not"} be painted`,
+        ).toBe(shouldPaint);
+      }
+      for (const [index, message] of infos.entries()) {
+        const shouldPaint = index < shape.paintedInfos;
+        expect(
+          output?.includes(message.text),
+          `${shape.label}: info ${index} ${shouldPaint ? "must" : "must not"} be painted`,
+        ).toBe(shouldPaint);
+      }
+      expect(
+        output?.includes(`... and ${shape.counted} more`),
+        `${shape.label}: the counter must stand for exactly ${shape.counted} messages`,
+      ).toBe(shape.counted > 0);
+
+      unmount();
+    }
+  });
+
+  it("collapses warnings after the info lines where one row is spare", async () => {
+    const [alpha, bravo] = RAISED_WARNINGS;
+    const [loaded, found] = EDIT_INFO_LINES;
+    const { stdout, lastFrame, unmount } = await mountLayoutWithMessages([
+      ...EDIT_INFO_LINES,
+      alpha,
+      bravo,
+    ]);
+    cleanup = unmount;
+
+    resizeTo(stdout, AT_MINIMUM);
+    await delay(RENDER_DELAY_MS);
+
+    const output = lastFrame();
+    expect(output).toContain(alpha.text);
+    expect(output, "the second warning has no row, so it is counted rather than dropped").toContain(
+      "and 3 more",
+    );
+    expect(output).not.toContain(bravo.text);
+    expect(output).not.toContain(loaded.text);
+    expect(output).not.toContain(found.text);
+  });
+});
+
 describe("WizardLayout logo", () => {
   let cleanup: (() => void) | undefined;
 

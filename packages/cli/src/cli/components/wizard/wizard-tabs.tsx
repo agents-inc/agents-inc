@@ -65,11 +65,6 @@ export function wizardTabsFor(flow: WizardStep[]): WizardTabStep[] {
   return flow.map((id) => ({ id, label: WIZARD_STEP_LABELS[id] }));
 }
 
-/** Tab label for a wizard step. */
-export function formatStepLabel(stepId: WizardStep): string {
-  return WIZARD_STEP_LABELS[stepId];
-}
-
 type StepState = "completed" | "current" | "pending" | "skipped";
 
 const getStepState = (

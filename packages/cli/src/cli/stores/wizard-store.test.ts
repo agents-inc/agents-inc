@@ -20,7 +20,7 @@ import { CUSTOM_HOUSE_TOOLING_ID } from "../lib/__tests__/mock-data/mock-skills"
 import type { AgentScopeConfig, Category, SkillConfig, SkillId } from "../types";
 import { EXPECTED_AGENTS } from "../lib/__tests__/expected-values";
 import { BUILT_IN_MATRIX } from "../types/generated/matrix";
-import { getIncompatibleReason, validateSelection } from "../lib/matrix";
+import { validateSelection } from "../lib/matrix";
 import {
   CLI_INVOKE_COMMAND,
   DEFAULT_PUBLIC_SOURCE_NAME,
@@ -719,15 +719,6 @@ describe("WizardStore", () => {
       );
     });
 
-    it("should still name the conflict for a pair the radio can no longer produce", () => {
-      expect(getIncompatibleReason("shared-monorepo-nx", ["shared-monorepo-turborepo"])).toBe(
-        "conflicts with Turborepo",
-      );
-      expect(
-        getIncompatibleReason("shared-tooling-eslint-prettier", ["shared-tooling-biome"]),
-      ).toBe("conflicts with Biome");
-    });
-
     it("should report both the conflict and the category error for a hand-written co-selection", () => {
       expect(
         validateSelection(["shared-monorepo-turborepo", "shared-monorepo-nx"]).errors,
@@ -1355,16 +1346,6 @@ describe("WizardStore", () => {
       expect(toastMessage).toBeNull();
     });
 
-    it("should not toggle skill scope when isEditingFromGlobalScope is true", () => {
-      const store = useWizardStore.getState();
-      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
-      useWizardStore.setState({ isEditingFromGlobalScope: true });
-
-      store.toggleSkillScope("web-framework-react");
-      const { skillConfigs } = useWizardStore.getState();
-      expect(firstElement(skillConfigs).scope).toBe("global");
-    });
-
     it("should add excluded global entry when toggling previously-installed global skill to project", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-framework", "web-framework-react", true);
@@ -1734,7 +1715,7 @@ describe("WizardStore", () => {
 
       initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
 
-      // D-223: project-scope active + global-scope excluded tombstone — dual-scope state.
+      // Project-scope active + global-scope excluded tombstone — dual-scope state.
       // populateFromSkillIds must preserve both so buildCategoriesForDomain can render dual badges.
       const savedConfigs: SkillConfig[] = [
         ...buildSkillConfigs(["web-framework-react"]),
@@ -1763,7 +1744,7 @@ describe("WizardStore", () => {
 
       initializeMatrix(REACT_HONO_FRAMEWORK_API_MATRIX);
 
-      // D-198: savedConfigs contains the same skill ID twice — once global, once project
+      // savedConfigs contains the same skill ID twice — once global, once project
       const savedConfigs: SkillConfig[] = [
         ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
         ...buildSkillConfigs(["web-framework-react"]),
@@ -3457,16 +3438,6 @@ describe("WizardStore", () => {
         expect(selectedAgents).toStrictEqual([]);
         expect(agentConfigs).toStrictEqual([]);
       });
-    });
-
-    it("should not toggle agent scope when isEditingFromGlobalScope is true", () => {
-      const store = useWizardStore.getState();
-      store.toggleAgent("web-developer");
-      useWizardStore.setState({ isEditingFromGlobalScope: true });
-
-      store.toggleAgentScope("web-developer");
-      const { agentConfigs } = useWizardStore.getState();
-      expect(agentConfigs).toStrictEqual(buildAgentConfigs(["web-developer"], { scope: "global" }));
     });
 
     it("should add excluded global entry when toggling previously-installed global agent to project", () => {

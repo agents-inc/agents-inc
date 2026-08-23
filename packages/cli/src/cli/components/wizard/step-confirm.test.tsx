@@ -402,6 +402,30 @@ describe("StepConfirm component", () => {
       expect(onComplete).not.toHaveBeenCalled();
     });
 
+    it("should complete through the latest onComplete after a re-render replaces it", async () => {
+      const supersededOnComplete = vi.fn();
+      const latestOnComplete = vi.fn();
+      useWizardStore.setState({ skillConfigs: buildSkillConfigs(["web-framework-react"]) });
+
+      const { stdin, rerender, unmount } = render(
+        <StepConfirm onComplete={supersededOnComplete} onBack={vi.fn()} />,
+      );
+      cleanup = unmount;
+      await delay(RENDER_DELAY_MS);
+
+      rerender(<StepConfirm onComplete={latestOnComplete} onBack={vi.fn()} />);
+      await delay(RENDER_DELAY_MS);
+
+      stdin.write(ENTER);
+      await delay(RENDER_DELAY_MS);
+
+      // The wizard rebuilds onComplete whenever the store changes, and it reads the store to
+      // assemble the result — so completing through a superseded closure would write a config
+      // describing an earlier selection.
+      expect(latestOnComplete).toHaveBeenCalled();
+      expect(supersededOnComplete).not.toHaveBeenCalled();
+    });
+
     it("should not leave or complete the step when the panel's scroll keys are pressed", async () => {
       const onComplete = vi.fn();
       const onBack = vi.fn();

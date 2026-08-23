@@ -4,7 +4,7 @@ import { Box, Text } from "ink";
 import React, { useMemo } from "react";
 import { CLI_COLORS, UI_SYMBOLS } from "../../consts.js";
 import { matrix } from "../../lib/matrix/matrix-provider.js";
-import { useWizardStore } from "../../stores/wizard-store.js";
+import { showWarningsAsToast, useWizardStore } from "../../stores/wizard-store.js";
 import { useMeasuredHeight } from "../hooks/use-measured-height.js";
 import { useRowScroll } from "../hooks/use-row-scroll.js";
 
@@ -160,6 +160,11 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
 
   // The stack's own skills merged with the global preselections, and its agent
   // keys merged with the global agent preselections.
+  //
+  // The merge is the one population that runs while Ink owns the terminal: the global
+  // preselections come from the global config, which can name a skill the loaded source does
+  // not carry, so it warns from under a painted frame. `showWarningsAsToast` is what keeps that
+  // off a stderr the next repaint would scroll away.
   function applyStack(stack: ResolvedStack): void {
     selectStack(stack.id);
     setStackAction("customize");
@@ -170,7 +175,7 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
     const globalPreselections = useWizardStore.getState().globalPreselections;
     const globalIds = globalPreselections?.map((s) => s.id) ?? [];
     const mergedIds = [...new Set([...stack.allSkillIds, ...globalIds])];
-    populateFromSkillIds(mergedIds, globalPreselections ?? undefined);
+    showWarningsAsToast(() => populateFromSkillIds(mergedIds, globalPreselections ?? undefined));
 
     setApproach("stack");
     setStep("domains");
@@ -178,7 +183,8 @@ export const StackSelection: React.FC<StackSelectionProps> = ({ onCancel }) => {
 
   function handleSelect(selectedId: FocusId): void {
     if (selectedId === "scratch") {
-      startFromScratch();
+      // Same population, same frame: the scratch row applies the global preselections too.
+      showWarningsAsToast(startFromScratch);
       setStep("domains");
       return;
     }
