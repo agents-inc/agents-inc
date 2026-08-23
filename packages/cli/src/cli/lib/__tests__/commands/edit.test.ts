@@ -1146,12 +1146,11 @@ describe("edit command reports a selected skill the scope filter left unassigned
    * resolves `~/.claude-src/` through `os.homedir()` at runtime), so without this
    * the run would write into the developer's own home.
    *
-   * It does not isolate every read: `discoverInstalledSkills` reaches the global
-   * skills through `GLOBAL_INSTALL_ROOT`, a `consts.ts` constant evaluated at
-   * module load, which no spy and no `HOME` can reach. That leak predates this
-   * spec — the developer's own `~/.claude/skills/` entries show up as
-   * missing-metadata warnings in every `commands/` spec that runs `Edit.run` —
-   * and it is read-only, so it cannot affect what this one asserts.
+   * It reaches every read too, which it once did not: `discoverInstalledSkills`
+   * used to find the global skills through a `consts.ts` constant evaluated at
+   * module load, which no spy and no `HOME` could reach, so the developer's own
+   * `~/.claude/skills/` entries surfaced as missing-metadata warnings in every
+   * `commands/` spec that ran `Edit.run`. It calls `globalInstallRoot()` now.
    */
   const homedirSpy = vi.spyOn(os, "homedir");
 
