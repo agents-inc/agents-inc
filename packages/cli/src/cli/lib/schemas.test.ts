@@ -8,6 +8,10 @@ import {
   buildProjectConfig,
   buildSourceConfig,
 } from "./__tests__/factories/config-factories.js";
+import {
+  createMockMarketplace,
+  createMockMarketplacePlugin,
+} from "./__tests__/factories/plugin-factories.js";
 import { readTestJson } from "./__tests__/helpers/config-io.js";
 import { buildSkillConfigs } from "./__tests__/helpers/wizard-simulation.js";
 import { EJECT_SOURCE } from "../consts";
@@ -20,6 +24,7 @@ import {
   categoryPathSchema,
   formatZodIssues,
   localRawMetadataSchema,
+  marketplaceSchema,
   metadataValidationSchema,
   projectConfigLoaderSchema,
   projectSourceConfigSchema,
@@ -374,6 +379,84 @@ describe("the marketplace fields the loader schemas name", () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.skills?.map((skill) => skill.origin)).toStrictEqual([EJECT_SOURCE]);
+  });
+});
+
+/**
+ * A marketplace's name is the namespace Claude Code registers its plugins under, so what this
+ * schema will LOAD has to be what that registration will accept. The rule was already written and
+ * already enforced one direction only: `build marketplace` refuses to PUBLISH a non-kebab name
+ * (`marketplaceNameNotPublishable` in `utils/messages.ts`), while the load side took any non-empty
+ * string — so a third-party manifest naming `@acme/skills` read clean here and named plugins that
+ * could never install. Owner ruling 2026-08-20: piggyback on what Claude Code accepts, both ways.
+ *
+ * A third-party marketplace whose name is not kebab-case now fails to load where it used to load.
+ * That is the intent, which is why the refusal is asserted as prose a reader can act on rather
+ * than as a boolean.
+ */
+describe("the name a marketplace may be loaded under", () => {
+  /** The one plugin `marketplaceSchema.plugins.min(1)` requires before `name` is ever reached. */
+  const ONE_PLUGIN = [createMockMarketplacePlugin("web-framework-react")];
+
+  /** An npm scoped package name: legitimate on npm, and not a name a marketplace may carry. */
+  const SCOPED_PACKAGE_NAME = "@acme/skills";
+  const TITLE_CASED_NAME = "Acme Skills";
+  const LEADING_DIGIT_NAME = "2acme";
+  const KEBAB_NAME = "acme-skills";
+
+  /**
+   * A fragment every kebab-case regex opens with, mirrored as a LITERAL rather than imported
+   * from `consts.ts`. The assertion is that the refusal does NOT hand the pattern back, and a
+   * test reading the very constant the product reads would move with it and stop asserting.
+   */
+  const RAW_PATTERN_FRAGMENT = "^[a-z]";
+
+  function refusalFor(name: string): string {
+    const result = marketplaceSchema.safeParse({ ...createMockMarketplace(ONE_PLUGIN), name });
+
+    expect(result.success, `'${name}' must not load as a marketplace name`).toBe(false);
+    return formatZodIssues(result.error?.issues ?? []);
+  }
+
+  it("loads a kebab-case name, which is what the publisher writes", () => {
+    const result = marketplaceSchema.safeParse({
+      ...createMockMarketplace(ONE_PLUGIN),
+      name: KEBAB_NAME,
+    });
+
+    expect(
+      result.success,
+      "without this the refusals below could all be one guard that admits nothing",
+    ).toBe(true);
+  });
+
+  it("refuses an npm scoped name, which is the shape build marketplace already refuses to emit", () => {
+    expect(refusalFor(SCOPED_PACKAGE_NAME)).toContain("kebab-case");
+  });
+
+  it("refuses a name carrying capitals and spaces", () => {
+    expect(refusalFor(TITLE_CASED_NAME)).toContain("kebab-case");
+  });
+
+  it("refuses a name that does not start with a letter", () => {
+    expect(refusalFor(LEADING_DIGIT_NAME)).toContain("kebab-case");
+  });
+
+  it("keeps refusing an empty name, which is a different fault with the same field", () => {
+    expect(refusalFor("")).toContain("name");
+  });
+
+  it("states the rule and where to fix it rather than handing back the pattern", () => {
+    const refusal = refusalFor(SCOPED_PACKAGE_NAME);
+
+    expect(refusal, "the field the reader has to go and edit").toContain("name");
+    expect(refusal, "what a valid name looks like, not just that this one is invalid").toContain(
+      "lowercase letters, numbers and hyphens, starting with a letter",
+    );
+    expect(
+      refusal,
+      "a regex is what the CLI checks with, not something a marketplace author can act on",
+    ).not.toContain(RAW_PATTERN_FRAGMENT);
   });
 });
 

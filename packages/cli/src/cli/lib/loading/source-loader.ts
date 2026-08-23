@@ -17,6 +17,7 @@ import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 import type {
   AgentDefinition,
   AgentName,
+  CategoryDefinition,
   CategoryMap,
   CategoryPath,
   ExtractedSkillMetadata,
@@ -32,7 +33,8 @@ import type {
 import { getErrorMessage } from "../../utils/errors";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
+import { isAgentName } from "../../utils/type-guards";
+import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../../utils/typed-object";
 import {
   isDefaultSource,
   isLocalSource,
@@ -58,6 +60,7 @@ import {
   fetchFromSource,
   fetchMarketplace,
   MarketplaceManifestAbsentError,
+  MarketplaceNameRefusedError,
 } from "./source-fetcher";
 import { loadSkillsFromAllSources } from "./multi-source-loader";
 import { loadStacks, resolveAgentConfigToSkills } from "../stacks";
@@ -105,6 +108,9 @@ export async function loadSkillsMatrixFromSource(
     matrixOnly = false,
   } = options;
 
+  // ABORT on an unreadable config. Every skill this returns is resolved against the marketplace
+  // named here, so a run that got past this rung on a config it could not read would install from
+  // a marketplace nobody chose — which is the whole of what the refusal exists to stop.
   const sourceConfig = await resolveSource({ caller, flag: sourceFlag, projectDir });
   const { source } = sourceConfig;
 
@@ -208,20 +214,27 @@ type MarketplaceLabels = Pick<SourceLoadResult, "marketplace">;
 /**
  * Which state a marketplace's manifest is in, as far as naming the marketplace goes.
  *
- * Three states rather than two because the two failures are not the same event: a
- * marketplace with no manifest is an ordinary local directory, while one whose manifest
- * is there and refused is a broken publication, and the author is the only person who
- * can repair it. Collapsing them reported every schema violation in that file as an
- * absent file, and a reader who checked found it exactly where the message said it was
- * not. `doctor`'s `ConfigState` splits its own three the same way and for the same reason.
+ * Four states rather than two because the failures are not one event: a marketplace with
+ * no manifest is an ordinary local directory, one whose manifest is there and unreadable
+ * is a broken publication that can still be installed from, and one that publishes under
+ * a name Claude Code registers no plugin under can be installed from at all. Collapsing
+ * the first two reported every schema violation in that file as an absent file, and a
+ * reader who checked found it exactly where the message said it was not; collapsing the
+ * last two turned the rule `build marketplace` refuses to publish under into a warning
+ * printed above a green tick. `doctor`'s `ConfigState` splits its own the same way and
+ * for the same reason.
  */
 type ManifestState =
-  { kind: "absent" } | { kind: "unreadable"; reason: string } | { kind: "named"; name: string };
+  | { kind: "absent" }
+  | { kind: "refused"; reason: string }
+  | { kind: "unreadable"; reason: string }
+  | { kind: "named"; name: string };
 
 /**
- * {@link ManifestState} for one marketplace. Absence is read off the throw's TYPE rather
- * than its text: `fetchMarketplace` is the only thing that can tell a file it never found
- * from one it found and refused, so it says which, and nothing here matches on a sentence.
+ * {@link ManifestState} for one marketplace. Which failure it was is read off the throw's
+ * TYPE rather than its text: `fetchMarketplace` is the only thing that can tell a file it
+ * never found from one it found and refused, and a refused NAME from every other refusal,
+ * so it says which and nothing here matches on a sentence.
  */
 async function readManifestState(source: string): Promise<ManifestState> {
   try {
@@ -229,6 +242,9 @@ async function readManifestState(source: string): Promise<ManifestState> {
     return { kind: "named", name: marketplace.name };
   } catch (error) {
     if (error instanceof MarketplaceManifestAbsentError) return { kind: "absent" };
+    if (error instanceof MarketplaceNameRefusedError) {
+      return { kind: "refused", reason: getErrorMessage(error) };
+    }
     return { kind: "unreadable", reason: getErrorMessage(error) };
   }
 }
@@ -243,6 +259,14 @@ function configuredLabel(sourceConfig: ResolvedConfig): MarketplaceLabels {
  * `.claude-plugin/marketplace.json`. A `marketplace` already recorded in the
  * project config wins; sources this load cannot name keep whatever the config had
  * (possibly nothing) and are labelled by their source name.
+ *
+ * This is where each {@link ManifestState} says whether it ABORTS or DEGRADES, and the
+ * two answers are not interchangeable. A manifest that cannot be READ leaves a
+ * marketplace whose skills still install, so the load carries on under a label the
+ * config or the ref supplies. A manifest that names the marketplace something Claude
+ * Code registers no plugin under leaves nothing installable at all, so it ABORTS —
+ * carrying on labelled the marketplace by its ref, installed under a name nobody chose,
+ * and let `doctor` print a green tick directly beneath its own warning about that file.
  */
 async function resolveMarketplaceLabels(
   source: string,
@@ -259,6 +283,8 @@ async function resolveMarketplaceLabels(
     case "absent":
       verbose(`Marketplace has no ${MARKETPLACE_JSON} — using its ref as the label`);
       return configuredLabel(sourceConfig);
+    case "refused":
+      throw new MarketplaceNameRefusedError(state.reason);
     case "unreadable":
       warn(
         `Marketplace has a ${MARKETPLACE_JSON} this CLI cannot read, so its ref is the label instead:\n${state.reason}`,
@@ -347,7 +373,36 @@ async function loadFromRemote(
  * marketplace it is, so it stands as the source string too.
  */
 export async function loadMarketplaceMatrix(marketplaceDir: string): Promise<MergedSkillsMatrix> {
-  return loadAndMergeFromBasePath(marketplaceDir, marketplaceDir);
+  const matrix = await loadAndMergeFromBasePath(marketplaceDir, marketplaceDir);
+  return { ...matrix, categories: categoriesTheseSkillsAreIn(matrix) };
+}
+
+/**
+ * The categories a marketplace's own skills are in, and nothing else.
+ *
+ * {@link loadAndMergeFromBasePath} merges the built-in taxonomy underneath the
+ * marketplace's own, so a skill sitting in a built-in category resolves to that
+ * category's real definition rather than the humanized stand-in
+ * `synthesizeCategory` writes. Right for the merge and wrong for the artefact: a
+ * published catalogue cannot claim categories the marketplace ships nothing in,
+ * and 102 of them arrived that way — beside a `skills` and a `suggestedStacks`
+ * that were the marketplace's own.
+ *
+ * Membership is read off the SKILLS rather than off the marketplace's own
+ * `skill-categories.ts`, because the two disagree in both directions: a skill may
+ * sit in a category its author never declared, and a declared category may hold
+ * nothing. Narrowing by what is declared would leave a consumer holding a skill
+ * whose category the catalogue does not define, which is this bug with the sides
+ * swapped.
+ */
+function categoriesTheseSkillsAreIn(matrix: MergedSkillsMatrix): CategoryMap {
+  const occupied = new Set<CategoryPath>(typedValues(matrix.skills).map((skill) => skill.category));
+
+  return typedFromEntries(
+    typedEntries<Category, CategoryDefinition>(matrix.categories).filter(([id]) =>
+      occupied.has(id),
+    ),
+  );
 }
 
 /**
@@ -360,6 +415,9 @@ async function loadAndMergeFromBasePath(
   basePath: string,
   source: string,
 ): Promise<MergedSkillsMatrix> {
+  // ABORT on an unreadable config. This file is where a marketplace declares which directories
+  // its skills and stacks live in, so falling back to the defaults would walk a tree the
+  // marketplace says is somewhere else and report the catalogue as empty.
   const sourceProjectConfig = await loadProjectSourceConfig(basePath);
 
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
@@ -507,9 +565,59 @@ async function resolveOfferedStacks(
   return [];
 }
 
+/**
+ * A stack's sub-agents split by whether the CLI declares one.
+ *
+ * The keys are read as the STRINGS a stack file spells: `typedKeys` types them `AgentName` because
+ * `Stack["agents"]` is keyed by it, but they arrive from a marketplace's own `config/stacks.ts` and
+ * nothing between that file and here narrows them — so the membership test below is a real
+ * question rather than a formality, and the widening is what lets it be asked.
+ *
+ * Narrowed with `isAgentName` and deliberately NOT cast. Only the CLI's own `src/agents/` declares
+ * a sub-agent a compile pass can honour — that directory is the whole of the roster (owner ruling
+ * 2026-08-21) and is what `AGENT_NAMES` is generated from — so this is the union's own membership
+ * test rather than a second list to keep in step.
+ */
+function declaredAgentsIn(stack: Stack): { declared: AgentName[]; undeclared: string[] } {
+  const named: string[] = typedKeys<AgentName>(stack.agents);
+  return {
+    declared: named.filter(isAgentName),
+    undeclared: named.filter((name) => !isAgentName(name)),
+  };
+}
+
+/**
+ * What a stack naming a sub-agent the CLI does not ship is told to the user.
+ *
+ * The stack is DROPPED FROM rather than refused, and that posture is deliberate. A stack is a
+ * suggestion the wizard offers, not an install contract, so refusing it would take every
+ * sub-agent in it — the valid ones included — over one typo in a marketplace the user may not
+ * own. It is also the posture the rest of this conversion already takes: `resolveStackAgentSkills`
+ * drops a skill id the matrix does not carry, and one function answering the same question two
+ * ways is worse than either answer. Contrast `refuseCatalogueCollisions` above, which refuses
+ * the whole source because a colliding id is UNSAFE — two marketplaces silently shadowing each
+ * other on disk — where an undeclared sub-agent is merely uncompilable.
+ *
+ * What the drop must not be is SILENT, which is what it was: the wizard narrowed these names
+ * out of its own grid and told nobody. `warn()` is buffered during a source load and painted as
+ * the wizard's startup band, so this reaches the user rather than a stderr the first repaint
+ * scrolls away. The stack is named because a marketplace ships many, and the sub-agents are
+ * named rather than counted because only the name says what to fix.
+ */
+function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): string {
+  const named = undeclared.map((name) => `'${name}'`).join(", ");
+  return (
+    `Stack '${stack.id}' names ${undeclared.length} sub-agent(s) this CLI does not define: ` +
+    `${named}. Left out of the stack — a sub-agent must be one the CLI ships.`
+  );
+}
+
 // Stack values are already skill IDs — no alias resolution needed
 export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
-  const agentConfigs = typedKeys<AgentName>(stack.agents).flatMap((agentId) => {
+  const { declared, undeclared } = declaredAgentsIn(stack);
+  if (undeclared.length > 0) warn(undeclaredAgentsWarning(stack, undeclared));
+
+  const agentConfigs = declared.flatMap((agentId) => {
     const agentConfig = stack.agents[agentId];
     return agentConfig ? [{ agentId, agentConfig }] : [];
   });
@@ -527,8 +635,9 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
     ),
   );
 
-  const agentCount = typedKeys<AgentName>(stack.agents).length;
-  verbose(`Stack '${stack.id}' has ${allSkillIds.length} skills from ${agentCount} agents`);
+  verbose(
+    `Stack '${stack.id}' has ${allSkillIds.length} skills from ${agentConfigs.length} agents`,
+  );
 
   return {
     id: stack.id,
@@ -554,21 +663,6 @@ function resolveStackAgentSkills(
   return typedFromEntries(
     byCategory.map(({ category, validIds }) => [category, validIds] as const),
   );
-}
-
-/**
- * Extract a human-readable name from a source URL.
- * e.g. "github:agents-inc/skills" -> "agents-inc"
- *      "github:acme-corp/claude-skills" -> "acme-corp"
- */
-export function extractSourceName(source: string): string {
-  // Strip protocol prefix (github:, gh:, https://, etc.)
-  const withoutProtocol = source.replace(/^(?:github|gh|gitlab|bitbucket|sourcehut):/, "");
-  const withoutUrl = withoutProtocol.replace(/^https?:\/\/[^/]+\//, "");
-
-  // Take the first path segment (org/owner name)
-  const firstSegment = withoutUrl.split("/")[0];
-  return firstSegment || source;
 }
 
 /**
@@ -649,9 +743,8 @@ export function mergeLocalSkillsIntoMatrix(
     matrix.skills[metadata.id] = resolvedSkill;
 
     // Completes the map over the matrix this merge is building: the skill went
-    // into `matrix.skills` and the slug map stayed as the source left it, so
-    // `getSkillBySlug` — the asserting lookup the matrix barrel exports — threw
-    // for every skill a user had written themselves.
+    // into `matrix.skills` and the slug map stayed as the source left it, so every
+    // slug a user had written themselves resolved to nothing.
     claimSlug(matrix.slugMap, slug, metadata.id);
 
     // Ensure the skill's category exists in matrix.categories so that

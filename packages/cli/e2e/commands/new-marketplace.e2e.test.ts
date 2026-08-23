@@ -59,6 +59,15 @@ const EXAMPLE_SKILL_ID = `${MARKETPLACE_NAME}-example-skill`;
 const SCAFFOLDED_STACK_ID = `${MARKETPLACE_NAME}-starter`;
 
 /**
+ * The one category a scaffold declares, and the only one its skill is in.
+ *
+ * Spelled rather than composed: it carries the domain a scaffold picks and not
+ * the marketplace's name, so building it from {@link MARKETPLACE_NAME} would be
+ * a different string that happened to be right about nothing.
+ */
+const SCAFFOLDED_CATEGORY_ID = "web-example";
+
+/**
  * The three names `build marketplace` refuses. Spelled out rather than imported:
  * the rule is these strings, and a test reading the product's own list would agree
  * with any list it grew.
@@ -317,6 +326,10 @@ describe("new marketplace — round trip through the commands downstream", () =>
       parsed.data?.suggestedStacks.map((stack) => stack.id),
       "a marketplace's stacks are the ones its own config/stacks.ts declares",
     ).toStrictEqual([SCAFFOLDED_STACK_ID]);
+    expect(
+      Object.keys(parsed.data?.categories ?? {}),
+      "a consumer reading this file must not be offered categories the marketplace ships nothing in",
+    ).toStrictEqual([SCAFFOLDED_CATEGORY_ID]);
   });
 
   it(

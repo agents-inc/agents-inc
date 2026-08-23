@@ -13,6 +13,7 @@ import {
   SKILLS_DIR_PATH,
   STACKS_FILE_PATH,
 } from "../../../../consts";
+import { defaultCategories } from "../../../configuration/default-categories";
 import { defaultStacks } from "../../../configuration/default-stacks";
 import { renderConfigTs } from "../../content-generators.js";
 import { createTestSkill } from "../../factories/skill-factories.js";
@@ -69,6 +70,16 @@ const TAXONOMY_BASE: SkillId = "web-framework-react";
 /** The taxonomy a skill that exists only on the author's machine borrows. */
 const LOCAL_TAXONOMY_BASE: SkillId = "web-state-zustand";
 
+/**
+ * The built-in category {@link TAXONOMY_BASE} sits in.
+ *
+ * A marketplace may place its own skill in one of these rather than declaring a
+ * category, and then the catalogue owes the consumer that definition — which is
+ * the case a scaffold cannot exercise, because its one skill sits in its one
+ * declared category and the two candidate rules agree there.
+ */
+const BUILT_IN_CATEGORY = "web-framework";
+
 /** The id the fixture marketplace publishes its one skill under. */
 const MARKETPLACE_SKILL_ID = `${MARKETPLACE_NAME}-house-style`;
 
@@ -101,6 +112,13 @@ function marketplaceSkill(): TestSkill {
   return createTestSkill(TAXONOMY_BASE, "This marketplace's own house style", {
     id: MARKETPLACE_SKILL_ID,
     category: MARKETPLACE_CATEGORY,
+  });
+}
+
+/** The same marketplace's skill, left in the built-in category its taxonomy names. */
+function skillInBuiltInCategory(): TestSkill {
+  return createTestSkill(TAXONOMY_BASE, "This marketplace's own take on the framework", {
+    id: MARKETPLACE_SKILL_ID,
   });
 }
 
@@ -264,6 +282,54 @@ describe("build:marketplace catalog emission", () => {
         description: MARKETPLACE_CATEGORY_DESCRIPTION,
       });
       expect(catalog.skills[MARKETPLACE_SKILL_ID]?.category).toBe(MARKETPLACE_CATEGORY);
+    });
+  });
+
+  describe("categories", () => {
+    beforeEach(async () => {
+      await writeTestPackageJson(projectDir, { name: MARKETPLACE_NAME });
+    });
+
+    it("carries the category its skill declares, and none of the built-in taxonomy", async () => {
+      await writeMarketplaceCategories(projectDir);
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
+
+      await runCliCommand(["build:marketplace"]);
+
+      const catalog = await readTestJson<Matrix>(catalogPath);
+      expect(
+        Object.keys(catalog.categories),
+        "a published catalogue cannot claim categories the marketplace ships nothing in",
+      ).toStrictEqual([MARKETPLACE_CATEGORY]);
+    });
+
+    it("carries a built-in category its own skill sits in, with the built-in definition", async () => {
+      await publishMarketplaceSkill(projectDir, skillInBuiltInCategory());
+
+      await runCliCommand(["build:marketplace"]);
+
+      const catalog = await readTestJson<Matrix>(catalogPath);
+      expect(
+        Object.keys(catalog.categories),
+        "a consumer holding this skill must be able to place it, so the category it names travels with it",
+      ).toStrictEqual([BUILT_IN_CATEGORY]);
+      expect(
+        catalog.categories[BUILT_IN_CATEGORY],
+        "the built-in definition, not the humanized stand-in `synthesizeCategory` writes",
+      ).toStrictEqual(defaultCategories[BUILT_IN_CATEGORY]);
+    });
+
+    it("leaves out a category the marketplace declares and ships no skill in", async () => {
+      await writeMarketplaceCategories(projectDir);
+      await publishMarketplaceSkill(projectDir, skillInBuiltInCategory());
+
+      await runCliCommand(["build:marketplace"]);
+
+      const catalog = await readTestJson<Matrix>(catalogPath);
+      expect(
+        Object.keys(catalog.categories),
+        "declaring a category is not shipping one — the rule is the same for the marketplace's own as for the built-ins",
+      ).toStrictEqual([BUILT_IN_CATEGORY]);
     });
   });
 

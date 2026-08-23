@@ -25,7 +25,6 @@ vi.mock("../../consts", async (importOriginal) => {
 import {
   loadSkillsMatrixFromSource,
   convertStackToResolvedStack,
-  extractSourceName,
   mergeLocalSkillsIntoMatrix,
 } from "./source-loader";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
@@ -63,13 +62,16 @@ import {
 } from "../__tests__/fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS, EXTRA_DOMAIN_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
 import type {
+  AgentName,
   Category,
   CategoryDefinition,
   CategoryPath,
   MergedSkillsMatrix,
   ResolvedSkill,
+  ResolvedStack,
   SkillId,
   SkillSlug,
+  Stack,
 } from "../../types";
 import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
 import { getErrorMessage } from "../../utils/errors";
@@ -77,7 +79,7 @@ import { disableBuffering, drainBuffer, enableBuffering, setVerbose } from "../.
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
-import { getSkillBySlug, initializeMatrix } from "../matrix/matrix-provider";
+import { allSkills, initializeMatrix, matrix } from "../matrix/matrix-provider";
 // The env rung is cleared THROUGH the constant the resolver reads, not through a literal:
 // these hooks assert nothing, so there is no "both sides move together" hazard here, and a
 // literal is what let the suite go on deleting the withdrawn `CC_SOURCE` after the rename.
@@ -87,6 +89,7 @@ import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+import { typedKeys } from "../../utils/typed-object";
 
 /**
  * What the fixture marketplace ships, published in its own namespace: a custom
@@ -188,6 +191,37 @@ async function writeMarketplaceWithUnreadableManifest(tempDir: string): Promise<
 }
 
 /**
+ * A marketplace name Claude Code will not register plugins under, and the same name
+ * written the way it accepts.
+ *
+ * The pair is what makes the refusal below mean anything: the two marketplaces differ in
+ * this one field, so a guard that refused every manifest would fail the second spec
+ * rather than leave the file quietly all-refusal.
+ */
+const MANIFEST_NAME_REFUSED = "Acme_Skills";
+const MANIFEST_NAME_ACCEPTED = "acme-skills";
+
+/** A marketplace on disk publishing under `name`, with no other defect in its manifest. */
+async function writeMarketplaceNamed(
+  tempDir: string,
+  dirName: string,
+  name: string,
+): Promise<string> {
+  const sourceDir = path.join(tempDir, dirName);
+  await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace([createMockMarketplacePlugin("web-framework-react")]),
+      name,
+    }),
+  );
+  return sourceDir;
+}
+
+/**
  * What the load produced and what it said, read the way `init` and `edit` read
  * it: buffering is the production mechanism that carries `warn()` past Ink's
  * `clearTerminal` into the wizard's startup band, so draining it is asking the
@@ -215,6 +249,20 @@ async function loadWithWarnings(
 function loadedSkill(matrix: MergedSkillsMatrix, id: string): ResolvedSkill | undefined {
   // Boundary cast: skills keys are branded SkillId, widened to string for test indexing
   return (matrix.skills as Record<string, ResolvedSkill>)[id];
+}
+
+/** The same question of a stack conversion, which warns about what it drops. */
+function convertStackWithWarnings(stack: Stack): {
+  resolved: ResolvedStack;
+  warnings: string[];
+} {
+  enableBuffering();
+  try {
+    const resolved = convertStackToResolvedStack(stack);
+    return { resolved, warnings: drainBuffer().map((message) => message.text) };
+  } finally {
+    disableBuffering();
+  }
 }
 
 /** The same question of a synchronous local-skill merge. */
@@ -414,6 +462,33 @@ describe("source-loader", () => {
 
         expect(absent.warnings).toStrictEqual([]);
         expect(firstElement(unreadable.warnings)).toContain(UNREADABLE_MANIFEST_FIELD);
+      });
+    });
+
+    describe("a marketplace.json naming a marketplace Claude Code cannot register", () => {
+      it("should refuse the load rather than label the marketplace by its ref", async () => {
+        const sourceDir = await writeMarketplaceNamed(tempDir, "refused", MANIFEST_NAME_REFUSED);
+
+        const refusal = await refusalLoading(sourceDir, tempDir);
+
+        expect(
+          refusal,
+          "a name Claude Code registers no plugin under leaves nothing installable, so the load must stop",
+        ).not.toBeNull();
+        expect(refusal, "the manifest holding the name must be named").toContain(MARKETPLACE_JSON);
+        expect(refusal, "the refusal must state the rule, not the regex").toContain("kebab-case");
+      });
+
+      it("should load the same marketplace once its name is one Claude Code accepts", async () => {
+        const sourceDir = await writeMarketplaceNamed(tempDir, "accepted", MANIFEST_NAME_ACCEPTED);
+
+        const result = await loadSkillsMatrixFromSource({
+          sourceFlag: sourceDir,
+          projectDir: tempDir,
+          skipExtraSources: true,
+        });
+
+        expect(result.marketplace).toBe(MANIFEST_NAME_ACCEPTED);
       });
     });
 
@@ -850,13 +925,15 @@ describe("source-loader local skill slugs", () => {
   });
 
   it("resolves a local skill by the slug its metadata declares", async () => {
-    // `getSkillBySlug` asserts, and the merge left the slug map as the source built
-    // it — so this lookup threw for every skill the user had written themselves.
     await loadSkillsMatrixFromSource({ sourceFlag: fixtureDirs.sourceDir, projectDir: tempDir });
 
-    expect(getSkillBySlug(LOCAL_DISK_SKILL_SLUG)).toStrictEqual(
-      expect.objectContaining({ id: LOCAL_DISK_SKILL_ID, local: true }),
-    );
+    expect(
+      matrix.slugMap.slugToId[LOCAL_DISK_SKILL_SLUG],
+      "the merge left the slug map as the source built it, so a relationship rule naming a skill the user wrote themselves resolved to nothing",
+    ).toBe(LOCAL_DISK_SKILL_ID);
+    expect(allSkills().filter((skill) => skill.local)).toStrictEqual([
+      expect.objectContaining({ id: LOCAL_DISK_SKILL_ID, slug: LOCAL_DISK_SKILL_SLUG }),
+    ]);
   });
 
   it("leaves the built-in matrix's own slug map alone", async () => {
@@ -1190,56 +1267,6 @@ describe("source-loader integration", () => {
   });
 });
 
-describe("extractSourceName", () => {
-  it("should strip github: protocol and return org name", () => {
-    expect(extractSourceName("github:agents-inc/skills")).toBe("agents-inc");
-  });
-
-  it("should strip gh: protocol and return org name", () => {
-    expect(extractSourceName("gh:acme-corp/claude-skills")).toBe("acme-corp");
-  });
-
-  it("should strip gitlab: protocol and return org name", () => {
-    expect(extractSourceName("gitlab:myorg/repo")).toBe("myorg");
-  });
-
-  it("should strip bitbucket: protocol and return org name", () => {
-    expect(extractSourceName("bitbucket:team/repo")).toBe("team");
-  });
-
-  it("should strip sourcehut: protocol and return org name", () => {
-    expect(extractSourceName("sourcehut:user/project")).toBe("user");
-  });
-
-  it("should strip https:// URL and return org name", () => {
-    expect(extractSourceName("https://github.com/acme-corp/repo")).toBe("acme-corp");
-  });
-
-  it("should strip https:// URL with .git suffix", () => {
-    expect(extractSourceName("https://github.com/org/repo.git")).toBe("org");
-  });
-
-  it("should return first segment of plain path", () => {
-    expect(extractSourceName("org/repo")).toBe("org");
-  });
-
-  it("should return the source itself when no slash is present", () => {
-    expect(extractSourceName("single-segment")).toBe("single-segment");
-  });
-
-  it("should return full source for empty string", () => {
-    expect(extractSourceName("")).toBe("");
-  });
-
-  it("should handle http:// URLs", () => {
-    expect(extractSourceName("http://gitlab.example.com/team/repo")).toBe("team");
-  });
-
-  it("should handle complex paths after protocol stripping", () => {
-    expect(extractSourceName("github:deep-org/nested-repo/subdir")).toBe("deep-org");
-  });
-});
-
 describe("convertStackToResolvedStack", () => {
   const reactSkill = createMockSkill("web-framework-react");
   const zustandSkill = createMockSkill("web-state-zustand");
@@ -1387,6 +1414,81 @@ describe("convertStackToResolvedStack", () => {
     expect(agentSkills?.["web-framework"]).toBeUndefined();
     expect(resolved.allSkillIds).toHaveLength(0);
   });
+
+  /**
+   * A marketplace's `config/stacks.ts` is authored by hand and nothing between the file and
+   * here narrows its agent keys, so a name the CLI does not declare arrives typed `AgentName`
+   * and compiles. Only `src/agents/` declares a sub-agent a compile pass can honour — that
+   * directory is the whole of the roster (owner ruling 2026-08-21) and is what `AGENT_NAMES` is
+   * generated from — so an unknown name reaches `config.agents`, `SelectedAgentName` and
+   * `ProjectAgentName` alike and then leaves `compile` with no definition to compile.
+   *
+   * **The two cases are one claim and neither means anything alone.** The drop is a
+   * DISAPPEARANCE, and a conversion that dropped both agents, or that never ran, satisfies it
+   * for free — the surviving agent is what makes it a drop rather than a failure. And the drop
+   * without the warning is what shipped: the wizard already narrowed these names out of its
+   * grid, which is exactly why nobody was told.
+   */
+  it("drops a sub-agent the CLI does not declare and keeps the rest of the stack", () => {
+    const stack = createMockStack("part-declared", {
+      name: "Part Declared",
+      agents: {
+        "web-developer": {
+          "web-framework": [createMockSkillAssignment("web-framework-react")],
+        },
+        "frontend-dev": {
+          "api-api": [createMockSkillAssignment("api-framework-hono")],
+        },
+      },
+    });
+
+    const { resolved } = convertStackWithWarnings(stack);
+
+    expect(
+      typedKeys<AgentName>(resolved.skills),
+      "the declared sub-agent survives, which is what makes the other one a drop",
+    ).toStrictEqual(["web-developer"]);
+    expect(
+      resolved.allSkillIds,
+      "a dropped sub-agent takes its skills with it — nothing installs them",
+    ).toStrictEqual(["web-framework-react"]);
+  });
+
+  it("names the stack and the sub-agent it dropped, in the band the wizard paints", () => {
+    const stack = createMockStack("part-declared", {
+      name: "Part Declared",
+      agents: {
+        "web-developer": {
+          "web-framework": [createMockSkillAssignment("web-framework-react")],
+        },
+        "frontend-dev": {
+          "api-api": [createMockSkillAssignment("api-framework-hono")],
+        },
+      },
+    });
+
+    const { warnings } = convertStackWithWarnings(stack);
+
+    expect(warnings).toStrictEqual([
+      "Stack 'part-declared' names 1 sub-agent(s) this CLI does not define: 'frontend-dev'. " +
+        "Left out of the stack — a sub-agent must be one the CLI ships.",
+    ]);
+  });
+
+  it("says nothing about a stack whose sub-agents the CLI all declares", () => {
+    const stack = createMockStack("all-declared", {
+      name: "All Declared",
+      agents: {
+        "web-developer": {
+          "web-framework": [createMockSkillAssignment("web-framework-react")],
+        },
+      },
+    });
+
+    const { warnings } = convertStackWithWarnings(stack);
+
+    expect(warnings).toStrictEqual([]);
+  });
 });
 
 describe("mergeLocalSkillsIntoMatrix slug map", () => {
@@ -1409,7 +1511,7 @@ describe("mergeLocalSkillsIntoMatrix slug map", () => {
   });
 
   it("leaves a slug the matrix already maps with the skill holding it", () => {
-    // Ids are namespaced by their author (CLI-498); slugs are not, so a user's own
+    // Ids are namespaced by their author; slugs are not, so a user's own
     // skill can spell one the catalogue already uses. Letting it win would reroute
     // every rule naming that slug to the local skill, silently.
     const incumbent = createMockSkill("web-framework-react");

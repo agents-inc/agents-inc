@@ -2,7 +2,13 @@ import { z } from "zod";
 import { partition } from "remeda";
 import type { LocalSkillMetadata } from "./skills/skill-metadata";
 import type { LocalRawMetadata } from "./skills/local-skill-loader";
-import { AUTHOR_HANDLE_PATTERN, KEBAB_CASE_PATTERN, LOCAL_PSEUDO_CATEGORY } from "../consts";
+import {
+  AUTHOR_HANDLE_PATTERN,
+  KEBAB_CASE_PATTERN,
+  LOCAL_PSEUDO_CATEGORY,
+  STANDARD_FILES,
+} from "../consts";
+import { METADATA_KEYS } from "./metadata-keys";
 import { formatZodIssue } from "./schema-validator";
 import { isRecord } from "../utils/type-guards";
 import { warn } from "../utils/logger";
@@ -327,8 +333,35 @@ const categoryDefinitionSchema: z.ZodType<CategoryDefinition> = z.object({
   icon: z.string().exactOptional(),
 });
 
+/**
+ * What a relationship rule naming an unknown skill says back, in place of the whole
+ * generated slug union it was tested against.
+ *
+ * A rule names skills by slug and every one is held to the PUBLIC catalogue's generated
+ * union, so a marketplace author naming a skill they themselves ship is handed roughly 250
+ * names belonging to somebody else — which answers a question they did not ask and does not
+ * contain the answer to the one they did. Zod's own text for an enum reports the options and
+ * never the input, so the slug they actually wrote was the one thing missing from it; the
+ * function form is what puts it back.
+ *
+ * It says "yet" deliberately. The constraint is this schema's rather than the loader's — a
+ * source's own rules are resolved against that source's own slug map — so the refusal names a
+ * limit rather than a law. Whether slugs leave the closed union is a separate question.
+ */
+function unknownSkillSlugRefusal(input: unknown): string {
+  const named = typeof input === "string" ? `'${input}'` : "That value";
+  return (
+    `${named} is not a slug the public catalogue carries, and a relationship rule may only ` +
+    `name skills the public catalogue carries — this marketplace's own skills cannot be named ` +
+    `in one yet. Name a catalogue slug, or leave 'relationships' out: it is optional, and a ` +
+    `marketplace shipping no relationship rules loads and installs like any other.`
+  );
+}
+
 // Skill references in relationship rules: slugs resolved to canonical IDs by matrix-loader
-const skillRefInRules = skillSlugSchema;
+const skillRefInRules = z.enum(SKILL_SLUGS, {
+  error: (issue) => unknownSkillSlugRefusal(issue.input),
+}) as z.ZodType<SkillSlug>;
 
 // Shared shape for conflict/discourage/compatibility rules: 2+ slugs plus a reason
 const skillGroupRuleSchema = z.object({
@@ -467,9 +500,29 @@ const marketplaceMetadataSchema: z.ZodType<MarketplaceMetadata> = z.object({
   pluginRoot: z.string().exactOptional(),
 });
 
+/**
+ * What a marketplace name being refused says back, in place of the pattern it was tested against.
+ *
+ * A raw Zod format issue names the regex, which tells a marketplace author what the CLI checks
+ * with and nothing about what to write instead. The rule is spelled the way
+ * `marketplaceNameNotPublishable` in `utils/messages.ts` already spells it on the emit side, so
+ * the two directions of one rule cannot come to say different things about it.
+ *
+ * Stated as a `message` on the `regex` check rather than in a `refine`, deliberately: a refinement
+ * is unrepresentable in JSON Schema, so `src/schemas/marketplace.schema.json` would silently lose
+ * the `pattern` an editor validates `marketplace.json` against.
+ */
+const MARKETPLACE_NAME_REFUSAL =
+  "A marketplace name is kebab-case: lowercase letters, numbers and hyphens, starting with a letter (e.g. 'acme-skills'). Rename it in this manifest — Claude Code registers every plugin under it and accepts no other shape.";
+
 export const marketplaceSchema: z.ZodType<Marketplace> = z.object({
   $schema: z.string().exactOptional(),
-  name: z.string().min(1),
+  /**
+   * Kebab-case, because this name is the namespace Claude Code registers plugins under and the
+   * CLI piggybacks on what Claude Code accepts (owner ruling 2026-08-20). Held to the same rule
+   * `build marketplace` refuses to publish under, so what this CLI emits is what it can read back.
+   */
+  name: z.string().min(1).regex(KEBAB_CASE_PATTERN, { message: MARKETPLACE_NAME_REFUSAL }),
   version: z.string().min(1),
   description: z.string().exactOptional(),
   owner: marketplaceOwnerSchema,
@@ -666,13 +719,45 @@ const skillMetadataBaseSchema = z.object({
   custom: z.boolean().exactOptional(),
 });
 
+/**
+ * What a published skill's `slug` says back when the public catalogue does not carry it, in
+ * place of the whole generated slug union it was tested against.
+ *
+ * The same defect `unknownSkillSlugRefusal` answers one layer over, and the one an author meets
+ * FIRST: they write a `metadata.yaml` before they write a rule. Zod's text for an enum reports
+ * the options and never the input, so a marketplace author naming a skill they themselves ship
+ * was handed roughly 250 names belonging to somebody else with their own slug missing from it.
+ *
+ * It differs from the rules-side message in the one way that matters: this refusal has a way
+ * out and that one does not. `validateSkillMetadata` reads `custom: true` and validates against
+ * `customMetadataValidationSchema`, whose `slug` is any kebab-case name — so the flag is what a
+ * skill outside the catalogue's vocabulary is CARRIED by rather than a way around the check
+ * (owner ruling 2026-08-22: the union stays closed and `custom: true` is the documented
+ * mechanism). Nothing said so until now, which is the whole of what made it read as a trick.
+ */
+function unknownMetadataSlugRefusal(input: unknown): string {
+  const named = typeof input === "string" ? `'${input}'` : "That value";
+  return (
+    `${named} is not a slug the public catalogue carries. A published skill's slug is held to ` +
+    `that catalogue unless the skill declares it is not from it — add '${METADATA_KEYS.CUSTOM}: true' ` +
+    `beside it in this ${STANDARD_FILES.METADATA_YAML} and the slug is read as your marketplace's ` +
+    `own, any kebab-case name. That declaration is how a skill outside the catalogue's vocabulary ` +
+    `is carried; a skill the catalogue does carry names its catalogue slug and leaves it off.`
+  );
+}
+
 /** Strict validation for metadata.yaml in published skills (enforces author format, enum-validated category/slug) */
 export const metadataValidationSchema = skillMetadataBaseSchema
   .extend({
     /** Domain-prefixed category — must be a known built-in category */
     category: z.enum(CATEGORIES),
-    /** Kebab-case short key — must be a known built-in slug */
-    slug: z.enum(SKILL_SLUGS),
+    /**
+     * Kebab-case short key — must be a known built-in slug, unless the file declares
+     * `custom: true` and is judged by {@link customMetadataValidationSchema} instead.
+     */
+    slug: z.enum(SKILL_SLUGS, {
+      error: (issue) => unknownMetadataSlugRefusal(issue.input),
+    }),
   })
   .strict();
 
@@ -681,11 +766,7 @@ export const customMetadataValidationSchema = skillMetadataBaseSchema.extend({
   /** Any string category — custom skills may define their own categories */
   category: z.string(),
   /** Kebab-case short key for alias resolution, search, and relationship rules */
-  slug: z
-    .string()
-    .regex(/^[a-z][a-z0-9-]*$/)
-    .min(1)
-    .max(50),
+  slug: z.string().regex(KEBAB_CASE_PATTERN).min(1).max(50),
 });
 
 const stackSkillAssignmentSchema = z
