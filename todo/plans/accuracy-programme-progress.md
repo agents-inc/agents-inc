@@ -335,3 +335,344 @@ degrades as concurrency rises. Verify holdings from the tree, never from memory.
 - **No task IDs in `.ai-docs/`** (bible rule 3, live or dead). No source line numbers in `.ai-docs/`.
 - Sub-agents never edit `todo/` — the orchestrator does, as each item lands.
 - Compact at 500k context used, between units of work rather than mid-dispatch.
+
+## Census of the five uncensused green-for-the-wrong-reason classes — 2026-08-22
+
+One read-only dispatch, five classes. Result: **build two gates, not five.** Class 1 (unreachable
+subject) 11 dead symbols carrying 116 test invocations plus 2 branch-level; Class 4 (roster is a
+subset) 2; Class 3 (fixture the product refuses) 2; Class 2 (press at a refusing control) 1; Class 5
+(half-redirected mock) **0**. Filed CLI-657 … CLI-665; CLI-655 closed on the negative.
+
+**Corrections, four — two the agent's, two mine caught on verification.**
+
+1. My brief overstated Class 2's known count: "five specs" was **four call sites across three
+   specs**. The five was toast firings, and I read it as specs.
+2. A finding's `resolved_by` claims every `KNOWN GAP` comment is gone. **Six remain** — filed as
+   CLI-665.
+3. **Mine.** The census's closing recommendation — close `AgentsStep.toggleAgent` and
+   `DomainStep.toggleDomain` — is stale by one day. Both are already `confirmed-on-row-text`; CLI-638
+   closed them. It read the roster's _evidence for why they were closed_ as evidence they _could be_.
+   Caught by reading the roster, not by trusting the report.
+4. **Mine, and it would have shipped a broken gate.** The proposed Class-4 recogniser — "a roster
+   spec with no glob/readdir in the file" — **misses one of its own two motivating instances**:
+   `toast-assertion-surface.test.ts` imports and calls `fg`, but globs the files to scan rather than
+   deriving the roster. The gate must key on whether the ROSTER is derived from a walk. Written into
+   CLI-664.
+
+**The lesson the census states better than I would**, and it is why three of five classes get no
+gate: _every class that was genuinely closed was closed by removing its subject, not by detecting its
+symptom_ — constants became functions, a page object became closed-loop, a fixture gained a
+deliberate divergence. The two worth gating are the two where no subject can be removed, because
+"somebody writes a new one" is the whole failure mode.
+
+**False-positive rates, because a hit list without one is not a census.** Class 1 procedure A 78%
+(51 raw → 11); Class 2 **97%** (30 open-loop sites → 1); Class 3 75% (8 flagged → 2); Class 4 20%
+(10 gates → 2); Class 5 no rate — a clean negative. Class 2's rate is the one that settles the
+question: a syntactic proxy there would condemn 29 correct specs to find one defect.
+
+**Correction, CLI-665 dispatch (2026-08-22).** My brief had the defect inverted, and the agent
+refused the premise rather than executing it. I wrote that the finding's frontmatter was wrong about
+its body, citing four `KNOWN GAP` comments in `selected-agent-name-excluded.e2e.test.ts`. That file
+is **not in the finding's `affected_files` and is not its subject**; the finding's own three specs
+carry zero. The frontmatter clause was narrowly accurate and the BODY is the stale half.
+
+**Root cause is mine and it is the same one as before: I verified four load-bearing claims from the
+census and treated the rest as carried.** This claim was in the unverified remainder, and I
+propagated it into a brief. The census had written it as "the body is right and the frontmatter is
+wrong" — a framing, not a measurement — and framings are exactly what does not survive being passed
+on. Verify the framing, not only the counts.
+
+## The sixteen `Done` rows — 2026-08-22
+
+Verdicts: **11 LANDED, 3 MOOT, 2 PARTIAL, 0 NOT LANDED.** All sixteen deleted and archived; CLI-598
+retired with them. Spawned CLI-669.
+
+**Corrections, and two of the three are mine.**
+
+1. **Mine, and it would have cost the pass its best evidence.** My brief asserted "none of these 16
+   appears in `todo/archive.md`". Three do — CLI-352, CLI-346 and CLI-357 are each named INSIDE
+   another item's entry. My check was `grep -cF "— <id>**"`, which matches only an item's OWN archive
+   line. Those two mentions are what settle CLI-352 and CLI-346, and I told the verifier they did not
+   exist.
+2. **Mine, and worse than the first.** CLI-598 — the row commissioning the work — already carried the
+   three-state model including MOOT, already named the two archive mentions, already had CLI-323
+   right, and flagged CLI-357 UNVERIFIED rather than guessing. **My brief was a regression on the row
+   it was written from.** Re-deriving is not a licence to discard what the row established; the move
+   was to carry its findings forward as claims to test.
+3. The brief's three-state model was short one state. **MOOT** — the subject was deleted from the
+   tree under another item, so the work can never be performed. Filing those as landed records work
+   nobody did; filing them as outstanding puts dead work back in the backlog. The archive entry says
+   _moot_, and names the item that removed the subject.
+
+**A method note worth carrying.** The spot-check that read CLI-357 as landed was
+`grep -c "no-restricted-syntax"` → 7 — of which two are prose and two belong to unrelated blocks. A
+count that looks like evidence and is not, which is the defect class CLI-357 itself was written
+against. `ESLint.lintText` against the real config is what actually answered it.
+
+**Correction, CLI-662 dispatch (2026-08-22).** My brief said `PINNED_TO_PROJECT` "already appears as a
+shared constant across the `init-from-*` specs". It is 7 local declarations with 0 imports. I took
+that phrasing from an earlier **archive entry**, which is where the error originated — a description
+that was wrong when written and that I passed on without checking. Archive prose is not evidence.
+
+The brief's first candidate approach was also unviable, and the agent was right to refuse it rather
+than execute it. That is the second lane this round to reject a briefed premise on measurement; both
+were correct to. **The pattern across both: my errors are in the framings I carry forward from prose,
+not in the figures I re-derive.**
+
+**Corrections, CLI-663/664 dispatch (2026-08-22) — six, and four are mine.** I gave
+`config-readers-agree.test.ts` at `src/cli/lib/__tests__/` when it lives at
+`src/cli/lib/configuration/__tests__/`; I invented `page-army-space-presses.test.ts` as a model, a
+typo for a file I had named correctly two paragraphs earlier; I claimed "roughly ten roster gates"
+when the enumeration grep returns ~110 constants across 25 files; and I said "everything reads the
+one constant today", which was false — a fourth hand-rolled kebab regex was already in the tree, and
+finding it is now CLI-675.
+
+**The pattern from CLI-662 repeats exactly.** Every one of those four is a framing or a path I carried
+from memory or from prose. The figures I re-derived were right. Re-derive the PATHS too — a wrong
+path costs an agent a search, and an invented filename costs it trust in the rest of the brief.
+
+**One result worth keeping on method.** The brief said to prefer deleting a false claim to rewriting
+it. The lane instead made the claim TRUE, and that is what surfaced CLI-675. Prefer-deletion is the
+default for a claim nobody will act on; a claim worth honouring is worth honouring.
+
+**Corrections, CLI-660/661 dispatch (2026-08-22).** Two line-number drifts in my brief (`wizard.tsx`
+guard at 91-94 not 92-95; the spec at 161-181 not 162-181) — both harmless because the agent
+re-derived, which is what the contract asks. Everything substantive held.
+
+**The brief was wrong about file ownership in a way that mattered.** I implied `e2e/pages/steps/`
+would not need touching. It did, and unavoidably: every press/wait primitive on `BaseStep` is
+`protected`, so a spec cannot compose the raw-cursor-then-press-then-wait dance itself. **Naming the
+files a lane owns is only useful if the ownership map is derived from what the work requires**, not
+from what I expect it to touch. The agent reported the change rather than making it silently, and
+then made it because no other lane held that file.
+
+**A cross-lane result worth keeping.** The toast lane's derived gate was already RED on the scope
+toast before this lane's constant existed — its second half asserts every painted toast is named by
+some sentinel. Two lanes, dispatched independently, closed one gap from opposite ends and neither
+was told about the other. That is the case FOR deriving a roster rather than writing one.
+
+**Corrections, docs dispatch (2026-08-22).** My site estimate was low (51 across 16 files, not ~40)
+and my symbol list was short by five — four types/functions deleted alongside the twelve, which my
+regex therefore could not see. The FILE list was exactly right; every one of the 16 had hits. I also
+told the lane two docs were failing `format:check`; both were passing, and the real failure was an
+untracked scratch file a concurrent lane had created eleven seconds earlier.
+
+**The estimate being low is the benign direction and the symbol list being short is not.** A low
+count costs nothing — the lane re-derived, as instructed. An incomplete symbol list silently scopes
+the work: five symbols and six sites would have survived the pass reading as current documentation,
+and the final census would still have come back clean, because the census used my regex.
+**A census built from the same list as the work cannot detect the list being wrong.**
+
+**Correction, CLI-658 dispatch (2026-08-22) — the largest of the round, and mine.** My brief asserted
+"the tree should be clean of this class right now". It holds **24 live instances**. I built that
+claim on CLI-657 having deleted twelve symbols, without asking whether the census that FOUND those
+twelve could have found the rest.
+
+It could not, and my own brief said so two paragraphs earlier: it warned the reader that a barrel
+re-export and a `{@link}` read as production references, and cited `installEject` and
+`installPluginConfig` as the two that slipped past for exactly that reason. **What I never asked was
+what else the same blind spot was hiding.** Two symbols were repaired by hand and the method was
+never re-run. 22 of the 24 were sitting there the whole time.
+
+**The general rule: when a census is corrected by hand, the correction is not the fix — re-running
+the corrected method is.** A hand-patched result looks identical to a sound one, and this programme
+has now been bitten by that twice (the ugrep hazard was the other). Both times the repair was applied
+to the finding and not to the instrument.
+
+This is also the strongest argument yet for sequencing gates AFTER cleanups rather than before. Had
+CLI-658 run first, all 24 would have entered the exception table as permitted, and the roster would
+have read as a considered decision rather than a backlog.
+
+**Corrections, compiled-agent coverage dispatch (2026-08-22).** Two mine, one environmental.
+
+1. **I briefed a new parser without checking whether one existed.** `agent-assertions.ts` already
+   exports `parseCompiledAgent` with ~20 call sites. The agent built the briefed one anyway under a
+   distinct name and reported the collision — correct, since the existing one is broken two ways and
+   pointing new work at it would have spread the defects. But the brief should have found it: **"does
+   this already exist" is a question about the tree, and I have a standing rule to re-derive those.**
+2. Wrong directory for `compile.e2e.test.ts` (`e2e/commands/`, not `e2e/integration/`) and one doc
+   short on the enumeration gate. Both cost the agent a search.
+3. **Not mine, and it changes how I read every gate run today.** The unit suite gives 15 failures
+   under `FORCE_COLOR` and 7270 passes without it. My own clean run earlier in the session and this
+   lane's runs were taken under different shells and neither of us knew. Filed as CLI-686. **A gate
+   whose result depends on the developer's environment is not a gate** — and its failure names a
+   missing string, so it reads as a regression rather than as a setup problem.
+
+## Parallelism, corrected by the owner — 2026-08-22
+
+The owner challenged whether these lanes should run concurrently, citing work being overwritten and
+tests failing because another lane is mid-run. **Both halves were right, and I had the evidence
+already.**
+
+Checked and found a real collision: the `custom: true` lane renames all ten E2E fixture slugs, and
+**192 E2E specs reference `E2E_SKILL`**. A concurrent lane's gate is the full E2E suite — it would
+have run against half-renamed fixtures and seen failures it could not attribute. Cancelled that lane
+and re-dispatched it alone.
+
+**Killing a lane is not free, and I treated it as though it were.** I checked "no files modified in
+the last 6 minutes", read that as nothing-to-lose, and killed it — it wrote to
+`kebab-name-judges-agree.test.ts` in the seconds between. The edit was coherent (the regex fix and
+its pin retired together) but incomplete, and it left `producer-rosters-are-derived` red and the file
+prettier-unclean. **Check for a write immediately before the kill, not a minute before.**
+
+**The rule going forward:** parallelise only when lanes touch disjoint files AND no lane has wide
+test blast radius. `dist/` is shared no matter how the files are carved up, so any lane running the
+E2E suite is exposed to any other lane's rebuild — that is not solvable by ownership lists. Four
+lanes today reported transient failures outside their own diffs (`exit 127`,
+`Warning: init is not a agents-inc command`, one watching the suite report 3, then 10, then 6, then 0
+failures across four runs). The dangerous shape is that these surface as assertion failures rather
+than as build errors.
+
+**Corrections, CLI-596/644 dispatch (2026-08-22).** Four, and the first is the worst kind.
+
+1. **`validate` is not a command.** Both my brief AND CLI-596's own tracker row said the strict
+   metadata schema is reached through "`validate` and `doctor`". `agents-inc validate` exits
+   `UNKNOWN_COMMAND`, and a spec pins that it no longer resolves. **The row has carried that error
+   since it was written and I propagated it without checking** — a command name is exactly the kind
+   of claim `ls src/cli/commands/` answers in one second.
+2. **`getCustomSkillIds` has no readers at all.** I briefed the change as "moving" it; it is exported
+   and dead, so it moves nothing. It is now also a live instance of CLI-681's class.
+3. Baseline off by one (7211 vs 7210) — the cancelled lane's deleted pin.
+4. **The briefed route does not work, and the reason is a bigger defect than the row.** The lane
+   implemented it in full, measured it, and reverted — the right order.
+
+**The finding worth carrying: the fixture's borrowed identity was hiding a product defect.** Because
+the E2E fixture publishes the public catalogue's own slugs, the entire relationship-rule surface has
+only ever been exercised through an identity no third-party marketplace can have. A correctly
+namespaced marketplace cannot write a rule about its own skills at all. **A fixture that borrows a
+real identity does not just weaken its own specs — it can conceal the defect that makes the real
+identity unusable.** That is a stronger version of the standard already written down in
+`standards/e2e/test-data.md`, and it is why the row is now BLOCKED rather than ready.
+
+## The relevance sweep — 2026-08-22
+
+Three read-only verifiers over 37 rows before sequencing them. **Result: 12 already DONE, 3 MOOT,
+5 WRONG or PARTIAL-with-a-false-half, and every large row's headline figure stale.** Nine of the
+eleven figures I quoted from rows were wrong. The rows were describing a tree from days ago.
+
+**The correction that matters most is mine, and it is the third version of the same error.** I have
+told every brief today that ugrep returns a silent zero when a `)` sits inside a negated bracket
+expression. **It does not.** Isolated against one line:
+
+| pattern           | has `[^)]` | has `[^]]` | ugrep                    |
+| ----------------- | ---------- | ---------- | ------------------------ |
+| `\[.*\]\([^)]*\)` | yes        | no         | **matches**              |
+| `\[[^]]*\]\(.*\)` | no         | yes        | **0, exit 1, no stderr** |
+
+The trigger is **`]` as the first member of a negated class**. `)` is irrelevant. The remedy (`-P` or
+`-F`) was always right; only the cause was wrong — **which is worse than no diagnosis, because it
+sends the reader straight into the failure**: told to avoid `[^)]`, an author writes `[^]]`.
+
+The history: version one was "ugrep doesn't match a literal parenthesis", spread to four briefs.
+Version two is the one above, spread to every brief today. **Both times I corrected the FINDING and
+not the INSTRUMENT** — the same root cause as CLI-658, where a hand-patched census hid 22 further
+instances. A hazard note is an instrument. Re-isolate it, do not edit its prose.
+
+**Two rows went MOOT mid-verification, twenty minutes apart**, deleted by a concurrent lane while a
+verifier was reading them. That is not a failure of either side — it is what verifying a moving tree
+costs, and both verifiers caught it because the brief told them to re-run in the live lane's areas
+immediately before reporting. Keep that instruction in every brief that overlaps a running lane.
+
+**One verifier declined to run the test suite at all** rather than build a shared `dist/` out from
+under the E2E lane, and said so plainly instead of reporting a green it did not have. That is the
+right call and the right disclosure.
+
+**Correction, CLI-681 dispatch (2026-08-22) — three mine.** I told the lane marketplace removal was a
+real shipped behaviour and that plugin discovery made its seven readers likely-(b). **No command
+removes a marketplace at all**, and one of the seven composes a directory only test helpers build. I
+also gave the roster as 24 live plus one exception; it was 22 plus one.
+
+**And I broke a gate from the tracker side.** CLI-701's row cited a finding by a filename I invented
+rather than read — `…between-the-subject-and-the-matcher` for a file named
+`…inside-an-assertion-erases-the-state-the-assertion-is-about`. `check-finding-citations` went red and
+the lane had to prove the red was not its own, from `git show HEAD` and an mtime. **Tracker prose is
+gated too**, and I have been treating my own writes as exempt from the re-derive rule I put in every
+brief.
+
+**Correction, CLI-696/700 dispatch (2026-08-22).** I filed CLI-700 straight from a verifier's report
+without re-deriving it. **Its subject has never existed** — not on disk, not in git history — and
+`spec-gates` was green the whole time. The executing lane caught it and stopped on the row rather
+than widening a roster to clear an imagined red.
+
+**I have now been the source of two bad rows in one day** (this and CLI-701's invented finding
+filename). Both came from the same habit: treating a report I received, or a name I remembered, as
+established because _I_ was the one writing it down. The re-derive rule is in every brief I send and
+I have been exempting myself from it.
+
+**And my CLI-696 framing was wrong in the way that would have produced a useless fix**: I said escape
+the pipe. Escaping alone changes nothing, because the reader split on a bare `|` — the page would have
+become correct markdown and the gate would still have condemned it. The reader had to become
+escape-aware first. **A brief that names the remedy rather than the defect can be followed exactly and
+still fix nothing.**
+
+**Two corrections from the CLI-680 dispatch, both mine, both methodological.**
+
+1. **`grep -v agent-findings` filters LINES, not paths.** `grep -rn` prints `path:line:text`, so the
+   pipe matched against the whole printed line and silently dropped any hit whose _prose_ mentions the
+   directory. That hid a seventh file. **The documentation bible already states this trap verbatim and
+   its own census uses `--exclude-dir`** — I handed a lane the exact form its governing standard warns
+   against, and have been using it all day. Correct form: `grep -vP '^\.ai-docs/agent-findings/'`.
+2. **My CLI-574 rename destroyed the provenance it existed to preserve.** The script wrote
+   `(was D-276)` and then ran a global `D-276 → CLI-738` substitution over the same text, rewriting its
+   own annotation into `(was CLI-738)`. All 27 rows, every heading. Restored by reversing the id map.
+   **The rule: a rename pass must not run a global substitution after writing text that contains the
+   old id** — order the annotation last, or exclude it.
+
+Both were caught by the lane _behind_ mine reading a file it had been told was already handled. That
+is the third time today a downstream lane has caught an upstream error, and the first two were also
+mine. The pattern is not that the lanes are careless — it is that **I do not verify my own writes to
+the same standard I demand in every brief.**
+
+**A third CLI-574 correction, and this one leaked 879 files into `git status`.** Renaming
+`todo/plans/D-162-skill-olympics/` to `CLI-729-skill-olympics/` left `.gitignore:124` pinned to the
+old path, so the entire Skill Olympics corpus — third-party skill text and benchmark artefacts,
+deliberately excluded — became untracked-and-visible. Repointed; `git check-ignore` confirms it is
+ignored again.
+
+**The rule: renaming a path means finding everything that names it BY PATH, not only by id.** I
+checked the tracker's own `[Plan]` links and the plan files' internal citations, and stopped there.
+`.gitignore`, `.prettierignore`, and any tooling config keyed to a directory name are the other half,
+and none of them is reachable by grepping for the id — the ignore rule names the directory, and the
+directory name only _contains_ the id.
+
+Third error from one rename pass, after the destroyed `(was …)` provenance and the line-based
+`grep -v`. All three share a shape: **I verified the thing I was changing and not the things that
+pointed at it.**
+
+**A false alarm of mine, 2026-08-22.** I killed a lane on a correct parallelism call, then read a
+2-line `agent.liquid` diff from an EARLIER session as that lane wiring a 150-line partial into every
+compiled agent, and reported a product change that had not happened. The lane had done exactly what
+its brief asked: a roster gate with the unwired partial in a documented exception, no product change.
+
+**The error was attributing an uncommitted diff to the lane I had just stopped.** In a tree with this
+much uncommitted work from many passes, `git diff` says what changed since HEAD — never who changed
+it or when. Mtime and the lane's own file list are the only attribution signals, and I used neither.
+
+The parallelism call itself was right: both lanes ran the full E2E suite, one changed printed output
+on shipped commands and the other touched `e2e/pages/constants.ts`. Disjoint files, both wide.
+
+## The second verification sweep — 2026-08-23
+
+Seventeen rows filed from other agents' reports, never independently checked. **Measured rate: 18%
+not-as-claimed at the headline, 35% carrying at least one false detail** — lower than the original
+backlog's 41%, but far from zero, and two rows were fully DONE before anyone would have worked them.
+
+**Three findings changed the plan rather than a row.**
+
+1. **Four pairs are one change each, not eight lanes.** `ensureBinaryExists()` is a one-line wrapper
+   whose whole body is `assertDistIsPresent(CLI_ROOT)`, so retiring one _is_ retiring the other —
+   done separately, that is 245 files touched twice. The two reason-field rows land on the same three
+   files and need one answer, not two. The two fixture rows are the same tables. And three separate
+   defects share one checker file, so they cannot be three lanes.
+2. **An ordering constraint nobody had noticed.** The staleness guard trips on an ordinary editor
+   save (write-temp-and-rename), so the two large sweeps must run _after_ that is fixed or every save
+   during them reddens the guard for the lane itself and for everyone else.
+3. **Two rows promise replacement text "recorded in the report" and that text is not in the tree.**
+   A fix lane would go looking and find nothing. **A row may cite a measurement, but it cannot cite an
+   artefact that does not exist** — if the wording matters, it belongs in the row.
+
+**A self-correction from the verifier worth keeping:** its first census used `\*\*\d+ members\*\*`
+and returned zero — a true negative for that pattern and the wrong pattern, because the document
+writes `**184 members, exhaustive as listed:**`. It caught this by widening rather than reporting the
+clean zero. That is the same shape as the ugrep hazard: **a search that cannot see the thing reads
+exactly like a search that found nothing.**

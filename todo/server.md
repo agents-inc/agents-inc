@@ -17,10 +17,11 @@ carries the identifier the item had before this folder existed.
 tunnel, and `api.agentsinc.sh/configs/:id` has been live since 0.149.0. The app is not the work;
 the three items below are.
 
-| ID                                                    | Task                                                                                                                                                                                                       | Status                       | Type    | Complexity |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
-| SERVER-01 (was editor-todo item 3)                    | v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling) | Deferred                     | feature | complex    |
-| SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                      | Ready for Dev — next session | feature | easy       |
+| ID                                                    | Task                                                                                                                                                                                                            | Status                       | Type    | Complexity |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
+| SERVER-01 (was editor-todo item 3)                    | v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling)      | Deferred                     | feature | complex    |
+| SERVER-02 (was editor-todo "Phase 7")                 | `packages/api` + `packages/api-mocks` — a typed client and matching MSW handlers, so the editor's worker calls are generated rather than hand-written. Worth more as SERVER-01/03 add surface; two routes today | Investigate                  | feature | complex    |
+| SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                           | Ready for Dev — next session | feature | easy       |
 
 ---
 
@@ -75,6 +76,9 @@ A self-contained encoded string was rejected: the information floor for a realis
 base64 characters, over the ~50-character usability bar. **No encoded-blob fallback will be
 maintained.**
 
-The payload contract is `SeedPayload` v3 in `packages/matrix/src/seed.ts`. The schema accepts `v: 3`
-and nothing else — pre-release policy is discard-don't-migrate, so an id minted against v1 or v2
+The payload contract is `SeedPayload` in `packages/matrix/src/seed.ts`. **`SEED_VERSION` is 5 as of
+`aebec49a` (2026-08-18) — this paragraph said v3 until 2026-08-20 and was two bumps stale.** The
+schema accepts `v: SEED_VERSION` and nothing else — pre-release policy is discard-don't-migrate, so an id minted against v1 or v2
 fails to decode loudly rather than being guessed at.
+
+---

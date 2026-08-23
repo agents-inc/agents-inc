@@ -15,21 +15,38 @@ started. See the root `CLAUDE.md`.
 
 ## Where we are — 2026-08-20 (CLI e2e re-measured; CLI unit, tsc/eslint/prettier re-run 2026-08-20; the editor rows are the 2026-08-17 figures and have not been re-run since)
 
-**The Go-Live program is COMPLETE. All three legs are done and every gate is green.** Nothing is
-committed: the working tree carries the whole programme plus the day's fixes, uncommitted, by the
-owner's standing instruction that commits are authorised one round at a time.
+**The Go-Live program is COMPLETE. All three legs are done and every gate is green.**
 
-| Suite                                  | State                                        |
-| -------------------------------------- | -------------------------------------------- |
-| CLI unit                               | 6,993 passed / 0 failed                      |
-| CLI e2e                                | 844 passed / 0 failed                        |
-| Editor unit                            | 13 files / 293 passed                        |
-| Editor playwright                      | 259 passed (was 193 at the start of the day) |
-| tsc / eslint / prettier / matrix:check | clean across every workspace                 |
+**The tree is no longer uncommitted — that changed on 2026-08-20.** The whole programme landed in a
+release round ending at `155f0662` (0.156.1, the focus walk looking before it presses), and the
+working tree was clean immediately afterwards. This section said "nothing is committed" for weeks
+before that; if it says so again, it is stale.
 
-`generate:schemas:check` is RED and has been all day: the gate is `git diff --exit-code src/schemas/`
-and the working tree carries an uncommitted `source` → `marketplace` rename. It goes green at the
-commit round, not before.
+**In flight as of 2026-08-20: the seventeen-ruling round.** The owner settled every open ruling in
+one pass — the twelve in [`plans/open-rulings-2026-08-19.md`](./plans/open-rulings-2026-08-19.md)
+plus CLI-538, CLI-590, CLI-591, CLI-592 and CLI-595. Six closed with no work needed, four of those
+because the premise was checked and found narrower than written. The rest are in implementation.
+**The decisions are recorded in the plan file, not here** — this roadmap orders work; it is not the
+decision record.
+
+All CLI figures below re-measured 2026-08-20 on a clean tree with nothing rebuilding `dist/` —
+which matters, because every intermediate reading taken during the ruling round was corrupted by
+concurrent rebuilds swapping tsup's hashed chunks under a running suite. Any E2E number quoted from
+mid-round is noise, not a regression.
+
+| Suite                             | State                                                  |
+| --------------------------------- | ------------------------------------------------------ |
+| CLI unit                          | 181 files / **7,059 passed, 0 failed**                 |
+| CLI e2e                           | 230 files / **847 passed, 0 failed** (7 expected-fail) |
+| Editor unit                       | 13 files / 293 passed — 2026-08-17 figure, not re-run  |
+| Editor playwright                 | 259 passed — 2026-08-17 figure, not re-run             |
+| tsc / eslint / prettier           | clean                                                  |
+| schemas / types / matrix `:check` | all three green                                        |
+
+`generate:schemas:check` was RED all through the programme — the gate is
+`git diff --exit-code src/schemas/` and the tree carried an uncommitted `source` → `marketplace`
+rename. **The commit round it was waiting for has happened and the gate is GREEN** — re-run
+2026-08-20: `✓ src/schemas matches what the generator emits`.
 
 **Twenty-four rows were retired on 2026-08-17**, six of them closed by proof rather than by a patch —
 work that had already been done, been superseded, or never needed doing. `archive.md` carries all of
@@ -205,6 +222,26 @@ Owner rulings, recorded so they are not re-litigated:
 
 ---
 
+## The browser is not reachable from a cold start — owner priority, 2026-08-21
+
+**Two rows, one missing idea: `--ui` should be reachable wherever `--from` is.** These are the
+owner's stated next priority once the mechanical round finishes, ahead of everything in Track B.
+
+- **CLI-622** — `init` has no `--ui` flag. `edit` has one; `init`'s only flags are `--marketplace`
+  and `--from`. So on a fresh machine the editor cannot be the way in: you must finish the terminal
+  wizard first and only then open the browser.
+- **CLI-621** — a shared id can be APPLIED but never OPENED. `init --from` and `edit --from` install
+  a payload; `edit --ui` opens _your own_ installation. Nothing opens _an id_ in the editor, so a
+  recipient can only apply it blind.
+
+**Why this is not covered by the CLI-is-narrower-than-the-editor ruling.** That ruling says the CLI
+need not AUTHOR what the editor authors, and its own test is direction of travel: the CLI must
+CONSUME anything the editor produces. Both rows are consumption gaps — one front door implements a
+route the other does not, and the payload `share` exists to create cannot be inspected by the person
+it was sent to.
+
+---
+
 # Track B — nice to have, blocks nothing
 
 Real work and worth doing. **None of it gates go-live.** Grouped by kind, unordered within each
@@ -217,12 +254,12 @@ it made them available, not required** — these are cosmetic-to-internal consis
 user-facing capability behind them. Best done as one batch: they touch overlapping surfaces and
 re-auditing twice is waste.
 
-**CLI-463 left this group on 2026-08-16** — it is vocabulary-coupled to A1 and moved to Track A. D-118
+**CLI-463 left this group on 2026-08-16** — it is vocabulary-coupled to A1 and moved to Track A. CLI-727
 and CLI-425 are not, and stay here.
 
 | ID          | What                                                                                                                                                                             | Status   |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| **D-118**   | **Rename project/global scope to project/user** — "global skills" become "user skills" throughout. Nice to have, never a blocker                                                 | Deferred |
+| **CLI-727** | **Rename project/global scope to project/user** — "global skills" become "user skills" throughout. Nice to have, never a blocker                                                 | Deferred |
 | **CLI-425** | Skill-id/category alignment, 33+ sites — a skill id always includes its category. **Re-audit post-taxonomy before executing**; list at `plans/CLI-425-id-category-violations.md` | Deferred |
 
 ## Queued by the owner for their own session
@@ -233,29 +270,48 @@ and CLI-425 are not, and stay here.
 
 ## Correctness rows carried out of pass 5
 
-| ID          | What                                                                                                                                                   | Status                       |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
-| **CLI-492** | Align init / edit / compile on CLI-only agent definitions — a source-defined agent name can enter the generated unions from one path and never compile | Ready for Dev                |
-| **CLI-496** | The global source-migration propagation defect on the narrower path — nothing tests it today, its only spec is `describe.skip`                         | Ready for Dev                |
-| **CLI-475** | One unknown category silences every operational `doctor` check — the content-errors-first skip is unconditional                                        | Ready for Dev                |
-| **CLI-477** | Nothing enforces that every `defaultRules` slug exists in the default catalog (invariant 4)                                                            | Ready for Dev                |
-| **CLI-470** | Uninstall honesty legs 2–3: the body-comment provenance marker and the marker-driven sweep (leg 1 landed)                                              | **On hold — owner calls it** |
+| ID          | What                                                                                                                                                   | Status        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| **CLI-492** | Align init / edit / compile on CLI-only agent definitions — a source-defined agent name can enter the generated unions from one path and never compile | Ready for Dev |
+| **CLI-496** | The global source-migration propagation defect on the narrower path — nothing tests it today, its only spec is `describe.skip`                         | Ready for Dev |
+| **CLI-477** | Nothing enforces that every `defaultRules` slug exists in the default catalog (invariant 4)                                                            | Ready for Dev |
 
 ## Docs and test hygiene
+
+### The green-for-the-wrong-reason census — 2026-08-22
+
+Seven classes were found over this programme; five had never been censused, and were each found
+incidentally while doing something else. That is not evidence they were isolated. The census settles
+it: **two classes are worth a gate, three are not, and one has no further instances at all.**
+
+- **CLI-657 → CLI-658** — eleven dead exported symbols carry **116 test invocations**; `installEject`
+  alone carries 35 across six specs while `init.tsx` calls `lib/operations/` instead. **CLI-657
+  first** — a gate run before the delete-or-wire decision rosters every one as an allowed exception
+  and makes it permanent.
+- **CLI-663 → CLI-664** — the roster-of-producers that is a hand-written subset. The one gate here
+  worth building unconditionally: the property is syntactic and the tree already holds four correct
+  implementations to copy.
+- **CLI-659** · **CLI-660** · **CLI-661** · **CLI-662** — one-off cleanups. Deliberately no gate: the
+  false-positive rates are 97%, 75% and semantic respectively, and a weak gate is worse than none.
+- **CLI-665** — a finding's frontmatter contradicting its own body.
+- **CLI-655 is closed on a clean negative** — no further half-redirected mocks exist, and the reason
+  is that the class was closed at its cause rather than policed at its symptom.
+
+**The finding that generalises**: every class genuinely closed was closed by _removing its subject_ —
+constants became functions, a page object became closed-loop, a fixture gained a deliberate
+divergence. Gate only where no subject can be removed.
 
 - **CLI-493** — the codex-keeper doc batch: M-2's three sites, the badge notation, the
   `plugin marketplace update` correction, two CLI-479 drifts (phantom hotkey constants, `STEP_TEXT`
   count 139 → 149).
 - **CLI-497** — `SOURCE_ROW_WALK_LENGTH` is fixture-sized (12); a larger source under-walks and
   passes vacuously.
-- **CLI-595** — ruling wanted on the two page-object rules the focus-walk finding proposes
-  (observe before acting; a press budget is not a search bound). The code half landed 2026-08-20.
 - **CLI-596** — all ten E2E fixture skill slugs are already claimed by the default catalogue, so a
   fixture skill has no slug identity in the ~14 mixed-configuration specs. Inert today (no product
   reader of `getSkillBySlug` or `idToSlug`); armed for the first one.
-- **D-235** (uncovered `buildProjectTypesExtras` branch) · **D-219** (fixture-default ergonomics) ·
-  **D-168** (E2E setup via CLI commands, not hand-built files) · **D-111** (stable test identifiers)
-  · **D-64** (a CLI E2E testing skill).
+- **D-235** (uncovered `buildProjectTypesExtras` branch) · **CLI-736** (fixture-default ergonomics) ·
+  **CLI-730** (E2E setup via CLI commands, not hand-built files) · **CLI-726** (stable test identifiers)
+  · **CLI-723** (a CLI E2E testing skill).
 
 ## The site
 
@@ -290,12 +346,12 @@ assuming either way. · **CLI-467** (the knip deletion rounds against the record
 `@agents-inc/cli/config` jiti alias — with no installed base, this is now a free deletion whenever
 you want it) · **REPO-07** (delete the old web monorepo — a judgement about how long you want the
 safety net) · **REPO-09** (a local `.env` can ship a live site pointed at your own machine) ·
-**D-237** (README GIF).
+**CLI-737** (README GIF).
 
 ## Waiting on an owner signal
 
 **SKILLS-01** + **CLI-405** (adapter migration, ~160 skills) · **SKILLS-09** (the observability setup
-skill is Next-only in all but name) · **D-280** (prune built-in stacks) · **SERVER-01** registry
+skill is Next-only in all but name) · **CLI-739** (prune built-in stacks) · **SERVER-01** registry
 adapters (each lands only with hand-verification against the live registry) · **SERVER-02**
 (`packages/api` + mocks — worth more as SERVER-01/03 add surface) · **CLI-453** (`new skill`).
 
@@ -303,6 +359,6 @@ adapters (each lands only with hand-verification against the live registry) · *
 
 `cli.md` carries roughly a hundred further rows — wizard UX polish (CLI-311 to CLI-316), expressive-
 TypeScript decisions (CLI-324 to CLI-330), agent-roster work (CLI-380 to CLI-384), telemetry
-(D-170, D-90), and the older feature backlog (D-08, D-13, D-25, D-26, D-41). **This roadmap does not
+(CLI-731, CLI-725), and the older feature backlog (CLI-714, CLI-716, CLI-718, CLI-719, CLI-720). **This roadmap does not
 replicate them and is not trying to** — the tracker is canonical. They surface here only when
 something promotes them into a leg above.

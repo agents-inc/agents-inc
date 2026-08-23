@@ -13,33 +13,19 @@ There is no done column and nothing is struck through. Landed items get one line
 carries the identifier the item had before this folder existed, because several of them are cited by
 number in prose and in source comments and those citations have to stay traceable.
 
-| ID                                             | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Status           | Type     | Complexity |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | -------- | ---------- |
-| EDITOR-02 (was editor-todo item 2)             | Bundle is one 1.07 MB chunk plus a 228 KB second; nothing is code-split                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Ready for Dev    | refactor | complex    |
-| EDITOR-05 (was editor-todo item 6)             | Skill descriptions describe the skill, not the library — fix is upstream in the CLI                                                                                                                                                                                                                                                                                                                                                                                                                                            | Ready for Dev    | bug      | complex    |
-| EDITOR-07 (was editor-todo "Not designed yet") | Five surfaces have never been designed — confirm dialog, Share, Settings, states, dark mode                                                                                                                                                                                                                                                                                                                                                                                                                                    | Needs Assistance | feature  | complex    |
-| EDITOR-08 (new, 2026-08-06)                    | A project-scoped skill can be assigned to a global sub-agent, which cannot resolve it                                                                                                                                                                                                                                                                                                                                                                                                                                          | Ready for Dev    | bug      | complex    |
-| EDITOR-09 (new, 2026-08-06)                    | The editor is built from Configurator v5; take the latest Claude Design files instead                                                                                                                                                                                                                                                                                                                                                                                                                                          | Ready for Dev    | feature  | complex    |
-| EDITOR-10 (new, 2026-08-05)                    | The agents grid has no researcher row — the roster's fifth role (CLI-351 landed 2026-08-05)                                                                                                                                                                                                                                                                                                                                                                                                                                    | Investigate      | feature  | complex    |
-| EDITOR-22 (new, 2026-08-06)                    | A "custom skills only" filter — provenance is a filter, not a category (owner ruling)                                                                                                                                                                                                                                                                                                                                                                                                                                          | Deferred         | feature  | easy       |
-| EDITOR-28 (new, 2026-08-09)                    | Favorite skills (owner: DEFERRED): starring a skill renders it first in the list + a favourites filter joins the filter bar                                                                                                                                                                                                                                                                                                                                                                                                    | Deferred         | feature  | medium     |
-| EDITOR-50 (new, 2026-08-19)                    | Seven parked editor, server and browser-suite features from the accuracy-programme triage — see [`plans/parked-features-2026-08-19.md`](./plans/parked-features-2026-08-19.md), second section. Each was verified live; each is parked because what remains is a new guard or mechanism rather than a fix. The one worth reading first is the default-refuse network route for the Playwright suite: a spec reached live GitHub and asserted on a third party's data, and while that spec is fixed, nothing stops the next one | Ready for Dev    | feature  | complex    |
+| ID                                             | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status           | Type    | Complexity |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
+| EDITOR-07 (was editor-todo "Not designed yet") | Five surfaces have never been designed — confirm dialog, Share, Settings, states, dark mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Needs Assistance | feature | complex    |
+| EDITOR-09 (new, 2026-08-06)                    | The editor is built from Configurator v5; take the latest Claude Design files instead                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Ready for Dev    | feature | complex    |
+| EDITOR-10 (new, 2026-08-05)                    | The agents grid has no researcher row — the roster's fifth role (CLI-351 landed 2026-08-05)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Investigate      | feature | complex    |
+| EDITOR-22 (new, 2026-08-06)                    | A "custom skills only" filter — provenance is a filter, not a category (owner ruling)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Deferred         | feature | easy       |
+| EDITOR-28 (new, 2026-08-09)                    | Favorite skills (owner: DEFERRED): starring a skill renders it first in the list + a favourites filter joins the filter bar                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Deferred         | feature | medium     |
+| EDITOR-50 (new, 2026-08-19)                    | Seven parked editor, server and browser-suite features from the accuracy-programme triage — see [`plans/parked-features-2026-08-19.md`](./plans/parked-features-2026-08-19.md), second section. Each was verified live; each is parked because what remains is a new guard or mechanism rather than a fix. The one worth reading first is the default-refuse network route for the Playwright suite: a spec reached live GitHub and asserted on a third party's data, and while that spec is fixed, nothing stops the next one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Ready for Dev    | feature | complex    |
+| EDITOR-51 (new, 2026-08-21)                    | **The error colour is an unsettled choice, not a designed one — flagged by the agent that shipped it rather than left to be discovered.** EDITOR-08's scope marker uses `text-destructive`, which is declared in `globals.css` but **has never been drawn anywhere in this app**. The design's palette carries no error colour at all, and amber is reserved for what the user deliberately chose, so it could not be borrowed. This is the smallest honest choice available and it wants a designer's eye. **Not a new gap:** EDITOR-07 already lists _"empty, loading and error states"_ among the five surfaces never designed — this is the first one to actually ship, which makes it the concrete instance to design against rather than a hypothetical. The glyph itself is settled and needs no design: it is the options panel's info glyph with the stem and dot swapped — same circle, same 12px, same stroke — because the design ships no icon set beyond the GitHub mark, so drawing it is what that panel already does. | Needs Assistance | feature | easy       |
 
 ---
 
 ## Active items
-
----
-
-#### EDITOR-02: The bundle is one 1.07 MB chunk
-
-Plus a 228 KB second one, dominated by the catalog. This is first paint on a cold cache.
-
-Nothing is code-split: `apps/editor/vite.config.ts` sets no `manualChunks`. Confirmed 2026-08-04 —
-the file has no `manualChunks` and no `base`.
-
-This item used to be listed twice in the old tracker, once here and once under "Phase 7" as
-"code-split the bundle". It is one piece of work.
 
 ---
 
@@ -49,18 +35,6 @@ By explicit instruction — this is the current behaviour on purpose, not an ove
 
 Persisting them means giving them real catalog entries, which is a marketplace concern rather than
 an editor one. That dependency is why the scope is open.
-
----
-
-#### EDITOR-05: Skill descriptions describe the skill, not the library
-
-The design wants roughly 25 characters about the library — "JavaScript UI library" — and the data
-gives a description of the skill instead.
-
-**The fix is upstream, in the CLI's catalogue.** The editor only consumes this data; it is recorded
-here because this is the surface where the gap is visible. The audit runs against
-`packages/matrix/src/vendor/generated/matrix.ts`, and authoring the answer is an edit in
-`packages/cli` — the same repository, so nothing here waits on anything.
 
 ---
 
@@ -78,44 +52,6 @@ single piece of work:
 **On dark mode specifically:** `packages/ui` declares a dark variant but ships no dark colours for
 it. That is the same gap that forced the documentation site to drop its theme toggle
 ([`www.md`](./www.md) WWW-01), so designing this once settles both.
-
----
-
-#### EDITOR-08: A project skill can be assigned to a global sub-agent
-
-The two scopes are tracked independently and nothing relates them. A skill carries
-`scope: "project" | "global"` (`stores/persisted-schema.ts`, `skillEntrySchema`), a sub-agent
-carries its own (`agentEntrySchema`), and an assignment is just a key in
-`entry.assignments` — so every combination is reachable, including the one that cannot work.
-
-**Why it cannot work.** A global sub-agent's front-matter is written to `~/.claude/agents/`, where
-it is visible to every project on the machine. A project-scoped skill is installed under that one
-project's `.claude/`. So a global agent carrying a project skill references something that does not
-exist from anywhere else — and the editor currently reports it as a live assignment, counts it in
-the install summary, and travels it in a shared config.
-
-**Where the rule has to live**, in order of what it costs:
-
-- The store is the only place that cannot be bypassed: `cycleAssignment` and the scope toggles
-  (`setSkillOption`, `setAgentOption`) are the three verbs that can create the invalid pair, and
-  each can reach it from either side — assigning a project skill to a global agent, switching an
-  assigned skill to project, or switching an agent holding project skills to global.
-- The grid and the roster then need to _show_ the constraint rather than silently refuse it. The
-  matrix cell in the skill options panel and the roster's agent rows are where a user would be
-  surprised, and the design already has a vocabulary for unavailable-with-a-reason: the dimmed
-  incompatible cell with a tooltip.
-- `selectInstallInventory` and `summarize` count assignments today with no scope check, so their
-  numbers are wrong for any config already in this state.
-
-**Two things to decide before building it.** Which side gives way when a user changes scope on the
-other — refuse the change, or drop the assignments it invalidates and say so. And what happens to
-configs already holding invalid pairs: they arrive through `pruneUnknownIds` on load and through
-`fromSeedPayload` from a share link, so both need an answer, and silently dropping assignments a
-user shared is the one outcome that must not happen quietly.
-
-**The CLI is the other half.** It writes the front-matter this is about, and nothing here should
-diverge from what `agents-inc compile` actually does with a project skill on a global agent — check
-that first, because if the CLI already refuses it, the editor's job is only to stop offering it.
 
 ---
 

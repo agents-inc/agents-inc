@@ -21,16 +21,13 @@ pieces of the docs-site item** that are distinct enough to be picked up on their
 **The site builds cleanly with no warnings and every navigation link resolves.** Nothing below
 blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 
-| ID                               | Task                                                                                          | Status           | Type     | Complexity |
-| -------------------------------- | --------------------------------------------------------------------------------------------- | ---------------- | -------- | ---------- |
-| WWW-01 (was editor-todo item 8)  | Docs site: 5 of 10 sidebar sections, reference is per-group, config fields undocumented       | Ready for Dev    | feature  | complex    |
-| WWW-02 (was editor-todo item 9)  | Landing page: 5 of 12 blocks, and the catalogue teaser centrepiece is not one of them         | Ready for Dev    | feature  | complex    |
-| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes                   | Ready for Dev    | feature  | complex    |
-| WWW-04 (was editor-todo item 12) | Three pages tell readers to run `new skill` / `new agent` / `new marketplace`, all off        | Ready for Dev    | bug      | easy       |
-| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings                   | Needs Assistance | feature  | easy       |
-| WWW-07 (was editor-todo item 8)  | The two halves do not read as one product — type scale above all                              | Ready for Dev    | bug      | complex    |
-| WWW-08 (was editor-todo item 8)  | The shared header was never extracted, so the two halves show different logos                 | Ready for Dev    | refactor | complex    |
-| WWW-10 (new, 2026-08-06)         | Docs prose claims 7 domains (there are 9 — `desktop`, `cli` missing); `ls` alias undocumented | Ready for Dev    | bug      | easy       |
+| ID                               | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Status           | Type     | Complexity |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | -------- | ---------- |
+| WWW-01 (was editor-todo item 8)  | Docs site: 5 of 10 sidebar sections, reference is per-group, config fields undocumented                                                                                                                                                                                                                                                                                                                                                                      | Ready for Dev    | feature  | complex    |
+| WWW-02 (was editor-todo item 9)  | Landing page: 5 of 12 blocks, and the catalogue teaser centrepiece is not one of them                                                                                                                                                                                                                                                                                                                                                                        | Ready for Dev    | feature  | complex    |
+| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes                                                                                                                                                                                                                                                                                                                                                                                  | Ready for Dev    | feature  | complex    |
+| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings                                                                                                                                                                                                                                                                                                                                                                                  | Needs Assistance | feature  | easy       |
+| WWW-08 (was editor-todo item 8)  | **SMALLER after 2026-08-21.** The www-side half is done: the header is one component (`src/components/site-header.astro`) instead of an inline copy plus a headerless 404, and destinations that were declared in three places now live in `src/lib/links.ts`. What remains is the CROSS-APP half — the site and the editor still ship different logos and the docs site title is 14px against the landing wordmark's 11px. That convergence is the row now. | Ready for Dev    | refactor | medium     |
 
 ---
 
@@ -71,6 +68,34 @@ sub-agents. The CLI README's doc links point at the site's source files on GitHu
 page broke when the originals were deleted; the next publish heals them.
 
 ### Constraints already settled — do not undo these
+
+**Six of these were added 2026-08-21 by the WWW-07 type pass.** They are listed first because they
+are the newest and therefore the easiest to reverse by accident.
+
+- **The site renders at the design's native 100% root, not the editor's 110%.** `packages/ui`'s
+  `globals.css` sets `font-size: 110%` on `:root` and calls it "THE SIZING KNOB"; every rem on this
+  site inherited it, which is why Starlight's own `2.1875rem` — annotated "35px" in its source —
+  rendered at 38.5. Starlight's whole rem geometry and the design tokens' px annotations both assume
+  16px. **Do not "restore" 110% for consistency with the editor — the editor is the zoomed one.**
+- **One prose scale, defined once, consumed by both halves.** It lives site-local in
+  `src/styles/site.css` as a `@theme` block, with Starlight's `--sl-text-*` mapped onto the same
+  tokens. **Do not add prose sizes to `packages/ui`** — that pushes them into the editor, which has no
+  prose — and do not give either half its own.
+- **Starlight's responsive heading step-up at `min-width: 50em` is deliberately dropped.** One size
+  per role at every width. Do not restore the media query.
+- **Code blocks are frameless with an ink-ramp syntax theme.** Do not restore the terminal frame: its
+  three dots are painted with `mask-image`, so the unlayered radius rule genuinely cannot reach them,
+  and its tokens were a stock `#3b61b0` that exists nowhere in the palette. The frame and the syntax
+  colours are TWO independent mechanisms (the frames plugin and the theme) and need two fixes, not one.
+- **`minSyntaxHighlightingColorContrast: 0`.** Expressive Code defaults to 5.5 and was silently
+  rewriting `#a06a1c` to `#8a5b18` in the built HTML — **the owner's contrast ruling being overridden
+  by a tool with nobody's name on the edit.** This is the setting that stops it.
+- **A section heading on the landing page is Inter, not mono.** Rule 3 reserves mono for labels, ids
+  and badges; every actual label on the page is still mono.
+
+**A build gotcha, recorded because it cost a wrong conclusion:** Expressive Code caches its rendered
+output and a stale cache survives an ordinary rebuild. An edit that appears to do nothing needs
+`rm -rf dist .astro node_modules/.astro` before you believe it.
 
 These are the decisions taken while the site was built. Each one cost more than it looks like it
 should have, and each is easy to reverse by accident.
@@ -380,21 +405,6 @@ Workers and the same Custom Domain, so taken together the apex moves once instea
 
 ---
 
-#### WWW-04: Three pages tell readers to run commands that are switched off
-
-`new skill`, `new agent` and `new marketplace` are all `false` in
-`packages/cli/src/cli/lib/feature-flags.ts` and error out with "currently disabled while being
-improved". Three pages tell readers to run them anyway:
-
-- `guides/writing-custom-skills.md` is built entirely around `new skill` and `new agent`.
-- `guides/creating-a-marketplace.md` opens with `new marketplace`.
-- `concepts/sub-agents.md` closes by recommending `new agent`.
-
-The site's own `reference/commands.md` correctly marks all three as disabled, **so the site
-contradicts itself — and the pages a reader actually follows are the wrong half.**
-
----
-
 #### WWW-06: Two video slots are empty, and a third is missing
 
 Both existing slots are marked in the code. Neither has a file. The caution still holds: a **terminal
@@ -421,32 +431,6 @@ documentation, after the quickstart.
 
 ---
 
-#### WWW-07: The two halves do not read as one product
-
-This is exactly the risk the docs-site spike was meant to catch before anything was built on top of
-it, and it is the stated exit condition for switching to Fumadocs (WWW-01).
-
-**What came out right.** Radius and colour: zero rounded corners survive anywhere, and no Starlight
-blue-grey is left.
-
-**Type did not.** The landing page borrows the editor's 8–13px label sizes for prose, so its section
-headings render at **9.9px — smaller than the body text underneath them** — while the same headings
-in the documentation are 38.5px, and Starlight's own rem scale is inflated a further 10% by the
-editor's root font-size. Crossing from `/` to `/docs` is a jump between two websites.
-
-**Four smaller escapes.**
-
-- The documentation sidebar's selected item is a solid amber block, where the design has exactly one
-  filled element and it is ink.
-- Code blocks in the documentation are drawn as a terminal window with three round grey dots — drawn
-  as a mask image, so the radius rule cannot reach them — with their text in a stock blue that exists
-  nowhere in the palette.
-- The "Skills" sidebar link uses a file-type icon that means nothing.
-- `404.astro` carries neither the header nor the mark and uses a third type treatment — a third
-  visual identity on a site that already has two.
-
----
-
 #### WWW-08: The shared header was never extracted
 
 `apps/editor/src/components/nav-rail.tsx` cannot move as-is — it imports TanStack Router's `Link` and
@@ -463,14 +447,3 @@ repository that deliberately runs two React majors side by side, and `apps/www` 
 by decision (WWW-01).
 
 ---
-
-#### WWW-10: Docs prose undercounts the domains and omits the `ls` alias
-
-Found by the WWW-09 execution pass, 2026-08-06 — distinct defects from the counts:
-
-- `concepts/skills.mdx:28` and `resources/index.mdx:10` list **seven** domains; the generated
-  `DOMAINS` union has **nine** (`desktop` and `cli` are the missing two). Same fix family as
-  WWW-09: derive the domain list (or at least its count) from `@workspace/matrix` rather than
-  re-prosing it.
-- `reference/commands.md` documents `list` but not its `ls` alias (verified in the command
-  source during the WWW-05 rewrite; left out of that fix to keep it scoped).
