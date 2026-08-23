@@ -106,7 +106,7 @@ const byCategory: Partial<Record<Category, Skill[]>> = {};
 
 The annotation form is preferred because the literal `{}` never masquerades as a complete record — the compiler tracks population as assignments land.
 
-**Asserting lookups instead of non-null assertions.** When a skill must exist in the matrix, never write `matrix.skills[id]!` — use `getSkillById(id)` / `getSkillBySlug(slug)` from `src/cli/lib/matrix/matrix-provider.ts`, which throw with a diagnostic message. Reserve `matrix.skills[id]` (no `!`) for genuinely optional lookups, where the `undefined` branch is handled.
+**Asserting lookups instead of non-null assertions.** When a skill must exist in the matrix, never write `matrix.skills[id]!` — use `getSkillById(id)` from `src/cli/lib/matrix/matrix-provider.ts`, which throws with a diagnostic message. Reserve `matrix.skills[id]` (no `!`) for genuinely optional lookups, where the `undefined` branch is handled.
 
 ---
 
@@ -158,7 +158,7 @@ Applying (b) by reflex is the failure mode to watch for: a type that admits `und
 **Corollary for review: a cast to a generated union in a read model is evidence its schema is loose.** Look upstream before accepting one.
 
 ```
-grep -rnE '\bas (SkillId|SkillSlug|Category|Domain|AgentName|ModelName)\b' ../matrix/src/read-model/ ../matrix/src/built-in-matrix.ts ../matrix/src/built-in-agents.ts --include='*.ts' | grep -v '\.test\.'
+grep -rnP '\bas (SkillId|SkillSlug|Category|Domain|AgentName|ModelName)\b' ../matrix/src/read-model/ ../matrix/src/built-in-matrix.ts ../matrix/src/built-in-agents.ts --include='*.ts' | grep -v '\.test\.'
 ```
 
 Two boundaries the rule does not cross, and both matter more than the rule:
@@ -168,7 +168,7 @@ Two boundaries the rule does not cross, and both matter more than the rule:
 **Where the vocabulary is genuinely open, keep `z.string()` and an open field type — but never `z.string() as z.ZodType<SkillId>`.** That form is worse than either honest option: it asserts a membership nothing checked, and it hands every consumer a union the data may not belong to. This is a live shape in `src/cli/lib/schemas.ts`, which reads third-party marketplaces and so legitimately meets ids outside the built-in tuple (a custom marketplace namespaces its skill ids; users define custom agents):
 
 ```
-grep -nE '^\s+[a-zA-Z]*[Ii][dD]s?: z\.(string|array\(z\.string)' src/cli/lib/schemas.ts
+grep -nP '^\s+[a-zA-Z]*[Ii][dD]s?: z\.(string|array\(z\.string)' src/cli/lib/schemas.ts
 ```
 
 The same file already writes `z.enum(SKILL_SLUGS)` and `z.enum(CATEGORIES)`, so the pattern is not unknown to it; the open positions are `skillAssignmentSchema.id`, `agentYamlConfigSchema.id` and `categoryDefinitionSchema.id` / `.domain`, and `loadAgentsFromDir` in `src/cli/lib/loading/loader.ts` carries a boundary cast whose stated justification is the annotation on the second of those. Whether each id is open or closed is a product judgement, not a mechanical one — but the annotation must state the answer honestly either way. §12a is the read side of the open case: a `Partial<Record<Union, V>>` plus a lookup taking `string`, never eleven casts at the call sites.
@@ -297,7 +297,7 @@ for (const file of fetched) {
 Two notes. The rule is about arrays: a single result reads fine as `if (!result.ok) return result.error` and needs nothing. And **an explicit type predicate is worse than either**, not better: `(f): f is Extract<R, { ok: false }> => !f.ok` restates the discriminant in a second place, so a third variant added to the union type-checks and is silently skipped.
 
 ```
-grep -rnE '\.(find|filter)\((\(\{ *(ok|success|valid)\b|\([a-zA-Z]+, *[a-zA-Z]+\) *=> *!?[a-zA-Z]+\.(ok|success|valid)\b)' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx'
+grep -rnP '\.(find|filter)\((\(\{ *(ok|success|valid)\b|\([a-zA-Z]+, *[a-zA-Z]+\) *=> *!?[a-zA-Z]+\.(ok|success|valid)\b)' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx'
 ```
 
 Currently clean. The grep finds the two non-narrowing shapes and cannot find a third: a callback whose body is complex enough to defeat inference while still reading `x.ok` directly. Treat it as a floor.
@@ -441,7 +441,7 @@ deliberate, and its reason is a property of the boundary rather than a style pre
 unknown>` it produces really can be missing `skills`, whatever a cast asserts about it.
 
 ```
-grep -rnE 'as [A-Za-z_][A-Za-z0-9_]*(\[\]|<[^>]*>)? \?\?' src/cli --include='*.ts' --include='*.tsx'
+grep -rnP 'as [A-Za-z_][A-Za-z0-9_]*(\[\]|<[^>]*>)? \?\?' src/cli --include='*.ts' --include='*.tsx'
 ```
 
 Currently empty, and it is a floor rather than a census: it finds the cast written immediately before
@@ -557,7 +557,7 @@ export const E2E_AGENTS = {
 Nothing fails to compile either way — the widened type is still assignable everywhere the constant is used — so the loss surfaces much later, as a missed type error in some future spec that assigns the member to a narrower parameter. This has bitten twice on the same shape (`E2E_AGENTS` in `e2e/fixtures/expected-values.ts`, `EXPECTED_AGENTS` in `src/cli/lib/__tests__/expected-values.ts`), so both carry an on-site comment saying why the clauses sit where they do; do not "tidy" them back onto the object. When a constant mixes data and accessors, verify the accessor's type is unchanged with a two-line type-probe assignment before and after adding any clause. An object with no accessor takes the clause on the object — `E2E_AGENT` and `EXPECTED_SKILLS` both do, and `E2E_AGENT` says so in a comment beside its neighbour.
 
 ```
-grep -rn -B12 'as const satisfies' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx' | grep -E '^[^ ]+[-:][0-9]+[-:] *get [a-zA-Z_]+\(\)'
+grep -rn -B12 'as const satisfies' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx' | grep -P '^[^ ]+[-:][0-9]+[-:] *get [a-zA-Z_]+\(\)'
 ```
 
 ---
@@ -648,7 +648,7 @@ in `built-in-matrix.ts`, named for `BUILT_IN_MATRIX`, the one constant it valida
 name stays with the general shape. Do not mint a second twin.
 
 ```
-grep -rnE '^\s*(export )?const [A-Z][A-Za-z0-9]*Schema\b' packages apps --include='*.ts' | grep -v node_modules
+grep -rnP '^\s*(export )?const [A-Z][A-Za-z0-9]*Schema\b' packages apps --include='*.ts' | grep -v node_modules
 ```
 
 Every hit is now module-private, which is the whole of the surviving exception.

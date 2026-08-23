@@ -225,7 +225,7 @@ A test belongs in `e2e/` if it:
 1. **Spawns the CLI binary** — via `CLI.run()` for non-interactive or `InitWizard.launch()` / `EditWizard.launch()` for interactive
 2. **Sends input the way a user would** — command-line args or wizard step methods
 3. **Asserts on what the user sees** — terminal output, exit codes, file-system state through matchers
-4. **Never calls production functions directly** — no importing `installEject()`, `compileAllAgents()`, or `splitConfigByScope()`
+4. **Never calls production functions directly** — no importing `recompileAgents()`, `writeProjectConfig()`, or `splitConfigByScope()`
 
 If a test calls production functions directly, it belongs in `src/cli/lib/__tests__/`, not in `e2e/`.
 

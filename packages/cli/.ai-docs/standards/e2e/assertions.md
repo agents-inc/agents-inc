@@ -236,7 +236,7 @@ skill nobody named. The live population is the expectation types on `toHaveConfi
 (`e2e/matchers/agent-matchers.ts`) — the four with call sites, in the hundreds between them.
 
 ```
-grep -rnE 'skillIds\??: (readonly )?string\[\]' e2e src --include='*.ts' --include='*.tsx'
+grep -rnP 'skillIds\??: (readonly )?string\[\]' e2e src --include='*.ts' --include='*.tsx'
 ```
 
 A worklist rather than a verdict, and the exemptions are real and named by CLAUDE.md's own cast
@@ -391,6 +391,33 @@ expect(result).toEqual({ valid: true });
 
 ---
 
+## Never Coalesce Between the Subject and the Matcher
+
+**A `??` or `?.` inside `expect(...)` normalises the subject before anything looks at it**, so the assertion is about the normalised value and not about the product's. CLAUDE.md already bans `?? {}` on data that must exist in PRODUCT code, because a silent fallback hides a bug from a user; the same three characters in an assertion are worse, because they hide the state from the only thing looking at it.
+
+```typescript
+// Bad -- absent and empty are the same value before the matcher sees either
+expect(result.global.stack ?? {}, "...").toStrictEqual({});
+
+// Good -- the matcher can tell a derivation that ran and yielded nothing
+// from a key that was never written
+expect(result.global.stack, "...").toStrictEqual({});
+```
+
+**The tell is that the fallback's value equals the expected value** — `x ?? {}` compared against `{}`, `xs ?? []` against `[]`, `n ?? 0` against `0`. That pairing can never fail on the axis it was written for, whatever the product does. Where the two values differ the assertion is not vacuous, but the construct still costs a diagnostic: `expect(error?.message).toContain(...)` reports an absent `error` as the matcher complaining about `undefined` rather than as the absence the run actually found.
+
+**A field that is optional on the TYPE but always written by the function under test is exactly the case worth pinning, not the case that justifies a fallback.** The type permits the regression and only the spec can refuse it. `splitConfigByScope` (`src/cli/lib/configuration/config-generator.ts`) writes `stack` on both partitions unconditionally because the merger reads an ABSENT stack as no statement and keeps the stale rows, while an EMPTY one says the derivation ran and yielded nothing — so the invariant has two halves: the stack must be EMPTY, and it must be PRESENT. Both specs covering it carried `?? {}`, which can only ever check emptiness — the presence half, the one the function's own doc comment calls the reason the code is shaped this way, was unpinned in the two specs whose subject it is.
+
+This is not the never-broaden rule in [README.md § Critical Rules](./README.md#critical-rules), and it is not the ARITY/LENGTH/ABSENCE rule in CLAUDE.md: nothing here was failing, and nothing was weakened to make it pass. The fallback is written defensively against an optional type, which is why it reads as harmless at the call site and why review passes over it.
+
+Census — the subject side is what this rule is about, so triage each hit for whether the fallback sits before the matcher or inside the expected value:
+
+```
+grep -rn -P 'expect\([^)]*(\?\?|\?\.)' src e2e --include='*.ts' --include='*.tsx'
+```
+
+---
+
 ## Writing Correct Assertion Values
 
 When adding `toStrictEqual` assertions for config objects, verify these common pitfalls:
@@ -500,7 +527,7 @@ Measured on `e2e/commands/eject-default-source-skill-absent.e2e.test.ts`, whose 
 The count line is the only assertable form of "and nothing else went wrong", because the failure lines have no fixed cardinality to pin and no order to slice:
 
 ```
-grep -rnE '\$\{[a-zA-Z_.]+\.length\} of \$\{' src/cli --include='*.ts' --include='*.tsx'
+grep -rnP '\$\{[a-zA-Z_.]+\.length\} of \$\{' src/cli --include='*.ts' --include='*.tsx'
 ```
 
 The second half is about the fixture rather than the assertion, and it extends [test-data.md § A Fixture Writes Content the Product Could Have Written](./test-data.md) in the other direction: **a fixture standing in for FETCHED content satisfies what the CLI READS from it, not merely what a copy needs to start.** A real checkout of a marketplace carries every file the install path opens. A fixture carrying only the files the first step needs manufactures failures no user can reach, and they land in whichever assertion is loose enough to admit them.
@@ -525,12 +552,12 @@ The sentinel used to be `"Nothing declares the files above"`. That is true of an
 
 **The test: name the wording that would have to change if the behaviour changed.** A row label, a step heading and a section title are legitimately short and legitimately invariant — they identify a screen rather than assert anything, and `DOCTOR_ROW_NO_ORPHANS` or `SCOPE_GLOBAL` are correct as they stand. The rule bites where a message makes a claim: a tip, a refusal, a reason line, a count's explanation. There, the sentinel goes in the clause a reader would dispute.
 
-**This is not mechanically checkable, and the measurement is recorded so the conclusion can be re-derived rather than retried.** Two candidate checks were measured against all 172 members:
+**This is not mechanically checkable, and what was measured is recorded so the conclusion can be re-derived rather than retried.** Two candidate checks were run over every `STEP_TEXT` member:
 
-| Candidate check                                                       | Why it does not work                                                                                                                                                                                                                                                                                                                       |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Locate each sentinel's message in `src/cli/`, flag lead-in positions  | 22 of the 172 appear nowhere in `src/cli/` verbatim, because the product COMPOSES them — `UNINSTALL_AGENTS_KEPT_ONE`, `PROPAGATED_RECOMPILE_ONE` and `DOCTOR_SKILLS_VALIDATED` are assembled around counts. A check that cannot find its subject 13% of the time either declines to judge those members silently or condemns them wrongly. |
-| Flag a sentinel followed by a clause break in the message carrying it | Fires on 90 of the 150 that can be located, `DOCTOR_ROW_SKILLS_RESOLVED` ("Skills Resolved"), `DOCTOR_CONFIG_CHECK` ("Config Valid") and `SCOPE_GLOBAL` ("Global") among them. Every one of those is a label doing its job, and a check that condemns the good sentinels is worse than no check — it teaches the reader to suppress it.    |
+| Candidate check                                                       | Why it does not work                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Locate each sentinel's message in `src/cli/`, flag lead-in positions  | A whole class of members is carried as no literal the check could find, because the product COMPOSES them — `UNINSTALL_AGENTS_KEPT_ONE` (`"Kept 1 agent in"`), `PROPAGATED_RECOMPILE_ONE` and `DOCTOR_SKILLS_VALIDATED` are assembled around counts. A check that cannot find its subject at all for a class of members either declines to judge them silently or condemns them wrongly. |
+| Flag a sentinel followed by a clause break in the message carrying it | Fires on most of what it can locate — `DOCTOR_ROW_SKILLS_RESOLVED` ("Skills Resolved"), `DOCTOR_CONFIG_CHECK` ("Config Valid") and `SCOPE_GLOBAL` ("Global") among them. Every one of those is a label doing its job, and a check that condemns the good sentinels is worse than no check — it teaches the reader to suppress it.                                                        |
 
 A sentinel is therefore chosen by judgement and defended by a comment at its definition in `e2e/pages/constants.ts` saying **which** half of the message it is and why. `DOCTOR_TIP_UNOWNED_INSTALL` carries that comment; copy its shape.
 

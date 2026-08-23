@@ -103,7 +103,7 @@ catch (error) { verbose(`Failed to load: ${getErrorMessage(error)}`); return [];
 One message for several causes is fine; one message asserting which cause occurred is not. Where a genuine remedy differs per cause, the code must be able to tell them apart before the message may — and if it cannot, that is a defect in the detection, not in the wording. The hedging vocabulary is the tell, and it is greppable:
 
 ```
-grep -rnE '(may|might) have been|was probably|is likely|by a newer|by an older' src/cli/ --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
+grep -rnP '(may|might) have been|was probably|is likely|by a newer|by an older' src/cli/ --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
 ```
 
 One live hit, and it is the shape the rule ASKS for rather than a breach — `absentFromSourceWarning` in `src/cli/stores/wizard-store.ts`, raised by `resolveSkillForPopulation` for an installed skill the loaded matrix does not carry. It still hedges ("may have been removed or renamed") because it genuinely cannot tell a marketplace drop from a namespaced id or from a source this run did not load, and it closes by naming the one action available for all three: what happens to the skill (left out of this session's selection) and the way out (`<CLI_INVOKE_COMMAND> update`, to refresh the marketplace). One message for several causes, with a remedy that fits every one of them. The classification the code CAN make lives downstream, in `removalReason` (`lib/skills/unresolved-skill-entries.ts`), which reads the filesystem and tells a marketplace drop from a local install whose files are gone — reachable to `edit` and not to a synchronous store function holding only the matrix, which is why the store offers the remedy instead of guessing at the reason.
@@ -115,12 +115,12 @@ One live hit, and it is the shape the rule ASKS for rather than a breach — `ab
 **The usual residue of a dropped cause is a template literal with no `${}`.** Nothing in the toolchain produces backticks for a string with no interpolation — Prettier leaves quote style alone, and neither `quotes`, `prefer-template` nor `no-useless-concat` covers it — so the backticks are what an interpolation left behind when it was removed or never finished. The smoking gun here was `` `Cross-reference validation skipped: failed to load categories/rules` ``, which told the user validation was skipped and not that their own `skill-categories.ts` had a syntax error, in a file that had done it correctly a hundred lines earlier. Grep the diagnostic positions, not every backtick — the general form is drowned by JSDoc code spans:
 
 ```
-grep -rnE '(message: |warn\(|verbose\(|this\.error\(|reason: )`[^`$]*`' src/cli --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
+grep -rnP '(message: |warn\(|verbose\(|this\.error\(|reason: )`[^`$]*`' src/cli --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
 ```
 
 Three hits today, all `verbose()` diagnostics with no caught error in scope. A hit inside a `catch` is the defect.
 
-**3.7 A caller that must distinguish two failures needs the throw to carry the distinction.** Where one function is the only code that can tell two conditions apart, it says which — an error subclass, or a discriminated result — and no caller re-derives it by matching on message text. A message is presentation and changes without notice; a type does not. `fetchMarketplace` throws `MarketplaceManifestAbsentError` (`lib/loading/source-fetcher.ts`) purely so `readManifestState` in `source-loader.ts` can classify into a three-member `ManifestState` — `absent` / `unreadable` / `named` — without reading a sentence, and a caller that does not care still catches an ordinary `Error`. The two remedies differ (add the file, versus repair the file that is already there), which is the test for whether the distinction is owed at all; `doctor`'s `ConfigState` splits its own three the same way and for the same reason. Collapsing them reported every schema violation in a manifest as an absent file, and a reader who checked found it exactly where the message said it was not.
+**3.7 A caller that must distinguish two failures needs the throw to carry the distinction.** Where one function is the only code that can tell two conditions apart, it says which — an error subclass, or a discriminated result — and no caller re-derives it by matching on message text. A message is presentation and changes without notice; a type does not. `fetchMarketplace` throws `MarketplaceManifestAbsentError` and `MarketplaceNameRefusedError` (`lib/loading/source-fetcher.ts`) purely so `readManifestState` in `source-loader.ts` can classify into a four-member `ManifestState` — `absent` / `refused` / `unreadable` / `named` — without reading a sentence, and a caller that does not care still catches an ordinary `Error`. The remedies differ (add the file, versus rename what it declares, versus repair the file that is already there), which is the test for whether a distinction is owed at all; `doctor`'s `ConfigState` splits its own three states on the same principle. Collapsing them reported every schema violation in a manifest as an absent file, and a reader who checked found it exactly where the message said it was not.
 
 ---
 
@@ -356,11 +356,20 @@ the cell it names, and state the derivation in the test's JSDoc** so the next re
 rather than re-deriving it. `source-grid.tsx` declares `SKILL_NAME_WIDTH`, `INSTALL_MODE_COL_WIDTH`
 and `SCOPE_COL_WIDTH`, and `source-grid.test.tsx` carries the derivation beside its snapshots,
 including the relation between the two branches — the flat branch is the grouped one shifted left by
-exactly `SCOPE_COL_WIDTH`, which is a single check that covers both frames at once. The cheap version
-where the full derivation reads as ceremony: require it whenever the snapshot's **leading whitespace**
-changes, since that is what a column shift looks like and it is mechanically visible in a diff.
+exactly `SCOPE_COL_WIDTH`, which is a single check that covers both frames at once.
 
-**6.18** Never define parser/extractor helpers with non-trivial logic inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If a helper is genuinely reusable across tests, live it in `e2e/helpers/` or `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. Instead, assert directly on raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`).
+**Every regeneration owes that full derivation, and the cheaper trigger is rejected.** The
+alternative was to require it only when the snapshot's **leading whitespace** changes. Leading
+whitespace is a proxy for a column shift and a good one for a shift that moves the first cell of a
+line, which is what the `Scope` caption above was; it says nothing about a caption that moves
+between two columns further right, a width change absorbed by a cell that was already padded, or a
+header re-emitted into the neighbouring box. A trigger silent on those licenses skipping the check
+in precisely the cases where nothing else would notice, which is the property that made 6.17a
+necessary in the first place. The cost is real and is accepted rather than designed around: one
+column count per snapshot, on every `-u`, derived from the three width constants above. What it
+buys is the only thing standing between a `-u` and a green suite pinning a layout nobody chose.
+
+**6.18** Never define parser/extractor helpers with non-trivial logic inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If a helper is genuinely reusable across tests, live it in `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. **That is the only directory where such a test is collected**, and the alternative this rule used to offer is one nothing runs: the projects in `vitest.config.ts` include `src/**` and `scripts/**` only, and both projects in `e2e/vitest.config.ts` require an `.e2e.test.ts` or `.smoke.test.ts` suffix, so a plain `*.test.ts` written under `e2e/helpers/` is collected by nothing and never runs while looking exactly like coverage. E2E specs reach a tested helper by importing it — `e2e/helpers/test-utils.ts` names each one and re-exports it, which is how `normalizeGlobalConfig` and `writeTestPackageJson` are reached — and `journey-page.ts`, with `journey-page.test.ts` beside it in the collected directory, is the shape a new one takes. Instead, assert directly on raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g. `loadProjectConfig` for `config.ts`).
 
 **6.19** A spec that invokes the CLI by oclif command id is testing the build output, not the source, and its green means nothing until the build is current. Two suites have this property, and they are the ones whose greens to distrust: everything calling `runCliCommand` (`src/cli/lib/__tests__/commands/**` today, and any `integration/` spec that imports it), which reaches oclif through `package.json` -> `oclif.commands.target` = `./dist/commands`; and everything under `e2e/`, which spawns `bin/run.js` against that same directory. Neither `tsc` nor a code review can see the gap — `runCliCommand` addresses a command by its id string, so nothing imports the module whose absence is the defect.
 
@@ -426,6 +435,20 @@ Three details are load-bearing and none is obvious. **The guard covers every fil
 
 The defect that produced this rule is the argument for the last point. An editor spec named "a directory that cannot be read is refused rather than added" installed no stub, resolved a staged skill against live `api.github.com`, and passed on the **size** refusal instead of the unreadable one it was written for — asserting, in effect, that a third party keeps a directory over 256 KB. `expect(dialog.error).toBeVisible()` cannot tell four refusal kinds apart. **Where a UI has several ways to say no, assert WHICH one** — the kinds here are a discriminated union with distinct wording, so `toContainText` was always available.
 
+**6.25 A red-first run is evidence only when the red comes from the assertion, and `toThrow(<a name that does not resolve yet>)` cannot supply one.** Vitest reads `toThrow(undefined)` as "threw anything at all", so an assertion naming a refusal constant the module has not exported yet matches whatever the code happened to throw — and the test that looked red-first passes for the wrong reason the moment any error appears. This is precisely the shape a test written BEFORE its implementation takes, which is when the vacuous form is least visible: four of thirteen new refusal tests on `check-enumeration-drift.ts` were written this way on 2026-08-19 and none of them was ever proved. `tsc` sees it — TS2305, module has no exported member — but `tsc` is not what the red-first step runs.
+
+Assert a refusal through `expectRefusal(run, refusal, because?)` in `scripts/refusal-expectations.ts`, which judges the message before it uses it: `undefined` and `""` are each refused by name, and everything else is handed to `toThrow` as before. `vacuousThrowAssertions()` in the same module is the gate — it parses every suite under `scripts/` and condemns two shapes, `toThrow(<a name the file imports>)` and `toThrow()` with no argument at all, both of which accept any failure. A constant the file DECLARES is deliberately left alone: it cannot be the one its module forgot to export.
+
+The gate covers `scripts/` because that is where a refusal is asserted by imported message constant as a matter of course — one shared idiom across every gate this package owns. **It is not repository-wide, and that is stated rather than hidden** — the census below found over 140 sites in the CLI's own suites, most naming a locally-declared constant or an error class, and converting them would be a scope decision rather than a sweep:
+
+```
+grep -rn 'toThrow(' src e2e --include='*.ts' --include='*.tsx' | grep -vP "toThrow\(([\"\`/)]|')"
+```
+
+**6.26 A test whose real work is a large fraction of the suite's `testTimeout` carries its own timeout, and that timeout is DERIVED from the work rather than written as a number.** A test sized close to the default passes alone, passes on a quiet re-run, and fails when the machine is busy — which reads to whoever meets it as a regression their change caused, and teaches the next reader to re-run rather than investigate. `spec-gates.test.ts`'s escape-shape gate is the live case: `LINT_ZONES.length * ESCAPE_SHAPES.length * 2` in-process type-aware ESLint passes, ~2.7s on an idle machine against a 10s default, observed failing once during a wave with six agents live.
+
+Two things are wrong to do instead. **Raising the suite default** hands the same headroom to every unit test in the package, where a ten-second unit test is itself the bug. **Writing the timeout as a literal** leaves it claiming to be sized for a loop that has since grown: another zone or another shape is more work every time, and the failure lands on whoever added it under a name that says nothing about them. Multiply the loop's own dimensions by a stated per-unit budget, put the measurement and its date in the budget's docblock, and the timeout tracks the work on its own. Prove the wiring by shrinking the budget below the real work once and watching that one test — and only that one — time out.
+
 ---
 
 ## 7. Type Safety
@@ -476,7 +499,7 @@ const counts: Partial<Record<AgentName, number>> = {};
 
 **7.8** No `as unknown as T` double casts. If you need two casts to express a type, the upstream return type or schema is wrong — fix it there.
 
-**7.9** No non-null assertions on map/matrix lookups that have an asserting helper. Prefer `getSkillById(id)` / `getSkillBySlug(slug)` from `matrix/matrix-provider.ts` over `matrix.skills[id]!`. Use the raw index access only when the skill is genuinely optional.
+**7.9** No non-null assertions on map/matrix lookups that have an asserting helper. Prefer `getSkillById(id)` from `matrix/matrix-provider.ts` over `matrix.skills[id]!`. Use the raw index access only when the skill is genuinely optional.
 
 **7.10** Type factory function parameters with the narrowest union type (`SkillId`, not `string`). Error-path tests that need invalid values cast at the call site with a `// Boundary cast:` comment — do not widen the signature to accommodate them.
 
@@ -535,7 +558,7 @@ return {
 Applies to everything that reaches `JSON.stringify` or a source-emitter: `plugin.json`, `marketplace.json`, the generated catalogue modules, and the `config.ts` / `config-types.ts` pair. `ensureMinimalConfig` and `generateProjectConfigFromSkills` are the in-tree exemplars. The check is a property assignment onto a local inside the modules that serialize their own return — currently clean:
 
 ```
-grep -rnE '^\s+[a-z][A-Za-z0-9]*(\.[a-zA-Z0-9]+)+ = ' src/cli/lib/marketplace-scaffold.ts src/cli/lib/plugins/plugin-manifest.ts src/cli/lib/marketplace-generator.ts src/cli/lib/seed/publish-seed.ts src/cli/lib/stacks/stacks-loader.ts src/cli/lib/loading/source-fetcher.ts
+grep -rnP '^\s+[a-z][A-Za-z0-9]*(\.[a-zA-Z0-9]+)+ = ' src/cli/lib/marketplace-scaffold.ts src/cli/lib/plugins/plugin-manifest.ts src/cli/lib/marketplace-generator.ts src/cli/lib/seed/publish-seed.ts src/cli/lib/stacks/stacks-loader.ts src/cli/lib/loading/source-fetcher.ts
 ```
 
 The spread is `...(cond ? { k: v } : {})` here rather than typescript-types-bible §4a's `...(v !== undefined && { k: v })` because these builders are answering "should this field be emitted at all", not "is this optional property absent" — same syntax, different question, and §4a governs the other one.
@@ -638,7 +661,7 @@ populateFromSkillIds: (ids, skills, cats) => set(() => {
 
 **12.1** No `console.log` / `console.warn` / `console.error` in production code. Use `log()`, `warn()`, `verbose()` from `utils/logger.ts`. In oclif commands, use `this.log()` / `this.warn()`.
 
-**12.2** Use named exit codes from `lib/exit-codes.ts`: `SUCCESS` (0), `ERROR` (1), `INVALID_ARGS` (2), `NETWORK_ERROR` (3), `CANCELLED` (4). No magic numbers in `process.exit()` or `this.error(..., { exit: })` calls.
+**12.2** Use named exit codes from `lib/exit-codes.ts`: `SUCCESS` (0), `ERROR` (1), `INVALID_ARGS` (2), `NETWORK_ERROR` (3), `CANCELLED` (4), `COMPLETED_WITH_FAILURES` (5). No magic numbers in `process.exit()` or `this.error(..., { exit: })` calls. `COMPLETED_WITH_FAILURES` is raised through `this.exit()` at the END of a command that ran to completion, never through `this.error()` — the work landed and the ending reports what did not, so an abort would relabel a state already on disk rather than prevent it.
 
 **12.3** Follow the message style guide in `logger.ts` for all warning and log messages: capital first letter, single-quoted dynamic values (`'value'`), no "Warning:" prefix (added by `warn()`), lowercase after colons.
 
@@ -703,7 +726,7 @@ const skills = category.skills;
 Two detectors, because the two shapes hide differently. A `??` whose right-hand side builds a value out of the same string the left-hand side used as a key is the first. The second has no table and therefore no `??` — `id.split("-")` followed by `segments[n] ?? "web"`, where the default is what removes the failure mode a reviewer's eye would catch:
 
 ```
-grep -rnE '\b[a-zA-Z]*[Ii]d\.split\(' src/cli/lib/__tests__/ e2e/ --include='*.ts' --include='*.tsx'
+grep -rnP '\b[a-zA-Z]*[Ii]d\.split\(' src/cli/lib/__tests__/ e2e/ --include='*.ts' --include='*.tsx'
 ```
 
 That grep is currently empty. The last site it caught — `e2e/interactive/edit-wizard-detection.e2e.test.ts`, which split `skill.id` into a `category` and a `slug` for `renderMetadataYaml` while the `E2E_SKILL` entry it read the id from already carried the slug — now spreads `metadataFieldsFor(skillId)`, exported from `e2e/fixtures/project-builder.ts`, which reads one table and throws naming the skill and the table on a miss.
@@ -735,7 +758,7 @@ differ from its input, find that key in the expression computing the flag — an
 small enough to read end to end:
 
 ```
-grep -rnE '\bchanged: boolean|\bdirty: boolean' src/cli --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
+grep -rnP '\bchanged: boolean|\bdirty: boolean' src/cli --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
 ```
 
 Six returns today, all of them in `config-gate/`.
@@ -772,7 +795,7 @@ Never leave a mismatch standing because the output currently looks fine, and tre
 Two properties make this class invisible, and both are worth recognising directly. The check and the thing it protects live in **different lifecycles** — an imperative one-shot in `init()`, a React tree that re-renders for the whole session — so a reader of the check sees a loop that waits for a valid size and reasonably concludes the size is handled. And the tell is **a one-shot listener removed on success**:
 
 ```
-grep -rnE 'removeListener|\.off\(' src/cli/base-command.ts src/cli/commands/
+grep -rnP 'removeListener|\.off\(' src/cli/base-command.ts src/cli/commands/
 ```
 
 One hit, and it is the kept startup gate: blocking before Ink mounts is cleaner than mounting a tree in order to refuse to draw it, so the two gates are complementary and `reference/component-patterns.md` records which catches what. Both read one shared predicate and one shared message formatter in `src/cli/utils/terminal.ts` — see 18.1, because a second copy of a user-visible string is a surface with no assertable identity. Where the re-check replaces the tree rather than overlaying it, say so at the site: Ink lays children out at the small size regardless of what covers them, so an overlay keeps bleeding underneath.
@@ -801,7 +824,7 @@ Two consequences worth stating with it. **The discriminator should be the proper
 **15.16 An existence check tests the exact path its refusal names.** `directoryExists(path.dirname(p))` and `fileExists(p)` answer different questions, and a guard naming one while testing the other is correct only for the inputs where the two happen to agree. **The refusal text is the specification**: if it says "this file is missing", the check is on the file. `fetchMarketplace` guarded `.claude-plugin/marketplace.json` by testing `.claude-plugin/`, and the shape that separates them is the commonest one in this domain — a plugin repository ships `.claude-plugin/plugin.json` and no marketplace beside it, so for every such repository the guard answered "the manifest is there", the read two statements later threw ENOENT, and the absence surfaced as a generic failure. The existing message needed no change when the check was fixed; it was already true of the condition the guard was meant to detect and false of the one it detected. Note the direction the damage ran: the mismatch was harmless while one caller collapsed every throw into one sentence, and became a **new** false statement — a plugin repository reported as a marketplace whose manifest is present and broken — the moment 3.7's classification was added. Currently clean, and the grep is cheap enough to run on any new guard:
 
 ```
-grep -rEn '(directoryExists|fileExists)\((path\.)?dirname' src e2e scripts --include='*.ts' --include='*.tsx'
+grep -rPn '(directoryExists|fileExists)\((path\.)?dirname' src e2e scripts --include='*.ts' --include='*.tsx'
 ```
 
 ---
@@ -865,19 +888,32 @@ and `e2e/lifecycle/init-edit-error-guards.e2e.test.ts`, name and value together.
 
 Rows three to five have one property in common and it is what makes the rule a rule: **none of them
 can ever go red, so they are corrected in the same pass or they are not corrected at all.** A later
-run cannot find them and a later reader has no reason to doubt them. Two live specimens, both
-green today and both describing a vocabulary the product withdrew:
+run cannot find them and a later reader has no reason to doubt them. Both specimens this section
+carried are repaired as of 2026-08-21, and each taught a different half:
 
-- `describe("stored source resolution")` in `e2e/commands/compile.e2e.test.ts`, over specs whose own
-  `it` names correctly say marketplace and whose assertions read `Marketplace:`.
-- Three `it` names in `src/cli/lib/__tests__/user-journeys/config-precedence.test.ts` reading
+- `describe("stored source resolution")` in `e2e/commands/compile.e2e.test.ts` sat over specs whose
+  own `it` names correctly said marketplace and whose assertions read `Marketplace:`. One heading,
+  in the one position nothing reads.
+- Three `it` names in `src/cli/lib/__tests__/user-journeys/config-precedence.test.ts` read
   `CC_SOURCE`, each over a body that sets `process.env[SOURCE_ENV_VAR]` — and `SOURCE_ENV_VAR` in
   `lib/configuration/config.ts` is `"CC_MARKETPLACE"`. This one is the sharper lesson, because the
-  old-value grep **does** return it: the identifier `CC_SOURCE` is right there in the name. Grepping
-  was never the gap. Accounting for the hits was, and a hit in an `it` name reads as prose to a pass
-  looking for code.
+  old-value grep **does** return it: the identifier was right there in the name. Grepping was never
+  the gap. Accounting for the hits was, and a hit in an `it` name reads as prose to a pass looking
+  for code.
 
-So: run both greps, and account for every hit rather than every failure. A test name, a `describe`
+**The second specimen's class is now held, and only that class.** `scripts/check-spec-name-vocabulary.ts`
+reads the name every `it`, `describe` and `test` in the package gives itself, takes every
+constant-shaped token out of it — one containing an underscore, which is how this codebase spells a
+constant and an environment variable and is not how it writes prose — and requires each to be a
+token some non-spec module holds **in code**. Resolving against comments is what the first draft did
+and it made the scan vouch for itself: its own docblock named the withdrawn variable, so the run
+reported clean. Across 431 specs and 299 modules the finished scan reported exactly the three names
+above and nothing else.
+
+What it does NOT cover is the rest of rows three to five: a heading whose stale word is an ordinary
+one (`source`, as in the first specimen), a comment, a helper's option name, an assertion message.
+Those still have nothing, ever. So: run both greps, and account for every hit rather than every
+failure. A test name, a `describe`
 heading, an assertion message and a helper's option name are all part of the rename — see
 `e2e/README.md` under File Naming, which carries the same rule for the E2E tree. And where a rename
 pass is scoped to one tree, it reports its scope in the same sentence as its result: "the unit suite
@@ -896,7 +932,7 @@ The general form covers any two surfaces, not only two commands: **if a string a
 The tripwire is narrower and worth stating with the rule: **a field on `WizardResultV2` that only one of its consumers reads is a defect until proven otherwise.** The detection heuristic is one grep, and two private methods of the same name in two commands is the signature:
 
 ```
-grep -rhoE '^\s+private (async )?[a-zA-Z]+\(' src/cli/commands/ | grep -oE '[a-zA-Z]+\($' | sort | uniq -d
+grep -rhoP '^\s+private (async )?[a-zA-Z]+\(' src/cli/commands/ | grep -oP '[a-zA-Z]+\($' | sort | uniq -d
 ```
 
 It reports a candidate, not a verdict — `reportSuccess` in `init` and `uninstall` narrate different operations and are correctly separate, as is `printHeader` across five commands. The six that share one operation (`decodeSeedOrFail`, `registerExternalSkillsOrFail`, `selectionFromSharedConfig`, `selectionFromWizard`, `writeCarriedSkills`, `writeConfigAndCompile`, all in `init.tsx` and `edit.tsx`) are the `--from` pair, and 18.2 is the question to ask of them.

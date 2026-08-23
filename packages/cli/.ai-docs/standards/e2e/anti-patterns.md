@@ -251,8 +251,33 @@ What replaced it terminates on the structure being walked rather than on a count
 The census is short enough to read every time, and each hit is judged on whether its comment names a count:
 
 ```
-grep -rnE 'const [A-Z_]+ = [0-9]+;' e2e/pages --include='*.ts'
+grep -rnP 'const [A-Z_]+ = [0-9]+;' e2e/pages --include='*.ts'
 ```
+
+### Never give a TOGGLE keystroke the retry a monotonic keystroke takes
+
+**What:** copying the shape of `retryEnterUntil` or `BuildStep.advanceCategoryFocus` onto Space —
+press, check whether something happened, re-press if it did not.
+
+**Why:** Enter and Tab are monotonic. "Did the next step paint" and "did focus move" cannot be
+un-answered by pressing again, so a re-press of a keystroke Ink swallowed costs nothing and a
+re-press of one that landed is at worst wasted. Space toggles. A re-press of a press that DID land
+turns the selection back off, converting a dropped keystroke into a double keystroke — and nothing
+else in the suite can see it, because a skill toggled twice leaves exactly the bytes of a skill
+never toggled, and every assertion in the suite reads where the selection ENDED.
+
+**Instead:** confirm against the TARGET STATE of a NAMED subject — one cell's own rendered text,
+matched on the exact label — never against "the frame changed". Compute the target ONCE from the
+pre-press reading and hold it, so the loop exits on having observed it however many presses were
+swallowed or doubled. Pay a bounded re-read only from the second press on, where an earlier press
+can still be in flight. And where a method has no subject to name, say so and leave it open-loop
+rather than inventing an observable that does not distinguish the states —
+`BuildStep.toggleFocusedSkill` is that case, written out at the method. Full reasoning:
+[page-objects.md § A Toggle Cannot Take the Retry a Monotonic Key Takes](./page-objects.md).
+
+The roster that keeps this from recurring is `src/cli/lib/__tests__/page-object-space-presses.test.ts`,
+which names every Space press in `e2e/pages/**` and its posture. A new one fails there until it is
+confirmed or justified.
 
 ### Never assert on a category the grid renders below the fold without navigating to it first
 
@@ -401,7 +426,7 @@ grep -rn 'UNPARSEABLE_YAML\|SYNTAX_ERROR' e2e --include='*.ts'
 
 **Why:** `process.cwd()` is `getcwd(2)`. The kernel returns the canonical path with every symlink already resolved and does not consult `$PWD`, so spawning a child with `cwd: <tmp>/link/proj` gives that child `process.cwd() === <tmp>/real/proj` — measured directly in this environment. The distinction the spec exists to create is erased before any production line runs; `path.resolve` and `realpathSync` agree on an already-canonical path, and the spec passes identically against the bug and against the fix. The harness chooses WHICH directory a command runs in. It can never choose by WHICH PATH that directory is reached.
 
-**Instead:** cover it one layer down, where the path is still a parameter the test supplies. `registerProjectPath` stored a `realpath` while `deregisterProjectPath` looked the entry up under `path.resolve`, so any project under a symlinked ancestor stayed registered forever after `uninstall`; the guard is `local-installer.test.ts` → "should deregister a project reached through a symlinked ancestor", which was watched red against the pre-fix normalization while its four plain-path siblings stayed green. Keep the E2E for the plain-path contract. Before writing any E2E whose subject is how a path is normalized, ask whether that value reaches production through `process.cwd()` — if it does, this layer cannot express the case, and a spec claiming otherwise advertises coverage that does not exist.
+**Instead:** cover it one layer down, where the path is still a parameter the test supplies — `local-installer.test.ts` → "should deregister a project reached through a symlinked ancestor" is the shape. Keep the E2E for the plain-path contract. Before writing any E2E whose subject is how a path is normalized, ask whether that value reaches production through `process.cwd()` — if it does, this layer cannot express the case, and a spec claiming otherwise advertises coverage that does not exist.
 
 ---
 
@@ -748,7 +773,7 @@ The unspent half of this is mechanical and worth running before a review rather 
 
 ```
 for f in $(grep -rl 'Before\b' e2e --include='*.e2e.test.ts'); do
-  for v in $(grep -oE 'const [a-zA-Z0-9_]*[Bb]efore[a-zA-Z0-9_]*' "$f" | awk '{print $2}' | sort -u); do
+  for v in $(grep -oP 'const [a-zA-Z0-9_]*[Bb]efore[a-zA-Z0-9_]*' "$f" | awk '{print $2}' | sort -u); do
     [ "$(grep -c "\b$v\b" "$f")" -le 1 ] && echo "$f :: $v"
   done
 done

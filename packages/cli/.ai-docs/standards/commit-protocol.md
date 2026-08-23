@@ -69,9 +69,9 @@ to keep true:
 
 ```
 comm -3 \
-  <(sed -n '/^## Subagents/,/^Each subagent/p' README.md | grep -oE '`[a-z-]+`' | tr -d '`' | sort -u) \
+  <(sed -n '/^## Subagents/,/^Each subagent/p' README.md | grep -oP '`[a-z-]+`' | tr -d '`' | sort -u) \
   <(sed -n '/^export const AGENT_NAMES/,/^] as const/p' src/cli/types/generated/source-types.ts \
-      | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u)
+      | grep -oP '"[a-z-]+"' | tr -d '"' | sort -u)
 ```
 
 Empty in both directions is the passing state. The glob-shaped entries in the table's Reviewer and

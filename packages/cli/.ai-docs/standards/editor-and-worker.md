@@ -846,9 +846,71 @@ rediscovered twice, once per site, and the second site's comment says so.
 The population to read is every `active*` call that sits inside a hook callback:
 
 ```
-grep -rnE 'active(Catalog|Stacks|Version|Marketplace|SkillById|ExternalSkill)\(' apps/editor/src --include='*.ts' --include='*.tsx'
+grep -rnP 'active(Catalog|Stacks|Version|Marketplace|SkillById|ExternalSkill)\(' apps/editor/src --include='*.ts' --include='*.tsx'
 ```
 
 Most hits are in `derive.ts` and other plain functions, where reading the seat directly is correct
 and there is no dependency array to lie about it. The hits that matter are the ones inside a memo or
 an effect, and there the question is whether the array names the seat.
+
+---
+
+## What a first-time visitor downloads is a claim the build checks, not a number someone remembers
+
+**The editor ships one HTML page, so every byte of JavaScript it references is paid before anything
+appears.** That cost is invisible from every gate this repository already had: `tsc`, ESLint, both
+suites and the Playwright run are equally green whether the entry chunk is 90 KB or 1 MB, and the
+Playwright suite in particular drives a **dev server**, where nothing is chunked at all. So the only
+place the question can be asked is inside `vite build`, against the bytes it just emitted — which is
+where `apps/editor/scripts/first-paint-budget.ts` asks it, as a plugin `vite.config.ts` installs.
+
+It makes two claims, and both fail the build:
+
+1. **The first-paint payload fits a gzipped budget.** The payload is the entry chunk, every chunk it
+   imports statically — those are exactly the ones the emitted HTML `modulepreload`s — and every
+   stylesheet. A chunk reached only through `import()` is deliberately not counted; keeping weight
+   out of the static graph is the behaviour the budget exists to reward.
+2. **No chunk carries this repository's own source and a `node_modules` module together.** That is
+   the caching property stated as a property of the artefact rather than of the config that produced
+   it, so a grouping rule that stops matching — a renamed directory, a `/` where `[\\/]` was meant —
+   reports itself instead of silently merging the tiers back.
+
+**One number over the whole payload rather than an assertion per dependency**, because the defect
+has one shape and many spellings: a static import of something only used behind a click, an upgrade
+that doubles a library, a chunking rule that drags a lazily-loaded module into the static graph. A
+list of per-package assertions catches only the spellings someone thought of.
+
+### The chunk groups are ordered by rate of change, and two of their settings are load-bearing
+
+`build.rolldownOptions.output.codeSplitting.groups` in `apps/editor/vite.config.ts` names five
+tiers — React, the brand icons, the observability SDK, a catch-all vendor group, and the generated
+catalogue from `packages/matrix`. The axis is how often each changes, because that is what decides
+whether a returning visitor re-downloads it. Before the split the whole app was one 1.03 MB file
+(302 KB gzipped) and a one-line copy edit re-hashed all of it; after, an app-source edit re-hashes
+only the 94 KB entry chunk and the other seven keep their file names — verified by building twice
+with a single line appended to one module and diffing the emitted names.
+
+Two settings look like tuning and are not:
+
+- **`vendor` must outrank `catalog` in `priority`.** A group captures its matches' dependencies as
+  well as its matches (`includeDependenciesRecursively`, on by default, and turning it off is
+  documented in rolldown as risking invalid chunks), so the lower-priority catalogue group would
+  otherwise swallow zod — 18 KB of an unchanging library re-downloaded every time the marketplace is
+  regenerated.
+- **`entriesAware: true` on the catch-all.** Without it, a `test: /node_modules/` group collects a
+  dependency reached ONLY through `import()` and hoists it into the static graph. That is not
+  hypothetical: it happened to `posthog-js` on the first attempt, put 74 KB back on the first-paint
+  path, and read as a tidier list of chunks while doing it. The budget is what caught it.
+
+### Reading the number
+
+It is gzip, at level 9, because nothing is served uncompressed and raw bytes describe a transfer
+that never happens. Cloudflare negotiates brotli with most browsers and brotli at quality 11
+measured ~15% smaller on this bundle, so the gate's figure is the conservative one — and the cheap
+one, at ~60ms against ~2s for brotli on every build. **The same bytes read about 2% smaller under
+Bun's zlib than under Node's**, so the budget clears the larger reading and a build run either way
+gives the same verdict.
+
+**When the gate fires, the first question is whether the new weight can be loaded on demand**, not
+what the budget should be raised to. The number is a record of a measured cost; raising it is
+allowed, as a deliberate edit with a reason written beside it.

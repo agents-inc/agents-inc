@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-07-30
+last_validated: 2026-08-21
 ---
 
 # Page Objects
@@ -70,7 +70,15 @@ For a multi-phase test where a later wizard must see an earlier phase's global c
 
 **Instance members:** `get globalHome`, `getOutput()`, `getScreen()`, `getRawOutput()`, `waitForExit(timeout?)`, `abort()`, `abortAndDestroy(timeout?)`, `destroy()`. There is no `escape()` — it was deleted once its last caller went, and a `wizard.escape()` in an older spec or doc is a reference to a method that no longer exists. `dashboard.escape()` is a different method on a different class and is live.
 
-`abortAndDestroy(timeout?)` is the standard read-only-scenario teardown: Ctrl+C -> `waitForExit(timeout)` -> `destroy()`, returning the exit code. `timeout` passes through verbatim, so omitting it falls back to the session default exactly as a bare `waitForExit()` does. **Prefer it over `abort()` in anything new** — one call covers the abort, the exit wait and the cleanup, and a spec that stops at `abort()` has to own the other two.
+`abortAndDestroy(timeout?)` is the standard read-only-scenario teardown: Ctrl+C -> `waitForExit(timeout)` -> `destroy()` -> `expectCancelledExit(...)`, returning the exit code. `timeout` passes through verbatim, so omitting it falls back to the session default exactly as a bare `waitForExit()` does. **Prefer it over `abort()` in anything new** — one call covers the abort, the exit wait, the cleanup and the verdict, and a spec that stops at `abort()` has to own all four.
+
+**It ASSERTS, and that is not an implementation detail of the teardown.** The last step is `expectCancelledExit` (`e2e/assertions/phase-assertions.ts`), so every aborted session is held to `EXIT_CODES.CANCELLED` rather than the five call sites of thirty-five that ever captured the return value. Three things about the placement are load-bearing:
+
+- **It runs AFTER `destroy()`.** A throw between the exit wait and the teardown would leak the PTY session and the wizard's temp dirs, so cleanup completes and the verdict lands on the way out.
+- **The message names which wizard.** This fires during teardown, and two callers abort from a `finally` or an `afterAll` (`getScopeBadgesForSkill` in `fixtures/dual-scope-helpers.ts` is the live one), where a teardown throw REPLACES the failure the block was already carrying.
+- **Do not add a call-site copy.** The funnel throws first, so `expect(exitCode).not.toBe(SUCCESS)` after it is unreachable on the failure path — it reads as coverage and provides none. Three such sites were removed rather than tightened.
+
+**Neither wizard extends the other, so the rule is held by a gate rather than by the copy that put it in both.** `InitWizard` and `EditWizard` share no base class and each `abortAndDestroy` is a byte-identical copy of the other — which is exactly how the assertion came to be missing from both. `src/cli/lib/__tests__/wizard-abort-exit-code.test.ts` DERIVES the roster: a module under `e2e/pages/wizards/` that touches `this.session.` owns a PTY it can end, so `global-home.ts` is absent from it because the scan does not find it rather than because anyone excluded it. A third wizard reddens the first assertion; once rostered, it reddens the second until its teardown reaches `expectCancelledExit`.
 
 `abort()` on both wizards is **`async`** and must be awaited: it writes Ctrl+C and then waits `INTERNAL_DELAYS.KEYSTROKE`, for the reason every keypress wrapper in this framework carries a delay — a bare synchronous write races the handler the frame currently on screen registered. It does NOT call `waitForWizardFooter()` first, and should not: a wizard abort is valid from any screen, including ones that paint no footer, where that wait would hang for the full `TIMEOUTS.WIZARD_LOAD` instead of settling. This is a wizard-level method and is unrelated to `BaseStep.abort()`, which is a step-level method on a `WizardLayout` screen and does take the footer wait — see the `BaseStep` tables below.
 
@@ -157,28 +165,29 @@ Each step class models the user actions available on one wizard screen. Methods 
 
 **File:** `e2e/pages/steps/build-step.ts`
 
-| Method                                    | Returns             | Action                                                                                                                                                      |
-| ----------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `advanceDomain()`                         | `void`              | Advance current domain (Enter, cursor-anchored new-frame wait); resets the tracked column hint                                                              |
-| `focusSkill(label)`                       | `void`              | Move grid focus to a skill by EXACT rendered label, without toggling. Closed-loop — see below.                                                              |
-| `selectSkill(label)`                      | `void`              | `focusSkill` then Space                                                                                                                                     |
-| `toggleFocusedSkill()`                    | `void`              | Press Space on the focused cell                                                                                                                             |
-| `toggleFocusedSkillAwaiting(sentinel)`    | `void`              | Space, then wait for `sentinel` in RAW output after a pre-press cursor. Use whenever the assertion is on a TOAST.                                           |
-| `selectSkillAwaiting(label, sentinel)`    | `void`              | `focusSkill` then `toggleFocusedSkillAwaiting` — navigation happens BEFORE the cursor snapshot                                                              |
-| `toggleScopeOnFocusedSkill()`             | `void`              | Press "s" on the focused cell                                                                                                                               |
-| `passThroughAllDomains()`                 | `SourcesStep`       | Web -> API -> Methodology (standard E2E source)                                                                                                             |
-| `passThroughAllDomainsGeneric()`          | `SourcesStep`       | Keep pressing Enter until Sources appears (non-standard sources); throws after 10 presses                                                                   |
-| `passThroughScratchDomains()`             | `SourcesStep`       | Web (focus + select react) -> API (Space) -> Mobile (advance)                                                                                               |
-| `passThroughWebAndMethodologyDomains()`   | `SourcesStep`       | Web -> Methodology (when API deselected)                                                                                                                    |
-| `advanceToSources()`                      | `SourcesStep`       | Advance single domain to Sources                                                                                                                            |
-| `saveFromBuild(wizardType)`               | `WizardResult`      | Build -> Sources -> Agents -> Confirm -> `confirm()`. **Default path only** — see the carve-out below.                                                      |
-| `navigateToNextCategory()`                | `void`              | Tab to next category within current domain                                                                                                                  |
-| `toggleLabels()`                          | `void`              | Press "d" to toggle compatibility labels                                                                                                                    |
-| `pressFilterIncompatibleHotkey()`         | `void`              | Press "f", which the build step binds to nothing — for specs that assert the withdrawn hotkey is inert                                                      |
-| `toggleInfoPanel()`                       | `void`              | Press "i" — renders a `SkillAgentSummary` overlay                                                                                                           |
-| `goBack()`                                | `void`              | Press Escape                                                                                                                                                |
-| `getScopeBadgesForSkill(label)`           | `Array<"P" \| "G">` | Read-only: rendered scope badges for a skill — `[]`, `["P"]`, `["G"]`, `["P","G"]`, or `["G","P"]`                                                          |
-| `getExclusiveCategorySelectedCount(name)` | `number`            | Read-only: the `(N of M)` counter an exclusive category header renders. Under `NO_COLOR` this is the ONLY text-observable signal of in-grid selected state. |
+| Method                                        | Returns             | Action                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `advanceDomain()`                             | `void`              | Advance current domain (Enter, cursor-anchored new-frame wait); resets the tracked column hint                                                                                                                                                                                                                                                                                                             |
+| `focusSkill(label)`                           | `void`              | Move grid focus to a skill by EXACT rendered label, without toggling. Closed-loop — see below.                                                                                                                                                                                                                                                                                                             |
+| `selectSkill(label)`                          | `void`              | `focusSkill`, then a CLOSED-LOOP Space — the target cell's rendered text is read, Space is pressed, and a press the grid never shows landing is re-pressed. It means the toggle LANDED: a refusal is reported, not passed on. See below.                                                                                                                                                                   |
+| `toggleFocusedSkill()`                        | `void`              | Press Space on the focused cell, OPEN-LOOP and unclosable — it can name no subject, and for it a landed press need not change anything. See below.                                                                                                                                                                                                                                                         |
+| `toggleFocusedSkillAwaiting(sentinel)`        | `void`              | Space, then wait for `sentinel` in RAW output after a pre-press cursor. Use whenever the assertion is on a TOAST.                                                                                                                                                                                                                                                                                          |
+| `selectSkillAwaiting(label, sentinel)`        | `void`              | `focusSkill` then `toggleFocusedSkillAwaiting` — navigation happens BEFORE the cursor snapshot                                                                                                                                                                                                                                                                                                             |
+| `toggleScopeOnFocusedSkill()`                 | `void`              | Press "s" on the focused cell                                                                                                                                                                                                                                                                                                                                                                              |
+| `toggleScopeOnFocusedSkillAwaiting(sentinel)` | `void`              | "s", then wait for `sentinel` in RAW output after a pre-press cursor. The only way to see the global-context scope refusal: a row that has not moved is what BOTH its guards leave behind.                                                                                                                                                                                                                 |
+| `passThroughAllDomains()`                     | `SourcesStep`       | Web -> API -> Methodology (standard E2E source)                                                                                                                                                                                                                                                                                                                                                            |
+| `passThroughAllDomainsGeneric()`              | `SourcesStep`       | Keep pressing Enter until Sources appears (non-standard sources); throws after 10 presses                                                                                                                                                                                                                                                                                                                  |
+| `passThroughScratchDomains()`                 | `SourcesStep`       | Web (focus + select react) -> API (Space) -> Mobile (advance)                                                                                                                                                                                                                                                                                                                                              |
+| `passThroughWebAndMethodologyDomains()`       | `SourcesStep`       | Web -> Methodology (when API deselected)                                                                                                                                                                                                                                                                                                                                                                   |
+| `advanceToSources()`                          | `SourcesStep`       | Advance single domain to Sources                                                                                                                                                                                                                                                                                                                                                                           |
+| `saveFromBuild(wizardType)`                   | `WizardResult`      | Build -> Sources -> Agents -> Confirm -> `confirm()`. **Default path only** — see the carve-out below.                                                                                                                                                                                                                                                                                                     |
+| `navigateToNextCategory()`                    | `void`              | Tab to next category within current domain                                                                                                                                                                                                                                                                                                                                                                 |
+| `toggleLabels()`                              | `void`              | Press "d" to toggle compatibility labels                                                                                                                                                                                                                                                                                                                                                                   |
+| `pressFilterIncompatibleHotkey()`             | `void`              | Press "f", which the build step binds to nothing — for specs that assert the withdrawn hotkey is inert                                                                                                                                                                                                                                                                                                     |
+| `toggleInfoPanel()`                           | `void`              | Press "i" — renders a `SkillAgentSummary` overlay                                                                                                                                                                                                                                                                                                                                                          |
+| `goBack()`                                    | `void`              | Press Escape                                                                                                                                                                                                                                                                                                                                                                                               |
+| `getScopeBadgesForSkill(label)`               | `Array<"P" \| "G">` | Read-only: rendered scope badges for a skill — `[]`, `["P"]`, `["G"]`, `["P","G"]`, or `["G","P"]`                                                                                                                                                                                                                                                                                                         |
+| `getExclusiveCategorySelectedCount(name)`     | `number`            | Read-only: the `(N of M)` counter an exclusive category header renders — and ONLY an exclusive one, so it says nothing about the rest of the grid. It is not the only text-observable signal of selected state: the cell's own text is, which is what `selectSkill` confirms against. The two can disagree, because this reads the option `selected` flags and the scope badge reads `skillConfigs.scope`. |
 
 **`saveFromBuild` carve-out.** It is valid ONLY where the sources step is passed through WITHOUT mutation and the agents step is accepted with defaults. Sites that call `setAllLocal` / `setAllPlugin` / `moveSourceColumnRight` / `selectFocusedSourceCell` on the sources step, or navigate/toggle scope on the agents step, or that stop at the confirm screen instead of confirming, MUST keep the explicit step-by-step sequence — this method would silently skip their mutation.
 
@@ -207,6 +216,65 @@ The algorithm: parse the current viewport into categories -> read which category
 The one residual open-loop spot is a single-category grid with multiple cells: Tab is a guarded no-op there, so the walk cannot reset the column, and it falls back to a tracked column hint using the grid's real cyclic-wrap arithmetic. Single-category domains in the standard E2E source are all single-cell, so the fallback is effectively unreachable.
 
 **Horizontal navigation skips nothing, and that is what makes the RIGHT half safe.** `CategoryGrid`'s `findValidCol` is a plain cyclic `wrapOptionIndex` over the focused row's own `options` — the same array the row renders — so arrow-RIGHT visits every painted cell, incompatible ones included, and the column index read off the screen is the column index the keystrokes address. The screen parse and the navigation cannot disagree. A navigator written on the opposite assumption drifts from the screen at the first row carrying such a cell.
+
+#### A Toggle Cannot Take the Retry a Monotonic Key Takes (`selectSkill`)
+
+The race is the one `focusSkill`'s Tab walk and `retryEnterUntil` already answer: Ink registers a
+component's `useInput` handler in an effect, so a keystroke arriving between the render commit and
+the effect flush is discarded with nothing on any surface to say so. The build grid remounts on
+every domain change (`CategoryGrid key={activeDomain}`), and `use-category-grid-input.ts` carries a
+comment about it ending _"causing the first space press to be silently lost"_.
+
+**What must not be copied from those two loops is their confirmation.** Enter and Tab are
+MONOTONIC — "did the next step paint", "did focus move" — so a re-press cannot un-answer them, and
+confirming that SOMETHING happened is sound. Space TOGGLES. A re-press of a press that DID land
+turns the selection back off, which is a worse defect than the dropped keystroke and is invisible to
+every other assertion in the suite: a skill toggled twice leaves exactly the bytes of a skill never
+toggled, and every spec reads where the selection ENDED.
+
+Three properties make the Space loop safe, and none of them is optional:
+
+| Property                                                                   | Why                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The confirmation observes the TARGET STATE of a NAMED subject              | One cell's own rendered text, matched on the exact label. "Did the frame change" is satisfiable by anything, and a retry built on it double-toggles.                                                                                                   |
+| The target is computed ONCE from the pre-press reading and held            | Re-reading it per attempt turns "reach the flipped state" into "flip once more", which a late-landing press makes unterminating. Held, the loop exits on having OBSERVED the target, so the cell it leaves is the right one.                           |
+| From the SECOND press on, the confirmation re-reads after a bounded margin | The first press has nothing in flight behind it and is accepted on the frame it is seen on. Every later press has an earlier one unaccounted for, and a toggle that lands twice comes back — which the re-read catches and answers with another press. |
+
+That last one is the only margin in the design, and it is not a settle delay in disguise: it waits
+on the single thing no surface can show, a press already written to the PTY whose effect has not
+arrived, and it is paid only on the retry path. Do not generalise it into a delay before or after
+every press.
+
+**The signal is the whole rendered cell, not the scope badge.** The badge is the usual mover — a
+selected skill always has an active `SkillConfig` whose `scope` is a required field, so it is
+painted exactly while something selects the skill — but a dual-scope deselect collapses `[P][G]` to
+`[G]` rather than clearing it, and `getCompatibilityLabel` paints `(required by …)` on the way OUT
+of a selection. Comparing the cell's text catches all three; a badge-presence test catches one.
+
+**`toggleFocusedSkill()` is open-loop and cannot honestly be made otherwise.** It has no subject to
+name: under `NO_COLOR` the focused CELL has no text signal, so the page object cannot read which
+skill it is about to toggle. And for it a landed press need not change anything — callers press
+Space on a global-locked row precisely to assert it is INERT
+(`dual-scope-s-round-trip-space-inert.e2e.test.ts`), so "the cell did not move" is a correct outcome
+as often as it is a swallowed keystroke. Use `selectSkill` when the skill has a name and
+`toggleFocusedSkillAwaiting` when the outcome is a toast; reach for the bare toggle only when
+neither applies, and assert the outcome in the spec.
+
+**`selectSkill` therefore MEANS the toggle landed**, and a press the product refuses — a
+global-locked skill at project scope, the last skill in a required exclusive category — is reported
+rather than passed on. That is a behaviour change with a history: routing four call sites through
+the confirmation for the first time found three lifecycle specs that had been pressing Space into a
+refusal and passing on its silence. Specs whose subject IS the refusal use `selectSkillAwaiting`.
+
+**The rule is held by a gate, not by review.**
+`src/cli/lib/__tests__/page-object-space-presses.test.ts` rosters every Space press in
+`e2e/pages/**` with its posture and the reason for it, and separately requires that
+`this.session.space()` is written from `BaseStep.pressSpace` and nowhere else. A new step-page-object
+method that presses Space fails there until it is given a confirmation or written into the roster
+with the reason it cannot have one. Two of the roster's open-loop entries are marked CLOSEABLE and
+deliberately left: `AgentsStep.toggleAgent` and `DomainStep.toggleDomain` act on LISTS, which render
+`[✓]` checkboxes and therefore do have the text-observable selected state the build grid's cells
+lack — `DomainStep.deselectAll` already reads that marker before deciding to press.
 
 ### SourcesStep
 
@@ -286,7 +354,6 @@ All step classes extend `BaseStep`. Its methods are `protected` -- tests cannot 
 | `waitForItemVisible(label, maxAttempts=30)`   | Scroll down until label is on screen (VISIBILITY only — does not confirm cursor position)                                                                                                                                                                                                                                                                               |
 | `navigateCursorToItem(label, maxAttempts=30)` | Scroll down until the `❯`-marked line contains the label (CURSOR check). Prefer this whenever the next action depends on cursor position.                                                                                                                                                                                                                               |
 | `pressEnterAndWaitFor(nextStepText)`          | Footer wait, then closed-loop `retryEnterUntil` — snapshot cursor, press Enter, poll for `nextStepText` after cursor, re-press up to `INTERNAL_RETRIES.MAX_ATTEMPTS` (5). **The sentinel must be unique to the next step's first frame**; text also present in the current footer (e.g. `"select"`) returns instantly on the Enter's own repaint and defeats the retry. |
-| `delay(ms)`                                   | Internal delay (wraps `test-utils.delay`)                                                                                                                                                                                                                                                                                                                               |
 
 ### `waitForWizardFooter()` also asserts the frame is wholly on screen
 
@@ -461,6 +528,12 @@ This is an architectural boundary -- it uses index-based navigation methods (`ar
 2. Use the `protected` methods from `BaseStep` (`pressKey`, `waitForWizardFooter`, etc.). **Never call `pressKey` / `pressSpace` / `pressEnter` / `pressEscape` / `pressArrowX` / `session.*` without a preceding `await this.waitForWizardFooter()` in the same method** — every keypress needs the wait under parallel suite contention, not just the first one. Post-press waits don't substitute; the race sits upstream of the keystroke. The wait is a one-string match on the footer text `"select"` that only `WizardLayout` paints, so it is valid on `BaseStep` subclasses only — a non-wizard page object (e.g. `DashboardSession`) must wait on its own screen-specific sentinel instead, or it hangs for the full timeout. The rule reads absolutely because its qualified form is what let it drift: while it said "if it's the first interaction after a launch or step transition", seven `BuildStep` methods sat unguarded, two of them holding a wait AFTER the press, where it cannot close a race that has already been lost.
 3. If the method transitions to a new step, return the new step object
 
+**The keypress rule above is the PRE-press half. There is a post-press half for one key.** Space
+toggles, so a method that presses it owes a statement of how it knows the press landed — a
+confirmation against the target state of a named subject, or the reason it can have none. That is
+rostered in `src/cli/lib/__tests__/page-object-space-presses.test.ts` and explained in
+[§ A Toggle Cannot Take the Retry a Monotonic Key Takes](#a-toggle-cannot-take-the-retry-a-monotonic-key-takes-selectskill).
+
 **Self-check before committing a new step method:** grep the method body for `this.session.` and `this.press*`. Every hit MUST be immediately preceded by `await this.waitForWizardFooter()` in the same method. A `waitForWizardFooter` elsewhere in the method (after the press, in a loop body) does not count — the wait must sit upstream of every PTY write. Helpers that loop over keypresses (arrow-down walks, per-character typing) need the wait inside the loop body before each press, or refactored to walk via a single `waitForItemVisible` + keypress call. Coverage audit: `.ai-docs/reference/testing/e2e-infrastructure.md` § "Page-Object Keypress Rule" tracks the per-method state of every step file.
 
 ### Adding a New Wizard Type
@@ -469,6 +542,9 @@ This is an architectural boundary -- it uses index-based navigation methods (`ar
 2. Follow the `InitWizard`/`EditWizard` pattern: spawn session, wait for first step, return wizard object
 3. Expose the first step as a public property
 4. Add `destroy()` method for cleanup
+5. Add `abortAndDestroy()`, ending in `expectCancelledExit(exitCode, <wizard>)` AFTER the `destroy()`
+
+Step 5 is not optional and is not on the honour system. `src/cli/lib/__tests__/wizard-abort-exit-code.test.ts` finds the new class the moment it touches `this.session.` and goes red twice: once because the derived roster no longer matches its named list, and again because nothing in the new file asserts the exit code. Both messages say what to do. The two existing wizards share no base class, so there is nothing for a third to inherit the verdict FROM — which is the whole reason the gate exists rather than a review note.
 
 ---
 

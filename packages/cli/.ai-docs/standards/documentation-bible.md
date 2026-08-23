@@ -50,7 +50,19 @@ section or a validation history to give the clutter somewhere to live.
    so a reader has nothing to grep for, and `D-278` was renumbered after a collision, so one ID now
    names two rows. Name the behaviour instead of the ticket that produced it. An ID may appear only
    where it is the subject rather than the provenance — quoted as a specimen of this rule, or in
-   `agent-findings/`, whose filenames and frontmatter are dated evidence by design.
+   `agent-findings/` and `agent-suggestions/`, both of which are dated evidence by design: an entry
+   in either is referenced by filename, keeps its status in frontmatter, and is never moved once
+   written.
+
+   **The exemption reaches the two directories through different halves of an entry, so a clause
+   naming one of them exempts half the artefact.** In `agent-findings/` the IDs sit in filenames
+   and frontmatter, where they are the record's own identity. In `agent-suggestions/` they sit in
+   the BODY, where a proposal argues FROM them —
+   `agent-suggestions/2026-07-30-identity-key-helper-export-exception.md` makes its case for the
+   identity-key helper convention by naming the two defects that produced it, and substituting
+   behaviour for those IDs would leave the argument resting on nothing. The census command below
+   excludes both directories for that reason; widening one exclusion without the other enforces a
+   rule this clause does not state.
 
    **The tree does not pass this rule, and it fails on both halves — source files and documents
    alike.** Two greps are the inventory; read the scale off them rather than off this page, and use
@@ -59,9 +71,9 @@ section or a validation history to give the clutter somewhere to live.
    drift.
 
    ```
-   grep -rnE '\b[A-Z]{1,4}-[0-9]{2,4}\b' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx'
-   grep -rnE '\b[A-Z]{1,4}-[0-9]{2,4}\b' .ai-docs/ --include='*.md' \
-     --exclude-dir=agent-findings --exclude=documentation-bible.md
+   grep -rnP '\b[A-Z]{1,4}-[0-9]{2,4}\b' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx'
+   grep -rnP '\b[A-Z]{1,4}-[0-9]{2,4}\b' .ai-docs/ --include='*.md' \
+     --exclude-dir=agent-findings --exclude-dir=agent-suggestions --exclude=documentation-bible.md
    ```
 
    `SHA-256` is the only non-ID token these match; every other hit is an offender. Neither returns
@@ -98,7 +110,7 @@ are what made that paragraph true.
 The worklist is every enforcement verb in the guides, read against the command it names:
 
 ```
-grep -rnE '\b(enforces?|refuses?|rejects?|validates?|requires?|will fail)\b' \
+grep -rnP '\b(enforces?|refuses?|rejects?|validates?|requires?|will fail)\b' \
   ../../apps/www/src/content/docs/docs/
 ```
 
@@ -275,7 +287,7 @@ escape route the third forecloses, which is worse than the silence it replaced. 
 discriminated unions costs less than writing the sentence that generalises over them.
 
 ```
-grep -rEn 'all (three|four|five|six|seven|eight) |every one of (them|these)' .ai-docs/reference/
+grep -rPn 'all (three|four|five|six|seven|eight) |every one of (them|these)' .ai-docs/reference/
 ```
 
 ---
@@ -313,13 +325,67 @@ same class: never write "returns `void`" without naming the type, because a wide
 invisible to a prose reader and to every reviewer of the widening. Any sweep touching a document
 re-runs the greps its claims carry, whatever the cadence says.
 
+### The census instrument itself can return a lying zero
+
+The rule above is only as good as the command written beside the claim, and on this machine `grep`
+is **ugrep**, shimmed in by a shell function so that nothing at the call site says so. Re-derive
+which one you are holding before trusting any zero:
+
+```
+grep --version | head -1
+```
+
+**Run that check — and the reproduction below — as direct commands, never from inside a script.**
+The shim is a shell function in the agent's own session, and a function does not cross into a child
+interpreter: `bash -c 'grep --version'` answers GNU grep here, so the whole block below returns four
+clean matches and the hazard reads as fictional. Nothing in this package is exposed either, because
+no script, gate or spec shells out to `grep` at all — the exposure is one agent typing a census at
+its own prompt, which is the only place a census is ever typed.
+
+ugrep disagrees with GNU grep on patterns both accept, and it fails in two shapes that have to be
+told apart, because only one of them is visible:
+
+| Shape                                                                                      | What the caller sees                                | Remedy                                                                        |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Loud** — a construct ugrep's parser rejects, such as an unescaped `{` under `-E` or `-P` | empty stdout, exit **2**, an error on stderr        | `-F`, or escape it. `-P` does **not** rescue this one — it errors identically |
+| **Silent** — a valid ERE that GNU grep matches and ugrep does not                          | `0` on stdout, exit **1**, **zero bytes on stderr** | `-P` for a pattern census, `-F` for a literal one                             |
+
+**The loud shape becomes the silent one the moment it is piped**, which is how a census usually ends.
+`grep … | wc -l` prints `0` for a pattern that never compiled, because the error went to stderr and
+`wc` counted an empty stdout. So the remedy is not "watch for an error" — it is to write the census
+in a dialect that does not have the failure.
+
+**Do not write down what causes the silent shape.** Three causes have been stated in this repository
+with confidence and all three are false, the most recent of them carried into every brief written on
+2026-08-22. Each is refuted by one command, measured 2026-08-22 against ugrep 7.8.4:
+
+```
+printf 'see [label](http://x/y) here\n' > /tmp/ug.txt
+grep -cE '\[.*\]\([^)]*\)'    /tmp/ug.txt ; echo "exit=$?"   # 1, exit 0 -- refutes ") inside a negated class"
+grep -cE '\[[^]]*\]'          /tmp/ug.txt ; echo "exit=$?"   # 1, exit 0 -- refutes "[^]] is the trigger"
+grep -cE '\[[^]]*\]\([^)]*\)' /tmp/ug.txt ; echo "exit=$?"   # 0, exit 1 -- the hazard, in silence
+grep -cP '\[[^]]*\]\([^)]*\)' /tmp/ug.txt ; echo "exit=$?"   # 1, exit 0 -- the remedy
+```
+
+GNU grep 3.7 answers `1` at exit 0 to all four. The second line is the one that matters most: it
+holds the exact bracket expression the third line is blamed on and matches perfectly, so no property
+of that expression can be the trigger. And the hazard needs no bracket character inside any class at
+all — on a file holding `see AlabelB(http://x/y) here`, `grep -cE 'A[^B]*B\(.*\)'` is `0` at exit 1
+where GNU grep is `1`. That is why the third cause is retired rather than replaced by a fourth.
+
+Every stated cause was true of the specimen in front of its author and false of the class, and the
+cost is not a wrong footnote: an author told to avoid `)` inside a negated class writes `[^]]`
+instead and lands in the failure. **Write the remedy and not the cause** — a cause invites a reader
+to judge their own pattern exempt, and three authors have now judged wrongly. The remedy has never
+moved: **a census is `-P` or `-F`, always, whatever the pattern looks like.**
+
 ### Filling a gap includes grepping the docs for the gap's own vocabulary
 
 You cannot grep for what you added — the whole failure is that it added no name. Grep for the
 language of absence instead:
 
 ```
-grep -rEn 'declares no|no equivalent|is absent|is a gap|does not exist|untested|no spec|vestigial' .ai-docs/
+grep -rPn 'declares no|no equivalent|is absent|is a gap|does not exist|untested|no spec|vestigial' .ai-docs/
 ```
 
 Add the symbol the documents said was missing, and read every hit. **This is a step in filling the
@@ -390,7 +456,7 @@ The worklist is every document holding a directional row; read each one's conven
 where a table has none, write it from the source rather than from the table:
 
 ```
-grep -rlE '^\|.*[A-Za-z](→|->)[A-Za-z]' .ai-docs/reference/ .ai-docs/standards/ --include='*.md'
+grep -rlP '^\|.*[A-Za-z](→|->)[A-Za-z]' .ai-docs/reference/ .ai-docs/standards/ --include='*.md'
 ```
 
 ### File-Path Conventions
@@ -447,7 +513,7 @@ still reading as authoritative.
 Line ranges in an inventory TABLE whose whole purpose is to locate a declaration are the one
 tolerated exception, and they carry the same rot — prefer the symbol column.
 
-`grep -rEc '\.tsx?:[0-9]+' .ai-docs/reference/` returning zero is the check.
+`grep -rPc '\.tsx?:[0-9]+' .ai-docs/reference/` returning zero is the check.
 
 **The ban covers `todo/plans/` on the same terms.** A plan is read under the same trust as a
 reference doc — an agent opens it and navigates to its citations — and a plan rots in its
@@ -457,7 +523,7 @@ not the one the plan meant, with no signal that anything moved. Run the check ov
 the repository root, excluding vendored third-party material:
 
 ```
-grep -rEl '\.tsx?:[0-9]+' packages/cli/.ai-docs/reference/ todo/plans/ --exclude-dir=contestants
+grep -rPl '\.tsx?:[0-9]+' packages/cli/.ai-docs/reference/ todo/plans/ --exclude-dir=contestants
 ```
 
 A plan proposing a guard names the **value** the guard reads, not the rule in prose. A plan that
@@ -468,7 +534,7 @@ without saying so, it is wrong after the next edit anywhere in the file, and it 
 symbol name and the path do not.
 
 ```
-grep -rEn '\([0-9]+ lines?\)' .ai-docs/reference/ .ai-docs/standards/
+grep -rPn '\([0-9]+ lines?\)' .ai-docs/reference/ .ai-docs/standards/
 ```
 
 ---
@@ -533,7 +599,7 @@ higher duty cycle.
 The copy-paste sites of `standards/` are enumerable, and this is the list to open:
 
 ```
-grep -rnE '^#+ .*(Template|Checklist|Worked Example|Example)' .ai-docs/standards/*.md
+grep -rnP '^#+ .*(Template|Checklist|Worked Example|Example)' .ai-docs/standards/*.md
 ```
 
 ### Heading Diff: Detecting Sections That Were Never Written
@@ -569,13 +635,22 @@ grep -rn 'globallyInstalledKept' src .ai-docs --exclude-dir=agent-findings
 Exclude by directory, never by piping through `grep -v agent-findings` — a live hit whose line
 happens to cite a findings path is dropped by the filter and the sweep reports clean.
 
+**A citation of a FINDING is checked by a script, and `.ai-docs/` is deliberately not one of its
+scopes.** `scripts/check-finding-citations.ts` resolves every finding named by basename from
+`todo/`, from `changelogs/` (bracketed links only, so a release note keeps its words) and from
+`e2e/`. Its docblock carries the ruling on why `.ai-docs/` is not a fourth scope and why `src/` and
+`scripts/` are not either. The short version is that `agent-findings/INDEX.md` names deleted
+findings ON PURPOSE — a row naming a file not on disk is the only surviving record that the finding
+existed — so a scan over that tree reports the corpus's own archive as its defect and has no route
+to zero. The judgement is recorded rather than open: do not add the scope.
+
 **Where the old name survives one layer away, the grep returns live and dead hits mixed and no
 reading of the list separates them.** `SkillConfig.origin` was `SkillConfig.source`, and `source` is
 still a real field on `SkillReference` and on `Skill`. Judge each hit against the declaration its
 sentence means, not against the name:
 
 ```
-grep -nE '^\s+(source|origin)\??: ' src/cli/types/config.ts src/cli/types/skills.ts
+grep -nP '^\s+(source|origin)\??: ' src/cli/types/config.ts src/cli/types/skills.ts
 ```
 
 Where both twins appear on one page, name the surviving one in the sentence so the next grep is not
@@ -595,7 +670,7 @@ grep -rnw 'rowStatusMarker' src e2e scripts
 Over a whole document, extract the camelCase spans and test them together:
 
 ```
-grep -rhoE '`[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*`' <doc> | tr -d '`' | sort -u |
+grep -rhoP '`[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*`' <doc> | tr -d '`' | sort -u |
   while read -r s; do grep -rqw "$s" src e2e scripts || echo "$s"; done
 ```
 
@@ -638,7 +713,7 @@ cross-scope masking helpers, finds an unrelated module, and concludes the machin
 rather than relocated.
 
 ```
-grep -rnE '^(export )?(async )?(function|const) maskCollidingGlobalSkills' src/cli/lib/config-gate/propagate.ts
+grep -rnP '^(export )?(async )?(function|const) maskCollidingGlobalSkills' src/cli/lib/config-gate/propagate.ts
 ```
 
 Where a barrel exports near-synonyms, say which one and why. `loadAllAgents` for `loadMergedAgents`
@@ -653,8 +728,8 @@ registrable, the diff is two extractions and a `comm`:
 ```
 comm -3 \
   <(sed -n '/^### Message builder functions/,/^## /p' .ai-docs/reference/utilities.md \
-      | grep -oE '^\| `[a-zA-Z0-9_]+' | grep -oE '[a-zA-Z0-9_]+$' | sort -u) \
-  <(grep -oE '^export function [a-zA-Z0-9_]+' src/cli/utils/messages.ts | awk '{print $3}' | sort -u)
+      | grep -oP '^\| `[a-zA-Z0-9_]+' | grep -oP '[a-zA-Z0-9_]+$' | sort -u) \
+  <(grep -oP '^export function [a-zA-Z0-9_]+' src/cli/utils/messages.ts | awk '{print $3}' | sort -u)
 ```
 
 Empty output is agreement; column one is named-but-absent, column two present-but-unnamed. A total
@@ -663,6 +738,77 @@ has been out by three names at once — one present that should not have been, t
 have been — so a count-only check flags it by one and points at nothing in particular. The same
 applies where the atomic unit is an edge rather than a row: derive the whole relation from source
 and diff it both ways, which is the only thing that finds an import a graph never recorded.
+
+### Where this stops: in a source comment, `{@link}` is the citation and a backtick is prose
+
+The four checks above govern a **document**. A source comment is deliberately not held to check 2,
+and the split is the rule: **`{@link X}` asks an editor to resolve `X`; a backtick asks for
+nothing.**
+
+Check 2 cannot be run over source here, and not for want of a better scanner. The house style in
+this codebase is to explain what was REMOVED — _"it used to have a `DOMAIN` beside it"_, _"this
+class declares no `baseFlags`"_ — so by construction its best comments name symbols nothing
+declares. A scan over backticked names in comments is permanently red on correct prose, and a
+permanently red check gets answered by deleting the sentence rather than by repairing a citation.
+That is the benign class under check 2, one layer down and far more common.
+
+So write `{@link}` where a reader should be able to jump to a declaration, and a backtick where the
+sentence is prose about a name — including a name that is deliberately gone. Three forms read as
+citations and resolve to nothing:
+
+| Written                                                                                   | Why it does not resolve                                                                           | Write instead                      |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `{@link member}` — an interface or type-literal member, cited from outside that member    | Namepath resolution is lexical; a type's members are not in scope                                 | `{@link Type.member}`              |
+| `{@link import("./mod.js").thing}`                                                        | `{@link}` takes an entity name, and `import(...)` is not one — the parser stops at `import`       | Import the name, or use a backtick |
+| `{@link ./mod.ts}` — a bare module path where an entity name goes                         | The same reason one step further: this parses to no name at all, so there is nothing to ask about | Backtick the filename              |
+| `{@link exportedElsewhere}` — a name another module declares and this one does not import | Resolution is lexical here too, so a name that greps beautifully still lands nowhere from here    | Backtick it and name its module    |
+
+**Backticking a citation does not turn it into prose, and that is the one worth reading twice.** The
+JSDoc parser does not read backticks, so `` `{@link nowhere}` `` is judged exactly as `{@link nowhere}`
+is. The rule above says to write a backticked NAME instead of a citation — not to wrap the citation
+in backticks, which changes nothing about what the compiler is asked to resolve. The obvious
+consequence is that a document explaining the rule cannot spell an example out in source:
+`scripts/check-symbol-citations.test.ts` assembles its fixture citations at runtime for that reason.
+
+A CLASS member is the case that goes the other way: cited bare from a sibling member's comment it
+resolves for `tsc`, so it is correct as written. `BaseCommand`'s `incompleteWork` docblock, citing
+`exitIfWorkIncomplete` and `hasIncompleteWork`, is the live example. Read the instrument note below
+before treating that as settled.
+
+Enumerate the citations with a FIXED-string grep. An unescaped `{` is a repetition operator, and
+ugrep rejects this one outright rather than matching nothing — exit 2 with the reason on stderr,
+which the `| wc -l` below then reports to the caller as `0`. `-F` is what fixes it and `-P` is not;
+see [The census instrument itself can return a lying zero](#the-census-instrument-itself-can-return-a-lying-zero),
+which governs every census in this document and distinguishes this loud failure from the silent one:
+
+```
+grep -rIoh -F '{@link' src e2e scripts --include='*.ts' --include='*.tsx' | wc -l
+```
+
+**This is gated now, by `scripts/check-symbol-citations.ts`** (2026-08-22, owner ruling on
+CLI-629). Neither `tsc` nor ESLint holds it: verified 2026-08-21 by injecting one unresolvable
+`{@link}` into an e2e spec, over which `bun run typecheck` and `bun run lint` both passed in silence.
+The check walks every `JSDocLink` node and asks `checker.getSymbolAtLocation`, once per tsconfig
+project, and its suite is how it runs — `reference/testing/infrastructure.md` carries its roster
+binding and its three stated limits.
+
+**Why the compiler and not `eslint-plugin-jsdoc`.** `jsdoc/no-undefined-types` reads ESLint's scope
+rather than the type graph, so it reports the sibling-member form above — which `tsc` resolves and
+which is correct as written — and misses every `import(...)` namepath. TypeDoc's
+`--validation.invalidLink` resolves against the real program and catches both, and adds a warning for
+every citation to a symbol that resolves but is not exported. The finding
+`2026-08-21-the-link-citation-is-followed-almost-everywhere-and-checked-nowhere` carries the
+per-instrument comparison and the site list that preceded the gate.
+
+**Two notes on building the walk, both paid for once.** `ts.forEachChild` descends into none of a
+node's `jsDoc`, `comment` or `tags`, so a walk built on it reads every statement in the package,
+finds no citation at all and reports a clean tree; `node.getChildren(sourceFile)` reaches them.
+And prefer `ts.getParsedCommandLineOfConfigFile` for the config — not because
+`ts.parseJsonConfigFileContent` ignores `extends`, which was asserted here until 2026-08-22 and is
+false (measured against TypeScript 6.0.3: both resolve the two-level chain and both yield 414 root
+files for this package's `tsconfig.json`), but because it is the entry point that takes a diagnostics
+reporter, so a config TypeScript cannot read fails by name instead of yielding a `ParsedCommandLine`
+full of errors a caller has to remember to inspect.
 
 ### Doc-Touching Changes (Feature / Rename / Deletion Hooks)
 
@@ -691,7 +837,7 @@ directory's, because an agent scanning for its own change stops at the first mat
 | Any change to `src/cli/lib/configuration/default-stacks.ts` — a stack, an assignment, a preload flag                                                             | `features/built-in-catalogue.md` (owns its structural invariants and their counts)                                                                                                                                                                                                                               |
 | Any change under `src/cli/lib/configuration/**`                                                                                                                  | `features/configuration.md`, `config/config-writer.md`, `config/config-merger.md`, `config/scope-split.md`                                                                                                                                                                                                       |
 | Any change under `src/cli/lib/operations/**`                                                                                                                     | `features/operations-layer.md`, `types/operations-types.md`, `dependency-graph.md`                                                                                                                                                                                                                               |
-| Any change under `src/cli/lib/agents/**`, or to `lib/compiler.ts` / `lib/output-validator.ts`                                                                    | `features/agent-system.md`, `features/compilation-pipeline.md`                                                                                                                                                                                                                                                   |
+| Any change under `src/cli/lib/agents/**`, or to `lib/compiler.ts`                                                                                                | `features/agent-system.md`, `features/compilation-pipeline.md`                                                                                                                                                                                                                                                   |
 | Any change under `src/cli/lib/skills/**` or `src/cli/lib/stacks/**`                                                                                              | `features/skills-and-matrix.md`, `features/compilation-pipeline.md`, `skills/skill-primitives.md`                                                                                                                                                                                                                |
 | Any change under `src/cli/lib/wizard/**`                                                                                                                         | `features/wizard-flow.md`, `wizard/state-transitions.md`, `concepts/guard-pattern.md`                                                                                                                                                                                                                            |
 | Any change under `src/cli/lib/seed/**`                                                                                                                           | `features/seed-contract.md`                                                                                                                                                                                                                                                                                      |
@@ -932,6 +1078,13 @@ still exist), and **minimal** (WHERE things are and WHAT they do).
 `.ai-docs/agent-findings/` is the deliberate exception to everything above: its entries are dated
 point-in-time evidence and say so. They are not maintained, not re-validated and not swept for
 staleness.
+
+**Which is not the same as "nothing in one is current", and the split is written out once, in
+`agent-findings/README.md` -> "Reading a Finding".** The short of it: the body and the file lists
+describe the tree on the entry's own date and stay as written; `status:` and `partial_note:` are
+live and are corrected in place. Read that section before opening a tracker row against a finding —
+a finding the tree has moved past is history rather than a defect, and correcting its body to match
+today's code destroys the record it exists to be.
 
 **A Proposed Standard is evidence that a rule is needed, not the text of one.** The paragraph above
 is the reason: a finding is frozen on the day it is written while the code, the library versions and

@@ -90,3 +90,33 @@ the work is finished.
 
 **Sub-agents do not edit `todo/`.** The orchestrator does, as each agent lands. The trackers carry
 curated git staging and several agents land at once, so briefs should say so explicitly.
+
+## How work gets briefed
+
+A **brief** is the prompt one agent hands another — a dispatch to a sub-agent, an instruction
+carried between sessions, a hand-off written from a tracker row. The contract is
+[`packages/cli/.ai-docs/standards/briefing.md`](./packages/cli/.ai-docs/standards/briefing.md) and
+it binds both ends: read it before dispatching work, and before executing a dispatch.
+
+**It is a discipline rather than a gate, because a brief is not a tracked file and no checker can
+open one.** Four of its rules are restated here because everything else depends on them:
+
+- **Re-derive before you write.** Every figure, site list and symbol name in a brief was measured
+  against a tree that has since moved. An agent whose row turns out not to describe the tree stops
+  on that row, reports it with evidence, and moves on — it does not invent work to justify the row.
+- **A brief carries the command, not its result.** No count in a brief; write the invocation that
+  produces one. A number is correct when written and wrong within days, and the reader cannot tell
+  which they are holding.
+- **Corrections are a required field of every report** — what in the brief proved false, with
+  "nothing" written out when nothing did. A silent report is indistinguishable from a brief that
+  held, and this field is the only thing that keeps the error rate visible. Its other half is the
+  orchestrator's: one line per dispatch into the programme's own progress file under
+  [`todo/plans/`](./todo/plans/), because a correction read once and discarded measures nothing —
+  the rate is a fact about a programme, and nothing turns a per-dispatch answer into one unless it
+  is written down as each lane lands.
+- **Name the files each lane owns whenever more than one agent is working.** An agent needing a
+  change in someone else's file reports the exact change rather than making it.
+
+Three principles were ruled on 2026-08-19 and are not re-litigated: **the verifier is never the
+fixer**; **a verdict carries a reproduction, not a judgement**; and **prefer deleting a claim to
+rewriting it**, since every rewrite is a new claim that can rot.

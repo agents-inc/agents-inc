@@ -124,6 +124,7 @@ grep -rn -B1 'eslint-disable' src e2e scripts --include='*.ts' --include='*.tsx'
 
 ### Delegation & Process
 
+- ALWAYS write a brief under [`.ai-docs/standards/briefing.md`](./.ai-docs/standards/briefing.md), and read it before executing one. A brief is the prompt one agent hands another; it is never written to the tree, so **no checker can open one** and the discipline is the whole enforcement. The four that bind hardest: **re-derive before you write** — every figure and symbol in a brief was measured against a tree that has since moved, and an agent whose row does not describe the tree stops on it and reports rather than inventing work to justify it; **a brief carries the command, not its result** — no count in a brief, write the invocation that produces one; **corrections are a required field of every report**, with "nothing" written out when nothing was wrong, because a silent report is indistinguishable from a brief that held — and the orchestrator accumulates them, one line per dispatch in the programme's progress file, since a correction read once and discarded measures nothing; and **name the files each lane owns** whenever more than one agent is working, so a change wanted in another lane's file is reported rather than made. Ruled 2026-08-19 and not re-litigated: the verifier is never the fixer, a verdict carries a reproduction rather than a judgement, and deleting a claim beats rewriting it
 - ALWAYS delegate implementation and test code to sub-agents. Tell them to read CLAUDE.md. Tell them: "Do NOT run any git commands."
 - ALWAYS trace ALL scenarios through the code after any fix
 - ALWAYS grep for the old value when changing test data or renaming anything
@@ -147,7 +148,7 @@ grep -rn -B1 'eslint-disable' src e2e scripts --include='*.ts' --include='*.tsx'
 ### Type Safety
 
 - ALWAYS use type guards (`isCategory()`, `isDomain()`, `isAgentName()` from `utils/type-guards.ts`) instead of `as` casts for runtime narrowing
-- ALWAYS use `getSkillById(id)` or `getSkillBySlug(slug)` from `matrix/matrix-provider.ts` for skill lookups where the skill must exist. Only use `matrix.skills[id]` when genuinely optional.
+- ALWAYS use `getSkillById(id)` from `matrix/matrix-provider.ts` for skill lookups where the skill must exist. Only use `matrix.skills[id]` when genuinely optional.
 - ALWAYS use `parseFrontmatter()` from `lib/loading/loader.ts` for SKILL.md parsing
 - ALWAYS type factory function parameters with the narrowest union type (`SkillId`, not `string`). Error-path tests cast at the call site.
 - ALWAYS use `typedEntries()` / `typedKeys()` from `utils/typed-object.ts` (not raw `Object.entries()`)
@@ -217,10 +218,11 @@ Items not already covered by NEVER/ALWAYS rules above:
 
 ## Key Documentation
 
-| Document                                                         | Purpose                      |
-| ---------------------------------------------------------------- | ---------------------------- |
-| [.ai-docs/DOCUMENTATION_MAP.md](./.ai-docs/DOCUMENTATION_MAP.md) | Codebase documentation index |
-| [todo/cli.md](../../todo/cli.md)                                 | Active tasks and blockers    |
+| Document                                                           | Purpose                                                |
+| ------------------------------------------------------------------ | ------------------------------------------------------ |
+| [.ai-docs/DOCUMENTATION_MAP.md](./.ai-docs/DOCUMENTATION_MAP.md)   | Codebase documentation index                           |
+| [.ai-docs/standards/briefing.md](./.ai-docs/standards/briefing.md) | How a brief states a fact, and what a report owes back |
+| [todo/cli.md](../../todo/cli.md)                                   | Active tasks and blockers                              |
 
 <critical-reminder>
 1. You do NOT write code. Delegate to sub-agents. Tell them to read CLAUDE.md.
