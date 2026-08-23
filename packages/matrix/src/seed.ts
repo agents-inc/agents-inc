@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { DEFAULT_SELECTION_OPTIONS } from "./read-model/selection-defaults"
+
 // The wire contract for shared configs: the web app POSTs this payload to the
 // config store (Cloudflare Worker + KV) and gets a short id back; `agents-inc
 // init --from <id>` fetches and validates it with this same schema. This file is
@@ -65,11 +67,17 @@ export const seedEffortSchema = z.enum([
 
 export const seedLoadStateSchema = z.enum(["lazy", "preloaded"])
 
+// Where a thing is written: under one project's `.claude`, or the user's own
+// `~/.claude`. Named once because a skill and a sub-agent each carry one and
+// the rule below compares the two — three spellings of one vocabulary is what
+// let the surfaces disagree about it.
+export const seedScopeSchema = z.enum(["project", "global"])
+
 // A skill says where it installs and which agents carry it, and nothing about
 // how they think.
 export const seedSkillSchema = z.object({
   install: z.enum(["plugin", "eject"]),
-  scope: z.enum(["project", "global"]),
+  scope: seedScopeSchema,
   // Sub-agent id → load state; presence is assignment. Per (agent, skill),
   // matching the granularity of the CLI's stack config.
   assignments: z.record(z.string(), seedLoadStateSchema),
@@ -88,7 +96,7 @@ export const seedAgentSchema = z.object({
   // ~/.claude. Absent means the shared selection default — `global`, spelled
   // once in `DEFAULT_SELECTION_OPTIONS` — so the resting choice never travels,
   // exactly as a resting model does not.
-  scope: z.enum(["project", "global"]).exactOptional(),
+  scope: seedScopeSchema.exactOptional(),
 })
 
 // ── External skills ──────────────────────────────────────────────────────
@@ -177,6 +185,22 @@ export const seedPayloadSchema = z.object({
   // decode — it explains why some ids were skipped.
   matrixVersion: z.string(),
   stackId: z.string().nullable(),
+  // The sentence the sharer's config records about itself, which on the CLI
+  // side is the description of whatever stack was applied. It travels because
+  // `stackId` deliberately does not: a saved config records a stack's
+  // EXPANSION and never the id it came from, so the receiver has no id to
+  // resolve one out of and the line is simply lost.
+  //
+  // Carrying the id instead would be worse rather than equivalent. A resolvable
+  // stack id does exactly two things on the way in — it supplies this
+  // description, and it overlays the stack YAML's own `preloaded` flags — and
+  // the assignments above already carry per-(skill, sub-agent) load state in
+  // full, so the second is redundant. What the id would ADD is the stack's
+  // whole roster: the receiving install spreads the loaded stack first and lets
+  // the saved stack win per agent, so a stack sub-agent the sharer REMOVED
+  // comes back wholesale. Absent means a config that describes itself with
+  // nothing, which is every payload the web app mints.
+  description: z.string().exactOptional(),
   // Where the skills below are fetched from, in the form `--marketplace` takes
   // one: `github:acme/skills`, a URL, a local path. The ref alone — the name
   // its manifest gives it is read from the fetched marketplace.json, so
@@ -206,8 +230,113 @@ export const seedPayloadSchema = z.object({
 export type SeedModel = z.infer<typeof seedModelSchema>
 export type SeedEffort = z.infer<typeof seedEffortSchema>
 export type SeedLoadState = z.infer<typeof seedLoadStateSchema>
+export type SeedScope = z.infer<typeof seedScopeSchema>
 export type SeedSkill = z.infer<typeof seedSkillSchema>
 export type SeedAgent = z.infer<typeof seedAgentSchema>
 export type SeedSkillTree = z.infer<typeof seedSkillTreeSchema>
 export type SeedExternalSkill = z.infer<typeof seedExternalSkillSchema>
 export type SeedPayload = z.infer<typeof seedPayloadSchema>
+
+/**
+ * Project skills never reach global sub-agents; global skills reach any.
+ *
+ * A global sub-agent's front-matter is written to `~/.claude`, where every
+ * project on the machine sees it, while a project-scoped skill is installed
+ * under one project's `.claude` — so a global sub-agent carrying a project
+ * skill names something that does not exist from anywhere else.
+ *
+ * This is the ONE definition. The CLI's `isScopePairCompatible` and the
+ * editor's roster marker both read it from here rather than restating it: the
+ * rule lived as three verbatim copies across three workspaces, which is exactly
+ * the drift a shared contract exists to prevent.
+ */
+export const isSeedScopePairWritable = (
+  skillScope: SeedScope,
+  agentScope: SeedScope
+) => !(skillScope === "project" && agentScope === "global")
+
+/**
+ * Where a sub-agent's front-matter is written, for an entry that may not exist.
+ *
+ * The `agents` map is sparse, so an absent entry — and an entry that names no
+ * scope — rests on the shared selection default. Read from
+ * `DEFAULT_SELECTION_OPTIONS` rather than written out, because a default the
+ * wire and the consumer spell differently is the same defect as two copies of
+ * the rule above.
+ */
+export const seedAgentScope = (entry: SeedAgent | undefined): SeedScope =>
+  entry?.scope ?? DEFAULT_SELECTION_OPTIONS.scope
+
+/** A `(skill, sub-agent)` assignment the config model has nowhere to write. */
+export type UnwritableSeedAssignment = { skillId: string; agent: string }
+
+// An assignment naming a sub-agent the sharer pinned OFF installs nothing, so
+// it is not a pair at all and cannot be an unwritable one. It leaves before the
+// scope question is asked, exactly as the CLI's decode drops it — a wire
+// stricter than the consumer it protects is its own kind of drift.
+const isSwitchedOff = (entry: SeedAgent | undefined) => entry?.on === false
+
+const isUnwritablePair = (
+  agents: SeedPayload["agents"],
+  skillScope: SeedScope,
+  agent: string
+): boolean => {
+  const entry = agents[agent]
+  if (isSwitchedOff(entry)) return false
+  return !isSeedScopePairWritable(skillScope, seedAgentScope(entry))
+}
+
+/**
+ * Every `(skill, sub-agent)` pair in this payload that has nowhere to be
+ * written. Both halves of each are named because neither alone says what to
+ * change: the skill can move to global scope, or the sub-agent can be pinned to
+ * the project, and only the sharer knows which they meant.
+ *
+ * **What this cannot see, and why the refusal built on it belongs at the
+ * MINTING end rather than at every read.** An assignment naming a sub-agent the
+ * RECEIVER does not know is the same bytes on the wire as one naming a
+ * sub-agent resting at global. Only a catalogue tells the two apart, and a wire
+ * schema has none — so a consumer that refused on this alone would turn a
+ * sub-agent rename into a retroactive break of every link minted before it,
+ * which is the leniency `seedToWizardResult` documents at length. The CLI keeps
+ * its own catalogue-aware check for that reason; what it no longer keeps is its
+ * own copy of the RULE.
+ */
+export const unwritableSeedAssignments = (
+  payload: SeedPayload
+): UnwritableSeedAssignment[] =>
+  Object.entries(payload.skills).flatMap(([skillId, skill]) =>
+    Object.keys(skill.assignments)
+      .filter((agent) => isUnwritablePair(payload.agents, skill.scope, agent))
+      .map((agent) => ({ skillId, agent }))
+  )
+
+/**
+ * The payload as something that can be INSTALLED, which is a stronger claim
+ * than being well-formed.
+ *
+ * A SECOND schema rather than a tightening of `seedPayloadSchema`, and the
+ * split is the whole design. Minting and reading want different answers to the
+ * same question:
+ *
+ *   - **Minting** (the worker's POST, and any client that assembles a payload)
+ *     should refuse the pair outright, so a link that cannot be installed is
+ *     never created and never pasted anywhere.
+ *   - **Reading** must stay lenient. Links holding the pair are already out in
+ *     the world; the editor opens one, marks the offending row and fixes it in
+ *     a single click (EDITOR-08), and `GET /configs/:id` re-validates what it
+ *     serves — so a base schema that refused would turn every such id into a
+ *     500 with no way back, and delete the repair flow that exists to rescue
+ *     them.
+ */
+export const installableSeedPayloadSchema = seedPayloadSchema.superRefine(
+  (payload, ctx) => {
+    for (const { skillId, agent } of unwritableSeedAssignments(payload)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["skills", skillId, "assignments", agent],
+        message: `a project-scoped skill has nowhere to be written on '${agent}', which rests at global scope`,
+      })
+    }
+  }
+)

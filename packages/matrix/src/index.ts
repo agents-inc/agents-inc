@@ -102,6 +102,11 @@ export {
   seedSkillTreeSchema,
   seedExternalSkillSchema,
   seedPayloadSchema,
+  seedScopeSchema,
+  installableSeedPayloadSchema,
+  isSeedScopePairWritable,
+  seedAgentScope,
+  unwritableSeedAssignments,
 } from "./seed"
 export type {
   SeedModel,
@@ -112,6 +117,8 @@ export type {
   SeedSkillTree,
   SeedExternalSkill,
   SeedPayload,
+  SeedScope,
+  UnwritableSeedAssignment,
 } from "./seed"
 
 export { matrixSchema } from "./matrix-schema"

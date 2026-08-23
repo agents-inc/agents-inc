@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 
+import { DEFAULT_SELECTION_OPTIONS } from "./read-model/selection-defaults"
 import {
   MAX_EXTERNAL_SKILL_BYTES,
   SEED_VERSION,
+  installableSeedPayloadSchema,
   seedExternalSkillSchema,
   seedPayloadSchema,
+  unwritableSeedAssignments,
 } from "./seed"
 
 // The external half of the wire contract, which is the only part of the payload
@@ -193,6 +196,12 @@ describe("the payload's optional fields", () => {
     ).toBe(false)
   })
 
+  it("refuses a description present holding undefined", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ description: undefined })).success
+    ).toBe(false)
+  })
+
   // The other half of each pair. Absence is pinned by the describe above — the
   // payload naming nothing external parses there — so what is left to say is
   // that a real ref still goes through, which no test in this file held.
@@ -202,6 +211,47 @@ describe("the payload's optional fields", () => {
         payload({ marketplace: "github:acme/skills" })
       ).success
     ).toBe(true)
+  })
+})
+
+// The sentence a config records for itself. It exists because the alternative
+// — recording the stack id that supplied it — makes the receiver overlay that
+// stack's own agents and preload flags over the curation being shared, adding
+// back exactly what the sharer removed.
+describe("the payload's description", () => {
+  const SHARED_DESCRIPTION = "Minimal stack for E2E testing"
+
+  it("travels, so the receiver can record what the sharer's config said it was", () => {
+    expect(
+      seedPayloadSchema.parse(payload({ description: SHARED_DESCRIPTION }))
+        .description
+    ).toBe(SHARED_DESCRIPTION)
+  })
+
+  it("leaves the field off a payload whose config describes itself with nothing", () => {
+    expect(seedPayloadSchema.parse(payload())).not.toHaveProperty("description")
+  })
+
+  // The field arrived without a version bump, and this is the fact that
+  // reasoning rests on: a plain object schema DROPS what it does not know, so a
+  // consumer built before the field existed installs the identical
+  // configuration minus one line — which is the state before it travelled at
+  // all. That is what separates it from `external`, whose loss installs a
+  // configuration quietly missing the skills the sharer picked, and why the
+  // literal did not have to move for this one.
+  //
+  // Asserted through a field no build will ever know, so the test keeps saying
+  // what it says after `description` becomes ordinary. Switching this object to
+  // a strict or a loose one is what makes it fail, and either would spend a
+  // bump that `plans/parked-features-2026-08-19.md` item 1 has other claims on.
+  it("would be dropped by an older consumer rather than refused, which is why the version held", () => {
+    const throughAnOlderBuild = seedPayloadSchema.parse(
+      payload({ aFieldMintedAfterEveryBuildOnDisk: SHARED_DESCRIPTION })
+    )
+
+    expect(throughAnOlderBuild).not.toHaveProperty(
+      "aFieldMintedAfterEveryBuildOnDisk"
+    )
   })
 })
 
@@ -249,5 +299,120 @@ describe("a sub-agent's optional fields", () => {
       seedPayloadSchema.safeParse(payload({ agents: { [AGENT_ID]: {} } }))
         .success
     ).toBe(true)
+  })
+})
+
+const REACT = "web-framework-react"
+
+/** A project-scoped skill, assigned to whichever sub-agents the caller names. */
+const projectSkill = (assignments: Record<string, string>) => ({
+  install: "plugin",
+  scope: "project",
+  assignments,
+})
+
+/**
+ * The pair the rule is about, in its commonest wire shape: a project-scoped
+ * skill assigned to a sub-agent the `agents` map says nothing about, so that
+ * sub-agent rests at the shared selection default.
+ */
+const restingPairPayload = () =>
+  payload({
+    skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+    agents: {},
+  })
+
+// The refusal and the permission are pinned together on purpose: a rule that
+// only ever turns things away cannot be told from one that has swallowed its
+// whole domain, and both leave a `safeParse` reading the same way.
+describe("a project skill's reach over a sub-agent", () => {
+  it("resolves an unnamed sub-agent through the shared selection default", () => {
+    // The rule is only meaningful because the default is `global`. Held against
+    // the constant rather than restated, so the two cannot drift apart.
+    expect(DEFAULT_SELECTION_OPTIONS.scope).toBe("global")
+  })
+
+  it("refuses a project skill on a sub-agent left at its resting scope", () => {
+    const result = installableSeedPayloadSchema.safeParse(restingPairPayload())
+
+    expect(result.success).toBe(false)
+  })
+
+  it("accepts the same pair once the sub-agent is pinned to the project", () => {
+    const pinned = payload({
+      skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+      agents: { [AGENT_ID]: { scope: "project" } },
+    })
+
+    expect(installableSeedPayloadSchema.safeParse(pinned).success).toBe(true)
+  })
+
+  it("accepts a global skill on a sub-agent at its resting scope", () => {
+    const global = payload({
+      skills: {
+        [REACT]: {
+          install: "plugin",
+          scope: "global",
+          assignments: { [AGENT_ID]: "preloaded" },
+        },
+      },
+      agents: {},
+    })
+
+    expect(installableSeedPayloadSchema.safeParse(global).success).toBe(true)
+  })
+
+  // An assignment row naming a sub-agent the sharer switched off installs
+  // nothing, so it cannot be an unwritable pair. The decode drops these rows
+  // before it asks the scope question and this has to agree, or the wire is
+  // stricter than the consumer it exists to protect.
+  it("ignores an assignment row naming a sub-agent pinned off", () => {
+    const off = payload({
+      skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+      agents: { [AGENT_ID]: { on: false } },
+    })
+
+    expect(installableSeedPayloadSchema.safeParse(off).success).toBe(true)
+  })
+
+  it("names both halves of every unwritable pair, not just the first", () => {
+    const two = payload({
+      skills: {
+        [REACT]: projectSkill({
+          [AGENT_ID]: "preloaded",
+          "api-developer": "lazy",
+        }),
+      },
+      agents: {},
+    })
+
+    expect(
+      unwritableSeedAssignments(seedPayloadSchema.parse(two))
+    ).toStrictEqual([
+      { skillId: REACT, agent: AGENT_ID },
+      { skillId: REACT, agent: "api-developer" },
+    ])
+  })
+
+  it("finds nothing to report in a payload the config model can write", () => {
+    const pinned = payload({
+      skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+      agents: { [AGENT_ID]: { scope: "project" } },
+    })
+
+    expect(
+      unwritableSeedAssignments(seedPayloadSchema.parse(pinned))
+    ).toStrictEqual([])
+  })
+})
+
+// The control for the whole rule above, and the reason it is a SECOND schema
+// rather than a tightening of the first. A link already minted holding the pair
+// has to keep arriving: the editor opens one, marks the row and fixes it in a
+// click (EDITOR-08), and the worker re-validates on read, so a base schema that
+// refused would turn every such id into a 500 nobody can repair.
+describe("the read schema is deliberately lenient about the same pair", () => {
+  it("accepts a payload the installable schema turns away", () => {
+    expect(seedPayloadSchema.safeParse(restingPairPayload()).success).toBe(true)
   })
 })
