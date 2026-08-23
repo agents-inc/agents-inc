@@ -185,12 +185,19 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # `turbo deploy` builds first. VITE_API_URL is inlined into the bundle at
-      # that point, so it belongs on this step and not on a separate build —
-      # and it is declared in turbo.json's `env` so the cache keys on it.
+      # `turbo deploy` builds first, and VITE_API_URL is inlined into that
+      # build. It is deliberately NOT set here any more: it lives in the
+      # committed apps/editor/.env.production, which `vite build` loads by
+      # itself, so CI and a hand-run `bun run deploy` produce the same bundle
+      # from the same file instead of from two copies of one address that must
+      # never disagree. Setting it here again would silently outrank that file
+      # — a shell variable beats every .env — and the deploy would then fail on
+      # check-deployable-bundle.ts rather than ship the difference, which is
+      # the behaviour we want but not a reason to keep the second copy.
+      # VITE_API_URL stays named in turbo.json's build `env` so that a shell
+      # value, if one ever returns, still keys the cache.
       - run: bun run deploy
         env:
-          VITE_API_URL: https://api.agentsinc.sh
           # Slugs are public identifiers — they appear in every Sentry URL, so
           # they are config rather than secrets. The DSN is public too (it
           # ships inside the bundle), but is kept alongside the token so there

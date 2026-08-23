@@ -55,6 +55,11 @@
       // this one validates the environment before it returns — by design: see src/env.schema.ts.
       // With no VITE_API_URL set, loading it throws and the whole run reports an error instead of
       // findings. Off, vite.config.ts is named as an entry below so its plugin imports still count.
+      //
+      // That premise weakened on 2026-08-21: apps/editor/.env.production is committed now and
+      // Vite's own loadEnv reads it at mode "production", so the throw needs the file to be missing
+      // rather than merely nobody having exported anything. Left off regardless — re-enabling it is
+      // a judgement about the findings it would add, not a fix, and deps:dead is nobody's gate.
       "vite": false,
       // Named so the plugins it imports still count as used; with the plugin off, nothing else
       // reads this file.

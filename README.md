@@ -47,13 +47,11 @@ The repository uses [bun](https://bun.sh) and [Turborepo](https://turborepo.com)
 bun install
 ```
 
-The web app then needs one variable before it will build. `apps/editor/src/env.schema.ts` supplies a localhost default for `bun dev`, but deliberately withholds it in production mode — a deployed bundle silently pointing at localhost is the exact failure it exists to prevent — and `vite build` is a production build. So copy the template once:
+That is the whole of it — nothing else to copy, and in particular **do not create `apps/editor/.env` in order to make the build work.** It used to be necessary and it is not any more, which matters because the step was a footgun: `.env` is loaded in every mode, so the localhost address it carried for `bun dev` was also the address `vite build` froze into the bundle, and a hand-run `bun run deploy` would then publish a live site whose every request went to the developer's own machine. That very nearly happened during the repository merge.
 
-```bash
-cp apps/editor/.env.example apps/editor/.env
-```
+What replaced it is `apps/editor/.env.production`, which is committed. Vite ranks a mode-specific env file above the generic one — shell, then `.env.production`, then `.env.local`, then `.env` — so a production build takes the real API address from that file and a local `.env` cannot reach it. Both halves follow: `bun dev` needs no setup because `env.schema.ts` still supplies the localhost default in development, and `bun run build` needs none because `.env.production` supplies the production one.
 
-Without it `bun run build` stops at `editor#build` with `Invalid environment: VITE_API_URL`. CI never hits this: the check job does not build the web app, and the deploy job sets `VITE_API_URL` to the real API explicitly.
+A `.env` of your own is still fine for the optional variables — `apps/editor/.env.example` documents what each is — and to point `bun dev` at a worker on a different port. To build a _bundle_ against something other than production, put it in `.env.production.local`, which is gitignored, and do not deploy that build: `bun run deploy` re-checks the built bundle against `.env.production` and refuses to upload one that disagrees.
 
 The root scripts fan out through turbo to whichever workspaces define the matching task, so `bun run build` builds the CLI, the web app and the worker in dependency order:
 
@@ -65,7 +63,7 @@ The root scripts fan out through turbo to whichever workspaces define the matchi
 | `bun run typecheck`  | Typechecks every workspace                                                                                                 |
 | `bun run test`       | Runs the unit tests                                                                                                        |
 | `bun run test:e2e`   | Runs the end-to-end suites                                                                                                 |
-| `bun run deploy`     | Deploys the Cloudflare workspaces                                                                                          |
+| `bun run deploy`     | Rebuilds, checks the bundle, then deploys the Cloudflare workspaces                                                        |
 | `bun run format`     | Formats the repo (one run from the root, not through turbo)                                                                |
 | `bun run deps:check` | Reports what is only visible across workspaces: version mismatches, and tsconfigs that stopped extending the shared config |
 

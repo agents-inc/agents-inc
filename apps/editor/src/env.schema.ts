@@ -9,6 +9,9 @@ export const envSchema = z.object({
   // The config-sharing worker. Defaulted for local dev only: a production
   // build that omitted this would ship pointing at localhost, and every share
   // would fail with a message that reads like an outage rather than a typo.
+  // In production the value comes from the committed `.env.production`, which
+  // Vite ranks above any local `.env` — so this staying required is what turns
+  // "somebody deleted that file" into a failed build instead of a bad deploy.
   VITE_API_URL: z.url(),
 
   // Optional on purpose, and optional in production too. Error reporting that
@@ -62,6 +65,7 @@ export const parseEnv = (
     .join(", ")
 
   throw new Error(
-    `Invalid environment: ${named}. See apps/editor/.env.example for what each one is.`
+    `Invalid environment: ${named}. See apps/editor/.env.example for what each one is, ` +
+      `and apps/editor/.env.production for the values a production build uses.`
   )
 }
