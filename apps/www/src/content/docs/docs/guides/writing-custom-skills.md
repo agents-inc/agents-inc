@@ -7,8 +7,19 @@ sidebar:
 
 Create your own skills and subagents to extend the framework with project-specific knowledge.
 
-Both are written by hand. The scaffolding commands that used to sit on this page were withdrawn
-rather than left broken; a replacement for skills is planned.
+Both are written by hand, and the route for each is `eject` — start from a working copy of a
+built-in and edit it. The `new skill` and `new agent` commands that used to sit on this page are
+gone, and they are gone for different reasons: **skill scaffolding is deferred**, and will mimic
+the [editor](https://agentsinc.sh)'s intake flow when it arrives rather than inventing a second
+one, so it waits for that flow to settle; **sub-agent scaffolding is not coming back at all** — a
+sub-agent is composed from partials and skills, so ejecting the built-in partials already gives you
+the whole of what a scaffold would have written.
+
+One thing the browser does do today, and it is import rather than authoring: the
+[editor](https://agentsinc.sh)'s **Add skill** dialog searches GitHub for skills that already
+exist, carries the chosen one's contents inline in the configuration it hands you, and
+`init --from <id>` installs it alongside the catalogue's own. That covers a skill somebody has
+already written. A skill only you have needs the rest of this page.
 
 ## Skills
 

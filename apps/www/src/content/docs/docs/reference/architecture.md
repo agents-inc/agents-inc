@@ -36,7 +36,7 @@ Paths below are relative to [`packages/cli/`](https://github.com/agents-inc/agen
 src/
   agents/               # Agent source partials (YAML + markdown per agent)
   cli/
-    commands/            # oclif command classes (build, import, new, + top-level)
+    commands/            # oclif command classes (build, new, + top-level)
     components/          # Ink React components
       common/            #   Shared UI (confirm, spinner, select-list)
       hooks/             #   React hooks for wizard behavior
@@ -80,7 +80,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 4. Wizard renders (Ink/React)
    -> Zustand store manages step-by-step state
-   -> Steps: stack -> skills -> sources -> agents -> confirm
+   -> Steps: stack -> domains -> build -> sources -> agents -> confirm
    -> Returns WizardResultV2 (selected skills, agent configs, scope settings)
 
 5. Installation
@@ -90,7 +90,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
       fans the global change out to registered projects and recompiles their agents
 
 6. Compilation
-   -> Reads agent partials (intro.md, workflow.md, etc.)
+   -> Reads agent partials (identity.md, playbook.md, output.md, etc.)
    -> Builds template context from selected skills
    -> Sanitizes to prevent Liquid injection
    -> LiquidJS renders agent.liquid template
@@ -143,7 +143,7 @@ being reachable at all — which is why it is the form to copy.
 
 ## Agent Compilation
 
-Agent prompts are assembled from partials (YAML frontmatter + markdown sections like `intro.md`, `workflow.md`, `skills.md`). The compiler reads agent definitions, builds a template context with all selected skills injected, sanitizes user-controlled fields to prevent Liquid injection (`{{`, `{%` stripped), and renders through LiquidJS. Output is one markdown file per agent in `.claude/agents/`.
+Agent prompts are assembled from partials — a `metadata.yaml` carrying the frontmatter, plus the markdown sections `identity.md`, `playbook.md`, `critical-requirements.md`, `critical-reminders.md` and `output.md`. The compiler reads agent definitions, builds a template context with all selected skills injected, sanitizes user-controlled fields to prevent Liquid injection (`{{`, `{%` stripped), and renders through LiquidJS. Output is one markdown file per agent in `.claude/agents/`.
 
 ## Test Infrastructure
 

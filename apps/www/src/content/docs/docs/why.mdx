@@ -67,10 +67,11 @@ See [Editing your config](/docs/guides/editing-config).
 After `npx agents-inc init`:
 
 - **Compiled sub-agents** in `.claude/agents/`, one markdown file each. The
-  catalogue currently defines {AGENT_COUNT} of them — developers, testers,
-  researchers and planners per domain, a single `reviewer` that loads its
-  per-domain review skills lazily, and a few meta ones — and you pick which
-  to compile.
+  catalogue currently defines {AGENT_COUNT} of them — a developer, a tester and
+  a researcher for each domain that has a roster, a single `pm` and a single
+  `reviewer` serving all of them (the reviewer loading its per-domain review
+  skills lazily), and a handful of meta agents — and you pick which to
+  compile.
 - **A config file** at `.claude-src/config.ts`. Plain TypeScript, meant to be
   edited by hand. It lists your skills, your sub-agents, and the `stack`
   mapping that decides which skills each sub-agent receives.

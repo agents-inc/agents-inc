@@ -3,7 +3,11 @@ title: Skills
 description: The atomic unit of expertise — what a skill is, what it looks like on disk, and how skills relate to sub-agents and stacks.
 ---
 
-import { SKILL_COUNT } from "../../../../lib/catalog-counts"
+import {
+  DOMAIN_COUNT,
+  DOMAIN_IDS,
+  SKILL_COUNT,
+} from "../../../../lib/catalog-counts"
 
 A **skill** is one atomic, reusable unit of expertise: one library or one practice, written once. React is a skill. Zod is a skill. Vitest is a skill.
 
@@ -17,11 +21,11 @@ skills/{skill-name}/
   metadata.yaml    # Name, domain, category, relationships
 ```
 
-Both files are required — the CLI's loader validates the pair, and `agents-inc validate` reports any skill missing either one.
+Both files are required — the CLI's loader validates the pair, and `npx agents-inc doctor` reports any skill missing either one.
 
 ## How skills are organised
 
-Each skill belongs to a **domain** (web, api, ai, mobile, infra, shared, meta) and a **category** within it (`web-framework`, `web-client-state`, `api-api`, and so on). A category can be marked exclusive, which is what makes the wizard treat it as a radio group — you get one framework, not three.
+Each skill belongs to one of {DOMAIN_COUNT} **domains** — {DOMAIN_IDS} — and to a **category** within it (`web-framework`, `web-client-state`, `api-api`, and so on). A category can be marked exclusive, which is what makes the wizard treat it as a radio group — you get one framework, not three.
 
 Skills also declare relationships to each other (`requires`, `conflictsWith`). Those relationships drive the compatibility filtering you see while selecting.
 

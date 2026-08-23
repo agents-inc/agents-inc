@@ -11,21 +11,25 @@ Every command available in the `agents-inc` CLI. Run `agents-inc <command> --hel
 
 ## Command matrix
 
-| Command             | Purpose                                                         | Interactive | Flags                                                           |
-| ------------------- | --------------------------------------------------------------- | ----------- | --------------------------------------------------------------- |
-| `init`              | First-time wizard: pick a stack, skills, agents, compile        | Yes         | `--marketplace/-m`, `--from <id>`                               |
-| `edit`              | Modify an existing installation via the wizard                  | Yes         | (none)                                                          |
-| `compile`           | Recompile agents from the current config                        | No          | `--verbose/-v`                                                  |
-| `update`            | Refresh the marketplaces this installation uses                 | No          | (none — no base)                                                |
-| `search <query>`    | Read-only catalog search across all registered sources          | No          | (none — no base)                                                |
-| `eject <type>`      | Export partials / templates / skills / all for customization    | No          | `--force/-f`, `--output/-o`                                     |
-| `build plugins`     | Compile skills/agents into distributable plugin bundles         | No          | `--agents-dir/-a`, `--output-dir/-o`, `--skill`, `--verbose/-v` |
-| `build marketplace` | Generate `marketplace.json` from built plugins + `package.json` | No          | `--name`, `--plugins-dir/-p`, `--output/-o`, `--verbose/-v`     |
-| `doctor`            | Validate content, then diagnose installation, agents, orphans   | No          | (none — always verbose)                                         |
-| `list`              | Show installation mode, source, skills, agents                  | No          | (none)                                                          |
-| `uninstall`         | Remove CLI-managed files and the `.claude-src/` config manifest | Yes         | `--yes/-y`                                                      |
+| Command                  | Purpose                                                         | Interactive | Flags                                                           |
+| ------------------------ | --------------------------------------------------------------- | ----------- | --------------------------------------------------------------- |
+| `init`                   | First-time wizard: pick a stack, skills, agents, compile        | Yes         | `--marketplace/-m`, `--from <id>`                               |
+| `edit`                   | Modify an existing installation via the wizard                  | Yes         | `--ui`, `--from <id>`                                           |
+| `compile`                | Recompile agents from the current config                        | No          | `--verbose/-v`                                                  |
+| `update`                 | Refresh the marketplaces this installation uses                 | No          | (none — no base)                                                |
+| `search <query>`         | Read-only catalog search across all registered sources          | No          | (none — no base)                                                |
+| `share`                  | Mint this installation as an id anyone can install              | No          | (none)                                                          |
+| `eject <type>`           | Export partials / templates / skills / all for customization    | No          | `--force/-f`, `--output/-o`                                     |
+| `new marketplace <name>` | Scaffold a marketplace of your own into a new directory         | No          | (none)                                                          |
+| `build plugins`          | Compile skills/agents into distributable plugin bundles         | No          | `--agents-dir/-a`, `--output-dir/-o`, `--skill`, `--verbose/-v` |
+| `build marketplace`      | Generate `marketplace.json` from built plugins + `package.json` | No          | `--name`, `--plugins-dir/-p`, `--output/-o`, `--verbose/-v`     |
+| `doctor`                 | Validate content, then diagnose installation, agents, orphans   | No          | (none — always verbose)                                         |
+| `list` (alias `ls`)      | Show installation mode, source, skills, agents                  | No          | (none)                                                          |
+| `uninstall`              | Remove CLI-managed files and the `.claude-src/` config manifest | Yes         | `--yes/-y`                                                      |
 
-Interactive = renders an Ink UI. One exception is not visible in that column: `init --from <id>` installs a shared configuration without opening the wizard, so it renders nothing and needs no terminal.
+**This table is the roster, and it is checked.** `apps/www/scripts/check-cli-claims.ts` binds it to `packages/cli/src/cli/commands/**` — oclif's `commands.strategy` is `pattern`, so a module under that tree _is_ a command and a command is nothing else — and to each command's `static flags`. A row for a command that no longer exists, a command with no row, and a Flags cell that has fallen behind all fail the site's `test` script. The two stock oclif commands, `help` and `autocomplete`, come from plugins rather than from that tree and are deliberately out of scope here.
+
+Interactive = renders an Ink UI. Two exceptions are not visible in that column: `init --from <id>` installs a shared configuration without opening the wizard, and `edit --ui` hands the installation to the browser instead of opening one. Neither renders anything, and neither needs a terminal.
 
 ---
 
@@ -55,7 +59,11 @@ Greenfield setup. Detects if already installed (shows dashboard), otherwise open
 
 Re-enters the wizard with the current selections pre-loaded. Diff is shown at the confirm step. On confirm: re-copies locals, installs/uninstalls plugins, re-writes config, recompiles agents.
 
-**Flags:** none. The wizard opens on the catalogue the installation's config names — `edit` cannot be pointed somewhere else, because a roster edited against one marketplace and recorded against another is the mixed-source state the config has no way to describe.
+**Flags:** `--ui`, `--from <id>` — the two directions of the editor round trip. Passing both is refused before anything is fetched or rendered, because they are opposites: `--ui` hands this installation to the editor and `--from` applies one back. There is no marketplace flag: the wizard opens on the catalogue the installation's config names, and `edit` cannot be pointed somewhere else, because a roster edited against one marketplace and recorded against another is the mixed-source state the config has no way to describe.
+
+**`--ui` hands this installation to the browser.** It reads the installed skills, sub-agents and per-agent curation, mints them as a configuration the store holds — the same mint `share` performs, from the same reader, so the two commands give one directory one id — prints the id with both destinations, and then opens `agentsinc.sh/?fromId=<id>` if there is a terminal to have a browser. Nothing on disk is touched: a run that changed anything here would be editing the project on the way to offering to edit it. Over a pipe or in CI the link is printed and nothing is opened, which is why the print comes first.
+
+**`--from <id>` applies one back, and is destructive.** Unlike `init --from`, this runs against an existing installation, and a shared configuration states a whole roster — so whatever it leaves out is removed. That is why it confirms before writing, with every removal named. Two things it will not silently drop are disclosed instead of acted on: a skill authored in this installation, which no configuration ever carried, and a skill this catalogue cannot place. Both are kept and reported, because an apply that quietly left them behind is how somebody ends up with a skill they never picked and no way to tell why.
 
 **When to use:** Change skills, agents, scope, or mode after `init`.
 
@@ -109,6 +117,26 @@ Read-only catalog browse. Takes one required positional arg and zero flags. Sear
 
 ---
 
+### `share`
+
+**File:** [`src/cli/commands/share.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/share.ts)
+
+The other direction of the round trip [CLI or web](/docs/cli-or-web) describes. It reads the skills, sub-agents and per-agent curation installed here, publishes them to the `agentsinc.sh` store as one configuration, and prints the id it was given along with both things anyone can do with it: `init --from <id>` to install it elsewhere, and `agentsinc.sh/?fromId=<id>` to open it in the editor.
+
+**The id is the configuration's own hash**, so sharing an unchanged installation returns the id it already had — running it twice does not mint two.
+
+**A skill you wrote by hand into `.claude/skills/` does not travel, and is not refused either.** Ownership is decided by the `forkedFrom` key the CLI stamps into every directory it writes — an ejected catalogue skill, or one a payload carried inline. A directory that exists and carries no such key is somebody's own work, so it is simply outside the round trip, and the `stack` rows naming it go with it. `edit --from` reads the same judgement from the same place, which is why a payload that never mentioned your skill is not read as an instruction to delete it.
+
+**Args:** none. **Flags:** none.
+
+Everything that can fail locally fails before the write: an installation that cannot be read, or a selection the payload contract cannot express, stops the run without spending a write on a configuration nobody could install.
+
+`share` and `edit --ui` mint identically — same reader, same mapping, same refusals — and differ only in the ending. `share` prints the id; `edit --ui` opens it.
+
+**When to use:** You configured in the terminal and want to hand the result to someone else, to another machine, or to the editor.
+
+---
+
 ## Customization
 
 ### `eject <type>`
@@ -122,6 +150,20 @@ Exports source material for user modification. Types: `agent-partials`, `templat
 ---
 
 ## Build (distribution / authoring)
+
+### `new marketplace <name>`
+
+**File:** [`src/cli/commands/new/marketplace.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/new/marketplace.ts)
+
+Writes a whole marketplace into a new directory named after the marketplace: a `package.json` carrying its identity, the three config files (`skill-categories.ts`, `skill-rules.ts`, `stacks.ts`), and one example skill already named in the marketplace's own namespace. What it emits passes the CLI's own loader, so `doctor` is clean in the new directory before you have written anything. It scaffolds only — `build plugins` and `build marketplace` are what publish it. See [Creating a marketplace](/docs/guides/creating-a-marketplace).
+
+**Args:** `name` (required). Kebab-case, and it becomes three things at once: the directory, the `package.json` name, and the prefix every skill id in the marketplace must carry.
+
+**Flags:** none — in particular there is no `--force`. Both name rules `build marketplace` enforces are enforced here instead, because failing at creation beats failing at publish when the name is already on every id; and a target directory that already holds files is refused rather than merged into or overwritten, because a scaffold writes a whole tree and a flag that overwrites an author's own files is the destructive half of a silent fallback. Both ways out — another name, or emptying that directory — are one step.
+
+**Reserved names:** `agents-inc`, `external` and `local` are refused, the same three `build marketplace` refuses.
+
+---
 
 ### `build plugins`
 
@@ -213,11 +255,13 @@ Agents Inc Doctor
 
 ---
 
-### `list`
+### `list` (alias `ls`)
 
 **File:** [`src/cli/commands/list.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/list.tsx)
 
 Prints the installation's mode, source, and a scope-grouped skill/agent summary. Ink component when TTY; plain text fallback otherwise.
+
+**`ls` is the same command, not a shorthand for a subset.** It is declared as an oclif alias, so `agents-inc ls` and `agents-inc list` resolve to one class and take the same (empty) flags. It is the only alias in the CLI.
 
 **Flags:** none.
 
@@ -237,6 +281,6 @@ Removes CLI-managed plugins, CLI-installed skills (matched by `forked-from` meta
 
 - **Exit codes** from `EXIT_CODES`: `SUCCESS = 0`, `ERROR = 1`, `INVALID_ARGS = 2`, `NETWORK_ERROR = 3`, `CANCELLED = 4`. Every `this.error()` call passes an explicit code.
 - **`--marketplace` is `init`'s flag and nobody else's.** Naming a marketplace is an install-time decision; every later command resolves the stored one (project config → global config → default). The same rule governs the `CC_MARKETPLACE` environment variable, which is read at install time only.
-- **Interactive vs non-interactive TTY handling** — `list` degrades gracefully when `process.stdin.isTTY` is false. `init --from` and `update` never need a terminal at all.
+- **Interactive vs non-interactive TTY handling** — `list` degrades gracefully when `process.stdin.isTTY` is false. `init --from`, `update`, `share` and `new marketplace` never need a terminal at all. `edit --ui` prints its link first and only then asks whether there is a terminal, so the id survives a pipe even though the browser cannot be opened.
 - **There is no `--refresh`.** Every load revalidates its cache against the remote, so there is nothing to force. `update` is a different operation entirely: it asks the Claude CLI to refresh a marketplace, and reads no skills source.
 - **`--verbose/-v`** retained only on `compile`, `build plugins`, `build marketplace`. `doctor` always emits full detail (a diagnostic command shouldn't have a hide-info toggle). `search` prints a table, no verbosity levels.

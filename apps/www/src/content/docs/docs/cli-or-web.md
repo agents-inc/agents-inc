@@ -1,6 +1,6 @@
 ---
 title: CLI or web
-description: The terminal wizard and the web editor are the same catalogue and the same output. How a configuration moves from one to the other, and which direction is not built yet.
+description: The terminal wizard and the web editor are the same catalogue and the same output. How a configuration moves from either one to the other.
 ---
 
 There are two ways to select skills. They are two front doors onto one thing,
@@ -16,7 +16,11 @@ same output, pick whichever you prefer.**
 Neither is the "real" one. The web editor does not install anything —
 your browser cannot write to `.claude/` — so it hands you a short id, and
 `init --from <id>` does the install. The terminal wizard skips the id because
-it is already where the files go.
+it is already where the files go, and mints one on demand with `share` when you
+want to leave.
+
+An id is the only thing that crosses between them, and it crosses in both
+directions.
 
 ## Same catalogue
 
@@ -26,7 +30,7 @@ catalogue and the code it is generated from move in the same commit — CI
 regenerates and fails if the checked-in copy has drifted. There is no window in
 which the grid can offer a skill the CLI does not have.
 
-## Web to CLI, the round trip that exists
+## Web to CLI
 
 1. Configure your selection at [agentsinc.sh](https://agentsinc.sh) and open
    the install dialog.
@@ -73,15 +77,48 @@ install it.
 A dead or unreadable link says so and leaves whatever you had configured
 alone.
 
-## CLI to web: not built
+## CLI to web
 
-There is no way to turn an existing installation back into a web
-configuration. The CLI cannot mint an id — there is no `share` command, and
-`edit` has no flag that opens the editor. The id flow runs one direction
-only: web to CLI.
+The id flow runs both directions. An installation can be minted back into a
+configuration, so starting in the terminal does not lock you out of the grid.
 
-If you started in the terminal and want to carry on in the browser, you would
-re-select in the grid by hand.
+```bash
+npx agents-inc share
+```
+
+That reads the skills, sub-agents and per-agent curation installed in the
+current directory, publishes them as one configuration, and prints the id with
+both things you can do with it — `init --from <id>` on another machine, or
+`agentsinc.sh/?fromId=<id>` in a browser.
+
+If you want the browser rather than the id, `edit --ui` is the same mint with a
+different ending — instead of printing the id it opens it, so the installation
+you are standing in becomes the selection loaded in the editor:
+
+```bash
+npx agents-inc edit --ui
+```
+
+Nothing on disk is touched by either. A configuration is read, not rewritten.
+
+**A skill you wrote by hand does not travel.** Ownership is decided by the
+provenance key the CLI stamps into every skill directory it writes, so an
+ejected or carried skill goes and one you authored in `.claude/skills/` stays.
+It is not refused, just out of scope — and `edit --from` reads that same
+judgement, so a configuration that never mentioned your skill is never read as
+an instruction to delete it.
+
+To bring the browser's changes back, `edit --from <id>`. That direction is
+destructive by design and confirms first: a shared configuration states a whole
+roster, so whatever it leaves out is removed, and every removal is named before
+anything is written. Two things it refuses to drop quietly — a skill you
+authored in this installation, and a skill this catalogue cannot place — are
+kept and reported instead.
+
+**The same id, either way round.** `share` and `edit --ui` mint through one
+reader, so one directory has one id, and the id is still the configuration's
+own hash. Sharing an unchanged installation twice returns what it returned the
+first time.
 
 ## Which should you use
 
