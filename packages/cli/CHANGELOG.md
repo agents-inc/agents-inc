@@ -7,6 +7,27 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.157.0] - 2026-08-23
+
+**The accuracy programme lands: scope travels end to end, every command prints the name the installation configured, and a run that cannot finish says so**
+
+- Scope now travels end to end — a project-scoped skill can no longer be assigned to a global sub-agent in the editor, and the share payload, the worker and the CLI all read one scope vocabulary from `@workspace/matrix` (EDITOR-08, EDITOR-02, SERVER-04)
+- Every command prints the configured `branding.name`, the interactive dashboard included (CLI-702, CLI-773)
+- A run that cannot finish names what it owes and the one command that finishes it, and exits non-zero (CLI-607, CLI-612, CLI-618, CLI-649, CLI-800, CLI-811)
+- `edit` decides its scope once, where it had answered the same question six times with two answers disagreeing (CLI-363)
+- `build marketplace` refuses rather than writing a manifest its own loader rejects, and a closed union no longer answers a marketplace's own slug with somebody else's catalogue (CLI-611, CLI-502, CLI-644, CLI-675)
+- The wizard's warnings reach the screen — sorted into the startup band, or a toast when raised after mount — and `TOAST_KEYS` is derived rather than hand-written (CLI-591, CLI-592, CLI-663)
+- Configuration truth: `splitConfigByScope`'s comment corrected against code the owner ruled right, the seed schema shared with the editor, `eject` no longer writing over a config it could not read, and six producers of the sub-agent roster brought into agreement (CLI-538, CLI-614, CLI-602, CLI-492)
+- Three guards refuse a build that moved under a running suite; every symptom of that race had been an ordinary assertion failure reading as a regression the change under test caused (CLI-671, CLI-699, CLI-708)
+- Sixteen gates over surfaces no checker had opened — the briefing contract, spec-name vocabulary, symbol citations, spawn doors, refusal expectations, findings citations, skipped specs, test-only exports, derived producer rosters, and three the repository had decided by incident (CLI-566, CLI-589, CLI-587, CLI-588, CLI-562, CLI-605, CLI-627, CLI-626, CLI-544, CLI-581, CLI-616, CLI-658, CLI-664, CLI-355, CLI-356, CLI-358)
+- Six specs that could not fail, repaired and mutation-proved — the old assertion stays green on the same mutation the new one catches (CLI-660, CLI-661, CLI-662, CLI-756, CLI-608, CLI-601)
+- The unit suite no longer depends on the developer's shell, and one unescaped pipe no longer deletes a whole journey row (CLI-686, CLI-696)
+- Removed: `output-validator.ts` and thirty-five exported symbols only tests invoked, `plugin-manifest-finder.ts` and `skill-fetcher.ts` among them (CLI-673, CLI-657, CLI-681)
+- `extractStack` moved out of its spec into a tested helper, and the `D-NNN` tracker ids migrated to the workspace prefix (CLI-669, CLI-574, CLI-680)
+- Web: the deployed editor's address is committed rather than assembled, the documentation's claims are re-derived from the CLI, and the landing page and docs read as one product — plus a seven-way chunk split that leaves an ordinary deploy re-hashing 29 KB instead of 1.03 MB (REPO-09, WWW-04, WWW-10, WWW-07)
+
+See [changelogs/0.157.0.md](./changelogs/0.157.0.md) for full details.
+
 ## [0.156.1] - 2026-08-20
 
 **A test helper that walked the long way round, and the standard that had blessed the number it walked to**
