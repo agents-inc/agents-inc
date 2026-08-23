@@ -50,6 +50,17 @@ export const DOMAIN_REACH = {
   api: 5,
 } as const
 
+// The one skill in the Next.js stack that reaches a SINGLE sub-agent, and the
+// sub-agent it reaches. Setting a skill to project scope puts every sub-agent
+// carrying it into the error state (EDITOR-08) — every agent rests at global —
+// so a spec that needs a project-scoped configuration it can actually install
+// needs one whose errors can be resolved in one click rather than seven.
+export const SINGLE_AGENT_SKILL = {
+  name: "Vite",
+  category: "Build Tools",
+  agentId: "web-developer",
+} as const
+
 // An incompatibility that only exists several hops out: SvelteKit is built on
 // Svelte, and Svelte conflicts with React — nothing links React to SvelteKit
 // directly. `blocked` sits in a different category from `trigger`, so the

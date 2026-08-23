@@ -5,6 +5,7 @@ import {
   EXCLUSIVE_CATEGORY,
   INCOMPATIBLE,
   MULTI_CATEGORY,
+  SINGLE_AGENT_SKILL,
   STACKS,
 } from "../support/catalog"
 
@@ -50,6 +51,33 @@ test.describe("catalog assumptions", () => {
     ).toBeVisible()
     await expect(
       configure.skill(MULTI_CATEGORY.second, category).root
+    ).toBeVisible()
+  })
+
+  // A stack skill reaching exactly ONE sub-agent is the fixed point that lets a
+  // spec build a project-scoped configuration and then resolve it (EDITOR-08).
+  // Both halves are upstream: which skill reaches one agent, and which one.
+  //
+  // Asserted through the STACK rather than a fresh pick, and that is the fact
+  // itself rather than a detail of the setup: a hand-picked skill takes the
+  // shared relevance rule and reaches its whole domain, while a stack skill
+  // takes the stack author's own word. Only the second of those is one.
+  test("the single-agent stack skill still reaches exactly one sub-agent", async ({
+    configure,
+  }) => {
+    await configure.chooseStack(STACKS.nextjs)
+    const skill = configure.skillIn(
+      DOMAINS.web,
+      SINGLE_AGENT_SKILL.category,
+      SINGLE_AGENT_SKILL.name
+    )
+
+    await expect(skill.agentCount).toHaveText("1 agent")
+    await expect(
+      configure.roster.skillRow(
+        SINGLE_AGENT_SKILL.name,
+        SINGLE_AGENT_SKILL.agentId
+      )
     ).toBeVisible()
   })
 

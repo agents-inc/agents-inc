@@ -105,6 +105,24 @@ application.
 
 ## Two things worth knowing before adding tests
 
+**A fixture that parses can still describe an impossible configuration.** Every
+share-link payload here runs through `seedPayloadSchema`, and `STORED_PAYLOAD`
+passed that while pinning a project-scoped skill onto a sub-agent resting at
+global — a pair the CLI's `init --from` throws on. The schema checks the shape;
+nothing checked whether the thing described could be installed. It is fixed
+(`packages/api-mocks/src/fixtures.ts`), and the point that outlives it is that
+`seedPayloadSchema.parse` is not the whole gate on a payload fixture.
+
+**A skill's reach is a fixed point too.** Setting a skill to project scope puts
+every sub-agent carrying it into the error state, because every sub-agent rests
+at global — so a spec that needs a project-scoped configuration it can actually
+install needs one whose errors are resolvable in a click or two.
+`SINGLE_AGENT_SKILL` in `support/catalog.ts` is the stack's one skill that
+reaches a single sub-agent, and `catalog.spec.ts` guards both halves: which
+skill it is, and which sub-agent it reaches. Note it is asserted through the
+STACK rather than a fresh pick — a hand-picked skill takes the shared relevance
+rule and reaches its whole domain; only a stack skill takes the author's word.
+
 **`catalog.spec.ts` guards the fixtures.** The catalogue is regenerated from
 the agents-inc CLI, so the skills and stacks the specs pin to will drift. That
 spec asserts each one still exists, so drift shows up as one obvious failure

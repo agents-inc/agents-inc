@@ -138,13 +138,20 @@ test.describe("skill options panel", () => {
 
   // Configuring an unselected skill is kept, so picking it later arrives with
   // the setup already applied rather than starting over.
+  //
+  // Install mode is the exclusive row under test rather than install scope, and
+  // that is EDITOR-08 rather than an arbitrary pick: every sub-agent rests at
+  // global, so choosing `project` here would put the whole matrix out of reach
+  // and there would be no assignment left to unmake. `scope-reach.spec.ts`
+  // covers that on its own terms; the claim here is that an option and an
+  // assignment both survive, which needs a pair that can coexist.
   test("options set before selecting survive being selected", async ({
     configure,
   }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
     await skill.openOptions()
-    await skill.options.choose("project")
+    await skill.options.choose("eject")
     await skill.options.cycleAssignment(MATRIX_DOMAIN, MATRIX_ROLE)
     await expect(skill.root).toHaveAttribute("aria-pressed", "false")
 
@@ -152,9 +159,9 @@ test.describe("skill options panel", () => {
     await skill.toggle()
 
     await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
-    await expect(skill.scopeBadge).toHaveAccessibleName("Scope: project")
+    await expect(skill.installBadge).toHaveAccessibleName("Install mode: eject")
     await skill.openOptions()
-    await expect(skill.options.segment("project")).toHaveAttribute(
+    await expect(skill.options.segment("eject")).toHaveAttribute(
       "aria-checked",
       "true"
     )
