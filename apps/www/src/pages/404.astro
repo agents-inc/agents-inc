@@ -4,12 +4,27 @@
  * — it would have claimed `/404` for the whole site, wrapping a landing-page
  * miss in the documentation chrome. See the `disable404Route` comment there.
  *
+ * IT NOW CARRIES THE HEADER, which is the whole of what changed here. Before,
+ * this page had no mark, no wordmark and no nav — three lines of text on an
+ * otherwise blank white page — and it sized them from a third set of classes
+ * that agreed with neither half of the site. A visitor who mistyped a URL got
+ * a page that did not say whose site they were on, and the only route onward
+ * was the browser's own back button. On a site whose open defect was that its
+ * two halves looked like two products, the not-found page was a third.
+ *
+ * Everything visible is now shared rather than restated: the header is the
+ * same component the landing page renders, the destinations come from the same
+ * module, and the two type sizes are the same prose tokens the documentation
+ * resolves its own `h1` and paragraphs to.
+ *
  * PLACEHOLDER copy, like index.astro.
  */
 import "../styles/site.css"
+import SiteHeader from "../components/site-header.astro"
 
-const HOME_PATH = "/"
-const DOCS_PATH = "/docs"
+import { DOCS_PATH, HOME_PATH } from "../lib/links"
+
+const PAGE_TITLE = "Page not found | Agents Inc"
 ---
 
 <!doctype html>
@@ -17,17 +32,22 @@ const DOCS_PATH = "/docs"
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Page not found | Agents Inc</title>
+    <title>{PAGE_TITLE}</title>
     <meta name="robots" content="noindex" />
   </head>
   <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
   <body>
-    <main class="mx-auto max-w-2xl p-gutter">
-      <h1 class="text-25 text-ink font-medium">Page not found</h1>
-      <p class="text-13 text-subtle mt-4">
-        That page does not exist.
+    <SiteHeader />
+
+    {/* The landing page's own main wrapper, so a miss lands in the same column
+        the site's other unstyled-by-Starlight page uses. */}
+    <main class="mx-auto max-w-3xl px-8 pt-gutter pb-gutter sm:px-gutter">
+      <h1 class="text-h1 text-ink max-w-xl font-semibold">Page not found</h1>
+      <p class="text-body text-ink-3 mt-4 max-w-xl">
+        That page does not exist. It may have moved, or the link that sent you here may be
+        out of date.
       </p>
-      <p class="text-13 mt-4">
+      <p class="text-body mt-4">
         <a href={HOME_PATH}>Home</a> &middot; <a href={DOCS_PATH}>Documentation</a>
       </p>
     </main>

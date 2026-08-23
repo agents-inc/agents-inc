@@ -1,0 +1,69 @@
+---
+/**
+ * The landing half's header — the mark, the wordmark and three nav links.
+ *
+ * IT IS A COMPONENT BECAUSE 404.astro NEEDS IT TOO. Before this file, the
+ * not-found page carried no header and no mark at all, so a visitor who
+ * mistyped a URL landed on a page with nothing on it that said whose site
+ * they were on and no way back other than the browser's own button. The
+ * alternative to extracting it was pasting thirty lines of markup into a
+ * second file, which is the defect WWW-08 already records once.
+ *
+ * THIS IS NOT WWW-08. That row is about the *other* duplication — the editor's
+ * nav-rail and Starlight's plain-text title being two different logos on one
+ * product — and its fix is a component in `packages/ui` serving three
+ * consumers across two React builds and one Astro one. This is local to
+ * `apps/www` and deliberately so: it takes the www-side copies from two to
+ * one, which is a strictly smaller job for whoever picks WWW-08 up, and it
+ * commits nothing about where the shared version eventually lives.
+ *
+ * Every class here is the design language already running in apps/editor: the
+ * mark and the nav links are the editor's NavRail, verbatim. Both are LABELS —
+ * mono, uppercase, tracked — which is rule 3 of the design language working
+ * rather than a size that got copied by accident, and it is why nothing in
+ * this file moved to the prose scale that site.css adds.
+ */
+import {
+  DOCS_PATH,
+  EXTERNAL_LINK_ATTRS,
+  GITHUB_REPO_URL,
+  HOME_PATH,
+  SKILLS_REPO_URL,
+} from "../lib/links"
+
+// NavRail's own class, verbatim. The active-state variants are dropped: this
+// site has one link per destination and none of them point at themselves.
+const NAV_LINK_CLASS =
+  "font-mono text-11 font-medium tracking-[.07em] whitespace-nowrap uppercase text-muted-foreground hover:text-ink"
+---
+
+{/*
+  `px-8 sm:px-gutter`, matching the two wrappers below it on the landing page,
+  and it is the only responsive thing here. The 60px gutter is the design's
+  structural constant and it is right everywhere the product itself runs,
+  because the product is a three-column desktop editor — but it is a desktop
+  constant. Held at 60px on a 390px phone it leaves a 258px column, which is
+  where the copy stops being readable.
+*/}
+<header class="mx-auto flex max-w-3xl items-center gap-4 px-8 pt-10 sm:px-gutter">
+  <a href={HOME_PATH} class="flex items-center gap-[0.6875rem]" aria-label="Agents Inc, home">
+    <span
+      class="flex size-[2.375rem] shrink-0 items-center justify-center border border-brand font-mono text-12 font-semibold tracking-[.02em] text-brand-ink"
+      aria-hidden="true">a-i</span
+    >
+    {/* The mark alone below `sm`, which is how the editor's own rail carries
+        the brand anyway. On a phone the wordmark and three nav links do not
+        fit one line together, and the mark is the half that survives losing
+        its partner. The link keeps its aria-label either way, so what is
+        announced does not change with the viewport. */}
+    <span class="hidden font-mono text-11 font-medium tracking-[.07em] text-ink uppercase sm:inline"
+      >Agents Inc</span
+    >
+  </a>
+
+  <nav class="ml-auto flex items-center gap-[1.125rem]" aria-label="Main">
+    <a href={DOCS_PATH} class={NAV_LINK_CLASS}>Docs</a>
+    <a href={SKILLS_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={NAV_LINK_CLASS}>Skills</a>
+    <a href={GITHUB_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={NAV_LINK_CLASS}>GitHub</a>
+  </nav>
+</header>

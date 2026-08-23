@@ -8,7 +8,13 @@
  *   1. fixes the cascade-layer order, before anything else declares one
  *   2. imports the real design system
  *   3. teaches Tailwind about .astro/.md, which globals.css does not scan
- *   4. reconciles Starlight with the design language — radius, then colour
+ *   4. reconciles Starlight with the design language — radius, colour, type
+ *
+ * The type block is the one that carries the most weight, and it is the reason
+ * this file is worth its length: it is the SINGLE definition of every prose
+ * size on the site. The landing page reads it as Tailwind utilities, the
+ * documentation reads the same tokens through Starlight's own `--sl-text-*`
+ * names, and neither half has a font size of its own to drift with.
  */
 
 /**
@@ -158,4 +164,242 @@
   /* Rule 3: Inter for human language, IBM Plex Mono for every label and id. */
   --sl-font: var(--font-sans);
   --sl-font-mono: var(--font-mono);
+}
+
+/**
+ * TYPE — the site's prose scale, and the reason the two halves stopped
+ * reading as two websites.
+ *
+ * THE DEFECT THIS REPLACES, measured at 1440x900 before the change: the
+ * landing page's section headings rendered at 9.9px, UNDER the 12.1px body
+ * text they were heading, while the same `h2` in the documentation rendered
+ * at 38.5px. A reader crossing from `/` to `/docs` changed websites.
+ *
+ * The cause is not a mistake anybody made — it is a gap. The design system
+ * ships one scale, `--text-7` … `--text-25`, and every step from 7px to 13px
+ * is a LABEL size, because the product it was drawn for is a dense three-
+ * column desktop editor in which every string is a label, an id or a badge.
+ * It has no prose sizes, because the editor has no prose. The landing page
+ * needed prose, found only labels, and used those. The documentation ignored
+ * the design system entirely and kept Starlight's defaults.
+ *
+ * So this block adds the missing register, once, for both halves. It does not
+ * touch `packages/ui`: adding prose sizes to the shared scale would push them
+ * into the editor, which has no use for them.
+ */
+
+/**
+ * THE SITE IS NOT THE APP, so it does not carry the app's zoom.
+ *
+ * `globals.css` sets `font-size: 110%` on `:root` and calls it, in its own
+ * words, "THE SIZING KNOB … 100% is the design's native size; 110% is the
+ * current setting, which is what '10% zoomed in' looks like." That is a
+ * preference about the editor, and every rem in this build inherited it.
+ *
+ * Two things followed from that, both invisible until measured. Starlight's
+ * whole geometry — the type ramp, the nav height, the sidebar and content
+ * widths, the content padding — is authored in rem against a 16px root, and
+ * its own source annotates each value with the px it expects: `2.1875rem` is
+ * commented "35px", and at 110% it renders 38.5. Every one of those
+ * annotations is a lie by 10%, and the documentation renders one notch louder
+ * than its author drew it. And the design tokens do the same from the other
+ * side: `--spacing-gutter: 3.75rem` is commented "60px is the page's
+ * structural constant", and at 110% it is 66px.
+ *
+ * Setting the site back to the design's native 100% makes both sets of
+ * annotations true again. It stays a percentage rather than a px value for
+ * the reason globals.css gives: a percentage compounds with the reader's own
+ * browser font-size preference instead of overriding it.
+ */
+:root {
+  font-size: 100%;
+}
+
+/**
+ * THE PROSE RAMP. Roles rather than sizes, deliberately — the design system
+ * names its scale by measurement (`text-13`) because a label's size IS the
+ * decision, but here the decision is "this is body copy" and the number is
+ * downstream of it. Naming by role is also what makes the mapping below a
+ * one-liner per entry rather than a translation table.
+ *
+ * The values are an ordinary, unremarkable documentation ramp — 32 / 24 / 20
+ * / 18 / 16 over 16px body — and unremarkable is the point. Starlight's own
+ * desktop ramp is 42 / 35 / 29 / 24 over 16px, which is a broadsheet next to
+ * a landing page whose densest line is 11px; this sits between the two
+ * without either half having to shout. The `--text-*--line-height` pairing is
+ * globals.css's own convention, so these tokens behave like the ones beside
+ * them.
+ */
+@theme {
+  --leading-prose: 1.75;
+  --leading-heading: 1.2;
+
+  --text-body: 1rem;
+  --text-body--line-height: var(--leading-prose);
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.6;
+
+  --text-h1: 2rem;
+  --text-h1--line-height: var(--leading-heading);
+  --text-h2: 1.5rem;
+  --text-h2--line-height: var(--leading-heading);
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.3;
+  --text-h4: 1.125rem;
+  --text-h4--line-height: 1.4;
+  --text-h5: 1rem;
+  --text-h5--line-height: 1.4;
+}
+
+/**
+ * THE DOCUMENTATION, POINTED AT THE SAME TOKENS. Starlight resolves every
+ * prose size through these seven semantic names, so remapping them is the
+ * whole of it — its eleven-step `--sl-text-2xs … 6xl` ramp underneath is left
+ * exactly as it is, because copying it here would be a second set of numbers
+ * to keep in step and that is the failure being fixed.
+ *
+ * Unlayered, for the reason the colour block above is: Starlight declares
+ * these inside `@layer starlight.base`, and an unlayered declaration beats a
+ * layered one whatever its specificity.
+ *
+ * ONE BEHAVIOUR IS DELIBERATELY DROPPED. Starlight steps h1–h4 up one notch
+ * at `min-width: 50em`, so its headings are larger on a desktop than on a
+ * phone. That step is inside the same layer and these declarations win over
+ * it, which is intended rather than collateral: the step-up existed to make
+ * 35px headings survive a 390px screen, and the largest heading here is 32px
+ * at every width — already inside what its narrow end was protecting. One
+ * size per role is also the only version of this that stays true on the
+ * landing page, which carries exactly one breakpoint on purpose.
+ */
+:root {
+  --sl-text-body: var(--text-body);
+  --sl-text-body-sm: var(--text-body-sm);
+  --sl-text-h1: var(--text-h1);
+  --sl-text-h2: var(--text-h2);
+  --sl-text-h3: var(--text-h3);
+  --sl-text-h4: var(--text-h4);
+  --sl-text-h5: var(--text-h5);
+
+  --sl-line-height: var(--leading-prose);
+  --sl-line-height-headings: var(--leading-heading);
+}
+
+/**
+ * FOUR PLACES THE DOCUMENTATION STILL SPOKE IN A DIFFERENT VOICE.
+ *
+ * Each is one rule, and each is a rule of the design language being applied
+ * where Starlight had its own answer — not a preference about how Starlight
+ * ought to look. They are grouped here rather than beside the colour block
+ * because they are all selector-level overrides rather than token mappings,
+ * and because unlayered is a mechanism to spend sparingly.
+ */
+
+/**
+ * RULE 2: "borders only where they mean something — the only real border is
+ * amber selection." And rule 4's other half: the only FILLED elements in this
+ * design are `＋ add skill` and `Install`, and both are ink.
+ *
+ * Starlight paints the sidebar's current page as a solid amber block with
+ * inverted text, which broke both halves at once — the site's one filled
+ * element was amber, and it was not the one the design nominates. It was also
+ * the loudest thing on any documentation page, so the eye went to the
+ * navigation rather than to the article.
+ *
+ * An amber rule down the leading edge with ink text says the same thing in
+ * the design's own words. The 2px stays in px alongside the other hairlines,
+ * for the reason globals.css gives: a sub-pixel line renders blurred, and the
+ * collapsed lattice is the whole visual language.
+ */
+:root nav.sidebar a[aria-current="page"] {
+  color: var(--color-ink);
+  background-color: transparent;
+  box-shadow: inset 2px 0 0 var(--color-brand);
+}
+
+/**
+ * RULE 3: "Inter for human names, IBM Plex Mono for every label and id."
+ *
+ * A sidebar group heading — "Start here", "Concepts", "Guides" — is a label,
+ * and Starlight set it in 16px Inter, the same size and face as the article
+ * body beside it. So the documentation's navigation had no voice of its own,
+ * while the landing page's `MIT · v0.156.1 · 238 skills` and `DOCS SKILLS
+ * GITHUB` were mono, uppercase and tracked.
+ *
+ * This is the one change that travels in the other direction: rather than
+ * making the landing page look like the documentation, it carries the landing
+ * page's label voice into the documentation, where the design language says
+ * it belonged anyway. The values are the landing page's own label row.
+ */
+:root nav.sidebar .group-label .large {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+/**
+ * The same argument, and the same three declarations, for the table of
+ * contents' own heading. It is the left sidebar's opposite number — a label
+ * naming a column of navigation — and leaving it in Inter while its
+ * counterpart became mono would have been an inconsistency introduced by the
+ * rule above rather than one found there.
+ *
+ * `--sl-text-h2` is what Starlight sizes it with, so before the prose ramp
+ * landed this read at 38.5px in the markup and 16px on screen only because
+ * Starlight overrides it again further down. It is a label; it takes a label's
+ * size.
+ */
+:root #starlight__on-this-page,
+:root #starlight__on-this-page--mobile {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+/**
+ * The same argument for the site title, which is the wordmark: the landing
+ * page sets `Agents Inc` in mono uppercase ink beside the mark, and Starlight
+ * set it in 18px amber Inter. Amber is rule 4's accent and a wordmark is not
+ * something the user chose, so this was the accent's one unearned appearance
+ * on the site.
+ *
+ * NOT THE LOGO PROBLEM. `apps/www` still has two different brand treatments —
+ * a bordered `a-i` mark on the landing half and plain text here — and that is
+ * WWW-08, whose fix is a component in `packages/ui` shared with the editor.
+ * This only stops the two halves setting the same three words in two faces,
+ * two colours and two sizes while that waits.
+ */
+:root a.site-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+}
+
+/**
+ * Code blocks keep the surface and the hairline the design gives a command
+ * block, now that the terminal chrome around them is gone (see the
+ * `expressiveCode` block in astro.config.ts for why it went). What is left is
+ * `border border-hairline bg-code` — packages/ui's CommandBlock, and the same
+ * box the landing page's hero draws around the same command.
+ *
+ * Unlayered like the rest of this file: Expressive Code ships its styles
+ * inside `@layer starlight.components`.
+ */
+:root .expressive-code .frame pre {
+  border: 1px solid var(--color-hairline);
+  background: var(--color-code);
+}
+
+/* An empty caption is what a frameless block leaves behind; it reserves a
+   line of nothing above every command otherwise. */
+:root .expressive-code .frame > figcaption:empty {
+  display: none;
 }

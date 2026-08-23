@@ -12,13 +12,21 @@
  * This page is not a Starlight page. It gets no sidebar, no docs header and no
  * prefetch script; it shares only the design tokens, via the stylesheet below.
  *
- * Every class here is the design language already running in apps/editor — the
+ * Every LABEL here is the design language already running in apps/editor — the
  * command block is packages/ui's CommandBlock, the outline CTA is its Button's
- * `outline` variant, the mono section headings are its DialogPaneHeading, and
- * the mark and nav links are the editor's NavRail. Nothing new was
- * invented for this page; where a value looks arbitrary it was copied.
+ * `outline` variant, and the mark and nav links are the editor's NavRail.
+ * Nothing new was invented for this page; where a value looks arbitrary it was
+ * copied.
+ *
+ * THE PROSE IS THE EXCEPTION, and it is the exception on purpose. Copying the
+ * editor's classes for prose too is what produced 9.9px section headings sitting
+ * above 12.1px body text — the editor's scale is a scale of label sizes, because
+ * the editor has no prose to size. Every paragraph and heading below now uses
+ * the site's own prose scale, defined once in src/styles/site.css and read by
+ * the documentation through the same tokens. See the TYPE block there.
  */
 import "../styles/site.css"
+import SiteHeader from "../components/site-header.astro"
 
 /**
  * The eyebrow's three facts are real signal, so two of them are read from the
@@ -34,6 +42,15 @@ import cliPackage from "../../../../packages/cli/package.json"
  */
 import { SKILL_COUNT } from "../lib/catalog-counts"
 
+/** The destinations this page shares with the header, the footer and 404. */
+import {
+  DOCS_PATH,
+  EDITOR_URL,
+  EXTERNAL_LINK_ATTRS,
+  GITHUB_REPO_URL,
+  SKILLS_REPO_URL,
+} from "../lib/links"
+
 /**
  * The command in the hero is the first one a new user would actually run, and
  * it is the only one on the page. `init` with no flags starts the wizard from
@@ -41,42 +58,59 @@ import { SKILL_COUNT } from "../lib/catalog-counts"
  */
 const INSTALL_COMMAND = "npx agents-inc init"
 
-const DOCS_PATH = "/docs"
-
-/**
- * Where the editor lives TODAY: the apex, on its own. The one-hostname
- * split decided on 2026-08-03 — `/` this page, `/docs` Starlight, `/editor`
- * today's apps/editor — is a separate piece of work that is not live, and it is
- * WWW-03 ("Domains and the app split") in todo/www.md, which carries the old
- * identifier: item 10 of docs/web/editor-todo.md.
- *
- * WHEN THAT SPLIT LANDS: change this to "/editor". Until then it has to be
- * the absolute URL, because a shipped page cannot carry a link that 404s and
- * `/editor` is exactly that — this page's own build serves nothing there.
- */
-const EDITOR_URL = "https://agentsinc.sh"
-
-const GITHUB_REPO_URL = "https://github.com/agents-inc/agents-inc"
-const SKILLS_REPO_URL = "https://github.com/agents-inc/skills"
-
 const PAGE_TITLE = "Agents Inc — compose Claude Code sub-agents from skills"
 const PAGE_DESCRIPTION =
   "An agent composition framework for Claude Code. Pick the skills matching your stack and the CLI compiles them into sub-agents."
 
-// NavRail's own class, verbatim. The active-state variants are dropped: this
-// page has one link per destination and none of them point at itself.
-const NAV_LINK_CLASS =
-  "font-mono text-11 font-medium tracking-[.07em] whitespace-nowrap uppercase text-muted-foreground hover:text-ink"
+/**
+ * A ROW OF LABELS, of which this page has two: the repository pair under
+ * "Free and open source" and the footer. They were the same six declarations
+ * written twice, which is how the footer ended up mono while the pair above it
+ * inherited nothing and rendered as ordinary sans links.
+ *
+ * `text-10` rather than the `text-9` both rows carried before. Nothing about
+ * the intent changed — that class rendered at 9.9px while the site inherited
+ * the editor's 110% root, and site.css now sets the site to the design's
+ * native 100%, so the same class would render 9px. This is the same size the
+ * row has always had, said in a way that does not depend on a zoom setting
+ * belonging to a different app.
+ */
+const LABEL_ROW_CLASS =
+  "font-mono text-10 font-medium tracking-[.13em] text-muted-foreground uppercase"
 
-// DialogPaneHeading, verbatim — the design's existing section heading.
-const SECTION_HEADING_CLASS =
-  "font-mono text-9 font-semibold tracking-[.13em] text-ink uppercase"
+// The resting and hover colours a label-row link carries. Restated on each
+// anchor rather than inherited: globals.css colours every bare `a` amber in
+// @layer base, and rule 4 reserves amber for what the user deliberately chose.
+const FOOTER_LINK_CLASS = "text-muted-foreground hover:text-ink"
 
-// install-dialog's prose: the one paragraph style in the design.
-const PARAGRAPH_CLASS = "text-11 leading-[1.5] text-ink-3"
+/**
+ * A SECTION HEADING, AND THE ONE THING ON THIS PAGE THAT CHANGED REGISTER.
+ *
+ * It was packages/ui's DialogPaneHeading, verbatim: `font-mono text-9
+ * font-semibold tracking-[.13em] uppercase`, which rendered at 9.9px above
+ * 12.1px body text — a heading smaller than the paragraph it headed.
+ *
+ * The mono treatment went with the size, and that half is a design-language
+ * argument rather than a measurement. Rule 3 reads "Inter for human names, IBM
+ * Plex Mono for every label/id/badge". "The approach" is a human sentence, not
+ * a label and not an id, so Inter is what the rule actually asks for. What
+ * DialogPaneHeading heads is a pane of a dialog in a dense desktop tool —
+ * chrome, correctly mono — and borrowing it for prose was the same category
+ * error as borrowing its size. Everything on this page that IS a label — the
+ * eyebrow, the nav, the buttons, the footer, the command block — is still mono
+ * and still uppercase, so the page keeps its voice.
+ *
+ * `text-h2` is the same token the documentation's own `h2` resolves to, so the
+ * two halves cannot render this role at different sizes.
+ */
+const SECTION_HEADING_CLASS = "text-h2 font-semibold text-ink"
 
-// Its inline literal, too — a file path or a command inside a sentence.
-const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
+// Body copy, at the size the documentation sets its own paragraphs.
+const PARAGRAPH_CLASS = "text-body text-ink-3"
+
+// A file path or a command inside a sentence. Mono, because that IS an id —
+// sized to sit inside the prose around it rather than on the label scale.
+const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
 ---
 
 <!doctype html>
@@ -101,54 +135,24 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
       the command block, the outline button and the video slot.
     */}
     {/*
-      `px-8 sm:px-gutter` on all three wrappers, and it is the only responsive
-      thing on the page. The 60px gutter is the design's structural constant
-      and it is right everywhere the product itself runs, because the product
-      is a three-column desktop editor — but it is a desktop constant.
-      Held at 60px on a 390px phone it leaves a 258px column, which is where
-      this copy stops being readable. The editor carries no breakpoints
-      at all for that reason; a landing page is the one surface that has to
-      survive a phone, so it carries exactly one.
+      `px-8 sm:px-gutter` on all three wrappers — the header's is inside the
+      component — and it is the only responsive thing on the page. The 60px
+      gutter is the design's structural constant and it is right everywhere the
+      product itself runs, because the product is a three-column desktop editor
+      — but it is a desktop constant. Held at 60px on a 390px phone it leaves a
+      258px column, which is where this copy stops being readable. The editor
+      carries no breakpoints at all for that reason; a landing page is the one
+      surface that has to survive a phone, so it carries exactly one.
     */}
-    <header class="mx-auto flex max-w-3xl items-center gap-4 px-8 pt-10 sm:px-gutter">
-      <a href="/" class="flex items-center gap-[0.6875rem]" aria-label="Agents Inc, home">
-        <span
-          class="flex size-[2.375rem] shrink-0 items-center justify-center border border-brand font-mono text-12 font-semibold tracking-[.02em] text-brand-ink"
-          aria-hidden="true">a-i</span
-        >
-        {/* The mark alone below `sm`, which is how the editor's own rail
-            carries the brand anyway. On a phone the wordmark and three nav
-            links do not fit one line together, and the mark is the half that
-            survives losing its partner. The link keeps its aria-label either
-            way, so what is announced does not change with the viewport. */}
-        <span
-          class="hidden font-mono text-11 font-medium tracking-[.07em] text-ink uppercase sm:inline"
-          >Agents Inc</span
-        >
-      </a>
-
-      <nav class="ml-auto flex items-center gap-[1.125rem]" aria-label="Main">
-        <a href={DOCS_PATH} class={NAV_LINK_CLASS}>Docs</a>
-        <a
-          href={SKILLS_REPO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          class={NAV_LINK_CLASS}>Skills</a
-        >
-        <a
-          href={GITHUB_REPO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          class={NAV_LINK_CLASS}>GitHub</a
-        >
-      </nav>
-    </header>
+    <SiteHeader />
 
     <main class="mx-auto max-w-3xl px-8 pt-gutter pb-gutter sm:px-gutter">
       <section aria-labelledby="headline">
         {/* Muted, not amber: rule 4 reserves the accent for what the user
-            deliberately chose, and an eyebrow is not a choice. */}
-        <p class="font-mono text-9 font-medium tracking-[.13em] text-muted-foreground uppercase">
+            deliberately chose, and an eyebrow is not a choice. The same six
+            declarations as the two label rows further down, and now literally
+            the same constant — they were three independent copies before. */}
+        <p class={LABEL_ROW_CLASS}>
           {cliPackage.license} &middot; v{cliPackage.version} &middot; {SKILL_COUNT} skills
         </p>
 
@@ -157,7 +161,7 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
             presumed the reader already knew what a Claude Code sub-agent was
             and why composing them mattered, which is the one thing a stranger
             does not know. Pain first, mechanism second, in that order. */}
-        <h1 id="headline" class="mt-4 max-w-xl text-25 leading-[1.4] font-medium text-ink">
+        <h1 id="headline" class="text-h1 text-ink mt-4 max-w-xl font-semibold">
           Hand-written Claude Code sub-agents duplicate each other and go stale
         </h1>
 
@@ -172,7 +176,7 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
             page ever did: prompt files "duplicate each other, drift apart, and
             cannot be composed". Concrete rather than abstract on purpose — the
             same paragraph pasted three times is the thing people recognise. */}
-        <p class="mt-4 max-w-xl text-13 leading-[1.5] text-ink-3">
+        <p class="text-body text-ink-3 mt-4 max-w-xl">
           A sub-agent is a specialised Claude Code assistant with its own instructions —
           in practice, a long prompt file. Once you have three of them, all three need the
           same paragraph about React, so you paste it into all three. Then React changes,
@@ -182,7 +186,7 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
         {/* And only now the mechanism, kept to two sentences: the fuller
             version is "The approach" below, and repeating it verbatim here
             would just be the same paragraph twice. */}
-        <p class="mt-4 max-w-xl text-13 leading-[1.5] text-ink-3">
+        <p class="text-body text-ink-3 mt-4 max-w-xl">
           Agents Inc breaks that expertise into atomic skills instead and compiles them
           into sub-agents. The React knowledge exists once; recompile, and every sub-agent
           built from it is rewritten.
@@ -287,8 +291,11 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
 
         WHY max-w-xl. Same measure as every paragraph on this page, so it
         reads as part of the column rather than as a banner across it. It also
-        shrinks: measured at 1440 wide, 634px across and 356px tall, where
-        full-bleed in `main` it was 725px across and 408px tall.
+        shrinks: measured at 1440 wide, 576x324, where full-bleed in `main` it
+        would be 660x371. (It was 634x356 until 2026-08-21, when site.css
+        stopped the site inheriting the editor's 110% root font-size — the box
+        is the same `aspect-video max-w-xl` it always was, and 36rem simply
+        stopped meaning 634px.)
 
         TO FILL IT IN: drop the file into apps/www/public/ and replace the
         whole <div> below with
@@ -338,25 +345,19 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
           catalogue are both public repositories — read them, fork them, or open a pull
           request.
         </p>
-        <p class="mt-4 flex flex-wrap gap-x-[1.125rem] gap-y-2">
-          <a
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            class={NAV_LINK_CLASS}>CLI repository</a
+        <p class={`mt-4 flex flex-wrap gap-x-[1.125rem] gap-y-2 ${LABEL_ROW_CLASS}`}>
+          <a href={GITHUB_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={FOOTER_LINK_CLASS}
+            >CLI repository</a
           >
-          <a
-            href={SKILLS_REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            class={NAV_LINK_CLASS}>Skills repository</a
+          <a href={SKILLS_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={FOOTER_LINK_CLASS}
+            >Skills repository</a
           >
         </p>
       </section>
     </main>
 
     <footer
-      class="mx-auto flex max-w-3xl flex-wrap items-center gap-x-[1.125rem] gap-y-2 px-8 pb-gutter font-mono text-9 font-medium tracking-[.13em] text-muted-foreground uppercase sm:px-gutter"
+      class={`mx-auto flex max-w-3xl flex-wrap items-center gap-x-[1.125rem] gap-y-2 px-8 pb-gutter sm:px-gutter ${LABEL_ROW_CLASS}`}
     >
       <span>{cliPackage.license} licensed</span>
       <span>v{cliPackage.version}</span>
@@ -364,13 +365,8 @@ const INLINE_CODE_CLASS = "font-mono text-10 text-ink not-italic"
           row: globals.css colours every bare `a` amber in @layer base, and
           rule 4 reserves amber for what the user deliberately chose — which a
           footer link is not. */}
-      <a href={DOCS_PATH} class="ml-auto text-muted-foreground hover:text-ink">Docs</a>
-      <a
-        href={GITHUB_REPO_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="text-muted-foreground hover:text-ink">GitHub</a
-      >
+      <a href={DOCS_PATH} class={`ml-auto ${FOOTER_LINK_CLASS}`}>Docs</a>
+      <a href={GITHUB_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={FOOTER_LINK_CLASS}>GitHub</a>
     </footer>
 
     <script>
