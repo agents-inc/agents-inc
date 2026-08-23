@@ -118,7 +118,14 @@ test.describe("add skill dialog", () => {
   // pass the first of them on its own.
   //
   // The search field takes focus as the dialog opens and nothing focusable sits
-  // between it and the list, so the first result is one Tab away.
+  // between it and the list, so the first result is one Tab away — ONCE THERE IS
+  // ONE. Both tests wait for it before pressing anything, and that wait is the
+  // difference between a green suite and an intermittent one: the index is a
+  // network call, the dialog renders `loading skills…` until it lands, and a Tab
+  // pressed inside that window leaves focus on a field with nowhere to go. The
+  // failure is silent about its cause — the row exists by the time the assertion
+  // retries, so it reports a row that is merely `inactive`. Reproduced by
+  // delaying the stubbed index 600ms, at which point it fails every run.
   test("tab moves from the search field to the first result", async ({
     configure,
     page,
@@ -126,6 +133,7 @@ test.describe("add skill dialog", () => {
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
     await expect(dialog.searchInput).toBeFocused()
+    await expect(dialog.result(FIRST_NAME)).toBeVisible()
 
     await page.keyboard.press("Tab")
 
@@ -136,6 +144,7 @@ test.describe("add skill dialog", () => {
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
     await expect(dialog.searchInput).toBeFocused()
+    await expect(dialog.result(FIRST_NAME)).toBeVisible()
 
     await page.keyboard.press("Tab")
     await page.keyboard.press("Enter")
