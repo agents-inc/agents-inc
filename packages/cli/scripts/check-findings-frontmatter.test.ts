@@ -801,6 +801,15 @@ const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [
 const FOUR_PRODUCERS =
   "2026-08-21-four-producers-of-one-union-and-two-of-them-read-the-marketplace.md";
 
+/**
+ * The finding whose `resolved_by` records that two frozen constants BECAME functions. Naming the
+ * dead names is the note's content rather than a slip: it says `CACHE_DIR` is now `cacheRoot()`
+ * and `GLOBAL_INSTALL_ROOT` is now `globalInstallRoot()`, and a rename note that cannot spell the
+ * old name says nothing. Both are pinned below rather than edited out.
+ */
+const FAKE_HOME_OUTLIVED =
+  "2026-08-21-a-fake-home-is-outlived-by-a-frozen-constant-and-a-detached-child.md";
+
 function undeclaredSymbol(file: string, key: string, symbol: string): UndeclaredSymbol {
   return { file, key, symbol };
 }
@@ -820,6 +829,16 @@ function undeclaredSymbol(file: string, key: string, symbol: string): Undeclared
  * weaker way: a test-local shim still declares it, so a note naming it resolves. The scan catches
  * renames, not landed fixes — re-deriving the claim itself is a reader's job, and `TEMPLATE.md`
  * binds it to the act of editing a finding at all.
+ *
+ * `CACHE_DIR` and `GLOBAL_INSTALL_ROOT` are the pair this list existed for and did not hold, and
+ * how they got past it is worth more than the entries. **This assertion reads the WORKING TREE,
+ * gitignored files included**, so a name lives on in whatever debris a machine happens to carry —
+ * here `packages/cli/.cache/handrun.mjs`, `e2e/helpers/handrun.gen.mjs` and the ignored
+ * `todo/plans/CLI-729-skill-olympics/` arena, all of which still declare the pre-rename constants.
+ * Locally the scan therefore answered 10 and passed; on a clean checkout it answers 12, and CI has
+ * been red on it since the 0.157.0 push. `UNAUTHORED_DIRECTORIES` in the checker is a hardcoded
+ * denylist and cannot track `.gitignore`, which is the defect underneath — filed, not fixed here.
+ * Reproduce the CI answer without a clean checkout by scanning `git ls-files` instead of the tree.
  */
 const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [
   undeclaredSymbol(DUAL_SCOPE_CONTENTION, PARTIAL_NOTE, "FOCUS_EFFECT_FLUSH_MS"),
@@ -835,6 +854,8 @@ const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [
   ),
   undeclaredSymbol(CATALOG_EMISSION, PARTIAL_NOTE, "generatePhase2"),
   undeclaredSymbol(CATALOG_EMISSION, PARTIAL_NOTE, "loadAndMergeSkillsMatrix"),
+  undeclaredSymbol(FAKE_HOME_OUTLIVED, RESOLVED_BY, "CACHE_DIR"),
+  undeclaredSymbol(FAKE_HOME_OUTLIVED, RESOLVED_BY, "GLOBAL_INSTALL_ROOT"),
   undeclaredSymbol(FOUR_PRODUCERS, RESOLVED_BY, "loadConfigTypesDataInBackground"),
 ];
 
