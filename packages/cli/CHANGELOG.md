@@ -7,6 +7,27 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.159.0] - 2026-08-24
+
+**A configuration can be piped in and a shared id can be opened, the E2E harness takes ownership of the dist guards, and three rows close by disproving their own premise**
+
+- `share --stdin` mints an id from a payload on standard input, and `init --ui` / `edit --ui` open agentsinc.sh on the id `--from` names — so a tool that composes a configuration never writes one to disk, and the wizard is no longer the only way to look at a shared id (CLI-621)
+- The interactive dashboard carries the counts the piped one prints. It showed strictly less than the output you get by piping it, with every assertion green because each path was only ever checked against itself; both render one producer now (CLI-816)
+- The mirrored E2E constants get the third party that compares them. The duplication is ruled ON — a spec importing the constant it asserts on moves both sides at once — and `EXIT_CODES` compares one-directionally, because the mirror legitimately names statuses the CLI never emits (CLI-328)
+- The dist door costs zero call sites: per-file discipline across 249 specs becomes one `beforeAll` in `e2e/setup.ts`, and the gate now asserts the call's ABSENCE so it cannot grow back (CLI-798)
+- Branding resolves per FIELD rather than per file. A user who branded globally stopped seeing their own name the moment any project config existed, and nothing announced it (CLI-772)
+- A fixture config must be one the CLI would write: 19 of 150 failed the round trip, all one cause in four files, and `writeProjectConfig` refuses instead of diagnosing (CLI-819)
+- The ASCII logo is deliberately not brandable, and the constant now says so — recorded beside the value rather than left to be refiled (CLI-769)
+- A stack naming a withdrawn skill says so instead of dropping it. `allSkillIds` went unfiltered and is the one that reaches a user, so a stack outliving its own skill selected an id nothing could resolve (CLI-597)
+- A stood-down `doctor` row prints the glyph its own symbol table declares — an en-dash, not the ASCII hyphen that means the opposite. Three of the row's four items had no subject left in the tree (CLI-329)
+- The window a throwing `beforeAll` opens is closed by one line. Filed as inherent and unclosable; a setup file's `afterAll` runs anyway, and reports beside the misleading error rather than in place of it (CLI-799)
+- The findings gate reads the repository rather than the machine, so a gitignored directory stops contributing symbols nobody wrote (CLI-820)
+- The spec-title gate takes `languageOptions` instead of the whole shared base — 9,424ms to 5,786ms. Its budget was always its own 60 seconds, never the 10 the row claimed (CLI-782)
+- Removed: `branding.tagline`, a schema-published field promising a wizard header that has never rendered one (CLI-768)
+- Removed: the old web monorepo, 1.1G, its last uncommitted diff being the direct ancestor of today's `todo/` folder (REPO-07)
+
+See [changelogs/0.159.0.md](./changelogs/0.159.0.md) for full details.
+
 ## [0.158.0] - 2026-08-24
 
 **A rule author's reason reaches the grid, three defects leave the shipped surface, and the E2E suite stops describing states the CLI cannot produce**
