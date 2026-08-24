@@ -45,31 +45,20 @@ export function expectAgentCompilation(
   }
 }
 
-/** Verify structural validity of compiled agent markdown */
-export function expectValidAgentMarkdown(
-  content: string,
-  agentName: string,
-  options?: {
-    hasCorePrinciples?: boolean;
-    hasMethodologies?: boolean;
-  },
-): void {
+/**
+ * Verify structural validity of compiled agent markdown.
+ *
+ * Every section is checked unconditionally. An `options` bag carrying `hasCorePrinciples` and
+ * `hasMethodologies` sat here until 2026-08-23 and nothing could reach it: all eight call sites
+ * pass two arguments, both flags defaulted to running their check, and so the opt-out existed only
+ * as a signature promising a discrimination no caller made. Same shape as the `hasSkillActivation`
+ * disjunction deleted beside it. A compiled agent that legitimately lacks one of these sections
+ * needs its own named assertion, not a flag on this one.
+ */
+export function expectValidAgentMarkdown(content: string, agentName: string): void {
   expect(content).toMatch(/^---\n/);
   expect(content).toContain(`name: ${agentName}`);
   expect(content).toContain("description:");
-
-  if (options?.hasCorePrinciples !== false) {
-    expect(content).toContain("<core_principles>");
-  }
-  if (options?.hasMethodologies !== false) {
-    expect(content).toContain("<methodologies>");
-  }
-}
-
-/** Verify compiled agent name list (order-independent) */
-export function expectCompiledAgents(
-  result: { compiledAgents: string[] },
-  expected: string[],
-): void {
-  expect([...result.compiledAgents].sort()).toStrictEqual([...expected].sort());
+  expect(content).toContain("<core_principles>");
+  expect(content).toContain("<methodologies>");
 }
