@@ -484,15 +484,53 @@ async function namesOnlyVariants(row: JourneyRow): Promise<boolean> {
 }
 
 /**
- * Whether every leg this file holds begins from a fixture-written config. Both halves are read:
- * a file that seeds a config somewhere AND installs from nothing somewhere else still carries
- * the from-scratch proof the column claims for it.
+ * Whether every leg this file holds begins from a fixture-written config.
+ *
+ * Three halves are read, not two. A file that seeds a config somewhere AND installs from nothing
+ * somewhere else still carries the from-scratch proof the column claims for it — and a file that
+ * INSTALLS NOTHING AT ALL is neither: its subject is what a command prints over a directory, so
+ * "from scratch" and "variant" are both the wrong question to ask of it.
+ *
+ * That third shape was missing until 2026-08-23 and it cost a file split: a report-shape spec had
+ * to become its own file rather than join its sibling, purely so the row would not read `TO TEST`
+ * about assertions that exist. A heuristic with no word for a shape condemns it.
  */
 function holdsOnlyVariants(source: string): boolean {
+  if (installsNothing(source)) return false;
+
   const seeds = FIXTURE_SEED_CALLS.some((call) => call.test(source));
   const installsFromNothing = FROM_SCRATCH_INSTALLS.some((call) => call.test(source));
   return seeds && !installsFromNothing;
 }
+
+/**
+ * Whether a file drives the binary without ever installing through it.
+ *
+ * The subject of such a spec is output — a refusal, a report, a usage line — read over whatever
+ * the directory already holds. It may still write a config to have something to read, which is
+ * exactly why `FIXTURE_SEED_CALLS` alone misclassifies it as a variant.
+ *
+ * Deliberately narrow: it asks whether ANY installing call appears, so a file with one install leg
+ * and one output leg is judged by the rules above rather than exempted here. Only a file that
+ * installs nowhere qualifies.
+ */
+function installsNothing(source: string): boolean {
+  return !INSTALLING_CALLS.some((call) => call.test(source));
+}
+
+/**
+ * Every call that puts something on disk through the product, from-scratch or not.
+ *
+ * A superset of {@link FROM_SCRATCH_INSTALLS}: that list is about installs into an EMPTY
+ * directory, this one about installs at all. Kept beside it so the two cannot drift into
+ * disagreeing about what an install is.
+ */
+const INSTALLING_CALLS = [
+  ...FROM_SCRATCH_INSTALLS,
+  /\bEditWizard\.launch[A-Za-z]*\s*\(/,
+  /\bCLI\.run\(\s*\[\s*"(edit|compile|update|uninstall|eject)"/,
+  /\brunEditFrom\s*\(/,
+];
 
 /**
  * The rules the repository's own ESLint config reports against `source` when it is read as
@@ -638,6 +676,39 @@ describe("the reader sees every row the journey tables number", () => {
  * `writeProjectConfig`, and read as PARTIAL awaiting one more assertion surface — strengthening
  * any of the three would have closed nothing.
  */
+describe("the from-scratch classifier has a word for each shape a spec takes", () => {
+  // Three shapes, and the third is the one that was missing until 2026-08-23. Written as source
+  // fragments rather than by pointing at real spec files, so the assertions stay true when those
+  // files change — the subject is the classifier's vocabulary, not any spec's current contents.
+  const SEEDS_AND_NEVER_INSTALLS = `
+    await writeProjectConfig(dir, { name: "x" });
+    const { stdout } = await CLI.run(["doctor"], { dir });
+    expect(stdout).toContain("Checking");
+  `;
+  const SEEDS_THEN_INSTALLS_FROM_NOTHING = `
+    await writeProjectConfig(dir, { name: "x" });
+    await CLI.run(["init", "--from", id], { dir: other });
+  `;
+  const SEEDS_AND_EDITS_ONLY = `
+    await writeProjectConfig(dir, { name: "x" });
+    await CLI.run(["edit", "--from", id], { dir });
+  `;
+
+  it("does not call a spec that installs nothing a variant, however it seeded its config", () => {
+    expect(holdsOnlyVariants(SEEDS_AND_NEVER_INSTALLS)).toBe(false);
+  });
+
+  it("still reads a from-scratch install beside a seeded config as from scratch", () => {
+    expect(holdsOnlyVariants(SEEDS_THEN_INSTALLS_FROM_NOTHING)).toBe(false);
+  });
+
+  // The discriminating case. Without it the two above would be satisfied by a classifier that
+  // simply answered `false` to everything, which is the vacuous form of this whole gate.
+  it("still calls a spec that seeds a config and only edits it a variant", () => {
+    expect(holdsOnlyVariants(SEEDS_AND_EDITS_ONLY)).toBe(true);
+  });
+});
+
 describe("a journey names from-scratch specs that are from scratch", () => {
   it("marks a row TO TEST when every spec it names begins from a fixture-written config", async () => {
     const rows = await journeyRows();

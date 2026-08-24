@@ -639,8 +639,8 @@ export const REGISTRY: RegistryEntry[] = [
     },
   },
 
-  // The config area's module export lists. Four modules, six rows, because two of the four are
-  // enumerated in TWO documents apiece — the `config/` deep-dive and the `features/` overview each
+  // The config area's module export lists. Four modules, seven rows, because three of the four
+  // are enumerated in TWO documents apiece — the `config/` deep-dive and the `features/` overview each
   // carry the same table, which is the "two writable copies" condition, so both are bound. The
   // 2026-08-18 pass found `config-types-writer.ts`'s pair naming five of its eight exports (no
   // `assembleConfigTypesSource`, `deriveCategories` or `deriveDomains`) and `scope-predicates.ts`
@@ -976,7 +976,12 @@ export const REGISTRY: RegistryEntry[] = [
     source: { file: E2E_CONSTANTS, symbol: "FILES" },
     document: {
       document: E2E_README,
-      from: "**Files (`FILES`)** — all 12:",
+      // Anchored WITHOUT a count. It carried "— all 12" until 2026-08-23, which made a prose
+      // number load-bearing shell for this row: a 13th member reddens the members check
+      // below, and whoever then corrected the prose to "all 13" broke this anchor and
+      // reddened a SECOND row for an unrelated-looking reason. The members check is what
+      // states exhaustiveness; the sentence does not need to say it twice.
+      from: "**Files (`FILES`)**",
       to: "**Step text (`STEP_TEXT`)",
       states: "code-spans",
     },
