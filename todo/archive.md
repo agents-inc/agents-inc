@@ -4906,3 +4906,194 @@ E2E_SKILL_IDS.slice(1) })`, a marketplace shipping exactly one skill, since ever
     the lifecycle example) and `.ai-docs/standards/e2e/test-structure.md`'s `beforeAll` pattern.
   - **Gates:** full E2E 247 files / 912 passed, unit 210 files / 7,217 passed, `deps:check`, all
     three `tsc` projects, ESLint and `prettier --check` clean.
+
+- **2026-08-24 — CLI-622, and `share --stdin` beside it** (cli.md) — **The browser is reachable
+  from a cold start, and a configuration the caller HOLDS can become an id.** Two halves of one
+  idea, designed in conversation and landed together.
+  - **`init --ui`** opens the editor on nothing. `edit --ui` mints an id first because it has an
+    installation to carry across; there is none here, so this is the bare address and the browser
+    starts from the catalogue. It sits **above `ensureConfigReadable`** and reads no installation
+    at all — deliberately, so a config too broken to load cannot block the other front door. The
+    link is printed BEFORE any browser is opened, which is what keeps it usable over a pipe, in CI
+    and where no desktop session exists; a failed launch is a warning beside a link that still
+    works, and that warn site is rostered in `failure-reporting-classification.test.ts` with its
+    reason.
+  - **`init --ui --from` is REFUSED**, and NOT for `edit`'s reason. There the two are opposite ends
+    of one round trip; here there is no installation to hand out, so the pair is UNBUILT rather
+    than contradictory. `EDITOR_NEEDS_NO_ID` says which, so a silent choice between them is never
+    read as the feature. Lifting it is CLI-621, which is now the only row left of the pair.
+  - **`share --stdin`** publishes a payload piped in, reading no installation. The producer is not
+    this CLI: `meta-config-stack-detect` walks a repository and emits a `SeedPayload` it is
+    forbidden to write or apply, and an id is the only door into the editor, which reads `?fromId=`
+    and nothing else. **Publishing from the CLI rather than from the skill is the whole design
+    argument**, and it is four concrete things: `SEED_VERSION` is a `z.literal`, so a producer that
+    hardcodes the wire shape emits refused payloads the day it moves; `AGENTS_INC_API_URL` exists
+    so tests never touch the network and a hardcoded URL ignores it; the caller's user-agent is
+    what SERVER-03 counts by; and a skill that POSTs has published before the user has confirmed
+    anything, which its own top rule forbids. Hand-run proved the user-agent survives — the stub
+    logged `ua=agents-inc-cli`.
+  - **The flag's subject guard is the empty directory.** A bare `share` resolves an installation
+    the way every command does, this project then the global one, so without the branch, sharing a
+    piped payload from an empty directory would publish whatever the machine has installed
+    globally. That is asserted, not assumed.
+  - **Three refusals, pinned by the empty REQUEST LOG rather than by the exit code**, because the
+    claim is that nothing was spent: an empty pipe, text that is not JSON, and JSON the contract
+    refuses. The store's free tier allows a thousand writes a day against a hundred times that in
+    reads, so a write is the scarce half and one spent on an unreadable payload buys a dead link.
+  - **Corrections to the plan as discussed:** the first shape considered was `--from` accepting a
+    payload PATH, dropped because stdin leaves no file behind — which was the owner's own reason.
+    The second was the skill POSTing directly and printing the command, dropped for the four
+    reasons above. And `share`'s output needed no change at all: `sharedConfigDestinations(id)`
+    already prints both routes, so the piped path cannot describe an id differently from `share`
+    or `edit --ui`.
+  - **Gates:** E2E 249 files / 921 passed (two new specs, 9 assertions), unit 7,216 of 7,217 —
+    the one red is CLI-820's working-tree scan, green on CI. Three gates caught this change's own
+    debt and each was paid: the warn-site roster, `check-enumeration-drift` over the messages
+    constants, and `spec-gates` demanding a journey per spec (journeys 44 and 45). `apps/www`'s
+    `check-cli-claims` caught both undocumented flags; it now reports 13 commands and 18 flags, all
+    documented.
+
+- **2026-08-24 — CLI-621** (cli.md) — **A shared id can now be OPENED, not only applied**, and the
+  ruling that unblocked it replaced a refusal with a rule. **`--ui` opens whatever `--from` names,
+  and the command's own subject when `--from` is absent** (owner, 2026-08-24) — one rule across
+  both commands.
+  - `init --ui --from <id>` and `edit --ui --from <id>` open that id. `SHARED_CONFIG_ONE_DIRECTION`
+    and `EDITOR_NEEDS_NO_ID` are both **deleted**: the first read the pair as opposite ends of one
+    round trip, and under the ruling they are not opposite at all.
+  - **Nothing is minted and nothing is fetched on that path.** `--ui` alone POSTs an installation
+    to mint an id because an installation is not yet a configuration the store holds; an id already
+    IS one. `edit-from.e2e.test.ts` pins it the only way a spec can — **the store sees no request
+    at all** — which no unit test could observe.
+  - **`edit --ui --from` needs no installation**, which is the owner's ruling rather than an
+    oversight: opening an id in a browser reads no local state, so a directory's condition cannot
+    decide whether you may look at somebody else's configuration. It sits above
+    `ensureConfigReadable` AND above `edit`'s own installed-here requirement, and
+    `commands/edit-ui-from.e2e.test.ts` says the exemption is deliberate, since `edit` refuses an
+    empty directory on every other path.
+  - **`share --stdin --ui` was considered and declined** (owner, 2026-08-24): publishing stays a
+    visibly separate step from opening.
+  - **The producer was updated, and it was already broken.** `meta-config-stack-detect` in
+    `agents-inc/skills` snapshotted the wire contract at `SEED_VERSION = 3` while the live literal
+    is **5** — `v: z.literal(SEED_VERSION)` — so **every payload it emitted was already being
+    refused** by the editor's import path and by `init --from`, silently, for as long as the wire
+    has been at 5. Snapshot corrected to v5 with `description`, `marketplace` and `external`; both
+    worked examples and the counter-example moved with it; and its two CRITICAL requirements and
+    its "Where it goes" section now name `agents-inc share --stdin` instead of "a surface the user
+    confirms", with the four reasons it must not POST for itself. **This is the drift the design
+    argument predicted, found already realised** — which is the strongest evidence for publishing
+    from the CLI that could exist. Skills-repo gates pass: `format:check` clean, 238 skills
+    validate.
+  - **Gates:** unit 7,227 of 7,228 (the one red is CLI-820's working-tree scan, green on CI); the
+    four affected e2e specs 17/17; `check-enumeration-drift` needed a re-anchor, because a registry
+    boundary was anchored on a NEIGHBOURING row that this change deleted — a second row reddening
+    for a reason unrelated to its own subject, now anchored on a stable neighbour and the reason
+    recorded. Journeys 44 corrected and 46 added; the warn roster gained `edit`'s second `--ui`
+    site, placed in source order beside its twin.
+
+- **2026-08-24 — CLI-772** (cli.md) — **A docblock described a fallback the function did not
+  perform, and the gap was a live user-visible defect.** `resolveBranding` read
+  `loadEffectiveSourceConfig`, which answers with the project's config if that FILE exists and the
+  global one otherwise — so a project config with no `branding` key resolved to the SHIPPED default
+  and never consulted the global one. **Brand globally, then have any project config at all, and
+  your name silently reverted**, which is every installed project. The docblock one line above had
+  said "falling back to global then DEFAULT_BRANDING" throughout. Now per FIELD, which is what
+  makes branding different from `marketplace`: a project's marketplace is its own and inheriting
+  one would install from somewhere nobody named, while branding is presentation a user sets once.
+  **The existing spec had pinned the defect as correct** — _"should return default branding when
+  config has no branding section"_ — which is `CLAUDE.md`'s own prohibition on encoding a known gap
+  in an assertion. Four tests replace it, two of them controls. Hand-run: `ACME Tools Doctor` where
+  the shipped name used to come back, and `Project Brand Doctor` when the project overrides it.
+
+- **2026-08-24 — CLI-597** (cli.md) — **Half of it had already landed, and the live half was the
+  one that reaches a user.** The row said stack skill ids pass through unvalidated;
+  `resolveStackAgentSkills` has filtered the per-category map against the matrix for some time, and
+  its docblock says so. What was NOT filtered is `allSkillIds` — and that is the list that matters:
+  `wizard.tsx:107` returns it verbatim as the selection when a stack is picked, and
+  `packages/matrix/src/read-model/stacks.ts` counts and lists it for the editor. So the two
+  disagreed, and a marketplace whose `stacks.ts` outlived one of its own skills selected an id
+  nothing could resolve — exactly the symptom the row reported, reached by a mechanism it
+  misdiagnosed. Now filtered at the same gate, with `withdrawnSkillsWarning` naming what it drops,
+  as the sub-agent half already did. Mutation-proved: removing the filter reddens the spec.
+  The test uses a REAL `SkillId` absent from the seeded matrix rather than a fabricated one, per
+  `CLAUDE.md` — `tsc` refused the invented id, which is the rule enforcing itself.
+
+- **2026-08-24 — CLI-820** (cli.md) — **The gate now answers about the repository rather than about
+  the machine.** `declaredNamesUnder` walked the filesystem and skipped a hardcoded denylist that
+  cannot track `.gitignore`, so three ignored locations still declaring two constants deleted on
+  2026-08-22 made it answer 10 locally and 12 on a clean checkout — **CI was red on that assertion
+  from the 0.157.0 push through 0.158.0 while every local run passed.** It asks git now. The
+  obvious form, `check-ignore` per file, was correct and cost 5 seconds on this repository; one
+  `ls-files --others --ignored --exclude-standard --directory` per root collapses whole ignored
+  directories to one entry, so a prefix test answers everything beneath them — **2.1s against the
+  6.4s that form cost**. Outside a working tree the command fails and nothing is ignored, which is
+  exactly right for the temp trees this scan is unit-tested against and is why no test needs a
+  repository of its own. Mutation-proved both ways. **The unit suite is now green locally for the
+  first time in this cluster** — 7,238 of 7,238.
+
+- **2026-08-24 — CLI-798** (cli.md) — **The dist door costs zero call sites.** It was
+  `ensureBinaryExists` called from a `beforeAll` in **248 spec files**, per-file discipline with
+  nothing gating it: forget the call and the reward is a 45-second timeout naming nothing, and no
+  reader could tell a spec that omitted it correctly from one that forgot. `e2e/setup.ts` is a
+  `setupFiles` entry, so a `beforeAll` there runs once before every spec file — the same door,
+  unforgettable. **271 call lines and 250 imports removed**, and the helper deleted.
+  `spec-gates.test.ts` now asserts the ABSENCE of the call, so the discipline cannot grow back, and
+  `runners-refuse-a-mismatched-build.test.ts` was repointed at the harness, its scope claim intact.
+  **Proved by mutation rather than by reasoning**: with `assertDistIsPresent` made to throw, a spec
+  that never called it skips all five of its tests at `beforeAll`; restored, all five pass.
+
+- **2026-08-24 — CLI-819** (cli.md) — **Fixed, and the fixture-identity question was answered by
+  the fixture's own text.** Thirteen stack literals filed a skill under a category the catalogue
+  contradicts — `"web-testing"` for ids the catalogue puts in `"web-e2e"` — derived from the id's
+  prefix, which `CLAUDE.md` forbids in fixtures as much as in product code. Invisible because
+  `normalizeStackRecord` relocates the assignment on LOAD, so nothing read the written key. Two
+  relocations collided in an EXCLUSIVE category, which is why one spec asserted a compiled
+  sub-agent body no CLI-written configuration can produce. **The fixture had written two DIFFERENT
+  keys** — `web-testing` and `web-mocking` — for two ids the catalogue both puts in `web-e2e`, so
+  its intent was never two e2e skills; the second slot took `web-mocks-msw`, which genuinely is
+  `web-mocking`. Both skills, both categories, one agent, no spec lost its subject.
+  **The diagnostic became a refusal the same day**: the whole suite reports zero round-trip
+  failures, so `writeProjectConfig` now throws on any config the product would not have written.
+  Measured at no cost — 318s either way — and stated as journey 47.
+
+- **2026-08-24 — CLI-782** (cli.md) — **The row's alarm was false and its observation was true.**
+  It read `spec-filenames.test.ts` at "8083 ms against a 10-second per-test budget — 81% of it".
+  That test passes its OWN `TITLE_GATE_TIMEOUT_MS` of **60 seconds** as its third argument, so it
+  was at 16% rather than 81%, and the constant's docblock had already provisioned that headroom in
+  as many words: _"six agents working at once is exactly when a 4s gate becomes a 9s one, and a
+  timeout there reads to whoever meets it as a regression the change caused rather than as a busy
+  machine."_ **I repeated the row's error and escalated it**, reporting ~520ms of headroom from two
+  measurements of 9,424ms and 9,478ms against the global 10s. Both were against the wrong budget.
+  - **What was true is that the scan did four times the work it reads.** The gate took the shared
+    base WHOLE — `js.configs.recommended`, `tseslint.configs.recommended` and this repository's own
+    additions — and `reportsFor` then discarded everything that was not `no-restricted-syntax`.
+    Every other rule ran over 466 spec files and was thrown away.
+  - It takes the base's `languageOptions` and nothing else now, which is what its own docblock
+    always said it wanted: _"the PARSER alone"_. **9,424ms → 5,786ms under full-suite contention,
+    and 2,294ms solo**; measured in isolation the lint itself is 3,351ms → 1,996ms over the same
+    466 files for the same verdict. A structural test pins it — the gate's config must declare
+    exactly `["no-restricted-syntax"]` — and is mutation-proved: restoring the whole base reddens
+    it.
+  - `NonNullable<Linter.Config["languageOptions"]>` rather than a cast, and the whole block rather
+    than the parser alone, so whatever the parser needs beside itself travels with it.
+
+- **2026-08-24 — CLI-769** (cli.md) — **Ruled INTENDED by the owner: the ASCII mark is not
+  brandable and is not meant to be.** The row read a white-labelled installation still drawing
+  `AGENTS INC` in ASCII as unfinished branding, on the reasoning that `branding.name` had just
+  reached six surfaces. It is the opposite — the mark is the PRODUCT's, not the installation's, and
+  `branding.name` following the name everywhere while the logo does not is the distinction rather
+  than a gap. `package.json`'s `description`, the first line of `--help` that oclif reads from
+  package metadata, is the same class and the same answer. **Recorded at `ASCII_LOGO` in
+  `consts.ts` rather than only here**, because a ruling that lives only in `archive.md` is one the
+  next reader refiles: the constant now carries the decision beside the value it governs.
+
+- **2026-08-24 — REPO-07** (repo.md) — The old web monorepo deleted from disk, 1.1G freed. The safety net had done its job: `origin/main` held every commit (nothing unpushed), and the only uncommitted work was a staged rewrite of `docs/configurator-todo.md` that is the direct ANCESTOR of this folder — its items 8, 9 and 10 are WWW-01, WWW-02 and WWW-03, and its item 7 is CLI-740's coverage bullet. The untracked `.claude-src/` was a CLI test install, regenerable in seconds. Both preserved anyway, outside either repository, at `~/dev/agents-inc-web-monorepo-uncommitted-2026-08-24.patch` with the HEAD sha beside it — the remote at `agents-inc/web` is untouched and re-clonable.
+
+- **2026-08-24 — CLI-768** (cli.md) — `branding.tagline` deleted on the owner's ruling, at all five sites: the `BrandingConfig` type, the zod schema, `ResolvedBranding`, `DEFAULT_BRANDING.TAGLINE` and the hand-maintained `project-source-config.schema.json` — which `generate:schemas` does NOT own, a correction to my own first assumption that cost one regenerate to find. The field promised _"Custom tagline shown in wizard header"_ and no wizard header ever rendered it. **The test that carries the red is the drop, not the absence**: `brandingConfigSchema` is a bare `z.object`, so an unpublished key is stripped silently rather than refused, and a `name`-only assertion would pass either way — the pin is `toStrictEqual({ name })` over a config that also names a tagline. The published JSON schema is checked separately, because `additionalProperties: false` makes a leftover tagline an ERROR for an editor validating a user's config while the parser merely drops it. **The per-field branding block survived on one field**: its discriminator was never two fields but a project config that EXISTS and is silent about branding, which is exactly the per-file regression it was written for.
+
+- **2026-08-24 — CLI-816** (cli.md) — The interactive dashboard carries the counts, on the owner's ruling. `formatDashboardText` printed skill count, agent count, install mode and marketplace; the `Dashboard` component printed a title and four menu rows — so the screen a person sat in front of was **less informative than the output they got by piping it**, with every assertion green throughout because each path was only ever compared against itself. One producer now, `dashboardCountLines`, rendered by both. **The parity test reads its expected lines out of that function rather than restating them**, so the two cannot drift again — and it ships with a control, because a `dashboardCountLines` returning `[]` satisfies a containment check for free. Mutation-proved in both directions: emptied, the control reddens alone and the parity pair stays green, which is the whole reason it is there.
+
+- **2026-08-24 — CLI-328** (cli.md) — The `e2e/pages/constants.ts` duplication ruled ON rather than reversed, and the half that was missing built. Its "NO imports from src/cli" header read as a rule nobody applied — **233 imports from `src/` live across every other directory of the E2E tree**, spec directories included — but the duplication is right for the reason `check-screen-sentinels.ts` already argues: a spec that imported the constant it asserts on would move both sides at once and assert nothing. What was missing is a third party comparing the mirrors, and only the wizard's screen subtitles had one. `scripts/check-mirrored-constants.ts` is the other half — `EXIT_CODES`, `TERMINAL_SIZE.SHORT.rows` against `MIN_TERMINAL_SIZE.ROWS`, and `SOURCE_PATHS.PLUGINS_DIST` — and the record comparison runs **one-directionally on purpose**: `UNKNOWN_COMMAND: 127` is the shell's status, not the CLI's, so a mirror may hold codes the product never emits. `SHORT.cols` is deliberately NOT registered: 100 sits above the gate's 80 by design, and mirroring it would assert an equality nobody wants. Mutation-proved by moving `MIN_TERMINAL_SIZE.ROWS` to 22 — "mirror holds 20, product holds 22".
+
+- **2026-08-24 — CLI-329** (cli.md) — One of its four items had a subject. **`step-settings` does not exist** and **`SOURCE_HEADER_NAMES` does not exist** — both were measured against a tree that has since moved, and neither is a gap to fill. `UI_SYMBOLS.CHECKBOX_CHECKED` was filed as a stale `[x]` the UI contradicts; it has **zero readers anywhere in `src` or `e2e`**, as does `CHECKBOX_UNCHECKED`, so the answer was deletion rather than correction. The live one was `doctor`: `formatStatus` returned the literals `"!"` and `"-"` while `UI_SYMBOLS.DISCOURAGED` and `UI_SYMBOLS.SKIPPED` existed for exactly those states — and `SKIPPED` is an EN-DASH, so a stood-down row printed a different character from the one declared for it, indistinguishable from `UI_SYMBOLS.REMOVED`, which is deliberately an ASCII hyphen and means the opposite. **Both e2e assertions moved together and one of them is a NEGATIVE** — a glyph change that updated only the positive would have left `not.toMatch` matching nothing and passing for a reason it does not state. The exhaustive `STEP_TEXT` list in two documents was already one short before this touched it: 185 claimed, 187 actual.
+
+- **2026-08-24 — CLI-799** (cli.md) — The window closed, and the row's own premise refuted by measurement. It was filed as unclosable — "both mechanisms are blind ... **Moving the door earlier does not fix this**; it is inherent to a `beforeAll` that spans the window" — and marked worth work only if the race were observed. The first half is true and was re-measured: a throwing `beforeAll` really does skip every `beforeEach` and `afterEach` under it, and it is the SPEC's `beforeAll` that spawns, installs and waits, so this is most of what a lifecycle spec does rather than a narrow window. The second half is false. **Measured on vitest 4.1.10 against a standalone probe**: a setup file's `afterAll` runs even when the spec's `beforeAll` threw, and its throw is reported ALONGSIDE that error rather than in place of it. One line in `e2e/setup.ts`. The misleading failure still stands — nothing can undo it, the spec really did fail there — and the real cause is now printed beside it, which is all the reader was missing.
