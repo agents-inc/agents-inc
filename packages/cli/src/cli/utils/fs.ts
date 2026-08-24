@@ -143,6 +143,37 @@ export async function removeDirIfEmpty(dir: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Copies a tree into an installation, and makes what it wrote writable by its new owner.
+ *
+ * **`eject` means the user owns the copy**, so the copy has to be editable however the SOURCE
+ * happened to be stored. `fs-extra` preserves mode, and nothing normalised it: a marketplace on a
+ * read-only mount, in a Nix store path, or written under a restrictive umask produced skills the
+ * user could not subsequently edit — and the failure did not surface at the install. It surfaced
+ * later, at an unrelated `edit` or mode switch, as `EACCES` on a file the user never made
+ * read-only. Every caller of this function is an install or an eject, so every destination is the
+ * user's.
+ *
+ * The owner's write bit is ADDED rather than the mode replaced. A skill may legitimately ship an
+ * executable script, and flattening to `644` would break it on the way in — the destination should
+ * differ from the source in exactly one respect, which is that its owner can write it.
+ *
+ * Directories take the same bit for the same reason: a read-only directory refuses a file added
+ * beside the copy, which is what an eject-then-edit does next.
+ */
 export async function copy(src: string, dest: string): Promise<void> {
   await fs.copy(src, dest);
+  await grantOwnerWrite(dest);
+}
+
+const OWNER_WRITE = 0o200;
+
+async function grantOwnerWrite(target: string): Promise<void> {
+  const entry = await fs.stat(target);
+  await fs.chmod(target, entry.mode | OWNER_WRITE);
+
+  if (!entry.isDirectory()) return;
+
+  const children = await fs.readdir(target);
+  await Promise.all(children.map((child) => grantOwnerWrite(path.join(target, child))));
 }
