@@ -9,6 +9,7 @@ import {
   configTsPath,
   ensureBinaryExists,
   listFiles,
+  readTreeSnapshot,
   loadConfigOrFail,
   readTestFile,
   skillsPath,
@@ -16,11 +17,11 @@ import {
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
-  flattenCliOutput,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
@@ -98,9 +99,18 @@ describe("init --from <id>: greenfield only", () => {
     });
 
     // Everything the refused run must leave exactly as it found it, captured before it runs.
+    // Snapshots rather than listings. The page's Negative form section asks a refusal row for a
+    // tree snapshot "not four separate absences", and a listing cannot see the failure that
+    // matters here: a file REWRITTEN in place leaves the directory listing identical. These carry
+    // content and mtime, so a rewrite reddens.
     const globalConfigBefore = await readTestFile(configTsPath(env.fakeHome));
-    const globalSkillsBefore = await listFiles(skillsPath(env.fakeHome));
-    const globalAgentsBefore = await listFiles(agentsPath(env.fakeHome));
+    const globalSkillsBefore = await readTreeSnapshot(skillsPath(env.fakeHome));
+    const globalAgentsBefore = await readTreeSnapshot(agentsPath(env.fakeHome));
+
+    // `readTreeSnapshot` answers `{}` for an absent directory, so an install that never happened
+    // would satisfy the comparisons below for free. Both sides must hold something first.
+    expect(Object.keys(globalSkillsBefore).length).toBeGreaterThan(0);
+    expect(Object.keys(globalAgentsBefore).length).toBeGreaterThan(0);
 
     // A different project entirely — this one has no installation of its own, so the global
     // install is the only thing standing in the way.
@@ -120,8 +130,8 @@ describe("init --from <id>: greenfield only", () => {
     expect(await listFiles(secondProjectDir)).not.toContain(DIRS.CLAUDE_SRC);
     // ...and so is the install that blocked it, on both sides.
     expect(await readTestFile(configTsPath(env.fakeHome))).toBe(globalConfigBefore);
-    expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual(globalSkillsBefore);
-    expect(await listFiles(agentsPath(env.fakeHome))).toStrictEqual(globalAgentsBefore);
+    expect(await readTreeSnapshot(skillsPath(env.fakeHome))).toStrictEqual(globalSkillsBefore);
+    expect(await readTreeSnapshot(agentsPath(env.fakeHome))).toStrictEqual(globalAgentsBefore);
   });
 
   it("installs a payload with nothing global into a clean project despite a global installation", async () => {

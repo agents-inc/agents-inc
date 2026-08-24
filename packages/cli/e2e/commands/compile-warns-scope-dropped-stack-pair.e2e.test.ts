@@ -2,7 +2,7 @@ import path from "path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import {
   cleanupTempDir,
   createLocalSkill,

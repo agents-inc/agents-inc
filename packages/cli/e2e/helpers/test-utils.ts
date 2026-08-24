@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -12,6 +12,11 @@ import {
 } from "../../src/cli/consts.js";
 import { cliVersion, stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import { getErrorMessage } from "../../src/cli/utils/errors.js";
+import {
+  generateConfigSource,
+  type ConfigSourceOptions,
+} from "../../src/cli/lib/configuration/config-writer.js";
 import {
   renderAgentMd,
   renderAgentYaml,
@@ -272,15 +277,81 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
   );
 }
 
-/** Write a config.ts file to the .claude-src/ directory of the given base dir. */
+/**
+ * Write a `config.ts` into the `.claude-src/` of the given base dir, **through the product's own
+ * writer**.
+ *
+ * `generateConfigSource` rather than `renderConfigTs`, and that is the whole point: a fixture that
+ * renders its own JSON writes a file shape the CLI never produces, and every assertion over it is
+ * then pinned to the fixture rather than to the product. The two disagreed on all four of the
+ * things an assertion can see — field order (the writer canonicalises; `JSON.stringify` keeps
+ * insertion order), entry spacing (`{"id":"x"}` against `{ "id": "x" }`, which decides whether a
+ * `toContain('"scope":"project"')` matches at all), the typed named variables the writer hoists
+ * above the export, and the stack compaction in `compactStackAssignments` that writes an unflagged
+ * assignment as a bare id and drops an exclusive category's array wrapper. A spec built on the
+ * fixture shape passes over a writer that has changed underneath it, which is the divergence this
+ * helper existed to create.
+ *
+ * The STANDALONE form, which is what the writer emits for a config that does not extend a global
+ * one. A fixture wanting the project-extends-global shape passes `options` straight through.
+ *
+ * No `config-types.ts` is needed beside it: the writer's `import type` and `satisfies` are both
+ * type-only and erased before the loader ever evaluates the module. {@link writeConfigTypes} exists
+ * for the specs that ASSERT on that companion file, not for loading.
+ */
 export async function writeProjectConfig(
   baseDir: string,
   config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
+  options?: ConfigSourceOptions,
 ): Promise<void> {
   const resolved: FixtureProjectConfig = { skills: [], agents: [], ...config };
   const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
   await mkdir(configDir, { recursive: true });
-  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(resolved));
+  const source = generateConfigSource(resolved as ProjectConfig, options);
+  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
+  await reportRoundTripDrift(baseDir, source, options);
+}
+
+/**
+ * Writes a line to `$CONFIG_ROUNDTRIP_PROBE` whenever a fixture config does not survive the
+ * product's own load-then-write cycle. Unset — which is every ordinary run — it does nothing.
+ *
+ * **Rendering a fixture through the writer proves its FORM; this proves its CONTENT is reachable.**
+ * `generateConfigSource` will emit whatever it is handed, so a fixture can still describe a state
+ * the CLI would never write. Reading it back and writing it again is what asks that question: the
+ * loader normalises (`normalizeStackRecord` relocates an assignment to its skill's declared
+ * category, and expands the writer's compacted forms), so a config the product would have written
+ * comes back byte-identical, and one it would not either DRIFTS or makes the writer THROW.
+ *
+ * It found 19 of both over 150 fixture configs, all one root cause and all in four files — see
+ * `.ai-docs/agent-findings/2026-08-23-fixture-stack-categories-derived-from-id.md`. Run it with:
+ *
+ *   CONFIG_ROUNDTRIP_PROBE=/tmp/probe.jsonl npx vitest --config e2e/vitest.config.ts --run --project e2e
+ *
+ * A diagnostic rather than an assertion, deliberately, and only until that finding is cleared: a
+ * guard that fails on four known files either reddens the suite or acquires an exemption list, and
+ * the finding is the better place for a debt that is already named and counted.
+ */
+async function reportRoundTripDrift(
+  baseDir: string,
+  source: string,
+  options: ConfigSourceOptions | undefined,
+): Promise<void> {
+  const probePath = process.env.CONFIG_ROUNDTRIP_PROBE;
+  if (!probePath) return;
+
+  const site = new Error().stack?.split("\n").find((line) => line.includes(".e2e.test.ts"));
+  const record = (entry: Record<string, unknown>): Promise<void> =>
+    appendFile(probePath, `${JSON.stringify({ site: site?.trim() ?? "?", ...entry })}\n`);
+
+  try {
+    const reread = await loadProjectConfigFromDir(baseDir);
+    if (!reread) return;
+    const again = generateConfigSource(reread.config, options);
+    if (again !== source) await record({ kind: "DRIFT", source, again });
+  } catch (error) {
+    await record({ kind: "THROW", message: getErrorMessage(error), source });
+  }
 }
 
 /**
@@ -800,6 +871,7 @@ export function getEjectedTemplatePath(projectDir: string): string {
 // by the unit gate that sits beside it. One definition, so the run cannot drift from the
 // messages it is about.
 export { HANDED_OUT_INVOCATIONS } from "../../src/cli/lib/__tests__/helpers/handed-out-invocations.js";
+export { flattenCliOutput } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
 
 export { createE2ESource, E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";

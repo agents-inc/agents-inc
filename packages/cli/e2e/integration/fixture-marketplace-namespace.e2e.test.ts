@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 import {
   createE2EPluginSource,

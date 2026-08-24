@@ -6,11 +6,11 @@ import { cleanupTempDir, ensureBinaryExists, readTreeSnapshot } from "../helpers
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
-  flattenCliOutput,
   runEditFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {

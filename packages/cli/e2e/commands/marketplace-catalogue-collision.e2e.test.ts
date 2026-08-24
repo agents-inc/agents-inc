@@ -13,7 +13,7 @@ import {
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 

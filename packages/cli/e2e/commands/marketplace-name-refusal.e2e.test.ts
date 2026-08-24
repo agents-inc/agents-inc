@@ -5,7 +5,7 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import { cleanupTempDir, ensureBinaryExists, runCLI } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
 
 /**

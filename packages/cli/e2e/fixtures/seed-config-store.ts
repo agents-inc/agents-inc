@@ -173,13 +173,3 @@ export function runEditFrom(
     env: { AGENTS_INC_API_URL: store.url },
   });
 }
-
-/**
- * oclif wraps error and warning text at the terminal width and prefixes each continuation with
- * ` ›  `, so a full sentence straddles line breaks in the captured output. Asserting on a short
- * fragment instead would just move the brittleness — it would pass on a message that had been
- * truncated. Undo the wrapping and assert the whole thing.
- */
-export function flattenCliOutput(output: string): string {
-  return output.replace(/›/g, " ").replace(/\s+/g, " ").trim();
-}

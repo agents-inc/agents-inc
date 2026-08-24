@@ -4,12 +4,12 @@ import "../matchers/setup.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import {
-  flattenCliOutput,
   runEditFrom,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {

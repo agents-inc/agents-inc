@@ -12,7 +12,7 @@ import {
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { CUSTOM_PROJECT_SKILL_ID, ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**

@@ -17,12 +17,12 @@ import {
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
-  flattenCliOutput,
   runInitFrom,
   runShare,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, FILES } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
@@ -267,10 +267,12 @@ describe("share", () => {
       firstElement(store.requests).body,
     );
     expect(Object.keys(posted.skills)).toStrictEqual([E2E_SKILL.react.id]);
-    // Nor carried as content: the carry-back reads the same provenance this rule does, so a
-    // directory nothing forked is outside both halves of the round trip rather than only the
-    // half that names ids.
-    expect(posted.external).toBeUndefined();
+    // `expect(posted.external).toBeUndefined()` sat here and proved nothing: this fixture's two
+    // skills are CATALOGUE skills, and `external` only ever carries ids no catalogue resolves, so
+    // it is undefined whether the rule works or not. The discriminating assertion is the one
+    // above — the posted id set is exactly the catalogue skill, with the user-authored directory
+    // absent from it. A spec that needs the content half asserted needs an EXTERNAL skill in the
+    // fixture; the sibling above, which posts `EXTERNAL_ID`, is that spec.
   });
 
   it("refuses a directory with nothing installed, without spending a write", async () => {

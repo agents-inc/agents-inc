@@ -17,11 +17,11 @@ import {
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
-  flattenCliOutput,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
 import {

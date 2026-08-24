@@ -17,11 +17,11 @@ import {
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import {
-  flattenCliOutput,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";

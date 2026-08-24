@@ -3,11 +3,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
 import {
-  flattenCliOutput,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 

@@ -12,7 +12,7 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /** The `source-fetcher` message for a marketplace path that is not a directory. */

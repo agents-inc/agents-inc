@@ -3,7 +3,7 @@ import { mkdir } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupFixture,

@@ -13,7 +13,7 @@ import {
   runCLI,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { flattenCliOutput } from "../fixtures/seed-config-store.js";
+import { flattenCliOutput } from "../helpers/test-utils.js";
 import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 
