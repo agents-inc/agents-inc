@@ -309,9 +309,10 @@ divergence. Gate only where no subject can be removed.
 - **CLI-596** — all ten E2E fixture skill slugs are already claimed by the default catalogue, so a
   fixture skill has no slug identity in the ~14 mixed-configuration specs. Inert today (no product
   reader of `getSkillBySlug` or `idToSlug`); armed for the first one.
-- **D-235** (uncovered `buildProjectTypesExtras` branch) · **CLI-736** (fixture-default ergonomics) ·
-  **CLI-730** (E2E setup via CLI commands, not hand-built files) · **CLI-726** (stable test identifiers)
-  · **CLI-723** (a CLI E2E testing skill).
+- **D-235** (uncovered `buildProjectTypesExtras` branch) · **CLI-819** (four E2E fixtures file a
+  skill under a category the catalogue contradicts — needs a ruling on fixture identity, since
+  `web-e2e` is exclusive) · **CLI-726** (stable test identifiers) · **CLI-723** (a CLI E2E testing
+  skill).
 
 ## The site
 

@@ -4253,3 +4253,656 @@ MANIFEST_NAME_FIELD`, typed `keyof Marketplace`) and never its message, so the d
   untouched. Its row is also partly stale: `resolveStackAgentSkills` DOES filter the per-category map and
   DOES warn per unknown id; only `allSkillIds` is genuinely unvalidated.
   Spawned CLI-655 — a spec that was green about a state no run can produce — and CLI-656.
+
+- **2026-08-23 — CLI-746, CLI-789, CLI-817, CLI-648** (cli.md) — **Four rows retired on
+  re-derivation, none of them by work done for their own sake.** All four were closed as collateral
+  by the 0.157.0 release and stayed open because nothing re-measured them; found by a read-only pass
+  over the 43 rows of `plans/verified-mechanical-worklist.md`, of which these were the only stale
+  ones. **CLI-746** — `grep -c 'D-220' src/cli/lib/configuration/config-generator.ts` returns **0**,
+  while `shouldIncludeTriple` and `isScopePairCompatible` both still exist, so the id migration
+  cleared the docblocks rather than the subject going away. **CLI-789** and **CLI-817** —
+  `prettier --check` is clean on `reference/commands/index.md` and `standards/e2e/user-journeys.md`;
+  the working-tree drift both rows measured never reached a commit, so the reflow cost they were
+  filed to prevent was never paid by anyone. **CLI-648** — closed by exactly the remedy it proposed:
+  `spec-filenames.test.ts` carries `TITLE_CALL`, four selectors covering the bare-identifier,
+  `callee.object`, `callee.callee.object` and `callee.tag.object` shapes, with `TITLE_SHAPES`
+  planting a fixture per shape and the prefixes composed from `TRACKER_ID_PREFIXES` so a seventh
+  tracker cannot arrive unfixtured. `eslint.config.js`'s own selector is still bare-identifier-only
+  and deliberately so — the gate is the in-process ESLint pass, not the config.
+  **CLI-547's citation was repaired rather than left dangling**: it read "Same class as CLI-648" and
+  now carries the fact instead — a pattern that cannot see the node reads exactly like one that
+  works, so a clean census is not evidence.
+
+- **2026-08-23 — CLI-742** (cli.md) — **Moot, and the row's own exemption is what makes it moot.**
+  The row counted 14 unsanctioned `D-220` sites — 12 in `config-generator.ts`, 2 in
+  `local-installer.ts` — and explicitly excluded two more in e2e FILE-LEVEL JSDoc as sanctioned,
+  `packages/cli/CLAUDE.md` naming that the one permitted home for a task id. Measured 2026-08-23:
+  both source files return **0**, and the only `D-220` left in the tree is those same two sanctioned
+  file-level docblocks in `stack-per-agent-curation.e2e.test.ts` and
+  `edit-remove-last-skill-stack-cleanup.e2e.test.ts`. So the census the row was filed on is now
+  empty and the residue is the part it had already ruled out of scope. Cleared by CLI-574/CLI-680
+  rather than by anything done for this row. Verify with
+  `grep -rn 'D-220' src e2e scripts --include='*.ts' --include='*.tsx'`.
+
+- **2026-08-23 — `plans/mechanical-backlog-2026-08-22.md` merged into
+  `plans/verified-mechanical-worklist.md`** — two sequencing files for one backlog, and the older one
+  was 77% spent. Of its 60 ids, **46 had landed** in 0.157.0 and the surviving 13 were **already rows
+  in the worklist**, so the merge lost no work — measured by comparing its id set against the
+  trackers' first-column rows rather than against prose, which double-counts cross-references. What
+  it uniquely held was the per-row ordering, and that is what moved: `CLI-736` before `CLI-730` (the
+  worklist's size ordering lists them the wrong way round), `CLI-596` and `CLI-692` as one lane over
+  one schema file and 192 specs, `CLI-689` before `CLI-557`, `CLI-679` last among the documentation
+  rows, `CLI-547` unblocked now `CLI-574` and `CLI-680` have landed, the runs-alone set, and
+  `WWW-08`'s independence. Its SDLC restatement was deliberately NOT carried across — the root
+  `CLAUDE.md` owns that and it drifted the last time it stood in two places. The file's own thesis is
+  worth keeping in one line: **the previous attempts failed on ordering, not on effort.**
+
+- **2026-08-23 — CLI-790** (cli.md) — **One unparseable `metadata.yaml` no longer kills `uninstall`
+  before it deletes anything.** `readLocalSkillMetadata` and `injectForkedFromMetadata` in
+  `skills/skill-metadata.ts` both had a `try`-less `parseYaml` sitting directly above a `safeParse`
+  — the shape `clean-code-standards.md` § 7.3 names, and which reads as one guarded operation while
+  catching only the schema half. Both now go through one `readYaml` returning a
+  `{ parsed: true; value } | { parsed: false; reason }` union, the form § 7.3 nominates
+  (`readSkillMetadata` in `loading/loader.ts`) shared rather than repeated, and
+  `existingMetadataFields` collapses the two failure routes into the one warning the author
+  actually needs. **Driven red first, and a pre-existing spec turned out to be pinning the defect:**
+  `injectForkedFromMetadata` had a test asserting `.rejects.toThrow()` on unparseable YAML, directly
+  contradicting the function's own docblock promise that _"if parsing fails, only `forkedFrom` is
+  written (with a warning logged)"_. The contract stayed and the assertion changed — it now asserts
+  the documented behaviour and says in a comment why it was reversed. **Hand-run against the real
+  binary** with a project whose installed skill carried unreadable YAML: the run warns by name,
+  classifies the skill as not-CLI-managed (unreadable metadata is no provenance), removes
+  `.claude-src/`, keeps `.claude/`, exits 0. **No documentation changed and that is the finding** —
+  the docblocks were already describing the fixed behaviour, so the code caught up to the docs
+  rather than the reverse.
+  **Three of the row's supporting claims did not describe the tree, and none affects the headline:**
+  the _"two more unguarded sites in `lib/seed/`"_ are four `parseYaml` calls in
+  `seed/external-skills.test.ts` parsing fixtures the test just wrote; `readPluginSkillMetadata`
+  does not exist, so the "family of three" is two; and `readSkillMetadata` in `loading/loader.ts`
+  was already guarded — it is the model the fix copies, not a site needing repair. A census of every
+  remaining `parseYaml` in production found **all of them already inside a `try`**, so
+  `skill-metadata.ts` held the last instance of the shape and there is nothing to file behind it.
+
+- **2026-08-23 — CLI-814** (cli.md) — `doctor` no longer prints `1 skills available`. The count was
+  built by hand at the one site in `checkSourceReachable` while `plural()` sat in the same file and
+  served three others; it now goes through `plural()` like its neighbours. **Driven red first with
+  the only input that can tell the two forms apart** — `createE2ESource({ withoutSkills:
+E2E_SKILL_IDS.slice(1) })`, a marketplace shipping exactly one skill, since every other count in
+  the suite is plural and satisfies the buggy form as readily as the fixed one. The expected string
+  went into `STEP_TEXT.DOCTOR_ONE_SKILL_AVAILABLE` rather than the spec, per the rule against local
+  text constants in E2E files. The assertion runs against `node bin/run.js` on a real generated
+  marketplace, which is the same evidence a hand-run gives for a pure string change.
+  **The documentation claim in this entry was wrong when written and the drift gate caught it**:
+  no prose quotes the line, but `STEP_TEXT` is enumerated exhaustively in
+  `standards/e2e/README.md` and `reference/testing/e2e-infrastructure.md`, so the new
+  `DOCTOR_ONE_SKILL_AVAILABLE` constant drifted both until they were updated. Adding a member
+  to a bound enumeration is a documentation change even when no sentence mentions it.
+
+- **2026-08-23 — CLI-793, CLI-795** (cli.md) — Two defects one comment apart in
+  `scripts/check-enumeration-drift.ts`. **CLI-795:** the config-area comment read _"Four modules,
+  six rows, because two of the four are enumerated in TWO documents apiece"_; both numerals were
+  wrong and are now seven and three, measured by
+  `grep -oP 'source: \{ file: (CONFIG_WRITER|CONFIG_TYPES_WRITER|CONFIG_GENERATOR|SCOPE_PREDICATES)'`
+  — `CONFIG_GENERATOR` appears once and the other three twice. **CLI-793:** the `FILES` row anchored
+  on the literal `**Files (`FILES`)** — all 12:`, making a prose count load-bearing shell for a
+  gate in another file — a 13th member reddens the members check, and correcting the prose then
+  breaks the anchor and reddens a second row for an unrelated-looking reason. The count is gone from
+  both the anchor and the sentence, with the reason recorded at the row: the members check is what
+  states exhaustiveness and the sentence does not need to say it twice. **Proved non-vacuous in both
+  directions** — removing `CATALOG_JSON` from the README still reddens the row as
+  `presentButUnnamed`, and restoring it returns 76/76.
+
+- **2026-08-23 — CLI-778** (cli.md) — Two dead surfaces on the agent assertion helpers, both gone.
+  `expectCompiledAgents` had **zero call sites** across `src`, `e2e` and `scripts` — only its own
+  definition and a barrel re-export — and `expectValidAgentMarkdown`'s `options` bag was
+  unreachable: all **8** call sites pass two arguments and neither `hasCorePrinciples` nor
+  `hasMethodologies` was ever supplied, so the flags existed as a signature promising a
+  discrimination no caller made. Both sections are now checked unconditionally, with a note saying
+  that an agent legitimately lacking one needs its own named assertion rather than a flag on this
+  one. Neither symbol was on the `tested-exports-reach-production` roster, so nothing there moved.
+  **The drift gate caught the documentation half rather than a reviewer:**
+  `reference/testing/factories.md` enumerates the exported values of `__tests__/assertions/` and
+  still named the deleted symbol in two places. Deleting an export from a bound directory is a
+  documentation change; the gate is what says so.
+
+- **2026-08-23 — CLI-796** (cli.md) — `TEST_CATEGORIES` in `reference/testing/mock-data.md` stays
+  **deliberately unbound**, and the table now records why rather than reading as an omission beside
+  four neighbours bound the same day. Not bindable as `table-pairs` — every value is a
+  `createMockCategory(...)` call and the checker's value reader resolves string literals only,
+  refusing it with _"names a symbol holding a member whose value no reader can name"_; teaching it
+  to resolve a call's first argument is the "guessed at rather than looked up" that reader's own
+  docblock refuses. Bindable keys-only as `table-rows` and **rejected on the repository's own
+  precedent**: a sibling comment in the same file argues against that form for two-column tables
+  because it holds the keys while letting every value drift, and the Phase C rules pass established
+  that a rule ships without a check rather than with a bad one. Closed as a recorded decision, which
+  is what the row asked for as its second option.
+
+- **2026-08-23 — CLI-801, CLI-806** (cli.md) — Two journey rows in `standards/e2e/user-journeys.md`
+  stating an environment-dependent fact as an absolute. **CLI-801:** row 32 claimed `edit --from`
+  "refuses BEFORE the confirm" at `$HOME`. True on a real PTY; piped — which is how the spec runs —
+  the no-terminal refusal fires first and the home-scope message never prints. Both exits are 1 and
+  both orderings are correct, so the row now names both paths and says which one the spec can see.
+  **CLI-806:** row 17 was marked TO TEST **(blocked)** on a `claude plugin install` dependency that
+  resolves fine on a developer machine — it succeeded 23 times during verification — and is absent
+  only on CI, so the named spec runs here rather than skipping. Re-marked "blocked on CI only", with
+  the block read as _nobody has driven it_ rather than _nobody can_. Docs-only, so no test: both
+  were verified by re-deriving the claim by hand, which is how they were filed. `spec-gates`
+  green at 10/10 afterwards, since it reads this page.
+
+- **2026-08-23 — CLI-807** (cli.md) — Three assertions true of every string, all three residue of a
+  removal. `global-scope-lifecycle.e2e.test.ts` carried a bare `expect(stdout).toContain(``)` between
+  a comment explaining why the old fragment assertion was dropped and the back-reference that
+  replaced it — deleted, with the comment now saying the back-reference is the replacement.
+  `install-mode-bulk.e2e.test.ts` asserted ``toContain(`to `)`` at two sites, a substring that
+  appears in `Copying skills to local directory`, `Agents compiled to:` and `To customize`.
+  **The count turned out not to be the subject and pinning it was wrong twice**: composing the full
+  line as the constants' own note prescribes failed at 1, then at `E2E_SKILL_IDS.length` (10) —
+  the run switches the 7 skills the install selected, not the catalogue. The assertion now pairs
+  `SWITCHING_SKILLS_SUFFIX` with the mode description, which is count-free and carries the whole
+  discrimination the constants describe: _a spec asserting only the verb cannot tell a switch TO
+  plugin from a switch BACK_. **Mutation-proved** — swapping the two mode descriptions reddens both
+  sites; restoring them returns green.
+
+- **2026-08-23 — CLI-804** (cli.md) — Two journeys discharged their compiled-agent surface with
+  `toBeGreaterThan(0)`, which no swap can redden. Both now assert members against a named roster,
+  the shape `share-round-trip-compiled-bodies` already used. **Three things the row did not know,
+  all found by making the change:** the second file is at `e2e/commands/marketplace-author-arc`, not
+  `e2e/lifecycle/`; `readCompiledAgents` keys carry the `.md` extension, so the comparison maps
+  through `path.basename(file, ".md")` and reads in sub-agent names rather than filenames; and
+  `expectInstallSurfaces` is shared by **two variants with different rosters** — a stack install
+  compiles the two the stack declares, a stackless source compiles all eight — so the helper now
+  takes the roster as a parameter. A single shared expectation would have had to be loose enough to
+  accept both, which is how the count got there in the first place. The eight-member constant is
+  spelled out rather than derived from `AGENT_NAMES`, because deriving it would make the expectation
+  agree with the product by construction. **Mutation-proved with a SWAP** — one member exchanged,
+  length identical — which reddens where the old assertion could not. The sibling
+  `listFiles(skillsPath(...)).length` count in the same helper is the same class and was left
+  deliberately: the row's subject is surface 1, and widening it here would hide the change.
+
+- **2026-08-23 — CLI-805, CLI-808, CLI-809** (cli.md) — Four cells in
+  `standards/e2e/user-journeys.md` claiming more, or less, than their specs hold. **CLI-808 (row 5)
+  UNDERSTATED itself**: surfaces read `2, 3` while surface 1 is asserted by all four named specs, so
+  it is now `1, 2, 3` and only `config-types.ts` (surface 4) is genuinely untested — a grep for the
+  four ways a spec reaches generated types returns nothing across all four. Its "blocked" marker is
+  re-scoped to CI, since `claude` 2.1.240 was on PATH and the journey ran to completion here
+  including real plugin installs. **CLI-809 (row 10)** rested its from-scratch claim on two specs
+  when only one qualifies: `commands/update` builds every install from a hand-written config and
+  hand-written generated types — a variant end to end — so the claim rests entirely on
+  `lifecycle/install-update-source-drift`. A row one spec short of being a real hole is the shape
+  the page exists to prevent. **CLI-805 (rows 28a and 29)** overstated two: `real-marketplace` calls
+  `selectScratch()` and walks past the install, so the offer half is covered and only the install
+  half is open; and no spec crosses `config.marketplace` on the share round trip, because both
+  round-trip specs pass `--marketplace <sourceDir>` to the receiving end — the live divergence
+  (origin a local path, rebuild the public ref) is `readMarketplace` as designed, not a defect.
+  **`spec-gates` caught a mistake in the correction itself:** the first wording put
+  `writeProjectConfig` and `writeConfigTypes` in the From-scratch column, which the gate reads as
+  spec names and refused. The explanation moved to the status cell, where it is prose rather than a
+  claim about which specs exist. 10/10 after.
+
+- **2026-08-23 — CLI-803** (cli.md) — Three assertions that could not fail for the reason they
+  named. **(1)** An entire `it` in `interactive/real-marketplace.e2e.test.ts`, named _"should have
+  used the real marketplace for plugin installation"_, whose only assertion was
+  `toContain("agents-inc")` — **this CLI's own binary name**, in the completion text and version
+  banner of every run. Deleted; the two `<skill>@agents-inc` refs above it are the discriminating
+  form of the same claim, now named as `INSTALLED_SKILL_REFS` so the later count has a subject.
+  **(2)** `toMatch(/skills/i)` and `/agents/i` on `list` output: both are unconditional section
+  labels. Replaced by the counts — and finding the right replacement corrected the row's implicit
+  assumption that `list` prints a roster, when it prints a summary (`Skills: 2`, `Agents: 5`); the
+  roster is asserted by name two tests above, so counts are what this one can honestly hold.
+  **(3)** `expect(posted.external).toBeUndefined()` in `commands/share.e2e.test.ts`, proving _"a
+  directory nothing forked is outside both halves of the round trip"_ — the fixture's two skills are
+  CATALOGUE skills and `external` only ever carries ids no catalogue resolves, so it was undefined
+  either way. Replaced by a comment naming the line above as the discriminating one and pointing at
+  the sibling spec that posts a real `EXTERNAL_ID`. **Mutation-proved** — the skill count off by one
+  reddens; restored, 9/9.
+
+- **2026-08-23 — CLI-797** (cli.md) — Six documentation sites described `ensureBinaryExists()` as
+  probing the committed `bin/run.js`, and one of them told the reader outright that it **cannot
+  fail** and was findings Pattern V. **That was true when written and stopped being true when
+  CLI-671 landed**: the guard now calls `assertDistIsPresent`, which stats `dist/index.js` — the
+  file oclif resolves commands from — and refuses when it is absent. So the documentation was
+  telling readers a working guard was theatre, which is worse than a stale claim: it invites
+  deletion of the thing that works. All six corrected, and the `build-and-packaging.md` block keeps
+  the Pattern V history explicitly as history, with a line telling the reader to read any surviving
+  "unfailable" description the same way. `check-enumeration-drift` and `check-symbol-citations`
+  green at 98/98 after.
+
+- **2026-08-23 — CLI-770** (cli.md) — `flattenCliOutput` moved from `e2e/fixtures/seed-config-store.ts`
+  to `src/cli/lib/__tests__/helpers/flatten-cli-output.ts` and re-exported through
+  `e2e/helpers/test-utils.ts`, the single door `CLAUDE.md` names, with **21 importers repointed**.
+  It now has the tests it never had — four, including one pinning that whitespace is COLLAPSED
+  rather than stripped, which is the mutation that would pass every `toContain` on a fragment and
+  fail only on the whole sentence this helper exists to assert. The tested home matters and is not
+  interchangeable with the old one: no vitest project collects `*.test.ts` under `e2e/helpers/`, so
+  a test written beside the helper would never run while looking like coverage. Verified with
+  `tsc -p e2e/tsconfig.json`, `eslint e2e`, and the suites that reach it — 9/9 `commands/init-from`
+  files and 100/100 `lifecycle/` files.
+
+- **2026-08-23 — CLI-810** (cli.md) — `init-from-greenfield` proved its refusal negatives with
+  `listFiles` comparisons, which cannot see a file REWRITTEN in place — the row claimed _"both
+  proved byte-identical"_ when only one of the two was read as bytes. Both now use
+  `readTreeSnapshot`, which already existed and carries content and mtime, so the page's own
+  Negative form rule (_a refusal owes a tree snapshot, "not four separate absences"_) is actually
+  met. **Its `{}`-for-absent behaviour is the trap the helper's own docblock warns about**, so the
+  spec now asserts both snapshots are non-empty before comparing — an install that never happened
+  would otherwise satisfy the comparison for free. **Mutation-proved against the exact blind spot:**
+  rewriting one global skill file in place between the snapshots reddens the spec; the old listing
+  comparison would have stayed green. The product was never at fault, which the row said — what
+  changed is that the spec can now tell you so.
+
+- **2026-08-23 — CLI-813** (cli.md) — The from-scratch classifier now has a word for the third
+  shape. `holdsOnlyVariants` read two halves — seeds a config, installs from nothing — so a spec
+  whose subject is what a command PRINTS over a directory was condemned as a variant if it wrote a
+  config anywhere in the file, and that forced a file split earlier the same day for the wrong
+  reason. `installsNothing` is the new first question, backed by `INSTALLING_CALLS`, a deliberate
+  superset of `FROM_SCRATCH_INSTALLS` kept beside it so the two cannot drift about what an install
+  is. **Three tests, and the third is the one that matters:** a spec that seeds and only edits is
+  still a variant, without which the first two would be satisfied by a classifier answering `false`
+  to everything. **Mutation-proved** — removing the new guard reddens exactly the new case and
+  nothing else.
+
+- **2026-08-23 — CLI-802** (cli.md) — Closed as the row's second option: **recorded rather than
+  fixed**. Three journey legs cannot be driven by hand — the build-step advisory, the "apply that
+  ADDS a skill" leg, and that arc's toast half — because reaching them needs `createE2ESource`'s
+  exact shape and the workspace has **no TS runner** (re-verified by looking: neither `tsx` nor
+  `ts-node` is installed, only `vitest`), so the fixture builder cannot be called outside a suite
+  run. `standards/e2e/user-journeys.md` gains a _Legs that are suite-only by construction_ section
+  saying so, naming the three and both ways out — a runner dependency or a compiled entry point —
+  neither taken. The point of writing it down is that a hand-run can never independently confirm
+  these three, so the suite is the only evidence there will be, and a reader should stop treating
+  their empty hand-run column as an omission.
+
+- **2026-08-23 — CLI-815** (cli.md) — The editor consequence of the scoped catalogue emission, run
+  and now guarded. Both editor suites pass — **400 unit, 324 Playwright** — so the row's "run it" is
+  answered, and the answer is that nothing had broken. **But nothing pinned it either**, which the
+  running does not fix: every add-skill spec picks one category by name, which passes whether the
+  dropdown offers five or a hundred. A new spec in `marketplace.spec.ts` loads the acme marketplace
+  and asserts the placement dropdown then offers **that** catalogue's domain set (`api`, `web`)
+  rather than the public nine. **Two corrections to my own first attempt, both found by running
+  it:** I wrote the guard in `add-skill.spec.ts` against `DOMAINS` from `support/catalog.ts`, which
+  names only the three domains those specs use rather than the whole seated set — the default page
+  legitimately offers nine; and the default path is not the row's subject at all, since the
+  narrowing only shows when a MARKETPLACE is seated. The guard belongs where one is loaded.
+  **Mutation-proved:** skipping the marketplace load leaves the public catalogue seated and the
+  assertion reddens.
+
+- **2026-08-23 — CLI-761** (cli.md) — **MISDIAGNOSED in both halves, and the measurement is the
+  deliverable.** (1) _"Three tables state the same fact"_ overstates it: `SKILL_IDENTITY_FIELDS`
+  already reads `slug` and `displayName` from `E2E_SKILL` and duplicates **only `category`**, for
+  ten of its twenty-four entries — the other fourteen are skills project-builder writes that no E2E
+  source ships. `getCanonicalSkillTaxonomy` covers 80 unit-factory ids overlapping nine of the ten
+  by raw name. Three tables, one partly-shared field. (2) _"`getCanonicalSkillTaxonomy` is not
+  exported, which is the only reason a unit spec had to state a category inline"_ is **false**: the
+  inline sites are not canonical-skill claims at all — `source-validator.test.ts` passes
+  `category: "web-framework"` as raw snake_case payload under test, and `external-skills.test.ts`
+  states one for an `EXTERNAL_ID` carrying `custom: true`, which by definition answers to no
+  canonical table. Exporting it would have added an export with **no consumer**, which
+  `packages/cli/CLAUDE.md` forbids outright. **What actually landed** is the correction the row was
+  right about: `E2E_SKILLS`'s docblock called itself _"the SOLE definition of what a fixture
+  ships"_, and it is not the only table stating a category for these skills. It now says so, names
+  both siblings with their real counts, and records what closing the ten-skill overlap would take —
+  giving `E2E_SKILL` a `category` derived from `E2E_SKILLS`. Not done here: it is a change to the
+  shared identity map with no defect behind it.
+
+- **2026-08-23 — CLI-771** (cli.md) — **The `dist/` race is fixed for the case that was actually
+  fixable, and the prevention CLI-708 refused stays refused.** The row asked to prevent two AGENTS
+  racing, which CLI-708 closed as detection-not-prevention with all three routes rejected. Rescoped
+  after the real instance turned up in a single command: `turbo run test test:e2e` fired **three
+  tsup builds** — measured, `grep -c '\$ tsup$'` — because `packages/cli/turbo.json` already ordered
+  a build ahead of each task through `dependsOn` AND the npm `pretest`, `pretest:e2e` and
+  `pretest:smoke` hooks each ran another, while turbo runs those tasks concurrently. `clean: true`
+  meant the loser died with `ENOENT ... unlink dist/chunk-*.js`, which is what aborted a push with
+  no legible error. The three hooks are gone; the same command now fires **one** build. A `//test`
+  note in `package.json` records why, so nobody restores them.
+  **Removing them made five statements false, and all five were corrected in the same change** —
+  the guard's own `REBUILD_HINT` still told the reader `bun run test` builds first,
+  `WHY_A_REBUILD_EMPTIES_DIST` named the three hooks as the danger, `assertDistIsFresh`'s docblock
+  and `e2e/global-setup.ts` both credited the hooks, and `clean-code-standards.md` § 6.19 described
+  a two-layer enforcement whose first layer had just been deleted. Two stale rows in
+  `build-and-packaging.md` and `infrastructure.md` went with them. **The direct path was verified by
+  moving `dist/` aside**: a bare `vitest run` refuses with `dist/ does not exist.` and now names a
+  hint that is true. 206 files / 7180 tests green through turbo afterwards.
+
+- **2026-08-23 — CLI-788** (cli.md) — `INCOMPLETE_WORK_RECOVERY.DELETE_AGENT_FILE` now has a spec
+  that fails when the site stops working, rather than a roster entry pinning that some site names
+  the member. `cleanupStaleAgentFiles` runs AFTER `writeConfigAndCompile`, so the two existing
+  failure cases in that file walk straight past it — they sabotage the compile target, and a pass
+  that fails to compile has nothing stale left to delete. The new case reaches the removal arm the
+  way the hand-run did: a clean pass first so a compiled file exists to go stale, then the agents
+  directory at `0555` so the unlink of the sub-agent the second pass drops fails. **Its control is
+  the load-bearing half** — the first pass must really compile the file, or a removal that was never
+  attempted satisfies everything after it for free. **Two corrections found by running it:**
+  `buildProject()` leaves no compiled agents on disk, so the file only exists after a pass; and
+  `AgentsStep.toggleAgent` navigates by the RENDERED title, so `E2E_AGENT[...].name` (`web-developer`)
+  never focuses anything and `.display` (`Web Developer`) is what it wants. **Mutation-proved
+  against the product**: deleting the `reportIncompleteWork` call from `cleanupStaleAgentFiles` and
+  rebuilding reddens exactly the new test; restoring it returns 4/4.
+
+- **2026-08-23 — CLI-647** (cli.md) — All five `??`-between-subject-and-matcher sites repaired, and
+  **removing each fallback proved the row right by producing a different answer**. The two exact
+  tells split: `local-installer.test.ts` really did hold `[]`, so its `?? []` was pure noise and the
+  bare assertion now fails on an absent key; `scenario-c-init-registers-project` held **`undefined`**
+  — a global install writes no `projects` KEY at all — so the fallback had been equating two states
+  that mean different things, and it now asserts `toBeUndefined()`, which is the stronger claim and
+  the one the test is named for. The three negative forms needed controls rather than rewrites,
+  because `JSON.stringify(undefined ?? {})` is `"{}"` and contains no id however the run went: in
+  `init-project-skill-reaching-no-agent` the project stack turned out to be **absent**, which is
+  precisely what that journey is about, so it now asserts the absence directly and keeps the
+  serialised negative only for the global stack, which really is populated. `uninstall-manifest-removal`
+  needed only the fallback gone — vitest throws on `expect(undefined).not.toContain`, so an absent
+  `projects` now fails where it used to be excused. **The row's own caveat that the `?? {}` sites
+  "cannot simply have it deleted" was right about the mechanism and wrong about the remedy**: the
+  answer is a control above the negative, not a fallback around the subject. The wider 522-hit `?.`
+  census the row names is untouched and stays open under its own scope.
+
+- **2026-08-23 — CLI-652** (cli.md) — Both proposed compiler-API checks built; the five the row
+  argued against stay unbuilt and its reasons stand. **BUILD (1),
+  `scripts/check-boundary-union-casts.ts`:** three exact predicates — source type is
+  `TypeFlags.String`, target is a union of string literals, target's declaration lives under
+  `types/generated/`. The previous lane was right that a grep cannot do this and wrong that nothing
+  can: `as SkillId` reads identically whether the subject is a literal the compiler already knows
+  or a `path.basename(...)` the filesystem just handed over, and only the second is the shape
+  `CLAUDE.md` bans. **Measured 12 sites, not 13** — landed as a DECLARED BACKLOG keyed by module
+  rather than a gate opening red, per the lesson that a gate arriving with a dozen violations gets
+  deleted the first time it is inconvenient. Scoped by DIRECTORY through `PARSE_BOUNDARIES`, never
+  by an on-site comment, as the row insisted. Proved by planting a thirteenth site, rebuilding, and
+  watching the gate name it. **BUILD (2), `scripts/check-symbol-file-pairs.ts`:** CLI-635's parked
+  subset, moving the predicate from _the identifier appears in file F_ to _file F DECLARES it_ — the
+  distinction is load-bearing because a module that IMPORTS a moved symbol satisfies a grep, which
+  is exactly the state a move leaves behind, and a test pins that case directly. **The first design
+  was wrong and the checker said so rather than guessing**: resolving a bare `some-module.ts` by
+  filename refused with _"names a module more than one file answers to: index.ts — 19 files"_, then
+  again on `config-assertions.ts` at two. A bare module name is not an address; the SECTION HEADING
+  is what scopes it, so that is what it now reads. It **arrives green** over `factories.md`'s
+  100-odd rows, which is evidence the document is right rather than a repair wearing a gate's
+  clothes, and mutation-proved by renaming one row's symbol.
+
+- **2026-08-23 — CLI-812** (cli.md) — Both missing standards written into
+  `clean-code-standards.md` § 15, where the neighbouring data-integrity rules live. **15.17: an
+  artefact that ships to consumers narrows EVERY built-in table it inherits.** The tell recorded
+  with it is the useful half — each side read correct alone, because `narrowToShippedSlugs` carried
+  a docblock explaining exactly why narrowing the rules was right while the categories pass-through
+  had no docblock at all, nobody having been asked the question. **15.18: a spec over a published
+  artefact asserts every block it carries, not the subset that happens to be right**, with the
+  instruction to enumerate the blocks from the artefact's own schema or writer so a fourth added
+  later reddens the spec rather than joining the unasserted set. **Verified the defects behind them
+  are actually fixed rather than only documented**: `loadMarketplaceMatrix` now returns
+  `{ ...matrix, categories: categoriesTheseSkillsAreIn(matrix) }`, so an emitted catalogue no longer
+  advertises 102 categories its marketplace has nothing in. The row was right that only the
+  standards were outstanding — its lane was fenced to gate-demanded `.ai-docs/` rows and could not
+  write them.
+
+- **2026-08-23 — CLI-557** (cli.md) — **Overtaken by CLI-538, and closed by measuring rather than by
+  writing the E2E it asked for.** The row was right when filed: `config-scope-integrity.e2e.test.ts`
+  pins the WRITER's emission of `marketplace`, not `splitConfigByScope`'s spread, so the behaviour
+  its filename claims had no guard. CLI-538 then landed the guard one level down —
+  `config-generator.test.ts` -> _"carries selectedDomains onto both partitions, because a project
+  owns its own domains"_. **Proved non-vacuous before closing:** deleting `...config` from the
+  project partition and rebuilding reddens **two** tests in that file; restoring returns 91/91.
+  **An E2E would be the worse home and was deliberately not written.** A unit test asks
+  `splitConfigByScope` the question directly, where an end-to-end run can only observe the answer
+  through a writer that supplies the same field by another route — which is precisely why the
+  existing spec's assertions cannot see the spread, and why adding more of them would not have
+  helped. The spec's JSDoc, which is where the next author looks, now names the real guard and says
+  outright not to add an E2E on the strength of the old note.
+
+- **2026-08-23 — CLI-679** (cli.md) — The gap between the two existing gates is closed, by the
+  narrowing the row asked for rather than the naive rule it warned against.
+  `scripts/check-symbol-file-pairs.ts` (built for CLI-652 and widened here) judges symbols **in a
+  stated position** — a table whose second column claims an address — over
+  `factories.md`, `boundary-map.md` and `skill-primitives.md`. `agent-findings/` is excluded by
+  construction, since the checker takes a document rather than a tree.
+  **Four false-positive classes were found by running it, and each narrowed the rule:**
+  a **Consumer** column pairs the same two cells to state which module USES the symbol, true of a
+  module that does not declare it — `computeScopeDiff | skill-agent-summary.tsx` is correct under
+  that header and a first pass condemned it; a **constants table** pairs a name with a filename it
+  HOLDS, often a file in a marketplace rather than this package; a **module-private** helper
+  documented at its own module is correct, so the predicate is DECLARES and not exports — an
+  exports-only version reported three `exec.ts` validators as stale; and a **bare module name** is
+  not an address, `index.ts` answering to nineteen files.
+  **The silent zero was real and is now impossible.** Four documents carrying 70 rows read as clean
+  because their headings name no directory and every row was being skipped; the checker refuses a
+  document stating no pairing it can read, so `wizard-flow.md` and `plugin-system.md` now say so
+  loudly instead of passing. **One genuine stale site found and fixed**: `readPluginManifest()`
+  filed under `marketplace-generator.ts` in `boundary-map.md` while living in
+  `plugins/plugin-finder.ts` — a document that named the right module fifty lines earlier.
+
+- **2026-08-23 — CLI-689** (cli.md) — **The row's remedy was wrong too, and the row had already
+  corrected the remedy before it.** It re-measured the population right — 38 `expectFourSurfaces`
+  call sites, 23 omitting `globalHome` — and rejected "require the parameter" because that reddens
+  all 38. Its own replacement, _take the `ProjectHandle` and derive from it_, does not describe the
+  tree either: the call sites pass bare directory strings (`projectDir`, `fakeHome`, `env.fakeHome`,
+  `origin`, `rebuilt`), and most have no handle to pass. **The defect it identified is real and
+  needed none of that**: `CLI.run` decides the HOME the spawned binary runs under and
+  `expectFourSurfaces` decides the HOME it then reads, they must agree or the assertion inspects a
+  tree the command never wrote, and they agreed only by both being written as the same fallback —
+  agreement by coincidence across 23 sites. Now one definition, `globalHomeFor` in
+  `__tests__/helpers/`, called by both, with **zero call-site changes**. Its spec pins the empty
+  string as given rather than absent, so `??` cannot be tidied into `||`. **Mutation-proved across
+  both callers**: breaking the fallback reddens 2 unit tests and 5 `lifecycle/dual-scope` specs.
+
+- **2026-08-23 — WWW-08** (www.md) — Closed, and **its stated remedy was refused in writing by the
+  site it targets.** The row asked for "a component in `packages/ui` shared with the editor";
+  `apps/www/astro.config.ts` says _"NO REACT INTEGRATION, DELIBERATELY. Please do not 'fix' this by
+  adding `@astrojs/react`"_ and states that the only thing this site takes from the design system is
+  its tokens. A shared React component is unreachable here, so a token is what the two halves share.
+  **Half the row had also closed itself:** the bordered `a-i` mark in `site-header.astro` and the one
+  in the editor's `nav-rail.tsx` are **byte-identical class strings** today — compared
+  programmatically, not by eye — so "the site and the editor still ship different logos" no longer
+  describes the tree. What remained was real and is fixed: the docs `site-title` was
+  `--text-body-sm` (14px) against the landing wordmark's `--text-11` (11px), the same three words in
+  two sizes. Every property in that rule is now the wordmark's. Verified in the BUILT artefact
+  rather than the source — `a.site-title{...font-size:var(--text-11)...}` in `dist/_astro/`, 19
+  pages built — and the comment records why a component is not the fix, so the next reader does not
+  re-propose it.
+
+- **2026-08-23 — CLI-650** (cli.md) — Two of three items done; the third stays deferred on the row's
+  own reasoning. **(1) A synthesized category's domain is no longer decided silently.** It is still
+  taken from whichever skill the glob reached first — picking a winner needs a rule the catalogue
+  does not state — but a second skill declaring a DIFFERENT domain for the same undeclared category
+  now warns, naming both skills and the domain that won. The gate asserts the WARNING and never the
+  resulting domain, because pinning the domain pins glob order. Its control asserts silence when the
+  two agree, without which the first test is satisfied by a build that warns on every synthesis.
+  **(2) `slugMap.idToSlug` deleted** — zero readers anywhere, every occurrence a write, and its
+  removal retires D-214's duplicate-slug asymmetry outright since the field cannot disagree with the
+  one that is read. `agentDefinedDomains` kept, as the row insisted.
+  **`MergedSkillsMatrix.version` KEPT, against the row.** Its "zero product readers" holds inside
+  `packages/cli` and is false across the repo: `matrixSchema` in `packages/matrix` requires
+  `version: z.string()`, so every emitted `catalog.json` carries it, and the editor reads it —
+  `payload.matrixVersion` comes from it and `catalog-store` carries it. Deleting it would have
+  broken the published contract and the editor together.
+  **Two mistakes of mine, both caught by the suite and worth recording.** Rewriting the synthesis
+  loop I dropped the guard that skips ALREADY-DECLARED categories, so declared ones were overwritten
+  by placeholders; 27 specs said so. Worse, I then regenerated while that build was live, which
+  flattened every declared category in both generated matrices — `exclusive: true` became `false`
+  across the catalogue. Rebuilt from the corrected source and regenerated again; the diff is now
+  `idToSlug` and nothing else, and both `generate:*:check` gates agree. **(3) The singleton side
+  effect is deferred**, as the row proposes: five callers, no user-visible symptom, and its
+  `computeMatrix()` exists only in a changelog.
+
+- **2026-08-23 — CLI-613** (cli.md) — **Already built, and built the way the row asked for.**
+  `spec-gates.test.ts` carries `SPECS_BELONGING_TO_NO_JOURNEY`, a declared backlog of 149 entries
+  whose own docblock states the row's argument back to it: _"a gate that opens by demanding a
+  hundred and fifty rows is deleted the first time it is inconvenient… what it buys immediately is
+  the NEXT spec"_, with the rule that a spec gaining a journey row leaves the list in the same
+  commit, so the number can only fall. **Proved live and non-vacuous**: adding a spec belonging to
+  no row reddens the gate, which names it (`commands/zz-probe-unclaimed`); removing it returns
+  13/13. **The row's figure had moved a fourth time** — measured today through
+  `readJourneyRows`/`specsNamedBy`, the only honest reader, it is **168 unclaimed of 247 spec
+  files**, against the row's 144/235 and its own re-measurement of 175/244. That churn is exactly
+  why the remedy was rewritten on 2026-08-23 to derive at gate time rather than freeze a count, and
+  why nothing here needed building: the gate already derives.
+
+- **2026-08-23 — CLI-547** (cli.md) — The task-ID backlog closed to its irreducible core, and it was
+  **an eighth the size the row claimed**. Re-measured today: 62 source lines and 28 doc lines, not
+  252 — CLI-574 and CLI-680 had cleared most of it. **Source: of 62, fifty-five are inside a
+  file-level JSDoc, which `packages/cli/CLAUDE.md` permits outright.** Classified with the compiler
+  rather than a pattern, and the first classifier was wrong in a way worth recording: it took the
+  leading comments of the first NON-import statement, which misses every file whose docblock sits
+  above the imports, and reported 60 to sweep instead of 8. Seven of the eight were swept — a
+  provenance line in an audit's `sources`, three "the ruled behaviour for X" docblocks, a heading id,
+  a dangling `todo/D-221-investigations/` link whose directory is gone, and an inline comment.
+  **Docs: `.ai-docs/reference/` is now clear**; fourteen provenance citations went, each replaced by
+  the fact rather than reworded, and seven more in `standards/`.
+  **Six sites stay, deliberately, and each is a different exemption.** `D-266`, `D-278` and `D-279`
+  in `documentation-bible.md` and the two quoted test names in `clean-code-standards.md` are the
+  rules DEMONSTRATING themselves — a ban whose example is deleted stops teaching. `spec-filenames.test.ts`
+  explains the ban the same way. `user-journeys.md`'s remaining id is a path component in a working
+  link to `todo/plans/CLI-444-e2e-strictness-audit.md`, which still exists. The census can therefore
+  never reach zero, and rule 3's "neither returns empty" stays true for a reason rather than a
+  backlog. 209 files / 7206 tests green; eslint and tsc clean.
+
+- **2026-08-23 — CLI-757** (cli.md) — `requires[].reason` reaches a reader, clipped to fit. The
+  field is REQUIRED by `requireRuleSchema` and enforced across the built-ins, so every marketplace
+  author writes it; nothing displayed it, and both siblings display theirs. It now reads
+  `<what is missing> — <why it is needed>`, the author's half through the existing `truncateText` at
+  a 60-character budget: the median shipped reason is 46 characters and untouched, 24 of 110 clip.
+  **The budget is not tidiness — it is the whole reason the first attempt was reverted.** The grid
+  cell WRAPS rather than elides, so an unbounded reason grows the tag, grows the frame, and pushes
+  the top of the wizard off the terminal; `e2e/interactive/edit-wizard-pending-removal-row` failed
+  exactly that way against the REAL catalogue, whose React Router reason is 143 characters. **No
+  fixture spec could show it** — the E2E source's reasons are one clause long. Owner ruled truncate.
+  The 13 assertions pinning the synthesised string stay EXACT via a `missingHalf()` split rather
+  than loosening to `toContain`, and three tests cover render, empty-reason and clipping.
+
+- **2026-08-23 — the copier left ejected skills unwritable** (no row; found under CLI-736) —
+  `fs.copy` preserves mode and nothing normalised it, so a marketplace on a read-only mount, in a
+  Nix store path, or written under a restrictive umask produced skills the user **could not edit
+  after ejecting them**. The failure did not surface at the install: it appeared later, at an
+  unrelated `edit` or mode switch, as `EACCES` on a file the user never made read-only. **Owner
+  ruling: eject means you own it**, so `copy()` now grants the owner's write bit on everything it
+  writes — every one of its seven callers is an install or an eject, so every destination is the
+  user's. The bit is ADDED rather than the mode replaced, so a skill shipping an executable script
+  still runs after ejecting; a test pins that. Found because a frozen test fixture propagated
+  `r--r--r--` through the copier into 17 spec files' installed projects — the bug was never about
+  the fixture, and only 2 of 312 `EACCES` were writes to the fixture itself.
+
+- **2026-08-23 — CLI-736 (fixture half)** (cli.md) — The plugin-capable E2E source is built once in
+  `globalSetup` and **frozen** (`chmod -R a-w`); 44 of 51 call sites share it, 2 opt out with
+  `owned: true` and 5 more take options so build their own. The freeze is the point: a shared
+  fixture one spec mutates is one every LATER spec sees mutated, and under `pool: "forks"` which
+  spec trips over it depends on scheduling, so the failure moves between runs. Frozen, the mutating
+  write fails at its own line, in its own file, every time — which is how the copier bug above was
+  found. **The speed argument did NOT hold and the row should stop claiming it:** 51 × 1.65s of
+  fixture building is real but already overlapped across up to 16 workers, so removing it left the
+  suite at 323s against a 310–336s baseline. What the change buys is one fixture definition instead
+  of 51 rebuilds, and a guarantee. **The launcher-ergonomics half — the row's actual subject — is
+  untouched.**
+
+- **2026-08-23 — CLI-596, CLI-692** (cli.md) — **Closed on the owner's ruling: the restriction is
+  intended for now, so there is no work.** A rule may name only a slug the PUBLIC Agents Inc
+  catalogue ships — `skillRefInRules` is `z.enum(SKILL_SLUGS)` — and that stays.
+  **The boundary is narrower than the rows implied, which is what made the ruling easy:** shipping a
+  custom skill already works, through `custom: true` and any slug, so a marketplace can publish
+  `acme-widget` and people can install it. What it cannot do is declare a RULE about it —
+  `acme-widget conflicts with react` is refused. Custom skills are supported; custom skills in
+  relationship rules are not.
+  **CLI-692 dissolves with it.** Its premise was that every relationship-rule spec tests "a
+  configuration no real marketplace can be in", because the E2E fixture publishes the public
+  catalogue's own slugs — verified, all ten of them (`react`, `hono`, `zustand`, `vitest`, `pinia`,
+  `vue-composition-api`, `reviewing`, `cli-reviewing` and the rest) are in `SKILL_SLUGS`. Under this
+  ruling that is not an unreachable configuration but **the only supported one**, so the fixture is
+  representative and the 192 specs built on it are testing the real contract.
+  **When it is reopened, the route is already traced and it is one line.** `skillRefInRules` in
+  `lib/schemas.ts` is the only gate: a source's `config/skill-rules.ts` reaches it through
+  `loadSkillRules` -> `skillRulesFileSchema`, so a custom slug is refused at LOAD. Relaxing it to a
+  slug-shaped string costs no safety, because the reporting layer already exists and the code
+  already says it should be the one used: `collectUnresolvedSlugs` gathers every rule slug no
+  shipped skill carries onto `matrix.unresolvedSlugs`, and `checkUnresolvedRuleSlugs` turns each
+  into a `doctor` finding. `narrowToShippedSlugs`'s own docblock states the intent — _"A source's
+  OWN rules are never narrowed. A slug its author typed and its skills do not carry is that
+  source's defect, and the warning is the only place it is reported"_ — which the closed union
+  currently contradicts by refusing the file outright. The built-in rules lose nothing:
+  `default-rules.ts` is typed `SkillRulesConfig`, so `tsc` still holds them to `SkillSlug`. The
+  cost is `unknownSkillSlugRefusal` becoming dead and whatever asserts it moving from
+  refused-at-load to reported-by-doctor. **Deferred 2026-08-23 by the owner as complexity not
+  needed yet**, with custom skills in rules wanted eventually.
+
+- **2026-08-23 — CLI-736** (cli.md) — **The launcher half, and the plan's premise turned out to be
+  backwards.** The plan described a suite of plugin-mode specs paying fixture plumbing, and asked
+  for a decision between option 1 (a shared `globalSetup` fixture) and option 4 (make
+  `createE2ESource` build a marketplace by default). **Measured against the tree: of the 76 files
+  carrying the dominant `source: { sourceDir, tempDir: sourceTempDir }` shape, 70 build a PLAIN
+  `createE2ESource()`** — the marketplace-less tree the launcher already defaulted to. Option 4 is
+  therefore ruled out outright: a marketplace makes every skill non-local, and `defaultOriginFor`
+  in `stores/wizard-store.ts` would flip 70 files' worth of unstated origins from eject to plugin.
+  **And there was no performance win left to find** — `createE2ESource()` measures at ~10ms, where
+  the plugin build on top of it costs ~1.65s and was already shared by the fixture half. What
+  remained was purely ergonomic, and that is what landed.
+  - A second frozen fixture, `E2E_SOURCE`, beside the plugin one under the same root, same freeze,
+    same teardown. `InitWizard` defaults to it; `EditWizard` deliberately does NOT, because `edit`
+    takes no `--marketplace` and its launcher RECORDS the source into the install's config, where
+    `recordInstallSource` refuses an install that has no config yet — a default there would turn
+    "nothing to edit" into a throw from a fixture helper.
+  - The 13 helpers in `e2e/fixtures/dual-scope-helpers.ts` take one `source: E2ESource` in place of
+    a `(sourceDir, sourceTempDir)` pair, which shortens the 19 plugin-source call sites too.
+  - **87 files lost the ceremony entirely** — two `let`s, a `beforeAll` that built the tree, and an
+    `afterAll` that cleaned it up — and 18 `InitWizard` sites now name no source at all, which is
+    the plan's own acceptance criterion. Net **1,608 insertions against 2,047 deletions** across
+    191 files.
+  - The shared root was renamed `agents-inc-e2e-shared-source` → `agents-inc-e2e-shared-fixtures`.
+    A refusal names the path it could not resolve and `edit-plugin-hard-error.e2e.test.ts` asserts
+    `/\bsources?\b/i` finds nothing in that whole message; the old name satisfied it, and only
+    escaped because no plain-source spec sat on that root yet. It is the same constraint
+    `createE2ESource` already documents over its own `fixture/` segment.
+  - `config-scope-integrity.e2e.test.ts`'s third describe was moved back onto the plugin fixture
+    after the sweep took it: its own docblock says a marketplace-less source makes that install
+    refuse outright, which is exactly what `E2E_SOURCE` is.
+  - **Gates:** full E2E 247 files / 912 passed, unit 210 files / 7,217 passed, `tsc` clean over all
+    three projects, ESLint clean. `check-enumeration-drift` caught the docs debt the fixture half
+    left — `shared-source.ts`'s four exports were absent from
+    `.ai-docs/reference/testing/factories.md` — and that table now names them.
+  - **Corrections to the row:** the plan's "172 call sites in 74 files; ~96% can drop the plumbing"
+    was wrong twice over (374 launch sites in 159 files, and most of them are not plugin-mode); its
+    "~5s per test file" setup cost is ~10ms for the plain tree; and `InitWizard.launch()` already
+    defaulted to a fresh `createE2ESource()`, so what blocked the drop was never the default — it
+    was that the source is shared with a setup helper and with a later `EditWizard.launch` that
+    must record the same one.
+
+- **2026-08-23 — CLI-730** (cli.md) — **The row named a real harm and prescribed the wrong cure; the
+  harm is closed and the cure is documented as not implementable.** Re-derived at **168
+  `writeProjectConfig`/`writeConfigTypes` sites across 68 files** (the row's original figure was 222
+  in 73; the two local helpers it named, `createDualScopeInstallation` and
+  `createLocalSkillWithForkedFrom`, no longer exist).
+  - **The harm, in the row's own words, was "setups that break silently when the CLI's internal
+    format changes" — and it was real and severe.** `writeProjectConfig` rendered its own
+    pretty-printed JSON while the product's `config-writer.ts` emits typed named variables, an
+    `import type`, `satisfies ProjectConfig`, canonical field order, space-free entry lines and a
+    compacted stack. The two disagreed on all four things an assertion can see, so every assertion
+    over a fixture config was pinned to the fixture rather than to the product — and
+    `'"scope":"project"'`, which the suite asserts, does not even match the fixture's spacing.
+    **Closed at one site for all 150: `writeProjectConfig` now calls `generateConfigSource`**, with
+    the writer's own `ConfigSourceOptions` passed through for the project-extends-global shape. No
+    `config-types.ts` is needed beside it — `import type` and `satisfies` are erased before the
+    loader evaluates the module. Full E2E suite green on the swap, first run, no assertion changed.
+  - **The prescribed cure — "E2E tests must only use CLI commands to create state" — cannot be
+    applied, and the row's own Process anticipated that.** Classified all 168: **67** declare an
+    installation with nothing installed (an agent so the project is DETECTED, `skills: []`, no skill
+    on disk — the negation of what a wizard run produces, and the precondition `compile`'s
+    no-skills refusals need); **42** populated installs, every sampled one built around something
+    the CLI cannot author — a custom agent, a skill the source does not ship so the wizard drops it,
+    a marketplace config on a machine with no `claude` binary; **22** stack shapes; **13**
+    infrastructure (`e2e/fixtures/`, `e2e/helpers/` — the row's own exception); **13** corrupt
+    neighbours (no CLI writes an unreadable config); **6** project-registration lists; **5**
+    tombstone orderings. `ProjectBuilder`'s own docblocks already document several of these as
+    UNREACHABLE by design and say why writing the files instead does not produce them.
+  - **What replaced the cure is a round-trip audit, and it found something.** Rendering through the
+    writer proves a fixture's FORM; reading it back and writing it again proves its CONTENT is
+    reachable, because the loader normalises. `writeProjectConfig` now carries an env-gated
+    diagnostic (`CONFIG_ROUNDTRIP_PROBE`) that reports any config failing that trip. **19 of 150
+    fail, all one root cause, all in four files** — thirteen stack literals key `"web-testing"` for
+    a skill the catalogue puts in `"web-e2e"`, derived from the id prefix. Three of the nineteen
+    make the writer THROW, because `web-e2e` is exclusive and `ProjectBuilder.dualScope()` puts two
+    of its skills in one agent's stack — so `dual-scope.e2e.test.ts` asserts a compiled sub-agent
+    body no CLI-written configuration can produce.
+  - **Filed rather than fixed**, per "the verifier is never the fixer": correcting the keys forces
+    one fixture skill to change identity across five specs in two files, which changes what they
+    cover. `CLI-819` carries it, with
+    [the finding](../packages/cli/.ai-docs/agent-findings/2026-08-23-fixture-stack-categories-derived-from-id.md)
+    behind it. The diagnostic stays in the tree as that finding's reproduction and becomes an
+    always-on assertion once the four files are clean.
+  - **Docs:** `.ai-docs/reference/testing/e2e-infrastructure.md` (three rows that named
+    `renderConfigTs` as what writes an install's `config.ts`, plus the source-factory section and
+    the lifecycle example) and `.ai-docs/standards/e2e/test-structure.md`'s `beforeAll` pattern.
+  - **Gates:** full E2E 247 files / 912 passed, unit 210 files / 7,217 passed, `deps:check`, all
+    three `tsc` projects, ESLint and `prettier --check` clean.

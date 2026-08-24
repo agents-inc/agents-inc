@@ -22,53 +22,41 @@ disjoint **and** neither has wide test blast radius. `dist/` is shared however t
 up, so any lane running a suite is exposed to any other lane's build. Documentation-only lanes are
 the exception — they never build.
 
+How a row is finished rather than merely fixed is the root [`CLAUDE.md`](../../CLAUDE.md)'s "How
+work gets implemented", and is deliberately not restated here — it drifted the last time it stood in
+two places.
+
+### The constraints that outlive any one sequencing
+
+Absorbed from `mechanical-backlog-2026-08-22.md` when that file was merged into this one on
+2026-08-23. Each is a fact about the rows, not about the order they happened to be written in, so a
+regeneration of this list must carry them forward.
+
+- **`CLI-736` then `CLI-730`, and both landed 2026-08-23 in that order.** Kept because it is the
+  constraint that held: `CLI-736` changed how every wizard launches and `CLI-730` changed what the
+  fixtures underneath them write, so the reverse order would have rewritten every site against a
+  launcher that then moved. **`CLI-613` was fenced off from that chain** by `e2e/` file ownership.
+- **`CLI-596` and `CLI-692` are one lane, and neither is on this list** — see _Not on this list_
+  below. Recorded here because the constraint survives the ruling that unblocks them: same schema
+  file, 192 E2E specs on the fixture, so they return together or not at all.
+- **`CLI-689` precedes `CLI-557`** where that guard is written end-to-end.
+- **`CLI-679` goes last among the documentation rows.** A gate opened while symbols are still being
+  deleted opens red and gets deleted, which is the failure mode it exists to prevent.
+- **`CLI-547` is unblocked.** Its two predecessors in the id cluster, `CLI-574` and `CLI-680`, landed
+  in 0.157.0.
+- **Runs alone:** `CLI-689` (a required `globalHome` reddens all 38 call sites), `CLI-613`, `CLI-647`
+  and `CLI-652` (wide test surfaces), `CLI-736` and `CLI-730`.
+- **`WWW-08` is independent of everything else here** — different workspace, no shared file.
+
 ## The list
 
-| Row     | Type     | Size    | What                                                                                            |
-| ------- | -------- | ------- | ----------------------------------------------------------------------------------------------- |
-| CLI-746 | chore    | trivial | Task ids in FUNCTION-level JSDoc, where only file-level is sanctioned. packages/cli/CLAUDE.md p |
-| CLI-778 | chore    | trivial | Two dead surfaces on the agent assertion helpers, both found while deleting a third. (1) expect |
-| CLI-789 | chore    | trivial | .ai-docs/reference/commands/index.md fails prettier --check in the working tree, and it makes e |
-| CLI-793 | chore    | trivial | A prose count is load-bearing shell for a checker in another file. scripts/check-enumeration-dr |
-| CLI-795 | chore    | trivial | The same wrong-numeral defect, in the same file, one comment further down — and BOTH numerals i |
-| CLI-796 | test     | trivial | A documentation table stays unbound because the only binding available is the weak one its own  |
-| CLI-801 | docs     | trivial | A journey row claims a refusal fires "before the confirm", and without a TTY it never fires at  |
-| CLI-806 | docs     | trivial | A journey row's blocker is an environment claim written as an absolute. Row 17 is marked TO TES |
-| CLI-814 | chore    | trivial | checkSourceReachable does not pluralise: 1 skills available. Hand-reproduced against a one-skil |
-| CLI-817 | chore    | trivial | user-journeys.md was left prettier-red by an uncommitted change, and the next lane inherits the |
-| CLI-647 | test     | small   | Five sites carry the ??-between-subject-and-matcher defect; two are exact. Scan run 2026-08-21  |
-| CLI-648 | test     | small   | A selector that cannot see the node reads exactly like one that works — and four of five test-t |
-| CLI-652 | chore    | small   | Two further compiler-API checks worth building, and five judged not worth it — the reasons are  |
-| CLI-742 | chore    | small   | D-220 survives 14 times in SOURCE, and the worst of them sits under the documentation just clea |
-| CLI-757 | bug      | small   | A Zod schema and a test compel authors to write prose that nothing renders. requires[].reason i |
-| CLI-761 | chore    | small   | Three tables state the same fact about the same skills. SKILL_IDENTITY_FIELDS (e2e/fixtures/pro |
-| CLI-770 | test     | small   | A shared E2E helper lives outside the one door CLAUDE.md names, is imported directly by ten-plu |
-| CLI-771 | chore    | small   | Two agents running the E2E suite in one checkout cannot both succeed, and three six-minute runs |
-| CLI-788 | test     | small   | A recovery message users actually reach has no end-to-end coverage, and the one test naming it  |
-| CLI-790 | bug      | small   | One unparseable metadata.yaml in any installed skill kills uninstall before it deletes anything |
-| CLI-797 | docs     | small   | Six documentation sites describe the binary guard as reading a git-tracked file, and one of the |
-| CLI-802 | test     | small   | One journey cannot be driven by hand at all, and that is worth knowing about the fixture rather |
-| CLI-803 | test     | small   | Three journey assertions cannot fail for the reason they name, and one asserts the CLI's own bi |
-| CLI-804 | test     | small   | Two journeys discharge their compiled-agent surface with a count, where a swap passes. custom-m |
-| CLI-805 | docs     | small   | Two journey rows describe their specs as doing more than the specs do. (1) Row 28a says its spe |
-| CLI-807 | test     | small   | Three assertions in journey specs are true of every string, and all three look like template li |
-| CLI-808 | docs     | small   | A journey understates its own coverage by two surfaces, and its prose names the wrong one as un |
-| CLI-809 | docs     | small   | A journey's from-scratch claim rests on one spec while naming two, and the other is a variant e |
-| CLI-810 | test     | small   | A refusal journey proves its negatives with directory listings, which cannot see a rewritten fi |
-| CLI-812 | docs     | small   | Two standards the tree has been missing, both surfaced by one pair of defects. (1) An artefact  |
-| CLI-813 | test     | small   | The from-scratch heuristic has no vocabulary for a journey whose subject is a directory nothing |
-| CLI-815 | test     | small   | An editor consequence of the catalogue fix that was not verified in its own suite. categoryOpti |
-| WWW-08  | refactor | medium  | SMALLER after 2026-08-21. The www-side half is done: the header is one component (src/component |
-| CLI-557 | bug      | medium  | e2e/lifecycle/config-scope-integrity.e2e.test.ts does not cover what it is named for. Its marke |
-| CLI-613 | test     | medium  | 144 of 235 E2E spec files are named by no user-journey row — 61% of the suite (census 2026-08-2 |
-| CLI-650 | bug      | medium  | Matrix hygiene, D-214's successor — THREE items, verified 2026-08-22, in this order. D-214's 22 |
-| CLI-679 | test     | medium  | Nothing gates a symbol named in .ai-docs/ markdown against the source tree, which is how 51 sta |
-| CLI-689 | chore    | medium  | RE-MEASURED and the row's own remedy is the wrong one. 38 expectFourSurfaces call sites across  |
-| CLI-692 | test     | medium  | Every relationship-rule spec in the suite tests a configuration no real marketplace can be in.  |
-| CLI-547 | chore    | complex | The task-ID backlog: 265 sites, and a sweep scoped to any one sentence will report the class cl |
-| CLI-596 | bug      | complex | BLOCKED, and the blocker is a product defect bigger than this row: a marketplace cannot write a |
-| CLI-730 | refactor | complex | (was D-168) Audit E2E tests — replace manual file construction with CLI commands.               |
-| CLI-736 | refactor | complex | (was D-219) E2E fixture-default ergonomics. [Plan](./plans/CLI-736-wizard-launcher-default-fixt |
+**Empty as of 2026-08-23.** Every row this list carried has landed or been retired with a reason
+recorded in [`archive.md`](../archive.md); the last two, `CLI-736` and `CLI-730`, landed that day.
+Nothing outstanding is mechanical — what remains in the trackers is features, deferred items, and
+the four branding questions below, none of which this list is for.
+
+Regenerate it from the trackers when a mechanical backlog next accumulates, and carry _The
+constraints that outlive any one sequencing_ forward when you do.
 
 ## Not on this list
 
