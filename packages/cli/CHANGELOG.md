@@ -7,6 +7,26 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.158.0] - 2026-08-24
+
+**A rule author's reason reaches the grid, three defects leave the shipped surface, and the E2E suite stops describing states the CLI cannot produce**
+
+- The grid now says WHY a requirement is needed, in the rule author's own words. `requires[].reason` has been required by the schema all along and nothing rendered it; it is clipped at 60 characters because the cell wraps rather than elides and the catalogue's longest reason is 242 (CLI-757)
+- `uninstall` survives a `metadata.yaml` it cannot parse instead of dying before it deletes anything, a skill you eject is one you can edit, and `doctor` counts one skill as one skill (CLI-790, CLI-814)
+- Two compiler-API checkers land — boundary-union casts and `symbol | file` doc tables — and the five the row argued against stay unbuilt with its reasons intact (CLI-652, CLI-679)
+- The E2E suite shares two frozen fixtures instead of building one per file: 87 files lose the `beforeAll`/`afterAll` ceremony, and a plain source measures at 10ms, so the per-file sharing had bought nothing (CLI-736)
+- A fixture's `config.ts` is now rendered by the product's own writer. The two disagreed on field order, entry spacing, the hoisted variables and the stack compaction — so every assertion over a fixture config was pinned to the fixture rather than to the product (CLI-730)
+- `flattenCliOutput` and `globalHomeFor` were each written twice; both are now single, tested helpers (CLI-770, CLI-689)
+- The slug map has one direction, because nothing read the other, and a synthesised category keeps the domain the source declared (CLI-650)
+- One build per task: three `pretest*` hooks were a second build racing turbo's first, and two `tsup` runs with `clean: true` on one `dist/` aborted a push with no legible error (CLI-771, CLI-793, CLI-795, CLI-813)
+- Six assertions that could not have failed, each repaired and mutation-proved — a `?? []` that cannot tell absence from emptiness, a `toBeGreaterThan(0)` no swap can redden, a `toContain(``)` true of every string (CLI-647, CLI-803, CLI-804, CLI-807, CLI-810, CLI-788)
+- Removed: `expectCompiledAgents`, with zero call sites, and an options bag on `expectValidAgentMarkdown` that no caller could reach (CLI-778)
+- The task-ID backlog closes to its irreducible core, an eighth of the size the row claimed (CLI-547, CLI-742)
+- Web: the editor offers a loaded marketplace's own categories as placements, and the site header reads at the type system's scale (CLI-815, WWW-08)
+- Retired by measurement rather than by work, each with its evidence in `todo/archive.md` (CLI-557, CLI-596, CLI-613, CLI-648, CLI-692, CLI-746, CLI-761, CLI-789, CLI-796, CLI-797, CLI-801, CLI-802, CLI-805, CLI-806, CLI-808, CLI-809, CLI-812, CLI-817)
+
+See [changelogs/0.158.0.md](./changelogs/0.158.0.md) for full details.
+
 ## [0.157.0] - 2026-08-23
 
 **The accuracy programme lands: scope travels end to end, every command prints the name the installation configured, and a run that cannot finish says so**
