@@ -960,7 +960,7 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     classification: { class: "C", frameworks: ["nextjs"] },
     sources: [
       "skill body (next-axiom, @sentry/nextjs, next.config.ts wrapped withAxiom(withSentryConfig(...)), instrumentation.ts, sentry.{client,server,edge}.config.ts)",
-      'SKILLS-09 (todo/skills.md) — "Next-only in all but name"',
+      'todo/skills.md — "Next-only in all but name"',
     ],
   },
   "api-observability-axiom-pino-sentry": {

@@ -96,6 +96,9 @@ export const STEP_TEXT = {
   AGENTS_NOT_COMPILED: "did not compile",
   RECOMPILATION_FAILED: "Agent recompilation failed",
   RECOMPILE_STALE_REMEDY: "the compiled agents on disk are stale until you do",
+  /** `INCOMPLETE_WORK_RECOVERY.DELETE_AGENT_FILE`, for the stale-removal arm of `edit`. */
+  DELETE_AGENT_FILE_REMEDY:
+    "Claude Code loads a compiled sub-agent this project no longer configures",
   // The qualifier `init` appends to its compile count when part of the pass did not land —
   // `Compiled 1 agents (1 failed)`. Anchored on the word in FRONT of the parenthesis, because
   // three other lines end in the same qualifier and none of them is this one: `edit` and
@@ -281,6 +284,8 @@ export const STEP_TEXT = {
   DOCTOR_CONFIG_IS_VALID: "is valid",
   DOCTOR_SOURCE_LOCAL: "Connected to local:",
   DOCTOR_SKILLS_AVAILABLE: "skills available",
+  /** The singular form, which only a one-skill marketplace can produce. */
+  DOCTOR_ONE_SKILL_AVAILABLE: "1 skill available",
   // The provenance line the same row prints, whole, for a directory that names no marketplace:
   // `doctor` resolves the default and FETCHES it, and the row used to report only the cache
   // directory it landed in. Spelled end to end rather than in halves because both halves are the
@@ -333,7 +338,7 @@ export const STEP_TEXT = {
   DOCTOR_ONE_CONFIG_VALIDATED: "1 config validated",
   // The three remedies, told apart by which state produced them: an absent config is created, an
   // unreadable one is recreated, and a valid one that declares nothing is filled in. Pointing a
-  // user at the wrong one is what CLI-430 was.
+  // user at the wrong one is the defect these three exist to prevent.
   DOCTOR_TIP_CREATE_CONFIG: "to create a configuration",
   DOCTOR_TIP_RECREATE_CONFIG: "still works on a config it cannot read",
   DOCTOR_TIP_NOTHING_CONFIGURED: "Nothing is configured yet",
