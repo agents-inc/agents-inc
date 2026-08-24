@@ -47,9 +47,11 @@ import {
   CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
+  EDITOR_URL,
   EDIT_PROJECT_SETUP_FLAG,
   EJECT_SOURCE,
   STANDARD_FILES,
+  editorConfigUrl,
 } from "../consts.js";
 import { clearTerminalScreen } from "../utils/terminal.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
@@ -57,6 +59,7 @@ import { promptValue } from "../components/common/prompt-confirm.js";
 import { Spinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
+import { openUrl } from "../utils/open-url.js";
 import type { AgentName, MergedSkillsMatrix, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
@@ -102,20 +105,23 @@ const DashboardTitle: React.FC<{ name: string }> = ({ name }) =>
   name === DEFAULT_BRANDING.NAME ? <Text>{ASCII_LOGO}</Text> : <Text bold>{name}</Text>;
 
 type DashboardProps = {
-  /** The resolved branding name, as {@link DashboardData.name} carries it. */
-  name: string;
+  /** Everything the screen paints, exactly as {@link formatDashboardText} is handed it. */
+  data: DashboardData;
   onSelect: (command: DashboardCommand) => void;
   onCancel: () => void;
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ name, onSelect, onCancel }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ data, onSelect, onCancel }) => {
   const { exit } = useApp();
   const { rows: terminalHeight } = useTerminalDimensions();
 
   return (
     <Box flexDirection="column" height={terminalHeight}>
       <Box marginBottom={1}>
-        <DashboardTitle name={name} />
+        <DashboardTitle name={data.name} />
+      </Box>
+      <Box marginBottom={1}>
+        <Text>{dashboardCountLines(data).join("\n")}</Text>
       </Box>
       <SelectList
         items={DASHBOARD_OPTIONS}
@@ -132,22 +138,36 @@ const Dashboard: React.FC<DashboardProps> = ({ name, onSelect, onCancel }) => {
   );
 };
 
-/** Formats the dashboard summary as plain text lines (for non-interactive/test output). */
-export function formatDashboardText(data: DashboardData): string {
-  const modeLabel = INSTALL_MODE_LABELS[data.mode];
+/**
+ * What this installation is, as the lines both dashboards paint between the title and the menu.
+ *
+ * **Shared because the two paths had diverged, not for reuse.** `showDashboard` branches on
+ * `process.stdin.isTTY`, and only the text branch drew these — so the screen a person sits in
+ * front of was less informative than the output they get by piping it, and no assertion could see
+ * it, because each path was only ever compared against itself. One producer is what makes the two
+ * unable to drift apart again.
+ */
+export function dashboardCountLines(data: DashboardData): string[] {
   const lines = [
-    data.name,
-    "",
     `  Skills:       ${data.skillCount} installed`,
     `  Agents:       ${data.agentCount} compiled`,
-    `  Mode:         ${modeLabel}`,
+    `  Mode:         ${INSTALL_MODE_LABELS[data.mode]}`,
   ];
   if (data.source) {
     lines.push(`  Marketplace:  ${data.source}`);
   }
-  lines.push("");
-  lines.push(`  [Edit]  [Compile]  [Doctor]  [List]`);
-  return lines.join("\n");
+  return lines;
+}
+
+/** Formats the dashboard summary as plain text lines (for non-interactive/test output). */
+export function formatDashboardText(data: DashboardData): string {
+  return [
+    data.name,
+    "",
+    ...dashboardCountLines(data),
+    "",
+    `  [Edit]  [Compile]  [Doctor]  [List]`,
+  ].join("\n");
 }
 
 /**
@@ -172,7 +192,7 @@ export async function showDashboard(
   const selectedCommand = await promptValue<DashboardCommand | null>(
     (resolve) => (
       <Dashboard
-        name={data.name}
+        data={data}
         onSelect={(command) => resolve(command)}
         onCancel={() => resolve(null)}
       />
@@ -318,6 +338,11 @@ export default class Init extends BaseCommand {
       description: "Install a configuration shared from agentsinc.sh by its id, without the wizard",
       helpValue: "<id>",
     }),
+    ui: Flags.boolean({
+      description:
+        "Open agentsinc.sh instead of the terminal — the id --from names, or the catalogue",
+      default: false,
+    }),
   };
 
   /**
@@ -335,6 +360,40 @@ export default class Init extends BaseCommand {
   }
 
   /**
+   * The editor, opened on whatever `--from` named — or on nothing when it named nothing.
+   *
+   * **One rule, both commands (owner ruling 2026-08-24): `--ui` opens the command's SUBJECT, and
+   * `--from` is what supplies one.** `edit --ui` alone opens this installation because that is
+   * `edit`'s subject; `init --ui` alone opens the catalogue because a fresh directory has none.
+   * Given an id, either opens that id — which is what makes a shared configuration something a
+   * recipient can look at rather than only apply blind.
+   *
+   * No publish happens here and none is needed. `edit --ui` mints an id because an installation
+   * is not a configuration the store holds yet; an id already IS one, so this is
+   * `editorConfigUrl` and nothing else — no network, no marketplace, no catalogue load.
+   *
+   * The link is PRINTED first and opened second. Over a pipe, in CI, and on a machine with no
+   * desktop session there is no browser to be anybody's — a link nobody can copy is the whole
+   * loss, so opening one is the convenience on top and a failure to open is a warning beside a
+   * link that still works.
+   */
+  private async openEditor(id: string | undefined): Promise<void> {
+    const url = id === undefined ? EDITOR_URL : editorConfigUrl(id);
+
+    this.log(id === undefined ? `Build it at ${url}` : `Open it at ${url}`);
+    if (id === undefined) {
+      this.log(`Then install what it gives you with '${CLI_INVOKE_COMMAND} init --from <id>'.`);
+    } else {
+      this.log(`To install it here instead, run '${CLI_INVOKE_COMMAND} init --from ${id}'.`);
+    }
+
+    if (!process.stdin.isTTY) return;
+
+    const opened = await openUrl(url);
+    if (!opened.ok) this.warn(opened.error);
+  }
+
+  /**
    * One spine, two producers. The wizard and a shared id differ only in *where the selection
    * comes from* — everything after it (the empty guard, the install pipeline) is identical, so it
    * lives here once rather than being written twice and drifting.
@@ -342,6 +401,11 @@ export default class Init extends BaseCommand {
   private async install(): Promise<void> {
     const { flags } = await this.parse(Init);
     const projectDir = process.cwd();
+
+    // Above `ensureConfigReadable`, and above every read below it, because this route touches no
+    // installation at all. A config too broken to load must not stop someone reaching the other
+    // front door, and an id somebody shared is not this directory's business either.
+    if (flags.ui) return this.openEditor(flags.from);
 
     // Every route below reads the configs first — to show a dashboard, to refuse a shared id, or
     // to inline the global one. One that exists but cannot be read is recreated, not installed

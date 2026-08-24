@@ -60,12 +60,24 @@ export class CLI {
   static async run(
     args: string[],
     project: ProjectHandle,
-    options?: { env?: Record<string, string | undefined> },
+    options?: {
+      env?: Record<string, string | undefined>;
+      /**
+       * Written to the spawned process's stdin, which also makes stdin a PIPE rather than a TTY.
+       *
+       * Both halves matter to a command that reads one. `execa` gives a child with no `input` an
+       * inherited stdin, and under vitest that is not a terminal either — so a spec proving a
+       * command refuses an empty pipe and a spec proving it reads a full one differ only by this
+       * option, and neither can be written without it.
+       */
+      input?: string;
+    },
   ): Promise<CLIResult> {
     const home = options?.env?.HOME ?? globalHomeFor(project);
     const result = await execa("node", [BIN_RUN, ...args], {
       cwd: project.dir,
       reject: false,
+      ...(options?.input !== undefined && { input: options.input }),
       env: {
         ...NO_BACKGROUND_VERSION_CHECK,
         CC_MARKETPLACE: undefined,

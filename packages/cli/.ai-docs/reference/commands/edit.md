@@ -20,7 +20,6 @@ keywords:
     resolveEditRoot,
     RemovalPlanConfirm,
     SHARED_CONFIG_APPLY,
-    SHARED_CONFIG_ONE_DIRECTION,
     sharedConfigNeedsTerminal,
     globallyInstalledRemoved,
     unplaceableKept,
@@ -54,11 +53,11 @@ last_validated: 2026-08-17
 
 | Flag            | Type    | Hidden | Description                                                                                                                                                                                      |
 | --------------- | ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| --ui            | boolean | no     | `default: false`. Edit this installation in the browser at agentsinc.sh instead of the wizard. Replaces the wizard rather than preceding it.                                                     |
+| --ui            | boolean | no     | `default: false`. Opens agentsinc.sh instead of the wizard — the id `--from` names, or this installation when `--from` names nothing.                                                            |
 | --from          | string  | no     | `helpValue: "<id>"`. Apply a configuration shared from agentsinc.sh by its id, **removing whatever it leaves out**. Interactive and destructive — see below.                                     |
 | --project-setup | boolean | yes    | Internal: this run continues an `init` project setup (materialise + register even on no-change). Key = `EDIT_PROJECT_SETUP_FLAG` (`"project-setup"`); set only by `init`'s dashboard delegation. |
 
-**`--ui` and `--from` are mutually exclusive.** Passing both is refused with `SHARED_CONFIG_ONE_DIRECTION` (`src/cli/utils/messages.ts`) at `EXIT_CODES.ERROR`, before the fetch and before the mint — they are the two directions of one round trip and there is no order in which doing both in a single run means anything.
+**`--ui` opens whatever `--from` names.** One rule across `init` and `edit` (owner ruling 2026-08-24): `--ui` opens the command's SUBJECT in the browser instead of the terminal, and `--from` is what supplies one. So `edit --ui` alone opens this installation — minting an id for it, because an installation is not yet a configuration the store holds — while `edit --ui --from <id>` opens that id, minting and fetching nothing because it already is one. The pair was refused until then with `SHARED_CONFIG_ONE_DIRECTION`, which read them as opposite ends of one round trip; that constant is deleted. `openSharedInEditor` handles the paired form and sits ABOVE `ensureConfigReadable` and above `edit`'s own requirement that something be installed here — opening an id reads no local state, so a directory's condition cannot decide whether you may look at it. `commands/edit-ui-from.e2e.test.ts` is what says that exemption is deliberate.
 
 There is no `--agent-source` flag, and **no `--source`**: naming a source is `init`'s decision, so `edit`
 opens the wizard on the catalogue its config.ts names — project config → global config → default.
@@ -90,7 +89,7 @@ Both produce the same `WizardResultV2` and are applied by the same sequence, so 
 The `run()` method in `edit.tsx` orchestrates in this order:
 
 0. `this.ensureConfigReadable(cwd)` (`BaseCommand`) -- hard-errors with `configUnreadableError(...)` when a config file exists but throws `ConfigLoadError`, checking the project's own config and, from a project, the global one every project write inlines. It runs before the spinner renders, so the refusal never sits under a mounted Ink tree, and before any wizard work, so a `ConfigLoadError` cannot surface after skills have been copied and plugins installed. A MISSING config passes through and still reaches `ERROR_MESSAGES.NO_INSTALLATION` below. Full contract: [commands/index.md](./index.md) -> "Unreadable configs are recreated, not edited".
-1. Both-flags refusal: `flags.ui && flags.from !== undefined` -> `this.error(SHARED_CONFIG_ONE_DIRECTION, { exit: EXIT_CODES.ERROR })`.
+1. `if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from)` -- ABOVE step 0 in the source, not below it: opening an id somebody shared reads no local state, so it precedes `ensureConfigReadable` and `edit`'s own installed-here requirement alike. Nothing is minted and nothing is fetched. Until 2026-08-24 this line was a refusal (`SHARED_CONFIG_ONE_DIRECTION`, now deleted).
 2. `if (flags.ui) return this.openInEditor(cwd)` -- the whole of the outbound half, and it returns. Above the source load, which exists to fill screens this run will never paint.
 3. `fetchSharedConfigOrFail(flags.from)` when `--from` is set, else `null`. Refuses a non-TTY run with `sharedConfigNeedsTerminal(id)` **before** the fetch, logs `Fetching configuration ${id}...`, then `fetchSeedConfig(id)`; a `{ ok: false }` result is `this.error(fetched.error, { exit: EXIT_CODES.ERROR })`.
 4. `loadContextUnderSpinner()` -- renders a `<Spinner>` and calls `loadContext()` inside a `try/finally` that clears and unmounts it whichever way the await ends (never a `catch`: the throw reaches oclif untouched). `loadContext()` is **Operation: `detectProject()`** + **Operation: `loadSource()`** + `discoverAllPluginSkills()`, merging plugin-discovered skill ids with project config skills (excluded entries filtered out) into `EditContext`.
@@ -356,7 +355,7 @@ Handles plugin-mode skill scope migrations. Skips `origin === "eject"` skills (h
 - `src/cli/components/wizard/run-wizard-session.tsx` -- `runWizardSession`
 - `src/cli/components/common/removal-plan-confirm.tsx` -- `RemovalPlanConfirm`, `RemovalPlanSection`; `src/cli/components/common/prompt-confirm.tsx` -- `promptConfirm`; `src/cli/components/common/spinner.tsx` -- `Spinner`
 - `src/cli/utils/open-url.ts` -- `openUrl`; `src/cli/consts.ts` -- `editorConfigUrl`, `EDIT_PROJECT_SETUP_FLAG`, `EJECT_SOURCE`
-- `src/cli/utils/messages.ts` -- `SHARED_CONFIG_APPLY`, `SHARED_CONFIG_ONE_DIRECTION`, `sharedConfigNeedsTerminal`, `sharedConfigDestinations`, `globallyInstalledRemoved`, `authoredHereKept`, `unplaceableKept`, `carriedSkillsWritten`, `skippedUnknownSkills`, `skippedUnknownAgents`, `localSkillsCopied`, `recompileSummary`
+- `src/cli/utils/messages.ts` -- `SHARED_CONFIG_APPLY`, `sharedConfigNeedsTerminal`, `sharedConfigDestinations`, `globallyInstalledRemoved`, `authoredHereKept`, `unplaceableKept`, `carriedSkillsWritten`, `skippedUnknownSkills`, `skippedUnknownAgents`, `localSkillsCopied`, `recompileSummary`
 
 ## Test Surface
 

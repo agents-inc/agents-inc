@@ -581,15 +581,6 @@ export function sharedConfigNeedsTerminal(id: string): string {
 }
 
 /**
- * Refusal printed when `edit --ui` and `edit --from` are asked for at once. They are the two
- * ends of one round trip — one hands this installation to the editor, the other applies a
- * configuration back — and there is no order in which doing both in a single run means
- * anything.
- */
-export const SHARED_CONFIG_ONE_DIRECTION =
-  "--ui and --from are the two directions of the same round trip: --ui hands this installation to the editor, and --from applies one back. Run one, then the other.";
-
-/**
  * The removal plan's statement of CONSEQUENCE for entries a project run removes at global scope.
  *
  * A global install is one installation every registered project reads, so removing one from

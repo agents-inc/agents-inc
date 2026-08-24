@@ -10,7 +10,6 @@ import {
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -18,7 +17,8 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
- * The dashboard a person actually sees, driven through a real PTY.
+ * The dashboard a person actually sees, driven through a real PTY — its title, and the counts
+ * block that for a while only the piped output carried.
  *
  * Its sibling `commands/branding-name-reaches-headings` drives the same screen through a pipe,
  * and a pipe is non-TTY by construction: `showDashboard` prints `formatDashboardText(data)` on
@@ -56,7 +56,6 @@ describe("the name the interactive dashboard titles itself with", () => {
   let sourceTempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     // Built once: the dashboard never reads this marketplace, but `launchForDashboard` always
     // passes `--marketplace`, and rebuilding a source per test costs seconds for nothing.
     ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());
@@ -125,6 +124,32 @@ describe("the name the interactive dashboard titles itself with", () => {
     const output = dashboard.getOutput();
     expect(output).toContain(STEP_TEXT.LOGO_BANNER);
     expect(output).not.toContain(BRANDING.WHITE_LABEL_NAME);
+
+    await dashboard.escape();
+    expect(await dashboard.waitForExit()).toBe(EXIT_CODES.SUCCESS);
+  });
+
+  /**
+   * The counts, in a real terminal — the half no unit test can answer.
+   *
+   * `commands/init.test.tsx` compares the component's frame against `dashboardCountLines` and is
+   * the gate on the two paths agreeing. What it renders into is ink-testing-library's own
+   * viewport, so it cannot say whether four more rows still fit above the menu on a screen a
+   * person has. This one paints into a PTY at the fixture's geometry and reads what came back.
+   *
+   * The fixture installs exactly one skill and one sub-agent — {@link DASHBOARD_CONTENT}, which
+   * the dashboard needs before it will render at all — so the counts are named rather than
+   * matched loosely: a row reading "0 installed" would mean the screen painted a block about an
+   * installation it could not see.
+   */
+  it("shows the counts, which only the piped output used to carry", async () => {
+    dashboard = await launchDashboardFor();
+
+    const output = dashboard.getOutput();
+
+    expect(output, "the skills row").toMatch(/Skills:\s+1 installed/);
+    expect(output, "the agents row").toMatch(/Agents:\s+1 compiled/);
+    expect(output, "the install-mode row").toMatch(/Mode:\s+\S/);
 
     await dashboard.escape();
     expect(await dashboard.waitForExit()).toBe(EXIT_CODES.SUCCESS);

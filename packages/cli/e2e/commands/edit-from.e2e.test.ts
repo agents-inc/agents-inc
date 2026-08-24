@@ -2,7 +2,7 @@ import path from "path";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
-import { cleanupTempDir, ensureBinaryExists, readTreeSnapshot } from "../helpers/test-utils.js";
+import { cleanupTempDir, readTreeSnapshot } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
@@ -40,7 +40,6 @@ describe("edit --from <id> without a terminal", () => {
   const tempDirs: string[] = [];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });
@@ -123,7 +122,14 @@ describe("edit --from <id> without a terminal", () => {
     expect(await readTreeSnapshot(projectDir)).toStrictEqual(before);
   });
 
-  it("refuses both directions of the round trip in one run", async () => {
+  /**
+   * REFUSED until 2026-08-24, on the reading that the two flags were opposite ends of one round
+   * trip. The owner's ruling made `--ui` open whatever `--from` names, so the pair now opens the
+   * shared id — which is what lets a recipient look at a configuration instead of only applying
+   * it blind. Full coverage of the pairing is `commands/edit-ui-from`; what this spec adds is the
+   * economy, which only a real store can observe.
+   */
+  it("opens the shared id without spending anything at the store", async () => {
     const projectDir = await takeInstalledProject();
     publishHalfOfIt(PUBLISHED_ID);
 
@@ -131,10 +137,11 @@ describe("edit --from <id> without a terminal", () => {
       "--ui",
     ]);
 
-    expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_ONE_DIRECTION);
-    // `--ui` alone would have posted this installation and minted an id. A refused run must not
-    // first spend a write on the store.
+    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+    expect(flattenCliOutput(output)).toContain(`?fromId=${PUBLISHED_ID}`);
+    // `--ui` alone would POST this installation to mint an id, and `--from` alone would GET the
+    // named one. Given both, the id already exists and this directory is not the subject — so
+    // neither call has anything to do and the store sees nothing at all.
     expect(store.requests).toStrictEqual([]);
   });
 });

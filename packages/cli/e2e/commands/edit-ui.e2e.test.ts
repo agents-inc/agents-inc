@@ -1,12 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
-import {
-  createTempDir,
-  cleanupTempDir,
-  ensureBinaryExists,
-  readTreeSnapshot,
-} from "../helpers/test-utils.js";
+import { createTempDir, cleanupTempDir, readTreeSnapshot } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   runEditUi,
@@ -54,7 +49,6 @@ describe("edit --ui", () => {
   const tempDirs: string[] = [];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

@@ -11,7 +11,7 @@ import { renderConfigTs } from "../content-generators";
 import { sa } from "../factories/skill-factories.js";
 import { CLAUDE_SRC_DIR, EJECT_SOURCE, STANDARD_FILES } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
-import { SHARED_CONFIG_ONE_DIRECTION, STATUS_MESSAGES } from "../../../utils/messages";
+import { STATUS_MESSAGES } from "../../../utils/messages";
 import type { ProjectConfig } from "../../../types";
 
 /**
@@ -154,23 +154,34 @@ describe("edit --from", () => {
     });
   });
 
-  describe("the two directions of the round trip", () => {
-    it("refuses to run both at once", async () => {
+  /**
+   * The pair was REFUSED until 2026-08-24, on the reading that `--ui` hands this installation out
+   * and `--from` applies one back, so the two are opposite ends of one round trip. The owner's
+   * ruling replaced that with one rule across both commands — **`--ui` opens whatever `--from`
+   * names, and the command's own subject when `--from` is absent** — under which the combination
+   * is the obvious thing rather than a contradiction, and a shared id becomes something a
+   * recipient can look at rather than only apply blind.
+   */
+  describe("--ui opens what --from names", () => {
+    it("succeeds, where it used to refuse", async () => {
       await installConfig(installed());
 
       const error = await runEdit(["--ui", "--from", MISSING_ID]);
 
-      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(error?.message).toContain(SHARED_CONFIG_ONE_DIRECTION);
+      expect(error).toBeUndefined();
     });
 
-    it("mints nothing and fetches nothing when both are given", async () => {
+    /**
+     * The whole economy of the path. `--ui` ALONE posts this installation to mint an id; `--from`
+     * alone fetches the named one. Given both, an id already exists and this directory is not the
+     * subject — so neither call has anything to do, and `MISSING_ID` proves it: the store does not
+     * hold that id, and a run that fetched it would have failed.
+     */
+    it("neither mints nor fetches, because the id it opens already exists", async () => {
       await installConfig(installed());
 
       await runEdit(["--ui", "--from", MISSING_ID]);
 
-      // `--ui` alone would have posted this installation. A run that is about to be refused
-      // must not first spend a write on the store.
       expect(fetchStub).not.toHaveBeenCalled();
     });
   });

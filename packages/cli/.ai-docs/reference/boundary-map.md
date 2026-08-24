@@ -146,6 +146,26 @@ The one input boundary that can **halt a command before it parses anything**. Te
 - **Not a TTY, not gated at render.** `useTerminalDimensions()` falls back to 80x24 when stdout is not a TTY (piped output, CI), so the render guard passes by default off-TTY. The startup gate falls back to `MIN_TERMINAL_SIZE` itself for the same reason.
 - **`LOGO_MIN_TERMINAL_ROWS` (26) is not part of this boundary.** It gates one decorative element inside a terminal that already cleared the gate. See `architecture-overview.md` section 18.
 
+### 1.5 `share`'s Flag: `--stdin`
+
+The only boundary where the CLI parses a document a **producer outside this repository** wrote. Everything else in section 1 is a flag, an argv token or an environment reading; this is a whole configuration arriving on a pipe, and the producer it exists for — the `meta-config-stack-detect` skill — ships from a different repository on a different cadence.
+
+| Property       | Value                                                                                                             |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/commands/share.ts` → `src/cli/lib/seed/read-piped-payload.ts`                                            |
+| **Direction**  | IN (pipe)                                                                                                         |
+| **Data**       | A `SeedPayload` as JSON, unbounded length, from an untrusted author                                               |
+| **Validation** | `readPipedPayload` — non-empty, then `JSON.parse` behind a `JsonRead` verdict, then `seedPayloadSchema.safeParse` |
+| **Schema**     | `seedPayloadSchema` (`@workspace/matrix/seed`), the same one `fetch-seed.ts` applies to a downloaded payload      |
+
+**Boundary contracts:**
+
+- **Every refusal happens before the POST**, and the assertion that proves it is the store's empty request log rather than an exit code. The free tier allows a thousand writes a day against a hundred times that in reads, so a write is the scarce half and one spent on a payload the decoder cannot read buys a dead link.
+- **Three failures are told apart, because they are three different mistakes**: nothing arrived (`NOTHING_PIPED`), what arrived is not JSON, or it is JSON the contract will not take. A single "invalid input" would leave the caller guessing which.
+- **stdin being a TTY is refused separately** (`STDIN_IS_A_TERMINAL`), above the read. Without it the command waits on a terminal nobody is typing into, which is a hang rather than an error.
+- **The schema travels with the code that POSTs, and that is the whole reason this boundary exists here** rather than in the producer. `SEED_VERSION` is a `z.literal`, so a producer hardcoding the wire shape emits payloads the store refuses the day it moves; `AGENTS_INC_API_URL` exists so tests never touch the network and a hardcoded URL ignores it; and the caller's user-agent is what separates an install from a look.
+- **No installation is read on this path.** A bare `share` resolves one the way every command does — project, then global — so without the branch, sharing a piped payload from an empty directory would publish whatever the machine has installed. `e2e/commands/share-stdin.e2e.test.ts` asserts the posted body holds only what was piped.
+
 ---
 
 ## 2. File System Parse Boundaries (Data IN)

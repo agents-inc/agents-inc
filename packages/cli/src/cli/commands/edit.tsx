@@ -104,7 +104,6 @@ import {
   ERROR_MESSAGES,
   INFO_MESSAGES,
   SHARED_CONFIG_APPLY,
-  SHARED_CONFIG_ONE_DIRECTION,
   STATUS_MESSAGES,
   agentsNotCompiled,
   authoredHereKept,
@@ -467,7 +466,8 @@ export default class Edit extends BaseCommand {
 
   static flags = {
     ui: Flags.boolean({
-      description: "Edit this installation in the browser at agentsinc.sh instead of the wizard",
+      description:
+        "Open agentsinc.sh instead of the wizard — the id --from names, or this installation",
       default: false,
     }),
     from: Flags.string({
@@ -499,14 +499,18 @@ export default class Edit extends BaseCommand {
     const { flags } = await this.parse(Edit);
     const cwd = process.cwd();
 
+    // ABOVE `ensureConfigReadable`, and above `edit`'s own requirement that something be installed
+    // here at all. Opening an id somebody shared reads no local state — no config, no catalogue,
+    // no marketplace — so a directory's condition cannot decide whether you may look at it, and
+    // the id already IS a stored configuration so nothing is minted either. That exemption is the
+    // owner's ruling of 2026-08-24 rather than an oversight, and `edit-ui-from.e2e.test.ts` is
+    // what says so: `edit` refuses an empty directory on every other path.
+    if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from);
+
     // Before anything renders: a config that cannot be read is recreated, not edited, and
     // refusing here is what keeps the refusal clean — past this point the wizard has already
     // copied skills and installed plugins by the time a config read fails.
     await this.ensureConfigReadable(cwd);
-
-    if (flags.ui && flags.from !== undefined) {
-      this.error(SHARED_CONFIG_ONE_DIRECTION, { exit: EXIT_CODES.ERROR });
-    }
 
     // The browser is the other editor, so it replaces the wizard rather than preceding it —
     // above the source load, which exists to fill screens this run will never paint.
@@ -856,6 +860,29 @@ export default class Edit extends BaseCommand {
    * Nothing on disk is touched. A configuration is read, not rewritten, so a run that changed
    * anything here would be editing the project on the way to offering to edit it.
    */
+  /**
+   * An id somebody shared, opened rather than applied.
+   *
+   * The counterpart of `openInEditor` above and deliberately not a variant of it: that one MINTS,
+   * because an installation is not yet a configuration the store holds. An id already is one, so
+   * there is nothing to publish, nothing to read off disk, and no way for this to fail except the
+   * browser refusing to launch — which is a warning beside a link that still works.
+   *
+   * `--from` without `--ui` remains the destructive apply. Looking and applying are the two
+   * things a recipient can do with an id, and this is the one that changes nothing.
+   */
+  private async openSharedInEditor(id: string): Promise<void> {
+    const url = editorConfigUrl(id);
+
+    this.log(`Open it at ${url}`);
+    this.log(`To apply it here instead, run '${CLI_INVOKE_COMMAND} edit --from ${id}'.`);
+
+    if (!process.stdin.isTTY) return;
+
+    const opened = await openUrl(url);
+    if (!opened.ok) this.warn(opened.error);
+  }
+
   private async openInEditor(projectDir: string): Promise<void> {
     const prepared = await seedPayloadForInstallation(projectDir);
     if (!prepared.ok) {

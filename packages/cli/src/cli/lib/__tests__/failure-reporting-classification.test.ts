@@ -75,6 +75,10 @@ const EDIT_ADVISORY_WARNS = [
   },
   {
     line: "if (!opened.ok) this.warn(opened.error);",
+    why: "`openSharedInEditor`'s half of the same site — the one that opens an id `--from` named rather than this installation. Identical reasoning and identical line, which is why the roster carries it twice: the scan reads source order, and two paths each print a link before trying to open one.",
+  },
+  {
+    line: "if (!opened.ok) this.warn(opened.error);",
     why: "The URL is the deliverable and was printed above this; opening a browser is the convenience on top. Non-zero here would fail `--ui` on every headless machine that still has a TTY.",
   },
   {
@@ -104,6 +108,10 @@ const EDIT_ADVISORY_WARNS = [
  * that failed to compile during a user's first install reached no surface at all.
  */
 const INIT_ADVISORY_WARNS = [
+  {
+    line: "if (!opened.ok) this.warn(opened.error);",
+    why: "The browser is the convenience, not the work. `init --ui` prints the editor's address BEFORE it tries to open one, precisely because there is no browser to be anybody's over a pipe, in CI, or on a machine with no desktop session — so a failed launch leaves the link on screen and nothing this run promised is missing. The same site and the same reason as `edit --ui`'s.",
+  },
   {
     line: "if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));",
     why: "A fact about the PAYLOAD, not a failure of this run — the same line `edit --from` carries, worded once in `messages.ts`. An id no catalogue seats describes no work that could have been attempted.",
