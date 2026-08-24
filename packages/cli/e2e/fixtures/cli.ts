@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import { globalHomeFor } from "../../src/cli/lib/__tests__/helpers/global-home.js";
 import { stripVTControlCharacters } from "node:util";
 import type { ProjectHandle } from "../pages/wizard-result.js";
 import { BIN_RUN, NO_BACKGROUND_VERSION_CHECK, claudeConfigDir } from "../helpers/test-utils.js";
@@ -61,7 +62,7 @@ export class CLI {
     project: ProjectHandle,
     options?: { env?: Record<string, string | undefined> },
   ): Promise<CLIResult> {
-    const home = options?.env?.HOME ?? project.globalHome ?? project.dir;
+    const home = options?.env?.HOME ?? globalHomeFor(project);
     const result = await execa("node", [BIN_RUN, ...args], {
       cwd: project.dir,
       reject: false,

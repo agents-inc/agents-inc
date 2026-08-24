@@ -1,4 +1,5 @@
 import { existsSync } from "fs";
+import { globalHomeFor } from "../../src/cli/lib/__tests__/helpers/global-home.js";
 import path from "path";
 import { expect } from "vitest";
 import {
@@ -101,7 +102,7 @@ export async function inspectFourSurfaces(
   dir: string,
   options?: SurfaceOptions,
 ): Promise<SurfaceReading> {
-  const globalHome = options?.globalHome ?? dir;
+  const globalHome = globalHomeFor({ dir, globalHome: options?.globalHome });
   const expectEmpty = options?.expectEmpty ?? false;
   const claudeSrc = path.join(dir, ".claude-src");
 
