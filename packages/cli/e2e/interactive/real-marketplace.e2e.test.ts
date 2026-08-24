@@ -50,6 +50,18 @@ const REAL_SKILL_DISPLAY = {
 
 const hasSkillsSource = await directoryExists(path.join(SKILLS_SOURCE, SOURCE_PATHS.SKILLS_DIR));
 
+/**
+ * The two skill refs this run installs, as the install prints them.
+ *
+ * A ref names the marketplace that resolved it, which is the discriminating form of "the real
+ * marketplace was used" — a bare `toContain("agents-inc")` is this CLI's own binary name and
+ * passes whichever marketplace answered.
+ */
+const INSTALLED_SKILL_REFS = [
+  "web-framework-react@agents-inc",
+  "web-meta-framework-nextjs@agents-inc",
+] as const;
+
 describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let projectDir: string;
   let wizard: InitWizard | undefined;
@@ -134,13 +146,14 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     it("should have installed the real skills picked from the catalogue", () => {
       // The stack selection screen is cleared after the wizard, so the skill
       // refs the install printed are what the picks are visible as.
-      expect(initOutput).toContain("web-framework-react@agents-inc");
-      expect(initOutput).toContain("web-meta-framework-nextjs@agents-inc");
+      INSTALLED_SKILL_REFS.forEach((ref) => expect(initOutput).toContain(ref));
     });
 
-    it("should have used the real marketplace for plugin installation", () => {
-      expect(initOutput).toContain("agents-inc");
-    });
+    // A separate `it` asserting `toContain("agents-inc")` on its own sat here until 2026-08-23,
+    // named "should have used the real marketplace for plugin installation". `agents-inc` is this
+    // CLI's OWN binary name — it is in the completion text and the version banner of every run —
+    // so it passed whichever marketplace was used. The two `<skill>@agents-inc` refs above are the
+    // discriminating form of the same claim: a ref names the marketplace that resolved it.
 
     it("should have created config.ts with agents-inc source", async () => {
       await expect({ dir: projectDir }).toHaveConfig({
@@ -220,9 +233,15 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      // `toMatch(/skills/i)` and `/agents/i` sat here and were dropped on 2026-08-23: both words
+      // are unconditional section labels, printed whether or not either list has a member, so only
+      // the negative above discriminated. What the run actually installed is named instead.
       expect(stdout).not.toContain(STEP_TEXT.NO_INSTALLATION);
-      expect(stdout).toMatch(/skills/i);
-      expect(stdout).toMatch(/agents/i);
+      // `list` prints a summary rather than a roster, so the COUNTS are what it can be held to —
+      // and they discriminate where the labels did not. The roster itself is asserted by name in
+      // "should have installed exactly the sub-agents the selected domain brings" above.
+      expect(stdout).toMatch(new RegExp(`Skills:\\s+${INSTALLED_SKILL_REFS.length}`));
+      expect(stdout).toMatch(new RegExp(`Agents:\\s+${WEB_DOMAIN_AGENTS.length}`));
     });
   });
 });

@@ -1,4 +1,5 @@
 import path from "path";
+import type { AgentName } from "../../src/cli/types/index.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
@@ -6,6 +7,7 @@ import {
   E2E_SKILL,
   E2E_STACK_DISPLAY,
   E2E_STACK_SKILL_IDS,
+  E2E_STACK_AGENTS,
 } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 import { readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
@@ -109,12 +111,45 @@ async function expectCommandsResolveCustomSource(
   expect(update.output).toContain(STEP_TEXT.UPDATE_NO_MARKETPLACES);
 }
 
-/** The four-surface check every variant of this arc owes at its install scope. */
-async function expectInstallSurfaces(installDir: string): Promise<void> {
+/**
+ * Every sub-agent a source with no stacks compiles — the whole declared roster, because with
+ * nothing to choose between the wizard offers all of them.
+ *
+ * Named rather than counted for the reason the assertion below states, and spelled out rather than
+ * derived from `AGENT_NAMES`: deriving it would make the expectation agree with the product by
+ * construction, which is the one thing a roster assertion must not do.
+ */
+const EVERY_DECLARED_AGENT = [
+  "api-developer",
+  "api-researcher",
+  "api-tester",
+  "pm",
+  "reviewer",
+  "web-developer",
+  "web-researcher",
+  "web-tester",
+] as const satisfies readonly AgentName[];
+
+/**
+ * The four-surface check every variant of this arc owes at its install scope.
+ *
+ * The roster is a parameter because the two variants compile different ones — a stack install
+ * compiles what the stack declares, a stackless source compiles everything — and a single shared
+ * expectation would have to be loose enough to accept both, which is how the count got here.
+ */
+async function expectInstallSurfaces(
+  installDir: string,
+  expectedAgents: readonly AgentName[],
+): Promise<void> {
+  // Members, not a count: a count cannot detect a swap — one sub-agent removed and another added
+  // leaves `length` identical — and this arc's whole subject is which roster a CUSTOM source
+  // compiles. `share-round-trip-compiled-bodies` names its roster for the same reason.
   expect(
-    Object.keys(await readCompiledAgents(installDir)).length,
-    "the install must have compiled agents",
-  ).toBeGreaterThan(0);
+    Object.keys(await readCompiledAgents(installDir))
+      .map((file) => path.basename(file, ".md"))
+      .sort(),
+    "the install must compile exactly the expected sub-agents",
+  ).toStrictEqual([...expectedAgents].sort());
   expect((await listFiles(skillsPath(installDir))).length).toBeGreaterThan(0);
 
   const claudeSrcDir = path.dirname(configTypesTsPath(installDir));
@@ -191,7 +226,7 @@ describe("a custom marketplace is stored by init and resolved by every later com
       ).toStrictEqual(E2E_STACK_SKILL_IDS);
 
       // Surfaces 1 and 4.
-      await expectInstallSurfaces(globalHome);
+      await expectInstallSurfaces(globalHome, E2E_STACK_AGENTS);
 
       // Every later command resolves the stored source. Run before destroy() so
       // the wizard's HOME is still the one CLI.run reads.
@@ -245,7 +280,7 @@ describe("a custom marketplace is stored by init and resolved by every later com
         "a stackless init must record the source it installed from",
       ).toBe(stacklessSourceDir);
 
-      await expectInstallSurfaces(globalHome);
+      await expectInstallSurfaces(globalHome, EVERY_DECLARED_AGENT);
       await expectCommandsResolveCustomSource(result, stacklessSourceDir);
 
       await result.destroy();

@@ -88,7 +88,7 @@ describe("uninstall config manifest removal", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const after = await loadConfigOrFail(globalHome);
-    expect(after.projects ?? []).not.toContain(realProjectDir);
+    expect(after.projects).not.toContain(realProjectDir);
   });
 
   it("keeps user content in .claude/ while removing the config manifest", async () => {

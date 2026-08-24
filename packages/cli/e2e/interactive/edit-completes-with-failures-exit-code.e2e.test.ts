@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, rm, writeFile } from "fs/promises";
+import { chmod, mkdir, rm, writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -119,6 +119,16 @@ describe("edit completes its work and exits non-zero when part of it failed", ()
     return confirm.confirmExpectingExit();
   }
 
+  /** The same drive, but dropping a sub-agent on the way, so a compiled file goes stale. */
+  async function dropAgentWithoutExpectingSuccess(projectDir: string, agentName: string) {
+    wizard = await EditWizard.launch({ projectDir, source, ...TERMINAL_SIZE.TALL });
+    const sources = await wizard.build.passThroughAllDomainsGeneric();
+    const agents = await sources.acceptDefaults();
+    await agents.toggleAgent(agentName);
+    const confirm = await agents.acceptDefaults("edit");
+    return confirm.confirmExpectingExit();
+  }
+
   it(
     "exits zero and says Done when the whole pass succeeds",
     { timeout: TIMEOUTS.INTERACTIVE },
@@ -176,6 +186,47 @@ describe("edit completes its work and exits non-zero when part of it failed", ()
       await expectGeneratedTypesTrackTheRoster(project.dir);
       await expect(result.project).toHaveCompiledAgent(SURVIVING_AGENT);
       expect(await directoryExists(occupiedAgentPath)).toBe(true);
+    },
+  );
+
+  // The REMOVAL arm, which no spec reached until 2026-08-23. `cleanupStaleAgentFiles` runs after
+  // `writeConfigAndCompile`, so the two cases above walk straight past it: they sabotage the
+  // compile target, and a pass that fails to compile has nothing stale left to delete. The only
+  // thing naming `DELETE_AGENT_FILE` was a ROSTER entry in `failure-reporting-classification`,
+  // which pins that some site names the member and not that the site works.
+  //
+  // Sabotaged the way the hand-run reached it: a clean pass first, so a compiled file exists to go
+  // stale, then the agents directory made read-only so the unlink of the sub-agent this second
+  // pass drops fails. The read-only directory stops writes too, so the run reports both arms —
+  // this asserts the removal one is among them, which is the half nothing covered.
+  it(
+    "names a stale sub-agent file it could not delete, with the recovery, and exits non-zero",
+    { timeout: TIMEOUTS.INTERACTIVE },
+    async () => {
+      const project = await buildProject();
+
+      // The control: a first pass that really does compile the file the second must remove.
+      // Without it a removal that was never attempted would satisfy everything below for free.
+      const clean = await saveWithoutExpectingSuccess(project.dir);
+      expect(await clean.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const agentsDir = path.join(project.dir, DIRS.CLAUDE, DIRS.AGENTS);
+      expect(await fileExists(path.join(agentsDir, `${SABOTAGED_AGENT}.md`))).toBe(true);
+
+      await chmod(agentsDir, 0o555);
+      try {
+        const result = await dropAgentWithoutExpectingSuccess(
+          project.dir,
+          E2E_AGENT["web-developer"].display,
+        );
+
+        expect(await result.exitCode).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        const output = result.rawOutput;
+        expect(output).toContain(STEP_TEXT.COMPLETED_WITH_FAILURES);
+        expect(output).toContain(`${SABOTAGED_AGENT}.md`);
+        expect(output).toContain(STEP_TEXT.DELETE_AGENT_FILE_REMEDY);
+      } finally {
+        await chmod(agentsDir, 0o755);
+      }
     },
   );
 

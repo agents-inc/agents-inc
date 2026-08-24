@@ -2449,7 +2449,7 @@ describe("local-installer", () => {
       await deregisterProjectPath(projectDir);
 
       const updatedConfig = await readTestTsConfig<ProjectConfig>(globalConfigPath);
-      expect(updatedConfig.projects ?? []).toStrictEqual([]);
+      expect(updatedConfig.projects).toStrictEqual([]);
     });
 
     it("should not modify config when project not in list", async () => {
