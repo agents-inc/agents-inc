@@ -512,7 +512,7 @@ function reachedMarketplace(result: SourceLoadResult): CheckResult {
     status: "pass",
     message: `Connected to ${sourceLabel}: ${result.sourcePath}`,
     details: [
-      `${skillCount} skills available`,
+      `${plural(skillCount, "skill")} available`,
       `${howItWasReached(source, result.isLocal)} — ${MARKETPLACE_CHOSEN_BY[sourceOrigin]}`,
     ],
   };

@@ -87,6 +87,35 @@ describe("doctor diagnostics", () => {
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(SOURCE_SKILL_COUNT_LINE);
     });
+
+    // The count is built by hand at this one site while `plural()` sits in the same file and is
+    // used at three others, so a marketplace with exactly one skill read `1 skills available`.
+    // A one-skill source is the only input that can tell the two apart — every other count in
+    // this suite is plural and satisfies the buggy form as readily as the fixed one.
+    it("says '1 skill available' for a source that ships exactly one", async () => {
+      tempDir = await createTempDir();
+      const oneSkillSource = await createE2ESource({
+        withoutSkills: E2E_SKILL_IDS.slice(1),
+      });
+
+      try {
+        const home = path.join(tempDir, "home");
+        await mkdir(home, { recursive: true });
+        await writeProjectConfig(home, {
+          name: "global",
+          marketplace: oneSkillSource.sourceDir,
+        });
+
+        const projectDir = path.join(tempDir, "project");
+        await mkdir(projectDir, { recursive: true });
+
+        const { stdout } = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: home } });
+
+        expect(stdout).toContain(STEP_TEXT.DOCTOR_ONE_SKILL_AVAILABLE);
+      } finally {
+        await cleanupTempDir(oneSkillSource.tempDir);
+      }
+    });
   });
 
   describe("healthy project", () => {
