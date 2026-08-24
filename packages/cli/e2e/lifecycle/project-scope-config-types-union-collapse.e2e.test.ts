@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -87,14 +87,11 @@ const COLLAPSED_CATEGORY = "export type Category = string;";
  * partition has one skill and the unions are built normally.
  */
 async function initSingleSkillProject(options: {
-  sourceDir: string;
-  sourceTempDir: string;
   fakeHome: string;
   projectDir: string;
   skillScope: "project" | "global";
 }): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir: options.sourceDir, tempDir: options.sourceTempDir },
     projectDir: options.projectDir,
     env: { HOME: options.fakeHome },
     ...TERMINAL_SIZE.TALL,
@@ -127,19 +124,9 @@ async function initSingleSkillProject(options: {
 }
 
 describe("generated config types keep narrowing after a project-scope install", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
 
@@ -157,8 +144,6 @@ describe("generated config types keep narrowing after a project-scope install", 
       const { fakeHome, projectDir } = env;
 
       const install = await initSingleSkillProject({
-        sourceDir,
-        sourceTempDir,
         fakeHome,
         projectDir,
         skillScope: "project",
@@ -245,8 +230,6 @@ describe("generated config types keep narrowing after a project-scope install", 
       const { fakeHome, projectDir } = env;
 
       const install = await initSingleSkillProject({
-        sourceDir,
-        sourceTempDir,
         fakeHome,
         projectDir,
         skillScope: "global",

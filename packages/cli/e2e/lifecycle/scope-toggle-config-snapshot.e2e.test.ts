@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -30,8 +30,6 @@ import {
  */
 
 describe("scope toggle config snapshot", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -39,21 +37,14 @@ describe("scope toggle config snapshot", () => {
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   beforeEach(async () => {
     const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();
     testTempDir = tempDir;
     fakeHome = fh;
     projectDir = pd;
-    await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+    await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
   });
 
   afterEach(async () => {
@@ -73,7 +64,7 @@ describe("scope toggle config snapshot", () => {
       // ACTION: Launch EditWizard, toggle web-framework-react scope (S on first domain)
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -164,7 +155,7 @@ describe("scope toggle config snapshot", () => {
 
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -226,7 +217,7 @@ describe("scope toggle config snapshot", () => {
       // ACTION: Launch EditWizard, pass through build domains + sources, navigate to web-developer, toggle scope
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

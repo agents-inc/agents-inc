@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -39,19 +39,9 @@ const ADDED_SKILL = E2E_SKILL["visual-regression"];
 const PRESERVED_SKILL = E2E_SKILL.vitest;
 
 describe("init -> edit merge: config preserved across lifecycle", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   describe("full init then edit with changes", () => {
     let tempDir: string | undefined;
@@ -91,7 +81,6 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         // artefact where the assertions below read it — the same reasoning
         // local-lifecycle records for its own eject phase.
         const initWizard = await InitWizard.launchInGlobal({
-          source: { sourceDir, tempDir: sourceTempDir },
           projectDir,
         });
         // Explicit eject via the Sources step's `l` hotkey. `completeWithDefaults()`
@@ -148,7 +137,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         // project config); only the compiled-agent half caught it.
         const editWizard = await EditWizard.launchInGlobal({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           ...TERMINAL_SIZE.TALL,
         });
 

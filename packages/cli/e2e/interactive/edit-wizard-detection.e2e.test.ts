@@ -10,7 +10,7 @@ import {
   createLocalSkill,
   renderMetadataYaml,
 } from "../helpers/test-utils.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -27,7 +27,6 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
 describe("edit wizard — skill detection across sources and scopes", () => {
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
-  let sourceTempDir: string | undefined;
 
   beforeAll(ensureBinaryExists);
 
@@ -39,10 +38,6 @@ describe("edit wizard — skill detection across sources and scopes", () => {
       await cleanupTempDir(tempDir);
       tempDir = undefined;
     }
-    if (sourceTempDir) {
-      await cleanupTempDir(sourceTempDir);
-      sourceTempDir = undefined;
-    }
   });
 
   describe("mixed local and plugin-sourced skills", () => {
@@ -52,9 +47,6 @@ describe("edit wizard — skill detection across sources and scopes", () => {
       async () => {
         tempDir = await createTempDir();
         const projectDir = path.join(tempDir, "project");
-
-        const source = await createE2ESource();
-        sourceTempDir = source.tempDir;
 
         // Create a project with mixed skills:
         //   - web-framework-react: local source, project scope
@@ -128,7 +120,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         // Launch edit wizard
         wizard = await EditWizard.launch({
           projectDir,
-          source,
+          source: E2E_SOURCE,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -171,9 +163,6 @@ describe("edit wizard — skill detection across sources and scopes", () => {
         tempDir = await createTempDir();
         const projectDir = path.join(tempDir, "project");
 
-        const source = await createE2ESource();
-        sourceTempDir = source.tempDir;
-
         await mkdir(agentsPath(projectDir), { recursive: true });
 
         // Create project with 3 skills
@@ -203,7 +192,7 @@ describe("edit wizard — skill detection across sources and scopes", () => {
 
         wizard = await EditWizard.launch({
           projectDir,
-          source,
+          source: E2E_SOURCE,
           ...TERMINAL_SIZE.TALL,
         });
 

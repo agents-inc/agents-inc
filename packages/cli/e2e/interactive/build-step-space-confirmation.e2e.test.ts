@@ -1,9 +1,9 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -52,19 +52,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  * written is satisfied by a bug that skipped the write.
  */
 describe("build step — what selectSkill spends", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -86,7 +76,7 @@ describe("build step — what selectSkill spends", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
-        marketplace: sourceDir,
+        marketplace: E2E_SOURCE.sourceDir,
         skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
         domains: ["web"],
@@ -99,7 +89,7 @@ describe("build step — what selectSkill spends", () => {
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

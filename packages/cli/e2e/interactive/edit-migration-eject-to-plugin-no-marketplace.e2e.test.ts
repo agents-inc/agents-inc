@@ -78,7 +78,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
 
       wizard = await EditWizard.launch({
         projectDir: project.dir,
-        source: { sourceDir: localSource.sourceDir, tempDir: localSource.tempDir },
+        source: localSource,
         ...TERMINAL_SIZE.TALL,
       });
 

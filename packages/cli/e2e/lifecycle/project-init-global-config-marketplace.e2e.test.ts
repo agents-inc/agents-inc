@@ -72,7 +72,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
 
       wizard = await InitWizard.launch({
         projectDir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -136,7 +136,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
 
       wizard = await InitWizard.launch({
         projectDir: fakeHome,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

@@ -10,7 +10,7 @@ import {
   readActiveAgentNames,
 } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -130,8 +130,6 @@ function compiledRosters(
 }
 
 describe("a global edit propagates to every registered project, from nothing", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
 
   let globalHome: string;
@@ -146,9 +144,6 @@ describe("a global edit propagates to every registered project, from nothing", (
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     const environment = await createTestEnvironment();
     tempDir = environment.tempDir;
@@ -163,7 +158,6 @@ describe("a global edit propagates to every registered project, from nothing", (
 
     // Phase A — the global install, through the wizard, into an empty HOME.
     const globalWizard = await InitWizard.launchInGlobal({
-      source: { sourceDir, tempDir: sourceTempDir },
       projectDir: globalHome,
       ...TERMINAL_SIZE.TALL,
     });
@@ -175,8 +169,7 @@ describe("a global edit propagates to every registered project, from nothing", (
     // Phases B and C — two empty projects registered against that install.
     for (const dir of projectDirs) {
       const registration = await initProjectWithProjectScopedAgent(
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         globalHome,
         dir,
         PROJECT_SCOPED_AGENT.display,
@@ -192,7 +185,7 @@ describe("a global edit propagates to every registered project, from nothing", (
     // Phase D — the global edit, at HOME, deselecting one global sub-agent.
     const editWizard = await EditWizard.launchInGlobal({
       projectDir: globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       ...TERMINAL_SIZE.TALL,
     });
     try {
@@ -214,7 +207,6 @@ describe("a global edit propagates to every registered project, from nothing", (
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   // The fan-out reads `globalConfig.projects` and returns early when it is empty, so a run that

@@ -1,6 +1,6 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
   cleanupTempDir,
@@ -30,21 +30,12 @@ import "../matchers/setup.js";
  */
 
 describe("edit wizard — excluded skills", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -90,7 +81,7 @@ describe("edit wizard — excluded skills", () => {
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 
@@ -169,7 +160,7 @@ describe("edit wizard — excluded skills", () => {
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 
@@ -247,7 +238,7 @@ describe("edit wizard — excluded skills", () => {
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 
@@ -335,7 +326,7 @@ describe("edit wizard — excluded skills", () => {
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 
@@ -425,7 +416,7 @@ describe("edit wizard — excluded skills", () => {
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

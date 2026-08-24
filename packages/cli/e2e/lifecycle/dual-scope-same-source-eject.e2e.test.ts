@@ -1,8 +1,8 @@
 import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -88,22 +88,13 @@ const projectStack = {
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("dual-scope same-source (both eject)", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
   let seededTempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -120,7 +111,7 @@ describe("dual-scope same-source (both eject)", () => {
     "config dual-scope shape, bare agent ref, [P][G] badges, and s-toggle collapses the pair",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // --- Check 1: project config carries the both-eject dual-scope pair. ---
@@ -156,7 +147,7 @@ describe("dual-scope same-source (both eject)", () => {
       // --- Check 3: re-open edit → dual-scope [P][G] badges render for hono. ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -233,7 +224,7 @@ describe("dual-scope same-source (both eject)", () => {
       // deselect vitest (preloaded:false on web-developer ⇒ freely deselectable).
       const globalEdit = await EditWizard.launch({
         projectDir: globalHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: globalHome },
         ...TERMINAL_SIZE.TALL,
       });

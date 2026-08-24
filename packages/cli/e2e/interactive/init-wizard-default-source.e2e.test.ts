@@ -67,7 +67,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
 
   it("should register marketplace on first init (v1)", async () => {
     wizard = await InitWizard.launch({
-      source: { sourceDir: fixtureV1.sourceDir, tempDir: fixtureV1.tempDir },
+      source: fixtureV1,
       env: { HOME: sharedHome },
     });
 
@@ -101,7 +101,7 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: sharedProjectDir,
-        source: { sourceDir: fixtureV2.sourceDir, tempDir: fixtureV2.tempDir },
+        source: fixtureV2,
         env: { HOME: sharedHome },
       });
 

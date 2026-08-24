@@ -2,7 +2,7 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -71,8 +71,6 @@ const reactMetadata = renderMetadataYaml({
 });
 
 describe("global-scope install tombstones project-owned skills and agents", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let globalHome: string;
   let projectDir: string;
@@ -89,9 +87,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
@@ -138,7 +133,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     // propagateGlobalChangesToProjects for the registered project.
     const wizard = await EditWizard.launch({
       projectDir: globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: globalHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -172,7 +167,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it("completes the global-scope skill addition edit successfully", () => {

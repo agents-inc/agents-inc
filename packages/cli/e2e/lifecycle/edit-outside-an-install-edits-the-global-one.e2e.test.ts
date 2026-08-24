@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createTestEnvironment,
   finishWizard,
@@ -51,8 +51,6 @@ import type { SkillConfig } from "../../src/cli/types/index.js";
 const SPARE_SKILL = E2E_SKILL["visual-regression"];
 
 describe("edit from a directory that holds no installation", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let fakeHome: string;
   let bareDir: string;
@@ -71,9 +69,6 @@ describe("edit from a directory that holds no installation", () => {
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
@@ -82,7 +77,7 @@ describe("edit from a directory that holds no installation", () => {
     // nothing else. Only Phase A runs, so nothing is ever installed into it.
     bareDir = env.projectDir;
 
-    const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+    const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
     expect(phaseA.exitCode, `global install failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
     bareTreeBefore = await readTreeSnapshot(bareDir);
@@ -92,7 +87,7 @@ describe("edit from a directory that holds no installation", () => {
     // anything to write rather than for want of authority to write it.
     const wizard = await EditWizard.launch({
       projectDir: bareDir,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -118,12 +113,12 @@ describe("edit from a directory that holds no installation", () => {
 
     // The control: the same directory once it DOES hold an installation of its own, so the
     // toggle and the project pair are required rather than merely absent above.
-    const phaseB = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, bareDir);
+    const phaseB = await initProjectAllGlobal(E2E_SOURCE, fakeHome, bareDir);
     expect(phaseB.exitCode, `project setup failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
     const controlWizard = await EditWizard.launch({
       projectDir: bareDir,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -138,7 +133,6 @@ describe("edit from a directory that holds no installation", () => {
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it("completes the edit", () => {

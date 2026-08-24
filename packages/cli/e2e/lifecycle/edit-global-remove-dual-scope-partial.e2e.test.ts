@@ -1,8 +1,8 @@
 import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -60,19 +60,9 @@ const vitestMetadata = renderMetadataYaml({
 });
 
 describe("edit at global scope removes only the global copy of a dual-scope skill", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
 
@@ -140,7 +130,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
 
       const wizard = await EditWizard.launch({
         projectDir: globalHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: globalHome },
         ...TERMINAL_SIZE.TALL,
       });

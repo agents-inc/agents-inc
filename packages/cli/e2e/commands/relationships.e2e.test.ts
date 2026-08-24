@@ -45,7 +45,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         });
 
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -80,7 +80,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         });
 
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -117,7 +117,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         });
 
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -157,7 +157,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
         });
 
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
         expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);

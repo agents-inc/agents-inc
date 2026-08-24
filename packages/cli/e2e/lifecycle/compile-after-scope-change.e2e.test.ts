@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -16,8 +16,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 describe("compile after scope change", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -25,21 +23,14 @@ describe("compile after scope change", () => {
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   beforeEach(async () => {
     const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();
     testTempDir = tempDir;
     fakeHome = fh;
     projectDir = pd;
-    await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+    await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
   });
 
   afterEach(async () => {
@@ -55,7 +46,7 @@ describe("compile after scope change", () => {
       // Phase C: Edit -- toggle web-framework-react from global to project scope
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -120,7 +111,7 @@ describe("compile after scope change", () => {
       // Phase C: Edit -- toggle api-framework-hono from project to global scope
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

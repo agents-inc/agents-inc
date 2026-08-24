@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -52,19 +52,9 @@ const multiSkillStack = {
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes one of several skills an agent references", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let globalHome: string | undefined;
 
@@ -121,7 +111,7 @@ describe("edit removes one of several skills an agent references", () => {
       // Global-scope edit: deselect vitest only (react stays selected).
       const wizard = await EditWizard.launch({
         projectDir: globalHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: globalHome },
         ...TERMINAL_SIZE.TALL,
       });

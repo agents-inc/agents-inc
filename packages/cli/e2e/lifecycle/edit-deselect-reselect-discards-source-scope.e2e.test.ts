@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -36,19 +36,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("in-session deselect and re-select of a project-only eject skill", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -70,7 +60,7 @@ describe("in-session deselect and re-select of a project-only eject skill", () =
       testTempDir = tempDir;
       // web-testing-vitest lands project-scoped + eject; web-framework-react stays
       // global-scoped + eject at HOME.
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       const globalConfigPath = configTsPath(fakeHome);
 
@@ -90,7 +80,7 @@ describe("in-session deselect and re-select of a project-only eject skill", () =
       // the same row.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

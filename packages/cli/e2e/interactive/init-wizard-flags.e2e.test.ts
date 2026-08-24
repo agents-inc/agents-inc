@@ -47,7 +47,7 @@ describe("init wizard — flags and permissions", () => {
 
       editWizard = await EditWizard.launch({
         projectDir: dashboardProject.dir,
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
         ...TERMINAL_SIZE.TALL,
       });
 

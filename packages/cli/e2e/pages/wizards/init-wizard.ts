@@ -1,6 +1,6 @@
 import { TerminalSession } from "../../helpers/terminal-session.js";
 import { expectCancelledExit } from "../../assertions/phase-assertions.js";
-import { createE2ESource, type E2ESource } from "../../helpers/create-e2e-source.js";
+import { E2E_SOURCE, type E2ESource } from "../../helpers/create-e2e-source.js";
 import { INTERNAL_DELAYS, STEP_TEXT, TIMEOUTS } from "../constants.js";
 import { DashboardSession } from "../dashboard-session.js";
 import { TerminalScreen } from "../terminal-screen.js";
@@ -30,7 +30,14 @@ import {
 type HomeStrategy = "auto" | "project" | "global";
 
 export type InitWizardOptions = {
-  /** Pre-created source directory. If not provided, creates one. */
+  /**
+   * The source this wizard runs `init --marketplace` against.
+   *
+   * Defaults to {@link E2E_SOURCE}, the shared frozen tree with no marketplace — so every skill is
+   * local-only and the wizard's unstated origin is EJECT. Name a source only when the spec's
+   * subject IS one: `createE2EPluginSource()` for plugin-install mode, `createE2ESource(options)`
+   * for a tree that differs in what it ships.
+   */
   source?: E2ESource;
   /** Pre-created project directory. If not provided, creates a temp dir. */
   projectDir?: string;
@@ -119,17 +126,10 @@ export class InitWizard {
   }> {
     const cleanupDirs: string[] = [];
 
-    // Set up source
-    let sourceDir: string | undefined;
-    if (options?.noSource) {
-      sourceDir = undefined;
-    } else if (options?.source) {
-      sourceDir = options.source.sourceDir;
-    } else {
-      const source = await createE2ESource();
-      sourceDir = source.sourceDir;
-      cleanupDirs.push(source.tempDir);
-    }
+    // The source `init --marketplace` is pointed at. Unnamed means {@link E2E_SOURCE} — the
+    // shared frozen plain tree, which is what a spec wants unless its subject is the source
+    // itself. Nothing goes onto cleanupDirs for it: the run owns that tree, not this wizard.
+    const sourceDir = options?.noSource ? undefined : (options?.source ?? E2E_SOURCE).sourceDir;
 
     // Set up project dir
     let projectDir: string;
@@ -384,16 +384,7 @@ export class InitWizard {
     source?: E2ESource;
     env?: Record<string, string | undefined>;
   }): Promise<DashboardSession> {
-    let sourceDir: string | undefined;
-    const cleanupDirs: string[] = [];
-
-    if (options.source) {
-      sourceDir = options.source.sourceDir;
-    } else {
-      const source = await createE2ESource();
-      sourceDir = source.sourceDir;
-      cleanupDirs.push(source.tempDir);
-    }
+    const sourceDir = (options.source ?? E2E_SOURCE).sourceDir;
 
     const env: Record<string, string | undefined> = {
       CC_MARKETPLACE: undefined,
@@ -404,6 +395,6 @@ export class InitWizard {
       env,
     });
 
-    return new DashboardSession(session, options.projectDir, cleanupDirs);
+    return new DashboardSession(session, options.projectDir, []);
   }
 }

@@ -2,7 +2,7 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { finishWizard } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
@@ -161,8 +161,6 @@ function projectAgentPath(dir: string): string {
 }
 
 describe("project-context source migration of a global skill propagates to other registered projects", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
 
   let fakeHome: string;
@@ -183,9 +181,6 @@ describe("project-context source migration of a global skill propagates to other
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
@@ -207,7 +202,7 @@ describe("project-context source migration of a global skill propagates to other
       fakeHome,
       buildProjectConfig({
         name: "project-context-migration-global",
-        marketplace: sourceDir,
+        marketplace: E2E_SOURCE.sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: MARKET }),
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
@@ -250,7 +245,7 @@ describe("project-context source migration of a global skill propagates to other
     // the mode just committed on it, to global scope.
     const wizard = await EditWizard.launch({
       projectDir: projectA,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -277,7 +272,6 @@ describe("project-context source migration of a global skill propagates to other
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   // Pre-state: the artifacts the migration must invalidate are genuine product

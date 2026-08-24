@@ -54,7 +54,7 @@ describe("init with unresolvable marketplace: filesystem integrity", () => {
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       wizard = await InitWizard.launch({
-        source: { sourceDir: localSource.sourceDir, tempDir: localSource.tempDir },
+        source: localSource,
       });
 
       // Stack -> Domain -> Build -> all domains -> Sources

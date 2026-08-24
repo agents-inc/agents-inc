@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -96,20 +96,11 @@ const PROJECT_API_DEVELOPER_STACK = {
  * substitutes for the other, which is why both are here.
  */
 describe("a project-only sub-agent toggled to global scope", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let testTempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (testTempDir) await cleanupTempDir(testTempDir);
@@ -127,7 +118,6 @@ describe("a project-only sub-agent toggled to global scope", () => {
       // project-scoped sub-agent. No global install underneath either of them, so no
       // dual-scope pair exists anywhere in this fixture.
       const initWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
@@ -194,7 +184,7 @@ describe("a project-only sub-agent toggled to global scope", () => {
       // PHASE B -- toggle the sub-agent P->G and save.
       const editWizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

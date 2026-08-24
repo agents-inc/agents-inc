@@ -109,16 +109,10 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
     const env = await createTestEnvironment();
     const { fakeHome, projectDir } = env;
 
-    const phaseA = await initGlobal(pluginSource.sourceDir, pluginSource.tempDir, fakeHome);
+    const phaseA = await initGlobal(pluginSource, fakeHome);
     expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-    const phaseB = await initProject(
-      pluginSource.sourceDir,
-      pluginSource.tempDir,
-      fakeHome,
-      projectDir,
-      { setLocal: false },
-    );
+    const phaseB = await initProject(pluginSource, fakeHome, projectDir, { setLocal: false });
     expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
     return { tempDir: env.tempDir, fakeHome, projectDir };
@@ -166,7 +160,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // --- Check 3: re-open edit → dual-scope [P][G] badges render for hono. ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+        source: pluginSource,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -260,7 +254,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // deselect vitest (preloaded:false on web-developer ⇒ freely deselectable).
       const globalEdit = await EditWizard.launch({
         projectDir: globalHome,
-        source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+        source: pluginSource,
         env: { HOME: globalHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -388,7 +382,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // to it and commit the Local column, leaving every global row plugin. ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+        source: pluginSource,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -515,7 +509,7 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
       // independent stops. ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+        source: pluginSource,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

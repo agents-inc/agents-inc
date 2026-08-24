@@ -2,7 +2,7 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { initGlobalWithEject, initProject } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
@@ -30,8 +30,6 @@ import {
  */
 
 describe("cc init registers each project exactly once in the global projects array", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let fakeHome: string;
   let project1: string;
@@ -46,9 +44,6 @@ describe("cc init registers each project exactly once in the global projects arr
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
@@ -61,20 +56,20 @@ describe("cc init registers each project exactly once in the global projects arr
 
     // Phase A: global install at HOME (eject). Populates the global config so
     // subsequent project edits have skills to keep at global scope.
-    const globalRes = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+    const globalRes = await initGlobalWithEject(E2E_SOURCE, fakeHome);
     globalExit = globalRes.exitCode;
     const afterGlobal = await loadConfigOrFail(fakeHome);
     projectsAfterGlobalInit = afterGlobal.projects;
 
     // Phase B: project-1 via dashboard -> Edit, toggling a skill + agent to
     // project scope (a genuine change that drives the registration write).
-    const firstRes = await initProject(sourceDir, sourceTempDir, fakeHome, project1);
+    const firstRes = await initProject(E2E_SOURCE, fakeHome, project1);
     firstExit = firstRes.exitCode;
     const afterFirst = await loadConfigOrFail(fakeHome);
     projectsAfterFirst = afterFirst.projects;
 
     // Phase C: project-2 via dashboard -> Edit, same genuine change.
-    const secondRes = await initProject(sourceDir, sourceTempDir, fakeHome, project2);
+    const secondRes = await initProject(E2E_SOURCE, fakeHome, project2);
     secondExit = secondRes.exitCode;
     const afterSecond = await loadConfigOrFail(fakeHome);
     projectsAfterSecond = afterSecond.projects;
@@ -82,7 +77,6 @@ describe("cc init registers each project exactly once in the global projects arr
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it("all three installs complete successfully", () => {
@@ -92,7 +86,10 @@ describe("cc init registers each project exactly once in the global projects arr
   });
 
   it("does not self-register the global HOME install", () => {
-    expect(projectsAfterGlobalInit ?? []).toStrictEqual([]);
+    // `toBeUndefined`, not `?? []` against `[]`. The fallback made the two states
+    // indistinguishable, and they are not the same claim: a global install writes no
+    // `projects` KEY at all, where `[]` would mean it wrote one and left it empty.
+    expect(projectsAfterGlobalInit).toBeUndefined();
   });
 
   it("registers the first project exactly once", () => {

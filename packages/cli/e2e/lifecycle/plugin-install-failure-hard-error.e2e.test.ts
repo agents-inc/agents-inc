@@ -53,7 +53,10 @@ describe.skipIf(!claudeAvailable)(
       await ensureBinaryExists();
       // Build a real marketplace that registers cleanly with claude CLI, then
       // overwrite its plugin list so individual installs fail per-skill.
-      fixture = await createE2EPluginSource();
+      //
+      // `owned` because this spec's whole method is CORRUPTING its marketplace, and the shared
+      // fixture is frozen precisely so a spec cannot do that to one every other spec is reading.
+      fixture = await createE2EPluginSource({ owned: true });
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
     }, TIMEOUTS.SETUP_DUAL);
 
@@ -71,7 +74,7 @@ describe.skipIf(!claudeAvailable)(
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         // Do not use completeWithDefaults() — it awaits the INIT_SUCCESS banner,
@@ -131,7 +134,7 @@ describe.skipIf(!claudeAvailable)(
 
     beforeAll(async () => {
       await ensureBinaryExists();
-      fixture = await createE2EPluginSource();
+      fixture = await createE2EPluginSource({ owned: true });
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
     }, TIMEOUTS.SETUP_DUAL);
 
@@ -164,7 +167,7 @@ describe.skipIf(!claudeAvailable)(
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 

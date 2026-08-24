@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+
 import "../matchers/setup.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
@@ -25,15 +25,10 @@ import {
 
 describe("eject mode lifecycle: init -> compile -> uninstall", () => {
   let tempDir: string;
-  let sourceDir: string;
-  let sourceTempDir: string;
   let projectDir: string;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     projectDir = tempDir;
@@ -41,7 +36,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it(
@@ -58,7 +52,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       // follow-up compile/uninstall commands (which resolve targets from cwd)
       // find the same content.
       const wizard = await InitWizard.launchInGlobal({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
       });
 

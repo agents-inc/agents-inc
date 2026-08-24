@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -25,19 +25,9 @@ import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual
  */
 
 describe("exclusion lifecycle: scope toggle persistence and file placement", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string | undefined;
 
@@ -62,7 +52,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       // scope and api-developer agent to project scope.
       // ================================================================
 
-      await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
 
       // --- User-visible outcomes after setup ---
 
@@ -97,7 +87,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
 
       const editWizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

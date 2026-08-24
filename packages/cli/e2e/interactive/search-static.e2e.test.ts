@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
-  createE2ESource,
   createLocalSkill,
   ensureBinaryExists,
   renderMetadataYaml,
@@ -37,18 +37,12 @@ const LOCAL_ONLY_SKILL = {
  */
 describe("search command", () => {
   let tempDir: string;
-  let sourceDir: string | undefined;
-  let sourceTempDir: string | undefined;
 
   beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
       await cleanupTempDir(tempDir);
-    }
-    if (sourceTempDir) {
-      await cleanupTempDir(sourceTempDir);
-      sourceTempDir = undefined;
     }
   });
 
@@ -59,10 +53,10 @@ describe("search command", () => {
    * so the config is the only place the source it answers from can come from.
    */
   async function createSourceFixture(): Promise<void> {
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
-    await writeProjectConfig(tempDir, { name: "search-fixture", marketplace: sourceDir });
+    await writeProjectConfig(tempDir, {
+      name: "search-fixture",
+      marketplace: E2E_SOURCE.sourceDir,
+    });
   }
 
   /** Ejects {@link LOCAL_ONLY_SKILL} into the installation, the way an eject-mode install leaves it. */

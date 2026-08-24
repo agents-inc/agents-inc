@@ -1,12 +1,11 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
-  cleanupTempDir,
   configTsPath,
   directoryExists,
   ensureBinaryExists,
@@ -49,20 +48,11 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -73,12 +63,12 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
     "skill: `s` round-trips [P][G] both ways and spacebar drops the project half",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Seed a PERSISTED [P][G] pair: a real `s` toggle on the first-focused Web
       // skill, saved through to completion.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "setup must persist an active project entry plus a global tombstone",
@@ -92,7 +82,7 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
 
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -169,7 +159,7 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
     async () => {
       // createDualScopeEnv toggles api-developer G->P inside the project and
       // saves, so it lands as a persisted dual-scope agent pair.
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       const agentName = E2E_AGENT["api-developer"].name;
@@ -190,7 +180,7 @@ describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
 
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

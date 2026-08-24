@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -27,8 +27,6 @@ import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 describe("dual-scope edit lifecycle -- compiled agent content after scope toggle", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -36,21 +34,14 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   beforeEach(async () => {
     const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();
     testTempDir = tempDir;
     fakeHome = fh;
     projectDir = pd;
-    await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+    await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
   }, TIMEOUTS.LIFECYCLE);
 
   afterEach(async () => {
@@ -71,7 +62,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       // ACTION: Launch EditWizard, toggle web-framework-react scope to project
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -137,7 +128,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       // project scope — only the skill's project override goes away.
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -198,7 +189,7 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       // ACTION: Launch EditWizard, pass through build domains, toggle api-developer agent to global
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

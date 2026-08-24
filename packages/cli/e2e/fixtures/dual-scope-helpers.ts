@@ -11,6 +11,7 @@ import type { WizardResult } from "../pages/wizard-result.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import { activeAgentNames } from "../../src/cli/lib/configuration/scope-predicates.js";
 import { E2E_SKILL } from "./expected-values.js";
+import type { E2ESource } from "../helpers/create-e2e-source.js";
 import type { AgentName, AgentScopeConfig, SkillConfig } from "../../src/cli/types/index.js";
 
 export type DualScopeEnv = {
@@ -84,13 +85,12 @@ export async function readConfigSkillIds(dir: string): Promise<string[]> {
 export async function runEditWithFirstSkillAction(
   projectDir: string,
   fakeHome: string,
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   action: "scope" | "space",
 ): Promise<void> {
   const wizard = await EditWizard.launch({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     env: { HOME: fakeHome },
     rows: 60,
     cols: 120,
@@ -133,13 +133,12 @@ export async function runEditWithFirstSkillAction(
 export async function readSkillBadgesViaEdit(
   projectDir: string,
   fakeHome: string,
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   skillLabel: string,
 ): Promise<Array<"P" | "G">> {
   const wizard = await EditWizard.launch({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     env: { HOME: fakeHome },
     rows: 60,
     cols: 120,
@@ -207,12 +206,11 @@ export async function createTestEnvironment(options?: {
  * Runs Phase A: Init from HOME directory, accepting all defaults.
  */
 export async function initGlobal(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
 ): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     projectDir: homeDir,
     env: { HOME: homeDir },
   });
@@ -237,15 +235,14 @@ export async function initGlobal(
  * via the edit wizard to produce the same end state as a fresh install would.
  */
 export async function initProject(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
   projectDir: string,
   options?: { setLocal?: boolean },
 ): Promise<{ exitCode: number; output: string }> {
   const dashboard = await InitWizard.launchForDashboard({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     env: { HOME: homeDir },
   });
 
@@ -321,17 +318,16 @@ async function finalizeEdit(
  * Runs Phase A + Phase B to establish dual-scope state.
  */
 export async function setupDualScope(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   fakeHome: string,
   projectDir: string,
 ): Promise<void> {
   // Phase A: Init global
-  const phaseA = await initGlobal(sourceDir, sourceTempDir, fakeHome);
+  const phaseA = await initGlobal(source, fakeHome);
   expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
   // Phase B: Init project with scope toggling
-  const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir);
+  const phaseB = await initProject(source, fakeHome, projectDir);
   expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 }
 
@@ -340,12 +336,11 @@ export async function setupDualScope(
  * Like initGlobal() but navigates through sources step to set all local.
  */
 export async function initGlobalWithEject(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
 ): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     projectDir: homeDir,
     env: { HOME: homeDir },
   });
@@ -378,13 +373,12 @@ export async function initGlobalWithEject(
  * inherited global install, which the scope guards refuse.
  */
 export async function initGlobalWithEjectWithoutSkill(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
   skillLabel: string,
 ): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     projectDir: homeDir,
     env: { HOME: homeDir },
     ...TERMINAL_SIZE.TALL,
@@ -419,15 +413,14 @@ export async function initGlobalWithEjectWithoutSkill(
  * that the project side of a dual-scope install is real needs this shape.
  */
 export async function initProjectWithProjectScopedAgent(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
   projectDir: string,
   agentLabel: string,
 ): Promise<{ exitCode: number; output: string }> {
   const dashboard = await InitWizard.launchForDashboard({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     env: { HOME: homeDir },
   });
 
@@ -457,15 +450,14 @@ export async function initProjectWithProjectScopedAgent(
  * where all skills are installed in eject mode.
  */
 export async function setupDualScopeWithEject(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   fakeHome: string,
   projectDir: string,
 ): Promise<void> {
-  const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+  const phaseA = await initGlobalWithEject(source, fakeHome);
   expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-  const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir);
+  const phaseB = await initProject(source, fakeHome, projectDir);
   expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 }
 
@@ -473,12 +465,9 @@ export async function setupDualScopeWithEject(
  * Creates a complete dual-scope environment via wizard interactions
  * with eject mode for all skills. Returns a handle with destroy() for cleanup.
  */
-export async function createDualScopeEnv(
-  sourceDir: string,
-  sourceTempDir: string,
-): Promise<DualScopeEnv> {
+export async function createDualScopeEnv(source: E2ESource): Promise<DualScopeEnv> {
   const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
-  await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+  await setupDualScopeWithEject(source, fakeHome, projectDir);
   return {
     fakeHome,
     projectDir,
@@ -494,14 +483,13 @@ export async function createDualScopeEnv(
  * passed through without scope changes. Sources are set to local.
  */
 export async function initProjectAllGlobal(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
   projectDir: string,
 ): Promise<{ exitCode: number; output: string }> {
   const dashboard = await InitWizard.launchForDashboard({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     env: { HOME: homeDir },
   });
 
@@ -543,13 +531,12 @@ export async function initProjectAllGlobal(
  * exercise the skill-drop merge path.
  */
 export async function setupProjectOnlyMixedScope(
-  sourceDir: string,
-  sourceTempDir: string,
+  source: E2ESource,
   homeDir: string,
   projectDir: string,
 ): Promise<void> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir, tempDir: sourceTempDir },
+    source,
     projectDir,
     env: { HOME: homeDir },
     rows: 60,
@@ -595,16 +582,13 @@ export async function setupProjectOnlyMixedScope(
  * Phase A initializes the global home, Phase B initializes the project
  * with all skills remaining global-scoped (no scope toggling).
  */
-export async function createGlobalOnlyEnv(
-  sourceDir: string,
-  sourceTempDir: string,
-): Promise<DualScopeEnv> {
+export async function createGlobalOnlyEnv(source: E2ESource): Promise<DualScopeEnv> {
   const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
 
-  const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+  const phaseA = await initGlobalWithEject(source, fakeHome);
   expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-  const phaseB = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, projectDir);
+  const phaseB = await initProjectAllGlobal(source, fakeHome, projectDir);
   expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
   return {

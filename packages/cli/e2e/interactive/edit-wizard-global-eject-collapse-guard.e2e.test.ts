@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -42,19 +42,9 @@ const REACT = E2E_SKILL.react.id;
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 describe("edit wizard — the S collapse over an ejected global install", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -76,7 +66,7 @@ describe("edit wizard — the S collapse over an ejected global install", () => 
       // default is this value: the eject/eject collision IS the precondition of the guard, and a
       // precondition inherited from a default is one a change to that default moves silently.
       const project = await ProjectBuilder.editable({
-        marketplace: sourceDir,
+        marketplace: E2E_SOURCE.sourceDir,
         skills: [REACT, E2E_SKILL.vitest.id],
         globalSkills: [REACT],
         globalSkillsSource: EJECT_SOURCE,
@@ -101,7 +91,7 @@ describe("edit wizard — the S collapse over an ejected global install", () => 
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 
@@ -142,7 +132,7 @@ describe("edit wizard — the S collapse over an ejected global install", () => 
       // Identical to the fixture above but for `globalSkillsSource`. Nothing else moves, so the
       // badge flip below is attributable to that one field.
       const project = await ProjectBuilder.editable({
-        marketplace: sourceDir,
+        marketplace: E2E_SOURCE.sourceDir,
         skills: [REACT, E2E_SKILL.vitest.id],
         globalSkills: [REACT],
         globalSkillsSource: DEFAULT_PUBLIC_SOURCE_NAME,
@@ -165,7 +155,7 @@ describe("edit wizard — the S collapse over an ejected global install", () => 
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

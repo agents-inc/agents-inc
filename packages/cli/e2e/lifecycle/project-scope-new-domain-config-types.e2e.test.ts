@@ -1,8 +1,8 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+
 import {
   cleanupTempDir,
   configTypesTsPath,
@@ -77,13 +77,10 @@ const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | "api" | "mobile
  * PROJECT scope. That single toggle is the whole of the divergence.
  */
 async function initReactGlobalHonoProject(options: {
-  sourceDir: string;
-  sourceTempDir: string;
   fakeHome: string;
   projectDir: string;
 }): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir: options.sourceDir, tempDir: options.sourceTempDir },
     projectDir: options.projectDir,
     env: { HOME: options.fakeHome },
     ...TERMINAL_SIZE.TALL,
@@ -114,20 +111,11 @@ async function initReactGlobalHonoProject(options: {
 }
 
 describe("a project-scoped skill in a category the global install lacks widens the project's unions", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -143,8 +131,6 @@ describe("a project-scoped skill in a category the global install lacks widens t
       const { fakeHome, projectDir } = env;
 
       const install = await initReactGlobalHonoProject({
-        sourceDir,
-        sourceTempDir,
         fakeHome,
         projectDir,
       });

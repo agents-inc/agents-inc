@@ -24,7 +24,7 @@ import type { WizardResult, ProjectHandle } from "../pages/wizard-result.js";
 const claudeAvailable = await isClaudeCLIAvailable();
 
 /**
- * POM Framework Smoke Tests (D-134, Step 0 Validation)
+ * POM Framework Smoke Tests
  *
  * These 3 tests prove the Page Object Model framework works end-to-end
  * before any existing test is migrated. Each test exercises a different
@@ -69,7 +69,7 @@ describe("POM Framework Smoke Tests", () => {
         // afterEach owns cleanup (the reuse-param launch does not).
         sharedHome = await createTempDir();
         const wizard = await InitWizard.launchInProject({
-          source: { sourceDir: pluginFixture!.sourceDir, tempDir: pluginFixture!.tempDir },
+          source: pluginFixture!,
           globalHome: sharedHome,
         });
         result = await wizard.completeWithDefaults();

@@ -1,7 +1,7 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -77,12 +77,9 @@ const SELECTED_AGENT_ALIAS = "SelectedAgentName";
  * array at all, and therefore none in the union derived from it.
  */
 async function initGlobalWithoutApiDeveloper(
-  sourceDir: string,
-  sourceTempDir: string,
   homeDir: string,
 ): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launch({
-    source: { sourceDir, tempDir: sourceTempDir },
     projectDir: homeDir,
     env: { HOME: homeDir },
   });
@@ -128,14 +125,12 @@ async function initGlobalWithoutApiDeveloper(
  * as the propagating change.
  */
 async function registerProjectViaAgentScopeChange(
-  sourceDir: string,
-  sourceTempDir: string,
   fakeHome: string,
   projectDir: string,
 ): Promise<{ exitCode: number; output: string }> {
   const editWizard = await EditWizard.launch({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source: E2E_SOURCE,
     env: { HOME: fakeHome },
     extraArgs: [`--${EDIT_PROJECT_SETUP_FLAG}`],
     ...TERMINAL_SIZE.TALL,
@@ -181,14 +176,12 @@ async function registerProjectViaAgentScopeChange(
  * drift showed up in.
  */
 async function addApiDeveloperGloballyViaProjectEdit(
-  sourceDir: string,
-  sourceTempDir: string,
   fakeHome: string,
   projectDir: string,
 ): Promise<{ exitCode: number; output: string }> {
   const editWizard = await EditWizard.launch({
     projectDir,
-    source: { sourceDir, tempDir: sourceTempDir },
+    source: E2E_SOURCE,
     env: { HOME: fakeHome },
     ...TERMINAL_SIZE.TALL,
   });
@@ -210,19 +203,9 @@ async function addApiDeveloperGloballyViaProjectEdit(
 }
 
 describe("global-agent propagation -- value and type sides stay in lockstep", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
 
@@ -251,7 +234,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       await createPermissionsFile(projectADir);
       await createPermissionsFile(projectBDir);
 
-      const phase1 = await initGlobalWithoutApiDeveloper(sourceDir, sourceTempDir, fakeHome);
+      const phase1 = await initGlobalWithoutApiDeveloper(fakeHome);
       expect(phase1.exitCode, `Global init failed: ${phase1.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const globalConfigPath = configTsPath(fakeHome);
@@ -283,12 +266,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // helper's docstring for why. B's stored agent rows inherit from
       // the narrow global verbatim.
       // ================================================================
-      const projectBRegistration = await registerProjectViaAgentScopeChange(
-        sourceDir,
-        sourceTempDir,
-        fakeHome,
-        projectBDir,
-      );
+      const projectBRegistration = await registerProjectViaAgentScopeChange(fakeHome, projectBDir);
       expect(projectBRegistration.exitCode, "Project B registration should succeed").toBe(
         EXIT_CODES.SUCCESS,
       );
@@ -327,12 +305,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // that is NOT the current one — so B must be registered before
       // the promotion edit is run.
       // ================================================================
-      const projectARegistration = await registerProjectViaAgentScopeChange(
-        sourceDir,
-        sourceTempDir,
-        fakeHome,
-        projectADir,
-      );
+      const projectARegistration = await registerProjectViaAgentScopeChange(fakeHome, projectADir);
       expect(projectARegistration.exitCode, "Project A registration should succeed").toBe(
         EXIT_CODES.SUCCESS,
       );
@@ -345,12 +318,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // project — specifically Project B.
       // ================================================================
       const projectBContentBefore = await readTestFile(projectBConfigPath);
-      const phase4 = await addApiDeveloperGloballyViaProjectEdit(
-        sourceDir,
-        sourceTempDir,
-        fakeHome,
-        projectADir,
-      );
+      const phase4 = await addApiDeveloperGloballyViaProjectEdit(fakeHome, projectADir);
       expect(phase4.exitCode, `Global edit failed: ${phase4.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Sanity: propagation must actually have rewritten B's config.ts

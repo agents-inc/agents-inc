@@ -1,7 +1,7 @@
 import path from "path";
 import { CLI } from "../fixtures/cli.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -27,19 +27,10 @@ const SPLIT_INSTALL_ALIASES = ["SkillId", "AgentName", "Category"] as const;
  */
 
 // Shared E2E source across all suites in this file
-let sourceDir: string;
-let sourceTempDir: string;
 
 beforeAll(async () => {
   await ensureBinaryExists();
-  const source = await createE2ESource();
-  sourceDir = source.sourceDir;
-  sourceTempDir = source.tempDir;
 }, TIMEOUTS.SETUP_DUAL);
-
-afterAll(async () => {
-  if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-});
 
 describe("global scope lifecycle -- source loader merge", () => {
   let env: DualScopeEnv | undefined;
@@ -53,11 +44,11 @@ describe("global scope lifecycle -- source loader merge", () => {
     "edit wizard should detect both global and project local skills after dual-scope init",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
 
       const wizard = await EditWizard.launch({
         projectDir: env.projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: env.fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -82,7 +73,7 @@ describe("global scope lifecycle -- doctor command", () => {
   let sharedEnv: DualScopeEnv;
 
   beforeAll(async () => {
-    sharedEnv = await createDualScopeEnv(sourceDir, sourceTempDir);
+    sharedEnv = await createDualScopeEnv(E2E_SOURCE);
   }, TIMEOUTS.LIFECYCLE);
 
   afterAll(async () => {
@@ -102,9 +93,11 @@ describe("global scope lifecycle -- doctor command", () => {
     expect(stdout).not.toContain("web-developer (missing)");
     // `toContain("agents compiled")` is a fragment the PASS row and the WARN row
     // both carry ("N/N agents compiled" vs "N agents need recompilation" plus its
-    // detail lines), so only the negative above discriminated. The pass row names
-    // its own counts, and the tip fires only on the warn.
-    expect(stdout).toContain(``);
+    // detail lines), so only the negative above discriminated. It was replaced by
+    // the back-reference below, which pins the two counts EQUAL and so cannot be
+    // satisfied by the warn row. An empty `toContain(``)` sat here between those
+    // two facts until 2026-08-23 — true of every string, and the residue of the
+    // removal rather than a fourth assertion.
     expect(stdout).toMatch(/(\d+)\/\1 agents compiled/);
     expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
   });
@@ -137,7 +130,7 @@ describe("global scope lifecycle -- uninstall with dual scope", () => {
     "should remove project-scoped skills from project dir via uninstall --yes",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       const { exitCode, output } = await CLI.run(
@@ -179,7 +172,6 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
 
       // Run init wizard from project dir with HOME pointing to fakeHome
       wizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,

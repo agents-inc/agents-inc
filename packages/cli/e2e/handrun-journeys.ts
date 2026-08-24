@@ -136,7 +136,7 @@ async function journeyGlobalInstall(): Promise<{ project: ProjectHandle; sourceD
   // Eject mode, because plugin mode needs a registered marketplace and the
   // fixture source is not one — the CLI refuses, correctly, and that refusal is
   // its own journey rather than this one.
-  const run = await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  const run = await initGlobalWithEject(source, home);
   note(`exit ${run.exitCode}`);
 
   note("global config", skillIdsIn(path.join(home, ".claude-src", "config.ts")));
@@ -350,7 +350,7 @@ async function journeyUninstall(): Promise<void> {
   section("Journey 19 — uninstall from scratch");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j19-"));
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
   const before = listDir(path.join(home, ".claude", "skills"));
 
   const result = await CLI.run(["uninstall", "--yes"], { dir: home, globalHome: home });
@@ -374,7 +374,7 @@ async function journeyDeletedConfig(): Promise<void> {
   section("Journey 14 — the config deleted under a live install");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j14-"));
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
   rmSync(path.join(home, ".claude-src", "config.ts"), { force: true });
 
   const at: ProjectHandle = { dir: home, globalHome: home };
@@ -440,7 +440,7 @@ async function journeyStackRoster(): Promise<void> {
   section("Journeys 2 / 12 — a stack installs exactly its roster");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j2-"));
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
   const ids = await readConfigSkillIds(home);
   note("skills the stack installed", ids.join(", "));
   note("agents compiled", listDir(path.join(home, ".claude", "agents")));
@@ -462,7 +462,7 @@ async function journeyProjectOverGlobal(): Promise<void> {
   const projA = mkdtempSync(path.join(tmpdir(), "handrun-j3-a-"));
   const projB = mkdtempSync(path.join(tmpdir(), "handrun-j3-b-"));
 
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
   const globalIds = await readConfigSkillIds(home);
   note("global install", `${globalIds.length} skills`);
 
@@ -495,7 +495,7 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   section("Journey 34 — a hand-authored skill is not the round trip's to carry or remove");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j34-"));
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
 
   const mine = path.join(home, ".claude", "skills", "my-own-skill");
   mkdirSync(mine, { recursive: true });
@@ -575,13 +575,13 @@ async function journeyScopeToggles(): Promise<void> {
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j4-home-"));
   const proj = mkdtempSync(path.join(tmpdir(), "handrun-j4-proj-"));
-  await setupDualScopeWithEject(source.sourceDir, source.tempDir, home, proj);
+  await setupDualScopeWithEject(source, home, proj);
 
   const before = await readConfigSkillIds(proj);
   note("project skills before", before.slice(0, 3).join(", "));
   note("global skills", (await readConfigSkillIds(home)).slice(0, 3).join(", "));
 
-  await runEditWithFirstSkillAction(proj, home, source.sourceDir, source.tempDir, "scope");
+  await runEditWithFirstSkillAction(proj, home, source, "scope");
   const after = await readConfigSkillIds(proj);
   note("project skills after a scope toggle", after.slice(0, 3).join(", "));
   const gs = await checkFourSurfaces("global", home);
@@ -603,7 +603,7 @@ async function journeyPropagation(): Promise<void> {
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j7-home-"));
   const proj = mkdtempSync(path.join(tmpdir(), "handrun-j7-proj-"));
-  await setupDualScopeWithEject(source.sourceDir, source.tempDir, home, proj);
+  await setupDualScopeWithEject(source, home, proj);
 
   const globalTypes = readFileSync(path.join(home, ".claude-src", "config-types.ts"), "utf8");
   const compile = await CLI.run(["compile"], { dir: proj, globalHome: home });
@@ -678,10 +678,10 @@ async function journeyStackPicksEditable(): Promise<void> {
   // Edited at the home root, where the session owns every scope. From a PROJECT
   // a globally-installed skill cannot be deselected at all — that invariant is
   // journey 4's subject, and it would make this journey read as broken.
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
 
   const before = await readConfigSkillIds(home);
-  await runEditWithFirstSkillAction(home, home, source.sourceDir, source.tempDir, "space");
+  await runEditWithFirstSkillAction(home, home, source, "space");
   const after = await readConfigSkillIds(home);
   note("skills before", `${before.length}`);
   note("skills after deselecting one", `${after.length}`);
@@ -698,7 +698,7 @@ async function journeyCustomMarketplaceArc(): Promise<void> {
   section("Journey 18 — a custom marketplace is stored and later commands resolve it");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j18-"));
-  await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+  await initGlobalWithEject(source, home);
 
   const config = readFileSync(path.join(home, ".claude-src", "config.ts"), "utf8");
   const storesIt = config.includes(source.sourceDir);
@@ -765,7 +765,7 @@ async function journeyMarketplaceAuthorArc(): Promise<void> {
 
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j21-"));
   try {
-    const install = await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+    const install = await initGlobalWithEject(source, home);
     note(`init from the built repository exit ${install.exitCode}`);
     note("skills it installed", listDir(skillsPath(home)));
     const installed = await checkFourSurfaces("author-arc-install", home);
@@ -915,7 +915,7 @@ async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
   const origin = mkdtempSync(path.join(tmpdir(), "handrun-j29-origin-"));
   const rebuilt = mkdtempSync(path.join(tmpdir(), "handrun-j29-rebuilt-"));
   try {
-    const install = await initGlobalWithEject(source.sourceDir, source.tempDir, origin);
+    const install = await initGlobalWithEject(source, origin);
     note(`the origin install exit ${install.exitCode}`);
 
     const shared = await runShare(store, { dir: origin, globalHome: origin });
@@ -1071,7 +1071,7 @@ async function journeySharedDirectoryOwnership(): Promise<void> {
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j36-"));
   try {
-    const install = await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+    const install = await initGlobalWithEject(source, home);
     note(`init exit ${install.exitCode}`);
 
     await createLocalSkill(home, FOREIGN_SKILL_DIR);

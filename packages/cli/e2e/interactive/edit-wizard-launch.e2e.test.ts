@@ -11,7 +11,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { CLI } from "../fixtures/cli.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   CLI_INVOKE_COMMAND,
   EXIT_CODES,
@@ -31,7 +31,6 @@ import path from "path";
 describe("edit wizard — launch and display", () => {
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
-  let sourceTempDir: string | undefined;
 
   beforeAll(ensureBinaryExists);
 
@@ -41,10 +40,6 @@ describe("edit wizard — launch and display", () => {
     if (tempDir) {
       await cleanupTempDir(tempDir);
       tempDir = undefined;
-    }
-    if (sourceTempDir) {
-      await cleanupTempDir(sourceTempDir);
-      sourceTempDir = undefined;
     }
   });
 
@@ -144,12 +139,9 @@ describe("edit wizard — launch and display", () => {
       });
       tempDir = path.dirname(project.dir);
 
-      const source = await createE2ESource();
-      sourceTempDir = source.tempDir;
-
       wizard = await EditWizard.launch({
         projectDir: project.dir,
-        source,
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

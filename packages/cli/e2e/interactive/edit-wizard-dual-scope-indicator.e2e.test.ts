@@ -1,12 +1,7 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
-import {
-  cleanupTempDir,
-  directoryExists,
-  ensureBinaryExists,
-  skillsPath,
-} from "../helpers/test-utils.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { directoryExists, ensureBinaryExists, skillsPath } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -44,20 +39,11 @@ import {
  */
 
 describe("edit wizard — dual-scope indicator after G→P toggle", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -69,13 +55,13 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install all E2E skills globally, then bootstrap an all-global project.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Phase 2: toggle react G→P via a real `cc edit` run. After this, the
       // project's config.ts holds the dual-scope shape: active project entry +
       // global excluded tombstone.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Phase 3: re-open the wizard. On `main`, the hydrator drops the tombstone,
       // so only a single badge renders. Expected after fix: BOTH badges visible.
@@ -84,8 +70,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       const badges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
 
@@ -99,16 +84,16 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1 + 2 (same as A): establish the dual-scope config on disk.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Phase 3: open the wizard, pass through every step without changes,
       // let the CLI re-save. On `main`, the hydrator drops the tombstone on
       // load, so the re-save path writes a config that no longer contains it.
       const passThroughWizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -127,8 +112,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       const badges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
       expect(badges).toStrictEqual(["P", "G"]);
@@ -140,9 +124,9 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1 + 2: establish dual-scope state via real CLI flows.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
@@ -167,7 +151,7 @@ describe("edit wizard — dual-scope indicator after G→P toggle", () => {
       // config loses the `{scope:"global", excluded:true}` entry.
       const passThroughWizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

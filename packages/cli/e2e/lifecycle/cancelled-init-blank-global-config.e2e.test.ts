@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+
 import {
   agentsPath,
   cleanupTempDir,
@@ -27,19 +27,9 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
  * is covered by init-wizard-existing.e2e.test.ts.
  */
 
-let sourceDir: string;
-let sourceTempDir: string;
-
 beforeAll(async () => {
   await ensureBinaryExists();
-  const source = await createE2ESource();
-  sourceDir = source.sourceDir;
-  sourceTempDir = source.tempDir;
 }, TIMEOUTS.SETUP);
-
-afterAll(async () => {
-  if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-});
 
 describe("init cancelled from a project directory", () => {
   let tempDir: string | undefined;
@@ -69,7 +59,6 @@ describe("init cancelled from a project directory", () => {
       // Phase A: launch init from the project dir with a distinct HOME, then
       // abort on the very first (stack) step.
       const cancelled = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
         env: { HOME: fakeHome },
       });
@@ -106,7 +95,6 @@ describe("init cancelled from a project directory", () => {
       // Phase B: re-run init in the same project. Nothing is installed at
       // either scope, so the setup wizard must render — not the dashboard.
       const reopened = await InitWizard.launchRaw({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir,
         env: { HOME: fakeHome },
       });

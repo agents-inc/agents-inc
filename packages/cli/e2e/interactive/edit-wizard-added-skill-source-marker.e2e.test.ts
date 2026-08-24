@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -29,19 +29,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("edit wizard — added-skill marker on the Sources tab", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -83,7 +73,7 @@ describe("edit wizard — added-skill marker on the Sources tab", () => {
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

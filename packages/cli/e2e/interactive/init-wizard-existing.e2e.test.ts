@@ -54,7 +54,7 @@ describe("init wizard — existing projects", () => {
 
       wizard = await InitWizard.launch({
         projectDir: tempDir,
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
       });
 
       const output = wizard.stack.getOutput();
@@ -77,7 +77,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: tempDir,
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -113,7 +113,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
+        source: source!,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -137,7 +137,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
+        source: source!,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -161,7 +161,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
+        source: source!,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -185,7 +185,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
+        source: source!,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -218,7 +218,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: workDir,
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
         env: { HOME: tempDir },
       });
 
@@ -272,7 +272,7 @@ describe("init wizard — existing projects", () => {
       // stack-screen wait times out under the current bug.
       dashboard = await InitWizard.launchForDashboard({
         projectDir,
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
         env: { HOME: tempDir },
       });
 

@@ -70,7 +70,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
 
         wizard = await EditWizard.launchInProject({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         // Build -> Sources (customize view)
@@ -231,7 +231,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
 
         wizard = await EditWizard.launchInProject({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         // Build -> Sources (customize view)

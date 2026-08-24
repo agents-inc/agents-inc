@@ -1,13 +1,12 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   agentsPath,
-  cleanupTempDir,
   ensureBinaryExists,
   fileExists,
   readAgentEntriesFor,
@@ -39,21 +38,12 @@ import type { AgentName } from "../../src/cli/types/index.js";
 const API_DEVELOPER: AgentName = "api-developer";
 
 describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -66,7 +56,7 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
     "Check 1+2: dual-scope config shape and both [P][G] badges render on re-open",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Check 1: the persisted config carries the dual-scope pair.
@@ -95,7 +85,7 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
       // Check 2: re-open the wizard, walk to the agents step, read the badges.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -125,7 +115,7 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
     "Check 3: `s` on a persisted dual-scope agent collapses [P][G] to a single inherited-global [G]",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       const projectAgentFile = path.join(agentsPath(projectDir), "api-developer.md");
@@ -142,7 +132,7 @@ describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

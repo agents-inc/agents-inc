@@ -1,11 +1,10 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
-  cleanupTempDir,
   createPermissionsFile,
   ensureBinaryExists,
   readTreeSnapshot,
@@ -18,7 +17,7 @@ const SECOND_PROJECT_DIR_NAME = "project-b";
 
 /**
  * A compile run inside a project writes nothing outside that project — the
- * ruled containment for CLI-438. Propagation belongs to global operations; a
+ * ruled containment. Propagation belongs to global operations; a
  * project-scope compile is not one.
  *
  * Both registered projects are created through the real wizard, so the global
@@ -30,20 +29,11 @@ const SECOND_PROJECT_DIR_NAME = "project-b";
  */
 
 describe("compile inside a project is contained to that project", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -54,18 +44,13 @@ describe("compile inside a project is contained to that project", () => {
     "leaves the global scope and every other registered project byte- and mtime-identical",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       const secondProjectDir = path.join(fakeHome, SECOND_PROJECT_DIR_NAME);
       await mkdir(secondProjectDir, { recursive: true });
       await createPermissionsFile(secondProjectDir);
-      const secondProject = await initProjectAllGlobal(
-        sourceDir,
-        sourceTempDir,
-        fakeHome,
-        secondProjectDir,
-      );
+      const secondProject = await initProjectAllGlobal(E2E_SOURCE, fakeHome, secondProjectDir);
       expect(secondProject.exitCode, `second project init failed: ${secondProject.output}`).toBe(
         EXIT_CODES.SUCCESS,
       );

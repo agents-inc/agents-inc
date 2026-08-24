@@ -1,6 +1,6 @@
 import { rm } from "fs/promises";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -40,21 +40,12 @@ import { UI_SYMBOLS } from "../../src/cli/consts.js";
 const ORPHANED_TYPE_SURFACE = "export type SkillId";
 
 describe("a global install whose config.ts was deleted", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -75,7 +66,7 @@ describe("a global install whose config.ts was deleted", () => {
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
 
-    const install = await initGlobalWithEject(sourceDir, sourceTempDir, env.fakeHome);
+    const install = await initGlobalWithEject(E2E_SOURCE, env.fakeHome);
     expect(install.exitCode, `global init failed:\n${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
     const skillIds = (await listFiles(skillsPath(env.fakeHome))).sort();
@@ -180,7 +171,6 @@ describe("a global install whose config.ts was deleted", () => {
       // installation, and detection reads the config — so the way out of this
       // state is the from-scratch wizard, on a directory that is anything but.
       wizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });

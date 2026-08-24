@@ -3,7 +3,7 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+
 import {
   agentsPath,
   cleanupTempDir,
@@ -74,7 +74,6 @@ const TITLES_THAT_NAME_NO_DIRECTORY = [
 const COMPILED_AGENT_NAMES: AgentName[] = E2E_STACK_AGENTS;
 
 describe("default init from a project dir — global scope reporting", () => {
-  let sourceTempDir: string;
   let tempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -84,16 +83,12 @@ describe("default init from a project dir — global scope reporting", () => {
   beforeAll(async () => {
     await ensureBinaryExists();
 
-    const source = await createE2ESource();
-    sourceTempDir = source.tempDir;
-
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
     fakeHome = env.fakeHome;
     projectDir = env.projectDir;
 
     const wizard = await InitWizard.launch({
-      source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
       projectDir,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
@@ -111,7 +106,6 @@ describe("default init from a project dir — global scope reporting", () => {
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it("installs every default-scope skill and agent under HOME, not under the project", async () => {

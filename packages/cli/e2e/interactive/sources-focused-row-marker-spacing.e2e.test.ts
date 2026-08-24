@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -52,19 +52,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("edit wizard — focused Sources row keeps one space between its marker and its name", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -83,7 +73,7 @@ describe("edit wizard — focused Sources row keeps one space between its marker
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const project = await ProjectBuilder.editable({
-        marketplace: sourceDir,
+        marketplace: E2E_SOURCE.sourceDir,
         skills: [],
         globalSkills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
         agents: ["web-developer"],
@@ -107,7 +97,7 @@ describe("edit wizard — focused Sources row keeps one space between its marker
 
       wizard = await EditWizard.launchInProject({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

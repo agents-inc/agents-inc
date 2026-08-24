@@ -1,6 +1,6 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { describe, it, expect, afterAll, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
@@ -19,7 +19,7 @@ import {
   renderMetadataYaml,
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
@@ -39,19 +39,10 @@ import "../matchers/setup.js";
  */
 describe("global uninstall propagates to registered projects", () => {
   let tempDir: string;
-  let sourceDir: string;
-  let sourceTempDir: string;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (tempDir) {
@@ -69,7 +60,7 @@ describe("global uninstall propagates to registered projects", () => {
     // CLI-inlined snapshot of the global install (skills, agents,
     // selectedAgents, and a stack ref to the global skill).
     await writeProjectConfig(projectDir, {
-      marketplace: sourceDir,
+      marketplace: E2E_SOURCE.sourceDir,
       name: "project-test",
       skills: [
         { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
@@ -106,7 +97,7 @@ describe("global uninstall propagates to registered projects", () => {
     // deleted — the uninstall must warn about it and continue.
     const realProjectDir = realpathSync(projectDir);
     await writeProjectConfig(globalHome, {
-      marketplace: sourceDir,
+      marketplace: E2E_SOURCE.sourceDir,
       name: "global-test",
       skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
@@ -234,7 +225,7 @@ describe("global uninstall propagates to registered projects", () => {
     // --- Project installation: a PROJECT-scoped api-developer whose stack
     // preloads BOTH its own project skill and the inherited global one.
     await writeProjectConfig(projectDir, {
-      marketplace: sourceDir,
+      marketplace: E2E_SOURCE.sourceDir,
       name: "project-recompile",
       skills: [
         { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
@@ -264,7 +255,7 @@ describe("global uninstall propagates to registered projects", () => {
 
     // --- Global installation at the fake HOME, registering the project.
     await writeProjectConfig(globalHome, {
-      marketplace: sourceDir,
+      marketplace: E2E_SOURCE.sourceDir,
       name: "global-recompile",
       skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],

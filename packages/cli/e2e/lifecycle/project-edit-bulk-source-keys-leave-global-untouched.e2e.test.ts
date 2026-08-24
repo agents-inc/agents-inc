@@ -98,7 +98,7 @@ describe.skipIf(!claudeAvailable)(
         // would pass by never establishing the state it needs. A spec may not depend on the
         // behaviour it is pinning the removal of.
         const initWizard = await InitWizard.launch({
-          source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+          source: pluginSource,
           projectDir: fakeHome,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
@@ -115,13 +115,7 @@ describe.skipIf(!claudeAvailable)(
         await initResult.destroy();
 
         // Phase B: the project install. `setLocal: false` keeps every bulk key out of the setup.
-        const phaseB = await initProject(
-          pluginSource.sourceDir,
-          pluginSource.tempDir,
-          fakeHome,
-          projectDir,
-          { setLocal: false },
-        );
+        const phaseB = await initProject(pluginSource, fakeHome, projectDir, { setLocal: false });
         expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
         // Both configs must name a marketplace or plugin mode is not reachable at all, and
@@ -140,7 +134,7 @@ describe.skipIf(!claudeAvailable)(
 
         wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+          source: pluginSource,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
@@ -183,15 +177,9 @@ describe.skipIf(!claudeAvailable)(
         // Global install: every skill plugin-sourced (the marketplace init default). Project
         // install: hono moved G->P with `setLocal: false`, so no bulk key runs in setup and the
         // globals are still plugin-sourced when the test presses one.
-        const phaseA = await initGlobal(pluginSource.sourceDir, pluginSource.tempDir, fakeHome);
+        const phaseA = await initGlobal(pluginSource, fakeHome);
         expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
-        const phaseB = await initProject(
-          pluginSource.sourceDir,
-          pluginSource.tempDir,
-          fakeHome,
-          projectDir,
-          { setLocal: false },
-        );
+        const phaseB = await initProject(pluginSource, fakeHome, projectDir, { setLocal: false });
         expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
         const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
@@ -203,7 +191,7 @@ describe.skipIf(!claudeAvailable)(
 
         wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+          source: pluginSource,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });

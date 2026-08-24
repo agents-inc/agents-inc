@@ -8,7 +8,7 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   createTempDir,
@@ -38,21 +38,17 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * The comparison lived only in `handrun-journeys.ts`, which no script runs. This is the gate.
  */
 describe("a share round trip that starts at the wizard", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let store: SeedConfigStore;
   let origin: string;
   let rebuilt: string;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
     await store.close();
-    await cleanupTempDir(sourceTempDir);
   });
 
   // Both ends are allocated per attempt rather than per file, because the suite runs at
@@ -74,7 +70,7 @@ describe("a share round trip that starts at the wizard", () => {
     "compiles byte-identical sub-agents in a directory that has never seen any of it",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const install = await initGlobalWithEject(sourceDir, sourceTempDir, origin);
+      const install = await initGlobalWithEject(E2E_SOURCE, origin);
       expect(install.exitCode, `the wizard install failed: ${install.output}`).toBe(
         EXIT_CODES.SUCCESS,
       );
@@ -86,7 +82,7 @@ describe("a share round trip that starts at the wizard", () => {
         store,
         firstElement(store.minted),
         { dir: rebuilt, globalHome: rebuilt },
-        sourceDir,
+        E2E_SOURCE.sourceDir,
       );
       expect(reinstalled.exitCode, `reinstall failed: ${reinstalled.output}`).toBe(
         EXIT_CODES.SUCCESS,

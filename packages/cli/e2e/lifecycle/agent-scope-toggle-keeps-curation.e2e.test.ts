@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import path from "path";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -50,21 +50,12 @@ const GLOBAL_SKILL_CONFIGS = [
 ];
 
 describe("a sub-agent moved from global to project scope", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempHome: string | undefined;
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -128,7 +119,7 @@ describe("a sub-agent moved from global to project scope", () => {
     // Action: one project edit whose only change is the agent's scope.
     wizard = await EditWizard.launch({
       projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: tempHome },
       ...TERMINAL_SIZE.TALL,
     });

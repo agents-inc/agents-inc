@@ -79,7 +79,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
       // and hard-errors when the source has no marketplace (no silent
       // fallback per user's plugin-to-eject rule).
       const initWizard = await InitWizard.launch({
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -120,7 +120,7 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
       // stay in eject mode rather than silently flipping to plugin.
       const editWizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+        source,
         env: { HOME: fakeHome },
       });
       const editSources = await editWizard.build.passThroughAllDomains();
@@ -214,7 +214,7 @@ describe.skipIf(!claudeAvailable)(
         // No setAllLocal() call: the wizard defaults to plugin mode when the
         // source has a marketplace.json. This is the path we want to exercise.
         const initWizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir: fakeHome,
           env: { HOME: fakeHome },
         });
@@ -263,7 +263,7 @@ describe.skipIf(!claudeAvailable)(
 
         const editWizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           env: { HOME: fakeHome },
         });
         const editSources = await editWizard.build.passThroughAllDomains();
@@ -357,7 +357,7 @@ describe.skipIf(!claudeAvailable)(
         // ================================================================
 
         const initWizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir: fakeHome,
           env: { HOME: fakeHome },
         });
@@ -427,7 +427,7 @@ describe.skipIf(!claudeAvailable)(
 
         const editWizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           env: { HOME: fakeHome },
         });
         const editSources = await editWizard.build.passThroughAllDomains();

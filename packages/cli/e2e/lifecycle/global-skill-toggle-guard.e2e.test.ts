@@ -1,9 +1,8 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
-  cleanupTempDir,
   configTsPath,
   ensureBinaryExists,
   normalizeGlobalConfig,
@@ -35,19 +34,9 @@ import "../matchers/setup.js";
  */
 
 describe("global skill toggle guard from project scope", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
@@ -64,7 +53,7 @@ describe("global skill toggle guard from project scope", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global init + project init with all skills staying global
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
 
       // `cc init` inside a project materialises that project — it writes the
       // project's config.ts and registers the path in the global projects list —
@@ -76,7 +65,7 @@ describe("global skill toggle guard from project scope", () => {
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
         projectDir: env.projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: env.fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -130,7 +119,7 @@ describe("global skill toggle guard from project scope", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global init + project init with all skills staying global
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
 
       // `cc init` materialises the project config during setup (see above), so
       // the guard's contract is "changes nothing" rather than "writes nothing".
@@ -139,7 +128,7 @@ describe("global skill toggle guard from project scope", () => {
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
         projectDir: env.projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: env.fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -193,13 +182,13 @@ describe("global skill toggle guard from project scope", () => {
       // Same env, same scope, same two keys as the refusals above — the only difference is
       // the subject. The SPARE is in the source and in no config, so selecting it takes
       // nothing away from the global install and the guard has nothing to protect.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
 
       const globalConfigBefore = await readTestFile(configTsPath(env.fakeHome));
 
       wizard = await EditWizard.launch({
         projectDir: env.projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: env.fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

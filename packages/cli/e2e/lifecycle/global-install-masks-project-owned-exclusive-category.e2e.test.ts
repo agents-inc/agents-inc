@@ -2,7 +2,7 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -71,8 +71,6 @@ const vitestMetadata = renderMetadataYaml({
 });
 
 describe("global install masks a project-owned skill in an exclusive category", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let globalHome: string;
   let projectDir: string;
@@ -90,9 +88,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
@@ -143,7 +138,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
     // propagates to the registered project.
     const wizard = await EditWizard.launchInGlobal({
       projectDir: globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       ...TERMINAL_SIZE.TALL,
     });
     try {
@@ -182,7 +177,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
     const projectWizard = await EditWizard.launchInProject({
       projectDir,
       globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       ...TERMINAL_SIZE.TALL,
     });
     try {
@@ -196,7 +191,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it("completes the global-scope skill addition edit successfully", () => {

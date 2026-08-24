@@ -76,7 +76,7 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
 
       const initDir = path.join(tempDir, "init-project");
       const pluginInit = await InitWizard.launchInGlobal({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         projectDir: initDir,
       });
       const pluginInitResult = await pluginInit.completeWithDefaults();
@@ -96,7 +96,7 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
 
       const editDir = path.join(tempDir, "edit-project");
       const ejectInit = await InitWizard.launchInGlobal({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         projectDir: editDir,
       });
       const ejectInitResult = await completeWithLocalSources(ejectInit);
@@ -110,7 +110,7 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
 
       const editWizard = await EditWizard.launchInGlobal({
         projectDir: editDir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
       });
       const editSources = await editWizard.build.passThroughAllDomains();
       await editSources.setAllPlugin();

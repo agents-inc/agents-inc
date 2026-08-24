@@ -1,12 +1,12 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { DIRS, EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { cleanupTempDir, ensureBinaryExists, fileExists } from "../helpers/test-utils.js";
+import { ensureBinaryExists, fileExists } from "../helpers/test-utils.js";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import {
   createDualScopeEnv,
@@ -24,7 +24,7 @@ import {
 const SPARE_SKILL = E2E_SKILL["visual-regression"];
 
 /**
- * D-221 — Agent scope toggle (project → global) corrupts `agents` array
+ * Agent scope toggle (project → global) once corrupted the `agents` array
  * with duplicate project-scope rows.
  *
  * Verifies that toggling an agent's scope via `cc edit` produces a clean
@@ -37,7 +37,7 @@ const SPARE_SKILL = E2E_SKILL["visual-regression"];
  *   - Re-running `cc edit` (unrelated change) does not amplify any
  *     pre-existing row counts.
  *
- * Root cause (per todo/D-221-investigations/05-merger.md):
+ * Root cause:
  * `config-merger.ts::mergeConfigs` uses a scope-less `agentKey` for
  * non-excluded entries, so two active rows with the same name but different
  * scopes collide. When `existingConfig.agents` (loaded with global entries
@@ -50,19 +50,9 @@ const SPARE_SKILL = E2E_SKILL["visual-regression"];
  */
 
 describe("agent scope toggle keeps agents array duplicate-free", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   describe("Scenario A — P→G toggle produces no duplicates", () => {
     let env: DualScopeEnv | undefined;
@@ -85,7 +75,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         //   - project config (inlined): web-developer:global, api-developer:project
         //     plus api-developer:global:excluded tombstone
         // ================================================================
-        env = await createDualScopeEnv(sourceDir, sourceTempDir);
+        env = await createDualScopeEnv(E2E_SOURCE);
         const { fakeHome, projectDir } = env;
 
         const projectAgentFile = path.join(
@@ -108,7 +98,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
@@ -204,7 +194,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         // Phase 1: mixed-scope project (same as Scenario A baseline).
         // ================================================================
-        env = await createDualScopeEnv(sourceDir, sourceTempDir);
+        env = await createDualScopeEnv(E2E_SOURCE);
         const { fakeHome, projectDir } = env;
 
         // ================================================================
@@ -212,7 +202,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         wizard1 = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
@@ -249,7 +239,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         wizard2 = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
@@ -320,7 +310,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         // Phase 1: All agents at global scope in both global and project.
         // ================================================================
-        env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+        env = await createGlobalOnlyEnv(E2E_SOURCE);
         const { fakeHome, projectDir } = env;
 
         const projectAgentFile = path.join(
@@ -341,7 +331,7 @@ describe("agent scope toggle keeps agents array duplicate-free", () => {
         // ================================================================
         wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });

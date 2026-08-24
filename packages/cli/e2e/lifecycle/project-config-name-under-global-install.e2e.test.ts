@@ -35,7 +35,7 @@ describe("project config identity under an existing global install", () => {
     source = await createE2ESource();
     // Phase A installs globally at the fake HOME; Phase B sets the project up
     // underneath it with every skill and sub-agent left at global scope.
-    env = await createGlobalOnlyEnv(source.sourceDir, source.tempDir);
+    env = await createGlobalOnlyEnv(source);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {

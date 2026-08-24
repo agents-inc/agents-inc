@@ -1,9 +1,9 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { cleanupTempDir, ensureBinaryExists, runCLI } from "../helpers/test-utils.js";
+import { ensureBinaryExists, runCLI } from "../helpers/test-utils.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 
 /**
@@ -14,19 +14,9 @@ import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-he
  * orphaned skill directories.
  */
 
-let sourceDir: string;
-let sourceTempDir: string;
-
 beforeAll(async () => {
   await ensureBinaryExists();
-  const source = await createE2ESource();
-  sourceDir = source.sourceDir;
-  sourceTempDir = source.tempDir;
 }, TIMEOUTS.SETUP_DUAL);
-
-afterAll(async () => {
-  if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-});
 
 describe("doctor dual-scope diagnostics", () => {
   let env: DualScopeEnv | undefined;
@@ -40,7 +30,7 @@ describe("doctor dual-scope diagnostics", () => {
     "doctor passes all checks on healthy dual-scope installation",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
 
       const { exitCode, stdout } = await runCLI(["doctor"], env.projectDir, {
         env: { HOME: env.fakeHome },
@@ -62,7 +52,7 @@ describe("doctor dual-scope diagnostics", () => {
     "doctor detects missing agent file in dual-scope",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
 
       // Delete the api-developer agent file from the project scope
       const agentFile = path.join(env.projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
@@ -90,7 +80,7 @@ describe("doctor dual-scope diagnostics", () => {
     "doctor names a skill directory nothing here installed in dual-scope",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(sourceDir, sourceTempDir);
+      env = await createDualScopeEnv(E2E_SOURCE);
 
       // Create an orphan skill directory not referenced in config
       const orphanDir = path.join(env.projectDir, DIRS.CLAUDE, DIRS.SKILLS, "orphan-skill");

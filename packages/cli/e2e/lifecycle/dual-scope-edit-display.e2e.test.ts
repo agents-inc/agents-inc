@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -31,16 +31,11 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 describe("dual-scope edit lifecycle -- display and locking", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
@@ -51,10 +46,6 @@ describe("dual-scope edit lifecycle -- display and locking", () => {
     }
   });
 
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
-
   it(
     "Edit shows global items as locked, project items as editable",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -63,12 +54,12 @@ describe("dual-scope edit lifecycle -- display and locking", () => {
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
 
       // Phase C: Edit from project dir -- navigate through without changes
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

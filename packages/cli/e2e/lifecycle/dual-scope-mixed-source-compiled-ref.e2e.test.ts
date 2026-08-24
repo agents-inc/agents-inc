@@ -1,7 +1,7 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
@@ -94,19 +94,9 @@ async function seedScope(
 }
 
 describe("dual-scope mixed-source compiled agent ref format", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let tempDir: string | undefined;
 
@@ -135,7 +125,7 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
           stack: globalStack,
           projects: [projectDir],
         },
-        sourceDir,
+        E2E_SOURCE.sourceDir,
       );
 
       // Project override: global tombstone FIRST (production config-writer order),
@@ -151,7 +141,7 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
           agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
           stack: projectStack,
         },
-        sourceDir,
+        E2E_SOURCE.sourceDir,
       );
 
       // The global agent is compiled by a run in the GLOBAL context: a compile
@@ -213,7 +203,7 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
           stack: globalStack,
           projects: [projectDir],
         },
-        sourceDir,
+        E2E_SOURCE.sourceDir,
       );
 
       // Project override: global tombstone FIRST (ejected), active project entry
@@ -229,7 +219,7 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
           agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "project" }),
           stack: projectStack,
         },
-        sourceDir,
+        E2E_SOURCE.sourceDir,
       );
 
       // The global agent is compiled by a run in the GLOBAL context: a compile

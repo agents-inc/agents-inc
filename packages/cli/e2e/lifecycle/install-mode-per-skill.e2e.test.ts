@@ -78,7 +78,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
         // collapse onto projectDir (every assertion below reads it).
         // Phase 1: Init in eject mode using page objects
         const initWizard = await InitWizard.launchInGlobal({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
         });
 
@@ -97,7 +97,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
         // Phase 2: Edit -- switch ONLY the first skill to plugin mode.
         editWizard = await EditWizard.launchInGlobal({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 

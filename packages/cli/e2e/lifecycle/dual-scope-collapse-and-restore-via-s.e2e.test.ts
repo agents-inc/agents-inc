@@ -1,11 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
-import {
-  cleanupTempDir,
-  configTsPath,
-  ensureBinaryExists,
-  readTestFile,
-} from "../helpers/test-utils.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { configTsPath, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { TIMEOUTS } from "../pages/constants.js";
@@ -53,41 +48,27 @@ import {
  *   global react install -> `s` G->P (dual-scope) -> `s` P->G collapse -> `[G]`.
  * Returns after asserting the collapsed config is a single inherited-global entry.
  */
-async function collapseToInheritedGlobal(
-  projectDir: string,
-  fakeHome: string,
-  sourceDir: string,
-  sourceTempDir: string,
-): Promise<void> {
+async function collapseToInheritedGlobal(projectDir: string, fakeHome: string): Promise<void> {
   // `s` G->P: produces the persisted dual-scope pair.
-  await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+  await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
   expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
     { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
     { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
   ]);
 
   // `s` again: collapse the dual-scope pair to a single inherited-global entry.
-  await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+  await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
   expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
     { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
   ]);
 }
 
 describe("dual-scope collapse and restoration driven by `s`", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -98,17 +79,16 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
     "collapses a persisted [P][G] to a single inherited-global [G] on `s`",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
-      await collapseToInheritedGlobal(projectDir, fakeHome, sourceDir, sourceTempDir);
+      await collapseToInheritedGlobal(projectDir, fakeHome);
 
       // Re-open: the collapsed row renders a single `G` badge (inherited-global).
       const collapsedBadges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
       expect(collapsedBadges).toStrictEqual(["G"]);
@@ -125,10 +105,10 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
     "spacebar is a no-op on the collapsed [G] row while `s` restores it to a fresh [P][G] pair",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
-      await collapseToInheritedGlobal(projectDir, fakeHome, sourceDir, sourceTempDir);
+      await collapseToInheritedGlobal(projectDir, fakeHome);
 
       // (a) Spacebar on the collapsed inherited-global `[G]` row is a no-op: a
       // pure global-inherited row has no project override to deselect. Snapshot
@@ -137,7 +117,7 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
       const projectConfigPath = configTsPath(projectDir);
       const configBeforeSpace = await readTestFile(projectConfigPath);
 
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "space");
 
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
         { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
@@ -151,8 +131,7 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
       const noopBadges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
       expect(noopBadges).toStrictEqual(["G"]);
@@ -160,7 +139,7 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
       // (b) `s` on the same collapsed `[G]` row restores project scope via the
       // standard `toggleSkillScope` G->P path — re-creating a fresh dual-scope
       // pair (active project entry + global excluded tombstone).
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
         { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
@@ -170,8 +149,7 @@ describe("dual-scope collapse and restoration driven by `s`", () => {
       const restoredBadges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
       expect(restoredBadges.slice().sort()).toStrictEqual(["G", "P"]);

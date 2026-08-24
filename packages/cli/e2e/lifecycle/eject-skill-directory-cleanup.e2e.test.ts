@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -32,19 +32,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("eject skill directory cleanup on deselect", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -66,7 +56,7 @@ describe("eject skill directory cleanup on deselect", () => {
       testTempDir = tempDir;
       // Project-only eject skill: web-testing-vitest is project-scoped and copied
       // to projectDir; web-framework-react stays global (copied to fakeHome).
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       const projectConfigPath = configTsPath(projectDir);
       const globalConfigPath = configTsPath(fakeHome);
@@ -83,7 +73,7 @@ describe("eject skill directory cleanup on deselect", () => {
       // Edit from within the project: deselect ONLY the project-scoped eject skill.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -126,7 +116,7 @@ describe("eject skill directory cleanup on deselect", () => {
       testTempDir = tempDir;
       // Global-only eject install at HOME: all skills global-scoped, copied to
       // fakeHome/.claude/skills/. No project involvement.
-      const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
       expect(phaseA.exitCode, `Global eject init failed: ${phaseA.output}`).toBe(
         EXIT_CODES.SUCCESS,
       );
@@ -144,7 +134,7 @@ describe("eject skill directory cleanup on deselect", () => {
       // Edit from the global root (projectDir === HOME): deselect the global eject skill.
       wizard = await EditWizard.launch({
         projectDir: fakeHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

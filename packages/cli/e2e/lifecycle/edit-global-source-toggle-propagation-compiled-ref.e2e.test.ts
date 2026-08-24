@@ -2,7 +2,7 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { finishWizard } from "../fixtures/dual-scope-helpers.js";
 import "../matchers/setup.js";
@@ -107,8 +107,6 @@ function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
 }
 
 describe("global-scope source change propagates to registered projects", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
 
   let fakeHome: string;
@@ -132,9 +130,6 @@ describe("global-scope source change propagates to registered projects", () => {
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
@@ -186,7 +181,7 @@ describe("global-scope source change propagates to registered projects", () => {
     // registered project.
     const wizard = await EditWizard.launch({
       projectDir: fakeHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -209,7 +204,6 @@ describe("global-scope source change propagates to registered projects", () => {
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   // Pre-state: the artifact the global toggle must invalidate is a genuine

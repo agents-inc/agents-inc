@@ -1,10 +1,13 @@
 import { realpathSync } from "fs";
 import { mkdir, rm } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
-import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
+import {
+  createE2EPluginSource,
+  type E2EPluginSource,
+} from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -31,22 +34,15 @@ import {
  * 4. Stale project paths are filtered during registration
  */
 
-let sourceDir: string;
-let sourceTempDir: string;
+let source: E2EPluginSource;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 beforeAll(async () => {
   if (!claudeAvailable) return;
   await ensureBinaryExists();
-  const source = await createE2EPluginSource();
-  sourceDir = source.sourceDir;
-  sourceTempDir = source.tempDir;
+  source = await createE2EPluginSource();
 }, TIMEOUTS.SETUP_DUAL);
-
-afterAll(async () => {
-  if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-});
 
 describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
   let tempDir: string;
@@ -73,7 +69,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
 
       // Phase A: Init from HOME (global)
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
+        source,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -83,11 +79,11 @@ describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
       await globalResult.destroy();
 
       // Phase B: Init project-1 via dashboard → Edit (global install already exists)
-      const p1 = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, project1Dir);
+      const p1 = await initProjectAllGlobal(source, fakeHome, project1Dir);
       expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Phase C: Init project-2 via dashboard → Edit
-      const p2 = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, project2Dir);
+      const p2 = await initProjectAllGlobal(source, fakeHome, project2Dir);
       expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Verification: Global config should contain projects field with both paths
@@ -125,7 +121,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       // Phase A: Init from HOME (global) — establishes the global config-types.ts
       // that the project's config-types.ts must import from.
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
+        source,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -145,7 +141,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       );
 
       // Phase B: Init project via dashboard → Edit with all skills kept at global scope.
-      const proj = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, projectDir);
+      const proj = await initProjectAllGlobal(source, fakeHome, projectDir);
       expect(proj.exitCode, "Project init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Project's config-types.ts must be the IMPORT-AND-EXTEND form, not the
@@ -216,7 +212,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       // deliberately NOT in the default stack, so adding it in Phase C is a
       // genuine global-scope addition — not a scope toggle.
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
+        source,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -227,7 +223,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       // Phase B: Project init via dashboard → Edit, keeping all skills at
       // global scope. Produces the import-and-extend project config-types.ts
       // that must survive the Phase C global edit unchanged.
-      const proj = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, projectDir);
+      const proj = await initProjectAllGlobal(source, fakeHome, projectDir);
       expect(proj.exitCode, "Project init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       const projectConfigTypesPath = configTypesTsPath(projectDir);
@@ -250,7 +246,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       // form.
       const editWizard = await EditWizard.launch({
         projectDir: fakeHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -359,7 +355,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- deregistration on uninsta
 
       // Phase A: Init from HOME (global)
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
+        source,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -368,11 +364,11 @@ describe.skipIf(!claudeAvailable)("project tracking -- deregistration on uninsta
       await globalResult.destroy();
 
       // Phase B: Init project-1 via dashboard → Edit
-      const p1 = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, project1Dir);
+      const p1 = await initProjectAllGlobal(source, fakeHome, project1Dir);
       expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Phase C: Init project-2 via dashboard → Edit
-      const p2 = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, project2Dir);
+      const p2 = await initProjectAllGlobal(source, fakeHome, project2Dir);
       expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Pre-check: Both projects should be registered
@@ -433,7 +429,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
 
       // Phase A: Init from HOME (global)
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
+        source,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -442,7 +438,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
       await globalResult.destroy();
 
       // Phase B: Init project-1 via dashboard → Edit (registers it)
-      const p1 = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, project1Dir);
+      const p1 = await initProjectAllGlobal(source, fakeHome, project1Dir);
       expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Phase C: Delete project-1's .claude-src/ directory to make it stale
@@ -450,7 +446,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
       await rm(project1ConfigDir, { recursive: true, force: true });
 
       // Phase D: Init project-2 via dashboard → Edit (triggers registration + stale filtering)
-      const p2 = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, project2Dir);
+      const p2 = await initProjectAllGlobal(source, fakeHome, project2Dir);
       expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Verification: Global config should only contain project-2, not stale project-1

@@ -7,7 +7,7 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
-import { createE2ESource, E2E_STACK_DESCRIPTION } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE, E2E_STACK_DESCRIPTION } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   createTempDir,
@@ -38,21 +38,17 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * origin said "Minimal stack for E2E testing" and the rebuild said nothing at all.
  */
 describe("a share round trip that starts from an applied stack", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let store: SeedConfigStore;
   let origin: string;
   let rebuilt: string;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
     await store.close();
-    await cleanupTempDir(sourceTempDir);
   });
 
   // Both ends are allocated per attempt rather than per file: the suite runs at `retry: 1` and
@@ -72,7 +68,7 @@ describe("a share round trip that starts from an applied stack", () => {
     "reinstalls a configuration that still describes itself as the stack did",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const install = await initGlobalWithEject(sourceDir, sourceTempDir, origin);
+      const install = await initGlobalWithEject(E2E_SOURCE, origin);
       expect(install.exitCode, `the wizard install failed: ${install.output}`).toBe(
         EXIT_CODES.SUCCESS,
       );
@@ -93,7 +89,7 @@ describe("a share round trip that starts from an applied stack", () => {
         store,
         firstElement(store.minted),
         { dir: rebuilt, globalHome: rebuilt },
-        sourceDir,
+        E2E_SOURCE.sourceDir,
       );
       expect(reinstalled.exitCode, `reinstall failed: ${reinstalled.output}`).toBe(
         EXIT_CODES.SUCCESS,

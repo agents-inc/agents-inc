@@ -1,8 +1,8 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -44,19 +44,9 @@ async function readConfigArrays(projectDir: string): Promise<{
 }
 
 describe("re-edit cycles: config stability across multiple edits", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   describe("idempotent no-change edits", () => {
     let tempDir: string | undefined;
@@ -96,7 +86,6 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // eject-sourced. Without this, the wizard defaults to plugin mode and
         // hard-errors when the source has no marketplace (no silent fallback).
         const initWizard = await InitWizard.launchInProject({
-          source: { sourceDir, tempDir: sourceTempDir },
           projectDir,
           globalHome: sharedHome,
         });
@@ -129,7 +118,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         const edit1Wizard = await EditWizard.launchInProject({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           globalHome: sharedHome,
         });
         const edit1Result = await edit1Wizard.passThrough();
@@ -164,7 +153,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         const edit2Wizard = await EditWizard.launchInProject({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           globalHome: sharedHome,
         });
         const edit2Result = await edit2Wizard.passThrough();
@@ -263,7 +252,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         const edit1Wizard = await EditWizard.launchInProject({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           globalHome: sharedHome,
           ...TERMINAL_SIZE.TALL,
         });
@@ -325,7 +314,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         const edit2Wizard = await EditWizard.launchInProject({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           globalHome: sharedHome,
           ...TERMINAL_SIZE.TALL,
         });

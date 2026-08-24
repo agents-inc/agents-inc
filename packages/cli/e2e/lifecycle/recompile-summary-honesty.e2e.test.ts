@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
@@ -32,20 +32,11 @@ import {
  */
 
 describe("recompile summary distinguishes rewritten agents from unchanged ones", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -60,7 +51,7 @@ describe("recompile summary distinguishes rewritten agents from unchanged ones",
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
       expect(phaseA.exitCode, `global init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const globalAgentsBefore = await readTreeSnapshot(agentsPath(fakeHome));
@@ -75,7 +66,7 @@ describe("recompile summary distinguishes rewritten agents from unchanged ones",
 
       // Setting a project up over that install writes a config and recompiles,
       // but changes no roster — so every agent it recompiles is already correct.
-      const phaseB = await initProjectAllGlobal(sourceDir, sourceTempDir, fakeHome, projectDir);
+      const phaseB = await initProjectAllGlobal(E2E_SOURCE, fakeHome, projectDir);
       expect(phaseB.exitCode, `project setup failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
       expect(phaseB.output, "the run must reach the recompile it is being judged on").toContain(
         STEP_TEXT.EDIT_UNCHANGED,

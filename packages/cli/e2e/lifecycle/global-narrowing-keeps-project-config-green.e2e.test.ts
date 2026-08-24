@@ -1,8 +1,8 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -72,13 +72,10 @@ function claudeSrcDir(dir: string): string {
  * of its own, and therefore entirely at the mercy of the global unions.
  */
 async function initProjectWithGlobalSkills(options: {
-  sourceDir: string;
-  sourceTempDir: string;
   projectDir: string;
   globalHome: string;
 }): Promise<{ exitCode: number; output: string }> {
   const wizard = await InitWizard.launchInProject({
-    source: { sourceDir: options.sourceDir, tempDir: options.sourceTempDir },
     projectDir: options.projectDir,
     globalHome: options.globalHome,
     ...TERMINAL_SIZE.TALL,
@@ -98,14 +95,12 @@ async function initProjectWithGlobalSkills(options: {
  * entry — a project-scope edit never narrows the global config.
  */
 async function editGlobalRootDeselecting(options: {
-  sourceDir: string;
-  sourceTempDir: string;
   globalHome: string;
   skillLabel: string;
 }): Promise<{ exitCode: number; output: string }> {
   const wizard = await EditWizard.launch({
     projectDir: options.globalHome,
-    source: { sourceDir: options.sourceDir, tempDir: options.sourceTempDir },
+    source: E2E_SOURCE,
     env: { HOME: options.globalHome },
     ...TERMINAL_SIZE.TALL,
   });
@@ -149,20 +144,11 @@ async function unregisterProjects(globalHome: string): Promise<void> {
 }
 
 describe("a global-scope narrowing keeps an untouched project's config.ts type-checking", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -179,8 +165,6 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
 
       // Phase 1 — a project install whose skills all default to global scope.
       const install = await initProjectWithGlobalSkills({
-        sourceDir,
-        sourceTempDir,
         projectDir,
         globalHome: fakeHome,
       });
@@ -206,8 +190,6 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
 
       // Phase 2 — a global-scope edit that narrows the global unions.
       const edit = await editGlobalRootDeselecting({
-        sourceDir,
-        sourceTempDir,
         globalHome: fakeHome,
         skillLabel: NARROWED_SKILL.display,
       });

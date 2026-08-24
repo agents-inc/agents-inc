@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -34,19 +34,9 @@ const claudeAvailable = await isClaudeCLIAvailable();
  */
 
 describe("dual-scope edit lifecycle -- agent content and config integrity", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string;
   let fakeHome: string;
@@ -57,7 +47,7 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
     testTempDir = tempDir;
     fakeHome = fh;
     projectDir = pd;
-    await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+    await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
   });
 
   afterEach(async () => {
@@ -184,7 +174,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Phase A: Init global (completeWithDefaults — the fixture marketplace is the source)
-      const phaseA = await initGlobal(pluginFixture.sourceDir, pluginFixture.tempDir, fakeHome);
+      const phaseA = await initGlobal(pluginFixture, fakeHome);
       await expectPhaseSuccess(
         { project: { dir: fakeHome }, exitCode: phaseA.exitCode },
         {
@@ -217,12 +207,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
       ]);
 
       // Phase B: Init project with scope toggling (eject for project-scoped skills)
-      const phaseB = await initProject(
-        pluginFixture.sourceDir,
-        pluginFixture.tempDir,
-        fakeHome,
-        projectDir,
-      );
+      const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
       await expectPhaseSuccess(
         { project: { dir: projectDir }, exitCode: phaseB.exitCode },
         {
@@ -280,19 +265,9 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
 });
 
 describe("dual-scope edit lifecycle -- eject scope toggle copies skill to project", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string;
   let fakeHome: string;
@@ -313,7 +288,7 @@ describe("dual-scope edit lifecycle -- eject scope toggle copies skill to projec
     "Globally-ejected skill toggled to project scope exists at both paths",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
 
       // Assert: api-framework-hono exists at both project and global paths
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.hono.id);
@@ -335,19 +310,9 @@ describe("dual-scope edit lifecycle -- eject scope toggle copies skill to projec
 });
 
 describe("dual-scope edit lifecycle -- stack field preserves selected agents", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string;
   let fakeHome: string;
@@ -367,7 +332,7 @@ describe("dual-scope edit lifecycle -- stack field preserves selected agents", (
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Phase A: Global init with eject (all agents selected by default)
-      const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
       expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Load config.ts structurally and read the stack's agent keys
@@ -386,7 +351,7 @@ describe("dual-scope edit lifecycle -- stack field preserves selected agents", (
       // Phase B: Edit wizard passthrough (no changes)
       const wizard = await EditWizard.launch({
         projectDir: fakeHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

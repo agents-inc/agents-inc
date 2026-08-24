@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -43,19 +43,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("edit wizard — pending-removal row on the Sources tab in a global-scope edit", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let globalHome: string | undefined;
   let wizard: EditWizard | undefined;
@@ -127,7 +117,7 @@ describe("edit wizard — pending-removal row on the Sources tab in a global-sco
       // isEditingFromGlobalScope — nothing is inherited and nothing is locked.
       wizard = await EditWizard.launchInGlobal({
         projectDir: globalHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         ...TERMINAL_SIZE.TALL,
       });
 

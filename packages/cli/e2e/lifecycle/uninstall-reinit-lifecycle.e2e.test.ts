@@ -1,7 +1,7 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
@@ -31,19 +31,9 @@ import {
  * 2. Uninstall from project scope preserves the global installation
  */
 
-let sourceDir: string;
-let sourceTempDir: string;
-
 beforeAll(async () => {
   await ensureBinaryExists();
-  const source = await createE2ESource();
-  sourceDir = source.sourceDir;
-  sourceTempDir = source.tempDir;
 }, TIMEOUTS.SETUP_DUAL);
-
-afterAll(async () => {
-  if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-});
 
 describe("uninstall-reinit lifecycle", () => {
   let tempDir: string;
@@ -62,7 +52,7 @@ describe("uninstall-reinit lifecycle", () => {
       const { fakeHome } = env;
 
       // Phase A: Init global with eject mode
-      const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
       expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Verify Phase A installation exists
@@ -102,7 +92,7 @@ describe("uninstall-reinit lifecycle", () => {
       ).toBe(false);
 
       // Phase C: Re-init global with eject mode
-      const phaseC = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const phaseC = await initGlobalWithEject(E2E_SOURCE, fakeHome);
       expect(phaseC.exitCode, `Phase C re-init failed: ${phaseC.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Verify re-init produced a complete installation
@@ -146,7 +136,7 @@ describe("uninstall scope isolation", () => {
       const { fakeHome, projectDir } = env;
 
       // Setup: Dual-scope install (global + project) with eject mode
-      await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
 
       // Snapshot global state before project uninstall
       const globalConfigPath = configTsPath(fakeHome);

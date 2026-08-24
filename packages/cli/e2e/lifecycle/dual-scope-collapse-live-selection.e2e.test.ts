@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -37,20 +37,11 @@ import {
  */
 
 describe("dual-scope `s` collapse — live in-session selected state", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -61,11 +52,11 @@ describe("dual-scope `s` collapse — live in-session selected state", () => {
     "keeps react selected (still active via global) in the same session after the `s` collapse",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Establish the persisted dual-scope pair via a real `s` toggle + save.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
         { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
         { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
@@ -74,7 +65,7 @@ describe("dual-scope `s` collapse — live in-session selected state", () => {
       // Re-open and act on the LIVE session — do NOT save.
       const wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

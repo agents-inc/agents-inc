@@ -1,4 +1,10 @@
 import path from "path";
+import {
+  buildSharedSource,
+  removeSharedSource,
+} from "../src/cli/lib/__tests__/helpers/shared-source.js";
+import { buildPluginSourceInto } from "./helpers/create-e2e-plugin-source.js";
+import { buildSharedE2ESourceInto } from "./helpers/create-e2e-source.js";
 import { fileURLToPath } from "url";
 
 import { assertDistIsFresh } from "../src/cli/lib/testing/dist-staleness.js";
@@ -35,10 +41,12 @@ const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
  *   depended on it".
  *
  * A refusal rather than a rebuild, following {@link assertDistIsFresh}'s own posture: a suite
- * that quietly rebuilds hides the fact that someone ran it against the wrong tree. `pretest:e2e`
- * and `pretest:smoke` already build for `bun run test:e2e` and `bun run test:smoke`; this is the
- * half no script hook can reach, because `npx vitest --config e2e/vitest.config.ts` bypasses
- * both and is how most scoped runs here are actually made.
+ * that quietly rebuilds hides the fact that someone ran it against the wrong tree. `turbo` orders
+ * a build ahead of `test:e2e` and `test:smoke` through `dependsOn`, and since 2026-08-23 that is
+ * the only thing that does — the `pretest:e2e` and `pretest:smoke` hooks were removed because
+ * turbo runs those tasks concurrently and each hook's build raced the ordered one. So this refusal
+ * now covers a bare `bun run test:e2e` as well as `npx vitest --config e2e/vitest.config.ts`,
+ * which was always outside any script hook and is how most scoped runs here are made.
  *
  * Here rather than in `setup.ts` because the question is asked once per RUN, before a spec is
  * collected, and the scan behind it walks two source trees — where `setup.ts` is evaluated once
@@ -53,7 +61,21 @@ const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 export default async function setup() {
   await assertDistIsFresh(CLI_ROOT);
 
+  // The two shared fixtures, built once here and frozen together: the plugin-capable tree at
+  // `fixture/` and the plain, marketplace-less one at `plain/` ({@link E2E_SOURCE}). One root, one
+  // freeze, one teardown — they differ only by the two builds run over the second, and a spec
+  // picks between them by which install mode its subject is. ~1.65s once instead of 51 times,
+  // about 84 seconds a run. Frozen with `chmod -R a-w` so a spec that writes into a source it does
+  // not own fails AT THE WRITE rather than corrupting every spec scheduled after it —
+  // `src/cli/lib/__tests__/helpers/shared-source.ts` carries the full reasoning.
+  await buildSharedSource(async (root) => {
+    await buildPluginSourceInto(root);
+    await buildSharedE2ESourceInto(root);
+  });
+
   return async () => {
+    await removeSharedSource();
+
     let marketplaces;
     try {
       marketplaces = await claudePluginMarketplaceList();

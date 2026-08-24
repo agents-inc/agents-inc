@@ -91,7 +91,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       // ================================================================
 
       const initWizard = await InitWizard.launchInGlobal({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         projectDir,
         ...TERMINAL_SIZE.TALL,
       });
@@ -129,7 +129,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
 
       const editWizard = await EditWizard.launchInGlobal({
         projectDir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         ...TERMINAL_SIZE.TALL,
       });
       activeWizard = editWizard;

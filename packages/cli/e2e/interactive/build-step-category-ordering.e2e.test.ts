@@ -33,7 +33,7 @@ describe("build step — deterministic category ordering", () => {
 
   it("renders web-framework options alphabetically by displayName (react before Vue)", async () => {
     wizard = await InitWizard.launch({
-      source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+      source,
     });
 
     const domain = await wizard.stack.selectFirstStack();

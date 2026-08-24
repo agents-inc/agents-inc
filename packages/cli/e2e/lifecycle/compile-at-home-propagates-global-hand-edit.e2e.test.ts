@@ -1,9 +1,9 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
@@ -86,20 +86,11 @@ async function removeGlobalSkillByHand(globalHome: string, skillId: string): Pro
 }
 
 describe("compile at the home directory fans a hand-edited global config out to registered projects", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -116,7 +107,7 @@ describe("compile at the home directory fans a hand-edited global config out to 
 
       // Phase 1 — a project install that registers itself, owns api-developer at
       // project scope, and inherits api-framework-hono from global scope.
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       const projectAgentMd = path.join(agentsPath(projectDir), `${PROJECT_AGENT.name}.md`);
 

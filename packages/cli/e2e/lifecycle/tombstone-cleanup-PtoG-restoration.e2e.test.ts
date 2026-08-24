@@ -1,8 +1,7 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
-  cleanupTempDir,
   configTsPath,
   directoryExists,
   ensureBinaryExists,
@@ -53,20 +52,11 @@ import {
  */
 
 describe("edit wizard — tombstone cleanup after P→G restoration", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -78,16 +68,16 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install all E2E skills globally, bootstrap an all-global project.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Phase 2: toggle react G→P via real `cc edit`. Produces the dual-scope
       // state in project config (the dual-scope shape, validated by its own suite).
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Phase 3: toggle react P→G. The failure point this suite guards — must remove the
       // tombstone and collapse to a single global entry.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Config assertion: exactly ONE react entry, scope global, no tombstone.
       const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
@@ -124,8 +114,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       const badges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
       expect(badges).toStrictEqual(["G"]);
@@ -143,7 +132,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install globally. Assert pure global state, no tombstone.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       const projectConfigPath = configTsPath(projectDir);
@@ -162,7 +151,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       expect(await directoryExists(projectSkillDir)).toBe(false);
 
       // Phase 2: toggle G→P. Assert active project + global tombstone.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       const entriesPhase2 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       const activePhase2 = entriesPhase2.find((entry) => entry.excluded !== true);
@@ -177,7 +166,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
 
       // Phase 3: toggle P→G. Assert ONLY global active, no tombstone, no
       // project entry. This is the failure point this suite guards.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       const entriesPhase3 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
       expect(entriesPhase3).toHaveLength(1);
@@ -201,17 +190,17 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // Phase 1: install globally.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Phase 2: toggle G→P.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Phase 3: no-op passthrough edit — MUST NOT leave orphaned state that
       // would interfere with the subsequent P→G toggle.
       const passThroughWizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -224,7 +213,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       }
 
       // Phase 4: toggle P→G. Must produce the same clean end-state as Scenario A.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Config assertion: exactly ONE react entry at global scope, no tombstone.
       const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
@@ -254,8 +243,7 @@ describe("edit wizard — tombstone cleanup after P→G restoration", () => {
       const badges = await readSkillBadgesViaEdit(
         projectDir,
         fakeHome,
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         E2E_SKILL.react.display,
       );
       expect(badges).toStrictEqual(["G"]);

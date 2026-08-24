@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -32,19 +32,9 @@ import {
  */
 
 describe("init-edit-compile roundtrip lifecycle", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string;
   let fakeHome: string;
@@ -68,7 +58,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       projectDir = env.projectDir;
 
       // Phase A: Global init with eject
-      const phaseA = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
 
       expect(phaseA.exitCode, `Phase A failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
@@ -87,7 +77,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       expect(await directoryExists(globalAgentsDir), "Global agents dir must exist").toBe(true);
 
       // Phase B: Project init with scope toggle
-      const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir);
+      const phaseB = await initProject(E2E_SOURCE, fakeHome, projectDir);
 
       expect(phaseB.exitCode, `Phase B failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
@@ -119,7 +109,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       // Phase C: Edit wizard -- toggle web-framework-react scope to project
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

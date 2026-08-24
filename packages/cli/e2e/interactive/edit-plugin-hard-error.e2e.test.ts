@@ -118,7 +118,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
           // local source without marketplace.json — the resolution failure point
-          source: { sourceDir: localSource.sourceDir, tempDir: localSource.tempDir },
+          source: localSource,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -184,7 +184,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launch({
-          source: { sourceDir: localSource.sourceDir, tempDir: localSource.tempDir },
+          source: localSource,
         });
         // Step through the wizard manually so we can confirm without waiting
         // for a success banner that will never arrive.

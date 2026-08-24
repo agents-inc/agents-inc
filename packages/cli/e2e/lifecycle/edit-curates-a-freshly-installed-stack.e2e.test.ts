@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { finishWizard, readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   completeWithLocalSources,
@@ -71,8 +71,6 @@ const CURATED_SKILL_IDS = [
 const SKILL_ID_ALIAS = "SkillId";
 
 describe("an installed stack's picks are curated by a later edit, from nothing", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let globalHome: string;
 
   let installedSkillIds: string[];
@@ -87,14 +85,10 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
     globalHome = await createTempDir();
 
     // Phase A — pick the stack at the stack step and install it, eject mode.
     const installWizard = await InitWizard.launchInGlobal({
-      source: { sourceDir, tempDir: sourceTempDir },
       projectDir: globalHome,
       ...TERMINAL_SIZE.TALL,
     });
@@ -107,7 +101,7 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
     // Phase B — curate that stack: drop its `web-testing` pick, add the spare.
     const editWizard = await EditWizard.launchInGlobal({
       projectDir: globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       ...TERMINAL_SIZE.TALL,
     });
     try {
@@ -149,7 +143,6 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
 
   afterAll(async () => {
     if (globalHome) await cleanupTempDir(globalHome);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   // The subject guard for everything below: the skill the edit deselects must have been

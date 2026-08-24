@@ -54,7 +54,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         // Select E2E Test Stack
@@ -87,7 +87,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
   describe("agent deselection", () => {
     it("should not compile a deselected agent", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
       wizard = await InitWizard.launchInProject({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
       });
 
       // Select stack, accept domains, advance through build step
@@ -135,7 +135,7 @@ describe.skipIf(!claudeAvailable)("init wizard — interactions", () => {
         const { fakeHome, projectDir } = env;
 
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
           env: { HOME: fakeHome },
         });

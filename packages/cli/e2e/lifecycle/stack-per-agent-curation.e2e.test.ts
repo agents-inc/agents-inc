@@ -1,7 +1,7 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -46,19 +46,9 @@ import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
  */
 
 describe("stack per-agent curation survives edit", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   describe("hand-edited per-agent removal", () => {
     let tempDir: string | undefined;
@@ -115,7 +105,7 @@ describe("stack per-agent curation survives edit", () => {
 
         const wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -273,7 +263,7 @@ describe("stack per-agent curation survives edit", () => {
 
         const wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -393,7 +383,7 @@ describe("stack per-agent curation survives edit", () => {
 
         const wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir, tempDir: sourceTempDir },
+          source: E2E_SOURCE,
           ...TERMINAL_SIZE.TALL,
           env: { HOME: globalHomeDir },
         });

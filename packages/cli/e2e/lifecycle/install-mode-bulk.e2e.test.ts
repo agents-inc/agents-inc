@@ -78,7 +78,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
         // Phase 1: Init in eject mode using page objects
         const initWizard = await InitWizard.launchInGlobal({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
         });
 
@@ -98,7 +98,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         // Phase 2: Edit -- switch every skill to plugin, one row at a time
         const editWizard = await EditWizard.launchInGlobal({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         const editSources = await editWizard.build.passThroughAllDomains();
@@ -114,8 +114,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         });
 
         const rawOutput = editResult.rawOutput;
-        expect(rawOutput).toContain(STEP_TEXT.SWITCHING_SKILLS_PREFIX);
-        expect(rawOutput).toContain(`to `);
+        expect(rawOutput).toContain(
+          `${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
+        );
 
         // The narration is what the run SAID; the install mode is what it DID, and
         // that is this file's subject. A plugin-mode skill is registered in
@@ -143,7 +144,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
         // Phase 1: Init in plugin mode
         const initWizard = await InitWizard.launchInGlobal({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
         });
         const initResult = await initWizard.completeWithDefaults();
@@ -158,7 +159,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         // Phase 2: Edit -- switch every skill to eject, one row at a time
         const editWizard = await EditWizard.launchInGlobal({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         const editSources = await editWizard.build.passThroughAllDomains();
@@ -174,8 +175,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         });
 
         const rawOutput = editResult.rawOutput;
-        expect(rawOutput).toContain(STEP_TEXT.SWITCHING_SKILLS_PREFIX);
-        expect(rawOutput).toContain(`to `);
+        expect(rawOutput).toContain(
+          `${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
+        );
 
         // Same reasoning as the sibling above, in the other direction: the ejected
         // copy is back on disk and the plugin registration is gone.

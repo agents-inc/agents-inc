@@ -58,7 +58,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
       wizard = await EditWizard.launch({
         projectDir: project.dir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
       });
 
       const result = await wizard.completeFromBuild();
@@ -94,7 +94,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         const result = await wizard.completeFromBuild();
@@ -120,7 +120,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         const result = await wizard.completeFromBuild();
@@ -146,7 +146,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -188,7 +188,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         const result = await wizard.completeFromBuild();
@@ -218,7 +218,7 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
 
       wizard = await EditWizard.launch({
         projectDir: project.dir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
       });
 
       // abortAndDestroy pins the exit code to CANCELLED itself; this test's own

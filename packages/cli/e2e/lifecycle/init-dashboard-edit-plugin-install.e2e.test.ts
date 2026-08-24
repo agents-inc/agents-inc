@@ -97,7 +97,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         tempDir = env.tempDir;
         const { fakeHome, projectDir } = env;
 
-        const phaseA = await initGlobal(fixture.sourceDir, fixture.tempDir, fakeHome);
+        const phaseA = await initGlobal(fixture, fakeHome);
         expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
         const baselinePluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
@@ -108,7 +108,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
 
         dashboard = await InitWizard.launchForDashboard({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           env: { HOME: fakeHome },
         });
         await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -203,7 +203,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         // asserted where it lands.
         wizard = await EditWizard.launchInGlobal({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -264,7 +264,7 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
         // asserted where it lands.
         wizard = await EditWizard.launchInGlobal({
           projectDir: project.dir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 

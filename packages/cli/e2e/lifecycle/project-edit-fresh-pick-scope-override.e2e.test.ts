@@ -1,7 +1,7 @@
 import { realpathSync } from "fs";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -45,20 +45,11 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 describe("fresh pick during project setup defaults to global and overrides to project", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -76,8 +67,7 @@ describe("fresh pick during project setup defaults to global and overrides to pr
       // Phase A — global install WITHOUT vitest, so picking it later is a
       // genuine addition rather than a re-selection of an inherited install.
       const phaseA = await initGlobalWithEjectWithoutSkill(
-        sourceDir,
-        sourceTempDir,
+        E2E_SOURCE,
         fakeHome,
         E2E_SKILL.vitest.display,
       );
@@ -98,7 +88,6 @@ describe("fresh pick during project setup defaults to global and overrides to pr
       // the global install lacks and overriding its scope.
       const dashboard = await InitWizard.launchForDashboard({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
         env: { HOME: fakeHome },
       });
 

@@ -1,6 +1,6 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
   cleanupTempDir,
@@ -36,21 +36,12 @@ import "../matchers/setup.js";
  */
 
 describe("project config does not accumulate global skills after edit", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempHOME: string | undefined;
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -129,7 +120,7 @@ describe("project config does not accumulate global skills after edit", () => {
       // --- Action: run edit wizard, navigate through without changes ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: tempHOME },
       });
 

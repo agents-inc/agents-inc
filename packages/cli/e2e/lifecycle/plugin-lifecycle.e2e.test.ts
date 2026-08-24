@@ -63,7 +63,7 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       // follow-up uninstall command (which resolves its target from cwd) finds
       // the same content.
       const wizard = await InitWizard.launchInGlobal({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         projectDir,
       });
       const initResult = await wizard.completeWithDefaults();

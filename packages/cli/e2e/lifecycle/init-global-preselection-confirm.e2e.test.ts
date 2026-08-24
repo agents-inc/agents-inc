@@ -74,7 +74,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
 
       // Phase 1: Init from HOME -- create global installation with React
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -87,7 +87,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
       // build step with React pre-selected from global.
       const dashboard = await InitWizard.launchForDashboard({
         projectDir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         env: { HOME: fakeHome },
       });
 
@@ -140,7 +140,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
       const { fakeHome, projectDir } = env;
 
       const globalWizard = await InitWizard.launch({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -150,7 +150,7 @@ describe.skipIf(!claudeAvailable)("init global preselection confirm step", () =>
 
       const dashboard = await InitWizard.launchForDashboard({
         projectDir,
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
         env: { HOME: fakeHome },
       });
 

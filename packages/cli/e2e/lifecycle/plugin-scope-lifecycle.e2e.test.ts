@@ -79,7 +79,7 @@ describe.skipIf(!claudeAvailable)(
         await createPermissionsFile(projectDir);
 
         wizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,

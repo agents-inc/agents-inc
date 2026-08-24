@@ -73,7 +73,7 @@ describe("the sub-agent unions an install generates", () => {
       testTempDir = env.tempDir;
       const home = env.fakeHome;
 
-      const installed = await initGlobalWithEject(source.sourceDir, source.tempDir, home);
+      const installed = await initGlobalWithEject(source, home);
       expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const typesAfterInit = await readTestFile(configTypesTsPath(home));

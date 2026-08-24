@@ -147,7 +147,7 @@ describe("edit — why an unresolvable entry went", () => {
 
         wizard = await EditWizard.launch({
           projectDir: project.dir,
-          source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+          source: pluginFixture,
           ...TERMINAL_SIZE.TALL,
         });
 

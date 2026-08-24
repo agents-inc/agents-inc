@@ -44,7 +44,7 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
     projectDir = env.projectDir;
 
     const wizard = await InitWizard.launch({
-      source: { sourceDir: source.sourceDir, tempDir: source.tempDir },
+      source,
       projectDir,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
@@ -97,8 +97,23 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
 
     // Serialized rather than walked: the claim is that the id appears in no
     // agent's catalogue at all, which needs no structure to state.
-    expect(JSON.stringify(projectStack ?? {})).not.toContain(E2E_SKILL.react.id);
-    expect(JSON.stringify(globalStack ?? {})).not.toContain(E2E_SKILL.react.id);
+    //
+    // The two `expect(...).toBeDefined()` lines are the control, and without them the negatives
+    // below pass for free: `JSON.stringify(undefined ?? {})` is `"{}"`, which contains no id
+    // whatever the product did, so an install that wrote no stack at all satisfied them. The
+    // fallback is gone for the same reason — an absent stack must fail here, not be excused.
+    // The project side is the stronger claim and the one this journey is about: a skill that
+    // reaches no sub-agent leaves NO project stack at all, not one that merely omits the id.
+    // `JSON.stringify(projectStack ?? {})` said the weaker thing and could not fail — `"{}"`
+    // contains no id however the run went — so the absence it was written for went unasserted.
+    expect(projectStack).toBeUndefined();
+
+    // The global side really is populated, so its negative discriminates. Asserted as the
+    // serialised form because the claim is that the id appears in NO agent's catalogue, which
+    // needs no structure to state — with the control above it, since an absent global stack
+    // would satisfy this for free too.
+    expect(globalStack).toBeDefined();
+    expect(JSON.stringify(globalStack)).not.toContain(E2E_SKILL.react.id);
   });
 
   it("says so, naming the skill", () => {

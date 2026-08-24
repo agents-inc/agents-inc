@@ -87,7 +87,7 @@ describe("init wizard — stack flow", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
+          source: pluginSource!,
         });
         const result = await wizard.completeWithDefaults();
 
@@ -114,7 +114,7 @@ describe("init wizard — stack flow", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
+          source: pluginSource!,
         });
         const result = await wizard.completeWithDefaults();
 

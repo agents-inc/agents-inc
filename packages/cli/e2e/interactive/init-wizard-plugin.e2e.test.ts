@@ -61,7 +61,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
 
@@ -86,7 +86,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
 
@@ -104,7 +104,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
     it("should compile agents", { timeout: TIMEOUTS.PLUGIN_TEST }, async () => {
       wizard = await InitWizard.launchInProject({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
       });
       const result = await wizard.completeWithDefaults();
 
@@ -119,7 +119,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
         await result.exitCode;
@@ -142,7 +142,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
 
@@ -199,7 +199,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
         wizard = await InitWizard.launch({
           projectDir,
-          source: { sourceDir: localSource.sourceDir, tempDir: localSource.tempDir },
+          source: localSource,
         });
 
         const settingsPath = path.join(projectDir, DIRS.CLAUDE, FILES.SETTINGS_JSON);
@@ -240,7 +240,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
         const result = await wizard.completeWithDefaults();
 
@@ -265,7 +265,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         // Navigate through wizard, toggling first skill to project scope
@@ -302,7 +302,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         wizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
         });
 
         // Navigate through wizard, set one skill to local in sources step

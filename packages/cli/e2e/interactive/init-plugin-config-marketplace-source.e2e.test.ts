@@ -50,7 +50,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       wizard = await InitWizard.launchInProject({
-        source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+        source: fixture,
       });
       const result = await wizard.completeWithDefaults();
 

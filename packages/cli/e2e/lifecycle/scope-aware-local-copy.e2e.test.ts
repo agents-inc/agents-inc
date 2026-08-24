@@ -70,7 +70,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         const { fakeHome, projectDir } = env;
 
         initWizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
@@ -154,7 +154,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         // Phase 1: Init in plugin mode -- all skills global scope, plugin source
         initWizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir: fakeHome,
           env: { HOME: fakeHome },
         });
@@ -172,7 +172,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         // Phase 2: Edit the global install -- switch every skill to local, one row at a time
         editWizard = await EditWizard.launchInGlobal({
           projectDir: fakeHome,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 
@@ -210,7 +210,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
 
         // Phase 1: Init in eject mode -- all skills global scope
         initWizard = await InitWizard.launch({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir: fakeHome,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
@@ -233,7 +233,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         // Phase 2: Edit the global install -- switch every skill to plugin, one row at a time
         editWizard = await EditWizard.launchInGlobal({
           projectDir: fakeHome,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           ...TERMINAL_SIZE.TALL,
         });
 

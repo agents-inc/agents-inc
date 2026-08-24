@@ -97,7 +97,7 @@ describe.skipIf(!claudeAvailable)(
           // are editable, and all content + config collapse onto projectDir
           // (every assertion below reads projectDir / initResult.project).
           initWizard = await InitWizard.launchInGlobal({
-            source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
+            source: pluginSource!,
             projectDir,
           });
           const initResult = await initWizard.completeWithDefaults();
@@ -118,7 +118,7 @@ describe.skipIf(!claudeAvailable)(
           // plugin.
           editWizard = await EditWizard.launchInGlobal({
             projectDir,
-            source: { sourceDir: pluginSource!.sourceDir, tempDir: pluginSource!.tempDir },
+            source: pluginSource!,
             ...TERMINAL_SIZE.TALL,
           });
 

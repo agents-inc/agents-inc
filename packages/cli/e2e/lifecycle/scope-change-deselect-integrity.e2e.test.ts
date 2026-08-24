@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -47,19 +47,9 @@ import "../matchers/setup.js";
  */
 
 describe("scope change deselect integrity", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string | undefined;
   let env: DualScopeEnv | undefined;
@@ -85,9 +75,9 @@ describe("scope change deselect integrity", () => {
       // [P][G] pair on react: its project half is the project's own to drop, and
       // `web-framework` holds two fixture skills, so neither the global lock nor
       // the exclusive-category guard declines it.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
@@ -101,7 +91,7 @@ describe("scope change deselect integrity", () => {
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -140,7 +130,7 @@ describe("scope change deselect integrity", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global-only env (all skills at global scope)
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
 
       // Snapshot global config before edit
       const globalConfigPath = configTsPath(env.fakeHome);
@@ -149,7 +139,7 @@ describe("scope change deselect integrity", () => {
       // Launch edit wizard from project scope, pass through without changes
       wizard = await EditWizard.launch({
         projectDir: env.projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: env.fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -199,7 +189,7 @@ describe("scope change deselect integrity", () => {
       // Setup: dual-scope env (global web skills + project hono)
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
-      await setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
 
       // Snapshot global skills before edit
       const globalSkillsBefore = (await loadConfigOrFail(fakeHome)).skills;
@@ -207,7 +197,7 @@ describe("scope change deselect integrity", () => {
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

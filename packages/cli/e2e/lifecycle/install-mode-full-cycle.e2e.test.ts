@@ -64,12 +64,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      await setupDualScopeWithEject(
-        pluginFixture.sourceDir,
-        pluginFixture.tempDir,
-        fakeHome,
-        projectDir,
-      );
+      await setupDualScopeWithEject(pluginFixture, fakeHome, projectDir);
 
       // Inject marketplace into both configs to enable plugin switching
       await injectMarketplaceIntoConfig(fakeHome, pluginFixture.marketplaceName);
@@ -92,7 +87,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       // --- Phase B: Edit -- switch every EDITABLE source to plugin ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+        source: pluginFixture,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -131,7 +126,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       // --- Phase C: Edit -- switch every EDITABLE source back to local (eject) ---
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+        source: pluginFixture,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

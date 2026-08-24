@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -34,19 +34,9 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("project-only deselection integrity", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let testTempDir: string | undefined;
   let wizard: EditWizard | undefined;
@@ -66,7 +56,7 @@ describe("project-only deselection integrity", () => {
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       const projectConfigPath = configTsPath(projectDir);
       const projectTypesPath = configTypesTsPath(projectDir);
@@ -90,7 +80,7 @@ describe("project-only deselection integrity", () => {
       // Edit from within the project: deselect ONLY the project-only agent.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -141,7 +131,7 @@ describe("project-only deselection integrity", () => {
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       const projectConfigPath = configTsPath(projectDir);
       const projectTypesPath = configTypesTsPath(projectDir);
@@ -159,7 +149,7 @@ describe("project-only deselection integrity", () => {
       // Edit from within the project: deselect ONLY the project-only skill.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -207,7 +197,7 @@ describe("project-only deselection integrity", () => {
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       // Setup proof: vitest is genuinely a saved project skill before the edit, so an
       // absent Sources row later is the vanished-row bug, not a setup miss.
@@ -216,7 +206,7 @@ describe("project-only deselection integrity", () => {
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

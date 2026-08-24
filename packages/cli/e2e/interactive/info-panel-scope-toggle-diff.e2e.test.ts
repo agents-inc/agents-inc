@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { ensureBinaryExists } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -46,21 +46,12 @@ import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-va
  */
 
 describe("info panel — scope-toggle diff symmetry", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -81,7 +72,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
   ): Promise<void> {
     const toggleWizard = await EditWizard.launch({
       projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: fakeHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -113,9 +104,9 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // dual-scope indicator, not a removal) — so restoring it renders as
       // `•` (unchanged), not `+` (which would falsely tag a long-installed
       // global as newly added).
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // The P→G toggle session. Drive the wizard up to the confirm step and
       // capture the change summary BEFORE confirming — no filesystem mutation
@@ -124,7 +115,7 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // the screen and aborting with Ctrl+C leaves disk state untouched.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -171,12 +162,12 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // indicator, NOT a removal. The global install survives on
       // disk. The info panel must render Global as `•` (unchanged), not `-`
       // (which would falsely suggest the global install was removed).
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -221,14 +212,14 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // true}]` mirroring the skill case. In this session the user toggles
       // P→G which strips the tombstone — the global agent was always live,
       // so Global must render `•`, not `+` — the agent mirror of Scenario A.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
       await performAgentGlobalToProjectToggle(projectDir, fakeHome);
 
       // The P→G toggle session.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -272,13 +263,13 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // (which would falsely tag a long-installed global as newly added).
       // Build-step info panel and confirm renderer share the same component,
       // so the invariant must hold on both surfaces.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -319,14 +310,14 @@ describe("info panel — scope-toggle diff symmetry", () => {
       // The Global row (rendered from the tombstone) must show `•`, not `+`.
       // Without a user-initiated change this session, no diff prefix should
       // appear for react at all.
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
 
       // Second session — no changes — advance through to the confirm step.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

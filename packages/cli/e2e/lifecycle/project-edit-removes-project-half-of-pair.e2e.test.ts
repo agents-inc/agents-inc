@@ -1,10 +1,9 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
-  cleanupTempDir,
   configTsPath,
   configTypesTsPath,
   directoryExists,
@@ -32,7 +31,7 @@ const SCOPED_ALIASES = ["SkillId", "Category"] as const;
 
 /**
  * The project-owned half of a persisted `[P][G]` pair is the project's to drop —
- * the ruled behaviour for CLI-443. The guard that refuses changes from project
+ * the ruled behaviour. The guard that refuses changes from project
  * scope covers GLOBAL-owned halves; it must not swallow the half the project
  * itself created.
  *
@@ -45,20 +44,11 @@ const SCOPED_ALIASES = ["SkillId", "Category"] as const;
  */
 
 describe("project edit drops the project half of a dual-scope pair", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -69,12 +59,12 @@ describe("project edit drops the project half of a dual-scope pair", () => {
     "spacebar on a persisted [P][G] row removes the project half and leaves the global install whole",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
       const { fakeHome, projectDir } = env;
 
       // Seed the pair the same way a user does: `s` on an inherited global row,
       // saved through to completion.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "scope");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "setup must persist an active project entry plus a global tombstone",
@@ -100,7 +90,7 @@ describe("project edit drops the project half of a dual-scope pair", () => {
         "the global install must hold the skill before the edit — it is what must survive",
       ).toContain(E2E_SKILL.react.id);
 
-      await runEditWithFirstSkillAction(projectDir, fakeHome, sourceDir, sourceTempDir, "space");
+      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "space");
 
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),

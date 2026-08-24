@@ -1,8 +1,11 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import {
+  createE2EPluginSource,
+  type E2EPluginSource,
+} from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -67,17 +70,12 @@ async function initGlobalWithLocalSource(
 }
 
 describe("config-scope integrity -- source priority preservation", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let initWizard: InitWizard | undefined;
   let wizard: Awaited<ReturnType<typeof EditWizard.launch>> | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
@@ -90,10 +88,6 @@ describe("config-scope integrity -- source priority preservation", () => {
     }
   });
 
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
-
   it(
     "should preserve source: local after edit re-open (not overridden by primarySource)",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -104,7 +98,6 @@ describe("config-scope integrity -- source priority preservation", () => {
 
       // Phase A: Init from HOME with all sources set to local
       initWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
         projectDir: fakeHome,
         env: { HOME: fakeHome },
       });
@@ -128,7 +121,7 @@ describe("config-scope integrity -- source priority preservation", () => {
       // Phase B: Edit from HOME -- pass through without changes.
       wizard = await EditWizard.launch({
         projectDir: fakeHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -171,16 +164,11 @@ describe("config-scope integrity -- domains in global config only", () => {
 });
 
 describe("config-scope integrity -- config-types Domain type includes config.domains", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let wizard: Awaited<ReturnType<typeof EditWizard.launch>> | undefined;
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
@@ -189,10 +177,6 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
     if (tempDir) {
       await cleanupTempDir(tempDir);
     }
-  });
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it(
@@ -206,7 +190,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       await createPermissionsFile(fakeHome);
 
       // Phase A: Init from HOME with eject mode (non-plugin source, no marketplace).
-      const initResult = await initGlobalWithEject(sourceDir, sourceTempDir, fakeHome);
+      const initResult = await initGlobalWithEject(E2E_SOURCE, fakeHome);
       expect(initResult.exitCode, `Phase A init failed`).toBe(EXIT_CODES.SUCCESS);
 
       // Phase B: Manually edit the config to remove api skills while keeping
@@ -243,7 +227,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       // Phase C: Run edit from HOME -- pass through without changes.
       wizard = await EditWizard.launch({
         projectDir: fakeHome,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -287,25 +271,21 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
 describe.skipIf(!claudeAvailable)(
   "config-scope integrity -- global config includes source field",
   () => {
-    let sourceDir: string;
-    let sourceTempDir: string;
     let tempDir: string;
+    // The plugin-capable fixture, not the shared plain one: `setLocal: false` below keeps the
+    // project half in plugin mode, and a source with no `.claude-plugin/marketplace.json` makes
+    // that install refuse outright rather than quietly eject. See the `it`'s own note.
+    let pluginSource: E2EPluginSource;
 
     beforeAll(async () => {
       await ensureBinaryExists();
-      const source = await createE2EPluginSource();
-      sourceDir = source.sourceDir;
-      sourceTempDir = source.tempDir;
+      pluginSource = await createE2EPluginSource();
     }, TIMEOUTS.SETUP_DUAL);
 
     afterEach(async () => {
       if (tempDir) {
         await cleanupTempDir(tempDir);
       }
-    });
-
-    afterAll(async () => {
-      if (sourceTempDir) await cleanupTempDir(sourceTempDir);
     });
 
     /**
@@ -321,6 +301,15 @@ describe.skipIf(!claudeAvailable)(
      * effective global config the inlining writer is handed, and the global half is merged
      * onto the config Phase A already wrote. Deleting `marketplace` in
      * `cleanForEmission` is what takes it red, on the global assertion first.
+     *
+     * **The spread itself IS guarded, and not from here.** `config-generator.test.ts` ->
+     * "carries selectedDomains onto both partitions, because a project owns its own domains"
+     * holds it directly, and it is not vacuous: deleting `...config` from the project partition
+     * reddens two of that file's tests. A unit test is the better home for it than this spec
+     * could ever be — it asks `splitConfigByScope` the question, where an end-to-end run can only
+     * observe the answer through a writer that supplies the same field by another route, which is
+     * exactly why the assertions below cannot see it. Do not add an E2E for the spread on the
+     * strength of this note; the guard exists, one level down.
      */
     it(
       "should include source field in both global and project configs after scope split",
@@ -330,10 +319,10 @@ describe.skipIf(!claudeAvailable)(
         tempDir = env.tempDir;
         const { fakeHome, projectDir } = env;
 
-        const phaseA = await initGlobal(sourceDir, sourceTempDir, fakeHome);
+        const phaseA = await initGlobal(pluginSource, fakeHome);
         expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-        const phaseB = await initProject(sourceDir, sourceTempDir, fakeHome, projectDir, {
+        const phaseB = await initProject(pluginSource, fakeHome, projectDir, {
           setLocal: false,
         });
         expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
@@ -348,7 +337,7 @@ describe.skipIf(!claudeAvailable)(
         // the E2E source directory. The config writer formats it as:
         //   "marketplace": "/path/to/source",
         expect(globalConfig, "Global config must contain a top-level marketplace field").toContain(
-          `"marketplace": "${sourceDir}"`,
+          `"marketplace": "${pluginSource.sourceDir}"`,
         );
 
         // Phase D: Verify project config also includes the source field
@@ -358,7 +347,7 @@ describe.skipIf(!claudeAvailable)(
         expect(
           projectConfig,
           "Project config must contain a top-level marketplace field",
-        ).toContain(`"marketplace": "${sourceDir}"`);
+        ).toContain(`"marketplace": "${pluginSource.sourceDir}"`);
       },
     );
   },

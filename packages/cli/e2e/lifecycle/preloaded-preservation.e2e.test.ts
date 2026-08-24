@@ -122,7 +122,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         // ================================================================
 
         const initWizard = await InitWizard.launchInProject({
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           projectDir,
           globalHome: sharedHome,
         });
@@ -152,7 +152,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
 
         const editWizard = await EditWizard.launchInProject({
           projectDir,
-          source: { sourceDir: fixture.sourceDir, tempDir: fixture.tempDir },
+          source: fixture,
           globalHome: sharedHome,
         });
         const editResult = await editWizard.passThrough();

@@ -70,7 +70,7 @@ describe("init wizard — mixed scope config split", () => {
 
       wizard = await InitWizard.launch({
         projectDir,
-        source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
+        source: source!,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -158,7 +158,7 @@ describe("init wizard — mixed scope config split", () => {
 
       wizard = await InitWizard.launch({
         projectDir,
-        source: { sourceDir: source!.sourceDir, tempDir: source!.tempDir },
+        source: source!,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

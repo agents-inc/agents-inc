@@ -1,6 +1,7 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { createTempDir } from "./test-utils.js";
+import { sharedSourcePath } from "../../src/cli/lib/__tests__/helpers/shared-source.js";
 import type { FixtureStackAgentConfig } from "./test-utils.js";
 import {
   DIRS,
@@ -30,19 +31,31 @@ import {
 /**
  * E2E Source Creation Conventions
  *
- * Preferred pattern: Create source ONCE per describe block in `beforeAll`,
- * store in a suite-level variable, and pass to wizard launchers via the
- * `source` option. This avoids redundant source creation per test.
+ * **Reach for {@link E2E_SOURCE}, and build nothing.** It is the shared plain tree, written once
+ * per run by `globalSetup` and frozen, and it is what a spec wants unless its subject is the
+ * source itself:
  *
- * Example:
- *   let source: { sourceDir: string; tempDir: string };
- *   beforeAll(async () => { source = await createE2ESource(); });
- *   afterAll(async () => { await cleanupTempDir(source.tempDir); });
+ *   `InitWizard.launch()`                  — the default, so nothing is named at all
+ *   `EditWizard.launch({ projectDir, source: E2E_SOURCE })` — named, because `edit` RECORDS it
  *
- * Wizard launchers (InitWizard.launch, EditWizard.launch) accept a `source`
- * option to use a pre-created source instead of creating a new one internally.
+ * `edit` takes no `--marketplace`, so its launcher writes the source into the install's config
+ * before the wizard starts, and `recordInstallSource` refuses an install that has no config yet.
+ * A default there would turn "this project has nothing to edit" into a throw from a fixture
+ * helper, so the source stays explicit on that side. `init` names its source on the command line
+ * and defaults cleanly.
  *
- * Only create sources inline when the test requires a unique/modified source.
+ * Build your own only when the shared tree is not the source under test:
+ *
+ *   `createE2EPluginSource()`      — a marketplace, so plugin install mode is reachable at all
+ *   `createE2ESource(options)`     — a tree that differs in what it SHIPS (relationships,
+ *                                    withoutStacks, withoutSkills)
+ *   `createE2EPluginSource({ owned: true })` — a tree the spec WRITES into
+ *
+ * The pattern this replaced — a `beforeAll` calling `createE2ESource()` into two suite-level
+ * `let`s and an `afterAll` cleaning them up — was in about seventy files, and every one of them
+ * was building the same tree. It cost 10ms each, so nothing was gained by sharing it per file;
+ * what it cost was ten lines of ceremony per spec and a `source: { sourceDir, tempDir }` object
+ * assembled at every launch.
  */
 
 /**
@@ -442,6 +455,57 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
   }
 
   return { sourceDir, tempDir };
+}
+
+/**
+ * Writes a source's whole tree into `sourceDir`, with no temp directory of its own.
+ *
+ * Exists so the SHARED fixture and a privately-built one are the same tree by construction rather
+ * than by two descriptions that have to be kept in step — `globalSetup` builds the shared one by
+ * calling this, exactly as {@link createE2ESource} does.
+ */
+export async function writeE2ESourceInto(sourceDir: string): Promise<void> {
+  await writeSkills(sourceDir, E2E_SKILLS);
+  await writeStacks(sourceDir, false);
+  await writeAgents(sourceDir);
+}
+
+/**
+ * The segment the shared plain source occupies inside the frozen fixture root, beside the
+ * plugin-capable `fixture/` its sibling helper builds. Spells neither withdrawn noun, for the
+ * reason `sharedSourcePath`'s own docblock gives.
+ */
+const SHARED_PLAIN_SEGMENT = "plain";
+
+/**
+ * The one source every spec that neither mutates one nor needs a marketplace launches against.
+ *
+ * A constant rather than a call because nothing about it is per-spec: `globalSetup` writes this
+ * tree once and freezes it, and the path is derived, so a worker computes it without being handed
+ * anything. Naming it at a launch site is the whole ergonomic point — `source: E2E_SOURCE` in
+ * place of a two-field object assembled from a `beforeAll` that existed only to build one.
+ *
+ * **It has no `.claude-plugin/marketplace.json`, and that is the difference that matters.** With
+ * no marketplace carrying them, every skill this source ships is local-only, so the wizard's
+ * default origin is EJECT (`defaultOriginFor` in `stores/wizard-store.ts`). A spec whose subject
+ * is plugin install therefore reaches for `createE2EPluginSource()` instead — that fixture is the
+ * same tree with the two builds run over it, and swapping one for the other silently flips every
+ * unstated origin in the spec.
+ *
+ * Frozen, so a spec that writes into it fails at the write rather than corrupting whatever runs
+ * next; `createE2ESource()` still returns a private writable tree for the specs that need one.
+ */
+export const E2E_SOURCE: E2ESource = {
+  sourceDir: path.join(sharedSourcePath(), SHARED_PLAIN_SEGMENT),
+  tempDir: sharedSourcePath(),
+};
+
+/**
+ * Writes {@link E2E_SOURCE}'s tree into the shared fixture root. Called once, from `globalSetup`,
+ * before the freeze.
+ */
+export async function buildSharedE2ESourceInto(root: string): Promise<void> {
+  await writeE2ESourceInto(path.join(root, SHARED_PLAIN_SEGMENT));
 }
 
 async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]): Promise<void> {

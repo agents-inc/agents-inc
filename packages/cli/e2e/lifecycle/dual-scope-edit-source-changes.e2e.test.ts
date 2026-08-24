@@ -66,21 +66,16 @@ describe.skipIf(!claudeAvailable)(
         const { fakeHome, projectDir } = env;
 
         // Phase A + B: Use plugin source for init
-        const phaseA = await initGlobal(pluginFixture.sourceDir, pluginFixture.tempDir, fakeHome);
+        const phaseA = await initGlobal(pluginFixture, fakeHome);
         expect(phaseA.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const phaseB = await initProject(
-          pluginFixture.sourceDir,
-          pluginFixture.tempDir,
-          fakeHome,
-          projectDir,
-        );
+        const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
         expect(phaseB.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         // Phase C: Edit -- switch api-framework-hono from local to plugin source
         wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+          source: pluginFixture,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });
@@ -150,21 +145,16 @@ describe.skipIf(!claudeAvailable)(
         // Phase A + B: Init with plugin source -- initProject forces all sources
         // to local via the "l" hotkey. So after Phase B, all skills have
         // source: "eject" in config, even though the source has a marketplace.
-        const phaseA = await initGlobal(pluginFixture.sourceDir, pluginFixture.tempDir, fakeHome);
+        const phaseA = await initGlobal(pluginFixture, fakeHome);
         expect(phaseA.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-        const phaseB = await initProject(
-          pluginFixture.sourceDir,
-          pluginFixture.tempDir,
-          fakeHome,
-          projectDir,
-        );
+        const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
         expect(phaseB.exitCode).toBe(EXIT_CODES.SUCCESS);
 
         // Phase C: Edit -- switch all to plugin
         wizard = await EditWizard.launch({
           projectDir,
-          source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+          source: pluginFixture,
           env: { HOME: fakeHome },
           ...TERMINAL_SIZE.TALL,
         });

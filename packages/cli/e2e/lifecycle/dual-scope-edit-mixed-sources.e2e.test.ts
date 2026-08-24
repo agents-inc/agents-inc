@@ -66,21 +66,16 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      const phaseA = await initGlobal(pluginFixture.sourceDir, pluginFixture.tempDir, fakeHome);
+      const phaseA = await initGlobal(pluginFixture, fakeHome);
       expect(phaseA.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      const phaseB = await initProject(
-        pluginFixture.sourceDir,
-        pluginFixture.tempDir,
-        fakeHome,
-        projectDir,
-      );
+      const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
       expect(phaseB.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Phase C: Edit -- switch all to plugin
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+        source: pluginFixture,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -145,21 +140,16 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      const phaseA = await initGlobal(pluginFixture.sourceDir, pluginFixture.tempDir, fakeHome);
+      const phaseA = await initGlobal(pluginFixture, fakeHome);
       expect(phaseA.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      const phaseB = await initProject(
-        pluginFixture.sourceDir,
-        pluginFixture.tempDir,
-        fakeHome,
-        projectDir,
-      );
+      const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
       expect(phaseB.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Phase C: Edit -- switch api-framework-hono to local
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginFixture.sourceDir, tempDir: pluginFixture.tempDir },
+        source: pluginFixture,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

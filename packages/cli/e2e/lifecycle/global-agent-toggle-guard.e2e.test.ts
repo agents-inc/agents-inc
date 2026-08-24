@@ -1,6 +1,6 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, TERMINAL_SIZE, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
   agentsPath,
@@ -47,19 +47,9 @@ import "../matchers/setup.js";
  */
 
 describe("global agent toggle guard from project scope", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
-
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP_DUAL);
-
-  afterAll(async () => {
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
-  });
 
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
@@ -76,7 +66,7 @@ describe("global agent toggle guard from project scope", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: global init + project init with all skills/agents staying global
-      env = await createGlobalOnlyEnv(sourceDir, sourceTempDir);
+      env = await createGlobalOnlyEnv(E2E_SOURCE);
 
       // `cc init` inside a project materialises that project — it writes the
       // project's config.ts and registers the path in the global projects list —
@@ -97,7 +87,7 @@ describe("global agent toggle guard from project scope", () => {
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
         projectDir: env.projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: env.fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
@@ -164,7 +154,7 @@ describe("global agent toggle guard from project scope", () => {
       // was inert above must act.
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       env = { fakeHome, projectDir, destroy: () => cleanupTempDir(tempDir) };
-      await setupProjectOnlyMixedScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
 
       const agentName = E2E_AGENT["api-developer"].name;
       expect(
@@ -177,7 +167,7 @@ describe("global agent toggle guard from project scope", () => {
 
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
+        source: E2E_SOURCE,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });

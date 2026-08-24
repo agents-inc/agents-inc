@@ -2,7 +2,7 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -54,8 +54,6 @@ const reactMetadata = renderMetadataYaml({
 });
 
 describe("global edit at HOME preserves the registered projects array", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let tempDir: string;
   let globalHome: string;
   let registeredProject: string;
@@ -66,9 +64,6 @@ describe("global edit at HOME preserves the registered projects array", () => {
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
 
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
@@ -111,7 +106,7 @@ describe("global edit at HOME preserves the registered projects array", () => {
     // HOME-context write path, which is where `projects` would be lost.
     const wizard = await EditWizard.launch({
       projectDir: globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       env: { HOME: globalHome },
       ...TERMINAL_SIZE.TALL,
     });
@@ -129,7 +124,6 @@ describe("global edit at HOME preserves the registered projects array", () => {
 
   afterAll(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   it("completes the global edit successfully", () => {

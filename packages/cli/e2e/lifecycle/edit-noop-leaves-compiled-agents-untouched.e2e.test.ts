@@ -2,7 +2,7 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { finishWizard } from "../fixtures/dual-scope-helpers.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -47,8 +47,6 @@ const CONFIG_SOURCES = DIRS.CLAUDE_SRC;
 const COMPILED_AGENT_SUFFIX = ".md";
 
 describe("an edit that changes nothing leaves the installed scope untouched", () => {
-  let sourceDir: string;
-  let sourceTempDir: string;
   let globalHome: string;
 
   let compiledBefore: Record<string, TreeSnapshotEntry>;
@@ -60,14 +58,10 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
 
   beforeAll(async () => {
     await ensureBinaryExists();
-    const source = await createE2ESource();
-    sourceDir = source.sourceDir;
-    sourceTempDir = source.tempDir;
     globalHome = await createTempDir();
 
     // Phase A — a real install, so the artefacts the edit must leave alone are the CLI's own.
     const installWizard = await InitWizard.launchInGlobal({
-      source: { sourceDir, tempDir: sourceTempDir },
       projectDir: globalHome,
       ...TERMINAL_SIZE.TALL,
     });
@@ -81,7 +75,7 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     // rescopes anything: Build through every domain, Sources untouched, Agents on defaults.
     const editWizard = await EditWizard.launchInGlobal({
       projectDir: globalHome,
-      source: { sourceDir, tempDir: sourceTempDir },
+      source: E2E_SOURCE,
       ...TERMINAL_SIZE.TALL,
     });
     try {
@@ -103,7 +97,6 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
 
   afterAll(async () => {
     if (globalHome) await cleanupTempDir(globalHome);
-    if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   // The subject guard for both comparisons below. `readTreeSnapshot` answers `{}` for an absent

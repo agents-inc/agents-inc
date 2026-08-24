@@ -87,18 +87,12 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
 
       // Phase A: init at HOME against the plugin marketplace — every skill is
       // global-scoped and plugin-sourced.
-      const phaseA = await initGlobal(pluginSource.sourceDir, pluginSource.tempDir, fakeHome);
+      const phaseA = await initGlobal(pluginSource, fakeHome);
       expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Phase B: establish a real project installation. hono moves G->P; sources stay
       // plugin, so no source switch has happened yet.
-      const phaseB = await initProject(
-        pluginSource.sourceDir,
-        pluginSource.tempDir,
-        fakeHome,
-        projectDir,
-        { setLocal: false },
-      );
+      const phaseB = await initProject(pluginSource, fakeHome, projectDir, { setLocal: false });
       expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Pre-state: react is global, plugin-sourced, registered at user scope, and
@@ -121,7 +115,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       // Phase C: from the PROJECT directory, switch every EDITABLE source to local.
       wizard = await EditWizard.launch({
         projectDir,
-        source: { sourceDir: pluginSource.sourceDir, tempDir: pluginSource.tempDir },
+        source: pluginSource,
         env: { HOME: fakeHome },
         ...TERMINAL_SIZE.TALL,
       });
