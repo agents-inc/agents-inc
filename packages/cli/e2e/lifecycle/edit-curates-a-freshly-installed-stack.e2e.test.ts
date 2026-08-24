@@ -8,7 +8,6 @@ import {
   completeWithLocalSources,
   configTypesTsPath,
   createTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readCompiledAgents,
@@ -84,7 +83,6 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
   let editOutput: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     globalHome = await createTempDir();
 
     // Phase A — pick the stack at the stack step and install it, eject mode.

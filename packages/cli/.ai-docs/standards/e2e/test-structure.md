@@ -70,15 +70,10 @@ The three phases should be visually distinct. Mixing setup, interaction, and ass
 
 Use for:
 
-- `ensureBinaryExists()` -- required in every test file, refuses one that begins with no `dist/` under it
 - Expensive fixtures a spec builds for ITSELF — a source that differs in what it ships
   (`createE2ESource(options)`), or one the spec writes into (`createE2EPluginSource({ owned: true })`)
 
-```typescript
-beforeAll(async () => {
-  await ensureBinaryExists();
-}, TIMEOUTS.SETUP);
-```
+**Most spec files need no `beforeAll` at all.** `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — 248 files of per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot. `spec-gates.test.ts` now asserts the ABSENCE of the per-spec call, so the discipline cannot grow back.
 
 **Do NOT build a plain source here.** `E2E_SOURCE` is that tree, written once per run by `globalSetup`
 and frozen, and `InitWizard` defaults to it — so a spec wanting the ordinary source names nothing and

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupFixture, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupFixture } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
@@ -27,7 +27,6 @@ describe("switching a skill to eject mode reports the copies it made", () => {
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

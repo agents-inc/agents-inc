@@ -1,6 +1,6 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
@@ -16,7 +16,6 @@ import {
   configTsPath,
   configTypesTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -55,10 +54,6 @@ const HAND_WRITTEN_AGENT = "my-custom-agent";
 describe("uninstall removes a from-scratch install, scope by scope", () => {
   let tempDir: string | undefined;
   let env: DualScopeEnv | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     await env?.destroy();

@@ -5,7 +5,6 @@ import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import {
   agentsPath,
   cleanupTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readAgentEntriesFor,
@@ -64,7 +63,6 @@ describe("init --from <id>: sub-agent scope", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

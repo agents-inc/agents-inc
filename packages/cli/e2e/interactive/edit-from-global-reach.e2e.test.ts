@@ -11,7 +11,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -112,7 +111,6 @@ describe("edit --from <id> removing a global install", () => {
   const tempDirs: string[] = [];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);

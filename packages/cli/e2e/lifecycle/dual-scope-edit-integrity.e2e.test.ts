@@ -13,7 +13,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupFixture,
   cleanupTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
@@ -34,10 +33,6 @@ const claudeAvailable = await isClaudeCLIAvailable();
  */
 
 describe("dual-scope edit lifecycle -- agent content and config integrity", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -146,7 +141,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
   let pluginFixture: E2EPluginSource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     pluginFixture = await createE2EPluginSource({ marketplaceName: MARKETPLACE_SOURCE });
   }, TIMEOUTS.SETUP_DUAL);
 
@@ -265,10 +259,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
 });
 
 describe("dual-scope edit lifecycle -- eject scope toggle copies skill to project", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -310,10 +300,6 @@ describe("dual-scope edit lifecycle -- eject scope toggle copies skill to projec
 });
 
 describe("dual-scope edit lifecycle -- stack field preserves selected agents", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string;
   let fakeHome: string;
 

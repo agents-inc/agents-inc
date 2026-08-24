@@ -11,7 +11,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
@@ -81,7 +80,6 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
   let fixture: E2EPluginSource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

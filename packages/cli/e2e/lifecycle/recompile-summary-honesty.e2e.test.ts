@@ -1,14 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import {
-  agentsPath,
-  cleanupTempDir,
-  ensureBinaryExists,
-  readTreeSnapshot,
-  runCLI,
-} from "../helpers/test-utils.js";
+import { agentsPath, cleanupTempDir, readTreeSnapshot, runCLI } from "../helpers/test-utils.js";
 import {
   createTestEnvironment,
   initGlobalWithEject,
@@ -33,10 +27,6 @@ import {
 
 describe("recompile summary distinguishes rewritten agents from unchanged ones", () => {
   let tempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

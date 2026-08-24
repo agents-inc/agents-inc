@@ -14,7 +14,6 @@ import {
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   loadConfigOrFail,
   readCompiledAgents,
@@ -68,8 +67,6 @@ describe("edit from a directory that holds no installation", () => {
   let controlConfigPair: { configTs: boolean; configTypesTs: boolean };
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
     fakeHome = env.fakeHome;

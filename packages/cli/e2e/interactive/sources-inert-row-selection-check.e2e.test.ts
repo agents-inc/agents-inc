@@ -1,12 +1,11 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   listFiles,
   readTestFile,
   renderMetadataYaml,
@@ -71,10 +70,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("edit wizard — Sources grid paints no selection check on inert rows", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
 

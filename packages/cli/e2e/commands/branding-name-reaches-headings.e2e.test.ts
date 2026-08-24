@@ -14,7 +14,6 @@ import {
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   writeAgentFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -93,7 +92,6 @@ describe("the name a run prints itself under", () => {
   let store: SeedConfigStore;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     // The `init --from` leg is the only one that needs either, and both are built once: the
     // other four legs run against a config and an empty marketplace directory alone.
     ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { ensureBinaryExists, cleanupTempDir } from "../helpers/test-utils.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
@@ -45,8 +45,6 @@ describe("init wizard -- grid cell advisory annotations", () => {
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     source = await createE2ESource({
       relationships: {
         discourages: [

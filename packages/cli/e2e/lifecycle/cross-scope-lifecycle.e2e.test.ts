@@ -19,7 +19,6 @@ import {
   configTsPath,
   configTypesTsPath,
   createPermissionsFile,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
@@ -55,7 +54,6 @@ describe("cross-scope lifecycle: init global -> edit global from project", () =>
   let projectDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
 
     ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
@@ -192,7 +190,6 @@ describe.skipIf(!claudeAvailable)(
     let projectDir: string;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       fixture = await createE2EPluginSource();
 
       ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
@@ -337,7 +334,6 @@ describe.skipIf(!claudeAvailable)(
     let projectDir: string;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       fixture = await createE2EPluginSource();
 
       ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));

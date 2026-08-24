@@ -1,12 +1,9 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT, EXIT_CODES } from "../pages/constants.js";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
 
 describe("init wizard — navigation", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

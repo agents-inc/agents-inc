@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { E2E_STACK_NAME } from "../helpers/create-e2e-source.js";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
+
 import "../matchers/setup.js";
 
 /**
@@ -19,8 +19,6 @@ import "../matchers/setup.js";
  */
 describe("init wizard — stack step banner", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

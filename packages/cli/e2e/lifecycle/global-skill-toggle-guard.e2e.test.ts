@@ -1,13 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import {
-  configTsPath,
-  ensureBinaryExists,
-  normalizeGlobalConfig,
-  readTestFile,
-} from "../helpers/test-utils.js";
+import { configTsPath, normalizeGlobalConfig, readTestFile } from "../helpers/test-utils.js";
 import {
   createGlobalOnlyEnv,
   readSkillEntries,
@@ -34,10 +29,6 @@ import "../matchers/setup.js";
  */
 
 describe("global skill toggle guard from project scope", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
 

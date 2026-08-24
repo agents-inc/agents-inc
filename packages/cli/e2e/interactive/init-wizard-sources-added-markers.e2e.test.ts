@@ -5,7 +5,6 @@ import {
   cleanupTempDir,
   configTsPath,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -64,7 +63,6 @@ describe("init wizard — Sources tab marks every skill added on a first-time in
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

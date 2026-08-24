@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
@@ -7,7 +7,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
   skillsPath,
@@ -43,10 +42,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("edit wizard — pending-removal row on the Sources tab in a global-scope edit", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let globalHome: string | undefined;
   let wizard: EditWizard | undefined;
 

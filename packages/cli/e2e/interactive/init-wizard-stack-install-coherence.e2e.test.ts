@@ -15,7 +15,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   readCompiledAgents,
   skillsPath,
@@ -62,7 +61,6 @@ describe("init wizard — a stack install lands its roster and type-checks", () 
   let source: E2ESource | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

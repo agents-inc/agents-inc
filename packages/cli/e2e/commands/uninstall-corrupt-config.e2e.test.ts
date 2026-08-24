@@ -1,6 +1,6 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
@@ -12,7 +12,6 @@ import {
   createLocalSkill,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   writeAgentFile,
@@ -52,8 +51,6 @@ const SCHEMA_VIOLATION = [
 
 describe("uninstall with an unreadable config", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

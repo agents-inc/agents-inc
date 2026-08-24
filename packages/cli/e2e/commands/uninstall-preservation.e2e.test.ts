@@ -1,9 +1,8 @@
 import path from "path";
 import { writeFile, mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   cleanupTempDir,
-  ensureBinaryExists,
   directoryExists,
   fileExists,
   readTestFile,
@@ -38,8 +37,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("uninstall preservation behavior", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

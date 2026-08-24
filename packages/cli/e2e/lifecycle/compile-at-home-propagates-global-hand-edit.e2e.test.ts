@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
@@ -10,7 +10,6 @@ import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
   writeProjectConfig,
@@ -87,10 +86,6 @@ async function removeGlobalSkillByHand(globalHome: string, skillId: string): Pro
 
 describe("compile at the home directory fans a hand-edited global config out to registered projects", () => {
   let tempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
@@ -7,7 +7,6 @@ import {
   createLocalSkill,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   renderMetadataYaml,
@@ -30,8 +29,6 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
  */
 describe("compile refreshes config-types.ts from the persisted config", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
@@ -187,16 +184,16 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     });
 
     // Project install: one project-scoped skill + agent
-    await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+    await createLocalSkill(projectDir, "web-mocks-msw", {
       description: "Project skill for dual-scope types refresh",
       metadata: renderMetadataYaml({
-        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        ...metadataFieldsFor("web-mocks-msw"),
         contentHash: "hash-project",
       }),
     });
     await writeProjectConfig(projectDir, {
       name: "e2e-project",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+      skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
     });
 
@@ -232,7 +229,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     const globalTypes = await readTestFile(configTypesTsPath(globalHome));
     expect(globalTypes).not.toContain("as GlobalSkillId");
     expect(globalTypes).toContain('export type SkillId = "web-testing-cypress-e2e";');
-    expect(globalTypes).not.toContain('"web-testing-playwright-e2e"');
+    expect(globalTypes).not.toContain('"web-mocks-msw"');
     expect(globalTypes, "stale stub must be replaced").not.toContain(
       "export type SkillId = string;",
     );
@@ -240,9 +237,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // Project scope: import-and-extend form on top of the fresh global types
     const projectTypes = await readTestFile(configTypesTsPath(projectDir));
     expect(projectTypes).toContain("SkillId as GlobalSkillId");
-    expect(projectTypes).toContain(
-      'export type SkillId = GlobalSkillId | "web-testing-playwright-e2e"',
-    );
+    expect(projectTypes).toContain('export type SkillId = GlobalSkillId | "web-mocks-msw"');
     expect(projectTypes).not.toContain('"web-testing-cypress-e2e"');
     expect(projectTypes, "stale stub must be replaced").not.toContain(
       "export type SkillId = string;",

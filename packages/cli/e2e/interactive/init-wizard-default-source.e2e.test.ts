@@ -11,7 +11,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
@@ -34,7 +33,6 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
   let sharedProjectDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     sharedHome = await createTempDir();
 
     // Two DIRECTORIES publishing under ONE marketplace name — the shared default,
@@ -130,8 +128,6 @@ describe.skipIf(!claudeAvailable)("init wizard — stale marketplace update", ()
 // cannot tell a real regression from a runner that never had the binary.
 describe.skipIf(!claudeAvailable)("init wizard — default source eject mode ENOENT", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

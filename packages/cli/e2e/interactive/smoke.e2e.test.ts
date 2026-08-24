@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ensureBinaryExists, cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
@@ -13,7 +13,6 @@ describe("CLI smoke tests", () => {
   let projectDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     projectDir = await createTempDir();
   });
 

@@ -12,7 +12,6 @@ import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   readCompiledAgents,
 } from "../helpers/test-utils.js";
@@ -43,7 +42,6 @@ describe("a share round trip that starts at the wizard", () => {
   let rebuilt: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 

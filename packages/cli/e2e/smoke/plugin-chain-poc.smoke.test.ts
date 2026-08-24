@@ -15,7 +15,6 @@ import {
   cleanupTempDir,
   createIsolatedClaudeHome,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   listFiles,
@@ -53,7 +52,6 @@ describe.skipIf(!claudeAvailable)(
     let isolated: IsolatedClaudeHome;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       fixture = await createE2EPluginSource();
       isolated = await createIsolatedClaudeHome();
 

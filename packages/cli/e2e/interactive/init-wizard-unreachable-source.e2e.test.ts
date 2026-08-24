@@ -6,7 +6,7 @@ import {
   startTarballSourceServer,
   type TarballSourceServer,
 } from "../helpers/tarball-source-server.js";
-import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 
@@ -46,8 +46,6 @@ describe("init wizard against a source that has gone away", () => {
   let offlineScreen: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     source = await createE2ESource();
     server = await startTarballSourceServer(source.sourceDir);
     // One HOME across both runs: the source cache lives under it, so the second

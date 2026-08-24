@@ -8,7 +8,6 @@ import {
   createTempDir,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readAgentEntriesFor,
@@ -72,7 +71,6 @@ describe("init --from <id>", () => {
   let store: SeedConfigStore;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

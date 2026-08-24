@@ -7,7 +7,6 @@ import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   listFiles,
   readTreeSnapshot,
   loadConfigOrFail,
@@ -63,7 +62,6 @@ describe("init --from <id>: greenfield only", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

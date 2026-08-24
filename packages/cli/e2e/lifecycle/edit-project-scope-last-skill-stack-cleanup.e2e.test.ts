@@ -1,6 +1,6 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -11,7 +11,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
   skillsPath,
@@ -42,10 +41,6 @@ const singleSkillStack = {
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes the only project-scoped skill an agent references", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let tempDir: string | undefined;
 
   afterEach(async () => {

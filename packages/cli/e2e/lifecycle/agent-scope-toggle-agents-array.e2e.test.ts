@@ -1,12 +1,12 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { DIRS, EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { ensureBinaryExists, fileExists } from "../helpers/test-utils.js";
+import { fileExists } from "../helpers/test-utils.js";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import {
   createDualScopeEnv,
@@ -50,10 +50,6 @@ const SPARE_SKILL = E2E_SKILL["visual-regression"];
  */
 
 describe("agent scope toggle keeps agents array duplicate-free", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   describe("Scenario A — P→G toggle produces no duplicates", () => {
     let env: DualScopeEnv | undefined;
     let wizard: EditWizard | undefined;

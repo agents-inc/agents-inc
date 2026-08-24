@@ -7,7 +7,6 @@ import {
   createTempDir,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   FORKED_FROM_METADATA,
   listFiles,
   recordInstallSource,
@@ -47,7 +46,6 @@ describe("doctor diagnostics", () => {
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   });
 

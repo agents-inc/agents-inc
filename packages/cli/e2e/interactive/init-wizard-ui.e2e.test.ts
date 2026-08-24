@@ -1,14 +1,12 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { ADDED_MARKER, STEP_TEXT, WIZARD_TAB_LABELS } from "../pages/constants.js";
 import { E2E_SKILL, E2E_STACK_AGENTS, E2E_STACK_DISPLAY } from "../fixtures/expected-values.js";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
+
 import "../matchers/setup.js";
 
 describe("init wizard — UI elements", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

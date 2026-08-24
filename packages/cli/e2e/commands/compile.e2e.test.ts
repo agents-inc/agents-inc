@@ -1,12 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
   directoryExists,
-  ensureBinaryExists,
   listFiles,
   readTestFile,
   renderMetadataYaml,
@@ -32,8 +31,6 @@ import "../matchers/setup.js";
 
 describe("compile command", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

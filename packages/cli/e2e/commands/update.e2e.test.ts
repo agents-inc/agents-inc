@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   writeConfigTypes,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -42,8 +41,6 @@ const PATH_WITHOUT_CLAUDE = [path.dirname(process.execPath), "/usr/bin", "/bin"]
 
 describe("update command", () => {
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

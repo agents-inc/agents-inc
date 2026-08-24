@@ -18,7 +18,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   directoryExists,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   skillsPath,
 } from "../helpers/test-utils.js";
@@ -57,7 +56,6 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
   let currentTempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     pluginSource = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

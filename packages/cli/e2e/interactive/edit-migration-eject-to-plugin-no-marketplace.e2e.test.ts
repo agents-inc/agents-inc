@@ -7,7 +7,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupFixture,
   configTsPath,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   readTestFile,
   skillsPath,
@@ -37,7 +36,6 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     // A plain source directory with NO .claude-plugin/marketplace.json — the
     // marketplace resolution failure point.
     localSource = await createE2ESource();

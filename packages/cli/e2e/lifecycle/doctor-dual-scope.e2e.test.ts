@@ -1,9 +1,9 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { ensureBinaryExists, runCLI } from "../helpers/test-utils.js";
+import { runCLI } from "../helpers/test-utils.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 
 /**
@@ -13,10 +13,6 @@ import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-he
  * (global + project). Covers healthy state, missing agent files, and
  * orphaned skill directories.
  */
-
-beforeAll(async () => {
-  await ensureBinaryExists();
-}, TIMEOUTS.SETUP_DUAL);
 
 describe("doctor dual-scope diagnostics", () => {
   let env: DualScopeEnv | undefined;

@@ -1,11 +1,10 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   writeProjectConfig,
   createLocalSkill,
   renderMetadataYaml,
@@ -27,8 +26,6 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
 describe("edit wizard — skill detection across sources and scopes", () => {
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

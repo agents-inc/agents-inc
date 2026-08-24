@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
@@ -6,12 +6,7 @@ import "../matchers/setup.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import {
-  cleanupTempDir,
-  completeWithLocalSources,
-  createTempDir,
-  ensureBinaryExists,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, completeWithLocalSources, createTempDir } from "../helpers/test-utils.js";
 import { readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
@@ -39,10 +34,6 @@ const ADDED_SKILL = E2E_SKILL["visual-regression"];
 const PRESERVED_SKILL = E2E_SKILL.vitest;
 
 describe("init -> edit merge: config preserved across lifecycle", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   describe("full init then edit with changes", () => {
     let tempDir: string | undefined;
 

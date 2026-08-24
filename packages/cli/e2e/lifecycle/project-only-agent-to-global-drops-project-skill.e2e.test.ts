@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -9,7 +9,6 @@ import {
   agentsPath,
   cleanupTempDir,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   loadConfigOrFail,
   readAgentEntriesFor,
@@ -97,10 +96,6 @@ const PROJECT_API_DEVELOPER_STACK = {
  */
 describe("a project-only sub-agent toggled to global scope", () => {
   let testTempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (testTempDir) await cleanupTempDir(testTempDir);

@@ -1,10 +1,9 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   directoryExists,
   fileExists,
   writeProjectConfig,
@@ -27,8 +26,6 @@ import "../matchers/setup.js";
  */
 describe("uninstall config manifest removal", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

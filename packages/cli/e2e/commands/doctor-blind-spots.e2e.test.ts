@@ -20,7 +20,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   readTestFile,
   recordInstallSource,
   skillsPath,
@@ -37,7 +36,6 @@ describe("doctor with uninstalled plugin skills", () => {
   let tempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     pluginSource = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 
@@ -114,7 +112,6 @@ describe("doctor remediation advice for skills missing from disk", () => {
   let tempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

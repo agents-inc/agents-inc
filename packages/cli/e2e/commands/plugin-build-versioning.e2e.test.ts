@@ -6,7 +6,6 @@ import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
-  ensureBinaryExists,
   readMarketplaceJson,
   readPluginVersions,
   renderSkillMd,
@@ -112,7 +111,6 @@ describe("build plugins version bumping", () => {
   let marketplacePath: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir } = await createE2ESource());
     pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
     marketplacePath = path.join(

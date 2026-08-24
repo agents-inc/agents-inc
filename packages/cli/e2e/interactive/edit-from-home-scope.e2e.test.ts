@@ -8,7 +8,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   FORKED_FROM_METADATA,
   listFiles,
   loadConfigOrFail,
@@ -65,7 +64,6 @@ describe("edit --from <id> at the global root", () => {
   const tempDirs: string[] = [];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);

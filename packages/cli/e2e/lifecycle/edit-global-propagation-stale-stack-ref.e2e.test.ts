@@ -13,7 +13,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
   writeProjectConfig,
@@ -83,8 +82,6 @@ describe("global-scope skill removal propagates to registered projects", () => {
   let projectBConfig: FixtureProjectConfig;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "home");
     const projectA = path.join(tempDir, "project-a");

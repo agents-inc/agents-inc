@@ -15,7 +15,6 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
   readTestFile,
@@ -66,7 +65,6 @@ describe.skipIf(!claudeAvailable)(
     let currentTempDir: string | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       pluginSource = await createE2EPluginSource();
     }, TIMEOUTS.SETUP_DUAL);
 

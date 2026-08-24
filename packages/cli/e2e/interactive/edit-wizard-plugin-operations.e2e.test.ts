@@ -3,7 +3,7 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { cleanupFixture, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { cleanupFixture, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { TERMINAL_SIZE, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
@@ -31,7 +31,6 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode operations", () =
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP);
 

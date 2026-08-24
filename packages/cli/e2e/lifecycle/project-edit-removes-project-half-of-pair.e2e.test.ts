@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
@@ -7,7 +7,6 @@ import {
   configTsPath,
   configTypesTsPath,
   directoryExists,
-  ensureBinaryExists,
   listFiles,
   readCompiledAgents,
   readTestFile,
@@ -45,10 +44,6 @@ const SCOPED_ALIASES = ["SkillId", "Category"] as const;
 
 describe("project edit drops the project half of a dual-scope pair", () => {
   let env: DualScopeEnv | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await env?.destroy();

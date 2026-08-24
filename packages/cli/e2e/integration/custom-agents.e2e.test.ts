@@ -1,12 +1,7 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import {
-  cleanupTempDir,
-  ensureBinaryExists,
-  renderAgentYaml,
-  writeProjectConfig,
-} from "../helpers/test-utils.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { cleanupTempDir, renderAgentYaml, writeProjectConfig } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
@@ -53,8 +48,6 @@ async function createCustomAgent(
 
 describe("custom sub-agents", () => {
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

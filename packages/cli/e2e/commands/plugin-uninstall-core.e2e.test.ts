@@ -17,7 +17,6 @@ import {
   createIsolatedClaudeHome,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   renderSkillMd,
   skillsPath,
@@ -53,8 +52,6 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
   let isolated: IsolatedClaudeHome;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     // Step 1: Build plugin source (source -> build plugins -> build marketplace)
     fixture = await createE2EPluginSource();
     isolated = await createIsolatedClaudeHome();

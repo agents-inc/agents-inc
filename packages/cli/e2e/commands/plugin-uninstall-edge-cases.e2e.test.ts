@@ -1,11 +1,10 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import {
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   directoryExists,
   fileExists,
   readTestFile,
@@ -83,8 +82,6 @@ async function createUninstallableProject(
 
 describe("uninstall with plugin config but no installed plugins", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
@@ -180,8 +177,6 @@ describe("uninstall with plugin config but no installed plugins", () => {
 describe("uninstall preserves non-CLI plugins", () => {
   let tempDir: string;
 
-  beforeAll(ensureBinaryExists);
-
   afterEach(async () => {
     if (tempDir) {
       await cleanupTempDir(tempDir);
@@ -247,8 +242,6 @@ describe("uninstall preserves non-CLI plugins", () => {
 
 describe("uninstall without Claude CLI on PATH", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

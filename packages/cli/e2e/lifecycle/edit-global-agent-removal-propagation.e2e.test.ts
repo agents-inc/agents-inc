@@ -14,7 +14,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   loadConfigOrFail,
   readTestFile,
@@ -112,8 +111,6 @@ describe("global-scope agent removal propagates to registered projects", () => {
   let editRawOutput: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "project-a");

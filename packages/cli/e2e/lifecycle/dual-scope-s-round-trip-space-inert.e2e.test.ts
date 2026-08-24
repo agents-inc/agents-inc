@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -8,7 +8,6 @@ import {
   agentsPath,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readAgentEntriesFor,
   readTestFile,
@@ -49,10 +48,6 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("dual-scope `s` round-trip, and what spacebar owns beside it", () => {
   let env: DualScopeEnv | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await env?.destroy();

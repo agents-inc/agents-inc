@@ -2,12 +2,7 @@ import { readFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import {
-  cleanupTempDir,
-  configTsPath,
-  ensureBinaryExists,
-  loadConfigOrFail,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, configTsPath, loadConfigOrFail } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -60,7 +55,6 @@ describe("init --from <id>: per-sub-agent curation", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

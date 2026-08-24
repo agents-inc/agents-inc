@@ -9,7 +9,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTsPath,
-  ensureBinaryExists,
   skillsPath,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -81,8 +80,6 @@ describe("default init from a project dir — global scope reporting", () => {
   let initExitCode: number;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
     fakeHome = env.fakeHome;

@@ -8,7 +8,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   createTempDir,
-  ensureBinaryExists,
   readTreeSnapshot,
 } from "../helpers/test-utils.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
@@ -57,7 +56,6 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
   let editOutput: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     globalHome = await createTempDir();
 
     // Phase A — a real install, so the artefacts the edit must leave alone are the CLI's own.

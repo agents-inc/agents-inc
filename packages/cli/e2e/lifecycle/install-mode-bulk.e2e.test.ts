@@ -16,7 +16,6 @@ import {
   completeWithLocalSources,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   skillsPath,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
@@ -53,7 +52,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

@@ -14,7 +14,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
   renderMetadataYaml,
@@ -180,8 +179,6 @@ describe("project-context source migration of a global skill propagates to other
   let configB: FixtureProjectConfig;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
     projectA = path.join(tempDir, PROJECT_A);

@@ -14,7 +14,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
   renderMetadataYaml,
@@ -129,8 +128,6 @@ describe("global-scope source change propagates to registered projects", () => {
   let projectConfig: FixtureProjectConfig;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "project-a");

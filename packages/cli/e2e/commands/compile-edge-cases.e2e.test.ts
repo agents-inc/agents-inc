@@ -1,12 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
-  ensureBinaryExists,
   listFiles,
   readCompiledAgents,
   renderMetadataYaml,
@@ -27,8 +26,6 @@ import "../matchers/setup.js";
 
 describe("compile command edge cases", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

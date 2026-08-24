@@ -14,7 +14,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   readAgentEntriesFor,
   renderMetadataYaml,
   skillsPath,
@@ -86,8 +85,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
   let projectWebDeveloper: AgentScopeConfig[];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "registered-project");

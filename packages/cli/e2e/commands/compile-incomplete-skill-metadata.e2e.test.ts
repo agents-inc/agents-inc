@@ -1,11 +1,10 @@
 import path from "path";
 import { writeFile } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   readCompiledAgents,
   readTestFile,
   readTreeSnapshot,
@@ -73,8 +72,6 @@ async function stripRequiredField(fixture: Fixture): Promise<void> {
 
 describe("compile with an incomplete skill metadata.yaml", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

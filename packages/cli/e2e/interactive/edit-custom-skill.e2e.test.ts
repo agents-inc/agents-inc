@@ -5,7 +5,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createLocalSkill,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
 } from "../helpers/test-utils.js";
@@ -33,7 +32,6 @@ describe("edit wizard — a skill the user wrote", () => {
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     sourceFixture = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

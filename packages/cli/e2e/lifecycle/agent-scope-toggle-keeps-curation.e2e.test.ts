@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import path from "path";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
@@ -10,7 +10,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
   writeProjectConfig,
@@ -52,10 +51,6 @@ const GLOBAL_SKILL_CONFIGS = [
 describe("a sub-agent moved from global to project scope", () => {
   let tempHome: string | undefined;
   let wizard: EditWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     await wizard?.destroy();

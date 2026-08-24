@@ -8,7 +8,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createE2ESource,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   readMarketplaceJson,
@@ -70,8 +69,6 @@ async function writeMarketplacePlugin(projectDir: string): Promise<void> {
 
 describe("build commands", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

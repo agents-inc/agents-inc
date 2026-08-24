@@ -14,7 +14,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   renderMetadataYaml,
   skillsPath,
   writeProjectConfig,
@@ -87,8 +86,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
   let frameworkSelectedCount: number;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "registered-project");

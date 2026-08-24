@@ -16,7 +16,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   createTempDir,
-  ensureBinaryExists,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
@@ -38,7 +37,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

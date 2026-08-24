@@ -10,7 +10,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
   readTestFile,
@@ -39,7 +38,6 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     pluginFixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

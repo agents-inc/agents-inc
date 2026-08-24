@@ -1,9 +1,9 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -33,10 +33,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 describe("dual-scope edit lifecycle -- display and locking", () => {
   let tempDir: string;
   let wizard: EditWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await wizard?.destroy();

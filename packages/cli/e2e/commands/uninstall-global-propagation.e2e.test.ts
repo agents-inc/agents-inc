@@ -1,10 +1,9 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   runCLI,
@@ -20,7 +19,7 @@ import {
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -39,10 +38,6 @@ import "../matchers/setup.js";
  */
 describe("global uninstall propagates to registered projects", () => {
   let tempDir: string;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     if (tempDir) {

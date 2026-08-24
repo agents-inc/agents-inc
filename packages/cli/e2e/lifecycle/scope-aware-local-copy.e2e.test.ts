@@ -14,7 +14,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTsPath,
-  ensureBinaryExists,
   fileExists,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
@@ -41,7 +40,6 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
   let editWizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

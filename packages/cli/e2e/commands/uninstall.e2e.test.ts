@@ -1,11 +1,10 @@
 import path from "path";
 import { writeFile, mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import {
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   directoryExists,
   fileExists,
   renderMetadataYaml,
@@ -25,8 +24,6 @@ import "../matchers/setup.js";
 
 describe("uninstall command", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

@@ -1,12 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
-import {
-  HANDED_OUT_INVOCATIONS,
-  cleanupTempDir,
-  createTempDir,
-  ensureBinaryExists,
-} from "../helpers/test-utils.js";
+import { HANDED_OUT_INVOCATIONS, cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
 /**
@@ -31,7 +26,6 @@ describe("every invocation the CLI hands out is one the CLI answers", () => {
   let tempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     tempDir = await createTempDir();
   });
 

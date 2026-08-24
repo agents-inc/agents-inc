@@ -10,7 +10,6 @@ import {
   cleanupTempDir,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 
@@ -43,8 +42,6 @@ describe("cc init registers each project exactly once in the global projects arr
   let secondExit: number;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
     project1 = path.join(fakeHome, "project-1");

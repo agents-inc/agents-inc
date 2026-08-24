@@ -1,12 +1,11 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 
 import {
   cleanupTempDir,
   configTypesTsPath,
-  ensureBinaryExists,
   listFiles,
   readTestFile,
   skillsPath,
@@ -112,10 +111,6 @@ async function initReactGlobalHonoProject(options: {
 
 describe("a project-scoped skill in a category the global install lacks widens the project's unions", () => {
   let tempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

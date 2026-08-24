@@ -1,13 +1,7 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import {
-  configTsPath,
-  directoryExists,
-  ensureBinaryExists,
-  fileExists,
-  skillsPath,
-} from "../helpers/test-utils.js";
+import { configTsPath, directoryExists, fileExists, skillsPath } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -53,10 +47,6 @@ import {
 
 describe("edit wizard — tombstone cleanup after P→G restoration", () => {
   let env: DualScopeEnv | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await env?.destroy();

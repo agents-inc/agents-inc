@@ -1,5 +1,5 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   loadConfigOrFail,
   readTestFile,
@@ -33,8 +32,6 @@ describe("init wizard — mixed scope config split", () => {
   let wizard: InitWizard | undefined;
   let tempDir: string | undefined;
   let source: E2ESource | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

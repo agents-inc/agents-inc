@@ -1,11 +1,10 @@
 import path from "path";
 import { writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   directoryExists,
   getEjectedTemplatePath,
   listFiles,
@@ -37,8 +36,6 @@ const EJECTED_PARTIAL_AGENT = "web-developer";
 
 describe("eject command integration", () => {
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

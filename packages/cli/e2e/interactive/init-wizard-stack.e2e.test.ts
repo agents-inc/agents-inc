@@ -10,7 +10,6 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
   completeWithLocalSources,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   readCompiledAgents,
 } from "../helpers/test-utils.js";
@@ -28,8 +27,6 @@ const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
 
 describe("init wizard — stack flow", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

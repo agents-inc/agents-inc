@@ -1,5 +1,5 @@
 import { rm } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   readCompiledAgents,
@@ -42,10 +41,6 @@ const ORPHANED_TYPE_SURFACE = "export type SkillId";
 describe("a global install whose config.ts was deleted", () => {
   let tempDir: string | undefined;
   let wizard: InitWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     await wizard?.destroy();

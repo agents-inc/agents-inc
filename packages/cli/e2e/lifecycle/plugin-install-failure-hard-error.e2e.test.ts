@@ -11,7 +11,6 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupFixture,
   configTsPath,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
@@ -50,7 +49,6 @@ describe.skipIf(!claudeAvailable)(
     let wizard: InitWizard | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       // Build a real marketplace that registers cleanly with claude CLI, then
       // overwrite its plugin list so individual installs fail per-skill.
       //
@@ -133,7 +131,6 @@ describe.skipIf(!claudeAvailable)(
     let wizard: EditWizard | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       fixture = await createE2EPluginSource({ owned: true });
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
     }, TIMEOUTS.SETUP_DUAL);

@@ -6,7 +6,6 @@ import {
   configTsPath,
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   directoryExists,
   fileExists,
   listFiles,
@@ -38,7 +37,6 @@ describe("eject command", () => {
   let e2eSourceTempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
   });
 

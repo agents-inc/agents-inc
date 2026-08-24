@@ -17,7 +17,6 @@ import {
   configTypesTsPath,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   loadConfigOrFail,
   readTestFile,
@@ -73,10 +72,6 @@ describe("config-scope integrity -- source priority preservation", () => {
   let tempDir: string;
   let initWizard: InitWizard | undefined;
   let wizard: Awaited<ReturnType<typeof EditWizard.launch>> | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await initWizard?.destroy();
@@ -166,10 +161,6 @@ describe("config-scope integrity -- domains in global config only", () => {
 describe("config-scope integrity -- config-types Domain type includes config.domains", () => {
   let tempDir: string;
   let wizard: Awaited<ReturnType<typeof EditWizard.launch>> | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -278,7 +269,6 @@ describe.skipIf(!claudeAvailable)(
     let pluginSource: E2EPluginSource;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       pluginSource = await createE2EPluginSource();
     }, TIMEOUTS.SETUP_DUAL);
 

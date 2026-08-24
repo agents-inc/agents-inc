@@ -3,7 +3,6 @@ import { writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import {
   cleanupTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -56,7 +55,6 @@ describe("installed skill with unparseable metadata.yaml", () => {
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   });
 

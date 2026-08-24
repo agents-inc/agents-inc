@@ -1,6 +1,6 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { DashboardSession } from "../pages/dashboard-session.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -12,7 +12,6 @@ import {
   createTempDir,
   cleanupTempDir,
   createPermissionsFile,
-  ensureBinaryExists,
   readTreeSnapshot,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -23,8 +22,6 @@ describe("init wizard — existing projects", () => {
   let editWizard: EditWizard | undefined;
   let tempDir: string | undefined;
   let source: E2ESource | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

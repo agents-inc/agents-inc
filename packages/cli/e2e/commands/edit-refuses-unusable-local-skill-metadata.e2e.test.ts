@@ -4,7 +4,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   listFiles,
   readTestFile,
   skillsPath,
@@ -69,7 +68,6 @@ describe("edit with a saved entry whose installed metadata.yaml describes no ski
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

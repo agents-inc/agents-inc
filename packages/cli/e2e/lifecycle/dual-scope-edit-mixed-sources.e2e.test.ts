@@ -12,7 +12,6 @@ import {
   agentsPath,
   isClaudeCLIAvailable,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   skillsPath,
@@ -41,7 +40,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     pluginFixture = await createE2EPluginSource();
     pluginSourceTempDir = pluginFixture.tempDir;
   }, TIMEOUTS.SETUP_DUAL);

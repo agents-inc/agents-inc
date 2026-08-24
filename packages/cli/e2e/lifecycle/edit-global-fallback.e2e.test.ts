@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -8,7 +8,6 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   skillsPath,
@@ -25,10 +24,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  */
 
 describe("edit with global-only installation (no project config)", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;

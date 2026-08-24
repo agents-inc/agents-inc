@@ -6,7 +6,7 @@ import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { cleanupTempDir, configTypesTsPath, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, configTypesTsPath } from "../helpers/test-utils.js";
 import {
   createDualScopeEnv,
   createTestEnvironment,
@@ -27,10 +27,6 @@ const SPLIT_INSTALL_ALIASES = ["SkillId", "AgentName", "Category"] as const;
  */
 
 // Shared E2E source across all suites in this file
-
-beforeAll(async () => {
-  await ensureBinaryExists();
-}, TIMEOUTS.SETUP_DUAL);
 
 describe("global scope lifecycle -- source loader merge", () => {
   let env: DualScopeEnv | undefined;

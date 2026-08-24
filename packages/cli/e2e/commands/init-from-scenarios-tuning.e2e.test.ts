@@ -5,7 +5,6 @@ import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   listFiles,
   readAgentEntriesFor,
   readTestFile,
@@ -73,7 +72,6 @@ describe("init --from <id>: sub-agent model and effort", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

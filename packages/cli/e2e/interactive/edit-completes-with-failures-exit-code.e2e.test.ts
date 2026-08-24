@@ -9,7 +9,6 @@ import {
   configTsPath,
   configTypesTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -55,7 +54,6 @@ describe("edit completes its work and exits non-zero when part of it failed", ()
   let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

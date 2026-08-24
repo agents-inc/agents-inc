@@ -1,12 +1,11 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
   directoryExists,
-  ensureBinaryExists,
   listFiles,
   agentsPath,
   renderMetadataYaml,
@@ -20,8 +19,6 @@ import "../matchers/setup.js";
 
 describe("dual-scope compile", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
@@ -54,7 +51,7 @@ describe("dual-scope compile", () => {
       E2E_AGENT["web-developer"].name,
       {
         contains: ["web-testing-cypress-e2e"],
-        notContains: ["web-testing-playwright-e2e"],
+        notContains: ["web-mocks-msw"],
       },
     );
 
@@ -80,7 +77,7 @@ describe("dual-scope compile", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     await expect({ dir: project.dir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-      contains: ["web-testing-playwright-e2e", "web-testing-cypress-e2e"],
+      contains: ["web-mocks-msw", "web-testing-cypress-e2e"],
     });
 
     // Project agent should NOT contain web-only skills (different domain)
@@ -104,7 +101,7 @@ describe("dual-scope compile", () => {
       selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
         },
       },
     });
@@ -141,20 +138,20 @@ describe("dual-scope compile", () => {
 
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+      skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
       selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
-          "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
+          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
         },
       },
     });
 
-    await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+    await createLocalSkill(projectDir, "web-mocks-msw", {
       description: "Project skill for single-scope test",
       metadata: renderMetadataYaml({
-        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        ...metadataFieldsFor("web-mocks-msw"),
         contentHash: "hash-local",
       }),
     });
@@ -194,7 +191,7 @@ describe("dual-scope compile", () => {
       selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
         },
       },
     });
@@ -215,7 +212,7 @@ describe("dual-scope compile", () => {
       selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
         },
       },
     });

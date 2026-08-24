@@ -1,5 +1,5 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { CLI } from "../fixtures/cli.js";
@@ -10,7 +10,6 @@ import {
   configTsPath,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   readTestFile,
   renderMetadataYaml,
   runCLI,
@@ -43,8 +42,6 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
 describe("a warning the unit suite suppresses still reaches the user through the binary", () => {
   const AGENT_NAME = E2E_AGENT["web-developer"].name;
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

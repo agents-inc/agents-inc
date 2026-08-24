@@ -6,7 +6,6 @@ import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import {
   agentsPath,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -77,7 +76,6 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

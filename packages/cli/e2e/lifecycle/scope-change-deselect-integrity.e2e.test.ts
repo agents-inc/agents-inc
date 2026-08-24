@@ -1,11 +1,10 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   loadConfigOrFail,
   normalizeGlobalConfig,
   readTestFile,
@@ -47,10 +46,6 @@ import "../matchers/setup.js";
  */
 
 describe("scope change deselect integrity", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string | undefined;
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;

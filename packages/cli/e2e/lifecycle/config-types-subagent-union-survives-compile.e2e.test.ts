@@ -9,7 +9,6 @@ import {
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
-  ensureBinaryExists,
   readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -42,7 +41,6 @@ describe("the sub-agent unions an install generates", () => {
   let testTempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
 
     // Append rather than re-render: nothing about the sub-agent is restated here, so this cannot

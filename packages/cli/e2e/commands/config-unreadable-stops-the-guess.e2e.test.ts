@@ -10,7 +10,6 @@ import {
   cleanupTempDir,
   configTsPath,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   getEjectedTemplatePath,
   readTreeSnapshot,
@@ -51,7 +50,6 @@ describe("a settings config that exists and cannot be evaluated", () => {
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   });
 

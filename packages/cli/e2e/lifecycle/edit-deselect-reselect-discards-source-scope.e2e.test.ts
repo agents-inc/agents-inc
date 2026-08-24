@@ -1,9 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   normalizeGlobalConfig,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -36,10 +35,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("in-session deselect and re-select of a project-only eject skill", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string | undefined;
   let wizard: EditWizard | undefined;
 

@@ -9,7 +9,6 @@ import {
 import {
   cleanupFixture,
   cleanupTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
@@ -46,7 +45,6 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
   let currentTempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

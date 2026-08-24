@@ -3,7 +3,6 @@ import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS, SOURCE_PATHS } from "../pages/constants.js";
 import {
-  ensureBinaryExists,
   cleanupTempDir,
   createTempDir,
   fileExists,
@@ -56,8 +55,6 @@ describe("build agent plugins", () => {
   let sourceDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     sourceDir = path.join(tempDir, "source");
     agentsDir = path.join(sourceDir, "compiled-agents");

@@ -1,12 +1,11 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { TIMEOUTS, TERMINAL_SIZE, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   fileExists,
   normalizeGlobalConfig,
   readAgentEntriesFor,
@@ -47,10 +46,6 @@ import "../matchers/setup.js";
  */
 
 describe("global agent toggle guard from project scope", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
 

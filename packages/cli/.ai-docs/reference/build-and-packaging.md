@@ -599,14 +599,26 @@ What also exists is _coupling_ to the build, in two places:
 patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `dist/` contains no
 `.test.js` file to collect in the first place.
 
-> **`ensureBinaryExists()` in `e2e/helpers/test-utils.ts` reads `dist/`, and did not always.** It
+> **The E2E dist door reads `dist/`, and did not always.** It was `ensureBinaryExists()` in
+> `e2e/helpers/test-utils.ts`, called from each spec's own `beforeAll`, until it moved to a single
+> registration in `e2e/setup.ts` on 2026-08-24. It
 > probed `BIN_RUN` (`<repo>/bin/run.js`) until 2026-08-22 — a committed source file tsup never
 > writes, since tsup's only output directory is `dist/` — so the probe was true whether or not a
 > build had ever run while its message claimed to be about the build. That was findings
-> **Pattern V**, the artefact that looks like verification and cannot fail. It now calls
+> **Pattern V**, the artefact that looks like verification and cannot fail. It calls
 > `assertDistIsPresent` (`src/cli/lib/testing/dist-staleness.ts`), which stats `dist/index.js` and
 > refuses when it is absent — the condition that actually catches a missing build. **Read anything
 > below or elsewhere describing this guard as unfailable as history rather than as the tree.**
+
+> **The replacement guard stands at four hook positions, and the fourth is `afterAll`.**
+> `guardAgainstDistReplacement` runs from `beforeEach` and `afterEach` in `e2e/setup.ts`, which
+> covers a `dist/` emptied around any TEST — but not one emptied during a spec's own `beforeAll`,
+> because a throwing `beforeAll` skips every `beforeEach` under it. That is most of what a
+> lifecycle spec does: its `beforeAll` is where it spawns, installs and waits. The window was filed
+> as unclosable and is not. **Measured on vitest 4.1.10**: a setup file's `afterAll` runs even when
+> the spec's `beforeAll` threw, and its throw is reported ALONGSIDE that error rather than in place
+> of it. The spec still fails for its own misleading reason — nothing can undo that — and the real
+> cause is now printed beside it.
 
 ---
 

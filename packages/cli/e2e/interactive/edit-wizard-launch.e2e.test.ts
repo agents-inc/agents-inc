@@ -1,7 +1,6 @@
 import { mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
-  ensureBinaryExists,
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
@@ -31,8 +30,6 @@ import path from "path";
 describe("edit wizard — launch and display", () => {
   let wizard: EditWizard | undefined;
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

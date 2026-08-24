@@ -14,7 +14,6 @@ import {
   cleanupTempDir,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   readCompiledAgents,
   readTestFile,
@@ -42,7 +41,6 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP);
 

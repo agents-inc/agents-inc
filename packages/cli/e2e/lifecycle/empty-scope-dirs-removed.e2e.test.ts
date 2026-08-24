@@ -1,6 +1,6 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -13,7 +13,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -62,10 +61,6 @@ const reactSkillMetadata = renderMetadataYaml({
 });
 
 describe("empty scope directories", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
 

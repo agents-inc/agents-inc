@@ -6,7 +6,6 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import {
   cleanupFixture,
   configTsPath,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -31,7 +30,6 @@ describe("project config identity under an existing global install", () => {
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
     // Phase A installs globally at the fake HOME; Phase B sets the project up
     // underneath it with every skill and sub-agent left at global scope.

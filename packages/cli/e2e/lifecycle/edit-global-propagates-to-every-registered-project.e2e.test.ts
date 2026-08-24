@@ -17,7 +17,6 @@ import {
   completeWithLocalSources,
   configTypesTsPath,
   createPermissionsFile,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -143,8 +142,6 @@ describe("a global edit propagates to every registered project, from nothing", (
   let editOutput: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     const environment = await createTestEnvironment();
     tempDir = environment.tempDir;
     globalHome = environment.fakeHome;

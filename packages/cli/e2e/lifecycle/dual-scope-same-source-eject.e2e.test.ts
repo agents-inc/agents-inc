@@ -1,7 +1,7 @@
 import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
@@ -16,7 +16,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
   renderMetadataYaml,
@@ -91,10 +90,6 @@ describe("dual-scope same-source (both eject)", () => {
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
   let seededTempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     await wizard?.destroy();

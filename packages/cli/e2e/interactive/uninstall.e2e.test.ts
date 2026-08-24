@@ -1,7 +1,7 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
-import { cleanupTempDir, ensureBinaryExists, directoryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, directoryExists } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -37,8 +37,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 describe("uninstall interactive", () => {
   let tempDir: string;
   let prompt: InteractivePrompt | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await prompt?.destroy();

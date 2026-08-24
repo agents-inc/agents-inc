@@ -1,7 +1,7 @@
 import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
@@ -14,7 +14,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   readTestFile,
   renderMetadataYaml,
   writeProjectConfig,
@@ -67,8 +66,6 @@ const SHARED_AUTHOR = "@owner";
 
 describe("a global fan-out re-emits an unaffected project's config byte-identically", () => {
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

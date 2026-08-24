@@ -7,7 +7,6 @@ import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
-  ensureBinaryExists,
   readTestFile,
   renderMetadataYaml,
   skillsPath,
@@ -26,8 +25,6 @@ import { CLI } from "../fixtures/cli.js";
 
 describe("list command", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
@@ -230,7 +227,6 @@ describe("list command", () => {
     let pluginSource: E2EPluginSource;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       pluginSource = await createE2EPluginSource();
     }, TIMEOUTS.SETUP_DUAL);
 

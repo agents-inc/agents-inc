@@ -1,6 +1,6 @@
 import { realpathSync } from "fs";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
@@ -10,7 +10,6 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   readCompiledAgents,
   readTestFile,
   skillsPath,
@@ -46,10 +45,6 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("fresh pick during project setup defaults to global and overrides to project", () => {
   let tempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

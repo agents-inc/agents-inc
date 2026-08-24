@@ -8,12 +8,7 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE, E2E_STACK_DESCRIPTION } from "../helpers/create-e2e-source.js";
-import {
-  cleanupTempDir,
-  createTempDir,
-  ensureBinaryExists,
-  loadConfigOrFail,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir, loadConfigOrFail } from "../helpers/test-utils.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
@@ -43,7 +38,6 @@ describe("a share round trip that starts from an applied stack", () => {
   let rebuilt: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 

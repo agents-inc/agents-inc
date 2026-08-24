@@ -7,12 +7,7 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import {
-  cleanupFixture,
-  ensureBinaryExists,
-  isClaudeCLIAvailable,
-  loadConfigOrFail,
-} from "../helpers/test-utils.js";
+import { cleanupFixture, isClaudeCLIAvailable, loadConfigOrFail } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
 /**
@@ -32,7 +27,6 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin source name in config.
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP);
 

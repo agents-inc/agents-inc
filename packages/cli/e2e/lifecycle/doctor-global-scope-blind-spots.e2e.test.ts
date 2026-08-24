@@ -10,7 +10,6 @@ import {
   configTsPath,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -33,7 +32,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 let source: E2ESource;
 
 beforeAll(async () => {
-  await ensureBinaryExists();
   source = await createE2ESource();
 }, TIMEOUTS.SETUP);
 

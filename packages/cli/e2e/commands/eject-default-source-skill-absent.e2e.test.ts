@@ -1,8 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import { seedDefaultSourceCache } from "../fixtures/default-source-cache.js";
-import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 import type { SkillId } from "../../src/cli/types/index.js";
@@ -35,8 +35,6 @@ const ABSENT_FROM_THE_CHECKOUT = "meta-reviewing-infra-reviewing" as const satis
  */
 describe("eject skills from the default marketplace, against a checkout missing one of them", () => {
   let projectDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (projectDir) await cleanupTempDir(projectDir);

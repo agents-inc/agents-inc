@@ -6,7 +6,6 @@ import {
   agentsPath,
   cleanupFixture,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   listFiles,
@@ -118,7 +117,6 @@ describe("init --from <id>: install scopes and unknown ids", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });
@@ -275,7 +273,6 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);

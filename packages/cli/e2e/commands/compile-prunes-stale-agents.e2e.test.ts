@@ -1,11 +1,10 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   renderMetadataYaml,
   writeAgentFile,
@@ -33,8 +32,6 @@ const HAND_AUTHORED_AGENT = "my-custom-agent";
 
 describe("compile prunes stale compiled agents", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

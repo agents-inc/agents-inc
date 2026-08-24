@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { BUILT_IN_STACK_DISPLAY, E2E_STACK_DISPLAY } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import {
   STEP_TEXT,
   TIMEOUTS,
@@ -20,8 +20,6 @@ import "../matchers/setup.js";
  */
 describe("init wizard — stacks belong to the marketplace that ships them", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

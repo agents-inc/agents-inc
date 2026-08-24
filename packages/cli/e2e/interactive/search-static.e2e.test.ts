@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
-  ensureBinaryExists,
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -22,7 +21,7 @@ import type { SkillId } from "../../src/cli/types/index.js";
  * identity columns cannot be satisfied by the same string.
  */
 const LOCAL_ONLY_SKILL = {
-  id: "web-testing-playwright-e2e",
+  id: "web-mocks-msw",
   slug: "playwright-e2e",
   display: "Playwright On Disk",
   description: "Browser automation kept on disk",
@@ -37,8 +36,6 @@ const LOCAL_ONLY_SKILL = {
  */
 describe("search command", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

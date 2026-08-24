@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -8,7 +8,6 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   readTestFile,
@@ -124,10 +123,6 @@ async function initSingleSkillProject(options: {
 }
 
 describe("generated config types keep narrowing after a project-scope install", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let tempDir: string | undefined;
 
   afterEach(async () => {

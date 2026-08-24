@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
@@ -9,7 +9,6 @@ import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   listFiles,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -25,10 +24,6 @@ import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual
  */
 
 describe("exclusion lifecycle: scope toggle persistence and file placement", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let testTempDir: string | undefined;
 
   afterEach(async () => {

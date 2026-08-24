@@ -1,7 +1,7 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupFixture, cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
@@ -30,7 +30,6 @@ describe("confirm step — mode-change indicator", () => {
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -33,7 +33,6 @@ describe("wizard terminal-size guard on a mid-session resize", () => {
   let source: E2ESource | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

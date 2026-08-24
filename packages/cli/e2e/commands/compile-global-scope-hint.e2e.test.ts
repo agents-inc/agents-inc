@@ -1,10 +1,9 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
-  ensureBinaryExists,
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -23,8 +22,6 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
 describe("compile project-context global-scope hint", () => {
   let tempDir: string;
 
-  beforeAll(ensureBinaryExists);
-
   afterEach(async () => {
     if (tempDir) {
       await cleanupTempDir(tempDir);
@@ -39,7 +36,7 @@ describe("compile project-context global-scope hint", () => {
       selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["web-developer"].name]: {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
         },
       },
     });
@@ -63,14 +60,14 @@ describe("compile project-context global-scope hint", () => {
     // (so the project pass discovers skills and reaches the compile step).
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+      skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
     });
-    await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+    await createLocalSkill(projectDir, "web-mocks-msw", {
       description: "Project skill for hint test",
       metadata: renderMetadataYaml({
-        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        ...metadataFieldsFor("web-mocks-msw"),
         contentHash: "hash-hint-p",
       }),
     });
@@ -96,19 +93,19 @@ describe("compile project-context global-scope hint", () => {
     // Project install has a project-scoped agent that DOES compile in the project pass
     await writeProjectConfig(projectDir, {
       name: "project-test",
-      skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+      skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["api-developer"].name, scope: "project" }],
       selectedDomains: ["web"],
       stack: {
         [E2E_AGENT["api-developer"].name]: {
-          "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
+          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
         },
       },
     });
-    await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+    await createLocalSkill(projectDir, "web-mocks-msw", {
       description: "Project skill for guard test",
       metadata: renderMetadataYaml({
-        ...metadataFieldsFor("web-testing-playwright-e2e"),
+        ...metadataFieldsFor("web-mocks-msw"),
         contentHash: "hash-guard-p",
       }),
     });

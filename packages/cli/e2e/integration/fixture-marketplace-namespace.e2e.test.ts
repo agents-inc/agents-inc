@@ -17,12 +17,7 @@ import {
   E2E_SKILL_IDS,
   e2eSkillId,
 } from "../fixtures/expected-values.js";
-import {
-  cleanupFixture,
-  cleanupTempDir,
-  ensureBinaryExists,
-  readMarketplaceJson,
-} from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir, readMarketplaceJson } from "../helpers/test-utils.js";
 import {
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
@@ -105,7 +100,6 @@ describe("E2E fixture marketplace namespace", () => {
     let fixture: E2EPluginSource;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       fixture = await createE2EPluginSource();
     }, TIMEOUTS.SETUP);
 
@@ -136,7 +130,6 @@ describe("E2E fixture marketplace namespace", () => {
     let projectTempDir: string | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       source = await createE2ESource();
     }, TIMEOUTS.SETUP);
 

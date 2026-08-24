@@ -13,7 +13,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -37,7 +36,6 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
   let projectDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
 
     tempDir = await createTempDir();

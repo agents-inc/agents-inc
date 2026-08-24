@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -38,7 +38,6 @@ describe("init surfaces a rejected selection after the wizard", () => {
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     const source = await createE2ESource({ relationships: UNMET_REQUIREMENT_RULES });
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;

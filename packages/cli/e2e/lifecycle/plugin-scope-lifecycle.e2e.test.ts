@@ -13,7 +13,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createPermissionsFile,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
@@ -35,7 +34,6 @@ describe.skipIf(!claudeAvailable)(
     let wizard: InitWizard | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       fixture = await createE2EPluginSource();
 
       ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));

@@ -190,11 +190,6 @@ const SKILL_IDENTITY_FIELDS: Record<string, SkillIdentityFields> = {
     slug: "cypress-e2e",
     displayName: "Cypress E2E",
   },
-  "web-testing-playwright-e2e": {
-    category: "web-e2e",
-    slug: "playwright-e2e",
-    displayName: "Playwright E2E",
-  },
   "web-testing-react-testing-library": {
     category: "web-testing",
     slug: "react-testing-library",
@@ -403,7 +398,7 @@ export class ProjectBuilder {
    *       .claude/skills/web-testing-cypress-e2e/
    *     project/                            <- project dir (cwd)
    *       .claude-src/config.ts             <- project config
-   *       .claude/skills/web-testing-playwright-e2e/
+   *       .claude/skills/web-mocks-msw/
    */
   static async dualScope(options?: DualScopeOptions): Promise<DualScopeHandle> {
     const tempDir = await createTempDir();
@@ -418,7 +413,10 @@ export class ProjectBuilder {
       selectedDomains: ["web"],
       stack: {
         "web-developer": {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          // The category the CATALOGUE declares for this id, looked up rather than derived from
+          // its `web-testing-` prefix — `metadataFieldsFor` beside this writes the same answer
+          // into the skill's metadata.yaml, and the two disagreed until 2026-08-24.
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
         },
       },
     };
@@ -440,27 +438,34 @@ export class ProjectBuilder {
     const projectConfig: FixtureProjectConfig = {
       name: "project-test",
       skills: options?.projectSkills ?? [
-        { id: "web-testing-playwright-e2e", scope: "project", origin: "eject" },
+        { id: "web-mocks-msw", scope: "project", origin: "eject" },
         { id: "web-testing-cypress-e2e", scope: "global", origin: "eject" },
       ],
       agents: [{ name: "api-developer", scope: "project" }],
       selectedDomains: ["web"],
       stack: {
         "api-developer": options?.projectStack ?? {
-          "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          "web-mocking": [{ id: "web-testing-playwright-e2e", preloaded: true }],
+          // Two skills in two DIFFERENT categories, which is what this fixture always meant: one
+          // agent holding a global-scoped skill and a project-scoped one. It used to say
+          // `web-testing` and `web-mocking` for two skills the catalogue both puts in `web-e2e`,
+          // and `web-e2e` is EXCLUSIVE — so once the categories were read from the catalogue
+          // instead of from the id prefix, the pair became a config the writer refuses to emit.
+          // `web-mocks-msw` is a real `web-mocking` skill, so the second key is now true of the
+          // id under it rather than of the id the author reached for.
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
         },
       },
     };
     await writeProjectConfig(projectDir, projectConfig);
 
-    await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+    await createLocalSkill(projectDir, "web-mocks-msw", {
       description:
         options?.projectSkill?.description ?? "Project-local E2E skill for dual-scope testing",
       metadata:
         options?.projectSkill?.metadata ??
         renderMetadataYaml({
-          ...metadataFieldsFor("web-testing-playwright-e2e"),
+          ...metadataFieldsFor("web-mocks-msw"),
           cliDescription: "E2E test skill",
           usageGuidance: "Use when testing E2E scenarios",
           contentHash: "d4e5f6a",

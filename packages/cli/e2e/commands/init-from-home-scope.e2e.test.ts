@@ -4,7 +4,6 @@ import "../matchers/setup.js";
 import {
   agentsPath,
   cleanupTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   skillsPath,
@@ -58,7 +57,6 @@ describe("init --from <id>: project-scoped content at the global root", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

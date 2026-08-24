@@ -2,7 +2,7 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists, runCLI } from "../helpers/test-utils.js";
+import { cleanupTempDir, runCLI } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
@@ -55,7 +55,6 @@ describe("a marketplace whose manifest names it something Claude Code cannot reg
   let projectTempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
     project = await ProjectBuilder.editable({
       marketplace: source.sourceDir,

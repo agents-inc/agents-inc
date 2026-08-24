@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
@@ -10,7 +10,6 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   skillsPath,
@@ -34,10 +33,6 @@ describe("scope toggle config snapshot", () => {
   let fakeHome: string;
   let projectDir: string;
   let testWizard: EditWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   beforeEach(async () => {
     const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();

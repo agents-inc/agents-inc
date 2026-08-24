@@ -1,13 +1,12 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import {
   cleanupTempDir,
   configTsPath,
   createTempDir,
-  ensureBinaryExists,
   writeCorruptConfig,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -45,8 +44,6 @@ const SCHEMA_VIOLATION = [
 
 describe("doctor with an unreadable config", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { STEP_TEXT } from "../pages/constants.js";
-import { createTempDir, cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 
 /**
@@ -52,8 +52,6 @@ const EMPTY_OPERATIONAL_OPENING = [
 
 describe("the report doctor prints over a directory holding nothing", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

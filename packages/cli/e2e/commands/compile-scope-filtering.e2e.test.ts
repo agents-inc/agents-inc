@@ -1,10 +1,9 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
-  ensureBinaryExists,
   readCompiledAgents,
   renderMetadataYaml,
   writeProjectConfig,
@@ -24,8 +23,6 @@ import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.j
  */
 describe("compile scope filtering", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
@@ -49,16 +46,16 @@ describe("compile scope filtering", () => {
           }),
         },
         projectSkills: [
-          { id: "web-testing-playwright-e2e", scope: "project", origin: "eject" },
+          { id: "web-mocks-msw", scope: "project", origin: "eject" },
           { id: "web-testing-cypress-e2e", scope: "global", origin: "eject" },
         ],
         projectStack: {
-          "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
+          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
         },
         projectSkill: {
           description: "Project skill for scope filtering test",
           metadata: renderMetadataYaml({
-            ...metadataFieldsFor("web-testing-playwright-e2e"),
+            ...metadataFieldsFor("web-mocks-msw"),
             contentHash: "hash-project-sf",
           }),
         },
@@ -92,7 +89,7 @@ describe("compile scope filtering", () => {
 
       // Project agent should exist and contain its skill
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["name: api-developer", "web-testing-playwright-e2e"],
+        contains: ["name: api-developer", "web-mocks-msw"],
       });
 
       // Project dir should NOT have the global agent
@@ -129,7 +126,7 @@ describe("compile scope filtering", () => {
         selectedDomains: ["web"],
         stack: {
           [E2E_AGENT["web-developer"].name]: {
-            "web-testing": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+            "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
           },
           [E2E_AGENT["api-developer"].name]: {
             "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -155,20 +152,20 @@ describe("compile scope filtering", () => {
       // Project installation: completely different agent, no overlap with global
       await writeProjectConfig(projectDir, {
         name: "project-test",
-        skills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
         agents: [{ name: "cli-developer", scope: "project" }],
         selectedDomains: ["web"],
         stack: {
           "cli-developer": {
-            "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
+            "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
           },
         },
       });
 
-      await createLocalSkill(projectDir, "web-testing-playwright-e2e", {
+      await createLocalSkill(projectDir, "web-mocks-msw", {
         description: "Project skill",
         metadata: renderMetadataYaml({
-          ...metadataFieldsFor("web-testing-playwright-e2e"),
+          ...metadataFieldsFor("web-mocks-msw"),
           contentHash: "hash-pC",
         }),
       });
@@ -208,7 +205,7 @@ describe("compile scope filtering", () => {
 
       // Project agent compiled separately with its skill
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("cli-developer", {
-        contains: ["name: cli-developer", "web-testing-playwright-e2e"],
+        contains: ["name: cli-developer", "web-mocks-msw"],
       });
 
       // Project dir should NOT have any global agents
@@ -234,17 +231,18 @@ describe("compile scope filtering", () => {
         },
         // Only the project-scoped skill is registered here — the global one is
         // referenced by the stack below and by nothing else.
-        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+        projectSkills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
+        // Each under the category the CATALOGUE declares for it, not the one the id's prefix
+        // suggests: `web-testing-cypress-e2e` is `web-e2e`, and `web-e2e` is EXCLUSIVE, so the
+        // two cannot share a key even before they are named correctly.
         projectStack: {
-          "web-testing": [
-            { id: "web-testing-cypress-e2e", preloaded: true },
-            { id: "web-testing-playwright-e2e", preloaded: true },
-          ],
+          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
         },
         projectSkill: {
           description: "Project-local skill for discovery test",
           metadata: renderMetadataYaml({
-            ...metadataFieldsFor("web-testing-playwright-e2e"),
+            ...metadataFieldsFor("web-mocks-msw"),
             contentHash: "hash-ppd",
           }),
         },
@@ -267,7 +265,7 @@ describe("compile scope filtering", () => {
       // The project agent carries BOTH the project-local skill and the global one
       // its config never names.
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
-        contains: ["name: api-developer", "web-testing-playwright-e2e", "web-testing-cypress-e2e"],
+        contains: ["name: api-developer", "web-mocks-msw", "web-testing-cypress-e2e"],
       });
 
       // Project dir should NOT have the global agent
@@ -294,14 +292,14 @@ describe("compile scope filtering", () => {
             contentHash: "hash-gv",
           }),
         },
-        projectSkills: [{ id: "web-testing-playwright-e2e", scope: "project", origin: "eject" }],
+        projectSkills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
         projectStack: {
-          "web-testing": [{ id: "web-testing-playwright-e2e", preloaded: true }],
+          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
         },
         projectSkill: {
           description: "Project skill for verbose test",
           metadata: renderMetadataYaml({
-            ...metadataFieldsFor("web-testing-playwright-e2e"),
+            ...metadataFieldsFor("web-mocks-msw"),
             contentHash: "hash-pv",
           }),
         },
@@ -340,7 +338,7 @@ describe("compile scope filtering", () => {
       // that had stopped reading ~/.claude/skills/ altogether.
       expect(output).toContain(STEP_TEXT.LOADED_SKILL);
       expect(output).toContain("web-testing-cypress-e2e");
-      expect(output).toContain("web-testing-playwright-e2e");
+      expect(output).toContain("web-mocks-msw");
     });
   });
 });

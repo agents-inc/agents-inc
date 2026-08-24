@@ -18,7 +18,6 @@ import {
   configTsPath,
   configTypesTsPath,
   createPermissionsFile,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
@@ -40,7 +39,6 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 beforeAll(async () => {
   if (!claudeAvailable) return;
-  await ensureBinaryExists();
   source = await createE2EPluginSource();
 }, TIMEOUTS.SETUP_DUAL);
 

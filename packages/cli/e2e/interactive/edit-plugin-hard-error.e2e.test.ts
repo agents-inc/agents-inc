@@ -12,7 +12,6 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupFixture,
   configTsPath,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -77,7 +76,6 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     let wizard: EditWizard | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       // fixture provides plugin-sourced skill IDs used in the seeded config.
       fixture = await createE2EPluginSource();
       // localSource is a plain directory with NO marketplace.json — the
@@ -166,7 +164,6 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     let wizard: InitWizard | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       localSource = await createE2ESource();
     }, TIMEOUTS.SETUP);
 

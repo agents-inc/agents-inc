@@ -2,12 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
-import {
-  agentsPath,
-  cleanupTempDir,
-  completeWithLocalSources,
-  ensureBinaryExists,
-} from "../helpers/test-utils.js";
+import { agentsPath, cleanupTempDir, completeWithLocalSources } from "../helpers/test-utils.js";
 import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-agents.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -31,7 +26,6 @@ describe("init wizard — a stack's declared sub-agent roster is the installed o
   let source: E2ESource | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

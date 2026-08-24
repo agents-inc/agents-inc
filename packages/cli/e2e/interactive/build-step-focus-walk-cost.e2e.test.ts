@@ -1,5 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ensureBinaryExists, createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { CategoryWalkError } from "../pages/steps/build-step.js";
@@ -30,8 +30,6 @@ import "../matchers/setup.js";
 describe("build step — what focusSkill spends", () => {
   let wizard: EditWizard | undefined;
   let tempHOME: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

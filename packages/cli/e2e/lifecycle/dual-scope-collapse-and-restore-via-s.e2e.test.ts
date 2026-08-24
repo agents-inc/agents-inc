@@ -1,6 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { configTsPath, ensureBinaryExists, readTestFile } from "../helpers/test-utils.js";
+import { configTsPath, readTestFile } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { TIMEOUTS } from "../pages/constants.js";
@@ -65,10 +65,6 @@ async function collapseToInheritedGlobal(projectDir: string, fakeHome: string): 
 
 describe("dual-scope collapse and restoration driven by `s`", () => {
   let env: DualScopeEnv | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await env?.destroy();

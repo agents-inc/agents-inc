@@ -10,12 +10,7 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import {
-  ensureBinaryExists,
-  cleanupTempDir,
-  createTempDir,
-  isClaudeCLIAvailable,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -36,8 +31,6 @@ const claudeAvailable = await isClaudeCLIAvailable();
  */
 
 describe("POM Framework Smoke Tests", () => {
-  beforeAll(ensureBinaryExists, TIMEOUTS.SETUP);
-
   describe.skipIf(!claudeAvailable)("InitWizard.completeWithDefaults", () => {
     let result: WizardResult | undefined;
     let pluginFixture: E2EPluginSource | undefined;

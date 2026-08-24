@@ -1,15 +1,10 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import {
-  createPermissionsFile,
-  ensureBinaryExists,
-  readTreeSnapshot,
-  runCLI,
-} from "../helpers/test-utils.js";
+import { createPermissionsFile, readTreeSnapshot, runCLI } from "../helpers/test-utils.js";
 import { createGlobalOnlyEnv, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
 import type { DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 
@@ -30,10 +25,6 @@ const SECOND_PROJECT_DIR_NAME = "project-b";
 
 describe("compile inside a project is contained to that project", () => {
   let env: DualScopeEnv | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await env?.destroy();

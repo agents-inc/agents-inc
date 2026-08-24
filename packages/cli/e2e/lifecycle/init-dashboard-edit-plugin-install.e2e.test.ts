@@ -9,7 +9,6 @@ import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
   cleanupTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
@@ -49,7 +48,6 @@ describe.skipIf(!claudeAvailable)("init -> dashboard -> edit: plugin install mus
   let fixture: E2EPluginSource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

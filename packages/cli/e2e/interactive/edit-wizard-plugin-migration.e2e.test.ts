@@ -7,7 +7,6 @@ import {
   cleanupFixture,
   cleanupTempDir,
   createTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -39,7 +38,6 @@ describe.skipIf(!claudeAvailable)("edit wizard — plugin mode migration", () =>
   let sharedHome: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP);
 

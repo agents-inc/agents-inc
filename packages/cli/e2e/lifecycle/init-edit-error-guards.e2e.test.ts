@@ -1,11 +1,10 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   renderMetadataYaml,
   runCLI,
   writeProjectConfig,
@@ -42,8 +41,6 @@ const MARKETPLACE_FLAG_SPELLINGS = [
 
 describe("init/edit error guards", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

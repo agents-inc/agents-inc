@@ -1,12 +1,11 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   normalizeGlobalConfig,
   readTestFile,
@@ -34,10 +33,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("project-only deselection integrity", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string | undefined;
   let wizard: EditWizard | undefined;
 

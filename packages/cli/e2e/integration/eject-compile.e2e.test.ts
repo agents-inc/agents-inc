@@ -1,11 +1,10 @@
 import path from "path";
 import { writeFile } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   directoryExists,
   getEjectedTemplatePath,
@@ -35,8 +34,6 @@ const CUSTOM_INTRO_MARKER = "E2E-CUSTOM-INTRO-CONTENT";
 
 describe("template ejection + custom compilation", () => {
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

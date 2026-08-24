@@ -1,10 +1,9 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   writeProjectConfig,
   createLocalSkill,
   renderMetadataYaml,
@@ -32,10 +31,6 @@ import "../matchers/setup.js";
 describe("edit wizard — excluded skills", () => {
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     await wizard?.destroy();

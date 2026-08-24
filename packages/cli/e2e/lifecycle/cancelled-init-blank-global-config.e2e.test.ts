@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 
 import {
@@ -6,7 +6,6 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   pollUntil,
   skillsPath,
@@ -26,10 +25,6 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
  * when a REAL global installation exists is deliberate product behaviour and
  * is covered by init-wizard-existing.e2e.test.ts.
  */
-
-beforeAll(async () => {
-  await ensureBinaryExists();
-}, TIMEOUTS.SETUP);
 
 describe("init cancelled from a project directory", () => {
   let tempDir: string | undefined;

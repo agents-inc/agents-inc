@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
@@ -12,7 +12,6 @@ import {
   configTsPath,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   readTestFile,
 } from "../helpers/test-utils.js";
 import type { AgentName } from "../../src/cli/types/index.js";
@@ -46,10 +45,6 @@ import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
  */
 
 describe("stack per-agent curation survives edit", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   describe("hand-edited per-agent removal", () => {
     let tempDir: string | undefined;
 

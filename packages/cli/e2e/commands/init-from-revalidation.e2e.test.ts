@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { createE2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import {
   runInitFrom,
   startSeedConfigStore,
@@ -62,7 +62,6 @@ describe("init --from revalidates the decoded selection", () => {
   let store: SeedConfigStore;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     const source = await createE2ESource({ relationships: UNMET_REQUIREMENT_RULES });
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;

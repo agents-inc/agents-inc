@@ -1,6 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { ensureBinaryExists, loadConfigOrFail } from "../helpers/test-utils.js";
+import { loadConfigOrFail } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
@@ -22,10 +22,6 @@ import "../matchers/setup.js";
  */
 
 describe("unique skill in category guard", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let wizard: EditWizard | undefined;
 
   afterEach(async () => {

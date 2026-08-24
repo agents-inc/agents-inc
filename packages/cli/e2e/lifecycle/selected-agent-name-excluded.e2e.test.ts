@@ -9,7 +9,6 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
@@ -40,7 +39,6 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
   let sourceTempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
     sourceDir = fixture.sourceDir;
     sourceTempDir = fixture.tempDir;

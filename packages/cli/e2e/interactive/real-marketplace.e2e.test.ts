@@ -11,7 +11,6 @@ import {
   createTempDir,
   cleanupTempDir,
   directoryExists,
-  ensureBinaryExists,
 } from "../helpers/test-utils.js";
 import { readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
 import { BUILT_IN_STACK_DISPLAY, WEB_DOMAIN_AGENTS } from "../fixtures/expected-values.js";
@@ -75,8 +74,6 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let sharedHome: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     projectDir = await createTempDir();
     sharedHome = await createTempDir();
 

@@ -15,7 +15,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   createTempDir,
-  ensureBinaryExists,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
@@ -52,7 +51,6 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

@@ -8,7 +8,6 @@ import {
   agentsPath,
   createTempDir,
   cleanupTempDir,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -107,7 +106,6 @@ describe("share", () => {
   const tempDirs: string[] = [];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

@@ -1,13 +1,7 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import {
-  cleanupFixture,
-  cleanupTempDir,
-  ensureBinaryExists,
-  fileExists,
-  skillsPath,
-} from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir, fileExists, skillsPath } from "../helpers/test-utils.js";
 import { readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -79,7 +73,6 @@ describe("Sources step overflow with a pending-removal row at a short terminal h
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 
@@ -249,7 +242,6 @@ describe("Sources step overflow when every remaining row is inert (zero focusabl
   let source: E2ESource;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

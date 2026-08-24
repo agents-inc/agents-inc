@@ -24,7 +24,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
   renderMetadataYaml,
@@ -82,7 +81,6 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
   let currentTempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     pluginSource = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

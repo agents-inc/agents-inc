@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
@@ -11,7 +11,6 @@ import {
   createPermissionsFile,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
   skillsPath,
@@ -49,10 +48,6 @@ const singleSkillStack = {
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 describe("edit removes the only skill an agent references", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let globalHome: string | undefined;
 
   afterEach(async () => {

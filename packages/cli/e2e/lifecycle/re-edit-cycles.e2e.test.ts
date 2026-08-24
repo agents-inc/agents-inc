@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
@@ -12,7 +12,6 @@ import {
   completeWithLocalSources,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -44,10 +43,6 @@ async function readConfigArrays(projectDir: string): Promise<{
 }
 
 describe("re-edit cycles: config stability across multiple edits", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   describe("idempotent no-change edits", () => {
     let tempDir: string | undefined;
     let sharedHome: string | undefined;

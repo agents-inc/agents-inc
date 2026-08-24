@@ -1,15 +1,13 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import type { SourcesStep } from "../pages/steps/sources-step.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
+
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("init wizard — source management", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

@@ -4,13 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import {
-  cleanupFixture,
-  configTsPath,
-  ensureBinaryExists,
-  readTestFile,
-  skillsPath,
-} from "../helpers/test-utils.js";
+import { cleanupFixture, configTsPath, readTestFile, skillsPath } from "../helpers/test-utils.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import type { WizardResult } from "../pages/wizard-result.js";
 import { DIRS, E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -81,7 +75,6 @@ describe("an eject migration that could not do its work must not report success"
   let lockedDirs: string[] = [];
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

@@ -10,7 +10,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   isClaudeCLIAvailable,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   skillsPath,
 } from "../helpers/test-utils.js";
@@ -40,7 +39,6 @@ describe.skipIf(!claudeAvailable)(
     let wizard: EditWizard | undefined;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       pluginFixture = await createE2EPluginSource();
       pluginSourceTempDir = pluginFixture.tempDir;
     }, TIMEOUTS.SETUP_DUAL);

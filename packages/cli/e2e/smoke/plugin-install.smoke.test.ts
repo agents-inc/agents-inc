@@ -12,7 +12,6 @@ import {
   createTempDir,
   cleanupIsolatedClaudeHome,
   cleanupTempDir,
-  ensureBinaryExists,
   fileExists,
   type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
@@ -58,7 +57,6 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
   let isolated: IsolatedClaudeHome;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     isolated = await createIsolatedClaudeHome();
   });
 

@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTypesTsPath,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readCompiledAgents,
@@ -69,7 +68,6 @@ describe("marketplace author arc — check, build, publish, install", () => {
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     const source = await createE2ESource();
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;

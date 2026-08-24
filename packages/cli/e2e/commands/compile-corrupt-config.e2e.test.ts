@@ -1,6 +1,6 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
@@ -8,7 +8,6 @@ import {
   createLocalSkill,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   readTestFile,
@@ -75,8 +74,6 @@ async function seedGlobalInstall(fakeHome: string): Promise<void> {
 
 describe("compile with a corrupt config", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

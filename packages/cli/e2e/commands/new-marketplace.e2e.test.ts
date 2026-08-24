@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -94,8 +93,6 @@ const CONFIG_FILES = [
 describe("new marketplace — refusals", () => {
   let tempDir: string;
 
-  beforeAll(ensureBinaryExists);
-
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
   });
@@ -171,7 +168,6 @@ describe("new marketplace — what it writes", () => {
   let marketplaceDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     tempDir = await createTempDir();
     marketplaceDir = path.join(tempDir, MARKETPLACE_NAME);
     const scaffold = await CLI.run(["new", "marketplace", MARKETPLACE_NAME], { dir: tempDir });
@@ -244,7 +240,6 @@ describe("new marketplace — round trip through the commands downstream", () =>
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     tempDir = await createTempDir();
     marketplaceDir = path.join(tempDir, MARKETPLACE_NAME);
     const scaffold = await CLI.run(["new", "marketplace", MARKETPLACE_NAME], { dir: tempDir });

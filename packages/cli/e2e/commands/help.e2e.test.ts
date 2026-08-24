@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { createTempDir, cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
@@ -12,8 +12,6 @@ const WITHDRAWN_FLAG_REASON = "--source was withdrawn, not aliased, so no help s
 
 describe("help and version", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { cleanupTempDir, createTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
@@ -45,8 +45,6 @@ const EVERY_COMMAND = ["init", ...COMMANDS_WITHOUT_MARKETPLACE] as const;
 
 describe("--marketplace is init's flag alone", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

@@ -4,7 +4,6 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import {
   cleanupFixture,
   cleanupTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   readCompiledAgents,
 } from "../helpers/test-utils.js";
@@ -45,7 +44,6 @@ describe("edit wizard — eject mode", () => {
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     sourceFixture = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

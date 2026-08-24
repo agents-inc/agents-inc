@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -11,7 +11,6 @@ import {
   configTsPath,
   configTypesTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
   runCLI,
@@ -32,10 +31,6 @@ import {
  */
 
 describe("init-edit-compile roundtrip lifecycle", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
-
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;

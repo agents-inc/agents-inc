@@ -15,7 +15,6 @@ import {
   configTsPath,
   createTempDir,
   directoryExists,
-  ensureBinaryExists,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
@@ -65,7 +64,6 @@ describe.skipIf(!hasSkillsSource)("edit wizard pending-removal row (real marketp
   let editWizard: EditWizard | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     projectDir = await createTempDir();
     sharedHome = await createTempDir();
 

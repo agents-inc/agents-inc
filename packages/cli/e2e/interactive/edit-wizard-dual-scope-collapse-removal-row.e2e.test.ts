@@ -1,10 +1,9 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   listFiles,
   readTestFile,
   skillsPath,
@@ -42,10 +41,6 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
  */
 
 describe("edit wizard — pending-removal row when a dual-scope skill collapses to global", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let tempDir: string | undefined;
   let wizard: EditWizard | undefined;
 

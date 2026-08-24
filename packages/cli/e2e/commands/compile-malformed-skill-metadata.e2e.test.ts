@@ -1,11 +1,10 @@
 import path from "path";
 import { writeFile } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   readCompiledAgents,
   readTestFile,
   readTreeSnapshot,
@@ -67,8 +66,6 @@ async function seedInstalledProject(): Promise<Fixture> {
 
 describe("compile with an unreadable skill metadata.yaml", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

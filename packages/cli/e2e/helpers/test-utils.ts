@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -12,7 +12,6 @@ import {
 } from "../../src/cli/consts.js";
 import { cliVersion, stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
-import { getErrorMessage } from "../../src/cli/utils/errors.js";
 import {
   generateConfigSource,
   type ConfigSourceOptions,
@@ -39,7 +38,7 @@ import {
   directoryExists,
   fileExists,
 } from "../../src/cli/lib/__tests__/test-fs-utils.js";
-import { assertDistIsPresent } from "../../src/cli/lib/testing/dist-staleness.js";
+
 import type {
   AgentName,
   AgentScopeConfig,
@@ -309,49 +308,45 @@ export async function writeProjectConfig(
   await mkdir(configDir, { recursive: true });
   const source = generateConfigSource(resolved as ProjectConfig, options);
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
-  await reportRoundTripDrift(baseDir, source, options);
+  await refuseUnreachableConfig(baseDir, source, options);
 }
 
 /**
- * Writes a line to `$CONFIG_ROUNDTRIP_PROBE` whenever a fixture config does not survive the
- * product's own load-then-write cycle. Unset — which is every ordinary run — it does nothing.
+ * Refuses a fixture config the product would not have written.
  *
- * **Rendering a fixture through the writer proves its FORM; this proves its CONTENT is reachable.**
- * `generateConfigSource` will emit whatever it is handed, so a fixture can still describe a state
- * the CLI would never write. Reading it back and writing it again is what asks that question: the
- * loader normalises (`normalizeStackRecord` relocates an assignment to its skill's declared
- * category, and expands the writer's compacted forms), so a config the product would have written
- * comes back byte-identical, and one it would not either DRIFTS or makes the writer THROW.
+ * Rendering through `generateConfigSource` proves the FORM; this proves the CONTENT is reachable.
+ * The writer emits whatever it is handed, so a fixture can still describe a state the product
+ * refuses — reading it back is what asks that, because the loader NORMALISES. A config the CLI
+ * would have written comes back byte-identical; one it would not either drifts or throws.
  *
- * It found 19 of both over 150 fixture configs, all one root cause and all in four files — see
- * `.ai-docs/agent-findings/2026-08-23-fixture-stack-categories-derived-from-id.md`. Run it with:
+ * It shipped as an env-gated diagnostic on 2026-08-24 because four files failed it, and became
+ * this the same day once they were repaired. What it found is the reason it is now a refusal
+ * rather than a report: thirteen stack literals filed a skill under a category the catalogue
+ * contradicts — `"web-testing"` for ids the catalogue puts in `"web-e2e"` — derived from the id's
+ * prefix, which `packages/cli/CLAUDE.md` forbids in fixtures as much as in product code. Nothing
+ * saw it because `normalizeStackRecord` relocates the assignment on LOAD, so the written key had
+ * no reader; and two of those relocations collided in an EXCLUSIVE category, which means one spec
+ * asserted a compiled sub-agent body no CLI-written configuration can produce.
  *
- *   CONFIG_ROUNDTRIP_PROBE=/tmp/probe.jsonl npx vitest --config e2e/vitest.config.ts --run --project e2e
- *
- * A diagnostic rather than an assertion, deliberately, and only until that finding is cleared: a
- * guard that fails on four known files either reddens the suite or acquires an exemption list, and
- * the finding is the better place for a debt that is already named and counted.
+ * Measured at zero cost: the full E2E suite runs in the same 318s with this on as without it.
  */
-async function reportRoundTripDrift(
+async function refuseUnreachableConfig(
   baseDir: string,
   source: string,
   options: ConfigSourceOptions | undefined,
 ): Promise<void> {
-  const probePath = process.env.CONFIG_ROUNDTRIP_PROBE;
-  if (!probePath) return;
+  const reread = await loadProjectConfigFromDir(baseDir);
+  if (!reread) return;
 
-  const site = new Error().stack?.split("\n").find((line) => line.includes(".e2e.test.ts"));
-  const record = (entry: Record<string, unknown>): Promise<void> =>
-    appendFile(probePath, `${JSON.stringify({ site: site?.trim() ?? "?", ...entry })}\n`);
+  const again = generateConfigSource(reread.config, options);
+  if (again === source) return;
 
-  try {
-    const reread = await loadProjectConfigFromDir(baseDir);
-    if (!reread) return;
-    const again = generateConfigSource(reread.config, options);
-    if (again !== source) await record({ kind: "DRIFT", source, again });
-  } catch (error) {
-    await record({ kind: "THROW", message: getErrorMessage(error), source });
-  }
+  throw new Error(
+    `This fixture wrote a config.ts the CLI would not have written, at ${baseDir}. Reading it ` +
+      `back and writing it again gives different bytes, which means the product normalises ` +
+      `something the fixture stated — most often a stack category taken from a skill id's prefix ` +
+      `rather than looked up. Written:\n${source}\nRe-written after loading:\n${again}`,
+  );
 }
 
 /**
@@ -378,39 +373,6 @@ export async function writeCorruptConfig(baseDir: string, source: string): Promi
   const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
-}
-
-/**
- * Refuses a spec file that begins with no `dist/` under it.
- *
- * **It read {@link BIN_RUN} for its whole life, which is the one artefact in this path that
- * cannot go missing.** `bin/run.js` is three lines, git tracks it, and it starts whatever the
- * state of the build — oclif then resolves the commands from `./dist/commands`
- * (package.json -> `oclif.commands.target`), which is what a checkout that has never been built
- * does not have. So in the exact failure this exists to name, it returned cleanly and the run
- * went on to report `expected 127 to be 1`: an ordinary assertion failure saying nothing about a
- * build. Nearly every spec in both suites calls it from a `beforeAll`, and the handful that do
- * not looked like the only gap — re-derive both populations rather than trusting a figure written
- * here. The INVOCATION is matched rather than the name, and `*.smoke.test.ts` is counted with
- * `*.e2e.test.ts`: a bare import carries the string too, and the smoke suite calls this as well,
- * so the obvious grep for the name over `*.e2e.test.ts` alone undercounts at both ends — it has
- * already put a stale figure into a tracker row.
- *
- *     find e2e \( -name '*.e2e.test.ts' -o -name '*.smoke.test.ts' \)
- *     grep -rlP 'beforeAll\(ensureBinaryExists|await ensureBinaryExists\(\)' e2e --include='*.ts'
- *
- * **Presence only, and never staleness.** Whether the build matches the tree is asked once per
- * run, by `e2e/global-setup.ts`, and that is the honest scope for it — a `src/` edit landing
- * mid-run does not invalidate the build this run is already executing out of. Asked here instead
- * it refuses every spec file that begins after another agent saves a source file, which in this
- * checkout emptied half a suite. `assertDistIsPresent` carries that reasoning where the rule
- * lives.
- *
- * Async over a synchronous stat because every call site awaits it, and a `void` return would
- * turn each of those into an `await-thenable` report.
- */
-export async function ensureBinaryExists(): Promise<void> {
-  assertDistIsPresent(CLI_ROOT);
 }
 
 /** Strip ANSI escape sequences from CLI output */

@@ -1,6 +1,6 @@
 import path from "path";
 import { mkdir, rm } from "fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -11,7 +11,6 @@ import {
   fileExists,
   readTestFile,
   writeAgentFile,
-  ensureBinaryExists,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
@@ -33,8 +32,6 @@ const HAND_WRITTEN_AGENT = "my-custom-agent";
 
 describe("compiled-agent provenance marker", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

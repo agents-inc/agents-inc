@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 import {
@@ -7,7 +7,6 @@ import {
   configTsPath,
   configTypesTsPath,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -33,8 +32,6 @@ import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
  */
 describe("eject at the home directory writes a complete config pair", () => {
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

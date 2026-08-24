@@ -8,7 +8,6 @@ import {
   cleanupTempDir,
   configTypesTsPath,
   directoryExists,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -93,7 +92,6 @@ describe("init completes its install and exits non-zero when a sub-agent would n
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });

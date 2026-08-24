@@ -1,16 +1,11 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import {
-  agentsPath,
-  ensureBinaryExists,
-  fileExists,
-  readAgentEntriesFor,
-} from "../helpers/test-utils.js";
+import { agentsPath, fileExists, readAgentEntriesFor } from "../helpers/test-utils.js";
 import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
 import type { AgentName } from "../../src/cli/types/index.js";
@@ -40,10 +35,6 @@ const API_DEVELOPER: AgentName = "api-developer";
 describe("dual-scope agent — [P][G] badge and `s` collapse", () => {
   let env: DualScopeEnv | undefined;
   let wizard: EditWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     await wizard?.destroy();

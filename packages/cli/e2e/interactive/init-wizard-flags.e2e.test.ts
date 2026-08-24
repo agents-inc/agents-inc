@@ -1,18 +1,16 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir, ensureBinaryExists } from "../helpers/test-utils.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("init wizard — flags and permissions", () => {
   let wizard: InitWizard | undefined;
   let editWizard: EditWizard | undefined;
   let source: E2ESource | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

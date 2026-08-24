@@ -13,7 +13,16 @@ reporting_agent: orchestrator
 category: testing
 domain: e2e
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: >-
+  Fixed 2026-08-24. Each id now sits under the category the catalogue declares — `web-e2e` for
+  `web-testing-cypress-e2e` — and the pair that collided in that exclusive category was separated
+  by giving the second slot a skill that genuinely belongs to the other key: `web-mocks-msw` IS
+  `web-mocking`, which is what the fixture's own key had claimed all along. So both skills, both
+  categories and one agent survive, and no spec lost its subject. The diagnostic that found it was
+  promoted the same day from an env-gated report to an always-on refusal inside
+  `writeProjectConfig`, because the whole suite now reports zero; measured at no cost, 318s either
+  way. Journey 47 states the rule.
 ---
 
 # Four E2E fixtures file a skill under a stack category the catalogue contradicts
@@ -77,13 +86,18 @@ all**. So `dual-scope.e2e.test.ts` -> _"should compile project agents referencin
 project skills"_ asserts a compiled sub-agent body that no CLI-written configuration can produce.
 The spec is green, and what it covers is not reachable.
 
-## Why it is filed rather than fixed
+## How the fixture-identity question was answered
 
-Correcting the keys is mechanical, but it FORCES a fixture-identity decision that is not: the
-dual-scope fixture needs two distinguishable skills in one agent's stack, and two `web-e2e` skills
-cannot coexist there. One of them has to become a skill from another category, which moves the ids
-five specs assert on across two files. That is a change to what those specs cover, so it belongs to
-the owner rather than to the sweep that found it — `CLAUDE.md`'s "the verifier is never the fixer".
+Correcting the keys forced a decision the sweep deliberately did not take: the dual-scope fixture
+needs two distinguishable skills in one agent's stack, and two `web-e2e` skills cannot coexist
+there, because exclusivity is evaluated per (agent, category) in `compactCategoryAssignments`.
+
+The answer came from the fixture's own text. It had written `"web-testing"` and `"web-mocking"` as
+its two keys — two DIFFERENT categories — for two ids the catalogue both puts in `web-e2e`. The
+intent was never two e2e skills; it was one agent holding two skills of different kinds. So the
+second slot took a skill that actually is what its key says: `web-mocks-msw`, already declared
+`web-mocking` in `SKILL_IDENTITY_FIELDS`. Both skills, both categories, one agent — and the specs
+keep their subject.
 
 ## What would have caught it
 

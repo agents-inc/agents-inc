@@ -1,6 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
+
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
@@ -22,8 +22,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  */
 describe("edit wizard — confirm step and completion", () => {
   let wizard: EditWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

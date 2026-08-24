@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
@@ -11,7 +11,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTsPath,
-  ensureBinaryExists,
   loadConfigOrFail,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -145,10 +144,6 @@ async function unregisterProjects(globalHome: string): Promise<void> {
 
 describe("a global-scope narrowing keeps an untouched project's config.ts type-checking", () => {
   let tempDir: string | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);

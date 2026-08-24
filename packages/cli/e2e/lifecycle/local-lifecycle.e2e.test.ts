@@ -7,12 +7,7 @@ import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
-import {
-  createTempDir,
-  cleanupTempDir,
-  completeWithLocalSources,
-  ensureBinaryExists,
-} from "../helpers/test-utils.js";
+import { createTempDir, cleanupTempDir, completeWithLocalSources } from "../helpers/test-utils.js";
 
 /**
  * Full lifecycle E2E test for eject mode: Init -> Compile -> Uninstall.
@@ -28,8 +23,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
   let projectDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     projectDir = tempDir;
   }, TIMEOUTS.SETUP);

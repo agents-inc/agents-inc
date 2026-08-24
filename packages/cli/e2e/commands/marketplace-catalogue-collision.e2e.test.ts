@@ -5,7 +5,6 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import {
   cleanupTempDir,
   createTempDir,
-  ensureBinaryExists,
   readTreeSnapshot,
   renderSkillMd,
   runCLI,
@@ -57,7 +56,6 @@ describe("a marketplace colliding with the public catalogue", () => {
   let tempDir: string | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     namespacedSource = await createE2ESource();
     collidingSource = await createE2ESource();
     await republishUnderCatalogueId(collidingSource);

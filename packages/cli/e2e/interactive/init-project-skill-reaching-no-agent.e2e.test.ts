@@ -2,12 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import {
-  cleanupFixture,
-  cleanupTempDir,
-  ensureBinaryExists,
-  loadConfigOrFail,
-} from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir, loadConfigOrFail } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import "../matchers/setup.js";
@@ -35,7 +30,6 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
   let initExitCode: number;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
 
     const env = await createTestEnvironment();

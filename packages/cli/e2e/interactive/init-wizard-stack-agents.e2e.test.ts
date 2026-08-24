@@ -3,12 +3,7 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import {
-  cleanupTempDir,
-  ensureBinaryExists,
-  isClaudeCLIAvailable,
-  readCompiledAgents,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, isClaudeCLIAvailable, readCompiledAgents } from "../helpers/test-utils.js";
 import { E2E_AGENT_DISPLAY, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -30,7 +25,6 @@ describe.skipIf(!claudeAvailable)("init wizard — stack agent preselection", ()
   let source: E2EPluginSource | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2EPluginSource();
   }, TIMEOUTS.SETUP);
 

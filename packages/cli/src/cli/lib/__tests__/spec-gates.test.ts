@@ -879,3 +879,68 @@ describe("the shared base config refuses a value compared against itself", () =>
     ).not.toContain(SELF_COMPARE_RULE);
   });
 });
+
+/**
+ * The door every spawning spec needed, and now nobody calls.
+ *
+ * `ensureBinaryExists` refuses a spec file that begins with no `dist/` to spawn — a real window,
+ * and one `globalSetup`'s `assertDistIsFresh` does not cover, because that answers once per RUN
+ * and this one is asked per FILE. It was per-file discipline across 251 files and 525 lines, with
+ * NOTHING gating that a new spec remembered it: forget it and the reward is a 45-second timeout
+ * naming nothing, and no reader could tell "omitted correctly" from "forgot".
+ *
+ * `e2e/setup.ts` is a `setupFiles` entry, so a `beforeAll` registered there runs once before every
+ * spec file in the suite — the same door at zero call sites, which is what makes this gate an
+ * assertion of ABSENCE rather than of presence. A spec that calls it now is not wrong, it is
+ * redundant, and redundancy here is how the per-file discipline would grow back.
+ */
+describe("the dist door is the harness's, not each spec's", () => {
+  const GUARD = "ensureBinaryExists";
+
+  it("is registered once, for every spec file, in e2e/setup.ts", async () => {
+    const setup = await readFile(path.join(E2E_ROOT, "setup.ts"), "utf8");
+
+    expect(
+      setup,
+      "the door has to be somewhere, and this is the only place that covers every file",
+    ).toContain("beforeAll");
+    expect(setup).toContain("assertDistIsPresent");
+  });
+
+  it("is called by no spec, because calling it is now redundant", async () => {
+    const specs = readSpecNames(E2E_ROOT);
+    const callers = [];
+    for (const spec of specs) {
+      const body = await readNamedSpec(spec);
+      if (body.includes(GUARD)) callers.push(spec);
+    }
+
+    expect(
+      callers,
+      `${GUARD} runs for every spec file from e2e/setup.ts — a spec calling it again is the per-file discipline growing back`,
+    ).toStrictEqual([]);
+  });
+
+  /**
+   * The replacement guard stands at `afterAll` as well, and that position is the only one covering
+   * a `dist/` emptied DURING a spec's own `beforeAll`.
+   *
+   * The window was filed as unclosable: the door has already passed, and a throwing `beforeAll`
+   * skips every `beforeEach` under it, so both registered guards are blind and the spec fails on
+   * whatever its setup happened to hit — an error naming nothing about a build. That much is true
+   * and was measured again here. What was not true is that no hook sees it.
+   *
+   * **Measured on vitest 4.1.10**: a setup file's `afterAll` runs even when the spec's `beforeAll`
+   * threw, and its own throw is reported ALONGSIDE the misleading one rather than in place of it.
+   * So the file still fails for the wrong-looking reason, and the real cause is now printed beside
+   * it — which is the whole of what the reader was missing.
+   */
+  it("also stands at afterAll, the one position a throwing beforeAll cannot skip", async () => {
+    const setup = await readFile(path.join(E2E_ROOT, "setup.ts"), "utf8");
+
+    expect(
+      setup,
+      "a dist replacement during a spec's own beforeAll is invisible to beforeEach and afterEach, and only afterAll still runs to report it",
+    ).toContain("afterAll(assertDistUnchanged)");
+  });
+});

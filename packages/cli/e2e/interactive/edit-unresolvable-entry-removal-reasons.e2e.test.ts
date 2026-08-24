@@ -8,7 +8,6 @@ import {
 import {
   cleanupFixture,
   cleanupTempDir,
-  ensureBinaryExists,
   isClaudeCLIAvailable,
   loadConfigOrFail,
   skillsPath,
@@ -61,7 +60,6 @@ describe("edit — why an unresolvable entry went", () => {
     let sourceFixture: E2ESource;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       sourceFixture = await createE2ESource();
     }, TIMEOUTS.SETUP);
 
@@ -124,7 +122,6 @@ describe("edit — why an unresolvable entry went", () => {
     let pluginFixture: E2EPluginSource;
 
     beforeAll(async () => {
-      await ensureBinaryExists();
       pluginFixture = await createE2EPluginSource();
     }, TIMEOUTS.SETUP);
 

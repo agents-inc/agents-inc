@@ -11,7 +11,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   renderMetadataYaml,
   writeProjectConfig,
@@ -63,8 +62,6 @@ describe("global edit at HOME preserves the registered projects array", () => {
   let editExitCode: number;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
     registeredProject = path.join(tempDir, "registered-project");

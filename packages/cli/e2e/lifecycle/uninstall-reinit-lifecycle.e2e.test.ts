@@ -1,6 +1,6 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
@@ -9,7 +9,6 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  ensureBinaryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -30,10 +29,6 @@ import {
  * 1. Init -> Uninstall -> Re-init produces a clean, equivalent installation
  * 2. Uninstall from project scope preserves the global installation
  */
-
-beforeAll(async () => {
-  await ensureBinaryExists();
-}, TIMEOUTS.SETUP_DUAL);
 
 describe("uninstall-reinit lifecycle", () => {
   let tempDir: string;

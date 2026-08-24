@@ -1,11 +1,10 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createTempDir,
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   writeProjectConfig,
   createPermissionsFile,
   createLocalSkill,
@@ -38,10 +37,6 @@ import "../matchers/setup.js";
 describe("project config does not accumulate global skills after edit", () => {
   let tempHOME: string | undefined;
   let wizard: EditWizard | undefined;
-
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
 
   afterEach(async () => {
     await wizard?.destroy();

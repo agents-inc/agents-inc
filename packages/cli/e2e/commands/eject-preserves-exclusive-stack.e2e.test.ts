@@ -13,7 +13,6 @@ import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 import {
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
 } from "../helpers/test-utils.js";
@@ -71,7 +70,6 @@ describe("eject preserves a project's exclusive stack categories", () => {
   let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
-import { cleanupTempDir, ensureBinaryExists, isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { cleanupTempDir, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -17,8 +17,6 @@ const claudeAvailable = await isClaudeCLIAvailable();
 describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
   let wizard: InitWizard | undefined;
   let fixture: E2EPluginSource | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

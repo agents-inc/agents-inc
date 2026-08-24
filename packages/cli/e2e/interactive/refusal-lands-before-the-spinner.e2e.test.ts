@@ -1,13 +1,12 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -47,8 +46,6 @@ const SPINNER_ROW = `${STEP_TEXT.LOADING_SKILLS}...`;
 describe("a refusal does not sit under a live spinner", () => {
   let prompt: InteractivePrompt | undefined;
   let tempDir: string | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await prompt?.destroy();

@@ -1,6 +1,6 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -11,7 +11,6 @@ import {
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   loadConfigOrFail,
   readTestFile,
   renderMetadataYaml,
@@ -94,10 +93,6 @@ async function seedScope(
 }
 
 describe("dual-scope mixed-source compiled agent ref format", () => {
-  beforeAll(async () => {
-    await ensureBinaryExists();
-  }, TIMEOUTS.SETUP);
-
   let tempDir: string | undefined;
 
   afterEach(async () => {

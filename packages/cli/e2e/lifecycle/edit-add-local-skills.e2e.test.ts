@@ -13,7 +13,6 @@ import {
   configTsPath,
   createPermissionsFile,
   createTempDir,
-  ensureBinaryExists,
   fileExists,
   isClaudeCLIAvailable,
   readCompiledAgents,
@@ -53,7 +52,6 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
   let activeWizard: { destroy(): Promise<void> } | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
   }, TIMEOUTS.SETUP_DUAL);
 

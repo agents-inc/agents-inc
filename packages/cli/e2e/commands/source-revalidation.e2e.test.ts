@@ -7,12 +7,7 @@ import {
   startTarballSourceServer,
   type TarballSourceServer,
 } from "../helpers/tarball-source-server.js";
-import {
-  cleanupTempDir,
-  createTempDir,
-  ensureBinaryExists,
-  writeProjectConfig,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir, writeProjectConfig } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
@@ -71,8 +66,6 @@ describe("remote source revalidation", () => {
   let cacheRequests: RequestLog;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     before = await createE2ESource({ withoutSkills: [SPARE.id] });
     after = await createE2ESource();
     server = await startTarballSourceServer(before.sourceDir);

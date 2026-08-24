@@ -9,7 +9,6 @@ import {
   completeWithLocalSources,
   configTsPath,
   configTypesTsPath,
-  ensureBinaryExists,
   fileExists,
   getEjectedTemplatePath,
   readCompiledAgents,
@@ -60,7 +59,6 @@ describe("ejected customisations survive a recompile", () => {
   let source: E2ESource | undefined;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     source = await createE2ESource();
   }, TIMEOUTS.SETUP);
 

@@ -1,7 +1,7 @@
 import path from "path";
-import { describe, it, expect, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { EXIT_CODES } from "../pages/constants.js";
-import { cleanupTempDir, ensureBinaryExists, readCompiledAgents } from "../helpers/test-utils.js";
+import { cleanupTempDir, readCompiledAgents } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder, type DualScopeHandle } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
@@ -13,8 +13,6 @@ import "../matchers/setup.js";
  */
 describe("unified config view -- split writes", () => {
   let handle: DualScopeHandle | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     // The temp dir contains both global and project.

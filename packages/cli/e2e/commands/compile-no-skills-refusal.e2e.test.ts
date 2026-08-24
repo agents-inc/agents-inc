@@ -1,11 +1,6 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import path from "path";
-import {
-  cleanupTempDir,
-  createTempDir,
-  ensureBinaryExists,
-  writeProjectConfig,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir, writeProjectConfig } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { CLI_INVOKE_COMMAND, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
@@ -25,8 +20,6 @@ import { CLI } from "../fixtures/cli.js";
  */
 describe("compile's no-skills refusal names a command the CLI answers", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

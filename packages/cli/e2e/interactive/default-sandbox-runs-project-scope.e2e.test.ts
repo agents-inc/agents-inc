@@ -1,5 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ensureBinaryExists } from "../helpers/test-utils.js";
+import { afterEach, describe, expect, it } from "vitest";
+
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT } from "../pages/constants.js";
@@ -25,8 +25,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  */
 describe("default sandbox — project-scope edit", () => {
   let wizard: EditWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();

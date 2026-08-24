@@ -15,7 +15,6 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   configTsPath,
-  ensureBinaryExists,
   readCompiledAgents,
   readTestFile,
   skillsPath,
@@ -80,7 +79,6 @@ describe("update against the source an ejected skill was really installed from",
   let agentsAfter: Record<string, string>;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
     env = await createTestEnvironment({ permissions: false });

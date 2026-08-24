@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
@@ -7,7 +7,6 @@ import {
   cleanupTempDir,
   createLocalSkill,
   createTempDir,
-  ensureBinaryExists,
   renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -28,8 +27,6 @@ import "../matchers/setup.js";
  */
 describe("compile over a hand-edited stack pair the scope rule forbids", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {

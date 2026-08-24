@@ -15,7 +15,6 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTypesTsPath,
-  ensureBinaryExists,
   listFiles,
   loadConfigOrFail,
   readCompiledAgents,
@@ -174,7 +173,6 @@ describe("a custom marketplace is stored by init and resolved by every later com
   let stacklessSourceTempDir: string;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     const stacked = await createE2ESource();
     sourceDir = stacked.sourceDir;
     sourceTempDir = stacked.tempDir;

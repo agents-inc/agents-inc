@@ -12,7 +12,6 @@ import {
   cleanupTempDir,
   createIsolatedClaudeHome,
   createTempDir,
-  ensureBinaryExists,
   execCommand,
   isClaudeCLIAvailable,
   type ClaudeConfigOptions,
@@ -62,7 +61,6 @@ describe.skipIf(!claudeAvailable)("Claude CLI config isolation", () => {
   }
 
   beforeAll(async () => {
-    await ensureBinaryExists();
     fixture = await createE2EPluginSource();
     ambientMarketplaces = await claudePluginMarketplaceList();
   }, TIMEOUTS.SETUP);

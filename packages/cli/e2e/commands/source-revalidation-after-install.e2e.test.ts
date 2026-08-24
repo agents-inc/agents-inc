@@ -13,12 +13,7 @@ import {
   startTarballSourceServer,
   type TarballSourceServer,
 } from "../helpers/tarball-source-server.js";
-import {
-  cleanupTempDir,
-  ensureBinaryExists,
-  readTreeSnapshot,
-  type TreeSnapshotEntry,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, readTreeSnapshot, type TreeSnapshotEntry } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
@@ -63,8 +58,6 @@ describe("a source that moves on under an existing installation", () => {
   let picksUpChange: CLIResult;
 
   beforeAll(async () => {
-    await ensureBinaryExists();
-
     before = await createE2ESource({ withoutSkills: [SPARE.id] });
     after = await createE2ESource();
     server = await startTarballSourceServer(before.sourceDir);
