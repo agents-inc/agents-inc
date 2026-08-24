@@ -4,7 +4,10 @@ import {
   PRIVATE_MARKETPLACE_CANONICAL_REF,
 } from "@workspace/api-mocks/fixtures"
 
+import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
+
 import { expect, test } from "../fixtures"
+import { stubSkillIndex } from "../support/skill-index"
 import { STACKS } from "../support/catalog"
 import {
   stubMalformedCatalog,
@@ -141,6 +144,41 @@ test.describe("loading a marketplace", () => {
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
     expect(requests).toHaveLength(1)
+  })
+
+  // The catalogue emission is scoped, so a marketplace's visitor is offered THAT marketplace's
+  // categories as placements for an added external skill — not the public catalogue's. Nothing
+  // asserted it before 2026-08-23: every add-skill spec picks one category by name, which passes
+  // whether the dropdown holds five or a hundred. Asserted as the domain-prefix set, because a
+  // count cannot see a swap and the prefix is the half that says WHICH catalogue answered.
+  test("offers the loaded marketplace's categories as placements, not the public ones", async ({
+    configure,
+    page,
+  }) => {
+    await stubSkillIndex(page)
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(ACME.ref)
+    await configure.marketplaceDialog.load()
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+    const staged = SKILL_INDEX.skills[0]!.name
+    await dialog.stage(staged)
+
+    const labels = await dialog
+      .categorySelect(staged)
+      .locator("option")
+      .allTextContents()
+    const offeredDomains = [
+      ...new Set(
+        labels
+          .filter((label) => label.includes(" · "))
+          .map((label) => label.split(" · ")[0])
+      ),
+    ].sort()
+
+    expect(offeredDomains).toStrictEqual(["api", "web"])
   })
 
   test("its skills replace the public catalogue in the grid", async ({
