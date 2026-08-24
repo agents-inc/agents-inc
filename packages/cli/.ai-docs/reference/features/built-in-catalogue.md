@@ -504,15 +504,23 @@ rules are consumed exactly once, by `mergeMatrixWithSkills`, and dissolved into 
 ### `resolveStack` vs `convertStackToResolvedStack` — not equivalent
 
 `resolveStack`'s JSDoc says it is _"Equivalent to `convertStackToResolvedStack` in source-loader.ts
-but uses `skillIdSet` instead of `isValidSkillId()`"_. There is a **second** difference, and it is
-observable:
+but uses `skillIdSet` instead of `isValidSkillId()`"_. The remaining differences are the SET each
+filters against and what it says about a drop.
 
-| Field                    | `resolveStack` (generation)                    | `convertStackToResolvedStack` (runtime)                                        |
-| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------ |
-| `skills` (per-agent/cat) | filtered by `skillIdSet.has(id)`               | filtered by `id in currentMatrix.skills` (`resolveStackAgentSkills`)           |
-| `allSkillIds`            | derived **from the already-filtered** `skills` | derived from `resolveAgentConfigToSkills`, which **warns but does not filter** |
-| Unknown-id handling      | silent drop                                    | dropped from `skills`, **kept** in `allSkillIds`, one `warn` per occurrence    |
-| Unknown sub-agent NAME   | not checked — see below                        | dropped from `skills` and from `allSkillIds`, one named `warn` per stack       |
+**Until 2026-08-24 there was a third, and it was a defect rather than a design.**
+`convertStackToResolvedStack` filtered its per-category `skills` map but not `allSkillIds`, so the
+two disagreed — and `allSkillIds` is the one that reaches a user: `wizard.tsx` returns it verbatim
+as the selection when a stack is picked, and `packages/matrix/src/read-model/stacks.ts` counts and
+lists it for the editor. A marketplace whose `stacks.ts` outlived one of its own skills therefore
+selected an id nothing could resolve, and the mismatch surfaced only once somebody picked that
+stack. Both are filtered now, by the same question.
+
+| Field                    | `resolveStack` (generation)                    | `convertStackToResolvedStack` (runtime)                                  |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `skills` (per-agent/cat) | filtered by `skillIdSet.has(id)`               | filtered by `id in currentMatrix.skills` (`resolveStackAgentSkills`)     |
+| `allSkillIds`            | derived **from the already-filtered** `skills` | filtered by the same `id in currentMatrix.skills` question `skills` is   |
+| Unknown-id handling      | silent drop                                    | dropped from BOTH, one named `warn` per stack (`withdrawnSkillsWarning`) |
+| Unknown sub-agent NAME   | not checked — see below                        | dropped from `skills` and from `allSkillIds`, one named `warn` per stack |
 
 **The sub-agent row is an asymmetry with a reason, not a gap.** `resolveStack` reads
 `defaultStacks` — the CLI's own constant, declared `Partial<Record<AgentName, …>>` with literal

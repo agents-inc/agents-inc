@@ -1475,6 +1475,57 @@ describe("convertStackToResolvedStack", () => {
     ]);
   });
 
+  /**
+   * The skill half of the same question, and the half that reaches a user.
+   *
+   * `resolveStackAgentSkills` already keeps only ids the matrix carries, so the per-category
+   * `skills` map has been honest for some time. `allSkillIds` was built from a separate pass that
+   * only WARNED, so the two disagreed — and `allSkillIds` is the one that matters: it is what
+   * `wizard.tsx` returns as the selection when a user picks a stack, and what the editor's
+   * read-model counts and lists. So a marketplace whose `stacks.ts` named a skill its catalogue had
+   * dropped loaded without complaint and selected an id nothing could resolve, exactly as the
+   * mismatch was reported.
+   */
+  it("drops a stack skill the catalogue does not carry from allSkillIds too", () => {
+    // A REAL catalogue id that this describe's matrix does not seed — react, zustand and hono are
+    // the whole of it. A fabricated id would need a cast past `SkillId`, and a value the union
+    // cannot hold is one no production caller can supply, so the test would assert about an
+    // impossible input rather than about the runtime check under test.
+    const stack = createMockStack("half-known", {
+      name: "Half Known",
+      agents: {
+        "web-developer": {
+          "web-framework": [
+            createMockSkillAssignment("web-framework-react"),
+            createMockSkillAssignment("web-styling-tailwind"),
+          ],
+        },
+      },
+    });
+
+    const { resolved } = convertStackWithWarnings(stack);
+
+    expect(resolved.allSkillIds).toStrictEqual(["web-framework-react"]);
+    expect(resolved.skills["web-developer"]?.["web-framework"]).toStrictEqual([
+      "web-framework-react",
+    ]);
+  });
+
+  it("names the dropped skill, so a marketplace author can see what its stack lost", () => {
+    const stack = createMockStack("half-known", {
+      name: "Half Known",
+      agents: {
+        "web-developer": {
+          "web-framework": [createMockSkillAssignment("web-styling-tailwind")],
+        },
+      },
+    });
+
+    const { warnings } = convertStackWithWarnings(stack);
+
+    expect(warnings.join(" ")).toContain("web-styling-tailwind");
+  });
+
   it("says nothing about a stack whose sub-agents the CLI all declares", () => {
     const stack = createMockStack("all-declared", {
       name: "All Declared",

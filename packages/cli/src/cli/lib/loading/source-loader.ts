@@ -611,6 +611,21 @@ function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): s
   );
 }
 
+/**
+ * What a stack naming a skill the catalogue does not carry is told to the user.
+ *
+ * The skill counterpart of {@link undeclaredAgentsWarning}, and it exists for the same reason: a
+ * marketplace's `config/stacks.ts` is authored by hand against a catalogue that moves, so a stack
+ * outliving one of its own skills is an ordinary authoring mistake rather than a corrupt file.
+ */
+function withdrawnSkillsWarning(stack: Stack, withdrawn: readonly string[]): string {
+  const named = withdrawn.map((id) => `'${id}'`).join(", ");
+  return (
+    `Stack '${stack.id}' names ${withdrawn.length} skill(s) this marketplace's catalogue does ` +
+    `not carry: ${named}. Left out of the stack — selecting it would install nothing.`
+  );
+}
+
 // Stack values are already skill IDs — no alias resolution needed
 export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
   const { declared, undeclared } = declaredAgentsIn(stack);
@@ -627,12 +642,21 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
     ),
   );
 
-  // First-seen order across agents, matching the historical seen-Set accumulation
-  const allSkillIds = unique(
+  // First-seen order across agents, matching the historical seen-Set accumulation — and filtered
+  // against the matrix by the SAME question `resolveStackAgentSkills` asks above. The two used to
+  // disagree: the per-category map kept only ids the catalogue carried while this list kept every
+  // id the file named, and this is the one that reaches a user. `wizard.tsx` returns it verbatim
+  // as the selection when a stack is picked, and the editor's read-model counts and lists it — so
+  // a stack outliving one of its own skills selected an id nothing could resolve, and the mismatch
+  // surfaced only once somebody picked that stack.
+  const named = unique(
     agentConfigs.flatMap(({ agentConfig }) =>
       resolveAgentConfigToSkills(agentConfig).map((ref) => ref.id),
     ),
   );
+  const allSkillIds = named.filter((id) => id in currentMatrix.skills);
+  const withdrawn = named.filter((id) => !(id in currentMatrix.skills));
+  if (withdrawn.length > 0) warn(withdrawnSkillsWarning(stack, withdrawn));
 
   verbose(
     `Stack '${stack.id}' has ${allSkillIds.length} skills from ${agentConfigs.length} agents`,
