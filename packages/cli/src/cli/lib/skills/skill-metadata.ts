@@ -8,6 +8,7 @@ import { yamlSchemaComment, stripYamlSchemaComment } from "../../utils/yaml-sche
 import type { SkillId } from "../../types";
 import { formatZodIssues, localSkillMetadataSchema } from "../schemas";
 import { warn } from "../../utils/logger";
+import { getErrorMessage } from "../../utils/errors";
 
 /**
  * Tracks the original marketplace source of a locally-installed skill.
@@ -90,7 +91,14 @@ export async function readLocalSkillMetadata(skillDir: string): Promise<LocalSki
   }
 
   const content = await readFile(metadataPath);
-  const result = localSkillMetadataSchema.safeParse(parseYaml(content));
+  const read = readYaml(content);
+
+  if (!read.parsed) {
+    warn(`Invalid metadata.yaml at ${metadataPath}: ${read.reason}`);
+    return null;
+  }
+
+  const result = localSkillMetadataSchema.safeParse(read.value);
 
   if (!result.success) {
     warn(`Invalid metadata.yaml at ${metadataPath}: ${formatZodIssues(result.error.issues)}`);
@@ -134,12 +142,8 @@ export async function injectForkedFromMetadata(
   const rawContent = await readFile(metadataPath);
   const { yamlContent } = stripYamlSchemaComment(rawContent);
 
-  const parseResult = localSkillMetadataSchema.safeParse(parseYaml(yamlContent));
-  if (!parseResult.success) {
-    warn(`Malformed metadata.yaml at '${metadataPath}' — existing fields may be lost`);
-  }
   const metadata: LocalSkillMetadata = {
-    ...(parseResult.success ? parseResult.data : {}),
+    ...existingMetadataFields(yamlContent, metadataPath),
     forkedFrom: {
       skillId,
       contentHash,
@@ -163,4 +167,51 @@ export async function writeMetadataYaml(
 ): Promise<void> {
   const yamlContent = stringifyYaml(metadata, { lineWidth: YAML_FORMATTING.LINE_WIDTH_NONE });
   await writeFile(filePath, schemaComment + yamlContent);
+}
+
+/** What a YAML read can answer: the document, or why no parser could produce one. */
+type YamlRead =
+  | { readonly parsed: true; readonly value: unknown }
+  | { readonly parsed: false; readonly reason: string };
+
+/**
+ * Parses YAML without letting a syntax error escape.
+ *
+ * The two ways a metadata file fails reach a reader by different routes, and only one of them was
+ * ever handled here: a wrong SHAPE is caught by the schema's `safeParse`, while a file no parser
+ * can read throws out of `parseYaml` BEFORE `safeParse` is called at all. Both readers below
+ * promise to survive an invalid file and neither kept that promise for the second kind.
+ *
+ * `readSkillMetadata` in `lib/loading/loader.ts` is the same guard written out at its own call
+ * site; this is that shape, shared by the two readers here rather than repeated.
+ */
+function readYaml(content: string): YamlRead {
+  try {
+    return { parsed: true, value: parseYaml(content) };
+  } catch (error) {
+    return { parsed: false, reason: getErrorMessage(error) };
+  }
+}
+
+/**
+ * The fields a metadata.yaml already holds, or none of them.
+ *
+ * Answers empty and warns for EITHER failure — a file no parser can read, or one whose shape the
+ * schema refuses. Both are the same event from the author's side: the fields they wrote are about
+ * to be replaced by a file carrying only `forkedFrom`, and the warning is the only thing that says
+ * so. Keeping the two apart here would mean two warnings for one consequence.
+ */
+function existingMetadataFields(
+  yamlContent: string,
+  metadataPath: string,
+): Partial<LocalSkillMetadata> {
+  const read = readYaml(yamlContent);
+
+  if (read.parsed) {
+    const result = localSkillMetadataSchema.safeParse(read.value);
+    if (result.success) return result.data;
+  }
+
+  warn(`Malformed metadata.yaml at '${metadataPath}' — existing fields may be lost`);
+  return {};
 }

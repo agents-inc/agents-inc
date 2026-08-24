@@ -41,6 +41,14 @@ function createMetadataWithSchemaComment(skillId: SkillId, contentHash: string):
   return `# yaml-language-server: $schema=../schema.json\n${createValidMetadataYaml(skillId, contentHash, "2026-01-01")}`;
 }
 
+/**
+ * YAML no parser can read, as opposed to YAML that parses into the wrong shape.
+ *
+ * The two failures reach the reader by different routes — this one throws out of `parseYaml`,
+ * the other is caught by `safeParse` — and only the second was ever handled.
+ */
+const UNPARSEABLE_YAML = "forkedFrom: {unclosed\n  - and: a list under a map\n";
+
 describe("skill-metadata", () => {
   describe("readForkedFromMetadata", () => {
     it("returns forkedFrom metadata when metadata.yaml exists and is valid", async () => {
@@ -216,12 +224,21 @@ describe("skill-metadata", () => {
       expect(writtenContent).toContain("new-hash");
     });
 
-    it("throws when metadata.yaml contains unparseable YAML", async () => {
-      vi.mocked(readFile).mockResolvedValue("not: [valid: yaml: {broken");
+    // This asserted `.rejects.toThrow()` until 2026-08-23, pinning the defect as an invariant: the
+    // function's own docblock has always promised that "if parsing fails, only `forkedFrom` is
+    // written (with a warning logged)", and a throw is not that. The promise held for a file whose
+    // SHAPE the schema refused and not for one no parser could read, because `parseYaml` threw
+    // above the `safeParse` that was catching everything else. The contract is what stayed; the
+    // assertion is what changed.
+    it("writes forkedFrom and warns when the existing file cannot be parsed", async () => {
+      vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_YAML);
 
-      await expect(
-        injectForkedFromMetadata("/dest", "web-framework-react", "abc1234"),
-      ).rejects.toThrow();
+      await injectForkedFromMetadata("/dest", "web-framework-react", "abc1234");
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Malformed metadata.yaml"));
+      expect(writeFile).toHaveBeenCalledTimes(1);
+      const writtenContent = elementAt(firstElement(vi.mocked(writeFile).mock.calls), 1);
+      expect(writtenContent).toContain("abc1234");
     });
 
     it("reads from correct metadata.yaml path", async () => {
@@ -279,6 +296,21 @@ describe("skill-metadata", () => {
           },
         }),
       );
+
+      const result = await readLocalSkillMetadata("/project/.claude/skills/react");
+
+      expect(result).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Invalid metadata.yaml"));
+    });
+
+    // The docblock promises `null` "if the file doesn't exist or is invalid", and an unparseable
+    // file is the second of those. `parseYaml` throws, so before this the promise held for a
+    // schema failure and not for a syntax one — and `classifySkillDirs` in `commands/uninstall.tsx`
+    // calls this for every installed skill inside a `Promise.all` with no catch, so one bad file
+    // ended the whole uninstall before it deleted anything.
+    it("returns null and warns when metadata.yaml cannot be parsed at all", async () => {
+      vi.mocked(fileExists).mockResolvedValue(true);
+      vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_YAML);
 
       const result = await readLocalSkillMetadata("/project/.claude/skills/react");
 
