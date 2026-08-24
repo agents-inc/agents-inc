@@ -1158,16 +1158,10 @@ describe("config", () => {
 
   describe("loadProjectSourceConfig with branding", () => {
     it("should load branding name from project config", async () => {
-      await writeTestTsConfig(
-        tempDir,
-        buildSourceConfig({
-          branding: { name: "Acme Dev Tools", tagline: "Build faster with Acme" },
-        }),
-      );
+      await writeTestTsConfig(tempDir, buildSourceConfig({ branding: { name: "Acme Dev Tools" } }));
 
       const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.branding?.name).toBe("Acme Dev Tools");
-      expect(config?.branding?.tagline).toBe("Build faster with Acme");
+      expect(config?.branding).toStrictEqual({ name: "Acme Dev Tools" });
     });
 
     it("should return undefined branding when not configured", async () => {
@@ -1175,25 +1169,6 @@ describe("config", () => {
 
       const config = await loadProjectSourceConfig(tempDir);
       expect(config?.branding).toBeUndefined();
-    });
-
-    it("should load partial branding (name only)", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ branding: { name: "My Company" } }));
-
-      const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.branding?.name).toBe("My Company");
-      expect(config?.branding?.tagline).toBeUndefined();
-    });
-
-    it("should load partial branding (tagline only)", async () => {
-      await writeTestTsConfig(
-        tempDir,
-        buildSourceConfig({ branding: { tagline: "Custom tagline" } }),
-      );
-
-      const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.branding?.name).toBeUndefined();
-      expect(config?.branding?.tagline).toBe("Custom tagline");
     });
   });
 
@@ -1222,54 +1197,87 @@ describe("config", () => {
 
     it("should return default branding when no config exists", async () => {
       const branding = await resolveBranding(tempDir);
-      expect(branding.name).toBe(DEFAULT_BRANDING.NAME);
-      expect(branding.tagline).toBe(DEFAULT_BRANDING.TAGLINE);
+      expect(branding).toStrictEqual({ name: DEFAULT_BRANDING.NAME });
     });
 
     it("should return default branding when projectDir is undefined", async () => {
       const branding = await resolveBranding(undefined);
-      expect(branding.name).toBe(DEFAULT_BRANDING.NAME);
-      expect(branding.tagline).toBe(DEFAULT_BRANDING.TAGLINE);
+      expect(branding).toStrictEqual({ name: DEFAULT_BRANDING.NAME });
     });
 
     it("should return custom branding when configured", async () => {
-      await writeTestTsConfig(
-        tempDir,
-        buildSourceConfig({
-          branding: { name: "Acme Dev Tools", tagline: "Build faster with Acme" },
-        }),
-      );
-
-      const branding = await resolveBranding(tempDir);
-      expect(branding.name).toBe("Acme Dev Tools");
-      expect(branding.tagline).toBe("Build faster with Acme");
-    });
-
-    it("should merge custom branding with defaults for missing fields", async () => {
       await writeTestTsConfig(tempDir, buildSourceConfig({ branding: { name: "Acme Dev Tools" } }));
 
       const branding = await resolveBranding(tempDir);
-      expect(branding.name).toBe("Acme Dev Tools");
-      expect(branding.tagline).toBe(DEFAULT_BRANDING.TAGLINE);
+      expect(branding).toStrictEqual({ name: "Acme Dev Tools" });
     });
 
-    it("should use default name when only tagline is configured", async () => {
-      await writeTestTsConfig(
-        tempDir,
-        buildSourceConfig({ branding: { tagline: "Custom tagline" } }),
-      );
-
-      const branding = await resolveBranding(tempDir);
-      expect(branding.name).toBe(DEFAULT_BRANDING.NAME);
-      expect(branding.tagline).toBe("Custom tagline");
-    });
-
-    it("should return default branding when config has no branding section", async () => {
+    it("should return default branding when config has no branding section anywhere", async () => {
       await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
 
       const branding = await resolveBranding(tempDir);
-      expect(branding.name).toBe(DEFAULT_BRANDING.NAME);
-      expect(branding.tagline).toBe(DEFAULT_BRANDING.TAGLINE);
+      expect(branding).toStrictEqual({ name: DEFAULT_BRANDING.NAME });
+    });
+
+    /**
+     * The fallback is per FIELD, not per FILE, and the difference is the whole of this block.
+     *
+     * `loadEffectiveSourceConfig` answers with the project's config if that FILE exists and the
+     * global one otherwise, which is right for `marketplace` — a project's marketplace is its own,
+     * and inheriting one would install from somewhere nobody named. Branding is the opposite: it
+     * is presentation, a user sets it once for themselves, and a project that says nothing about
+     * it is not asking for the shipped name back.
+     *
+     * Read per file, a user who brands globally stops seeing their own name the moment any project
+     * config exists — which is every installed project. Nothing announced that; the name simply
+     * reverted.
+     */
+    describe("global branding reaches a project that does not override it", () => {
+      const GLOBAL_NAME = "Globally Branded";
+
+      beforeEach(async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ branding: { name: GLOBAL_NAME } }));
+      });
+
+      /**
+       * The per-file regression itself, and it needs only ONE field to state: the project config
+       * EXISTS — so `loadEffectiveSourceConfig` would answer with it and stop — and it names no
+       * branding, so answering per file yields the shipped default and the user's own name is
+       * gone. The pair of fields this block once used made the same point twice.
+       */
+      it("shows global branding through a project config that carries none", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
+
+        const branding = await resolveBranding(tempDir);
+
+        expect(branding).toStrictEqual({ name: GLOBAL_NAME });
+      });
+
+      /** A project that DOES name one takes precedence over the global scope. */
+      it("lets a project override the global name", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ branding: { name: "This Project" } }));
+
+        const branding = await resolveBranding(tempDir);
+
+        expect(branding).toStrictEqual({ name: "This Project" });
+      });
+
+      /** The control: with no project config at all, the global one was always reached. */
+      it("still reaches global branding when the project has no config at all", async () => {
+        const branding = await resolveBranding(tempDir);
+
+        expect(branding).toStrictEqual({ name: GLOBAL_NAME });
+      });
+
+      /** And the shipped default is still the floor when neither scope names it. */
+      it("falls through both scopes to the shipped default", async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: "github:home/skills" }));
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
+
+        const branding = await resolveBranding(tempDir);
+
+        expect(branding).toStrictEqual({ name: DEFAULT_BRANDING.NAME });
+      });
     });
   });
 });

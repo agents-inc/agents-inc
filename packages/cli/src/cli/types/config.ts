@@ -25,8 +25,6 @@ export type SourceEntry = {
 export type BrandingConfig = {
   /** Custom CLI name (e.g., "Acme Dev Tools") */
   name?: string;
-  /** Custom tagline shown in wizard header */
-  tagline?: string;
 };
 
 /** Per-skill configuration with scope and provenance */

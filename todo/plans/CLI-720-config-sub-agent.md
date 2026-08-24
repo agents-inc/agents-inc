@@ -389,7 +389,6 @@ boundSkills:
     boundTo: alias
 branding:
   name: Custom CLI Name
-  tagline: Custom tagline
 skillsDir: src/skills
 agentsDir: src/agents
 stacksFile: config/stacks.yaml

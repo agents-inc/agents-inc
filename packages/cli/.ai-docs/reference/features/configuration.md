@@ -823,7 +823,6 @@ export default {
   agents: [],
   branding: {
     name: "Acme Dev Tools",
-    tagline: "Custom development agents",
   },
 } satisfies ProjectConfig;
 ```
@@ -833,13 +832,23 @@ Falls back to `DEFAULT_BRANDING` from `src/cli/consts.ts`:
 - Name: "Agents Inc."
 - Tagline: "AI-powered development tools"
 
-**The fallback is per-FILE, not per-field.** `loadEffectiveSourceConfig` answers with the project's
-OWN config where it has one and the global config otherwise, and `resolveBranding` reads `branding`
-off whichever of the two it was handed. A project config that exists and declares no `branding`
-therefore resolves to `DEFAULT_BRANDING` — the global config's branding is not consulted behind it.
-The global rung is reached only by a directory holding no `.claude-src/config.ts` of its own, and
-`loadOwnProjectSourceConfig` excludes the home root from counting as one, so the same file is never
-read as both rungs in a run.
+**The fallback is per-FIELD**, and branding is the one thing resolved that way. Every other field
+comes through `loadEffectiveSourceConfig`, which answers with the project's OWN config where it has
+one and the global config otherwise — right for `marketplace`, since a project's marketplace is its
+own and inheriting one would install from somewhere nobody named. `resolveBranding` reads both
+scopes instead and takes each field from whichever names it first: this project, then the global
+config, then `DEFAULT_BRANDING`.
+
+**It was per-FILE until 2026-08-24, and that was a live defect wearing a correct docblock.** A
+project config that existed and declared no `branding` resolved straight to the shipped default, so
+a user who branded globally stopped seeing their own name the moment ANY project config existed —
+which is every installed project — and nothing announced it. `resolveBranding`'s own JSDoc had
+described the per-field behaviour throughout. The spec that covered it pinned the defect as correct
+(_"should return default branding when config has no branding section"_), which is why the gap
+survived review.
+
+`loadOwnProjectSourceConfig` still excludes the home root from counting as a project's own config,
+so the same file is never read as both rungs in a run.
 
 ### Who reads `branding.name`
 
@@ -848,15 +857,25 @@ Two readers, and every site that prints the configured name goes through one of 
 | Reader                                        | Reaches                                | What it names                                                                                                                                                                                                                                                                        |
 | --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `BaseCommand.resolveBrandingName(projectDir)` | `doctor`, `eject`, `uninstall`, `init` | `doctor`'s `<name> Doctor` header and `eject`'s `<name> Eject` header; `uninstall`'s `<name> Uninstall` header, its `notInstalledHere()` line, its `<name> has been uninstalled.` sign-off and its `not created by <name> CLI` skip warning; `init`'s `initSucceeded()` closing line |
-| `getDashboardData(projectDir)`                | the bare invocation's dashboard        | `DashboardData.name`, carried on the data rather than read by the formatter, which `formatDashboardText` prints as the summary's first line                                                                                                                                          |
+| `getDashboardData(projectDir)`                | the bare invocation's dashboard        | `DashboardData.name`, carried on the data rather than read by the formatter — printed as the summary's first line by `formatDashboardText`, and as the title by `DashboardTitle` on the TTY path. The counts beside it come from `dashboardCountLines`, which both paths render      |
 
 `init` and `uninstall` resolve the name once onto a `brandingName` field on the command and print
 from that; `doctor` and `eject` resolve it inline into the header call.
 
-**The dashboard's name reaches the non-interactive path only.** `showDashboard` prints
-`formatDashboardText(data)` when `process.stdin.isTTY` is false, and on a TTY renders the
-`Dashboard` component instead — which is handed `onSelect` and `onCancel` and never `data`, so it
-paints `ASCII_LOGO`. What an interactive user sees at that prompt does not follow `branding.name`.
+**The dashboard's two paths, which agree now and twice did not.** `showDashboard` prints
+`formatDashboardText(data)` when `process.stdin.isTTY` is false, and renders the `Dashboard`
+component on a TTY. The component was handed `onSelect` and `onCancel` and never the data, so it
+painted `ASCII_LOGO` whatever the configuration said — the name reached the piped path alone.
+It takes `data` now: `DashboardTitle` paints the configured name in place of the logo, and gives
+way to the logo only for an installation resting on `DEFAULT_BRANDING.NAME`, because the artwork
+spells the shipped name.
+
+The counts block was the second half of the same split and outlived the first. `formatDashboardText`
+printed skill count, agent count, install mode and marketplace; the component printed a title and
+four menu rows — so the screen a person sat in front of was **less informative than the output they
+got by piping it**. Both render `dashboardCountLines(data)` now, which is one producer rather than
+two agreeing renderers, and `src/cli/commands/init.test.tsx` holds the component's frame against
+that function's output so they cannot part again.
 
 ### The two postures, and why they differ
 
@@ -881,17 +900,6 @@ there rather than newly chosen: the `loadProjectConfig` beside it in the same `P
 over the same file, so a configuration that cannot be evaluated fails the call whether branding is
 read or not. Nothing is degraded that was not already, and the dashboard is reached only once an
 installation has been detected.
-
-### `tagline` has no reader anywhere
-
-`resolveBranding` resolves it and nothing consumes the field. The docstring on `BrandingConfig`
-(`src/cli/types/config.ts`) and on `projectSourceConfigSchema` (`src/cli/lib/schemas.ts`) both say
-"Custom tagline shown in wizard header" — and the wizard header is `WizardLayout`, which paints
-`ASCII_LOGO` (on the stack step, where the terminal clears `LOGO_MIN_TERMINAL_ROWS`) and then
-`WizardTabs`, and no tagline on any step. `DEFAULT_BRANDING.TAGLINE` is likewise reached only
-by `resolveBranding` itself. A configured tagline is accepted by the schema, published in
-`src/schemas/project-source-config.schema.json`, round-tripped as passthrough data and never
-printed.
 
 ## Schema Validation
 

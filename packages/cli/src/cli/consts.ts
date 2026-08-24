@@ -223,8 +223,6 @@ const CHECK_GLYPH = "\u2713";
 const EN_DASH_GLYPH = "\u2013";
 
 export const UI_SYMBOLS = {
-  CHECKBOX_CHECKED: "[x]",
-  CHECKBOX_UNCHECKED: "[ ]",
   CHEVRON: "\u276F",
   CHEVRON_SPACER: " ",
   SELECTED: CHECK_GLYPH,
@@ -342,7 +340,6 @@ export const LOGO_MIN_TERMINAL_ROWS = 26;
 
 export const DEFAULT_BRANDING = {
   NAME: "Agents Inc.",
-  TAGLINE: "AI-powered development tools",
 } as const;
 
 /**
@@ -437,6 +434,19 @@ export const DEFAULT_SCRATCH_DOMAINS: readonly Domain[] = ["web", "api", "mobile
 /** Domain used when no active domain can be resolved from wizard state. */
 export const FALLBACK_DOMAIN: Domain = "web";
 
+/**
+ * The product's own mark, and **deliberately not brandable** (owner ruling 2026-08-24).
+ *
+ * `branding.name` reaches every command that prints a name — the dashboard, the wizard footer,
+ * `doctor`'s header, six surfaces in all — so a white-labelled installation says its own name
+ * throughout. This does not follow it, and that is the decision rather than an omission: the mark
+ * is the product's, not the installation's.
+ *
+ * Filed as CLI-769 by an agent that found a white-labelled install still drawing `AGENTS INC` in
+ * ASCII and read the gap as unfinished branding. Recorded here so the next reader finds the answer
+ * beside the constant instead of refiling it. `package.json`'s `description` — the first line of
+ * `--help`, which oclif reads from package metadata — is the same class and the same answer.
+ */
 export const ASCII_LOGO = ` █████╗  ██████╗ ███████╗███╗   ██╗████████╗███████╗      ██╗███╗   ██╗ ██████╗
 ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██╔════╝      ██║████╗  ██║██╔════╝
 ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ███████╗      ██║██╔██╗ ██║██║

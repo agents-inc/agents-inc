@@ -515,32 +515,29 @@ describe("the hand-maintained JSON schemas", () => {
 });
 
 describe("branding via projectSourceConfigSchema", () => {
-  it("should accept full branding config", () => {
+  it("should accept branding naming the CLI", () => {
+    const result = projectSourceConfigSchema.safeParse({
+      branding: { name: "Acme Dev Tools" },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.branding).toStrictEqual({ name: "Acme Dev Tools" });
+  });
+
+  /**
+   * `branding` is the ONE field this schema publishes, and the assertion is `toStrictEqual`
+   * rather than a check on `name`, because stripping is the whole subject: `brandingConfigSchema`
+   * is a bare `z.object`, so an unpublished key is dropped silently rather than refused, and a
+   * `name`-only assertion passes whether or not the drop happened.
+   *
+   * A configured `tagline` used to survive this parse and reach `ResolvedBranding`, where nothing
+   * read it — the field promised a wizard header the product never rendered.
+   */
+  it("drops a tagline, which the schema no longer publishes", () => {
     const result = projectSourceConfigSchema.safeParse({
       branding: { name: "Acme Dev Tools", tagline: "Build faster with Acme" },
     });
     expect(result.success).toBe(true);
-    expect(result.data?.branding).toStrictEqual({
-      name: "Acme Dev Tools",
-      tagline: "Build faster with Acme",
-    });
-  });
-
-  it("should accept partial branding (name only)", () => {
-    const result = projectSourceConfigSchema.safeParse({
-      branding: { name: "My Company" },
-    });
-    expect(result.success).toBe(true);
-    expect(result.data?.branding?.name).toBe("My Company");
-    expect(result.data?.branding?.tagline).toBeUndefined();
-  });
-
-  it("should accept partial branding (tagline only)", () => {
-    const result = projectSourceConfigSchema.safeParse({
-      branding: { tagline: "Custom tagline" },
-    });
-    expect(result.success).toBe(true);
-    expect(result.data?.branding?.tagline).toBe("Custom tagline");
+    expect(result.data?.branding).toStrictEqual({ name: "Acme Dev Tools" });
   });
 
   it("should accept empty branding object", () => {
@@ -555,11 +552,17 @@ describe("branding via projectSourceConfigSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should reject non-string branding tagline", () => {
-    const result = projectSourceConfigSchema.safeParse({
-      branding: { tagline: true },
-    });
-    expect(result.success).toBe(false);
+  /**
+   * The published artefact, checked separately from the parser because they are generated from
+   * one source and read by different consumers — an editor validating a user's `config.ts`
+   * against the JSON schema sees `additionalProperties: false`, so for that reader a leftover
+   * `tagline` is an ERROR rather than the silent drop the parser performs.
+   */
+  it("publishes only a name under branding", async () => {
+    const schema = await readTestJson<JsonSchemaFile>(PROJECT_SOURCE_CONFIG_SCHEMA_PATH);
+    const branding = schema.properties["branding"] as JsonSchemaFile | undefined;
+
+    expect(Object.keys(branding?.properties ?? {})).toStrictEqual(["name"]);
   });
 });
 
@@ -567,10 +570,7 @@ describe("projectSourceConfigSchema with branding", () => {
   it("should accept config with branding", () => {
     const result = projectSourceConfigSchema.safeParse({
       marketplace: "github:myorg/skills",
-      branding: {
-        name: "Acme Dev Tools",
-        tagline: "Build faster with Acme",
-      },
+      branding: { name: "Acme Dev Tools" },
     });
     expect(result.success).toBe(true);
   });

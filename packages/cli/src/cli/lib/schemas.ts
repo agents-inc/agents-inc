@@ -563,8 +563,6 @@ export const settingsFileSchema = z
 const brandingConfigSchema = z.object({
   /** Custom CLI name (e.g., "Acme Dev Tools") */
   name: z.string().exactOptional(),
-  /** Custom tagline shown in wizard header */
-  tagline: z.string().exactOptional(),
 });
 
 /** The shape {@link projectSourceConfigSchema} admits once the rename guard has passed. */

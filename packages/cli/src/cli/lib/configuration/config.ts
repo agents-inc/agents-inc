@@ -293,15 +293,31 @@ export async function resolveAuthor(projectDir?: string): Promise<string | undef
 /** Resolved branding with defaults applied for any missing fields */
 export type ResolvedBranding = {
   name: string;
-  tagline: string;
 };
 
-/** Resolves branding from project config, falling back to global then DEFAULT_BRANDING. */
+/**
+ * Branding resolved per FIELD: this project's, then the global one's, then the shipped default.
+ *
+ * Per field rather than per file, and that distinction is the whole of this function. Everything
+ * else reads {@link loadEffectiveSourceConfig}, which answers with the project's config if that
+ * FILE exists and the global one otherwise — right for `marketplace`, where a project's is its own
+ * and inheriting one would install from somewhere nobody named. Branding is the opposite kind of
+ * field: it is presentation, a user sets it once for themselves, and a project that says nothing
+ * about it is not asking for the shipped name back.
+ *
+ * Read per file it did exactly that. A user who branded globally stopped seeing their own name the
+ * moment any project config existed — which is every installed project — and nothing announced it;
+ * the name simply reverted. This function's own docblock described the per-field behaviour for as
+ * long as the code did not perform it.
+ */
 export async function resolveBranding(projectDir?: string): Promise<ResolvedBranding> {
-  const effective = await loadEffectiveSourceConfig(projectDir);
+  const [own, global] = await Promise.all([
+    loadOwnProjectSourceConfig(projectDir),
+    loadGlobalSourceConfig(),
+  ]);
+
   return {
-    name: effective?.config.branding?.name ?? DEFAULT_BRANDING.NAME,
-    tagline: effective?.config.branding?.tagline ?? DEFAULT_BRANDING.TAGLINE,
+    name: own?.branding?.name ?? global?.branding?.name ?? DEFAULT_BRANDING.NAME,
   };
 }
 

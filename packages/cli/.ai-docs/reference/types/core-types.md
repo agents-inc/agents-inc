@@ -347,7 +347,6 @@ Re-exported from `src/cli/lib/configuration/config.ts` and `src/cli/lib/configur
 White-label overrides stored in `ProjectConfig.branding`:
 
 - `name?: string` — custom CLI name (e.g. `"Acme Dev Tools"`)
-- `tagline?: string` — custom tagline shown in the wizard header
 
 Re-exported from `src/cli/lib/configuration/config.ts` and `src/cli/lib/configuration/index.ts`.
 
