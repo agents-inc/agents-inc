@@ -368,15 +368,25 @@
  * something the user chose, so this was the accent's one unearned appearance
  * on the site.
  *
- * NOT THE LOGO PROBLEM. `apps/www` still has two different brand treatments —
- * a bordered `a-i` mark on the landing half and plain text here — and that is
- * WWW-08, whose fix is a component in `packages/ui` shared with the editor.
- * This only stops the two halves setting the same three words in two faces,
- * two colours and two sizes while that waits.
+ * The landing half draws a bordered `a-i` mark beside its wordmark and this
+ * half sets the words alone, which is a deliberate difference — Starlight owns
+ * this slot and takes plain text. What is NOT deliberate is the two halves
+ * setting the same three words differently, so every property here is the
+ * landing wordmark's: mono, 500, `.07em`, uppercase, ink, and `--text-11`.
+ *
+ * **The size was `--text-body-sm` (14px) against the wordmark's 11px until
+ * 2026-08-23**, which is the last thing WWW-08 was open for. Its other half
+ * closed itself: the mark in `src/components/site-header.astro` and the one in
+ * the editor's `nav-rail.tsx` are byte-identical class strings today.
+ *
+ * A shared `packages/ui` COMPONENT is not the fix and cannot be — this site
+ * ships no React integration, deliberately, and `astro.config.ts` asks in
+ * writing that nobody add one. The design system reaches here as tokens, so a
+ * token is what the two halves share.
  */
 :root a.site-title {
   font-family: var(--font-mono);
-  font-size: var(--text-body-sm);
+  font-size: var(--text-11);
   font-weight: 500;
   letter-spacing: 0.07em;
   text-transform: uppercase;
