@@ -29,6 +29,7 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
   marketplaceManifestPath,
+  UI_SYMBOLS,
 } from "../../../consts";
 import {
   createMockMarketplace,
@@ -63,11 +64,15 @@ const ROW_PLUGINS_INSTALLED = "Plugins Installed";
 const ROW_MARKETPLACE_REACHABLE = "Marketplace Reachable";
 
 /**
- * One operational row standing down: the name, the `-` its skip status prints, and the word.
+ * One operational row standing down: the name, the glyph its skip status prints, and the word.
  * The blanket notice carries no row name and no status column, so it never matches this.
+ *
+ * The glyph comes from {@link UI_SYMBOLS} rather than a literal, because it is not what these
+ * tests are about — they are about WHICH row stood down. It is an EN-DASH and was an ASCII hyphen
+ * here for as long as `doctor` printed one, which is the difference no reader could see.
  */
 function skippedRow(name: string): RegExp {
-  return new RegExp(`${name}\\s+-\\s+Skipped`);
+  return new RegExp(`${name}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`);
 }
 
 /** The agent `setupValidatedProject` declares, and the compiled file that satisfies it. */
@@ -1296,7 +1301,9 @@ describe("doctor content checks", () => {
       expect(
         stdout,
         "a row that stands down must name what blocked it, not carry a blanket notice",
-      ).toMatch(new RegExp(`${ROW_SKILLS_RESOLVED}\\s+-\\s+Skipped[^\\n]*skill`, "i"));
+      ).toMatch(
+        new RegExp(`${ROW_SKILLS_RESOLVED}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped[^\\n]*skill`, "i"),
+      );
     });
 
     /**
@@ -1331,7 +1338,12 @@ describe("doctor content checks", () => {
       expect(
         stdout,
         "a row that stands down must name what blocked it, not carry a blanket notice",
-      ).toMatch(new RegExp(`${ROW_PLUGINS_INSTALLED}\\s+-\\s+Skipped[^\\n]*plugin`, "i"));
+      ).toMatch(
+        new RegExp(
+          `${ROW_PLUGINS_INSTALLED}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped[^\\n]*plugin`,
+          "i",
+        ),
+      );
       expect(stdout).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
     });
 

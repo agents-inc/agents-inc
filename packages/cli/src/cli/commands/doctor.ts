@@ -694,6 +694,15 @@ function formatCheckName(name: string): string {
   return name.padEnd(CHECK_WIDTH);
 }
 
+/**
+ * The glyph each row is headed with, every one of them from {@link UI_SYMBOLS}.
+ *
+ * The last two used to be literals here — `"!"` and `"-"` — and the second was the one that
+ * mattered: `UI_SYMBOLS.SKIPPED` is an EN-DASH, so a stood-down row printed a different character
+ * from the one the symbol table declares for exactly that state, while `UI_SYMBOLS.REMOVED` is
+ * deliberately an ASCII hyphen for diff markers. Two glyphs a reader cannot tell apart, meaning
+ * opposite things, and nothing pointing either literal at the table it belonged in.
+ */
 function formatStatus(status: CheckResult["status"]): string {
   switch (status) {
     case "pass":
@@ -701,9 +710,9 @@ function formatStatus(status: CheckResult["status"]): string {
     case "fail":
       return UI_SYMBOLS.CROSS;
     case "warn":
-      return "!";
+      return UI_SYMBOLS.DISCOURAGED;
     case "skip":
-      return "-";
+      return UI_SYMBOLS.SKIPPED;
     default: {
       const _exhaustive: never = status;
       return _exhaustive;

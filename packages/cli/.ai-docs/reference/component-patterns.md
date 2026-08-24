@@ -168,31 +168,29 @@ The keys **and the hex each one holds**, exhaustive and in source order, bound t
 
 The keys, exhaustive and in source order, bound to `src/cli/consts.ts` for the same reason as the colours above. `SELECTED` and `CHECK` share one glyph, as do `SKIPPED` and `DISABLED`; the glyph constants behind those pairs are module-private and are not members.
 
-| Symbol               | Value           | Usage                                                                       |
-| -------------------- | --------------- | --------------------------------------------------------------------------- |
-| `CHECKBOX_CHECKED`   | `[x]`           | Selected checkbox                                                           |
-| `CHECKBOX_UNCHECKED` | `[ ]`           | Unselected checkbox                                                         |
-| `CHEVRON`            | unicode chevron | Navigation indicator                                                        |
-| `CHEVRON_SPACER`     | space           | Non-focused spacer                                                          |
-| `SELECTED`           | checkmark       | Selected item                                                               |
-| `UNSELECTED`         | circle          | Unselected item                                                             |
-| `CURRENT`            | filled circle   | Current focus                                                               |
-| `SKIPPED`            | dash            | Skipped step                                                                |
-| `DISCOURAGED`        | `!`             | Warning indicator                                                           |
-| `DISABLED`           | dash            | Disabled item (same glyph as `SKIPPED`)                                     |
-| `LOCK`               | lock emoji      | Locked/read-only items                                                      |
-| `EJECT`              | eject symbol    | Local/ejected skill indicator                                               |
-| `BULLET`             | bullet dot      | List item marker in confirm/summary                                         |
-| `SCROLL_UP`          | triangle up     | Scroll indicator                                                            |
-| `SCROLL_DOWN`        | triangle down   | Scroll indicator                                                            |
-| `CHECK`              | checkmark       | Success glyph (same glyph as `SELECTED`)                                    |
-| `CROSS`              | ✗               | Failure/cross glyph                                                         |
-| `REMOVED`            | `-`             | Removed/pending-removal diff marker (info panel, confirm step, Sources tab) |
-| `ADDED`              | `+`             | Added-diff marker (info panel, confirm step, Sources tab)                   |
+| Symbol           | Value           | Usage                                                                                                     |
+| ---------------- | --------------- | --------------------------------------------------------------------------------------------------------- |
+| `CHEVRON`        | unicode chevron | Navigation indicator                                                                                      |
+| `CHEVRON_SPACER` | space           | Non-focused spacer                                                                                        |
+| `SELECTED`       | checkmark       | Selected item                                                                                             |
+| `UNSELECTED`     | circle          | Unselected item                                                                                           |
+| `CURRENT`        | filled circle   | Current focus                                                                                             |
+| `SKIPPED`        | dash            | A stood-down `doctor` check row — its only reader, and an EN-dash, distinct from `REMOVED`'s ASCII hyphen |
+| `DISCOURAGED`    | `!`             | A `doctor` row that warns — its only reader                                                               |
+| `DISABLED`       | dash            | No reader anywhere in `src` or `e2e` (CLI-821); declared as the disabled-item glyph and never used as one |
+| `LOCK`           | lock emoji      | Locked/read-only items                                                                                    |
+| `EJECT`          | eject symbol    | Local/ejected skill indicator                                                                             |
+| `BULLET`         | bullet dot      | List item marker in confirm/summary                                                                       |
+| `SCROLL_UP`      | triangle up     | Scroll indicator                                                                                          |
+| `SCROLL_DOWN`    | triangle down   | Scroll indicator                                                                                          |
+| `CHECK`          | checkmark       | Success glyph (same glyph as `SELECTED`)                                                                  |
+| `CROSS`          | ✗               | Failure/cross glyph                                                                                       |
+| `REMOVED`        | `-`             | Removed/pending-removal diff marker (info panel, confirm step, Sources tab)                               |
+| `ADDED`          | `+`             | Added-diff marker (info panel, confirm step, Sources tab)                                                 |
 
 ## SelectList Component (`src/cli/components/common/select-list.tsx`)
 
-Generic keyboard-navigable list component, declared as a generic FUNCTION (`export function SelectList<T>`) rather than a `React.FC`, because `React.FC` cannot carry the type parameter. Its only importer is `src/cli/commands/init.tsx`, where the module-internal `Dashboard` component wraps it around `DASHBOARD_OPTIONS` — the four commands the project dashboard offers. Both the item type and the props type are exported alongside it.
+Generic keyboard-navigable list component, declared as a generic FUNCTION (`export function SelectList<T>`) rather than a `React.FC`, because `React.FC` cannot carry the type parameter. Its only importer is `src/cli/commands/init.tsx`, where the `Dashboard` component wraps it around `DASHBOARD_OPTIONS` — the four commands the project dashboard offers, painted under the counts block `dashboardCountLines` produces for both this component and `formatDashboardText`. `Dashboard` is exported for `commands/init.test.tsx`, which renders it to hold its frame against those lines: the two paths had diverged, and the component was the one showing less. Both the item type and the props type are exported alongside it.
 
 ```typescript
 export type SelectListItem<T> = { value: T; label: string };

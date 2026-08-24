@@ -1,14 +1,10 @@
 import path from "path";
 import { readdir, readFile, writeFile } from "fs/promises";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import {
-  cleanupTempDir,
-  completeWithLocalSources,
-  ensureBinaryExists,
-} from "../helpers/test-utils.js";
+import { cleanupTempDir, completeWithLocalSources } from "../helpers/test-utils.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -45,8 +41,6 @@ async function firstInstalledSkillMetadata(globalHome: string): Promise<string> 
 
 describe("doctor layered output", () => {
   let wizard: InitWizard | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     await wizard?.destroy();
@@ -140,7 +134,11 @@ describe("doctor layered output", () => {
         stdout,
         "the orphan row compares file names against the config and opens none of them",
       ).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
-      expect(stdout).toMatch(new RegExp(`${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+-\\s+Skipped`));
+      expect(stdout).toMatch(
+        new RegExp(
+          `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+Skipped`,
+        ),
+      );
       // The three negatives above and in the specs beside this one only say the BLANKET skip did
       // not happen, and a row stood down by the wrong pass prints neither string — so nothing at
       // this layer could tell the two skips apart without a positive naming the blocking pass.
@@ -179,8 +177,6 @@ describe("doctor layered output", () => {
 
 describe("doctor in a skills source repository", () => {
   let source: E2ESource | undefined;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (source) await cleanupTempDir(source.tempDir);
@@ -241,8 +237,6 @@ describe("doctor in a project whose marketplace dangles a slug", () => {
   let wizard: InitWizard | undefined;
   let source: E2ESource | undefined;
 
-  beforeAll(ensureBinaryExists);
-
   afterEach(async () => {
     await wizard?.destroy();
     wizard = undefined;
@@ -289,7 +283,9 @@ describe("doctor in a project whose marketplace dangles a slug", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
       expect(stdout, "a warning disables no row").not.toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+-\\s+Skipped`),
+        new RegExp(
+          `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+Skipped`,
+        ),
       );
     },
   );

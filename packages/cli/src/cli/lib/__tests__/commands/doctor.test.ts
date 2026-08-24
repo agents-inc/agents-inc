@@ -15,6 +15,7 @@ import {
   LOCAL_SKILLS_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
+  UI_SYMBOLS,
 } from "../../../consts";
 
 /** The installed pair a deleted configuration strands: one skill directory, one compiled agent. */
@@ -323,7 +324,7 @@ describe("doctor command", () => {
       expect(output).toContain(ORPHANED_SKILL_ID);
       expect(output).toContain(`${ORPHANED_AGENT_NAME}.md`);
       expect(output, "the row that names them cannot also report itself skipped").not.toMatch(
-        /No Orphans\s+-\s+Skipped/,
+        new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`),
       );
       expect(output).toContain("Nothing declares the files above");
     });
@@ -334,7 +335,7 @@ describe("doctor command", () => {
 
       // An empty directory with no configuration is the state `init` exists for,
       // not a stranded one — there is nothing for a configuration to have owned.
-      expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
+      expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
     });
 
@@ -363,7 +364,7 @@ describe("doctor command", () => {
 
       // `uninstall` refuses a directory carrying no provenance, so a row that offered this one
       // for removal would be the CLI contradicting itself across two of its own screens.
-      expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
+      expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
       expect(output).not.toContain("Nothing declares the files above");
 
@@ -398,7 +399,7 @@ describe("doctor command", () => {
 
       // `uninstall` with no configuration removes the marker-carrying agents and keeps the rest,
       // so a row that offered this one for removal would be the CLI contradicting itself.
-      expect(output).toMatch(/No Orphans\s+-\s+Skipped/);
+      expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
     });
 

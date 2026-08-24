@@ -42,6 +42,7 @@ All utilities in `src/cli/utils/`.
 | `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
 | `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders    |
 | `open-url.ts`     | `src/cli/utils/open-url.ts`     | Hand a link to the platform's link opener   |
+| `read-stream.ts`  | `src/cli/utils/read-stream.ts`  | `readAllOf` — a readable's whole text       |
 | `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`, `bytewise`   |
 | `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear screen/scrollback + size-gate helpers |
 | `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
@@ -435,9 +436,6 @@ states. `globalRemovalSections(...)` in `src/cli/commands/edit.tsx` emits them o
 `splitRemovalsByScope` found active at global scope — see
 [`commands/edit.md`](./commands/edit.md).
 
-`SHARED_CONFIG_ONE_DIRECTION` is a bare exported string (not an object): the refusal printed when
-`edit --ui` and `edit --from` are asked for in one run.
-
 **Two independent gates, and neither subsumes the other.** `src/cli/utils/messages.test.ts` pins the
 first four key lists with `toStrictEqual`, and also asserts non-empty string values everywhere and a
 trailing `...` on every `STATUS_MESSAGES` value — that gate judges the SOURCE and says nothing about
@@ -628,7 +626,6 @@ and a value column written as prose).
 | `CLI_INVOKE_COMMAND`         | `npx agents-inc`                                                   | Promoted invocation prefix shown in user-facing messages. `package.json` `bin` registers BOTH `agents-inc` and `agentsinc` for `dist/index.js`; `oclif.bin` is `agents-inc` alone. **Convention (recorded beside the constant in `consts.ts`): every user-facing instruction in this repo — messages, docs, code comments, agent playbooks — writes commands in this `npx agents-inc <cmd>` form. Prose that merely NAMES a command ("the `agents-inc list` table") does not.**   |
 | `EDITOR_URL`                 | `https://agentsinc.sh`                                             | The editor — where a configuration is built without the wizard and handed to `init --from <id>`. The editor Worker's custom domain (`apps/editor/wrangler.jsonc`); its config store `https://api.agentsinc.sh` is spelled separately in `src/cli/lib/seed/fetch-seed.ts` as `SEED_API_URL`, which is env-overridable while this is not                                                                                                                                            |
 | `DEFAULT_BRANDING.NAME`      | `Agents Inc.`                                                      | The name a run prints itself under when no configuration supplies one — the FALLBACK, not the value every surface prints. `branding.name` in `.claude-src/config.ts` replaces it at `doctor`'s, `eject`'s and `uninstall`'s headers, `uninstall`'s sign-off, `init`'s closing line and the dashboard summary's title; this constant is what `resolveBranding` yields where that key is absent and what `BaseCommand.resolveBrandingName` degrades to over a config it cannot read |
-| `DEFAULT_BRANDING.TAGLINE`   | `AI-powered development tools`                                     | Default tagline. `resolveBranding` resolves it and NOTHING consumes the result — the `BrandingConfig` docstring promising a wizard header is unkept, so neither this value nor a configured `branding.tagline` is printed anywhere                                                                                                                                                                                                                                                |
 | `DEFAULT_PUBLIC_SOURCE_NAME` | `agents-inc` (= `DEFAULT_PLUGIN_NAME`)                             | Fallback marketplace/source name                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `SOURCE_DISPLAY_NAMES`       | `{ public: "Public", eject: "Eject", "agents-inc": "Agents Inc" }` | Inline human-readable source type labels                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `INSTALL_MODES`              | `["eject", "plugin"]`                                              | The two install modes a Sources row offers, in the order the grid renders them                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -681,7 +678,7 @@ Helper: `formatSourceDisplayName(source: string): string` resolves a source name
 
 `UI_SYMBOLS`, `CLI_COLORS`, `SCROLL_VIEWPORT`, and `ASCII_LOGO` are defined in `src/cli/consts.ts`. (No `UI_LAYOUT` or `UI_MESSAGES` objects — those names are not defined.)
 
-The members of `UI_SYMBOLS`, exhaustive and in source order: `CHECKBOX_CHECKED`, `CHECKBOX_UNCHECKED`, `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`, `REMOVED`, `ADDED`.
+The members of `UI_SYMBOLS`, exhaustive and in source order: `CHEVRON`, `CHEVRON_SPACER`, `SELECTED`, `UNSELECTED`, `CURRENT`, `SKIPPED`, `DISCOURAGED`, `DISABLED`, `LOCK`, `EJECT`, `BULLET`, `SCROLL_UP`, `SCROLL_DOWN`, `CHECK`, `CROSS`, `REMOVED`, `ADDED`.
 
 Two key pairs share one glyph and are kept apart so call sites express intent: `SELECTED` and `CHECK` share a checkmark via the module-private `CHECK_GLYPH`, and `SKIPPED` and `DISABLED` share an en dash via `EN_DASH_GLYPH`. Neither glyph constant is exported.
 

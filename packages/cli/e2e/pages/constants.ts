@@ -1,5 +1,21 @@
 // --- e2e/pages/constants.ts ---
-// Self-contained E2E constants. NO imports from src/cli/.
+//
+// E2E constants, declared here rather than imported from `src/cli/` — and the reason is narrower
+// than the flat "NO imports from src/cli" this header carried for years. That read as a rule
+// nobody applied: 233 imports from `src/` live across every other directory of this tree, spec
+// directories included. What this one file buys by declaring instead of importing is the ability
+// to FAIL. A spec that imported the constant it asserts on would move both sides at once and
+// assert nothing — if the product renumbered `EXIT_CODES.CANCELLED`, an imported form would agree
+// with the new number and stay green.
+//
+// So the duplication is deliberate, and every mirrored value owes a third party comparing it:
+//
+//   - the wizard's screen subtitles → `scripts/check-screen-sentinels.ts`
+//   - the structural values below   → `scripts/check-mirrored-constants.ts`
+//
+// A value added here that mirrors one in `src/` and is registered with neither is the shape both
+// checks exist to close. Values with no production counterpart — terminal geometry the suite
+// picks, text fragments it composes — are this file's own and need no row.
 
 export const DIRS = {
   CLAUDE: ".claude",
@@ -268,6 +284,13 @@ export const STEP_TEXT = {
   // The six remaining operational row names `runAllChecks` logs. Named here rather
   // than retyped per spec: they are the report's skeleton, and a spec asserting one
   // of them is asserting that the row ran, not that a word appeared.
+  /**
+   * The glyph `doctor` heads a stood-down row with — `UI_SYMBOLS.SKIPPED`, an EN-DASH and not an
+   * ASCII hyphen. Named here because both assertions that use it build a regular expression, and
+   * one of them is a NEGATIVE: a glyph change that moved only the positive would leave the
+   * negative matching nothing and passing for a reason it does not state.
+   */
+  DOCTOR_STATUS_SKIP: "\u2013",
   DOCTOR_ROW_SKILLS_RESOLVED: "Skills Resolved",
   DOCTOR_ROW_AGENTS_COMPILED: "Agents Compiled",
   DOCTOR_ROW_NO_ORPHANS: "No Orphans",
@@ -444,7 +467,6 @@ export const STEP_TEXT = {
   SHARED_CONFIG_APPLY_CONFIRM: "Apply this configuration?",
   SHARED_CONFIG_APPLY_NOTHING_REMOVED: "Nothing is removed",
   SHARED_CONFIG_NEEDS_TERMINAL: "no terminal here to confirm it at",
-  SHARED_CONFIG_ONE_DIRECTION: "two directions of the same round trip",
   // The plan's two "kept" disclosures — what the run may not remove, and why. The first is
   // ownership, which `forkedFrom` decides; the second is this catalogue's own limit, for an id
   // the configuration NAMES and the decode could not place. Both name a real remedy, which is
@@ -698,6 +720,14 @@ export const INTERNAL_RETRIES = {
   INTERVAL_MS: 3_000,
 } as const;
 
+/**
+ * The statuses a spec asserts on. Every code `src/cli/lib/exit-codes.ts` declares is mirrored here
+ * with the same value, and `scripts/check-mirrored-constants.ts` holds the two together.
+ *
+ * A SUPERSET rather than a copy: {@link EXIT_CODES.UNKNOWN_COMMAND} is the shell's
+ * command-not-found status, which a spec sees when `dist/` is absent and the shell answers instead
+ * of the binary. The CLI never emits it, so the check compares in one direction only.
+ */
 export const EXIT_CODES = {
   SUCCESS: 0,
   ERROR: 1,
@@ -769,7 +799,9 @@ export const SOURCE_PATHS = {
   SKILL_RULES: "config/skill-rules.ts",
   STACKS_FILE: "config/stacks.ts",
   PLUGIN_MANIFEST_DIR: ".claude-plugin",
-  PLUGINS_DIST: "dist/plugins", // Mirrors PLUGINS_DIST_PATH in src/cli/consts.ts
+  // Mirrors PLUGINS_DIST_PATH in src/cli/consts.ts, held against it by
+  // scripts/check-mirrored-constants.ts.
+  PLUGINS_DIST: "dist/plugins",
 } as const;
 
 /**
@@ -788,8 +820,9 @@ export const TERMINAL_SIZE = {
    * `rows` must track that gate exactly: one row lower and every spec using this
    * hangs on "Terminal too short. Please resize." until its timeout, one row
    * higher and the specs stop being the tightest geometry the wizard supports.
-   * The value is duplicated rather than imported because this file is
-   * deliberately free of src/cli imports.
+   * `scripts/check-mirrored-constants.ts` holds it against `MIN_TERMINAL_SIZE.ROWS`,
+   * which is what makes a drift fail rather than hang. `cols` is NOT mirrored: 100
+   * sits deliberately above the gate's 80, wide enough to render normally.
    */
   SHORT: { rows: 20, cols: 100 },
   /**

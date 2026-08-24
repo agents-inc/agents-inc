@@ -1,13 +1,8 @@
 import path from "path";
 import { writeFile, mkdir } from "fs/promises";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
-import {
-  createTempDir,
-  cleanupTempDir,
-  ensureBinaryExists,
-  writeProjectConfig,
-} from "../helpers/test-utils.js";
+import { createTempDir, cleanupTempDir, writeProjectConfig } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 
 /**
@@ -25,8 +20,6 @@ const CONFIG_DEPENDENT_ROWS = [
 
 describe("doctor command", () => {
   let tempDir: string;
-
-  beforeAll(ensureBinaryExists);
 
   afterEach(async () => {
     if (tempDir) {
@@ -50,7 +43,7 @@ describe("doctor command", () => {
     for (const row of CONFIG_DEPENDENT_ROWS) {
       expect(stdout).toMatch(
         new RegExp(
-          `${row}\\s+-\\s+${STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID.replace(/[()]/g, "\\$&")}`,
+          `${row}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+${STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID.replace(/[()]/g, "\\$&")}`,
         ),
       );
     }
