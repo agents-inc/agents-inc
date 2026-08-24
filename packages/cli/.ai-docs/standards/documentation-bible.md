@@ -786,7 +786,7 @@ grep -rIoh -F '{@link' src e2e scripts --include='*.ts' --include='*.tsx' | wc -
 ```
 
 **This is gated now, by `scripts/check-symbol-citations.ts`** (2026-08-22, owner ruling on
-CLI-629). Neither `tsc` nor ESLint holds it: verified 2026-08-21 by injecting one unresolvable
+). Neither `tsc` nor ESLint holds it: verified 2026-08-21 by injecting one unresolvable
 `{@link}` into an e2e spec, over which `bun run typecheck` and `bun run lint` both passed in silence.
 The check walks every `JSDocLink` node and asks `checker.getSymbolAtLocation`, once per tsconfig
 project, and its suite is how it runs — `reference/testing/infrastructure.md` carries its roster

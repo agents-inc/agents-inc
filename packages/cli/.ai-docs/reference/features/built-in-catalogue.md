@@ -434,7 +434,7 @@ source the install recorded, so the row above is the same row for it.
 
 ### Two stack lookups, one fallback rule
 
-`defaultStacks` is consulted from two places, and since CLI-455 both scope the stand-in the same
+`defaultStacks` is consulted from two places, and both scope the stand-in the same
 way — to the default public marketplace:
 
 | Entry point                                                      | Rule                                                                                      | Effect                                                                                      |
@@ -451,7 +451,7 @@ The one caller turns the `null` into a failure that names the id AND the source 
 the one message `stackNotOfferedMessage(stackId, source)` exports beside the loader. The eject path
 (`local-installer.ts`) takes the source identity as an argument, read off
 `sourceResult.sourceConfig.source`. A second caller, the stack→plugin compiler, was threaded the
-same identity by CLI-455 and then deleted whole by CLI-459 — it had no user-reachable caller.
+same identity and then deleted whole — it had no user-reachable caller.
 
 ## Data flow — two paths, and the one users actually take
 

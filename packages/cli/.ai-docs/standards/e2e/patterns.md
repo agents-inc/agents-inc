@@ -47,7 +47,7 @@ describe("compile command", () => {
 
 Key points:
 
-- `beforeAll(ensureBinaryExists)` verifies the CLI binary exists
+- `beforeAll(ensureBinaryExists)` refuses a spec that begins with no `dist/` under it
 - `ProjectBuilder.minimal()` creates the project; `tempDir` captures the parent for cleanup
 - `CLI.run()` takes a `ProjectHandle` and returns ANSI-stripped output
 - Matchers verify file system state without reading files in the test

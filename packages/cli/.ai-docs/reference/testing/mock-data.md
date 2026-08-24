@@ -45,7 +45,19 @@ The declaration is keyed `Record<string, ResolvedSkill>`, so nothing about it is
 
 ### TEST_CATEGORIES
 
-Base category fixtures for spread-based customization:
+Base category fixtures for spread-based customization.
+
+**Deliberately not bound by `check-enumeration-drift.ts`, and this is the record of why.** Every
+value here is a `createMockCategory(...)` call, and the checker's value reader resolves string
+literals only — it refuses the table with _"names a symbol holding a member whose value no reader
+can name"_. Teaching it to resolve a call's first argument is the "guessed at rather than looked
+up" its own docblock refuses, so that is not the way in. The table IS bindable keys-only as
+`table-rows`, and that form was rejected: a sibling comment in this same file argues against it for
+two-column tables, because it holds the keys while letting every value drift, and this table's
+value column is the half a reader comes here for. The repository's precedent decides the tie —
+two greps were built, tested and deliberately not shipped under the Phase C rules pass, on the
+grounds that a rule ships without a check rather than with a bad one. Four neighbouring tables were
+bound the same day; this one is the exception on purpose rather than by omission.
 
 | Key               | Category ID         | Display Name      |
 | ----------------- | ------------------- | ----------------- |

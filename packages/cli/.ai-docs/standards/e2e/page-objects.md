@@ -293,7 +293,7 @@ lack — `DomainStep.deselectAll` already reads that marker before deciding to p
 
 Each row is one skill carrying a two-state control: `Local` at column 0, `Plugin` at column 1. There
 is no settings overlay to open — the `openSettings` / `pressAddSource` / `addSourceUrl` family drove
-the marketplace-sources screen, which was withdrawn with the marketplace axis (CLI-450).
+the marketplace-sources screen, which was withdrawn with the marketplace axis.
 
 ### AgentsStep
 

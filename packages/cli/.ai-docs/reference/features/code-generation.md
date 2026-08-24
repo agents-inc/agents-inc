@@ -508,7 +508,7 @@ The list is `VENDORED_TYPE_FILES` plus `AGENTS_FILE` — two module-level consta
 means adding a name there, and `generate:matrix:check` will report the new file as drift until it is
 committed.
 
-A ninth file, `src/generated/stack-preloads.ts`, was emitted until CLI-400 (2026-08-06). It carried
+A ninth file, `src/generated/stack-preloads.ts`, was emitted until 2026-08-06. It carried
 the load flags the built-in stacks hand-wrote, flattened to one verdict per skill because the editor
 had one toggle per skill — so a framework preloaded on its own domain's developer claimed to preload
 on every summoner in the stack too. The flags are gone from `defaultStacks` and the mapping in

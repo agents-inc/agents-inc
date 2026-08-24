@@ -593,7 +593,7 @@ whitelist over the same 39 groups. The whitelist asked "is a declared host selec
 asks "is a declared host still reachable". Astro conflicts with Next.js and Remix but not with
 React, so Radix's `needsAny [react, nextjs, remix]` keeps a survivor and Radix stays offerable
 beside Astro — where the whitelist ruled it out. The owner ruled those verdicts an accepted loss
-on 2026-08-07 and CLI-389 phase C deleted `compatibleWith` entirely, which is what made the CLI
+on 2026-08-07 and a later phase deleted `compatibleWith` entirely, which is what made the CLI
 and the editor answer the same question.
 
 Two consequences follow and are pinned as behaviour:
@@ -606,7 +606,7 @@ Two consequences follow and are pinned as behaviour:
   reaches itself.
 
 Anything that genuinely needs a presence semantic — "this skill needs its host chosen, not merely
-available" — is D-306's territory and must arrive as new vocabulary, not as a second reading of an
+available" — belongs to the availability vocabulary and must arrive as new vocabulary, not as a second reading of an
 existing rule.
 
 ### Relationship Query Functions (`matrix-resolver.ts`)
@@ -846,7 +846,7 @@ Content-hashing and plugin-version utilities shared by the skill, agent, and sta
 | `stacks-loader.ts` | `src/cli/lib/stacks/stacks-loader.ts` | Load stacks from stacks.ts |
 
 `stacks-loader.ts` is the whole module. `stack-installer.ts` and `stack-plugin-compiler.ts` — the
-stack→plugin bundle path — were deleted in CLI-459; nothing a user runs ever reached them.
+stack→plugin bundle path — were deleted; nothing a user runs ever reached them.
 
 Stacks are pre-configured bundles of skills mapped to agents. Defined in `config/stacks.ts` **in a source repo**; the CLI's own built-in catalogue is `lib/configuration/default-stacks.ts` — see [built-in-catalogue.md](./built-in-catalogue.md), which also covers the three different source-vs-default precedence rules.
 

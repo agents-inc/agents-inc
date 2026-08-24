@@ -608,7 +608,7 @@ The wire contract, the version-discard policy and the payload -> `WizardResultV2
 
 | Function                                        | File                       | Direction                                           |
 | ----------------------------------------------- | -------------------------- | --------------------------------------------------- |
-| `readPluginManifest()`                          | `marketplace-generator.ts` | IN (reads plugin manifests to generate marketplace) |
+| `readPluginManifest()`                          | `plugins/plugin-finder.ts` | IN (reads plugin manifests to generate marketplace) |
 | (output written by `build marketplace` command) |                            | OUT (writes `marketplace.json`)                     |
 
 ---

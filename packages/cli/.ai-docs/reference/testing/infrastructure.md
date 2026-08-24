@@ -49,13 +49,12 @@ Vitest is configured with 3 test projects:
 `oclif.commands.target`, which is `"./dist/commands"`. Every spec in this project therefore runs
 **the last build**.
 
-**A commands-project result is a statement about the last build.** Since CLI-457 you no longer have
+**A commands-project result is a statement about the last build.** You no longer have
 to remember that, because two layers enforce it:
 
-| Layer                                         | Covers                                                                                                                                                                                                                                                                                                             |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pretest` in `package.json` (`bun run build`) | `bun run test` and `npm test` — mirrors the long-standing `pretest:e2e`                                                                                                                                                                                                                                            |
-| `globalSetup` -> `vitest.global-setup.ts`     | Every invocation, `npx vitest run <file>` included. Calls `assertDistIsFresh` (`src/cli/lib/testing/dist-staleness.ts`), which compares the newest mtime under each tree compiled into `dist/` (build inputs only) against the newest in `dist/` and **throws before any spec is collected** when `dist/` is older |
+| Layer                                     | Covers                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `globalSetup` -> `vitest.global-setup.ts` | Every invocation, `npx vitest run <file>` included. Calls `assertDistIsFresh` (`src/cli/lib/testing/dist-staleness.ts`), which compares the newest mtime under each tree compiled into `dist/` (build inputs only) against the newest in `dist/` and **throws before any spec is collected** when `dist/` is older |
 
 The guard **refuses; it does not rebuild** — a direct `vitest run` stays fast and stays something
 you asked for. Its message names the fix (`bun run build`). It ignores `*.test.ts(x)`, `__tests__/`
@@ -78,7 +77,7 @@ build input added or edited carries an mtime of its own and still refuses, and a
 directory whose ignored entries all predate the build is still the only account of that directory's
 mtime there is.
 
-**Two trees, not one** (CLI-458). `BUILD_INPUT_TREES` names `packages/cli/src` and
+**Two trees, not one.** `BUILD_INPUT_TREES` names `packages/cli/src` and
 `packages/matrix/src`, because tsup inlines `@workspace/matrix` into the bundle (`noExternal`) —
 matrix source is compiled into this package's `dist/` exactly as `src/` is, and matrix has no build
 output of its own to go stale instead. Before that, touching a matrix file and running
@@ -95,10 +94,10 @@ even though matrix has no `build` script — see
 
 Both failure directions were live before that, and both are what the layers exist to stop:
 
-| Direction   | What you see                                                                                                                                                                                                                                                                                                                                    |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| False RED   | A source change the build has not picked up. During the CLI-404 removal, deleting `recommends` from `relationshipDefinitionsSchema` left 25 specs failing on `Config validation failed … relationships.recommends: Invalid input` — correct fixtures, correct source, stale `dist/` schema. A rebuild turned all 25 green with no other change. |
-| False GREEN | The quieter one. A breaking source change can leave these specs passing against stale `dist/` until CI's build step surfaces it.                                                                                                                                                                                                                |
+| Direction   | What you see                                                                                                                                                                                                                                                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| False RED   | A source change the build has not picked up. When `recommends` was removed, deleting it from `relationshipDefinitionsSchema` left 25 specs failing on `Config validation failed … relationships.recommends: Invalid input` — correct fixtures, correct source, stale `dist/` schema. A rebuild turned all 25 green with no other change. |
+| False GREEN | The quieter one. A breaking source change can leave these specs passing against stale `dist/` until CI's build step surfaces it.                                                                                                                                                                                                         |
 
 Reading a commands-project failure as "my change broke this" before checking the build date is the
 first wrong turn.
@@ -146,7 +145,7 @@ rule described under
 that section for what it ignores and why it refuses instead of rebuilding. Rule
 [6.19](../../standards/clean-code-standards.md) is the standard it enforces.
 
-**It is two files, and which half is where is the point** (CLI-460). The scan, the comparison, the
+**It is two files, and which half is where is the point.** The scan, the comparison, the
 `BUILD_INPUT_TREES` list and every message live in `src/cli/lib/testing/dist-staleness.ts`, whose
 sole export is `assertDistIsFresh(cliRoot)`. `vitest.global-setup.ts` holds three statements: it
 resolves its own directory as the CLI package root, exports `setup`, and calls that function.
@@ -461,7 +460,7 @@ This is not theoretical. Both column-geometry snapshots in `src/cli/components/w
 
 The flat branch must be the grouped one shifted left by exactly `SCOPE_COL_WIDTH`. State the derivation in the test's JSDoc so the next reader can re-check it without re-deriving it.
 
-> **Cross-ownership note — the extension above LANDED; what is missing is a gate, not a rule.** The prescriptive form is **rule 6.17a in `.ai-docs/standards/clean-code-standards.md`**, and it no longer stops at requiring the snapshot to exist: it requires the regeneration to re-derive the intended column starts from the component's own width constants and to state the derivation in the test's JSDoc, which `source-grid.test.tsx` now carries beside both snapshots. This paragraph read _"proposed, not applied"_ for weeks after that was false, which is the same failure one level up — a note recording a gap is only as good as the pass that returns to it. **The open half is enforcement:** a bare `vitest -u` is a review-time convention with nothing behind it, and neither `eslint.config.js`, the spec gates nor CI can tell a snapshot that was re-derived from one that was regenerated and waved through. Whether that becomes a mechanical check is an owner decision (`todo/cli.md` CLI-366), not a documentation gap. The suggestion that introduced 6.17a named this exact risk (_"a reviewer who rubber-stamps snapshot updates gets nothing"_) and shipped without an obligation closing it; the failure occurred one day later, on the very component the rule was written for. See `.ai-docs/agent-findings/2026-07-31-column-geometry-snapshots-regenerated-never-verified.md`.
+> **Cross-ownership note — the extension above LANDED; what is missing is a gate, not a rule.** The prescriptive form is **rule 6.17a in `.ai-docs/standards/clean-code-standards.md`**, and it no longer stops at requiring the snapshot to exist: it requires the regeneration to re-derive the intended column starts from the component's own width constants and to state the derivation in the test's JSDoc, which `source-grid.test.tsx` now carries beside both snapshots. This paragraph read _"proposed, not applied"_ for weeks after that was false, which is the same failure one level up — a note recording a gap is only as good as the pass that returns to it. **The open half is enforcement:** a bare `vitest -u` is a review-time convention with nothing behind it, and neither `eslint.config.js`, the spec gates nor CI can tell a snapshot that was re-derived from one that was regenerated and waved through. Whether that becomes a mechanical check is an owner decision (an open row in `todo/cli.md`), not a documentation gap. The suggestion that introduced 6.17a named this exact risk (_"a reviewer who rubber-stamps snapshot updates gets nothing"_) and shipped without an obligation closing it; the failure occurred one day later, on the very component the rule was written for. See `.ai-docs/agent-findings/2026-07-31-column-geometry-snapshots-regenerated-never-verified.md`.
 
 **E2E specs use no snapshots at all** (zero `toMatchSnapshot` / `toMatchInlineSnapshot` occurrences under `e2e/`), so this rule is component-test territory only.
 

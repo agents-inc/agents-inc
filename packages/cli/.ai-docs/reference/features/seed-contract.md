@@ -308,7 +308,7 @@ tightening of the first because minting and reading want opposite answers to the
 | Direction                                              | Schema                         | Why                                                                                                                                                                         |
 | ------------------------------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Writing** — `POST /configs`                          | `installableSeedPayloadSchema` | A link that cannot be installed should never get an address. 400 rather than a stored id — except a wrong `v`, which is [409](#a-wrong-v-on-the-write-side-is-409-not-400). |
-| **Reading** — `GET /configs/:id`, the editor, `--from` | `seedPayloadSchema`            | Links holding the pair are already out in the world. The editor opens one, marks the row and fixes it in a click (EDITOR-08); a refusal would kill that.                    |
+| **Reading** — `GET /configs/:id`, the editor, `--from` | `seedPayloadSchema`            | Links holding the pair are already out in the world. The editor opens one, marks the row and fixes it in a click; a refusal would kill that.                                |
 
 The one rule the installable schema adds is the scope-reach rule: **a project-scoped skill never
 reaches a sub-agent resting at global scope.** Its predicate is `isSeedScopePairWritable`, and it is
