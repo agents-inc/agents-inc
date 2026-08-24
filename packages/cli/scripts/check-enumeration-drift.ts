@@ -345,7 +345,11 @@ export const REGISTRY: RegistryEntry[] = [
     document: {
       document: COMMANDS_INDEX,
       from: "| `SHARED_CONFIG_APPLY`",
-      to: "| `SHARED_CONFIG_ONE_DIRECTION`",
+      // Was `| \`SHARED_CONFIG_ONE_DIRECTION\`` until 2026-08-24, when that refusal was deleted —
+      // `--ui` now opens whatever `--from` names rather than refusing the pair. A boundary anchored
+      // on a NEIGHBOUR breaks when the neighbour goes, which is a second row reddening for a reason
+      // that has nothing to do with its own subject.
+      to: "| `INCOMPLETE_WORK_RECOVERY`",
       states: "code-spans",
     },
   },

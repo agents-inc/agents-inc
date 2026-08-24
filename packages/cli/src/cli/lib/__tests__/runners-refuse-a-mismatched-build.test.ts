@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { exportedCallablesIn, invokedNamesIn } from "./helpers/test-only-invocations.js";
+import { invokedNamesIn } from "./helpers/test-only-invocations.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -43,16 +43,18 @@ const FILE_SCOPED_GUARD = "assertDistIsPresent";
 const PER_TEST_GUARD = "guardAgainstDistReplacement";
 
 /**
- * The E2E harness door the great majority of specs in BOTH e2e projects call from a `beforeAll`,
- * and the module that declares it. Re-derive the two populations rather than trusting a figure in
- * a comment — and match the invocation rather than the name, since a bare import carries the
- * string too:
+ * Where the E2E door is asked, which since 2026-08-24 is the HARNESS rather than each spec.
  *
- *     find e2e \( -name '*.e2e.test.ts' -o -name '*.smoke.test.ts' \)
- *     grep -rlP 'beforeAll\(ensureBinaryExists|await ensureBinaryExists\(\)' e2e --include='*.ts'
+ * It was `ensureBinaryExists`, exported from `e2e/helpers/test-utils.ts` and called from a
+ * `beforeAll` in 248 spec files — per-file discipline with no checker over it, where forgetting
+ * the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted
+ * it correctly from one that forgot. `e2e/setup.ts` is a `setupFiles` entry, so a `beforeAll`
+ * registered there runs once before every spec file in the suite: the same door, at zero call
+ * sites, and unforgettable. `spec-gates.test.ts` now asserts the ABSENCE of the per-spec call.
+ *
+ * The scope claim below is unchanged by the move and is the reason this gate exists at all.
  */
-const E2E_HARNESS = "e2e/helpers/test-utils.ts";
-const E2E_BUILD_GUARD = "ensureBinaryExists";
+const E2E_HARNESS = "e2e/setup.ts";
 
 /**
  * The two lists of files a suite evaluates around its specs, and the scope each one can speak at.
@@ -160,12 +162,13 @@ describe("a suite that executes dist/ refuses a build that does not match the tr
     const harness = await readFile(path.join(CLI_ROOT, E2E_HARNESS), "utf8");
     const invoked = invokedNamesIn(harness, E2E_HARNESS);
 
-    // Subject guard: the door has to still be declared for a claim about what it checks to mean
-    // anything — deleting it would satisfy the invocation assertion below by emptying its subject.
+    // Subject guard: the door has to still be REGISTERED for a claim about what it checks to mean
+    // anything — deleting the hook would satisfy the invocation assertion below by emptying its
+    // subject. `beforeAll` is the whole of what makes it per-file rather than per-test.
     expect(
-      exportedCallablesIn(harness, E2E_HARNESS),
-      `${E2E_HARNESS} no longer declares ${E2E_BUILD_GUARD} — there is no door left to judge`,
-    ).toContain(E2E_BUILD_GUARD);
+      harness,
+      `${E2E_HARNESS} no longer registers the door in a beforeAll — there is nothing left to judge`,
+    ).toContain("beforeAll");
 
     expect(
       invoked,

@@ -188,6 +188,34 @@ const TITLE_NAMES_A_TASK = [
  */
 const SHARED_BASE_CONFIG_PATH = path.resolve(CLI_ROOT, "../eslint-config/base.js");
 
+/**
+ * The parser the shared base resolves, taken out of it rather than inherited with it.
+ *
+ * This package does not declare `@typescript-eslint/parser`, so the base is where it comes from —
+ * but taking the base WHOLE brought every rule in `js.configs.recommended`,
+ * `tseslint.configs.recommended` and this repository's own additions, all of them computed over
+ * 466 spec files and then discarded by `reportsFor`, which reads `no-restricted-syntax` alone.
+ * Measured: 3,351ms whole against 1,996ms parser-only, same files, same verdict.
+ */
+async function sharedLanguageOptions(): Promise<NonNullable<Linter.Config["languageOptions"]>> {
+  const parserBlock = (await sharedBaseConfig()).find(
+    (block) => block.languageOptions?.parser != null,
+  );
+
+  // `!= null` rather than `!== undefined`: flat config types the slot `Parser | null | undefined`,
+  // and a null parser is as absent as a missing one for a gate that must parse TypeScript.
+  if (parserBlock?.languageOptions?.parser == null) {
+    throw new Error(
+      `${SHARED_BASE_CONFIG_PATH} resolves no parser — the shared base has moved, and this gate ` +
+        `reads a syntax tree TypeScript does not have without one`,
+    );
+  }
+
+  // The whole block rather than the parser alone, so whatever the parser needs beside itself —
+  // `ecmaVersion`, `sourceType`, `parserOptions` — travels with it rather than being restated.
+  return parserBlock.languageOptions;
+}
+
 async function sharedBaseConfig(): Promise<Linter.Config[]> {
   // Parse boundary: a plain-`.js` module has no type of its own, so the shape is declared here.
   const shared = (await import(pathToFileURL(SHARED_BASE_CONFIG_PATH).href)) as {
@@ -214,18 +242,22 @@ async function sharedBaseConfig(): Promise<Linter.Config[]> {
  * a spec cannot switch it off. Unused directives are not reported, because under a config this
  * narrow every directive in the tree is unused.
  */
+async function titleGateConfig(): Promise<Linter.Config[]> {
+  return [
+    {
+      files: ["**/*.ts", "**/*.tsx"],
+      languageOptions: await sharedLanguageOptions(),
+      linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: "off" },
+      rules: { "no-restricted-syntax": ["error", ...TITLE_NAMES_A_TASK] },
+    },
+  ];
+}
+
 async function titleGate(): Promise<ESLint> {
   return new ESLint({
     cwd: CLI_ROOT,
     overrideConfigFile: true,
-    overrideConfig: [
-      ...(await sharedBaseConfig()),
-      {
-        files: ["**/*.ts", "**/*.tsx"],
-        linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: "off" },
-        rules: { "no-restricted-syntax": ["error", ...TITLE_NAMES_A_TASK] },
-      },
-    ],
+    overrideConfig: await titleGateConfig(),
   });
 }
 
@@ -333,6 +365,31 @@ const TITLE_GATE_TIMEOUT_MS = 60_000;
  * ban with nothing to clean up first is the cheapest one there will ever be.
  */
 describe("no test title names the task that produced it", () => {
+  /**
+   * The gate reads ONE rule, so it must run one rule.
+   *
+   * It took the shared base whole — `js.configs.recommended`, `tseslint.configs.recommended` and
+   * every rule this repository adds — and then `reportsFor` discarded everything that was not
+   * `no-restricted-syntax`. Every other rule's work over 466 spec files was computed and thrown
+   * away: measured at **3,351ms against 1,996ms** for the same 466 files and the same verdict,
+   * so two fifths of the scan answered a question nobody asked.
+   *
+   * The base is still where the PARSER comes from — this package does not declare
+   * `@typescript-eslint/parser`, and `no-restricted-syntax` reads a syntax tree, which TypeScript
+   * has none of without one. Taking the parser out of the base rather than the base whole is the
+   * difference between needing it and inheriting it.
+   */
+  it("runs the one rule it reads, rather than every rule the shared base carries", async () => {
+    const config = await titleGateConfig();
+
+    const rules = config.flatMap((block) => Object.keys(block.rules ?? {}));
+
+    expect(
+      rules,
+      "the gate inherited rules it does not read — their work over every spec is computed and discarded",
+    ).toStrictEqual(["no-restricted-syntax"]);
+  });
+
   it(
     "condemns a task ID in every shape a title is written in, and leaves a behaviour name alone",
     async () => {

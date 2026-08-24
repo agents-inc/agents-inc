@@ -92,6 +92,7 @@
  * Nothing runs at module scope here — the suite beside it is the enforcement, and every directory
  * the check reads is a parameter so it can be driven against a fixture.
  */
+import { spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import path from "path";
 
@@ -178,10 +179,16 @@ export function check({
   findingsDir = FINDINGS_DIR,
   referenceRoots = [PACKAGE_ROOT, REPOSITORY_ROOT],
   sourceRoots = [REPOSITORY_ROOT],
+  isIgnored = gitIgnoresUnder(),
 }: {
   findingsDir?: string | undefined;
   referenceRoots?: string[] | undefined;
   sourceRoots?: string[] | undefined;
+  /**
+   * Whether the repository would carry this file. Injected so a test can state the answer without
+   * creating a git repository, and so the scan's subject is stated rather than assumed.
+   */
+  isIgnored?: ((file: string) => boolean) | undefined;
 } = {}): CheckResult {
   const files = findingFiles(findingsDir);
   const witnessed = witnessOf(findingsDir, [...APPARATUS_FILES, ...files]);
@@ -195,7 +202,7 @@ export function check({
     verdicts,
     duplicates: duplicateFilingsIn(readings),
     unresolved: unresolvedReferencesIn(parsed, [findingsDir, ...referenceRoots]),
-    undeclared: undeclaredSymbolsIn(parsed, declaredNamesUnder(sourceRoots)),
+    undeclared: undeclaredSymbolsIn(parsed, declaredNamesUnder(sourceRoots, isIgnored)),
     unlisted: unlistedFindingsIn(findingsDir, files),
     inFlight: changedSince(findingsDir, witnessed),
   };
@@ -572,21 +579,81 @@ const UNAUTHORED_DIRECTORIES = ["node_modules", "dist", ".git", "coverage", ".tu
  * undeclared and pass on its own evidence. An identifier is a token the parser puts in code
  * position; a name inside a string or a comment is not one.
  */
-function declaredNamesUnder(roots: string[]): Set<string> {
-  return new Set(roots.flatMap(namesUnder));
+function declaredNamesUnder(roots: string[], isIgnored: (file: string) => boolean): Set<string> {
+  return new Set(roots.flatMap((root) => namesUnder(root, isIgnored)));
 }
 
-function namesUnder(root: string): string[] {
+function namesUnder(root: string, isIgnored: (file: string) => boolean): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(root, entry.name);
     if (entry.isDirectory()) {
-      return UNAUTHORED_DIRECTORIES.includes(entry.name) ? [] : namesUnder(entryPath);
+      if (UNAUTHORED_DIRECTORIES.includes(entry.name)) return [];
+      return isIgnored(entryPath) ? [] : namesUnder(entryPath, isIgnored);
     }
+
+    if (isIgnored(entryPath)) return [];
 
     if (entry.name.endsWith(DATA_EXTENSION)) return keysIn(readFileSync(entryPath, "utf-8"));
 
     return isModule(entry.name) ? identifiersIn(entryPath) : [];
   });
+}
+
+/**
+ * Whether the repository would carry this path — asked of git rather than guessed from a denylist.
+ *
+ * `UNAUTHORED_DIRECTORIES` above is a hardcoded list and cannot track `.gitignore`, which is how
+ * this scan came to answer differently per machine: three ignored locations in this repository
+ * still declared two deleted constants, so it said 10 locally and 12 on a clean checkout, and CI
+ * was red on that assertion across two releases while every local run passed. The denylist stays
+ * because it is cheaper than any subprocess for the four directories that dominate the walk; git
+ * decides everything else.
+ *
+ * ONE call per root, not one per path. The obvious form — `git check-ignore` per file — is correct
+ * and cost 5 seconds on this repository, which would have made this scan one of the slowest tests
+ * in the suite to fix a correctness bug. `ls-files --others --ignored --exclude-standard
+ * --directory` lists what git ignores under a root, collapsing whole ignored directories to one
+ * entry, so a prefix test answers every path beneath them.
+ *
+ * Outside a working tree the command fails and the answer is that nothing is ignored — exactly
+ * right for the temp trees this scan is unit-tested against, and the reason no test needs a
+ * repository of its own.
+ */
+function gitIgnoresUnder(): (file: string) => boolean {
+  const perRoot = new Map<string, string[]>();
+
+  return (file: string): boolean => {
+    const root = path.parse(file).root === file ? file : path.dirname(file);
+    const anchor = nearestKnownRoot(perRoot, root) ?? loadIgnoredUnder(perRoot, root);
+
+    return anchor.some((ignored) => file === ignored || file.startsWith(`${ignored}${path.sep}`));
+  };
+}
+
+function nearestKnownRoot(perRoot: Map<string, string[]>, dir: string): string[] | undefined {
+  for (const [known, entries] of perRoot) {
+    if (dir === known || dir.startsWith(`${known}${path.sep}`)) return entries;
+  }
+
+  return undefined;
+}
+
+function loadIgnoredUnder(perRoot: Map<string, string[]>, dir: string): string[] {
+  const result = spawnSync(
+    "git",
+    ["-C", dir, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+    { encoding: "utf-8" },
+  );
+  const entries =
+    result.status === 0
+      ? result.stdout
+          .split("\n")
+          .filter((line) => line !== "")
+          .map((line) => path.resolve(dir, line.replace(/\/$/, "")))
+      : [];
+  perRoot.set(dir, entries);
+
+  return entries;
 }
 
 function isModule(name: string): boolean {

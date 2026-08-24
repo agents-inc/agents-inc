@@ -626,6 +626,62 @@ describe("a backticked symbol inside a lifecycle note", () => {
     expect(checkFixture(root, path.join(root, "source")).undeclared).toStrictEqual([]);
   });
 
+  /**
+   * The scan must answer about the REPOSITORY, not about the machine.
+   *
+   * It walks the filesystem, so any file lying in the tree contributes names — including files
+   * git ignores. Three ignored locations in this repository (a `.cache/`, a generated `.gen.mjs`
+   * and an ignored scratch directory) still declared two constants deleted on 2026-08-22, so the
+   * scan answered 10 locally and 12 on a clean checkout: **CI was red on this assertion from the
+   * 0.157.0 push through 0.158.0 while every local run passed.** A gate whose verdict depends on
+   * what a machine happens to carry trains people to disbelieve it.
+   *
+   * `isIgnored` is injected rather than shelled out to in the test, deliberately: proving this
+   * with a real `.gitignore` would mean creating a git repository from a test, and the predicate
+   * is the whole of what the scan needs to know.
+   */
+  it("ignores a name declared only in a file the repository does not carry", async () => {
+    const root = await writeSymbolFixture({
+      [FINDING_FILE]: finding({
+        status: "partial",
+        partial_note: `"Option A at the \`${A_DECLARED_SYMBOL}\` call sites is pending."`,
+      }),
+    });
+    const sourceRoot = path.join(root, "source");
+    const debris = path.join(sourceRoot, "config-writer.ts");
+
+    const asRepository = check({
+      findingsDir: root,
+      referenceRoots: [root],
+      sourceRoots: [sourceRoot],
+      isIgnored: (file) => file === debris,
+    });
+
+    expect(
+      asRepository.undeclared,
+      "the only file declaring it is one git ignores, so the repository declares it nowhere",
+    ).toStrictEqual([{ file: FINDING_FILE, key: "partial_note", symbol: A_DECLARED_SYMBOL }]);
+  });
+
+  /** The control: the same symbol, the same file, counted when the repository does carry it. */
+  it("counts a name from a file the repository does carry", async () => {
+    const root = await writeSymbolFixture({
+      [FINDING_FILE]: finding({
+        status: "partial",
+        partial_note: `"Option A at the \`${A_DECLARED_SYMBOL}\` call sites is pending."`,
+      }),
+    });
+
+    const asRepository = check({
+      findingsDir: root,
+      referenceRoots: [root],
+      sourceRoots: [path.join(root, "source")],
+      isIgnored: () => false,
+    });
+
+    expect(asRepository.undeclared).toStrictEqual([]);
+  });
+
   it("reads a backticked span only when the whole span is one identifier", async () => {
     const root = await writeSymbolFixture({
       [FINDING_FILE]: finding({
