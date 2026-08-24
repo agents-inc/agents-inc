@@ -119,7 +119,6 @@ describe("registerExternalSkills", () => {
     });
     // Claimed on the identity axis too — an entry the slug map does not carry is invisible to
     // anything that addresses a skill by slug.
-    expect(matrix.slugMap.idToSlug[EXTERNAL_ID]).toBe(EXTERNAL_ID);
   });
 
   it("seats an entry the decode that runs immediately after it can still read", () => {

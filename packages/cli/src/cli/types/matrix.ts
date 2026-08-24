@@ -122,12 +122,17 @@ export type SkillRulesConfig = {
   relationships: RelationshipDefinitions;
 };
 
-/** Bidirectional slug <-> skill ID mapping. Partial because only extracted skills are present. */
+/**
+ * Slug -> canonical skill ID. Partial because only extracted skills are present.
+ *
+ * One direction, not two. A reverse `idToSlug` was carried here until 2026-08-23 and had **zero
+ * readers anywhere** — every occurrence was a write, and the only thing consuming it was the
+ * duplicate-slug asymmetry it made possible. A map nothing reads cannot be out of step with the
+ * one that is read, so deleting it retires that whole class rather than guarding it.
+ */
 export type SkillSlugMap = {
   /** Forward: slug -> canonical skill ID */
   slugToId: Partial<Record<SkillSlug, SkillId>>;
-  /** Reverse: canonical skill ID -> slug */
-  idToSlug: Partial<Record<SkillId, SkillSlug>>;
 };
 
 /**

@@ -1,4 +1,3 @@
-import { typedEntries } from "../../../utils/typed-object";
 import type {
   Category,
   CategoryDefinition,
@@ -86,16 +85,12 @@ export function createMockMatrix(
   const autoSlugToId = Object.fromEntries(
     skillsWithSlugs.map((skill) => [skill.slug, skill.id]),
   ) as Record<SkillSlug, SkillId>;
-  const autoIdToSlug = Object.fromEntries(
-    skillsWithSlugs.map((skill) => [skill.id, skill.slug]),
-  ) as Record<SkillId, SkillSlug>;
-
   return {
     version: "1.0.0",
     categories: {},
     skills: skillsRecord,
     suggestedStacks: [],
-    slugMap: { slugToId: autoSlugToId, idToSlug: autoIdToSlug },
+    slugMap: { slugToId: autoSlugToId },
     generatedAt: new Date().toISOString(),
     ...overrides,
   };
@@ -200,15 +195,10 @@ export function createComprehensiveMatrix(
     reviewing: "meta-reviewing-reviewing",
   };
 
-  // Boundary cast: Object.fromEntries returns { [k: string]: string }
-  const idToSlug = Object.fromEntries(
-    typedEntries(slugToId).map(([slug, fullId]) => [fullId, slug]),
-  ) as SkillSlugMap["idToSlug"];
-
   return createMockMatrix(skills, {
     categories,
     suggestedStacks,
-    slugMap: { slugToId, idToSlug },
+    slugMap: { slugToId },
     ...overrides,
   });
 }

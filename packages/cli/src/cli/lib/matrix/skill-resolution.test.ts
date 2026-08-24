@@ -119,7 +119,6 @@ describe("skill-resolution", () => {
       );
 
       expect(merged.slugMap.slugToId.react).toBe("web-framework-react");
-      expect(merged.slugMap.idToSlug["web-framework-react"]).toBe("react");
     });
 
     it("drops unresolved conflict references instead of passing through", () => {

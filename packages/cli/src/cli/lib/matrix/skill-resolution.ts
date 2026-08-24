@@ -32,6 +32,34 @@ const AUTO_SYNTH_ORDER = 999;
  * skill-categories.ts. This is a safety net — the preferred path is for
  * skill authors to maintain proper skill-categories.ts entries.
  */
+/**
+ * Warns when a second skill files an undeclared category under a different domain from the first.
+ *
+ * A synthesized category takes its domain from **whichever skill the glob reached first**, and the
+ * order a directory walk returns is not a decision anybody made. Two skills sharing an undeclared
+ * category while declaring different domains therefore file the second under a domain its own
+ * `metadata.yaml` contradicts — silently, until now. The value feeds six product readers of
+ * `getCategoryDomain`, `config-generator.ts` and `wizard-store.ts` among them, so it shapes both
+ * the emitted `config.ts` and where the wizard puts the skill.
+ *
+ * **Reported, not resolved.** Picking a winner would need a rule the catalogue does not state, and
+ * the author is the only one who can say which domain they meant. `checkCategoryDomains` does not
+ * cover this — it reports a category with NO domain, and this one has two.
+ */
+function warnOnDomainDisagreement(
+  skill: ExtractedSkillMetadata,
+  decidedBy: ExtractedSkillMetadata,
+): void {
+  if (skill.domain === decidedBy.domain) return;
+
+  warn(
+    `Category '${skill.category}' has no definition, so its domain was taken from the first skill ` +
+      `naming it — '${decidedBy.id}' (${decidedBy.domain}). '${skill.id}' declares ` +
+      `'${skill.domain}' and will be filed under '${decidedBy.domain}'. Declare the category in ` +
+      `the marketplace's own config, or make the two skills agree.`,
+  );
+}
+
 export function synthesizeCategory(category: Category, domain: Domain): CategoryDefinition {
   verbose(
     `Category '${category}' has no definition in skill-categories.ts — using auto-generated placeholder`,
@@ -68,12 +96,11 @@ export function claimSlug(slugMap: SkillSlugMap, slug: SkillSlug, id: SkillId): 
   }
 
   slugMap.slugToId[slug] = id;
-  slugMap.idToSlug[id] = slug;
 }
 
-/** Builds a bidirectional slug <-> ID map from extracted skill metadata. */
+/** Builds the slug -> ID map from extracted skill metadata. */
 function buildSlugMap(skills: ExtractedSkillMetadata[]): SkillSlugMap {
-  const slugMap: SkillSlugMap = { slugToId: {}, idToSlug: {} };
+  const slugMap: SkillSlugMap = { slugToId: {} };
 
   for (const skill of skills) {
     claimSlug(slugMap, skill.slug, skill.id);
@@ -248,14 +275,26 @@ export function mergeMatrixWithSkills(
 
   // Auto-synthesize missing categories for skills that reference undefined categories
   const synthesizedCategories = { ...categories };
+  const synthesizedFrom = new Map<string, ExtractedSkillMetadata>();
   for (const skill of skills) {
     // Skip "local" pseudo-category — it's not a real Category union member
     if (skill.category === LOCAL_PSEUDO_CATEGORY) continue;
-    if (!synthesizedCategories[skill.category]) {
-      const synthesized = synthesizeCategory(skill.category, skill.domain);
-      synthesizedCategories[skill.category] = synthesized;
+
+    // A category the catalogue DECLARES is not ours to synthesize, and not ours to judge either:
+    // its domain is stated rather than inferred, so two skills disagreeing about it is a different
+    // defect that `checkCategoryDomains` owns. Read from the input map rather than the one being
+    // built, so a synthesized entry cannot be mistaken for a declared one.
+    if (categories[skill.category]) continue;
+
+    const already = synthesizedFrom.get(skill.category);
+    if (already === undefined) {
+      synthesizedCategories[skill.category] = synthesizeCategory(skill.category, skill.domain);
+      synthesizedFrom.set(skill.category, skill);
       verbose(`Auto-synthesized category '${skill.category}' for skill '${skill.id}'`);
+      continue;
     }
+
+    warnOnDomainDisagreement(skill, already);
   }
 
   const unresolvedSlugs = collectUnresolvedSlugs(relationships, slugMap.slugToId);

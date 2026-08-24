@@ -174,7 +174,6 @@ function copyOfBuiltInMatrix(): MergedSkillsMatrix {
     suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks],
     slugMap: {
       slugToId: { ...BUILT_IN_MATRIX.slugMap.slugToId },
-      idToSlug: { ...BUILT_IN_MATRIX.slugMap.idToSlug },
     },
   };
 }

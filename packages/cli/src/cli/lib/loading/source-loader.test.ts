@@ -1507,7 +1507,6 @@ describe("mergeLocalSkillsIntoMatrix slug map", () => {
     const result = mergeLocalSkillsIntoMatrix(createMockMatrix(), localResult);
 
     expect(result.slugMap.slugToId[LOCAL_ONLY_SLUG]).toBe("web-tooling-custom");
-    expect(result.slugMap.idToSlug["web-tooling-custom" as SkillId]).toBe(LOCAL_ONLY_SLUG);
   });
 
   it("leaves a slug the matrix already maps with the skill holding it", () => {
