@@ -1,4 +1,9 @@
-import { beforeEach, describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+
+vi.mock("../../utils/logger");
+
+import { warn } from "../../utils/logger";
+import { mergeMatrixWithSkills } from "./skill-resolution.js";
 import {
   getCellState,
   hasUnmetRequirements,
@@ -10,9 +15,12 @@ import {
   getSkillsByCategory,
   getAvailableSkills,
 } from "./matrix-resolver";
-import type { CategoryPath, SkillId, SkillSlug } from "../../types";
+import type { CategoryPath, Domain, SkillId, SkillSlug } from "../../types";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures";
-import { createMockSkill } from "../__tests__/factories/skill-factories.js";
+import {
+  createMockExtractedSkill,
+  createMockSkill,
+} from "../__tests__/factories/skill-factories.js";
 import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
 import {
@@ -30,6 +38,9 @@ const REACT_ID: SkillId = "web-framework-react";
 const VUE_ID: SkillId = "web-framework-vue-composition-api";
 const ZUSTAND_ID: SkillId = "web-state-zustand";
 const HONO_ID: SkillId = "api-framework-hono";
+
+/** A category no shipped `skill-categories.ts` declares, so resolution has to synthesize one. */
+const UNDECLARED = "web-nothing-declares-this" as CategoryPath;
 const SCSS_ID: SkillId = "web-styling-scss-modules";
 const TAILWIND_ID: SkillId = "web-styling-tailwind";
 
@@ -50,6 +61,17 @@ const NON_EXCLUSIVE_FRAMEWORK_CATEGORIES = buildCategoryMap({
 const EXCLUSIVE_FRAMEWORK_CATEGORIES = buildCategoryMap({
   "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
 });
+
+/**
+ * The synthesised half of an unmet-requirements message, with the rule author's `reason` cut off.
+ *
+ * `getUnmetRequirementsReason` answers `<what is missing> — <why it is needed>`, and the two halves
+ * have different owners: the first is computed from the current selection, the second is prose a
+ * rule author wrote. Every pin below is about the first, so splitting here keeps them EXACT rather
+ * than loosening them to `toContain` — which would pass on a message that had lost the skill names
+ * entirely.
+ */
+const missingHalf = (message: string | undefined): string | undefined => message?.split(" — ")[0];
 
 describe("unknown skill ids", () => {
   it("resolver entry points throw for ids not in the matrix", () => {
@@ -500,6 +522,57 @@ describe("Conflicting skills", () => {
   });
 });
 
+describe("an undeclared category two skills disagree about", () => {
+  // The domain is taken from whichever skill the glob reached FIRST, and a directory walk's order
+  // is nobody's decision. Two skills sharing an undeclared category while declaring different
+  // domains file the second under a domain its own metadata contradicts, and it feeds six product
+  // readers of `getCategoryDomain`.
+  //
+  // The WARNING is asserted and never the resulting domain: pinning the domain pins glob order, so
+  // an unrelated reordering of the fixture would redden a test about something else entirely.
+  //
+  // Driven through `mergeMatrixWithSkills`, which is where the synthesis happens —
+  // `createMockMatrix` hands back a matrix that is already built and never reaches it.
+  function mergeSkillsDeclaring(...domains: readonly Domain[]): void {
+    vi.mocked(warn).mockClear();
+
+    mergeMatrixWithSkills(
+      {},
+      { conflicts: [], discourages: [], requires: [], alternatives: [] },
+      domains.map((domain, index) =>
+        createMockExtractedSkill(`${UNDECLARED}-${index}` as SkillId, {
+          category: UNDECLARED,
+          domain,
+          slug: `undeclared-${index}` as SkillSlug,
+        }),
+      ),
+    );
+  }
+
+  function whatItSaid(): string {
+    return vi
+      .mocked(warn)
+      .mock.calls.map(([message]) => String(message))
+      .join("\n");
+  }
+
+  it("warns, naming the category and both skills", () => {
+    mergeSkillsDeclaring("web", "api");
+
+    expect(whatItSaid()).toContain(UNDECLARED);
+    expect(whatItSaid()).toContain(`${UNDECLARED}-0`);
+    expect(whatItSaid()).toContain(`${UNDECLARED}-1`);
+  });
+
+  // The control. Without it the assertion above is satisfied by a build that warns on every
+  // synthesized category, which buries the disagreement in noise rather than reporting it.
+  it("stays silent when the two agree", () => {
+    mergeSkillsDeclaring("web", "web");
+
+    expect(whatItSaid()).not.toContain(UNDECLARED);
+  });
+});
+
 describe("Missing skill dependencies", () => {
   describe("validateSelection catches missing dependencies", () => {
     it("should return error when required skill is not selected (single dependency)", () => {
@@ -724,6 +797,62 @@ describe("Missing skill dependencies", () => {
 
       expect(reason).toContain("requires");
       expect(reason).toContain("Vue Composition Api");
+    });
+
+    // `reason` is REQUIRED by `requireRuleSchema` and `default-rules.test.ts` enforces that every
+    // built-in rule carries one, so every marketplace author is compelled to write it. Nothing read
+    // it until 2026-08-23. Both siblings render theirs — `discourages[].reason` in the grid,
+    // `conflicts[].reason` through `reportValidationErrors`.
+    it("carries the rule author's own reason beside the synthesised one", () => {
+      initializeMatrix(
+        createMockMatrix(
+          createMockSkill(REACT_ID, {
+            requires: [
+              { skillIds: [VUE_ID], needsAny: false, reason: "the router is built on it" },
+            ],
+          }),
+          createMockSkill(VUE_ID),
+        ),
+      );
+
+      expect(getUnmetRequirementsReason(REACT_ID, [])).toBe(
+        "requires Vue Composition Api — the router is built on it",
+      );
+    });
+
+    it("omits the separator for a rule whose reason is empty", () => {
+      initializeMatrix(
+        createMockMatrix(
+          createMockSkill(REACT_ID, {
+            requires: [{ skillIds: [VUE_ID], needsAny: false, reason: "" }],
+          }),
+          createMockSkill(VUE_ID),
+        ),
+      );
+
+      expect(getUnmetRequirementsReason(REACT_ID, [])).toBe("requires Vue Composition Api");
+    });
+
+    // The cell WRAPS rather than elides, so an unbounded reason grows the tag, grows the frame and
+    // pushes the top of the wizard off the terminal. The shipped catalogue's longest reason is 242
+    // characters and its React Router entry alone cost four lines before this budget existed.
+    it("clips a reason too long for the cell, keeping the synthesised half whole", () => {
+      const longReason = "x".repeat(200);
+      initializeMatrix(
+        createMockMatrix(
+          createMockSkill(REACT_ID, {
+            requires: [{ skillIds: [VUE_ID], needsAny: false, reason: longReason }],
+          }),
+          createMockSkill(VUE_ID),
+        ),
+      );
+
+      const said = getUnmetRequirementsReason(REACT_ID, []) ?? "";
+
+      expect(said).toContain("requires Vue Composition Api — ");
+      expect(said).not.toContain(longReason);
+      expect(said.endsWith("\u2026")).toBe(true);
+      expect(said.length).toBeLessThan("requires Vue Composition Api — ".length + 70);
     });
 
     it("should list all missing required skills (AND logic)", () => {
@@ -1423,7 +1552,7 @@ describe("mobile and desktop framework fences", () => {
 
   it("reports a mobile skill picked without either mobile framework as unmet", () => {
     expect(hasUnmetRequirements(NATIVEWIND_ID, [NATIVEWIND_ID])).toBe(true);
-    expect(getUnmetRequirementsReason(NATIVEWIND_ID, [NATIVEWIND_ID])).toBe(
+    expect(missingHalf(getUnmetRequirementsReason(NATIVEWIND_ID, [NATIVEWIND_ID]))).toBe(
       "requires React Native or Expo",
     );
   });
@@ -1433,14 +1562,14 @@ describe("mobile and desktop framework fences", () => {
   });
 
   it("counts Tauri's mobile target on its own as an app for Maestro to drive", () => {
-    expect(getUnmetRequirementsReason(MAESTRO_ID, [MAESTRO_ID])).toBe(
+    expect(missingHalf(getUnmetRequirementsReason(MAESTRO_ID, [MAESTRO_ID]))).toBe(
       "requires React Native, Expo or Tauri Mobile",
     );
     expect(hasUnmetRequirements(MAESTRO_ID, [MAESTRO_ID, TAURI_MOBILE_ID])).toBe(false);
   });
 
   it("fences a desktop skill to the framework whose APIs it teaches", () => {
-    expect(getUnmetRequirementsReason(ELECTRON_IPC_ID, [ELECTRON_IPC_ID])).toBe(
+    expect(missingHalf(getUnmetRequirementsReason(ELECTRON_IPC_ID, [ELECTRON_IPC_ID]))).toBe(
       "requires Electron",
     );
     expect(hasUnmetRequirements(ELECTRON_IPC_ID, [ELECTRON_IPC_ID, ELECTRON_ID])).toBe(false);
@@ -1472,45 +1601,53 @@ describe("api and cross-cutting skill fences", () => {
   });
 
   it("fences Mercurius to Fastify, the server it registers as a plugin on", () => {
-    expect(getUnmetRequirementsReason(MERCURIUS_ID, [MERCURIUS_ID])).toBe("requires Fastify");
+    expect(missingHalf(getUnmetRequirementsReason(MERCURIUS_ID, [MERCURIUS_ID]))).toBe(
+      "requires Fastify",
+    );
     expect(hasUnmetRequirements(MERCURIUS_ID, [MERCURIUS_ID, HONO_ID])).toBe(true);
     expect(hasUnmetRequirements(MERCURIUS_ID, [MERCURIUS_ID, FASTIFY_ID])).toBe(false);
   });
 
   it("fences Auth.js to the Next.js surface the skill teaches", () => {
-    expect(getUnmetRequirementsReason(NEXTAUTH_ID, [NEXTAUTH_ID])).toBe("requires Next.js");
+    expect(missingHalf(getUnmetRequirementsReason(NEXTAUTH_ID, [NEXTAUTH_ID]))).toBe(
+      "requires Next.js",
+    );
     expect(hasUnmetRequirements(NEXTAUTH_ID, [NEXTAUTH_ID, NEXTJS_ID])).toBe(false);
   });
 
   it("accepts either Redis-compatible server for BullMQ, and neither of them alone is Vercel KV", () => {
-    expect(getUnmetRequirementsReason(BULLMQ_ID, [BULLMQ_ID])).toBe("requires Redis or Upstash");
+    expect(missingHalf(getUnmetRequirementsReason(BULLMQ_ID, [BULLMQ_ID]))).toBe(
+      "requires Redis or Upstash",
+    );
     expect(hasUnmetRequirements(BULLMQ_ID, [BULLMQ_ID, UPSTASH_ID])).toBe(false);
     expect(hasUnmetRequirements(BULLMQ_ID, [BULLMQ_ID, REDIS_ID])).toBe(false);
     expect(hasUnmetRequirements(BULLMQ_ID, [BULLMQ_ID, VERCEL_KV_ID])).toBe(true);
   });
 
   it("requires both halves of what the Better Auth skill teaches, not either one", () => {
-    expect(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID])).toBe(
+    expect(missingHalf(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID]))).toBe(
       "requires Drizzle and Hono",
     );
-    expect(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID, DRIZZLE_ID])).toBe(
-      "requires Hono",
-    );
-    expect(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID, HONO_ID])).toBe(
+    expect(
+      missingHalf(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID, DRIZZLE_ID])),
+    ).toBe("requires Hono");
+    expect(missingHalf(getUnmetRequirementsReason(BETTER_AUTH_ID, [BETTER_AUTH_ID, HONO_ID]))).toBe(
       "requires Drizzle",
     );
     expect(hasUnmetRequirements(BETTER_AUTH_ID, [BETTER_AUTH_ID, DRIZZLE_ID, HONO_ID])).toBe(false);
   });
 
   it("binds the two React-surfaced cross-cutting skills to React", () => {
-    expect(getUnmetRequirementsReason(COMPOSABLE_COMPONENTS_ID, [COMPOSABLE_COMPONENTS_ID])).toBe(
-      "requires React",
-    );
+    expect(
+      missingHalf(getUnmetRequirementsReason(COMPOSABLE_COMPONENTS_ID, [COMPOSABLE_COMPONENTS_ID])),
+    ).toBe("requires React");
     expect(
       hasUnmetRequirements(COMPOSABLE_COMPONENTS_ID, [COMPOSABLE_COMPONENTS_ID, REACT_ID]),
     ).toBe(false);
 
-    expect(getUnmetRequirementsReason(WEB_REVIEWING_ID, [WEB_REVIEWING_ID])).toBe("requires React");
+    expect(missingHalf(getUnmetRequirementsReason(WEB_REVIEWING_ID, [WEB_REVIEWING_ID]))).toBe(
+      "requires React",
+    );
     expect(hasUnmetRequirements(WEB_REVIEWING_ID, [WEB_REVIEWING_ID, REACT_ID])).toBe(false);
   });
 });

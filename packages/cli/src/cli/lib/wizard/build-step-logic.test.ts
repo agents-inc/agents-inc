@@ -27,6 +27,17 @@ import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matri
 import { WEB_FRAMEWORK_CATEGORY } from "../__tests__/mock-data/mock-categories";
 import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
 
+/**
+ * The synthesised half of an unmet-requirements message, with the rule author's `reason` cut off.
+ *
+ * `getUnmetRequirementsReason` answers `<what is missing> — <why it is needed>`, and the two halves
+ * have different owners: the first is computed from the current selection, the second is prose a
+ * rule author wrote. Every pin below is about the first, so splitting here keeps them EXACT rather
+ * than loosening them to `toContain` — which would pass on a message that had lost the skill names
+ * entirely.
+ */
+const missingHalf = (message: string | undefined): string | undefined => message?.split(" — ")[0];
+
 describe("validateBuildStep", () => {
   const requiredCategory: CategoryRow = {
     id: "web-framework",
@@ -668,7 +679,7 @@ describe("buildCategoriesForDomain", () => {
       // @lexical/react, so picking it alone leaves a requirement outstanding.
       const alone = optionIn("web", "web-editor", "web-editor-lexical", ["web-editor-lexical"]);
       expect(alone?.hasUnmetRequirements).toBe(true);
-      expect(alone?.unmetRequirementsReason).toBe("requires React, Next.js or Remix");
+      expect(missingHalf(alone?.unmetRequirementsReason)).toBe("requires React, Next.js or Remix");
 
       const withReact = optionIn("web", "web-editor", "web-editor-lexical", [
         "web-editor-lexical",
@@ -738,7 +749,7 @@ describe("buildCategoriesForDomain", () => {
         "web-meta-framework-remix",
       ]);
       expect(withRemix?.hasUnmetRequirements).toBe(true);
-      expect(withRemix?.unmetRequirementsReason).toBe("requires React");
+      expect(missingHalf(withRemix?.unmetRequirementsReason)).toBe("requires React");
 
       const withReact = optionIn("web", "web-routing", "web-routing-react-router", [
         "web-routing-react-router",

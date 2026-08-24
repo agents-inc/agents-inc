@@ -1,3 +1,4 @@
+import { truncateText } from "../../utils/string";
 import {
   createSelectionSemantics,
   type IncompatibilityCause,
@@ -204,12 +205,49 @@ export function getUnmetRequirementsReason(
       const s = matrix.skills[id];
       return s ? getLabel(s) : id;
     });
-    return requirement.needsAny
-      ? `requires ${joinWithConjunction(names, "or")}`
-      : `requires ${joinWithConjunction(names, "and")}`;
+    return withAuthorsReason(namesTheMissing(names, requirement.needsAny), requirement.reason);
   }
 
   return undefined;
+}
+
+/** What is missing, which only the current selection can say. */
+function namesTheMissing(names: string[], needsAny: boolean | undefined): string {
+  return `requires ${joinWithConjunction(names, needsAny ? "or" : "and")}`;
+}
+
+/**
+ * How much of a rule author's `reason` a grid cell carries.
+ *
+ * The cell wraps rather than elides, so an unbounded reason grows the tag, grows the frame, and
+ * pushes the top of the wizard off the terminal — measured against the shipped catalogue, whose
+ * longest reason is 242 characters and whose React Router entry alone cost four lines. A budget is
+ * what keeps a variable-length authored string out of a fixed-height layout.
+ *
+ * 60 covers the median (46) and every reason under it untouched; 24 of 110 shipped rules are
+ * clipped. Chosen against the catalogue as it stands rather than derived from the terminal, so a
+ * much narrower window can still wrap one line — the frame-fit specs are what would catch that.
+ */
+const REASON_BUDGET = 60;
+
+/**
+ * The rule author's own sentence, appended to the synthesised one and clipped to fit.
+ *
+ * The two halves say different things and neither replaces the other: the synthesis names WHAT is
+ * missing, which static prose cannot know, and the author's `reason` says WHY, which the synthesis
+ * cannot infer. `reason` is required by `requireRuleSchema` and enforced across the built-ins, so
+ * it is a sentence every marketplace author is already made to write — and nothing read it until
+ * 2026-08-23. Both siblings render theirs: `discourages[].reason` in the grid,
+ * `conflicts[].reason` through `reportValidationErrors`.
+ *
+ * Guarded on emptiness rather than assumed present: the schema requires the KEY, not a non-empty
+ * string, so a rule carrying `reason: ""` must not produce a dangling separator.
+ */
+function withAuthorsReason(synthesised: string, reason: string): string {
+  const stated = reason.trim();
+  if (stated === "") return synthesised;
+
+  return `${synthesised} — ${truncateText(stated, REASON_BUDGET)}`;
 }
 
 /**
