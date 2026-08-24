@@ -9,7 +9,7 @@ import { guardAgainstDistReplacement } from "../src/cli/lib/testing/dist-stalene
  * Refuses a spec whose `dist/` was replaced while it was running.
  *
  * This suite spawns `node bin/run.js`, and oclif resolves that binary's commands from
- * `./dist/commands`. tsup builds with `clean: true` and all three `pretest` hooks call it, so a
+ * `./dist/commands`. tsup builds with `clean: true`, so a
  * second agent running `bun run test` in the same checkout empties the directory this suite is
  * executing out of. A command invoked in that window exits 127 or reports itself unknown, which reaches
  * a spec as a screen that never showed what it waited for — an ordinary assertion failure naming

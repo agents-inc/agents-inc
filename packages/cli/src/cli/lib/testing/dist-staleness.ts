@@ -36,9 +36,11 @@ const DIST_NOW_LABEL = "dist now:";
 const REPLACED_DIST_HEADLINE = "dist/ was replaced while this run was in flight.";
 
 const WHY_A_REBUILD_EMPTIES_DIST =
-  "tsup builds with `clean: true`, so a `bun run build` started from anywhere else — `pretest`, " +
-  "`pretest:e2e` and `pretest:smoke` each run one — empties dist/ before refilling it, and " +
-  "nothing serialises that against a suite already executing out of it.";
+  "tsup builds with `clean: true`, so a `bun run build` started from anywhere else empties dist/ " +
+  "before refilling it, and nothing serialises that against a suite already executing out of it. " +
+  "The npm `pretest*` hooks used to be three such places and were removed on 2026-08-23 — " +
+  "turbo.json already ordered a build ahead of each task, so they were a second build that raced " +
+  "the first. What remains is a second AGENT, or a build run by hand in another terminal.";
 
 // Stated door-neutrally, unlike WHY_DIST_DECIDES further down: both suites read this one, and
 // the E2E half spawns bin/run.js under a pseudo-terminal rather than calling runCliCommand.
@@ -91,7 +93,8 @@ const WHY_MATRIX_COUNTS =
   "than importing it (`noExternal` in tsup.config.ts). Its source is compiled into this package's " +
   "dist exactly as src/ is, and it has no build output of its own to go stale instead.";
 
-const REBUILD_HINT = "Run `bun run build`, or `bun run test`, which builds first.";
+const REBUILD_HINT =
+  "Run `bun run build` first, or `turbo run test`, which orders a build ahead of it.";
 
 const MISSING_DIST_MESSAGE = ["dist/ does not exist.", "", WHY_DIST_DECIDES, "", REBUILD_HINT].join(
   "\n",
@@ -131,8 +134,11 @@ const BUILD_INPUT_TREES = [
  * `vitest run` stays fast and stays something you asked for.
  *
  * Called from `vitest.global-setup.ts`, which is the invocation path nothing
- * else reaches. `bun run test` and `npm test` rebuild through the `pretest`
- * hook, and `turbo test` rebuilds through `test -> dependsOn: ["build"]` — and
+ * else reaches. `turbo test` orders a build ahead of the run through
+ * `test -> dependsOn: ["build"]`, and since 2026-08-23 that is the ONLY thing that
+ * does: the npm `pretest*` hooks were removed because they were a second build
+ * racing turbo's first. A bare `bun run test` inside this package now reaches this
+ * refusal rather than a rebuild, which is the posture this file argues for — and
  * turbo covers packages/matrix as well as src/, because a dependency package's
  * files are hashed into the dependent's build task even though matrix has no
  * `build` script of its own (measured on turbo 2.10.8: a one-line matrix edit
