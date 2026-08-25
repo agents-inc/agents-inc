@@ -394,9 +394,9 @@ deleting anything** — the pass that found this cluster found three of them and
 genuinely dead guard. §6d is what to do about it once the declaration is the thing at fault.
 
 Where a red test appears to settle the disagreement in the guard's favour, it settles nothing until
-its input is shown to be producible: three defaults on `CategoryDefinition` were kept behind
-disables on the strength of two specs whose fixtures destructured a required field off a category
-constant to reach a branch no producer can reach. `clean-code-standards.md` 6.23 is that rule, and
+its input is shown to be producible: defaults on `CategoryDefinition` were kept behind disables
+on the strength of two specs whose fixtures destructured a required field off a category constant
+to reach a branch no producer can reach. `clean-code-standards.md` 6.23 is that rule, and
 this is the direction it arrives from here — a fixture that can construct a value the type forbids
 can make any dead branch look reachable, and reaching for a disable at that moment records the
 disagreement instead of settling it.

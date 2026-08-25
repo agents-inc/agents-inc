@@ -159,7 +159,7 @@ There is no `api-framework` category — the API domain spells its framework axi
 
 Re-exported from `src/cli/types/matrix.ts`.
 
-**`defaultCategories` defines every union member.** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` must declare one entry per `Category`; any member it omits is auto-synthesized at load time with a humanized display name ("Api Graphql"), `order: 999` and `exclusive: false` — which is what the wizard would render. `src/cli/lib/configuration/__tests__/default-categories.test.ts` pins the key set against the generated `CATEGORIES` array so the two cannot drift. Its size and the exclusive/required split are owned by [`features/skills-and-matrix.md`](../features/skills-and-matrix.md) ("Current Counts").
+**`defaultCategories` defines every union member.** `defaultCategories` in `src/cli/lib/configuration/default-categories.ts` must declare one entry per `Category`; any member it omits is auto-synthesized at load time with a humanized display name ("Api Graphql"), `order: 999` and `exclusive: false` — which is what the wizard would render. `src/cli/lib/configuration/__tests__/default-categories.test.ts` pins the key set against the generated `CATEGORIES` array so the two cannot drift. Its size and the `exclusive: true` count are owned by [`features/skills-and-matrix.md`](../features/skills-and-matrix.md) ("Current Counts").
 
 The `exclusive` flag is load-bearing beyond the wizard grid: cross-scope conflict masking reads it from the **merged matrix** (not from `defaultCategories`, so a source repo's overrides win) to decide whether a globally installed skill collides with a project-owned one. See [concepts/tombstone-pattern.md](../concepts/tombstone-pattern.md).
 

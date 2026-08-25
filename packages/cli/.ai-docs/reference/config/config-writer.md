@@ -565,7 +565,7 @@ Agents have no categories, so `maskCollidingGlobalAgents` / `dropOrphanedDerived
 
 ### Mask lifetime
 
-No store path can mint a BARE global tombstone: a project-scope deselect of a globally installed item is refused, and a domain deselect only drops what the project owns. The single remaining user route (`s`, G→P) always pairs the tombstone with an active project entry — an identity collision. Every bare mask is therefore machine-derived by construction, and one retention test suffices: **keep a mask only while the collision that would re-derive it still holds**, in `required` and optional categories alike.
+No store path can mint a BARE global tombstone: a project-scope deselect of a globally installed item is refused, and a domain deselect only drops what the project owns. The single remaining user route (`s`, G→P) always pairs the tombstone with an active project entry — an identity collision. Every bare mask is therefore machine-derived by construction, and one retention test suffices: **keep a mask only while the collision that would re-derive it still holds**.
 
 **Do not narrow this back to categories that are both `exclusive` and `required`.** That narrowing only holds while a derived mask and a deliberate exclusion are byte-identical on disk, and a bare user tombstone is no longer reachable.
 

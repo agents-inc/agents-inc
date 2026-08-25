@@ -72,16 +72,6 @@ Both arms additionally require `!isEditingFromGlobalScope`.
 
 **Exclusive-mode replacement variant (`blocksExclusiveSwap`):** In an exclusive (radio) category, selecting another skill when the current selection is globally locked by either arm above — OR is a live `[P][G]` pair — trips the same toast. The pair is included HERE and not in the deselect guard for one reason: dropping its project half unmasks the global install as an active entry, so a swap that did it implicitly would seat the new pick beside a still-active sibling in a category that permits one. Removing the pair stays the project's to do, on its own row, where nothing takes the freed slot.
 
-### 2. Only-Skill Deselect Guard (`toggleTechnology`)
-
-**File:** `wizard-store.ts` — `toggleTechnology` action.
-
-**Trigger:** Deselecting a skill in a category that is both `exclusive` and `required`, when that category has only one defined skill.
-
-**Guard condition:** `isSelected && categoryDef.exclusive && categoryDef.required && categorySkillCount <= 1`.
-
-**Outcome:** Toast — `"Cannot deselect the only skill in this category"`.
-
 ### 3. Global Agent Toggle Guard (`toggleAgent`)
 
 **File:** `wizard-store.ts` — `toggleAgent` action.
@@ -289,8 +279,7 @@ Store action (e.g., toggleTechnology)
   v
 Store-level guard:
   - Global-install + project scope + not init? -> toast, return early
-  - Only skill in required exclusive category?  -> toast, return early
-  - Other precondition fail?                    -> silent return
+  - Other precondition fail?                   -> silent return
   |
   v
 Normal action logic (compute newSelections, reconcileSkillConfigs, ...)
@@ -312,7 +301,6 @@ call sites are in `stack-selection.tsx`. See [`../store-map.md`](../store-map.md
 | ---------------------------------- | --------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Global skill toggle                | `toggleTechnology` / store                                                        | Toast   | "Global skills cannot be changed from project scope"                                                                                                            |
 | Global skill exclusive replacement | `toggleTechnology` / store                                                        | Toast   | Same as above (radio-replace path)                                                                                                                              |
-| Only-skill deselect                | `toggleTechnology` / store                                                        | Toast   | "Cannot deselect the only skill in this category"                                                                                                               |
 | Global agent toggle                | `toggleAgent` / store                                                             | Toast   | "Global agents cannot be changed from project scope"                                                                                                            |
 | Scope toggle global-context        | `HOTKEY_SCOPE` / wizard.tsx                                                       | Toast   | "Scope toggle unavailable in global context"                                                                                                                    |
 | Dual-scope inert spacebar (agents) | `toggleAgent` / store                                                             | Toast   | Global-locked agent toast on SPACE over a live `[P][G]` agent; `s` is the sole dual-scope agent toggle. The SKILL path allows it — SPACE drops the project half |

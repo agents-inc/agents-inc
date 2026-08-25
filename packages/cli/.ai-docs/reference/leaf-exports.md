@@ -15,7 +15,6 @@ keywords:
     ProjectAgentName,
     SelectedAgentName,
     ValidationPartial,
-    BuildStepValidation,
     leaf-exports,
     export-census,
   ]
@@ -37,15 +36,15 @@ last_validated: 2026-08-02
 
 ## What this file is
 
-**Eleven named exports** across seven sections, each sitting inside an area whose doc is otherwise
-thorough. Nine appear nowhere else under `.ai-docs/reference/`; the remaining two
+**Ten named exports** across seven sections, each sitting inside an area whose doc is otherwise
+thorough. Eight appear nowhere else under `.ai-docs/reference/`; the remaining two
 (`fetchAgentDefinitionsFromRemote`, `PROJECT_CONFIG_TYPES_BEFORE`) are partially covered elsewhere
 and this file carries only the remainder, saying so in place. Individually none justifies a file.
 
-**Every one is small. Most are not boring.** Two validators whose `valid` flag is a constant; a
-constants module whose only consumer reads a raw string instead of the constant it exports; a
-fetch branch no shipped code path can reach; a type declared twice under the same name. Those are
-the entries worth reading. The rest are shape tables.
+**Every one is small. Most are not boring.** A constants module whose only consumer reads a raw
+string instead of the constant it exports; a fetch branch no shipped code path can reach; a type
+declared twice under the same name. Those are the entries worth reading. The rest are shape
+tables.
 
 ### Already covered elsewhere — do not re-document here
 
@@ -81,7 +80,6 @@ its owning doc was out of scope for whoever found it.
 | 5   | `AgentPluginOptions`                                                                         | `lib/agents/agent-plugin-compiler.ts`      | [features/compilation-pipeline.md](./features/compilation-pipeline.md)                  |
 | 6   | `PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`, `ProjectConfigTypesOptions` | `lib/configuration/config-types-writer.ts` | [config/config-writer.md](./config/config-writer.md)                                    |
 | 7   | `ValidationPartial`                                                                          | `lib/matrix/matrix-resolver.ts`            | [features/skills-and-matrix.md](./features/skills-and-matrix.md) — Selection Validation |
-| 7   | `BuildStepValidation`                                                                        | `lib/wizard/build-step-logic.ts`           | [component-patterns.md](./component-patterns.md)                                        |
 
 ---
 
@@ -401,7 +399,7 @@ unions are emitted at statement level, not inside a property — the exact disti
 
 ---
 
-## 7. The two validation return shapes
+## 7. The selection validation return shape
 
 ### The selection validation passes (`lib/matrix/matrix-resolver.ts`)
 
@@ -435,38 +433,6 @@ generic
 `mergeValidationResults` (`lib/validation-result.ts`) serves the string-based `ValidationResult`
 used by `output-validator.ts` and `plugins/plugin-validator.ts`, where `valid` _is_ meaningful.
 
-### `BuildStepValidation` (`lib/wizard/build-step-logic.ts`)
-
-```typescript
-export type BuildStepValidation = { valid: true } | { valid: false; message: string };
-```
-
-The return type of `validateBuildStep`, which
-[features/wizard-flow.md](./features/wizard-flow.md) lists by name and
-[architecture-overview.md](./architecture-overview.md) lists in the `lib/wizard` export
-inventory. Barrel: `lib/wizard/index.ts` exports both the type and the function.
-
-**The union is the contract, and it is a departure from the `valid`-carrying types above it.**
-`SelectionValidation` derives `valid` from `errors.length === 0`; this one makes the derivation
-structural, so "invalid" and "carries a message" are one fact rather than two fields a producer
-has to keep in step. A caller cannot read the flag, take the happy path, and leave the message
-unread, because on the passing arm there is no message to read.
-
-**Advisory all the same.** `valid: false` names an empty required category; it stops nothing. The
-sole production caller is `handleContinue` in `components/wizard/step-build.tsx`, which puts the
-message in a toast and calls `onContinue` regardless — matching `validateSelection`, whose
-conflicts and unmet requirements are reported by `BaseCommand.reportValidationErrors` as warnings
-no exit code turns on. `CategoryDefinition.required` in `types/matrix.ts` says so in its own
-JSDoc.
-
-**Only the first empty required category is reported** — `.find`, not `.filter`. Two unfilled
-required categories produce one message naming the first in grid order; the next press reports the
-next one.
-
-Its file-mate `buildCategoriesForDomain` is heavily used and thoroughly documented — see
-[component-patterns.md](./component-patterns.md) and
-[features/wizard-flow.md](./features/wizard-flow.md) for the deterministic-ordering contract.
-
 ---
 
 ## Test surface
@@ -478,10 +444,9 @@ wrong.
 | File                                                              | Specs | Covers                                                                                        |
 | ----------------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------- |
 | `src/cli/lib/agents/agent-fetcher.test.ts`                        | 15    | `getLocalAgentDefinitions`, `fetchAgentDefinitionsFromRemote`, `getAgentDefinitions` dispatch |
-| `src/cli/lib/wizard/build-step-logic.test.ts`                     | 50    | `validateBuildStep`, `buildCategoriesForDomain`                                               |
-| `src/cli/lib/configuration/__tests__/config-types-writer.test.ts` | 62    | emitted source of both generators                                                             |
-| `src/cli/lib/matrix/matrix-resolver.test.ts`                      | 127   | the four `ValidationPartial` passes plus the rest of the resolver                             |
-| `src/cli/components/wizard/step-build.test.tsx`                   | —     | the `validateBuildStep` describe block (file total not re-derived)                            |
+| `src/cli/lib/wizard/build-step-logic.test.ts`                     | 44    | `buildCategoriesForDomain`                                                                    |
+| `src/cli/lib/configuration/__tests__/config-types-writer.test.ts` | 78    | emitted source of both generators                                                             |
+| `src/cli/lib/matrix/matrix-resolver.test.ts`                      | 115   | the four `ValidationPartial` passes plus the rest of the resolver                             |
 
 **No test file references `METADATA_KEYS`, `SkillRelation` or `MarketplaceRemoteSource` by name.**
 Those three are covered only transitively.
@@ -499,7 +464,6 @@ Those three are covered only transitively.
 | 5   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                     |
 | 6   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource` |
 | 7   | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                 |
-| 8   | `validateBuildStep` cannot return `valid: false`, has no production caller, and its `message` is never rendered   | `validateBuildStep` (`build-step-logic.ts`)                                |
 
 ---
 
@@ -511,7 +475,5 @@ Those three are covered only transitively.
 - **No count here is owned by this file** except the four spec counts in the test-surface table.
   Every other figure is a re-derivable grep or `find` result stated inline with its method. Nothing
   here belongs in the count-ownership registry.
-- **`step-build.test.tsx`'s file total is deliberately absent.** Only its `validateBuildStep`
-  describe block is relevant here; a file total would imply a wider coverage claim.
 - **A deferral is a link, and links break.** If one of the docs named above is later trimmed, the
   corresponding entry has to come back here.

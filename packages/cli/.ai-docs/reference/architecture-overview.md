@@ -146,7 +146,7 @@ src/cli/
     stacks/                 # Stack loading, installing, plugin compilation
     testing/                # Support for the test infrastructure itself, not for any command
       dist-staleness.ts     # assertDistIsFresh() — the vitest.global-setup.ts guard's whole body
-    wizard/                 # Build step logic + session diff (pure functions): validateBuildStep(), computeScopeDiff(), skillSlotKey(), agentSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains(), buildCategoriesForDomain()
+    wizard/                 # Build step logic + session diff (pure functions): computeScopeDiff(), skillSlotKey(), agentSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains(), buildCategoriesForDomain()
     compiler.ts             # Liquid template engine, agent/skill compilation
     exit-codes.ts           # Named EXIT_CODES constants
     marketplace-generator.ts # Marketplace.json generation

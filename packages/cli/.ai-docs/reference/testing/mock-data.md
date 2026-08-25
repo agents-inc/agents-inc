@@ -120,13 +120,12 @@ to one of them cannot land without a line here naming it — and the same comman
 `MatrixConfig` and compile-config fixtures. Not enumerated — see above.
 
 `CATEGORY_EXCLUSIVITY_MATRIX` is the one that needs a sentence: it is the only fixture whose
-categories carry REAL `exclusive` / `required` flags. `createMockMatrix`'s default categories map is
-empty, so every category reads as "undefined flags" and exclusivity rules can never fire — use this
-whenever the flags must be live. Shape: two frameworks in an exclusive **and required** category
-(`web-framework`: react, vue), two client-state skills in an exclusive but **optional** one
-(`web-client-state`: zustand, pinia), two styling skills in a non-exclusive one (`web-styling`:
-scss, tailwind), plus a non-exclusive `web-testing` (vitest). The exclusive+optional category is the
-one shape that separates "exclusive" from "exclusive AND required" rules.
+categories carry a REAL `exclusive` flag. `createMockMatrix`'s default categories map is empty, so
+every category reads as "undefined flags" and exclusivity rules can never fire — use this whenever
+the flag must be live. Shape: two frameworks in an exclusive category (`web-framework`: react,
+vue), two client-state skills in a second exclusive one (`web-client-state`: zustand, pinia), two
+styling skills in a non-exclusive one (`web-styling`: scss, tailwind), plus a non-exclusive
+`web-testing` (vitest).
 
 ### mock-skills.ts
 

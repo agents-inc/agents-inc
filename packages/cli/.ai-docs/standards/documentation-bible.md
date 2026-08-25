@@ -214,7 +214,7 @@ number.
 | ------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | Zod schema count                                                          | `reference/types/zod-schemas.md`                             |
 | `SkillId` / `SkillSlug` / `Category` / `Domain` / `AgentName` union sizes | `reference/type-system.md` ("Counts")                        |
-| `defaultCategories` size + exclusive/required split                       | `reference/features/skills-and-matrix.md` ("Current Counts") |
+| `defaultCategories` size + `exclusive: true` count                        | `reference/features/skills-and-matrix.md` ("Current Counts") |
 | Factory / helper / assertion counts                                       | `reference/testing/factories.md`                             |
 | How many source files and E2E files there are                             | `DOCUMENTATION_MAP.md` ("Coverage")                          |
 | Packaging counts (tarball entries, entry globs)                           | `reference/build-and-packaging.md`                           |

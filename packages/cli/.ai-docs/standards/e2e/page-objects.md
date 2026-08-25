@@ -261,10 +261,10 @@ as often as it is a swallowed keystroke. Use `selectSkill` when the skill has a 
 neither applies, and assert the outcome in the spec.
 
 **`selectSkill` therefore MEANS the toggle landed**, and a press the product refuses — a
-global-locked skill at project scope, the last skill in a required exclusive category — is reported
-rather than passed on. That is a behaviour change with a history: routing four call sites through
-the confirmation for the first time found three lifecycle specs that had been pressing Space into a
-refusal and passing on its silence. Specs whose subject IS the refusal use `selectSkillAwaiting`.
+global-locked skill at project scope — is reported rather than passed on. That is a behaviour
+change with a history: routing four call sites through the confirmation for the first time found
+three lifecycle specs that had been pressing Space into a refusal and passing on its silence.
+Specs whose subject IS the refusal use `selectSkillAwaiting`.
 
 **The rule is held by a gate, not by review.**
 `src/cli/lib/__tests__/page-object-space-presses.test.ts` rosters every Space press in

@@ -24,7 +24,6 @@ keywords:
     CLI_ROOT,
     MONOREPO_ROOT,
     ASCII_LOGO,
-    validateBuildStep,
     zero-state,
   ]
 related:
@@ -173,11 +172,6 @@ two of them describe a gate an agent would otherwise write tests to satisfy.
 | "Required categories block wizard advancement; select a Framework skill before Enter" | **False.** `StepBuild`'s `useInput` calls `onContinue()` unconditionally, and `useBuildStepProps`'s `onContinue` is `if (!store.nextDomain()) store.setStep("sources")`. There is no validation on the path                                                                                                                                                                                                                        |
 | "A styling skill must be pre-selected or the edit wizard cannot advance past build"   | **False**, same mechanism                                                                                                                                                                                                                                                                                                                                                                                                          |
 | "The `search` interactive path ignores `--source`, so use `CC_SOURCE`"                | **False three times over.** `search` is no longer interactive and has `static flags = {}`, so any flag is rejected rather than ignored; `--source` / `CC_SOURCE` are withdrawn spellings that nothing reads under any command; and the surviving `CC_MARKETPLACE` is read for `init` alone, so it steers nothing here either. A spec records the source in the install's config — `e2e/interactive/search-static.e2e.test.ts` does |
-
-`validateBuildStep` (`lib/wizard/build-step-logic.ts`) does compute the required-category message,
-and its behaviour is tested — but **it has no production caller**, so nothing renders or enforces it.
-[`leaf-exports.md`](../leaf-exports.md) owns that entry; do not read the function's existence as
-evidence of a gate.
 
 ## 3. Tooling alternatives already evaluated — do not re-litigate
 

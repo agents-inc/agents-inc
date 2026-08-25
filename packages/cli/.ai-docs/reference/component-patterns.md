@@ -271,7 +271,6 @@ type CategoryOption = {
 type CategoryRow = {
   id: Category;
   displayName: string;
-  required: boolean;
   exclusive: boolean;
   options: CategoryOption[];
 };
@@ -288,8 +287,6 @@ Internal component within `category-grid.tsx` that renders a single skill option
 **No lock icon / eject icon in `SkillTag`:** `SkillTag` no longer renders `UI_SYMBOLS.LOCK` or `UI_SYMBOLS.EJECT`. `UI_SYMBOLS.LOCK` now renders in `source-grid.tsx` on read-only rows; `UI_SYMBOLS.EJECT` renders in `skill-agent-summary.tsx` (`EjectIcon`).
 
 **Compatibility labels:** `getCompatibilityLabel()` returns labels shown on focus (with labels mode) or always for requiredBy/unmetRequirements. Labels include: `(required by X)`, `(incompatible)`, `(discouraged)`, or the unmet-requirements reason.
-
-> The sibling export in that module, `validateBuildStep()`, names the first required category the active domain leaves empty. `StepBuild`'s own `handleContinue` calls it on ENTER, puts the message in a toast through `setToastMessage`, and calls `onContinue` either way — **advisory, never a gate**, which is how every other wizard validation behaves. The toast is painted by `WizardLayout` outside `renderStep`, so it survives the unmount that advancing causes. Re-derive its callers with `grep -rn validateBuildStep src/`. See [leaf-exports.md](./leaf-exports.md) § `BuildStepValidation`.
 
 **Cell ordering:** the options in each `CategoryRow` are sorted by `displayName`, lowercased, using remeda's `sortBy` in `buildCategoriesForDomain()` (`src/cli/lib/wizard/build-step-logic.ts`). Before this the order followed matrix and `readdir` insertion order, so the grid reshuffled between runs and between source types. The lowercased ordinal comparison is deliberately locale-independent, so the order is identical on every machine — which is what makes a positional E2E walk over the grid meaningful. Category ROWS are ordered separately, by `cat.order`.
 
