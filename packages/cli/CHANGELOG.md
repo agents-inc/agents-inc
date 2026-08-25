@@ -7,6 +7,19 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.160.0] - 2026-08-25
+
+**A category is no longer required, a mixed installation counts what it declares, and two rows close by being refuted rather than fixed**
+
+- The required-category concept leaves the product entirely — the advisory toast, the `*` header marker, the exclusive-and-required deselect guard and the `required` field on the category types and their three Zod schemas. The reported symptom was never a block: `handleContinue` always called `onContinue()`, so the toast only read as a refusal (CLI-822)
+- A mixed installation counts the skills its configuration declares. `countInstalledSkills` branched on `mode === "plugin"` and otherwise counted directories, so `"mixed"` fell to the eject-only arm and plugin skills were never counted — the published binary printed `Skills: 2` over a config declaring eleven, while `list`'s interactive branch had always held the right answer eleven lines above (CLI-823)
+- An assertion binds to the constant that governs its own data, and a rendering assertion keeps its literal. Eight proposed conversions were stopped by the second half, each of which would have introduced the defect the pass was removing (CLI-829)
+- The positives beside the bound negatives: 8 of 246 converted, and the pass caught that the one before it had broken its own rule at nine sites — the assertion bound while the fixture kept a hardcoded id (CLI-828)
+- Two E2E specs describe behaviour that exists: a comment claiming a Framework skill must be selected before advancing, disproved by a sibling asserting `(0 of 1)`, and a spec named for a deleted guard renamed for what it still proves (CLI-824)
+- A fixture generator's dead return member and a silent no-op option are gone — **zero** call sites ever passed `matrix:`, so a future test using it would have been ignored without a word (CLI-826)
+- `CLI-827` closes **refuted**: the factory was already correct, and the row's evidence had been measured against one TypeScript project where two exist — 6 errors against 83 (CLI-827)
+- `CLI-830` closes as a **documented refusal**, proved in both directions: four plausible-but-wrong values draw complete `tsc` silence under `string` and all four error under the narrowing (CLI-830)
+
 ## [0.159.0] - 2026-08-24
 
 **A configuration can be piped in and a shared id can be opened, the E2E harness takes ownership of the dist guards, and three rows close by disproving their own premise**
