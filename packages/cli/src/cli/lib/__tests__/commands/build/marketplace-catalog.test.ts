@@ -174,7 +174,6 @@ async function writeMarketplaceCategories(marketplaceDir: string): Promise<void>
         description: MARKETPLACE_CATEGORY_DESCRIPTION,
         domain: "web",
         exclusive: false,
-        required: false,
         order: MARKETPLACE_CATEGORY_ORDER,
       },
     },

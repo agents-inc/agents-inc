@@ -491,16 +491,6 @@ export const STEP_TEXT = {
   // apart from the grid's own text in a full-session output match.
   VALIDATION_REQUIRES: "requires:",
 
-  // The build grid's OTHER selection refusal, and the one no spec had ever asserted:
-  // `toggleTechnology` in stores/wizard-store.ts declines to deselect a skill that is the
-  // only one the matrix gives a required exclusive category, because the category would
-  // then have no way back to a valid state. Three lifecycle specs were pressing Space into
-  // this refusal and passing on its silence — see
-  // `.ai-docs/agent-findings/2026-08-21-three-specs-pressed-space-at-a-wizard-that-refuses.md`.
-  // The sentinel is the whole sentence: the clause a reader would dispute is the reason, not
-  // the word "Cannot".
-  ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",
-
   // Scope warnings
   GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",
   GLOBAL_AGENTS_BLOCKED: "Global agents cannot be changed from project scope",

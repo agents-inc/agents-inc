@@ -630,6 +630,25 @@ describe("custom: true in schemas", () => {
     const result = skillCategoriesFileSchema.safeParse(VALID_SKILL_CATEGORIES_FILE);
     expect(result.success).toBe(true);
   });
+
+  /**
+   * The whole parsed category, not one field of it. A `required` flag a marketplace still ships
+   * has to arrive on the other side of this schema STRIPPED rather than carried, because what a
+   * source declares and what the CLI acts on are different questions — and every surface
+   * downstream reads the parsed object rather than the file.
+   */
+  it("should carry a parsed category without a required flag", () => {
+    const parsed = skillCategoriesFileSchema.parse(VALID_SKILL_CATEGORIES_FILE);
+
+    expect(parsed.categories["web-framework"]).toStrictEqual({
+      id: "web-framework",
+      displayName: "Framework",
+      description: "Web frameworks",
+      domain: "web",
+      exclusive: true,
+      order: 1,
+    });
+  });
 });
 
 describe("splitMetadataValidationIssues", () => {
@@ -882,7 +901,6 @@ describe("skillCategoriesFileSchema", () => {
           displayName: "Framework",
           description: "Web frameworks",
           exclusive: true,
-          required: true,
           order: 1,
         },
       },
@@ -908,7 +926,6 @@ describe("skillCategoriesFileSchema", () => {
           description: "Deployment pipeline skills",
           domain: "acme",
           exclusive: false,
-          required: false,
           order: 1,
         },
       },

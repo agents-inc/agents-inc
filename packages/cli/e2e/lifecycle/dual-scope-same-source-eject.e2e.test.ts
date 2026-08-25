@@ -59,12 +59,10 @@ import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 const HONO_ID = E2E_SKILL.hono.id;
 const HONO_PLUGIN_REF = `${HONO_ID}:${HONO_ID}`;
 
-// Check 5 uses a NON-framework skill (web-testing-vitest). Framework skills
-// (api-framework-hono) are required and cannot be deselected at global scope,
-// so an isolated global-only removal is only expressible with a non-framework
-// skill — the same reason edit-global-remove-dual-scope-partial.e2e.test.ts
-// uses vitest. It is seeded preloaded:true on the project agent so its
-// compiled-agent reference form is still asserted.
+// Check 5 uses a NON-framework skill (web-testing-vitest), the same skill
+// edit-global-remove-dual-scope-partial.e2e.test.ts uses. It is seeded
+// preloaded:true on the project agent so its compiled-agent reference form is
+// still asserted.
 const VITEST_ID = E2E_SKILL.vitest.id;
 const VITEST_PLUGIN_REF = `${VITEST_ID}:${VITEST_ID}`;
 

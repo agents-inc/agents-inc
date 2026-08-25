@@ -161,7 +161,6 @@ function skillCategoriesModule(): string {
         description: "Replace this with a category of your own",
         domain: EXAMPLE_DOMAIN,
         exclusive: false,
-        required: false,
         order: EXAMPLE_CATEGORY_ORDER,
       },
     },

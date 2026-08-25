@@ -57,14 +57,6 @@ export type CategoryDefinition = {
   domain?: Domain;
   /** If true, only one skill can be selected in this category (radio behavior). */
   exclusive: boolean;
-  /**
-   * If true, leaving this category empty is worth telling the user about.
-   *
-   * ADVISORY, not a gate: `validateBuildStep` names the first such category in a toast as the
-   * build step is left and the wizard advances anyway, which is how every other wizard
-   * validation behaves. Nothing anywhere refuses to proceed on it.
-   */
-  required: boolean;
   /** Display order within domain (lower = earlier) */
   order: number;
   icon?: string;

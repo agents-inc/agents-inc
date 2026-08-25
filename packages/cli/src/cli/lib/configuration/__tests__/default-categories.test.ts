@@ -1,12 +1,34 @@
 import { describe, it, expect } from "vitest";
 import { defaultCategories } from "../default-categories";
-import type { Category } from "../../../types";
+import type { Category, CategoryDefinition } from "../../../types";
 import { CATEGORIES } from "../../../types/matrix";
 import { BUILT_IN_MATRIX } from "../../../types/generated/matrix";
 import { typedKeys } from "../../../utils/typed-object";
 
 const EXPECTED_CATEGORY_COUNT = 102;
 const EXPECTED_EXCLUSIVE_COUNT = 35;
+
+/**
+ * Every field a built-in category declares, and the whole of it.
+ *
+ * A roster rather than a per-field `typeof` loop, because the loop beside it can only see the
+ * fields it was told to look for: a field that LEAVES the shape is invisible to it, and a
+ * leftover one nothing reads is invisible twice over — it still serialises into the generated
+ * matrix, and from there into every catalogue the CLI and the editor parse.
+ *
+ * Constrained to `keyof CategoryDefinition` so a member the type stops carrying reddens on this
+ * line rather than as an unassignable union member somewhere downstream. `icon` is a genuine
+ * optional that no built-in category sets, so the clause is a membership test rather than an
+ * exhaustive one.
+ */
+const CATEGORY_FIELDS = [
+  "id",
+  "displayName",
+  "description",
+  "domain",
+  "exclusive",
+  "order",
+] as const satisfies readonly (keyof CategoryDefinition)[];
 
 describe("defaultCategories", () => {
   it("has the expected number of categories", () => {
@@ -26,7 +48,6 @@ describe("defaultCategories", () => {
       description: "UI framework (React, Vue, Angular, SolidJS)",
       domain: "web",
       exclusive: true,
-      required: true,
       order: 1,
     });
   });
@@ -38,7 +59,6 @@ describe("defaultCategories", () => {
       description: "Desktop application framework (Tauri, Electron)",
       domain: "desktop",
       exclusive: true,
-      required: true,
       order: 1,
     });
   });
@@ -50,7 +70,6 @@ describe("defaultCategories", () => {
       description: "Backend framework (Hono, Express, Fastify)",
       domain: "api",
       exclusive: true,
-      required: true,
       order: 1,
     });
   });
@@ -62,7 +81,6 @@ describe("defaultCategories", () => {
       description: "CLI application framework (Commander, oclif)",
       domain: "cli",
       exclusive: true,
-      required: true,
       order: 1,
     });
   });
@@ -74,7 +92,6 @@ describe("defaultCategories", () => {
       description: "Code review patterns and methodology",
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 1,
     });
   });
@@ -86,7 +103,6 @@ describe("defaultCategories", () => {
       description: "Specification planning frameworks per domain",
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 4,
     });
   });
@@ -98,7 +114,6 @@ describe("defaultCategories", () => {
       description: "Workspace management (pnpm workspaces)",
       domain: "shared",
       exclusive: false,
-      required: false,
       order: 1,
     });
   });
@@ -110,7 +125,6 @@ describe("defaultCategories", () => {
       description: "Monorepo task orchestration (Turborepo, Nx)",
       domain: "shared",
       exclusive: true,
-      required: false,
       order: 2,
     });
   });
@@ -122,7 +136,6 @@ describe("defaultCategories", () => {
       description: "Linting and formatting (Biome, ESLint & Prettier)",
       domain: "shared",
       exclusive: true,
-      required: false,
       order: 3,
     });
   });
@@ -134,7 +147,6 @@ describe("defaultCategories", () => {
       description: "TypeScript config, git hooks, changesets, stack detection",
       domain: "shared",
       exclusive: false,
-      required: false,
       order: 4,
     });
   });
@@ -150,7 +162,6 @@ describe("defaultCategories", () => {
       description: "Transactional email (Resend, Sendgrid)",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 11,
     });
   });
@@ -172,7 +183,6 @@ describe("defaultCategories", () => {
       description: "Workspace management (pnpm workspaces)",
       domain: "shared",
       exclusive: false,
-      required: false,
       order: 1,
     });
     expect(BUILT_IN_MATRIX.categories["api-email"]).toStrictEqual({
@@ -181,7 +191,6 @@ describe("defaultCategories", () => {
       description: "Transactional email (Resend, Sendgrid)",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 11,
     });
   });
@@ -193,7 +202,6 @@ describe("defaultCategories", () => {
       description: "Primary SQL engine (PostgreSQL, MySQL, CockroachDB)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 2,
     });
     expect(defaultCategories["api-orm"]).toStrictEqual({
@@ -202,7 +210,6 @@ describe("defaultCategories", () => {
       description: "Database access layer (Drizzle, Prisma, TypeORM)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 3,
     });
     expect(defaultCategories["api-document"]).toStrictEqual({
@@ -211,7 +218,6 @@ describe("defaultCategories", () => {
       description: "Primary non-SQL store (MongoDB, Mongoose, Gel, SurrealDB)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 4,
     });
     expect(defaultCategories["api-kv"]).toStrictEqual({
@@ -220,7 +226,6 @@ describe("defaultCategories", () => {
       description: "Redis-class key-value provider (Redis, Upstash)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 5,
     });
     expect(defaultCategories["api-db-host"]).toStrictEqual({
@@ -229,7 +234,6 @@ describe("defaultCategories", () => {
       description: "Managed database host (Neon, PlanetScale, Turso)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 6,
     });
   });
@@ -246,7 +250,6 @@ describe("defaultCategories", () => {
         "Full backend platform — auth, database, storage, functions (Supabase, Firebase)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 7,
     });
   });
@@ -258,7 +261,6 @@ describe("defaultCategories", () => {
       description: "API data caching (React Query, SWR)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 6,
     });
     expect(defaultCategories["web-graphql-client"]).toStrictEqual({
@@ -267,7 +269,6 @@ describe("defaultCategories", () => {
       description: "GraphQL client library (Apollo Client, urql)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 7,
     });
     expect(defaultCategories["web-rpc"]).toStrictEqual({
@@ -276,7 +277,6 @@ describe("defaultCategories", () => {
       description: "End-to-end type-safe RPC (tRPC)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 8,
     });
   });
@@ -288,7 +288,6 @@ describe("defaultCategories", () => {
       description: "Documentation site generator (Docusaurus, VitePress)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 16,
     });
   });
@@ -300,7 +299,6 @@ describe("defaultCategories", () => {
       description: "Form state and submission (React Hook Form, TanStack Form, VeeValidate)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 10,
     });
     expect(defaultCategories["web-forms"]).toStrictEqual({
@@ -309,7 +307,6 @@ describe("defaultCategories", () => {
       description: "Schema validation (Zod)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 9,
     });
   });
@@ -321,7 +318,6 @@ describe("defaultCategories", () => {
       description: "Pre-styled component kit (shadcn/ui, MUI, Mantine, Vuetify)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 13,
     });
     expect(defaultCategories["web-ui-components"]).toStrictEqual({
@@ -330,7 +326,6 @@ describe("defaultCategories", () => {
       description: "Headless primitives (Radix UI, Base UI, Headless UI, TanStack Table)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 14,
     });
   });
@@ -342,7 +337,6 @@ describe("defaultCategories", () => {
       description: "End-to-end browser testing (Playwright, Cypress)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 12,
     });
     expect(defaultCategories["web-testing"]).toStrictEqual({
@@ -351,7 +345,6 @@ describe("defaultCategories", () => {
       description: "Unit, component, and visual testing",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 11,
     });
   });
@@ -363,7 +356,6 @@ describe("defaultCategories", () => {
       description: "Server-sent events and HTTP streaming",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 24,
     });
     expect(defaultCategories["web-realtime"]).toStrictEqual({
@@ -372,7 +364,6 @@ describe("defaultCategories", () => {
       description: "Bidirectional realtime (WebSockets, Socket.IO)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 23,
     });
   });
@@ -390,7 +381,6 @@ describe("defaultCategories", () => {
       description: "Containers (Docker, Kubernetes)",
       domain: "infra",
       exclusive: false,
-      required: false,
       order: 5,
     });
   });
@@ -422,15 +412,23 @@ describe("defaultCategories", () => {
     expect([...new Set(collisions)]).toStrictEqual([]);
   });
 
-  it("all categories have required fields", () => {
+  it("gives every category the fields the grid reads", () => {
     for (const [key, cat] of Object.entries(defaultCategories)) {
       expect(cat.id, `${key} missing id`).toBe(key as Category);
       expect(cat.displayName, `${key} missing displayName`).not.toBe("");
       expect(cat.description, `${key} missing description`).not.toBe("");
       expect(cat.domain, `${key} missing domain`).not.toBe("");
       expect(typeof cat.exclusive, `${key} exclusive not boolean`).toBe("boolean");
-      expect(typeof cat.required, `${key} required not boolean`).toBe("boolean");
       expect(typeof cat.order, `${key} order not number`).toBe("number");
+    }
+  });
+
+  it("gives every category those fields and no others", () => {
+    for (const [key, cat] of Object.entries(defaultCategories)) {
+      expect(
+        Object.keys(cat).sort(),
+        `${key} declares a field the catalogue has no reader for`,
+      ).toStrictEqual([...CATEGORY_FIELDS].sort());
     }
   });
 });

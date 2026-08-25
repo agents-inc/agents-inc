@@ -12,7 +12,6 @@ export function createMockCategory(
     description: `${displayName} category`,
     domain: "web",
     exclusive: true,
-    required: false,
     order: 0,
     ...overrides,
   };

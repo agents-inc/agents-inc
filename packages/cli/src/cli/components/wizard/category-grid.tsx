@@ -30,7 +30,6 @@ export type CategoryOption = {
 export type CategoryRow = {
   id: Category;
   displayName: string;
-  required: boolean;
   exclusive: boolean;
   options: CategoryOption[];
 };
@@ -51,8 +50,6 @@ export type CategoryGridProps = {
   /** Optional callback fired with the resolved SkillId of the focused cell */
   onFocusedSkillChange?: (skillId: SkillId | null) => void;
 };
-
-const SYMBOL_REQUIRED = "*";
 
 /** Next option index stepping cyclically from `currentIndex`; empty rows stay put. */
 const wrapOptionIndex = (length: number, currentIndex: number, direction: 1 | -1): number => {
@@ -169,12 +166,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       <Box flexDirection="row">
         {isFocused ? (
           <Text color={CLI_COLORS.WHITE} backgroundColor={CLI_COLORS.LABEL_BG}>
-            {` ${category.displayName}${category.required ? ` ${SYMBOL_REQUIRED}` : ""}${selectionCounter ? ` ${selectionCounter}` : ""} `}
+            {` ${category.displayName}${selectionCounter ? ` ${selectionCounter}` : ""} `}
           </Text>
         ) : (
           <>
             <Text color={CLI_COLORS.NEUTRAL}>{category.displayName}</Text>
-            {category.required && <Text color={CLI_COLORS.NEUTRAL}> {SYMBOL_REQUIRED}</Text>}
             {selectionCounter && <Text dimColor> {selectionCounter}</Text>}
           </>
         )}

@@ -217,8 +217,14 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
         rows: 40,
       });
 
-      const output = editWizard.build.getOutput();
-      expect(output).toMatch(/Framework \*/);
+      // The exclusive Framework category's own counter, read by name: this run installed
+      // web-framework-react, so the category's single slot is filled. Asserted positively
+      // and through the page object rather than as `toContain("Framework (1 of 1)")` —
+      // this install also paints "Meta-Framework (1 of 1)", which contains that string.
+      expect(
+        await editWizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
+        "the installed framework skill must open pre-selected in its category",
+      ).toBe(1);
     });
   });
 

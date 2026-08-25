@@ -11,6 +11,7 @@ import {
 } from "../../../consts";
 import type {
   AgentScopeConfig,
+  CategoryDefinition,
   ExtractedSkillMetadata,
   SkillConfig,
   SkillId,
@@ -21,6 +22,7 @@ import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../t
 import { readTestYaml } from "../helpers/config-io.js";
 import { writeSourceAgent, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { renderSkillMd, renderConfigTs } from "../content-generators";
+import type { SkillRulesFile } from "../content-generators";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
 
@@ -57,18 +59,6 @@ export type TestAgent = {
   playbookContent?: string;
 };
 
-export type TestMatrix = {
-  version: string;
-  skills: Record<string, TestSkill>;
-  categories: Record<string, { name: string; description: string }>;
-  suggestedStacks: Array<{
-    id: string;
-    name: string;
-    description: string;
-    allSkillIds: string[];
-  }>;
-};
-
 export type TestProjectConfig = {
   name: string;
   description?: string;
@@ -95,7 +85,6 @@ export type TestStack = {
 export type TestSourceOptions = {
   skills?: TestSkill[];
   agents?: TestAgent[];
-  matrix?: Partial<TestMatrix>;
   projectConfig?: TestProjectConfig;
   pluginManifest?: TestPluginManifest;
   /** Create as a plugin structure (in .claude/plugins/<plugin-name>) */
@@ -119,15 +108,26 @@ export type TestDirs = {
 export { fileExists, directoryExists };
 
 /**
- * Generates matrix representations from skill definitions:
- * 1. `testMatrix` — the internal TestMatrix used by test assertions
- * 2. `diskCategories` — a skill-categories.ts-compatible structure
- * 3. `diskRules` — a skill-rules.ts-compatible structure (empty relationships)
+ * One `config/skill-categories.ts` entry as this fixture writes it: every field
+ * {@link CategoryDefinition} declares, with `id` and `domain` widened to `string`.
  *
- * The disk format requires `categories` as CategoryDefinition objects
- * keyed by valid Category values. Skill data is loaded separately
- * via `extractAllSkills`.
+ * The widening is {@link TestSkill}'s, for {@link TestSkill}'s reason — a fixture names its own
+ * categories and domains so two suites cannot collide over one, and those names sit outside the
+ * generated `Category` and `Domain` unions by design. Deriving from `CategoryDefinition` rather
+ * than restating it holds every OTHER field to the type, so a field the category definition
+ * stops carrying stops compiling here instead of surviving as text no loader reads.
  */
+type TestCategoryDefinition = Omit<CategoryDefinition, "id" | "domain"> & {
+  id: string;
+  domain: string;
+};
+
+/** The `config/skill-categories.ts` default export, in `skillCategoriesFileSchema`'s shape. */
+type TestSkillCategoriesFile = {
+  version: string;
+  categories: Record<string, TestCategoryDefinition>;
+};
+
 /** Display-friendly category part after the domain prefix: "web-framework" -> "framework". */
 function categoryPartOf(category: string): string {
   const dashIndex = category.indexOf("-");
@@ -140,18 +140,18 @@ function domainOf(category: string): string {
   return dashIndex >= 0 ? category.slice(0, dashIndex) : category;
 }
 
-function generateMatrix(
-  skills: TestSkill[],
-  overrides?: Partial<TestMatrix>,
-): {
-  testMatrix: TestMatrix;
-  diskCategories: Record<string, unknown>;
-  diskRules: Record<string, unknown>;
+/**
+ * Builds the two config files a test source ships, derived from the categories its skills declare.
+ *
+ * `diskCategories` and `diskRules` are the `config/skill-categories.ts` and
+ * `config/skill-rules.ts` default exports, in the shapes `skillCategoriesFileSchema` and
+ * `skillRulesFileSchema` parse. Neither carries skill data: a skill declares its own category
+ * in its `metadata.yaml`, which `extractAllSkills` reads separately.
+ */
+function generateMatrix(skills: TestSkill[]): {
+  diskCategories: TestSkillCategoriesFile;
+  diskRules: SkillRulesFile;
 } {
-  const skillsMap: Record<string, TestSkill> = Object.fromEntries(
-    skills.map((skill) => [skill.id, skill]),
-  );
-
   // Category keys are hyphen-separated and domain-prefixed (e.g., "web-framework", "api-api")
   const uniqueCategories = [...new Set(skills.map((skill) => skill.category))];
   const categories: Record<string, { name: string; description: string }> = Object.fromEntries(
@@ -167,19 +167,10 @@ function generateMatrix(
     }),
   );
 
-  const testMatrix: TestMatrix = {
-    version: "1.0.0",
-    skills: skillsMap,
-    categories,
-    suggestedStacks: [],
-    ...overrides,
-  };
-
-  // Build skill-categories.ts-compatible structure for disk serialization.
-  // Categories need full CategoryDefinition fields keyed by valid category enum values.
-  // Skills carry their own category via metadata.yaml — these are only for UI grouping.
-  const diskCategoriesMap: Record<string, Record<string, unknown>> = Object.fromEntries(
-    Object.entries(categories).map(([category, cat], order) => [
+  // The tuple annotation is what makes the entry a checked literal: without it `fromEntries`
+  // infers the element type and a stale field rides through as an extra property nothing flags.
+  const diskCategoriesMap: Record<string, TestCategoryDefinition> = Object.fromEntries(
+    Object.entries(categories).map(([category, cat], order): [string, TestCategoryDefinition] => [
       category,
       {
         id: category,
@@ -187,18 +178,17 @@ function generateMatrix(
         description: cat.description,
         domain: domainOf(category),
         exclusive: true,
-        required: false,
         order,
       },
     ]),
   );
 
-  const diskCategories = {
+  const diskCategories: TestSkillCategoriesFile = {
     version: "1.0.0",
     categories: diskCategoriesMap,
   };
 
-  const diskRules = {
+  const diskRules: SkillRulesFile = {
     version: "1.0.0",
     relationships: {
       conflicts: [],
@@ -208,7 +198,7 @@ function generateMatrix(
     },
   };
 
-  return { testMatrix, diskCategories, diskRules };
+  return { diskCategories, diskRules };
 }
 
 /**
@@ -252,7 +242,7 @@ export function testMarketplaceSkillId(bareId: string): string {
 export async function createTestSource(options: TestSourceOptions = {}): Promise<TestDirs> {
   const skills = options.skills ?? DEFAULT_TEST_SKILLS;
   const agents = options.agents ?? DEFAULT_TEST_AGENTS;
-  const { diskCategories, diskRules } = generateMatrix(skills, options.matrix);
+  const { diskCategories, diskRules } = generateMatrix(skills);
 
   const tempDir = await createTempDir("ai-test-");
   const projectDir = path.join(tempDir, "project");

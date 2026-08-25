@@ -59,8 +59,7 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * `cc edit` at global scope and proves the project's own project-scope copy
  * survives — config, compiled agent reference (colon form), and filesystem. It
  * is seeded (like edit-global-remove-dual-scope-partial.e2e.test.ts) and uses a
- * NON-framework skill (web-testing-vitest) because framework skills are
- * required and cannot be deselected at global scope.
+ * NON-framework skill (web-testing-vitest).
  *
  * The MIXED plugin/eject matrix is covered separately by
  * dual-scope-edit-mixed-sources.e2e.test.ts — this file is strictly the

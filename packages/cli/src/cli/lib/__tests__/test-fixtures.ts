@@ -29,7 +29,7 @@ export const SKILLS = {
 
 // ---------------------------------------------------------------------------
 // Shared base category fixtures — canonical defaults with no overrides.
-// Use spread for per-test customization: `{ ...TEST_CATEGORIES.framework, required: true }`
+// Use spread for per-test customization: `{ ...TEST_CATEGORIES.framework, exclusive: false }`
 // ---------------------------------------------------------------------------
 
 export const TEST_CATEGORIES = {

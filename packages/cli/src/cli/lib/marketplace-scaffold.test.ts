@@ -95,6 +95,34 @@ describe("writeMarketplaceScaffold", () => {
     }
   });
 
+  // The module as emitted rather than as parsed, and the whole of it rather than one field.
+  // `categoryDefinitionSchema` is a plain `z.object`: it strips a key it does not name and says
+  // nothing about having stripped it, so the loader-based sibling above stays green over a
+  // category still shipping a field the CLI stopped declaring — every author starting from a
+  // scaffold would inherit that field, and nothing on the schema side can see it. Over the
+  // file's own text an added key and a removed one both redden.
+  it("emits a category as exactly the fields it declares", async () => {
+    const emitted = await readFile(path.join(marketplaceDir, SKILL_CATEGORIES_PATH), "utf-8");
+
+    expect(emitted).toMatchInlineSnapshot(`
+      "// The categories this marketplace's skills fall into.
+      export default {
+        "version": "1.0.0",
+        "categories": {
+          "web-example": {
+            "id": "web-example",
+            "displayName": "Example",
+            "description": "Replace this with a category of your own",
+            "domain": "web",
+            "exclusive": false,
+            "order": 1
+          }
+        }
+      };
+      "
+    `);
+  });
+
   it("writes rules the loader accepts, declaring no relationship at all", async () => {
     const rules = await loadSkillRules(path.join(marketplaceDir, SKILL_RULES_PATH));
 

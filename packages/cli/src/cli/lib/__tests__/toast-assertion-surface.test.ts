@@ -36,9 +36,6 @@ const STEP_TEXT_NAMESPACE = "STEP_TEXT";
  * the reason it cannot be read rather than silently.
  */
 const COMPOSED_AT_THE_CALL_SITE = [
-  // The selection-validation refusal, whose sentence is built by `matrix-resolver.ts` around the
-  // category and skill it is about.
-  "src/cli/components/wizard/step-build.tsx: validation.message",
   // The setter itself, which is the plumbing rather than a toast: every message here reaches the
   // row through it, and its parameter names all of them and none of them.
   "src/cli/stores/wizard-store.ts: message",

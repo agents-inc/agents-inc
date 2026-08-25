@@ -2,16 +2,8 @@ import { render } from "ink-testing-library";
 import { indexBy } from "remeda";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { StepBuild, type StepBuildProps } from "./step-build";
-import { validateBuildStep } from "../../lib/wizard/index";
 import { orderDomains } from "./utils";
-import type { CategoryRow as GridCategoryRow } from "./category-grid";
-import type {
-  CategoryDefinition,
-  Domain,
-  ResolvedSkill,
-  CategorySelections,
-  SkillId,
-} from "../../types";
+import type { CategoryDefinition, Domain, ResolvedSkill, SkillId } from "../../types";
 import {
   ENTER,
   ESCAPE,
@@ -77,9 +69,9 @@ describe("StepBuild component", () => {
 
   beforeEach(() => {
     initializeMatrix(defaultMatrix);
-    // The continue advisory writes a toast into the shared store, so both fields are
-    // reset here rather than in the one describe that reads them: a toast surviving
-    // into the next test would make the silent case pass or fail on its predecessor.
+    // Leaving a domain is asserted to be SILENT, and the toast row is shared state, so both
+    // fields are reset here rather than in the one describe that reads them: a toast surviving
+    // into the next test would make a silent case fail on its predecessor's message.
     useWizardStore.setState({ domainSelections: {}, toastMessage: null });
   });
 
@@ -131,13 +123,17 @@ describe("StepBuild component", () => {
       expect(output).toContain("Scss Modules");
     });
 
-    it("should show required indicator (*) for required categories", () => {
+    it("should paint a category header with nothing riding on its name", () => {
       const { lastFrame, unmount } = renderStepBuild();
       cleanup = unmount;
 
       const output = lastFrame();
-      // Framework and Styling are required
-      expect(output).toContain("*");
+      // Subject guard for the two negatives: both headers are painted in THIS frame, so a
+      // clean absence below is a statement about the header rather than about an empty grid.
+      expect(output).toContain("Framework");
+      expect(output).toContain("Styling");
+      expect(output).not.toContain("Framework *");
+      expect(output).not.toContain("Styling *");
     });
 
     it("should render categories for the domain", () => {
@@ -432,7 +428,7 @@ describe("StepBuild component", () => {
 
     it("should render correct domain categories in three-domain flow", () => {
       // Add cli category to matrix
-      const cliFrameworkCategory = { ...CLI_FRAMEWORK_CATEGORY, required: true, order: 0 };
+      const cliFrameworkCategory = { ...CLI_FRAMEWORK_CATEGORY, order: 0 };
       // Boundary cast: fictional skill ID for testing CLI domain display
       const commanderSkill = createMockSkill("cli-framework-commander" as SkillId, {
         displayName: "commander",
@@ -506,102 +502,18 @@ describe("StepBuild component", () => {
     });
   });
 
-  describe("validateBuildStep", () => {
-    it("should return valid when required categories have selections", () => {
-      const categories: GridCategoryRow[] = [
-        {
-          id: "web-framework",
-          displayName: "Framework",
-          required: true,
-          exclusive: true,
-          options: [{ id: "web-framework-react", state: { status: "normal" }, selected: true }],
-        },
-      ];
-      const selections: CategorySelections = { "web-framework": ["web-framework-react"] };
-
-      const result = validateBuildStep(categories, selections);
-      expect(result).toStrictEqual({ valid: true });
-    });
-
-    it("should report invalid when a required category has no selection", () => {
-      const categories: GridCategoryRow[] = [
-        {
-          id: "web-framework",
-          displayName: "Framework",
-          required: true,
-          exclusive: true,
-          options: [{ id: "web-framework-react", state: { status: "normal" }, selected: false }],
-        },
-      ];
-      const selections: CategorySelections = {};
-
-      const result = validateBuildStep(categories, selections);
-      expect(result).toStrictEqual({
-        valid: false,
-        message: "No skills selected in Framework (required category)",
-      });
-    });
-
-    it("should return valid when optional categories have no selections", () => {
-      const categories: GridCategoryRow[] = [
-        {
-          id: "web-client-state",
-          displayName: "State Management",
-          required: false,
-          exclusive: true,
-          options: [
-            {
-              id: "web-state-zustand",
-              state: { status: "normal" },
-              selected: false,
-            },
-          ],
-        },
-      ];
-      const selections: CategorySelections = {};
-
-      const result = validateBuildStep(categories, selections);
-      expect(result.valid).toBe(true);
-    });
-
-    it("should name the first missing required category", () => {
-      const categories: GridCategoryRow[] = [
-        {
-          id: "web-framework",
-          displayName: "Framework",
-          required: true,
-          exclusive: true,
-          options: [],
-        },
-        {
-          id: "web-styling",
-          displayName: "Styling",
-          required: true,
-          exclusive: true,
-          options: [],
-        },
-      ];
-      const selections: CategorySelections = {};
-
-      const result = validateBuildStep(categories, selections);
-      expect(result).toStrictEqual({
-        valid: false,
-        message: "No skills selected in Framework (required category)",
-      });
-    });
-  });
-
   /**
-   * Neither assertion here means anything without the other. `onContinue` alone cannot tell a
-   * validator that warned from one that was never called, and the toast alone cannot tell an
-   * advisory from a block — both leave the same trace on the surface the other test reads.
+   * Neither assertion in either test means anything without the other. `onContinue` alone
+   * cannot tell a silent handler from one that warned on its way through, and a null toast
+   * alone cannot tell silence from a handler that never ran at all — both leave the same trace
+   * on the surface the other assertion reads.
    *
-   * The web domain's two required categories are Framework and Styling, so the silent case has
-   * to fill BOTH: leaving Styling empty toasts about Styling instead and reads as a pass for
-   * the first category only.
+   * The pair of tests is the same argument one level up: an empty grid and a filled one must
+   * leave the toast row alike, and pinning only the filled one cannot tell a wizard that has
+   * stopped commenting on empty categories from one that was never given an empty one.
    */
-  describe("required-category advisory on continue", () => {
-    it("names the empty required category and continues anyway", async () => {
+  describe("leaving a domain", () => {
+    it("continues without a word when the domain has nothing selected", async () => {
       const onContinue = vi.fn();
       const { stdin, unmount } = renderStepBuild({ onContinue });
       cleanup = unmount;
@@ -610,13 +522,14 @@ describe("StepBuild component", () => {
       stdin.write(ENTER);
       await delay(INPUT_DELAY_MS);
 
-      expect(useWizardStore.getState().toastMessage).toBe(
-        "No skills selected in Framework (required category)",
-      );
+      expect(
+        useWizardStore.getState().toastMessage,
+        "an empty category is the user's choice, so leaving one behind is not worth a toast",
+      ).toBeNull();
       expect(onContinue).toHaveBeenCalled();
     });
 
-    it("stays silent and continues when every required category is filled", async () => {
+    it("continues without a word when the domain has selections", async () => {
       useWizardStore.setState({
         domainSelections: {
           web: {

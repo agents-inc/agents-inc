@@ -453,11 +453,10 @@ export class BuildStep extends BaseStep {
    * {@link toggleFocusedSkill}, which does not and says so.
    *
    * It follows that `selectSkill` means the toggle LANDED: a press the product
-   * refuses (a global-locked skill at project scope, the last skill in a
-   * required exclusive category) leaves the cell exactly as it was and is
-   * reported here rather than passed on. A spec whose subject IS the refusal
-   * wants {@link selectSkillAwaiting}, which anchors on the toast the refusal
-   * emits instead.
+   * refuses (a global-locked skill at project scope) leaves the cell exactly as
+   * it was and is reported here rather than passed on. A spec whose subject IS
+   * the refusal wants {@link selectSkillAwaiting}, which anchors on the toast
+   * the refusal emits instead.
    */
   async selectSkill(skillLabel: string): Promise<void> {
     await this.focusSkill(skillLabel);
@@ -851,7 +850,7 @@ export class BuildStep extends BaseStep {
 
   /**
    * Read the live "(selected of total)" selection counter that an EXCLUSIVE
-   * category header renders (e.g. `Framework * (1 of 1)`). Returns the selected
+   * category header renders (e.g. `Framework (1 of 1)`). Returns the selected
    * count — the number the grid currently treats as chosen in that category,
    * derived from the option `selected` flags (NOT from the scope badges).
    *
@@ -879,7 +878,7 @@ export class BuildStep extends BaseStep {
     await this.waitForWizardFooter();
     const output = this.getOutput();
     const escaped = categoryDisplayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(`(?:^|\\s)${escaped}\\s*\\*?\\s*\\((\\d+) of (\\d+)\\)`);
+    const pattern = new RegExp(`(?:^|\\s)${escaped}\\s*\\((\\d+) of (\\d+)\\)`);
     const lines = output.split("\n");
     for (const line of [...lines].reverse()) {
       const [, selectedCount] = line.match(pattern) ?? [];

@@ -127,11 +127,10 @@ export function createComprehensiveMatrix(
       ...TEST_CATEGORIES.framework,
       domain: "web",
       exclusive: true,
-      required: true,
     },
     "web-client-state": { ...TEST_CATEGORIES.clientState, domain: "web", order: 1 },
     "web-styling": { ...TEST_CATEGORIES.styling, domain: "web", order: 2 },
-    "api-api": { ...TEST_CATEGORIES.api, domain: "api", exclusive: true, required: true },
+    "api-api": { ...TEST_CATEGORIES.api, domain: "api", exclusive: true },
     "api-orm": { ...TEST_CATEGORIES.database, domain: "api", order: 1 },
     "web-testing": {
       ...TEST_CATEGORIES.testing,
@@ -143,7 +142,6 @@ export function createComprehensiveMatrix(
       ...TEST_CATEGORIES.methodology,
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 11,
     },
   };
@@ -235,14 +233,12 @@ export function createBasicMatrix(overrides?: Partial<MergedSkillsMatrix>): Merg
         ...TEST_CATEGORIES.framework,
         domain: "web",
         exclusive: true,
-        required: true,
       },
       "web-client-state": { ...TEST_CATEGORIES.clientState, domain: "web", order: 1 },
       "api-api": {
         ...TEST_CATEGORIES.api,
         domain: "api",
         exclusive: true,
-        required: true,
       },
       "web-testing": {
         ...TEST_CATEGORIES.testing,
@@ -254,7 +250,6 @@ export function createBasicMatrix(overrides?: Partial<MergedSkillsMatrix>): Merg
         ...TEST_CATEGORIES.methodology,
         domain: "meta",
         exclusive: false,
-        required: false,
       },
     } satisfies CategoryMap,
     ...overrides,

@@ -341,29 +341,6 @@ describe("Empty skill selection", () => {
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
-
-    it("should not flag category requirements for empty selection", () => {
-      // Required categories only matter when skills are selected
-      const matrix = createMockMatrix(
-        {},
-        {
-          categories: buildCategoryMap({
-            "web-framework": {
-              ...TEST_CATEGORIES.framework,
-              description: "Required framework",
-              required: true,
-              order: 1,
-            },
-          }),
-        },
-      );
-      initializeMatrix(matrix);
-
-      const result = validateSelection([]);
-
-      // Empty selection is valid - required categories are enforced at wizard level
-      expect(result.valid).toBe(true);
-    });
   });
 
   describe("an empty selection", () => {

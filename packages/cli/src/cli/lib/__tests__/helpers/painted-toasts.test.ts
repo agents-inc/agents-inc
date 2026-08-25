@@ -21,12 +21,12 @@ const COMPONENT = "src/cli/components/wizard/wizard.tsx";
 const STORE_SOURCE = [
   `const TOAST_MESSAGES = {`,
   `  GLOBAL_SKILLS_LOCKED: "Global skills cannot be changed from project scope",`,
-  `  ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",`,
+  `  ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",`,
   `} as const;`,
   ``,
   `export const store = {`,
   `  toggle: () => ({ toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED }),`,
-  `  deselect: () => ({ toastMessage: TOAST_MESSAGES.ONLY_SKILL_IN_CATEGORY }),`,
+  `  eject: () => ({ toastMessage: TOAST_MESSAGES.ALREADY_EJECTED_AT_GLOBAL }),`,
   `  clear: () => ({ toastMessage: null }),`,
   `};`,
   ``,
@@ -58,7 +58,7 @@ const SENTINEL_SOURCE = [
   `export const ${SENTINELS} = {`,
   `  STACK: "Choose a stack",`,
   `  SCOPE: "Scope",`,
-  `  ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",`,
+  `  ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",`,
   `  GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",`,
   `  SCOPE_TOGGLE_BLOCKED: "Scope toggle unavailable in global context",`,
   `} as const;`,
@@ -74,7 +74,7 @@ describe("the messages the product paints as a toast", () => {
   it("resolves a constant member assigned to the field", () => {
     expect(paintedToastsIn([{ file: STORE, source: STORE_SOURCE }]).messages).toStrictEqual([
       "Global skills cannot be changed from project scope",
-      "Cannot deselect the only skill in this category",
+      "Already exists as ejected skill at global scope",
     ]);
   });
 
@@ -104,7 +104,7 @@ describe("the sentinel constants that name a toast", () => {
     expect(
       toastKeysIn({ file: SENTINEL_FILE, source: SENTINEL_SOURCE }, SENTINELS, PRODUCT).keys,
       "a sentinel naming a toast is one no processed-buffer read may sit beside, and the roster is what keeps that from becoming a ban on reading the screen",
-    ).toStrictEqual(["ONLY_SKILL_IN_CATEGORY", "GLOBAL_SKILLS_BLOCKED", "SCOPE_TOGGLE_BLOCKED"]);
+    ).toStrictEqual(["ALREADY_EJECTED_AT_GLOBAL", "GLOBAL_SKILLS_BLOCKED", "SCOPE_TOGGLE_BLOCKED"]);
   });
 
   it("leaves a sentinel that is merely a fragment of a toast alone", () => {

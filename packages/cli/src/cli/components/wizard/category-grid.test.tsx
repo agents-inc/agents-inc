@@ -36,35 +36,24 @@ const createCategory = (
 ): CategoryRow => ({
   id,
   displayName,
-  required: false,
   exclusive: true,
   options,
   ...overrides,
 });
 
 const defaultCategories: CategoryRow[] = [
-  createCategory(
-    "web-framework",
-    "Framework",
-    [
-      createOption("web-framework-react"),
-      createOption("web-framework-vue-composition-api"),
-      createOption("web-framework-angular-standalone"),
-      createOption("web-framework-solidjs"),
-    ],
-    { required: true },
-  ),
-  createCategory(
-    "web-styling",
-    "Styling",
-    [
-      createOption("web-styling-scss-modules", { selected: true }),
-      createOption("web-styling-tailwind"),
-      createOption("web-styling-cva"),
-      createOption("web-meta-framework-nuxt"),
-    ],
-    { required: true },
-  ),
+  createCategory("web-framework", "Framework", [
+    createOption("web-framework-react"),
+    createOption("web-framework-vue-composition-api"),
+    createOption("web-framework-angular-standalone"),
+    createOption("web-framework-solidjs"),
+  ]),
+  createCategory("web-styling", "Styling", [
+    createOption("web-styling-scss-modules", { selected: true }),
+    createOption("web-styling-tailwind"),
+    createOption("web-styling-cva"),
+    createOption("web-meta-framework-nuxt"),
+  ]),
   createCategory("web-client-state", "Client State", [
     createOption("web-state-zustand"),
     createOption("web-state-jotai"),
@@ -82,30 +71,20 @@ const defaultCategories: CategoryRow[] = [
 ];
 
 const categoriesWithFramework: CategoryRow[] = [
-  createCategory(
-    "web-framework",
-    "Framework",
-    [
-      createOption("web-framework-react", {
-        selected: true, // Framework selected
-      }),
-      createOption("web-framework-vue-composition-api"),
-      createOption("web-framework-angular-standalone"),
-      createOption("web-framework-solidjs"),
-    ],
-    { required: true },
-  ),
-  createCategory(
-    "web-styling",
-    "Styling",
-    [
-      createOption("web-styling-scss-modules"),
-      createOption("web-styling-tailwind"),
-      createOption("web-styling-cva"),
-      createOption("web-meta-framework-nuxt"),
-    ],
-    { required: true },
-  ),
+  createCategory("web-framework", "Framework", [
+    createOption("web-framework-react", {
+      selected: true, // Framework selected
+    }),
+    createOption("web-framework-vue-composition-api"),
+    createOption("web-framework-angular-standalone"),
+    createOption("web-framework-solidjs"),
+  ]),
+  createCategory("web-styling", "Styling", [
+    createOption("web-styling-scss-modules"),
+    createOption("web-styling-tailwind"),
+    createOption("web-styling-cva"),
+    createOption("web-meta-framework-nuxt"),
+  ]),
   createCategory("web-client-state", "Client State", [
     createOption("web-state-zustand"),
     createOption("web-state-jotai"),
@@ -223,23 +202,17 @@ describe("CategoryGrid component", () => {
       expect(output).toContain("Tailwind");
     });
 
-    it("should show required indicator (*) for required categories", () => {
+    it("should paint each category header as its name and nothing else", () => {
       const { lastFrame, unmount } = renderGrid();
       cleanup = unmount;
 
       const output = lastFrame();
-      // Framework and Styling are required
-      // The * should appear after their names
-      expect(output).toContain("*");
-    });
-
-    it("should NOT show (optional) for non-required categories", () => {
-      const { lastFrame, unmount } = renderGrid();
-      cleanup = unmount;
-
-      const output = lastFrame();
-      // Optional is assumed by default, so we don't show the label
-      expect(output).not.toContain("(optional)");
+      // Subject guard for the negatives: these two headers are painted in THIS frame, so a
+      // clean absence below is a statement about the header rather than about an empty grid.
+      expect(output).toContain("Framework");
+      expect(output).toContain("Styling");
+      expect(output).not.toContain("Framework *");
+      expect(output).not.toContain("Styling *");
     });
 
     it("should handle empty categories array", () => {
@@ -759,15 +732,10 @@ describe("CategoryGrid component", () => {
     it("should call onToggle when pressing space on a selected option", async () => {
       const onToggle = vi.fn();
       const categories: CategoryRow[] = [
-        createCategory(
-          "web-framework",
-          "Framework",
-          [
-            createOption("web-framework-react", { selected: true }),
-            createOption("web-framework-vue-composition-api"),
-          ],
-          { required: true },
-        ),
+        createCategory("web-framework", "Framework", [
+          createOption("web-framework-react", { selected: true }),
+          createOption("web-framework-vue-composition-api"),
+        ]),
       ];
       const { stdin, unmount } = renderGrid({
         categories,
@@ -1310,16 +1278,11 @@ describe("CategoryGrid component", () => {
     it("should adjust focusedCol when changing to row with fewer options", async () => {
       const onFocusChange = vi.fn();
       const categories: CategoryRow[] = [
-        createCategory(
-          "web-framework",
-          "Framework",
-          [
-            createOption("web-forms-react-hook-form", { selected: true }), // Framework selected
-            createOption("web-forms-vee-validate"),
-            createOption("web-forms-zod-validation"),
-          ],
-          { required: true },
-        ),
+        createCategory("web-framework", "Framework", [
+          createOption("web-forms-react-hook-form", { selected: true }), // Framework selected
+          createOption("web-forms-vee-validate"),
+          createOption("web-forms-zod-validation"),
+        ]),
         createCategory("web-styling", "Category 2", [createOption("web-testing-vitest")]),
       ];
 

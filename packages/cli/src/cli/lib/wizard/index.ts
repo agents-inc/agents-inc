@@ -1,8 +1,4 @@
-export {
-  type BuildStepValidation,
-  validateBuildStep,
-  buildCategoriesForDomain,
-} from "./build-step-logic";
+export { buildCategoriesForDomain } from "./build-step-logic";
 export {
   type AgentDiffRow,
   type DiffRowStatus,

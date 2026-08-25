@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateBuildStep, buildCategoriesForDomain } from "./build-step-logic";
+import { buildCategoriesForDomain } from "./build-step-logic";
 import {
   BUILD_STEP_ADVISORY_STATES_MATRIX,
   BUILD_STEP_CONFLICTS_EXCLUSIVE_MATRIX,
@@ -15,7 +15,6 @@ import {
   BUILD_STEP_SORTING_MATRIX,
   BUILD_STEP_WEB_MATRIX,
 } from "../__tests__/mock-data/mock-matrices";
-import type { CategoryRow } from "../../components/wizard/category-grid";
 import { DOMAIN_ORDER } from "@workspace/matrix";
 import type { SkillId, Category, Domain } from "../../types";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
@@ -37,113 +36,6 @@ import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
  * entirely.
  */
 const missingHalf = (message: string | undefined): string | undefined => message?.split(" — ")[0];
-
-describe("validateBuildStep", () => {
-  const requiredCategory: CategoryRow = {
-    id: "web-framework",
-    displayName: "Framework",
-    required: true,
-    exclusive: true,
-    options: [],
-  };
-
-  const optionalCategory: CategoryRow = {
-    id: "shared-tooling",
-    displayName: "Tooling",
-    required: false,
-    exclusive: false,
-    options: [],
-  };
-
-  it("should return valid when no categories are required", () => {
-    const result = validateBuildStep([optionalCategory], {});
-    expect(result).toStrictEqual({ valid: true });
-  });
-
-  it("should report invalid when a required category has no selections", () => {
-    const result = validateBuildStep([requiredCategory], {});
-    expect(result).toStrictEqual({
-      valid: false,
-      message: "No skills selected in Framework (required category)",
-    });
-  });
-
-  it("should return valid when required category has selections", () => {
-    const result = validateBuildStep([requiredCategory], {
-      "web-framework": ["web-framework-react"],
-    });
-    expect(result).toStrictEqual({ valid: true });
-  });
-
-  it("should name the first missing required category", () => {
-    const anotherRequired: CategoryRow = {
-      id: "web-client-state",
-      displayName: "State Management",
-      required: true,
-      exclusive: true,
-      options: [],
-    };
-    const result = validateBuildStep([requiredCategory, anotherRequired], {});
-    expect(result).toStrictEqual({
-      valid: false,
-      message: "No skills selected in Framework (required category)",
-    });
-  });
-
-  it("should handle empty categories array", () => {
-    const result = validateBuildStep([], {});
-    expect(result).toStrictEqual({ valid: true });
-  });
-
-  it("should return valid with no message when all required categories have selections", () => {
-    const anotherRequired: CategoryRow = {
-      id: "web-client-state",
-      displayName: "State Management",
-      required: true,
-      exclusive: true,
-      options: [],
-    };
-    const result = validateBuildStep([requiredCategory, anotherRequired], {
-      "web-framework": ["web-framework-react"],
-      "web-client-state": ["web-state-zustand"],
-    });
-    expect(result).toStrictEqual({ valid: true });
-  });
-
-  it("should skip optional categories when checking for missing selections", () => {
-    const result = validateBuildStep([optionalCategory, requiredCategory], {
-      "web-framework": ["web-framework-react"],
-    });
-    expect(result).toStrictEqual({ valid: true });
-  });
-
-  it("should treat empty array selections the same as missing key", () => {
-    const result = validateBuildStep([requiredCategory], {
-      "web-framework": [],
-    });
-    expect(result).toStrictEqual({
-      valid: false,
-      message: "No skills selected in Framework (required category)",
-    });
-  });
-
-  it("should name the second required category when the first is satisfied", () => {
-    const secondRequired: CategoryRow = {
-      id: "web-styling",
-      displayName: "Styling",
-      required: true,
-      exclusive: true,
-      options: [],
-    };
-    const result = validateBuildStep([requiredCategory, secondRequired], {
-      "web-framework": ["web-framework-react"],
-    });
-    expect(result).toStrictEqual({
-      valid: false,
-      message: "No skills selected in Styling (required category)",
-    });
-  });
-});
 
 describe("buildCategoriesForDomain", () => {
   const frameworkCategory: Category = "web-framework";
@@ -394,13 +286,15 @@ describe("buildCategoriesForDomain", () => {
     });
   });
 
-  it("should propagate category required and exclusive flags", () => {
+  // Both values, because one cannot tell a flag that is carried across from a field the row
+  // builder writes as a constant — which is what the pairing with the retired `required` flag
+  // used to buy this assertion for free.
+  it("should propagate the category's exclusive flag", () => {
     initializeMatrix(BUILD_STEP_FRAMEWORK_NON_EXCLUSIVE_MATRIX);
+    expect(firstElement(buildCategoriesForDomain("web", [])).exclusive).toBe(false);
 
-    const result = buildCategoriesForDomain("web", []);
-
-    expect(firstElement(result).required).toBe(true);
-    expect(firstElement(result).exclusive).toBe(false);
+    initializeMatrix(BUILD_STEP_WEB_MATRIX);
+    expect(firstElement(buildCategoriesForDomain("web", [])).exclusive).toBe(true);
   });
 
   it("should only return categories matching the requested domain", () => {

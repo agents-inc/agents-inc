@@ -506,9 +506,13 @@ describe("WizardStore", () => {
       expect(toastMessage).toBeNull();
     });
 
-    it("should block deselecting the only skill in an exclusive+required category", () => {
+    it("should allow deselecting the only skill an exclusive category has", () => {
       const m = createMockMatrix(...Object.values(SKILLS));
-      m.categories["api-api"] = { ...TEST_CATEGORIES.api, required: true };
+      // The exact shape the retired guard fired on — an exclusive category the matrix gives one
+      // skill, so a deselect leaves it with nothing to fall back to. `required` is the flag that
+      // guard keyed on and it goes when the field does; what this pins is the permission, which
+      // is a fact about the shape rather than about the flag.
+      m.categories["api-api"] = { ...TEST_CATEGORIES.api, exclusive: true };
       initializeMatrix(m);
       const store = useWizardStore.getState();
       store.toggleTechnology("api", "api-api", "api-framework-hono", true);
@@ -516,11 +520,14 @@ describe("WizardStore", () => {
       store.toggleTechnology("api", "api-api", "api-framework-hono", true);
 
       const { domainSelections, toastMessage } = useWizardStore.getState();
-      expect(domainSelections.api!["api-api"]).toStrictEqual(["api-framework-hono"]);
-      expect(toastMessage).toBe("Cannot deselect the only skill in this category");
+      expect(
+        domainSelections.api!["api-api"],
+        "an exclusive category with one skill is still a category the user may leave empty",
+      ).toStrictEqual([]);
+      expect(toastMessage).toBeNull();
     });
 
-    it("should allow deselecting the only skill in a non-required category", () => {
+    it("should allow deselecting the only skill in a non-exclusive category", () => {
       const store = useWizardStore.getState();
       store.toggleTechnology("web", "web-testing", "web-testing-vitest", false);
 

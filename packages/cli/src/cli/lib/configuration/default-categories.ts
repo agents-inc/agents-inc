@@ -11,7 +11,6 @@ export const defaultCategories = {
     description: "UI framework (React, Vue, Angular, SolidJS)",
     domain: "web",
     exclusive: true,
-    required: true,
     order: 1,
   },
   "web-meta-framework": {
@@ -20,7 +19,6 @@ export const defaultCategories = {
     description: "Full-stack meta-framework (Next.js, Remix, Nuxt, SvelteKit)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 2,
   },
   "web-routing": {
@@ -29,7 +27,6 @@ export const defaultCategories = {
     description: "Client-side routing (TanStack Router)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 3,
   },
   "web-styling": {
@@ -38,7 +35,6 @@ export const defaultCategories = {
     description: "CSS approach (SCSS Modules, Tailwind, CVA)",
     domain: "web",
     exclusive: false,
-    required: true,
     order: 4,
   },
   "web-client-state": {
@@ -47,7 +43,6 @@ export const defaultCategories = {
     description: "UI state, forms, local data (Zustand, Redux, MobX)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 5,
   },
   "web-server-state": {
@@ -56,7 +51,6 @@ export const defaultCategories = {
     description: "API data caching (React Query, SWR)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 6,
   },
   "web-graphql-client": {
@@ -65,7 +59,6 @@ export const defaultCategories = {
     description: "GraphQL client library (Apollo Client, urql)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 7,
   },
   "web-rpc": {
@@ -74,7 +67,6 @@ export const defaultCategories = {
     description: "End-to-end type-safe RPC (tRPC)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 8,
   },
   "web-forms": {
@@ -83,7 +75,6 @@ export const defaultCategories = {
     description: "Schema validation (Zod)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 9,
   },
   "web-form-library": {
@@ -92,7 +83,6 @@ export const defaultCategories = {
     description: "Form state and submission (React Hook Form, TanStack Form, VeeValidate)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 10,
   },
   "web-testing": {
@@ -101,7 +91,6 @@ export const defaultCategories = {
     description: "Unit, component, and visual testing",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 11,
   },
   "web-e2e": {
@@ -110,7 +99,6 @@ export const defaultCategories = {
     description: "End-to-end browser testing (Playwright, Cypress)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 12,
   },
   "web-ui-kit": {
@@ -119,7 +107,6 @@ export const defaultCategories = {
     description: "Pre-styled component kit (shadcn/ui, MUI, Mantine, Vuetify)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 13,
   },
   "web-ui-components": {
@@ -128,7 +115,6 @@ export const defaultCategories = {
     description: "Headless primitives (Radix UI, Base UI, Headless UI, TanStack Table)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 14,
   },
   "web-tooling": {
@@ -137,7 +123,6 @@ export const defaultCategories = {
     description: "Frontend build tools and bundlers (Vite, Webpack)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 15,
   },
   "web-docs": {
@@ -146,7 +131,6 @@ export const defaultCategories = {
     description: "Documentation site generator (Docusaurus, VitePress)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 16,
   },
   "web-mocking": {
@@ -155,7 +139,6 @@ export const defaultCategories = {
     description: "Mock Service Worker for development and testing",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 17,
   },
   "web-error-handling": {
@@ -164,7 +147,6 @@ export const defaultCategories = {
     description: "Error boundaries, result types, and error patterns",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 18,
   },
   "web-i18n": {
@@ -173,7 +155,6 @@ export const defaultCategories = {
     description: "i18n libraries (next-intl, react-intl, vue-i18n)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 19,
   },
   "web-file-upload": {
@@ -182,7 +163,6 @@ export const defaultCategories = {
     description: "File upload patterns and handling",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 20,
   },
   "web-files": {
@@ -191,7 +171,6 @@ export const defaultCategories = {
     description: "Image handling and file processing",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 21,
   },
   "web-utilities": {
@@ -200,7 +179,6 @@ export const defaultCategories = {
     description: "Utility libraries (date-fns, native JS patterns)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 22,
   },
   "web-realtime": {
@@ -209,7 +187,6 @@ export const defaultCategories = {
     description: "Bidirectional realtime (WebSockets, Socket.IO)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 23,
   },
   "web-streaming": {
@@ -218,7 +195,6 @@ export const defaultCategories = {
     description: "Server-sent events and HTTP streaming",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 24,
   },
   "web-animation": {
@@ -227,7 +203,6 @@ export const defaultCategories = {
     description: "Animation libraries and CSS animations",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 25,
   },
   "web-pwa": {
@@ -236,7 +211,6 @@ export const defaultCategories = {
     description: "Service workers, offline-first patterns, and PWA features",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 26,
   },
   "web-accessibility": {
@@ -245,7 +219,6 @@ export const defaultCategories = {
     description: "WCAG compliance, ARIA, and keyboard navigation",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 27,
   },
   "web-performance": {
@@ -254,7 +227,6 @@ export const defaultCategories = {
     description: "Bundle optimization, render performance, and code splitting",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 28,
   },
   "web-3d": {
@@ -263,7 +235,6 @@ export const defaultCategories = {
     description: "3D rendering (React Three Fiber)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 29,
   },
   "web-dataviz": {
@@ -272,7 +243,6 @@ export const defaultCategories = {
     description: "Charts and data visualization (D3, Recharts)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 30,
   },
   "web-dnd": {
@@ -281,7 +251,6 @@ export const defaultCategories = {
     description: "Drag-and-drop interactions (dnd-kit)",
     domain: "web",
     exclusive: false,
-    required: false,
     order: 31,
   },
   "web-editor": {
@@ -290,7 +259,6 @@ export const defaultCategories = {
     description: "Rich text editing (Lexical, Tiptap)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 32,
   },
   "web-maps": {
@@ -299,7 +267,6 @@ export const defaultCategories = {
     description: "Interactive maps (Leaflet, Mapbox)",
     domain: "web",
     exclusive: true,
-    required: false,
     order: 33,
   },
   "api-api": {
@@ -308,7 +275,6 @@ export const defaultCategories = {
     description: "Backend framework (Hono, Express, Fastify)",
     domain: "api",
     exclusive: true,
-    required: true,
     order: 1,
   },
   "api-sql-engine": {
@@ -317,7 +283,6 @@ export const defaultCategories = {
     description: "Primary SQL engine (PostgreSQL, MySQL, CockroachDB)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 2,
   },
   "api-orm": {
@@ -326,7 +291,6 @@ export const defaultCategories = {
     description: "Database access layer (Drizzle, Prisma, TypeORM)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 3,
   },
   "api-document": {
@@ -335,7 +299,6 @@ export const defaultCategories = {
     description: "Primary non-SQL store (MongoDB, Mongoose, Gel, SurrealDB)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 4,
   },
   "api-kv": {
@@ -344,7 +307,6 @@ export const defaultCategories = {
     description: "Redis-class key-value provider (Redis, Upstash)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 5,
   },
   "api-db-host": {
@@ -353,7 +315,6 @@ export const defaultCategories = {
     description: "Managed database host (Neon, PlanetScale, Turso)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 6,
   },
   "api-auth": {
@@ -362,7 +323,6 @@ export const defaultCategories = {
     description: "Auth solution (Better Auth, Auth.js)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 8,
   },
   "api-observability": {
@@ -371,7 +331,6 @@ export const defaultCategories = {
     description: "Logging, monitoring, error tracking",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 9,
   },
   "api-analytics": {
@@ -380,7 +339,6 @@ export const defaultCategories = {
     description: "Product analytics and tracking",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 10,
   },
   "api-email": {
@@ -389,7 +347,6 @@ export const defaultCategories = {
     description: "Transactional email (Resend, Sendgrid)",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 11,
   },
   "ai-provider": {
@@ -398,7 +355,6 @@ export const defaultCategories = {
     description: "AI model provider SDKs (Anthropic, OpenAI, Google, etc.)",
     domain: "ai",
     exclusive: false,
-    required: false,
     order: 1,
   },
   "ai-orchestration": {
@@ -407,7 +363,6 @@ export const defaultCategories = {
     description: "Multi-model AI workflow frameworks (LangChain, LlamaIndex, Vercel AI)",
     domain: "ai",
     exclusive: false,
-    required: false,
     order: 2,
   },
   "ai-observability": {
@@ -416,7 +371,6 @@ export const defaultCategories = {
     description: "LLM monitoring, evaluation, and tracing (Langfuse, Promptfoo)",
     domain: "ai",
     exclusive: false,
-    required: false,
     order: 3,
   },
   "ai-infrastructure": {
@@ -425,7 +379,6 @@ export const defaultCategories = {
     description: "Model hosting, serving, and inference gateways",
     domain: "ai",
     exclusive: false,
-    required: false,
     order: 4,
   },
   "ai-patterns": {
@@ -434,7 +387,6 @@ export const defaultCategories = {
     description: "Cross-cutting AI usage patterns (tool use, prompting)",
     domain: "ai",
     exclusive: false,
-    required: false,
     order: 5,
   },
   "api-baas": {
@@ -443,7 +395,6 @@ export const defaultCategories = {
     description: "Full backend platform — auth, database, storage, functions (Supabase, Firebase)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 7,
   },
   "api-performance": {
@@ -452,7 +403,6 @@ export const defaultCategories = {
     description: "API performance patterns and optimization",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 12,
   },
   "api-cms": {
@@ -461,7 +411,6 @@ export const defaultCategories = {
     description: "CMS platforms (Payload, Sanity, Strapi)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 13,
   },
   "api-commerce": {
@@ -470,7 +419,6 @@ export const defaultCategories = {
     description: "Commerce platforms (Stripe)",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 14,
   },
   "api-search": {
@@ -479,7 +427,6 @@ export const defaultCategories = {
     description: "Search engines (Elasticsearch, Meilisearch)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 15,
   },
   "api-vector-db": {
@@ -488,7 +435,6 @@ export const defaultCategories = {
     description: "Vector databases (Pinecone, Qdrant, Chroma, Weaviate)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 16,
   },
   "api-caching": {
@@ -497,7 +443,6 @@ export const defaultCategories = {
     description: "API caching strategies and patterns",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 17,
   },
   "api-graphql": {
@@ -506,7 +451,6 @@ export const defaultCategories = {
     description: "GraphQL servers (Apollo Server, Mercurius, Yoga)",
     domain: "api",
     exclusive: true,
-    required: false,
     order: 18,
   },
   "api-messaging": {
@@ -515,7 +459,6 @@ export const defaultCategories = {
     description: "Webhooks and event-driven messaging",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 19,
   },
   "api-queue": {
@@ -524,7 +467,6 @@ export const defaultCategories = {
     description: "Background job queues (BullMQ)",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 20,
   },
   "api-specs": {
@@ -533,7 +475,6 @@ export const defaultCategories = {
     description: "API specification formats (OpenAPI)",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 21,
   },
   "mobile-framework": {
@@ -542,7 +483,6 @@ export const defaultCategories = {
     description: "Native mobile framework (React Native, Expo)",
     domain: "mobile",
     exclusive: false,
-    required: true,
     order: 1,
   },
   "mobile-animation": {
@@ -551,7 +491,6 @@ export const defaultCategories = {
     description: "Native animation and gestures (Reanimated, Gesture Handler, Skia)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 6,
   },
   "mobile-background": {
@@ -560,7 +499,6 @@ export const defaultCategories = {
     description: "Background task scheduling and execution",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 12,
   },
   "mobile-camera": {
@@ -569,7 +507,6 @@ export const defaultCategories = {
     description: "Camera integration (Vision Camera)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 10,
   },
   "mobile-deep-linking": {
@@ -578,7 +515,6 @@ export const defaultCategories = {
     description: "Deep links and universal/app links",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 9,
   },
   "mobile-deployment": {
@@ -587,7 +523,6 @@ export const defaultCategories = {
     description: "App builds and store releases (EAS)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 15,
   },
   "mobile-hardware": {
@@ -596,7 +531,6 @@ export const defaultCategories = {
     description: "Device hardware access (BLE, NFC)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 11,
   },
   "mobile-navigation": {
@@ -605,7 +539,6 @@ export const defaultCategories = {
     description: "Screen navigation (Expo Router, React Navigation)",
     domain: "mobile",
     exclusive: true,
-    required: false,
     order: 2,
   },
   "mobile-notifications": {
@@ -614,7 +547,6 @@ export const defaultCategories = {
     description: "Push and local notifications",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 8,
   },
   "mobile-performance": {
@@ -623,7 +555,6 @@ export const defaultCategories = {
     description: "React Native performance optimization",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 13,
   },
   "mobile-security": {
@@ -632,7 +563,6 @@ export const defaultCategories = {
     description: "Mobile app security patterns (React Native)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 14,
   },
   "mobile-storage": {
@@ -641,7 +571,6 @@ export const defaultCategories = {
     description: "On-device storage and offline databases (MMKV, SQLite, WatermelonDB)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 4,
   },
   "mobile-styling": {
@@ -650,7 +579,6 @@ export const defaultCategories = {
     description: "Native styling (NativeWind, Unistyles)",
     domain: "mobile",
     exclusive: true,
-    required: false,
     order: 3,
   },
   "mobile-testing": {
@@ -659,7 +587,6 @@ export const defaultCategories = {
     description: "Mobile E2E testing (Detox, Maestro)",
     domain: "mobile",
     exclusive: false,
-    required: false,
     order: 7,
   },
   "mobile-ui-components": {
@@ -668,7 +595,6 @@ export const defaultCategories = {
     description: "Native UI component libraries (React Native Paper, Tamagui)",
     domain: "mobile",
     exclusive: true,
-    required: false,
     order: 5,
   },
   "shared-monorepo": {
@@ -677,7 +603,6 @@ export const defaultCategories = {
     description: "Workspace management (pnpm workspaces)",
     domain: "shared",
     exclusive: false,
-    required: false,
     order: 1,
   },
   "shared-task-runner": {
@@ -686,7 +611,6 @@ export const defaultCategories = {
     description: "Monorepo task orchestration (Turborepo, Nx)",
     domain: "shared",
     exclusive: true,
-    required: false,
     order: 2,
   },
   "shared-lint": {
@@ -695,7 +619,6 @@ export const defaultCategories = {
     description: "Linting and formatting (Biome, ESLint & Prettier)",
     domain: "shared",
     exclusive: true,
-    required: false,
     order: 3,
   },
   "shared-tooling": {
@@ -704,7 +627,6 @@ export const defaultCategories = {
     description: "TypeScript config, git hooks, changesets, stack detection",
     domain: "shared",
     exclusive: false,
-    required: false,
     order: 4,
   },
   "shared-security": {
@@ -713,7 +635,6 @@ export const defaultCategories = {
     description: "Authentication security patterns and best practices",
     domain: "shared",
     exclusive: false,
-    required: false,
     order: 5,
   },
   "meta-reviewing": {
@@ -722,7 +643,6 @@ export const defaultCategories = {
     description: "Code review patterns and methodology",
     domain: "meta",
     exclusive: false,
-    required: false,
     order: 1,
   },
   "meta-methodology": {
@@ -731,7 +651,6 @@ export const defaultCategories = {
     description: "Research and investigation methodology",
     domain: "meta",
     exclusive: false,
-    required: false,
     order: 2,
   },
   "meta-design": {
@@ -740,7 +659,6 @@ export const defaultCategories = {
     description: "Software design patterns and paradigms",
     domain: "meta",
     exclusive: false,
-    required: false,
     order: 3,
   },
   "meta-planning": {
@@ -749,7 +667,6 @@ export const defaultCategories = {
     description: "Specification planning frameworks per domain",
     domain: "meta",
     exclusive: false,
-    required: false,
     order: 4,
   },
   "infra-ci-cd": {
@@ -758,7 +675,6 @@ export const defaultCategories = {
     description: "Continuous integration and deployment pipelines",
     domain: "infra",
     exclusive: false,
-    required: false,
     order: 1,
   },
   "infra-platform": {
@@ -767,7 +683,6 @@ export const defaultCategories = {
     description: "Edge compute and deployment platforms",
     domain: "infra",
     exclusive: false,
-    required: false,
     order: 2,
   },
   "infra-config": {
@@ -776,7 +691,6 @@ export const defaultCategories = {
     description: "Environment and infrastructure configuration",
     domain: "infra",
     exclusive: false,
-    required: false,
     order: 3,
   },
   "infra-containers": {
@@ -785,7 +699,6 @@ export const defaultCategories = {
     description: "Containers (Docker, Kubernetes)",
     domain: "infra",
     exclusive: false,
-    required: false,
     order: 5,
   },
   "infra-iac": {
@@ -794,7 +707,6 @@ export const defaultCategories = {
     description: "Infrastructure as code (Pulumi, SST, Terraform)",
     domain: "infra",
     exclusive: true,
-    required: false,
     order: 4,
   },
   "cli-framework": {
@@ -803,7 +715,6 @@ export const defaultCategories = {
     description: "CLI application framework (Commander, oclif)",
     domain: "cli",
     exclusive: true,
-    required: true,
     order: 1,
   },
   "cli-prompts": {
@@ -812,7 +723,6 @@ export const defaultCategories = {
     description: "Interactive CLI prompts (Clack)",
     domain: "cli",
     exclusive: false,
-    required: false,
     order: 2,
   },
   "desktop-framework": {
@@ -821,7 +731,6 @@ export const defaultCategories = {
     description: "Desktop application framework (Tauri, Electron)",
     domain: "desktop",
     exclusive: true,
-    required: true,
     order: 1,
   },
   "desktop-backend": {
@@ -830,7 +739,6 @@ export const defaultCategories = {
     description: "Desktop backend integration (Tauri)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 3,
   },
   "desktop-ipc": {
@@ -839,7 +747,6 @@ export const defaultCategories = {
     description: "Inter-process communication (Electron)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 2,
   },
   "desktop-mobile": {
@@ -848,7 +755,6 @@ export const defaultCategories = {
     description: "Desktop-to-mobile platform support (Tauri)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 12,
   },
   "desktop-multiwindow": {
@@ -857,7 +763,6 @@ export const defaultCategories = {
     description: "Multi-window management (Electron, Tauri)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 5,
   },
   "desktop-packaging": {
@@ -866,7 +771,6 @@ export const defaultCategories = {
     description: "App packaging and distribution (Electron Forge, Tauri)",
     domain: "desktop",
     exclusive: true,
-    required: false,
     order: 9,
   },
   "desktop-plugins": {
@@ -875,7 +779,6 @@ export const defaultCategories = {
     description: "Desktop plugin systems (Tauri)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 11,
   },
   "desktop-security": {
@@ -884,7 +787,6 @@ export const defaultCategories = {
     description: "Desktop app security hardening (Electron, Tauri)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 7,
   },
   "desktop-storage": {
@@ -893,7 +795,6 @@ export const defaultCategories = {
     description: "Desktop data persistence (Electron)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 6,
   },
   "desktop-testing": {
@@ -902,7 +803,6 @@ export const defaultCategories = {
     description: "Desktop app testing (Electron)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 8,
   },
   "desktop-ui": {
@@ -911,7 +811,6 @@ export const defaultCategories = {
     description: "Desktop UI patterns (Electron)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 4,
   },
   "desktop-updates": {
@@ -920,7 +819,6 @@ export const defaultCategories = {
     description: "Application auto-updates (electron-updater)",
     domain: "desktop",
     exclusive: false,
-    required: false,
     order: 10,
   },
 } as const satisfies Record<Category, CategoryDefinition>;

@@ -328,7 +328,6 @@ const categoryDefinitionSchema: z.ZodType<CategoryDefinition> = z.object({
   description: z.string(),
   domain: (z.string() as z.ZodType<Domain>).exactOptional(),
   exclusive: z.boolean(),
-  required: z.boolean(),
   order: z.number(),
   icon: z.string().exactOptional(),
 });

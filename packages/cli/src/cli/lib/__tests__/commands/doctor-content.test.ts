@@ -309,7 +309,6 @@ async function writeTestMatrix(
         description: `${cat.displayName} skills`,
         domain: cat.domain,
         exclusive: true,
-        required: false,
         order,
       },
     ]),
@@ -1637,7 +1636,6 @@ describe("source validation (validateSource)", () => {
         description: "Framework skills",
         domain: "web",
         exclusive: true,
-        required: false,
         order: 0,
       },
     };

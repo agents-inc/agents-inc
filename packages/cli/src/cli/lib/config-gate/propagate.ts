@@ -380,7 +380,7 @@ function buildProjectCollisionTest(
  * global tombstone is the `s` scope toggle (G→P), which always pairs the tombstone with an
  * active project entry for the same id — an IDENTITY collision. So every bare mask is
  * machine-derived, and a single retention test suffices: keep it iff the collision that
- * would re-derive it is still there, in `required` and optional categories alike.
+ * would re-derive it is still there.
  */
 function dropOrphanedDerivedMasks(
   projectOwnedSkills: SkillConfig[],

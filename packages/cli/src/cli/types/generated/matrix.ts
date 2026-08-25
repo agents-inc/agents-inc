@@ -23,7 +23,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "UI framework (React, Vue, Angular, SolidJS)",
       domain: "web",
       exclusive: true,
-      required: true,
       order: 1,
     },
     "web-meta-framework": {
@@ -32,7 +31,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Full-stack meta-framework (Next.js, Remix, Nuxt, SvelteKit)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 2,
     },
     "web-routing": {
@@ -41,7 +39,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Client-side routing (TanStack Router)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 3,
     },
     "web-styling": {
@@ -50,7 +47,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "CSS approach (SCSS Modules, Tailwind, CVA)",
       domain: "web",
       exclusive: false,
-      required: true,
       order: 4,
     },
     "web-client-state": {
@@ -59,7 +55,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "UI state, forms, local data (Zustand, Redux, MobX)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 5,
     },
     "web-server-state": {
@@ -68,7 +63,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "API data caching (React Query, SWR)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 6,
     },
     "web-graphql-client": {
@@ -77,7 +71,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "GraphQL client library (Apollo Client, urql)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 7,
     },
     "web-rpc": {
@@ -86,7 +79,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "End-to-end type-safe RPC (tRPC)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 8,
     },
     "web-forms": {
@@ -95,7 +87,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Schema validation (Zod)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 9,
     },
     "web-form-library": {
@@ -104,7 +95,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Form state and submission (React Hook Form, TanStack Form, VeeValidate)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 10,
     },
     "web-testing": {
@@ -113,7 +103,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Unit, component, and visual testing",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 11,
     },
     "web-e2e": {
@@ -122,7 +111,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "End-to-end browser testing (Playwright, Cypress)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 12,
     },
     "web-ui-kit": {
@@ -131,7 +119,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Pre-styled component kit (shadcn/ui, MUI, Mantine, Vuetify)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 13,
     },
     "web-ui-components": {
@@ -140,7 +127,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Headless primitives (Radix UI, Base UI, Headless UI, TanStack Table)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 14,
     },
     "web-tooling": {
@@ -149,7 +135,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Frontend build tools and bundlers (Vite, Webpack)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 15,
     },
     "web-docs": {
@@ -158,7 +143,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Documentation site generator (Docusaurus, VitePress)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 16,
     },
     "web-mocking": {
@@ -167,7 +151,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Mock Service Worker for development and testing",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 17,
     },
     "web-error-handling": {
@@ -176,7 +159,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Error boundaries, result types, and error patterns",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 18,
     },
     "web-i18n": {
@@ -185,7 +167,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "i18n libraries (next-intl, react-intl, vue-i18n)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 19,
     },
     "web-file-upload": {
@@ -194,7 +175,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "File upload patterns and handling",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 20,
     },
     "web-files": {
@@ -203,7 +183,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Image handling and file processing",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 21,
     },
     "web-utilities": {
@@ -212,7 +191,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Utility libraries (date-fns, native JS patterns)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 22,
     },
     "web-realtime": {
@@ -221,7 +199,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Bidirectional realtime (WebSockets, Socket.IO)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 23,
     },
     "web-streaming": {
@@ -230,7 +207,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Server-sent events and HTTP streaming",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 24,
     },
     "web-animation": {
@@ -239,7 +215,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Animation libraries and CSS animations",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 25,
     },
     "web-pwa": {
@@ -248,7 +223,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Service workers, offline-first patterns, and PWA features",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 26,
     },
     "web-accessibility": {
@@ -257,7 +231,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "WCAG compliance, ARIA, and keyboard navigation",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 27,
     },
     "web-performance": {
@@ -266,7 +239,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Bundle optimization, render performance, and code splitting",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 28,
     },
     "web-3d": {
@@ -275,7 +247,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "3D rendering (React Three Fiber)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 29,
     },
     "web-dataviz": {
@@ -284,7 +255,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Charts and data visualization (D3, Recharts)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 30,
     },
     "web-dnd": {
@@ -293,7 +263,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Drag-and-drop interactions (dnd-kit)",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 31,
     },
     "web-editor": {
@@ -302,7 +271,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Rich text editing (Lexical, Tiptap)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 32,
     },
     "web-maps": {
@@ -311,7 +279,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Interactive maps (Leaflet, Mapbox)",
       domain: "web",
       exclusive: true,
-      required: false,
       order: 33,
     },
     "api-api": {
@@ -320,7 +287,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Backend framework (Hono, Express, Fastify)",
       domain: "api",
       exclusive: true,
-      required: true,
       order: 1,
     },
     "api-sql-engine": {
@@ -329,7 +295,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Primary SQL engine (PostgreSQL, MySQL, CockroachDB)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 2,
     },
     "api-orm": {
@@ -338,7 +303,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Database access layer (Drizzle, Prisma, TypeORM)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 3,
     },
     "api-document": {
@@ -347,7 +311,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Primary non-SQL store (MongoDB, Mongoose, Gel, SurrealDB)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 4,
     },
     "api-kv": {
@@ -356,7 +319,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Redis-class key-value provider (Redis, Upstash)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 5,
     },
     "api-db-host": {
@@ -365,7 +327,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Managed database host (Neon, PlanetScale, Turso)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 6,
     },
     "api-auth": {
@@ -374,7 +335,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Auth solution (Better Auth, Auth.js)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 8,
     },
     "api-observability": {
@@ -383,7 +343,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Logging, monitoring, error tracking",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 9,
     },
     "api-analytics": {
@@ -392,7 +351,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Product analytics and tracking",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 10,
     },
     "api-email": {
@@ -401,7 +359,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Transactional email (Resend, Sendgrid)",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 11,
     },
     "ai-provider": {
@@ -410,7 +367,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "AI model provider SDKs (Anthropic, OpenAI, Google, etc.)",
       domain: "ai",
       exclusive: false,
-      required: false,
       order: 1,
     },
     "ai-orchestration": {
@@ -419,7 +375,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Multi-model AI workflow frameworks (LangChain, LlamaIndex, Vercel AI)",
       domain: "ai",
       exclusive: false,
-      required: false,
       order: 2,
     },
     "ai-observability": {
@@ -428,7 +383,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "LLM monitoring, evaluation, and tracing (Langfuse, Promptfoo)",
       domain: "ai",
       exclusive: false,
-      required: false,
       order: 3,
     },
     "ai-infrastructure": {
@@ -437,7 +391,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Model hosting, serving, and inference gateways",
       domain: "ai",
       exclusive: false,
-      required: false,
       order: 4,
     },
     "ai-patterns": {
@@ -446,7 +399,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Cross-cutting AI usage patterns (tool use, prompting)",
       domain: "ai",
       exclusive: false,
-      required: false,
       order: 5,
     },
     "api-baas": {
@@ -456,7 +408,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
         "Full backend platform — auth, database, storage, functions (Supabase, Firebase)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 7,
     },
     "api-performance": {
@@ -465,7 +416,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "API performance patterns and optimization",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 12,
     },
     "api-cms": {
@@ -474,7 +424,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "CMS platforms (Payload, Sanity, Strapi)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 13,
     },
     "api-commerce": {
@@ -483,7 +432,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Commerce platforms (Stripe)",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 14,
     },
     "api-search": {
@@ -492,7 +440,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Search engines (Elasticsearch, Meilisearch)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 15,
     },
     "api-vector-db": {
@@ -501,7 +448,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Vector databases (Pinecone, Qdrant, Chroma, Weaviate)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 16,
     },
     "api-caching": {
@@ -510,7 +456,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "API caching strategies and patterns",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 17,
     },
     "api-graphql": {
@@ -519,7 +464,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "GraphQL servers (Apollo Server, Mercurius, Yoga)",
       domain: "api",
       exclusive: true,
-      required: false,
       order: 18,
     },
     "api-messaging": {
@@ -528,7 +472,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Webhooks and event-driven messaging",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 19,
     },
     "api-queue": {
@@ -537,7 +480,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Background job queues (BullMQ)",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 20,
     },
     "api-specs": {
@@ -546,7 +488,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "API specification formats (OpenAPI)",
       domain: "api",
       exclusive: false,
-      required: false,
       order: 21,
     },
     "mobile-framework": {
@@ -555,7 +496,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Native mobile framework (React Native, Expo)",
       domain: "mobile",
       exclusive: false,
-      required: true,
       order: 1,
     },
     "mobile-animation": {
@@ -564,7 +504,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Native animation and gestures (Reanimated, Gesture Handler, Skia)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 6,
     },
     "mobile-background": {
@@ -573,7 +512,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Background task scheduling and execution",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 12,
     },
     "mobile-camera": {
@@ -582,7 +520,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Camera integration (Vision Camera)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 10,
     },
     "mobile-deep-linking": {
@@ -591,7 +528,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Deep links and universal/app links",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 9,
     },
     "mobile-deployment": {
@@ -600,7 +536,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "App builds and store releases (EAS)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 15,
     },
     "mobile-hardware": {
@@ -609,7 +544,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Device hardware access (BLE, NFC)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 11,
     },
     "mobile-navigation": {
@@ -618,7 +552,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Screen navigation (Expo Router, React Navigation)",
       domain: "mobile",
       exclusive: true,
-      required: false,
       order: 2,
     },
     "mobile-notifications": {
@@ -627,7 +560,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Push and local notifications",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 8,
     },
     "mobile-performance": {
@@ -636,7 +568,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "React Native performance optimization",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 13,
     },
     "mobile-security": {
@@ -645,7 +576,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Mobile app security patterns (React Native)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 14,
     },
     "mobile-storage": {
@@ -654,7 +584,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "On-device storage and offline databases (MMKV, SQLite, WatermelonDB)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 4,
     },
     "mobile-styling": {
@@ -663,7 +592,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Native styling (NativeWind, Unistyles)",
       domain: "mobile",
       exclusive: true,
-      required: false,
       order: 3,
     },
     "mobile-testing": {
@@ -672,7 +600,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Mobile E2E testing (Detox, Maestro)",
       domain: "mobile",
       exclusive: false,
-      required: false,
       order: 7,
     },
     "mobile-ui-components": {
@@ -681,7 +608,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Native UI component libraries (React Native Paper, Tamagui)",
       domain: "mobile",
       exclusive: true,
-      required: false,
       order: 5,
     },
     "shared-monorepo": {
@@ -690,7 +616,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Workspace management (pnpm workspaces)",
       domain: "shared",
       exclusive: false,
-      required: false,
       order: 1,
     },
     "shared-task-runner": {
@@ -699,7 +624,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Monorepo task orchestration (Turborepo, Nx)",
       domain: "shared",
       exclusive: true,
-      required: false,
       order: 2,
     },
     "shared-lint": {
@@ -708,7 +632,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Linting and formatting (Biome, ESLint & Prettier)",
       domain: "shared",
       exclusive: true,
-      required: false,
       order: 3,
     },
     "shared-tooling": {
@@ -717,7 +640,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "TypeScript config, git hooks, changesets, stack detection",
       domain: "shared",
       exclusive: false,
-      required: false,
       order: 4,
     },
     "shared-security": {
@@ -726,7 +648,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Authentication security patterns and best practices",
       domain: "shared",
       exclusive: false,
-      required: false,
       order: 5,
     },
     "meta-reviewing": {
@@ -735,7 +656,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Code review patterns and methodology",
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 1,
     },
     "meta-methodology": {
@@ -744,7 +664,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Research and investigation methodology",
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 2,
     },
     "meta-design": {
@@ -753,7 +672,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Software design patterns and paradigms",
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 3,
     },
     "meta-planning": {
@@ -762,7 +680,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Specification planning frameworks per domain",
       domain: "meta",
       exclusive: false,
-      required: false,
       order: 4,
     },
     "infra-ci-cd": {
@@ -771,7 +688,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Continuous integration and deployment pipelines",
       domain: "infra",
       exclusive: false,
-      required: false,
       order: 1,
     },
     "infra-platform": {
@@ -780,7 +696,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Edge compute and deployment platforms",
       domain: "infra",
       exclusive: false,
-      required: false,
       order: 2,
     },
     "infra-config": {
@@ -789,7 +704,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Environment and infrastructure configuration",
       domain: "infra",
       exclusive: false,
-      required: false,
       order: 3,
     },
     "infra-containers": {
@@ -798,7 +712,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Containers (Docker, Kubernetes)",
       domain: "infra",
       exclusive: false,
-      required: false,
       order: 5,
     },
     "infra-iac": {
@@ -807,7 +720,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Infrastructure as code (Pulumi, SST, Terraform)",
       domain: "infra",
       exclusive: true,
-      required: false,
       order: 4,
     },
     "cli-framework": {
@@ -816,7 +728,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "CLI application framework (Commander, oclif)",
       domain: "cli",
       exclusive: true,
-      required: true,
       order: 1,
     },
     "cli-prompts": {
@@ -825,7 +736,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Interactive CLI prompts (Clack)",
       domain: "cli",
       exclusive: false,
-      required: false,
       order: 2,
     },
     "desktop-framework": {
@@ -834,7 +744,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop application framework (Tauri, Electron)",
       domain: "desktop",
       exclusive: true,
-      required: true,
       order: 1,
     },
     "desktop-backend": {
@@ -843,7 +752,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop backend integration (Tauri)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 3,
     },
     "desktop-ipc": {
@@ -852,7 +760,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Inter-process communication (Electron)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 2,
     },
     "desktop-mobile": {
@@ -861,7 +768,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop-to-mobile platform support (Tauri)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 12,
     },
     "desktop-multiwindow": {
@@ -870,7 +776,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Multi-window management (Electron, Tauri)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 5,
     },
     "desktop-packaging": {
@@ -879,7 +784,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "App packaging and distribution (Electron Forge, Tauri)",
       domain: "desktop",
       exclusive: true,
-      required: false,
       order: 9,
     },
     "desktop-plugins": {
@@ -888,7 +792,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop plugin systems (Tauri)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 11,
     },
     "desktop-security": {
@@ -897,7 +800,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop app security hardening (Electron, Tauri)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 7,
     },
     "desktop-storage": {
@@ -906,7 +808,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop data persistence (Electron)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 6,
     },
     "desktop-testing": {
@@ -915,7 +816,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop app testing (Electron)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 8,
     },
     "desktop-ui": {
@@ -924,7 +824,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Desktop UI patterns (Electron)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 4,
     },
     "desktop-updates": {
@@ -933,7 +832,6 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       description: "Application auto-updates (electron-updater)",
       domain: "desktop",
       exclusive: false,
-      required: false,
       order: 10,
     },
   },

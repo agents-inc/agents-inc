@@ -30,7 +30,6 @@ const FOREIGN_MATRIX = {
       description: "How Acme writes things",
       domain: "web",
       exclusive: false,
-      required: false,
       order: 1,
     },
   },

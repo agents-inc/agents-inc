@@ -47,7 +47,6 @@ const LOCAL_ONLY_INSTALL_MODES = ["eject"] as const satisfies readonly Exclude<
 /** Toast strings surfaced by scope/selection guards (E2E asserts these verbatim). */
 const TOAST_MESSAGES = {
   GLOBAL_SKILLS_LOCKED: "Global skills cannot be changed from project scope",
-  ONLY_SKILL_IN_CATEGORY: "Cannot deselect the only skill in this category",
   ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",
   GLOBAL_AGENTS_LOCKED: "Global agents cannot be changed from project scope",
 } as const;
@@ -1543,18 +1542,6 @@ export const useWizardStore = create<WizardState>((set, get) => ({
         : hasGlobalActive(installed, technology);
       if (isGlobalLocked && !state.isEditingFromGlobalScope) {
         return { toastMessage: TOAST_MESSAGES.GLOBAL_SKILLS_LOCKED };
-      }
-
-      if (isSelected) {
-        const categoryDef = matrix.categories[category];
-        if (categoryDef?.exclusive && categoryDef.required) {
-          const categorySkillCount = typedValues(matrix.skills).filter(
-            (s) => s.category === category,
-          ).length;
-          if (categorySkillCount <= 1) {
-            return { toastMessage: TOAST_MESSAGES.ONLY_SKILL_IN_CATEGORY };
-          }
-        }
       }
 
       // In exclusive mode, selecting a new skill replaces the current one. Block if that would

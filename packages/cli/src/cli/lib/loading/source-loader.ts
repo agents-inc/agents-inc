@@ -780,7 +780,6 @@ export function mergeLocalSkillsIntoMatrix(
         description: `Local skill category`,
         domain: metadata.domain,
         exclusive: false,
-        required: false,
         order: 0,
       };
       verbose(`Added local category: ${category} (domain: ${metadata.domain})`);

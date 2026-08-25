@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   cleanupTempDir,
@@ -27,12 +27,13 @@ import "../matchers/setup.js";
  * (not `currentSkillIds`), so deselecting a skill from project scope
  * does not trigger removal from the global config.
  *
- * The two tests here are a PAIR and neither means much alone. One drives a
- * deselect the wizard performs (react's project half, from a persisted [P][G]
- * pair); the other drives one it REFUSES (hono, the only skill in a required
- * exclusive category). A refusal pinned on its own cannot tell a correctly-
- * scoped guard from one that has swallowed its whole domain — both leave the
- * config and the filesystem byte-identical and both exit 0.
+ * The two deselect tests here are a PAIR and neither means much alone. One drops react's
+ * project half out of a category that still holds other skills; the other empties an exclusive
+ * category outright (hono, the only skill the fixture gives API Framework). The second is the
+ * harder case and used to be unreachable: the wizard refused it, so the spec pressed at a
+ * refusal and passed on its silence. Both now assert the same invariant over a deselect that
+ * LANDS, and each carries an assertion on the project side as well, because the global
+ * assertions alone read identically against a press the wizard never acted on.
  *
  * **How the "global config unchanged" assertion was shown to be able to fail.**
  * Reverting a fix cannot check it: a guarantee not to write and a bug that
@@ -173,12 +174,13 @@ describe("scope change deselect integrity", () => {
     },
   );
 
-  // The control for the deselect above, and the reason both live in one file: a
-  // refusal pinned alone cannot tell a correctly-scoped guard from one that has
-  // swallowed its whole domain, since either leaves the config and the filesystem
-  // byte-identical and exits 0.
+  // The second shape the same invariant has to hold over. The deselect above drops one half of
+  // a pair inside a category that still has other skills in it; this one empties an exclusive
+  // category outright, which is the state that used to be refused. Both must leave the global
+  // config alone, and a spec covering only the first cannot tell an invariant that holds from
+  // one whose harder case never runs.
   it(
-    "a deselect the exclusive-category guard refuses leaves both configs untouched",
+    "emptying an exclusive category leaves the global config untouched",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // Setup: dual-scope env (global web skills + project hono)
@@ -188,6 +190,14 @@ describe("scope change deselect integrity", () => {
 
       // Snapshot global skills before edit
       const globalSkillsBefore = (await loadConfigOrFail(fakeHome)).skills;
+
+      expect(
+        await readSkillEntries(projectDir, E2E_SKILL.hono.id),
+        "setup must persist an active project entry plus a global tombstone to have a project half to drop",
+      ).toStrictEqual([
+        { id: E2E_SKILL.hono.id, scope: "global", origin: "eject", excluded: true },
+        { id: E2E_SKILL.hono.id, scope: "project", origin: "eject" },
+      ]);
 
       // Launch edit wizard from project scope
       wizard = await EditWizard.launch({
@@ -200,15 +210,10 @@ describe("scope change deselect integrity", () => {
       // Web domain (pass through)
       await wizard.build.advanceDomain();
 
-      // API domain -- press Space on api-framework-hono, WHICH THE WIZARD REFUSES,
-      // and that refusal is now this test's subject rather than an accident of it.
-      // hono is the only skill the matrix gives the required exclusive API Framework
-      // category, so `toggleTechnology` declines the deselect and toasts instead —
-      // making this the suite's one exercise of ONLY_SKILL_IN_CATEGORY.
-      await wizard.build.selectSkillAwaiting(
-        E2E_SKILL.hono.display,
-        STEP_TEXT.ONLY_SKILL_IN_CATEGORY,
-      );
+      // API domain -- spacebar drops api-framework-hono, the only skill the fixture gives the
+      // exclusive API Framework category. `selectSkill` is closed-loop, so reaching the next
+      // line at all means the toggle LANDED and the category is now empty.
+      await wizard.build.selectSkill(E2E_SKILL.hono.display);
       await wizard.build.advanceDomain();
 
       // Methodology domain -> Sources -> Agents -> Confirm (all pass through)
@@ -232,6 +237,21 @@ describe("scope change deselect integrity", () => {
       await expect({ dir: projectDir }).toHaveConfig({
         skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
       });
+
+      // The departure, on the side that actually changed. The global assertions above say what
+      // the deselect did NOT touch and would read identically against a wizard that refused the
+      // press outright — this is the half that says the press did something.
+      //
+      // The expected shape is the dual-scope collapse `applySkillRemoval` in
+      // `stores/wizard-store.ts` performs: an active project entry beside a global tombstone is a
+      // pair, both halves go, and the global one comes back un-tombstoned.
+      // `project-edit-removes-project-half-of-pair.e2e.test.ts` pins the same collapse over react
+      // with the same literal, so a mismatch here is a difference between the two categories
+      // rather than a licence to loosen the assertion.
+      expect(
+        await readSkillEntries(projectDir, E2E_SKILL.hono.id),
+        "emptying the category must leave the project owning no half of the pair",
+      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
 
       await result.destroy();
     },

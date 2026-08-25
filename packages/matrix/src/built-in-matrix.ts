@@ -37,7 +37,6 @@ export const categoryDefinitionSchema = z.object({
   // one cannot be placed in the UI, so the read model drops it rather than failing the whole boot.
   domain: domainIdSchema.exactOptional(),
   exclusive: z.boolean(),
-  required: z.boolean(),
   order: z.number(),
 })
 

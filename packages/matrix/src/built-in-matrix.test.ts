@@ -41,7 +41,6 @@ const VALID_CATEGORY = {
   description: "The framework the app is built on",
   domain: "web",
   exclusive: true,
-  required: true,
   order: 1,
 }
 
@@ -108,6 +107,30 @@ describe("categoryDefinitionSchema", () => {
     expect(categoryDefinitionSchema.safeParse(VALID_CATEGORY).success).toBe(
       true
     )
+  })
+
+  // The whole category rather than one field of it. This package vendors its data from the CLI
+  // and re-emits it to every read model, so a field the CLI stops declaring has two places to
+  // leave from — the schema above, and the generated file `generate:matrix` copies over. The
+  // second assertion is what ties them: `z.object` strips what it does not name and says
+  // nothing about having stripped it, so a schema-only check stays green over vendored data
+  // still carrying the field, and the parse would silently be lossy.
+  it("ships a category as exactly the fields a read model indexes by", () => {
+    expect(BUILT_IN_MATRIX.categories[KNOWN_CATEGORY]).toStrictEqual({
+      id: KNOWN_CATEGORY,
+      displayName: "Framework",
+      description: "UI framework (React, Vue, Angular, SolidJS)",
+      domain: "web",
+      exclusive: true,
+      order: 1,
+    })
+
+    expect(
+      categoryDefinitionSchema.parse(
+        BUILT_IN_MATRIX.categories[KNOWN_CATEGORY]
+      ),
+      "the boundary drops a field the vendored data still ships, so the parse is lossy"
+    ).toStrictEqual(BUILT_IN_MATRIX.categories[KNOWN_CATEGORY])
   })
 
   it("rejects a renamed category id", () => {

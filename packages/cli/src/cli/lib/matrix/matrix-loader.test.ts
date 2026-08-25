@@ -97,7 +97,6 @@ describe("matrix-loader", () => {
             displayName: "Framework",
             description: "Core UI framework",
             exclusive: true,
-            required: true,
             order: 1,
           },
           "web-styling": {
@@ -105,7 +104,6 @@ describe("matrix-loader", () => {
             displayName: "Styling",
             description: "CSS approach",
             exclusive: true,
-            required: true,
             order: 3,
           },
           "api-api": {
@@ -113,7 +111,6 @@ describe("matrix-loader", () => {
             displayName: "API",
             description: "Backend framework",
             exclusive: true,
-            required: true,
             order: 1,
           },
         },
@@ -126,7 +123,6 @@ describe("matrix-loader", () => {
         displayName: "Framework",
         description: "Core UI framework",
         exclusive: true,
-        required: true,
         order: 1,
       });
       expect(categories["web-styling"]).toStrictEqual({
@@ -134,7 +130,6 @@ describe("matrix-loader", () => {
         displayName: "Styling",
         description: "CSS approach",
         exclusive: true,
-        required: true,
         order: 3,
       });
       expect(categories["api-api"]).toStrictEqual({
@@ -142,7 +137,6 @@ describe("matrix-loader", () => {
         displayName: "API",
         description: "Backend framework",
         exclusive: true,
-        required: true,
         order: 1,
       });
     });

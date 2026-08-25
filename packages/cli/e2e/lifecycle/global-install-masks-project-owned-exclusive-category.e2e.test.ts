@@ -30,8 +30,8 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
 /**
  * Category exclusivity across scopes.
  *
- * `web-framework` is an exclusive + required category: a project may hold at
- * most one active framework skill. Cross-scope reconciliation, however, is keyed
+ * `web-framework` is an exclusive category: a project may hold at most one
+ * active framework skill. Cross-scope reconciliation, however, is keyed
  * on skill-id equality and knows nothing about categories, so a project that
  * owns Vue at PROJECT scope keeps that entry active while a GLOBAL install of
  * React is re-inlined as a SECOND active entry — two active skills in one

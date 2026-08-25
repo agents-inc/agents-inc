@@ -1774,7 +1774,6 @@ describe("mergeLocalSkillsIntoMatrix", () => {
         id: "web-tooling",
         domain: "web",
         exclusive: false,
-        required: false,
         order: 0,
       }),
     );

@@ -394,7 +394,6 @@ describe("skill-resolution", () => {
         expect.objectContaining({
           displayName: "Devops Iac",
           exclusive: false,
-          required: false,
           order: 999,
           domain: "web",
         }),

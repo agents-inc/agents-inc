@@ -127,7 +127,6 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "interactive/edit-wizard-pending-removal-row",
   "interactive/edit-wizard-plugin-migration",
   "interactive/edit-wizard-plugin-operations",
-  "interactive/edit-wizard-unique-skill-guard",
   "interactive/info-panel-scope-toggle-diff",
   "interactive/init-plugin-config-marketplace-source",
   "interactive/init-project-skill-reaching-no-agent",

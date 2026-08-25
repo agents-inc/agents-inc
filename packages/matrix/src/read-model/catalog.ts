@@ -58,7 +58,6 @@ export type CatalogCategory = {
   domainId: Domain
   // Only one skill may be picked. Drives the `pick one` tag and auto-collapse.
   exclusive: boolean
-  required: boolean
   skills: CatalogSkill[]
 }
 
@@ -128,7 +127,6 @@ const toCatalogCategory = (
   description: category.description,
   domainId: category.domain,
   exclusive: category.exclusive,
-  required: category.required,
   skills: skills
     .map((skill) => toCatalogSkill(skill, category.domain))
     .sort((a, b) => a.displayName.localeCompare(b.displayName)),

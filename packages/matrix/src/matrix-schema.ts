@@ -34,7 +34,6 @@ const matrixCategorySchema = z.object({
   // UI, so a consumer drops it rather than failing the whole catalogue.
   domain: z.string().exactOptional(),
   exclusive: z.boolean(),
-  required: z.boolean(),
   order: z.number(),
 })
 

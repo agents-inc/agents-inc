@@ -71,13 +71,11 @@ export const REACT_ZUSTAND_HONO_MATRIX = createMockMatrix(
 );
 
 /**
- * Two frameworks in an exclusive + required category, two client-state skills in
- * an exclusive but OPTIONAL one, two styling skills in a non-exclusive one, plus
- * a non-exclusive testing category. Use when a test needs the category
- * `exclusive` / `required` flags to be real — the default `createMockMatrix`
- * categories map is empty, so every category reads as "undefined flags" and
- * exclusivity rules can never fire. The exclusive+optional category is the one
- * shape that separates "exclusive" from "exclusive AND required" rules.
+ * Two frameworks and two client-state skills in exclusive categories, two styling
+ * skills in a non-exclusive one, plus a non-exclusive testing category. Use when a
+ * test needs the category `exclusive` flag to be real — the default
+ * `createMockMatrix` categories map is empty, so every category reads as
+ * "undefined flags" and exclusivity rules can never fire.
  */
 export const CATEGORY_EXCLUSIVITY_MATRIX = createMockMatrix(
   SKILLS.react,
@@ -89,8 +87,8 @@ export const CATEGORY_EXCLUSIVITY_MATRIX = createMockMatrix(
   SKILLS.vitest,
   {
     categories: buildCategoryMap({
-      "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true, required: true },
-      "web-client-state": { ...TEST_CATEGORIES.clientState, exclusive: true, required: false },
+      "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
+      "web-client-state": { ...TEST_CATEGORIES.clientState, exclusive: true },
       "web-styling": { ...TEST_CATEGORIES.styling, exclusive: false },
       "web-testing": { ...TEST_CATEGORIES.testing, exclusive: false },
     }),
@@ -456,7 +454,6 @@ export const TOOLING_AND_FRAMEWORK_CONFIG = createMockMatrixConfig({
   "web-framework": {
     ...TEST_CATEGORIES.framework,
     description: "UI Framework",
-    required: true,
     order: 1,
   },
 });
@@ -466,7 +463,6 @@ export const CI_CD_CONFIG = createMockMatrixConfig({
     description: "Continuous integration and deployment",
     domain: "infra",
     exclusive: true,
-    required: false,
     order: 30,
   }),
 });
@@ -476,7 +472,6 @@ export const FRAMEWORK_AND_STYLING_CONFIG = createMockMatrixConfig(
     "web-framework": {
       ...TEST_CATEGORIES.framework,
       description: "UI Framework",
-      required: true,
       order: 1,
     },
     "web-styling": {
@@ -503,7 +498,6 @@ export const OBSERVABILITY_CONFIG = createMockMatrixConfig({
     description: "Monitoring and observability tools",
     domain: "api",
     exclusive: false,
-    required: false,
     order: 15,
   }),
 });
@@ -513,7 +507,6 @@ export const FRAMEWORK_AND_TESTING_CONFIG = createMockMatrixConfig(
     "web-framework": {
       ...TEST_CATEGORIES.framework,
       description: "UI Framework",
-      required: true,
       order: 1,
     },
     "web-testing": {
@@ -830,9 +823,9 @@ export function buildMultiSourceMatrix(
 // Build-step-logic test matrices
 // ---------------------------------------------------------------------------
 
-/** Shared category overrides for framework (required) + state management */
+/** Shared category overrides for framework + state management */
 const BUILD_STEP_CATEGORIES = buildCategoryMap({
-  "web-framework": { ...TEST_CATEGORIES.framework, required: true },
+  "web-framework": { ...TEST_CATEGORIES.framework },
   "web-client-state": {
     ...TEST_CATEGORIES.clientState,
     displayName: "State Management",
@@ -840,7 +833,7 @@ const BUILD_STEP_CATEGORIES = buildCategoryMap({
   },
 });
 
-/** Base matrix: React + Vue frameworks, Zustand + Pinia state — with required framework category */
+/** Base matrix: React + Vue frameworks, Zustand + Pinia state — exclusive framework category */
 export const BUILD_STEP_WEB_MATRIX = createMockMatrix(
   SKILLS.react,
   SKILLS.vue,
@@ -859,26 +852,25 @@ export const BUILD_STEP_EMPTY_FRAMEWORK_MATRIX = createMockMatrix(
   {},
   {
     categories: buildCategoryMap({
-      "web-framework": { ...TEST_CATEGORIES.framework, required: true },
+      "web-framework": { ...TEST_CATEGORIES.framework },
     }),
   },
 );
 
-/** React with required: true, exclusive: false on framework — tests flag propagation */
+/** React with exclusive: false on framework — tests flag propagation */
 export const BUILD_STEP_FRAMEWORK_NON_EXCLUSIVE_MATRIX = createMockMatrix(SKILLS.react, {
   categories: buildCategoryMap({
     "web-framework": {
       ...TEST_CATEGORIES.framework,
-      required: true,
       exclusive: false,
     },
   }),
 });
 
-/** React + Hono with framework (required) + api categories — tests domain filtering */
+/** React + Hono with framework + api categories — tests domain filtering */
 export const BUILD_STEP_FRAMEWORK_API_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
   categories: buildCategoryMap({
-    "web-framework": { ...TEST_CATEGORIES.framework, required: true },
+    "web-framework": { ...TEST_CATEGORIES.framework },
     "api-api": {
       ...TEST_CATEGORIES.api,
       domain: "api" as const,

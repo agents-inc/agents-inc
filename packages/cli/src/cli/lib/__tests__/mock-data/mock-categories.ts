@@ -10,12 +10,10 @@ import { buildCategoryMap } from "../factories/matrix-factories.js";
 
 export const WEB_FRAMEWORK_CATEGORY = {
   ...TEST_CATEGORIES.framework,
-  required: true,
 };
 
 export const WEB_STYLING_CATEGORY = {
   ...TEST_CATEGORIES.styling,
-  required: true,
   order: 1,
 };
 
@@ -29,7 +27,6 @@ export const API_FRAMEWORK_CATEGORY = {
   displayName: "API Framework",
   // Boundary cast: narrows string to Domain union
   domain: "api" as const,
-  required: true,
   order: 0,
 };
 
@@ -61,7 +58,7 @@ export const FRAMEWORK_CATEGORY = {
 // ---------------------------------------------------------------------------
 
 export const MULTI_SOURCE_CATEGORIES = buildCategoryMap({
-  "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true, required: true },
+  "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
   "web-client-state": {
     ...TEST_CATEGORIES.clientState,
     displayName: "State",
