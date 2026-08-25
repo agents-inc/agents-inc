@@ -320,20 +320,25 @@ describe("a spec citing a finding", () => {
  * read nothing at all while the `it` filtering dangling citations to it asserted over an empty list
  * and passed.
  *
- * The spec scope's zero WAS stated rather than assumed, and it is now spent: it read zero because
- * four specs had cited two findings an old prune removed, and repairing them deleted the four
- * sentences rather than repointing them. On 2026-08-21 three lifecycle specs cited
+ * The spec scope's zero WAS stated rather than assumed, and it has moved twice. It first read zero
+ * because four specs had cited two findings an old prune removed, and repairing them deleted the
+ * four sentences rather than repointing them. On 2026-08-21 three lifecycle specs cited
  * `2026-08-21-three-specs-pressed-space-at-a-wizard-that-refuses.md` from the KNOWN GAP comments
  * the closed-loop Space confirmation forced them to carry, this line reddened exactly as it said
- * it would, and the value moved. Moving it back would mean the spec tree had stopped citing, which
- * is worth a second look rather than a silent edit.
+ * it would, and the value moved. It moved back on 2026-08-24, when a product removal deleted
+ * `STEP_TEXT.ONLY_SKILL_IN_CATEGORY` from `e2e/pages/constants.ts` and the comment above it went
+ * with the constant — by then that comment was the spec tree's last citation. The second look this
+ * line asks for was taken, and the ruling is that the value follows the citation: one attached to a
+ * behaviour that no longer exists is right to go with it, and manufacturing a replacement to hold
+ * the old value would leave this line asserting about prose written to satisfy it. Moving it either
+ * way is worth that second look rather than a silent edit.
  */
 type ScopePopulation = "cites findings" | "cites none today";
 
 const SCOPE_POPULATIONS: Record<string, ScopePopulation> = {
   [TRACKERS]: "cites findings",
   [CHANGELOGS]: "cites findings",
-  [SPECS]: "cites findings",
+  [SPECS]: "cites none today",
 };
 
 /** One scope read on its own, so no scope's silence can be covered by another's population. */

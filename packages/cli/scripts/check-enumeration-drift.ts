@@ -1105,13 +1105,13 @@ export const REGISTRY: RegistryEntry[] = [
   },
   {
     // Module-private, which `declarationOf` reads anyway — it walks variable statements without
-    // checking for an export modifier. The four strings are asserted verbatim by E2E specs, so a
-    // fifth guard landing unnamed is a guard no spec knows to wait for.
+    // checking for an export modifier. The three strings are asserted verbatim by E2E specs, so a
+    // fourth guard landing unnamed is a guard no spec knows to wait for.
     claim: "TOAST_MESSAGES in reference/store-map.md",
     source: { file: WIZARD_STORE, symbol: "TOAST_MESSAGES" },
     document: {
       document: STORE_MAP,
-      from: "Bound to source by `scripts/check-enumeration-drift.ts`, so a fifth guard cannot land without a row here. E2E asserts the strings verbatim:",
+      from: "Bound to source by `scripts/check-enumeration-drift.ts`, so a fourth guard cannot land without a row here. E2E asserts the strings verbatim:",
       to: "## State Reset",
       states: "table-rows",
     },
