@@ -3,6 +3,8 @@
  * Single source of truth for all test content templates.
  */
 import { omit } from "remeda";
+import type { z } from "zod";
+import type { skillRulesFileSchema } from "../schemas";
 
 export function renderSkillMd(id: string, description?: string, body?: string): string {
   const desc = description ?? `${id} skill`;
@@ -183,10 +185,16 @@ function emitMetadataYaml(fields: EmittedMetadataFields): string {
   return lines.join("\n") + "\n";
 }
 
-export function renderCategoriesTs(categories: Record<string, unknown>): string {
-  return renderConfigTs(categories);
-}
+/**
+ * A `config/skill-rules.ts` default export, exactly as `skillRulesFileSchema` parses it.
+ *
+ * Inferred from that schema rather than restated beside it, so the two cannot drift: a field
+ * the rules file stops carrying stops compiling at every fixture still supplying it, which is
+ * the whole reason this renderer is typed while {@link renderConfigTs} above it is not.
+ */
+export type SkillRulesFile = z.infer<typeof skillRulesFileSchema>;
 
-export function renderRulesTs(rules: Record<string, unknown>): string {
+/** Renders a `config/skill-rules.ts` whose default export `loadSkillRules` accepts. */
+export function renderRulesTs(rules: SkillRulesFile): string {
   return renderConfigTs(rules);
 }
