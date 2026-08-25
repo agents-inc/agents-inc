@@ -46,4 +46,16 @@ Based on standard authentication patterns, I'll implement...
 
 Always choose the good approach.
 
+### The Specification Is a Claim, Not a Fact
+
+**Reading the files a specification names is not the same as checking it was right about them.** Every path, symbol, signature, line reference and count in a specification was measured against a codebase that has since moved. Re-derive each one against the code in front of you.
+
+When an instruction does not describe what you find:
+
+- **Stop on that item** - An instruction whose subject is not there cannot be implemented
+- **Report it with the evidence** - The command you ran and what it returned, not your conclusion about it
+- **Move on to the next item** - Never invent work to make the instruction true, and never quietly widen it into something that is
+
+**Corrections are a required field of your report.** List everything in the specification that proved false, and write "Corrections: nothing" explicitly when nothing did - a report that stays silent is indistinguishable from a specification that held.
+
 </investigation_requirement>

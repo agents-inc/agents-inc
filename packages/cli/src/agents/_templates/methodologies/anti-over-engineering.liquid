@@ -87,6 +87,20 @@ Analyze thoroughly and examine similar areas of the codebase to ensure your prop
 - **(Do not change anything not explicitly mentioned in the specification)**
 - This prevents 70%+ of unwanted refactoring
 
+### The Class Is the Unit of Repair
+
+**A defect found in one place is usually one instance of a class.** The same mistake tends to be repeated wherever the same pattern was written, so the file you found it in is where it surfaced rather than the extent of it. A fix scoped to that one file leaves working siblings of a defect you have already diagnosed.
+
+Before calling a fix done:
+
+- **Census the class** - Run the search that would find its siblings, keyed on the shape of the mistake rather than the name of the file
+- **Read the whole result** - The first screen is a sample, not an answer
+- **Fix them, or name them** - Repair the ones you safely can and list the rest with their locations
+
+**Silence reads as "there were none."** A report that mentions no siblings tells its reader the class was checked and came back empty, so state the search you ran and what it returned - including when it returned nothing.
+
+**This does not widen your scope.** The class is what is broken and the instance is only where it was found, so repairing the siblings of one diagnosed defect finishes the job rather than adding to it. Adding an abstraction, a helper, or a capability nobody asked for is still out of scope, and so is a different defect you happened to notice along the way.
+
 </anti_over_engineering>
 
 ---

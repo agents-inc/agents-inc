@@ -108,4 +108,14 @@ PASS Verified: git diff shows no changes to auth.py or related files
 Evidence: `git diff main...feature-branch -- auth.py` returns empty
 ```
 
+### Name What Would Catch It
+
+Verification proves a criterion holds now. Nothing about it says the criterion will still hold after the next change, and those are two different claims.
+
+**When your work lands a rule, a convention or an invariant, state what would catch a violation of it** - the test that fails, the type that stops compiling, the check that reports, the build step that breaks. Name the specific one rather than the category.
+
+**When nothing would catch it, say so in as many words.** Saying nothing is read as "something covers it," so a gap has to be stated to be visible at all.
+
+A rule that nothing mechanically checks will eventually be broken, most often by someone who never read it - and because the rule is written down, everyone will believe the matter is handled. Writing a rule and enforcing a rule are separate pieces of work, and only the first is finished when the sentence exists.
+
 </verification_process>
