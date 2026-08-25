@@ -11,17 +11,14 @@ import "../matchers/setup.js";
 /**
  * Skill deselection behavior E2E test.
  *
- * Verifies that a skill CAN be deselected when it is the only skill in a
- * non-required category (no guard fires, skill is removed from config).
- * Multi-skill categories also allow normal toggling.
- *
- * Note: The exclusive+required guard (which blocks deselection) cannot be
- * tested at E2E level because the E2E source has no category that is both
- * exclusive and required with only one skill. That edge case is covered by
- * the unit test in wizard-store.test.ts.
+ * Verifies that a skill CAN be deselected when it is the only one SELECTED in
+ * its category, and that the deselection reaches config.ts — once for a
+ * non-exclusive category (web-testing) and once for an exclusive one
+ * (web-framework). Neither case is refused: `toggleTechnology` refuses a
+ * deselection only for a globally-locked skill at project scope.
  */
 
-describe("unique skill in category guard", () => {
+describe("skill deselection", () => {
   let wizard: EditWizard | undefined;
 
   afterEach(async () => {
@@ -30,7 +27,7 @@ describe("unique skill in category guard", () => {
   });
 
   it(
-    "should allow deselecting the only skill in a non-required single-skill category",
+    "should allow deselecting the only selected skill in a non-exclusive category",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const project = await ProjectBuilder.editable({
@@ -46,12 +43,9 @@ describe("unique skill in category guard", () => {
         rows: 40,
       });
 
-      // Deselect vitest — web-testing is not required, so deselection succeeds
+      // Deselect vitest — the only selected skill in the non-exclusive web-testing
+      // category, which also ships web-testing-visual-regression unselected.
       await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-
-      // Verify no toast message appeared (guard no longer fires for non-required categories)
-      const output = wizard.build.getOutput();
-      expect(output).not.toContain("Cannot deselect the only skill in this category");
 
       // Complete the wizard
       const result = await wizard.build.saveFromBuild("edit");
@@ -68,7 +62,7 @@ describe("unique skill in category guard", () => {
   );
 
   it(
-    "should allow deselecting in a category with multiple skills",
+    "should allow deselecting the only selected skill in an exclusive category",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const project = await ProjectBuilder.editable({
@@ -84,12 +78,9 @@ describe("unique skill in category guard", () => {
         rows: 40,
       });
 
-      // Attempt to deselect react — web-framework has 2 skills (react + vue)
+      // Deselect react — the only selected skill in the exclusive web-framework
+      // category, which also offers vue-composition-api.
       await wizard.build.selectSkill(E2E_SKILL.react.display);
-
-      // Verify no toast message appeared
-      const output = wizard.build.getOutput();
-      expect(output).not.toContain("Cannot deselect the only skill in this category");
 
       // Complete the wizard and verify it exits successfully
       const result = await wizard.build.saveFromBuild("edit");

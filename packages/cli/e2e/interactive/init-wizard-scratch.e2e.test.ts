@@ -46,7 +46,7 @@ describe("init wizard — scratch flow", () => {
       const domain = await wizard.stack.selectScratch();
       const build = await domain.acceptDefaults();
 
-      // Select required Framework skill before advancing
+      // Toggle React on in the Web domain before the domain round trip below.
       await build.selectSkill(E2E_SKILL.react.display);
 
       // Advance to next domain (API)
