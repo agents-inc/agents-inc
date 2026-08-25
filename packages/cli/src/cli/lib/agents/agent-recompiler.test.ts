@@ -16,19 +16,20 @@ import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { buildAgentConfigs } from "../__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 import { CLAUDE_DIR } from "../../consts";
+import { SKILLS } from "../__tests__/test-fixtures";
 import { VITEST_REACT_HONO_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { expectValidAgentMarkdown } from "../__tests__/assertions/agent-assertions";
 
 const REACT_AND_VITEST_SKILLS: Record<string, { id: string; description: string; path: string }> = {
-  "web-framework-react": {
-    id: "web-framework-react",
+  [SKILLS.react.id]: {
+    id: SKILLS.react.id,
     description: "React framework skill",
-    path: "web-framework-react/",
+    path: `${SKILLS.react.id}/`,
   },
-  "web-testing-vitest": {
-    id: "web-testing-vitest",
+  [SKILLS.vitest.id]: {
+    id: SKILLS.vitest.id,
     description: "Vitest testing skill",
-    path: "web-testing-vitest/",
+    path: `${SKILLS.vitest.id}/`,
   },
 };
 
@@ -208,13 +209,13 @@ describe("agent-recompiler", () => {
         description: "Test plugin",
         agents: buildAgentConfigs(["web-developer"]),
         skills: [
-          ...buildSkillConfigs(["web-framework-react"]),
-          ...buildSkillConfigs(["web-testing-vitest"], { excluded: true }),
+          ...buildSkillConfigs([SKILLS.react.id]),
+          ...buildSkillConfigs([SKILLS.vitest.id], { excluded: true }),
         ],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
-            "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+            "web-framework": [{ id: SKILLS.react.id, preloaded: false }],
+            "web-testing": [{ id: SKILLS.vitest.id, preloaded: false }],
           },
         },
       });
@@ -234,7 +235,7 @@ describe("agent-recompiler", () => {
       // Active skill should appear in compiled agent
       expect(content).toContain("web-framework-react");
       // Excluded skill should NOT appear in compiled agent
-      expect(content).not.toContain("web-testing-vitest");
+      expect(content).not.toContain(SKILLS.vitest.id);
     });
 
     it("should filter project-scoped skills from global-scoped agents (D7 cross-scope safety)", async () => {
@@ -243,13 +244,13 @@ describe("agent-recompiler", () => {
         description: "Test plugin",
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         skills: [
-          ...buildSkillConfigs(["web-framework-react"]),
-          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
+          ...buildSkillConfigs([SKILLS.react.id]),
+          ...buildSkillConfigs([SKILLS.vitest.id], { scope: "global" }),
         ],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
-            "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+            "web-framework": [{ id: SKILLS.react.id, preloaded: false }],
+            "web-testing": [{ id: SKILLS.vitest.id, preloaded: false }],
           },
         },
       });
@@ -269,7 +270,7 @@ describe("agent-recompiler", () => {
       // Global skill should appear in global-scoped agent
       expect(content).toContain("web-testing-vitest");
       // Project-scoped skill should NOT appear in global-scoped agent
-      expect(content).not.toContain("web-framework-react");
+      expect(content).not.toContain(SKILLS.react.id);
     });
   });
 });

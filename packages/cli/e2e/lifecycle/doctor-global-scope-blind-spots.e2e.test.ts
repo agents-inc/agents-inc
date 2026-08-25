@@ -2,7 +2,7 @@ import path from "path";
 import { mkdir } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupFixture,
@@ -171,7 +171,7 @@ describe("doctor global-scope diagnostics", () => {
       expect(
         stdout,
         "config.ts lists two skills, so the skills check must not claim there are none",
-      ).not.toContain("No skills configured");
+      ).not.toContain(STEP_TEXT.DOCTOR_NO_SKILLS_CONFIGURED);
       expect(stdout).toContain("2/2 skills found");
     },
   );

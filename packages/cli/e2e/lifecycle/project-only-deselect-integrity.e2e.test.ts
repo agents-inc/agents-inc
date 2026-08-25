@@ -15,7 +15,7 @@ import {
   readConfigSkillIds,
   setupProjectOnlyMixedScope,
 } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
@@ -65,9 +65,9 @@ describe("project-only deselection integrity", () => {
         "compiled project api-developer.md must exist after init",
       ).toBe(true);
       const projectConfigBefore = await readTestFile(projectConfigPath);
-      expect(projectConfigBefore).toContain("api-developer");
+      expect(projectConfigBefore).toContain(E2E_AGENT["api-developer"].name);
       const projectTypesBefore = await readTestFile(projectTypesPath);
-      expect(projectTypesBefore).toContain("api-developer");
+      expect(projectTypesBefore).toContain(E2E_AGENT["api-developer"].name);
 
       // Snapshot the inherited global config before the project-scope edit.
       const globalConfigBefore = await readTestFile(globalConfigPath);
@@ -92,12 +92,12 @@ describe("project-only deselection integrity", () => {
       expect(
         projectConfigAfter,
         "config.ts must not retain the deselected project-only agent",
-      ).not.toContain("api-developer");
+      ).not.toContain(E2E_AGENT["api-developer"].name);
       const projectTypesAfter = await readTestFile(projectTypesPath);
       expect(
         projectTypesAfter,
         "config-types.ts AgentName/SelectedAgentName union must drop the deselected agent",
-      ).not.toContain("api-developer");
+      ).not.toContain(E2E_AGENT["api-developer"].name);
       expect(
         await fileExists(projectAgentMd),
         "compiled api-developer.md must be deleted after full removal",
@@ -110,9 +110,9 @@ describe("project-only deselection integrity", () => {
 
       // Boundary: the inherited global-active agent survives the project edit.
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
-      expect(await readTestFile(globalTypesPath)).toContain("web-developer");
+      expect(await readTestFile(globalTypesPath)).toContain(E2E_AGENT["web-developer"].name);
       const globalConfigAfter = await readTestFile(globalConfigPath);
-      expect(globalConfigAfter).toContain("web-developer");
+      expect(globalConfigAfter).toContain(E2E_AGENT["web-developer"].name);
       expect(
         normalizeGlobalConfig(globalConfigAfter),
         "global config must be unchanged by a project-scope agent deselect",

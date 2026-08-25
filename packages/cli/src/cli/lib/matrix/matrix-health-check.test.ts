@@ -3,6 +3,7 @@ import { checkMatrixHealth } from "./matrix-health-check";
 import { createMockSkill } from "../__tests__/factories/skill-factories.js";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
+import { SKILLS } from "../__tests__/test-fixtures.js";
 import {
   EMPTY_MATRIX,
   HEALTH_HEALTHY_MATRIX,
@@ -82,7 +83,7 @@ describe("matrix-health-check", () => {
 
       expect(categoryIssues).toHaveLength(1);
       expect(firstElement(categoryIssues).severity).toBe("warning");
-      expect(firstElement(categoryIssues).details).toContain("web-framework-react");
+      expect(firstElement(categoryIssues).details).toContain(SKILLS.react.id);
       expect(firstElement(categoryIssues).details).toContain("nonexistent-category");
     });
 
@@ -137,7 +138,7 @@ describe("matrix-health-check", () => {
 
       expect(refIssues).toHaveLength(1);
       expect(firstElement(refIssues).severity).toBe("warning");
-      expect(firstElement(refIssues).details).toContain("web-framework-react");
+      expect(firstElement(refIssues).details).toContain(SKILLS.react.id);
       expect(firstElement(refIssues).details).toContain("web-framework-ghost");
       expect(firstElement(refIssues).details).toContain("conflictsWith");
     });
@@ -179,7 +180,7 @@ describe("matrix-health-check", () => {
 
       expect(refIssues).toHaveLength(1);
       expect(firstElement(refIssues).details).toContain("web-framework-missing");
-      expect(firstElement(refIssues).details).not.toContain("web-framework-react");
+      expect(firstElement(refIssues).details).not.toContain(SKILLS.react.id);
     });
   });
 
@@ -211,8 +212,12 @@ describe("matrix-health-check", () => {
 
       expect(auditIssues).toHaveLength(1);
       expect(firstElement(auditIssues).severity).toBe("error");
-      expect(firstElement(auditIssues).details).toContain("web-styling-tailwind");
-      expect(firstElement(auditIssues).details).toContain("web-styling");
+      expect(firstElement(auditIssues).details).toContain(SKILLS.tailwind.id);
+      // Quoted and in its clause: a bare "web-styling" is a substring of the skill id above,
+      // so it passes on the id alone and cannot tell whether the category is named at all.
+      expect(firstElement(auditIssues).details).toContain(
+        "its category 'web-styling' is exclusive",
+      );
     });
 
     it("errors when a universal verdict carries a requires rule", () => {

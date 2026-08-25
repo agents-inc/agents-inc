@@ -143,8 +143,8 @@ describe("global skill toggle guard from project scope", () => {
 
       // Verify the global config still contains zustand (not replaced by pinia)
       const globalConfig = await readTestFile(configTsPath(env.fakeHome));
-      expect(globalConfig).toContain("zustand");
-      expect(globalConfig).not.toContain("pinia");
+      expect(globalConfig).toContain(E2E_SKILL.zustand.slug);
+      expect(globalConfig).not.toContain(E2E_SKILL.pinia.slug);
 
       // Verify global skill directories still exist on disk (eject mode)
       await expect({ dir: env.fakeHome }).toHaveLocalSkills([E2E_SKILL.zustand.id]);

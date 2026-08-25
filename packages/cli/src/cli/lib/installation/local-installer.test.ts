@@ -1086,14 +1086,14 @@ describe("local-installer", () => {
     it("should filter global agent skills to only global-scoped skills (cross-scope safety net)", async () => {
       // Set up buildSkillRefsFromConfig mock to return both skills
       mockBuildSkillRefs.mockReturnValueOnce([
-        { id: "web-framework-react", usage: "when working with web-framework" },
+        { id: SKILLS.react.id, usage: "when working with web-framework" },
         { id: "web-testing-vitest", usage: "when working with web-testing" },
       ]);
 
       const config = buildProjectConfig({
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         skills: [
-          ...buildSkillConfigs(["web-framework-react"]),
+          ...buildSkillConfigs([SKILLS.react.id]),
           ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
         ],
         stack: {
@@ -1113,7 +1113,7 @@ describe("local-installer", () => {
       const skills = result["web-developer"]?.skills ?? [];
       const skillIds = skills.map((s) => s.id);
       expect(skillIds).toContain("web-testing-vitest");
-      expect(skillIds).not.toContain("web-framework-react");
+      expect(skillIds).not.toContain(SKILLS.react.id);
     });
 
     it("should not filter project-scoped agent skills", async () => {
@@ -1153,14 +1153,14 @@ describe("local-installer", () => {
       it("should exclude skills with excluded: true from compilation", async () => {
         mockBuildSkillRefs.mockReturnValueOnce([
           { id: "web-framework-react", usage: "when working with web-framework" },
-          { id: "web-testing-vitest", usage: "when working with web-testing" },
+          { id: SKILLS.vitest.id, usage: "when working with web-testing" },
         ]);
 
         const config = buildProjectConfig({
           agents: buildAgentConfigs(["web-developer"]),
           skills: [
             ...buildSkillConfigs(["web-framework-react"]),
-            ...buildSkillConfigs(["web-testing-vitest"], { excluded: true }),
+            ...buildSkillConfigs([SKILLS.vitest.id], { excluded: true }),
           ],
           stack: {
             "web-developer": {
@@ -1178,7 +1178,7 @@ describe("local-installer", () => {
         const skills = result["web-developer"]?.skills ?? [];
         const skillIds = skills.map((s) => s.id);
         expect(skillIds).toContain("web-framework-react");
-        expect(skillIds).not.toContain("web-testing-vitest");
+        expect(skillIds).not.toContain(SKILLS.vitest.id);
       });
 
       it("should exclude agents with excluded: true from compilation", () => {
@@ -3216,9 +3216,8 @@ describe("local-installer", () => {
         await mkdir(configDir, { recursive: true });
         const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
 
-        // web-client-state is exclusive but NOT required. The project's own
-        // client-state skill is gone, so the mask no longer masks anything and
-        // must not survive the next reconciled write.
+        // The project's own client-state skill is gone, so the mask no longer masks
+        // anything and must not survive the next reconciled write.
         await writeConfigFile(
           buildProjectConfig({
             name: "target",
@@ -3249,10 +3248,9 @@ describe("local-installer", () => {
         );
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
-        expect(
-          parsedConfig.skills,
-          "a mask must not outlive its collision, exclusive category required or not",
-        ).toStrictEqual([{ id: "web-state-zustand", scope: "global", origin: "agents-inc" }]);
+        expect(parsedConfig.skills, "a mask must not outlive its collision").toStrictEqual([
+          { id: "web-state-zustand", scope: "global", origin: "agents-inc" },
+        ]);
       });
 
       it("retains the mask while the project still owns a colliding skill in an optional exclusive category", async () => {

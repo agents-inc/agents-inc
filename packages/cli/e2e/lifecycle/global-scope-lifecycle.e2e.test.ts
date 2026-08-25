@@ -12,7 +12,7 @@ import {
   createTestEnvironment,
   type DualScopeEnv,
 } from "../fixtures/dual-scope-helpers.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   TS_NOT_ASSIGNABLE,
   probeConfigTypesNarrowing,
@@ -86,7 +86,7 @@ describe("global scope lifecycle -- doctor command", () => {
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).not.toContain("web-developer (missing)");
+    expect(stdout).not.toContain(`${E2E_AGENT["web-developer"].name} (missing)`);
     // `toContain("agents compiled")` is a fragment the PASS row and the WARN row
     // both carry ("N/N agents compiled" vs "N agents need recompilation" plus its
     // detail lines), so only the negative above discriminated. It was replaced by

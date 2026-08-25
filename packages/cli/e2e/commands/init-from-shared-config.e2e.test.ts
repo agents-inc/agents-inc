@@ -22,7 +22,7 @@ import {
 } from "../fixtures/seed-config-store.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
@@ -210,7 +210,7 @@ describe("init --from <id>", () => {
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain("No configuration found for id 'NoSuchId'");
     // Nothing partially installed: the fetch fails before the pipeline starts.
-    expect(await listFiles(tempDir)).not.toContain(".claude-src");
+    expect(await listFiles(tempDir)).not.toContain(DIRS.CLAUDE_SRC);
   });
 
   it("refuses a payload that does not match the contract", async () => {
@@ -254,7 +254,7 @@ describe("init --from <id>", () => {
     // the case this refusal exists for in bulk — and the remedy for it always exists. A message
     // that only diagnoses "a newer version" sends the reader to an upgrade that cannot help.
     expect(flattenCliOutput(output)).toContain("re-share the configuration");
-    expect(await listFiles(tempDir)).not.toContain(".claude-src");
+    expect(await listFiles(tempDir)).not.toContain(DIRS.CLAUDE_SRC);
   });
 
   it("applies a sub-agent's model and effort to both the compiled agent and the config", async () => {
