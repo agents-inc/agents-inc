@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readdir, writeFile } from "fs/promises";
 import { describe, it, expect, afterAll, beforeAll, afterEach } from "vitest";
 import {
   cleanupFixture,
@@ -20,8 +20,18 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  E2E_MARKETPLACE_NAME,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import type { ProjectHandle } from "../pages/wizard-result.js";
 
 describe("list command", () => {
   let tempDir: string;
@@ -101,6 +111,175 @@ describe("list command", () => {
       // count and a path.
       expect(stdout).toMatch(new RegExp(`^\\s*Skills:\\s+${skills.length}$`, "m"));
       expect(stdout).toMatch(new RegExp(`^\\s*Agents:\\s+${agents.length}$`, "m"));
+    });
+  });
+
+  /**
+   * A mixed installation — most skills carried by a marketplace, one ejected into the project —
+   * is the shape the count was lost on. `countInstalledSkills` asked the plugin registry for a
+   * `plugin` install and `.claude/skills/` for everything else, and `mixed` fell to the second
+   * branch: it reported the ejected copies alone, which for a mostly-plugin install is a number
+   * close to zero.
+   *
+   * What `Skills: N` counts is the skills THIS CLI put there — the configuration's `skills` array
+   * minus its tombstones. Neither the registry nor the skills directory answers that: each holds
+   * only the half of an installation its own install path writes, and each also holds entries the
+   * CLI never wrote.
+   *
+   * **The dashboard is driven here too, against the same fixture, and that pairing is the point.**
+   * It and `list` read one producer (`getInstallationInfo`), and each has only ever been asserted
+   * against itself — which is how two dashboard paths diverged silently once already
+   * (`todo/archive.md`, 2026-08-24). A number is the installation's answer, not a surface's, so
+   * both surfaces are held to one named constant rather than to a figure written twice.
+   */
+  describe("with a mixed installation", () => {
+    /** Carried by a marketplace: declared in the config, and owning no directory on disk. */
+    const MARKETPLACE_SKILL_IDS = [E2E_SKILL.zustand.id, E2E_SKILL.vitest.id];
+
+    /** Ejected into the project: the only skills of this fixture that own a directory. */
+    const EJECTED_SKILL_IDS = [E2E_SKILL.react.id];
+
+    /** What every surface must say, whichever of them is asked. */
+    const DECLARED_SKILL_COUNT = MARKETPLACE_SKILL_IDS.length + EJECTED_SKILL_IDS.length;
+
+    /**
+     * A directory under `.claude/skills/` that no configuration declares — a skill installed by
+     * hand or by another tool. This CLI did not put it there and does not manage it.
+     */
+    const UNDECLARED_SKILL_DIR = "context7-mcp";
+
+    /**
+     * The fixture, in a genuine project context: HOME is a sibling of the project rather than the
+     * project itself, so the global scope is a second root the report has to account for and not
+     * an alias of the first one.
+     */
+    async function buildMixedInstall(): Promise<{ project: ProjectHandle; home: string }> {
+      const project = await ProjectBuilder.editable({
+        skills: EJECTED_SKILL_IDS,
+        globalSkills: MARKETPLACE_SKILL_IDS,
+        globalSkillsSource: E2E_MARKETPLACE_NAME,
+        agents: [E2E_AGENT["web-developer"].name],
+      });
+      tempDir = path.dirname(project.dir);
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+      return { project, home };
+    }
+
+    it("counts the plugin skills, which own no directory on disk", async () => {
+      const { project, home } = await buildMixedInstall();
+      const configBefore = await readTestFile(configTsPath(project.dir));
+
+      const { exitCode, stdout } = await CLI.run(["list"], project, { env: { HOME: home } });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout, "the fixture's origins make this a mixed install").toContain("Mixed");
+      expect(
+        stdout,
+        "a mixed installation manages its plugin skills as much as its ejected ones",
+      ).toMatch(skillCountRow(DECLARED_SKILL_COUNT));
+
+      expect(await readTestFile(configTsPath(project.dir)), "list must not rewrite config.ts").toBe(
+        configBefore,
+      );
+      expect(
+        (await readdir(skillsPath(project.dir))).sort(),
+        "list must not add or remove a skill directory",
+      ).toStrictEqual([...EJECTED_SKILL_IDS].sort());
+    });
+
+    /**
+     * The dashboard prints its counts in its own wording (`Skills: N installed`) through a
+     * separate formatter, so it is driven here rather than in a spec of its own: the claim is that
+     * two surfaces agree about ONE installation, and nothing makes two fixtures agree.
+     */
+    it("reports that same number on the dashboard", async () => {
+      const { project, home } = await buildMixedInstall();
+      const configBefore = await readTestFile(configTsPath(project.dir));
+
+      const { exitCode, stdout } = await CLI.run(["init"], project, { env: { HOME: home } });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout, "an installed project gets the dashboard, not the wizard").toContain(
+        STEP_TEXT.DASHBOARD,
+      );
+      expect(
+        stdout,
+        "the dashboard and list read one installation, so they cannot report two numbers",
+      ).toMatch(new RegExp(`Skills:\\s+${DECLARED_SKILL_COUNT} installed`));
+
+      expect(
+        await readTestFile(configTsPath(project.dir)),
+        "the dashboard must not rewrite config.ts",
+      ).toBe(configBefore);
+      expect(
+        (await readdir(skillsPath(project.dir))).sort(),
+        "the dashboard must not add or remove a skill directory",
+      ).toStrictEqual([...EJECTED_SKILL_IDS].sort());
+    });
+
+    it("does not count a skill directory the configuration never declared", async () => {
+      const { project, home } = await buildMixedInstall();
+      await createLocalSkill(project.dir, UNDECLARED_SKILL_DIR);
+
+      const { exitCode, stdout } = await CLI.run(["list"], project, { env: { HOME: home } });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        stdout,
+        "a directory this CLI never installed is not part of what it reports it manages",
+      ).toMatch(skillCountRow(DECLARED_SKILL_COUNT));
+      expect(
+        (await readdir(skillsPath(project.dir))).sort(),
+        "the undeclared directory is still on disk — it is unreported, not removed",
+      ).toStrictEqual([...EJECTED_SKILL_IDS, UNDECLARED_SKILL_DIR].sort());
+    });
+
+    /**
+     * A tombstone masks a globally installed skill for this project; the files can outlive it, so
+     * the only thing that says it is excluded is the entry itself.
+     */
+    it("does not count a tombstoned entry", async () => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+
+      await writeProjectConfig(projectDir, {
+        name: "tombstoned-mixed-install",
+        marketplaceName: E2E_MARKETPLACE_NAME,
+        skills: [
+          ...buildSkillConfigs(EJECTED_SKILL_IDS, { scope: "project" }),
+          ...buildSkillConfigs(MARKETPLACE_SKILL_IDS, {
+            scope: "global",
+            origin: E2E_MARKETPLACE_NAME,
+          }),
+          ...buildSkillConfigs([E2E_SKILL.pinia.id], {
+            scope: "global",
+            origin: E2E_MARKETPLACE_NAME,
+            excluded: true,
+          }),
+        ],
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+        selectedDomains: ["web"],
+      });
+      for (const skillId of EJECTED_SKILL_IDS) {
+        await createLocalSkill(projectDir, skillId);
+      }
+
+      const { exitCode, stdout } = await CLI.run(
+        ["list"],
+        { dir: projectDir },
+        {
+          env: { HOME: home },
+        },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        stdout,
+        "a tombstone records a skill this project has excluded, not one it manages",
+      ).toMatch(skillCountRow(DECLARED_SKILL_COUNT));
     });
   });
 

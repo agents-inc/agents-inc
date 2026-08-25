@@ -8,11 +8,13 @@ import {
   type InstallationInfo,
 } from "./plugin-info";
 import type { Installation } from "../installation";
-import type { SkillDefinitionMap } from "../../types";
+import type { SkillDefinitionMap, SkillId } from "../../types";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  EJECT_SOURCE,
   PLUGINS_SUBDIR,
   STANDARD_DIRS,
   STANDARD_FILES,
@@ -70,6 +72,26 @@ const PROJECT_PLUGIN_SKILLS: SkillDefinitionMap = {
   "web-testing-vitest": createMockSkillDefinition("web-testing-vitest"),
 };
 
+/**
+ * The marketplace-carried half of a mixed installation's configuration. Held against `SkillId`
+ * so retiring one of these ids reddens this line rather than a consumer four files away.
+ */
+const MARKETPLACE_SKILL_IDS = [
+  "web-framework-react",
+  "web-state-zustand",
+  "web-testing-vitest",
+] as const satisfies readonly SkillId[];
+
+/** The locally ejected half — the one skill of a mixed install that owns a directory on disk. */
+const EJECTED_SKILL_ID = "web-mocks-msw" satisfies SkillId;
+
+/**
+ * A directory under `.claude/skills/` that no configuration declares — a skill a user dropped
+ * in by hand, or one another tool installed. The CLI did not put it there and does not manage
+ * it, so it is deliberately NOT a member of `SkillId`.
+ */
+const UNDECLARED_SKILL_DIR = "context7-mcp";
+
 describe("plugin-info", () => {
   describe("getInstallationInfo", () => {
     it("should return null when no installation is detected", async () => {
@@ -115,7 +137,12 @@ describe("plugin-info", () => {
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
-        config: buildProjectConfig({ name: "my-local-project", skills: [] }),
+        config: buildProjectConfig({
+          name: "my-local-project",
+          skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+            origin: EJECT_SOURCE,
+          }),
+        }),
         configPath,
       });
 
@@ -177,7 +204,19 @@ describe("plugin-info", () => {
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
-        config: buildProjectConfig({ name: "dual-scope-project", skills: [] }),
+        config: buildProjectConfig({
+          name: "dual-scope-project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], {
+              scope: "project",
+              origin: EJECT_SOURCE,
+            }),
+            ...buildSkillConfigs(["web-state-zustand", "web-testing-vitest"], {
+              scope: "global",
+              origin: EJECT_SOURCE,
+            }),
+          ],
+        }),
         configPath,
       });
 
@@ -306,7 +345,13 @@ describe("plugin-info", () => {
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
-        config: buildProjectConfig({ name: "global", skills: [] }),
+        config: buildProjectConfig({
+          name: "global",
+          skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+            scope: "global",
+            origin: EJECT_SOURCE,
+          }),
+        }),
         configPath,
       });
 
@@ -447,7 +492,13 @@ describe("plugin-info", () => {
       expect(result!.agentDirs).toStrictEqual([globalAgentsDir, projectAgentsDir]);
     });
 
-    it("reads the home root once for a plugin installation at the home root", async () => {
+    /**
+     * The reported installation's own shape: a plugin install rooted at the home directory whose
+     * registry no longer resolves everything the configuration declares. The configuration is what
+     * says which skills this CLI put there, so a plugin the registry has since lost is still one
+     * of them — and a report that drops it tells the user their install shrank.
+     */
+    it("counts a home-root plugin installation from its configuration, not from the registry", async () => {
       const homeDir = os.homedir();
       const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
 
@@ -461,13 +512,14 @@ describe("plugin-info", () => {
       );
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({});
+      // The registry resolves two of the three the configuration declares.
       mockPluginSkillsByDir({ [homeDir]: GLOBAL_PLUGIN_SKILLS });
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({
           name: "global-plugins",
-          skills: buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+          skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, {
             scope: "global",
-            origin: "agents-inc",
+            origin: DEFAULT_PUBLIC_SOURCE_NAME,
           }),
         }),
         configPath,
@@ -476,11 +528,10 @@ describe("plugin-info", () => {
       const result = await getInstallationInfo();
 
       expect(result).not.toBeNull();
-      expect(result!.skillCount, "the home root must not be counted twice").toBe(2);
       expect(
-        mockedDiscoverAllPluginSkills.mock.calls,
-        "at the home root the two scopes resolve to one directory, which must be read once",
-      ).toStrictEqual([[homeDir]]);
+        result!.skillCount,
+        "every skill the configuration declares is one the CLI manages, resolvable or not",
+      ).toBe(MARKETPLACE_SKILL_IDS.length);
     });
 
     it("should use default name when local config has no name", async () => {
@@ -549,6 +600,198 @@ describe("plugin-info", () => {
       expect(result).not.toBeNull();
       expect(result!.skillCount).toBe(0);
       expect(result!.agentCount).toBe(0);
+    });
+  });
+
+  /**
+   * What `Skills: N` counts: the skills THIS CLI put there, which is the configuration's `skills`
+   * array minus its tombstones. Neither the plugin registry nor `.claude/skills/` answers that —
+   * each holds only the half of an installation its own install path writes, and each also holds
+   * entries the CLI never wrote.
+   *
+   * **The three modes are pinned separately and deliberately.** The report used to ask the
+   * registry in `plugin` mode and the skills directory otherwise, so `mixed` — a shape neither
+   * branch was written for — fell to the eject branch and reported the ejected copies alone,
+   * which for a mostly-plugin install is a number close to zero. A fix that special-cases `mixed`
+   * would leave the other two answering from a source that can disagree with the configuration,
+   * so each mode gets a fixture where that source under-reports.
+   */
+  describe("the skill count is what the configuration declares", () => {
+    const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const projectSkillsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+
+    it("counts a mixed installation's plugin skills, which own no directory on disk", async () => {
+      mockedDetectInstallation.mockResolvedValue(buildInstallation({ mode: "mixed", configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      // A mixed install ejects some skills and installs the rest as plugins, so only the ejected
+      // one has a directory. Counting directories here counts the smaller half.
+      mockReaddirByDir({
+        [projectSkillsDir]: [createDirent(EJECTED_SKILL_ID, { isDir: true })],
+      });
+      mockPluginSkillsByDir({});
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "mixed-project",
+          skills: [
+            ...buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+            ...buildSkillConfigs([EJECTED_SKILL_ID], { origin: EJECT_SOURCE }),
+          ],
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.skillCount,
+        "a mixed installation manages its plugin skills as much as its ejected ones",
+      ).toBe(MARKETPLACE_SKILL_IDS.length + 1);
+    });
+
+    it("counts a plugin installation's skills when the registry resolves none of them", async () => {
+      mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({});
+      // The registry a project reads is the user's, and it can be emptied out from under an
+      // install — by a Claude CLI upgrade, or by a `claude plugin uninstall` run by hand.
+      mockPluginSkillsByDir({});
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "plugin-project",
+          skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(result!.skillCount).toBe(MARKETPLACE_SKILL_IDS.length);
+    });
+
+    it("counts an eject installation's skills when a copy has been deleted by hand", async () => {
+      mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      // Two of the three declared copies survive; `doctor` is the surface that reports the third
+      // as missing, and it is still a skill this installation is responsible for.
+      mockReaddirByDir({
+        [projectSkillsDir]: MARKETPLACE_SKILL_IDS.slice(0, 2).map((id) =>
+          createDirent(id, { isDir: true }),
+        ),
+      });
+      mockPluginSkillsByDir({});
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "eject-project",
+          skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: EJECT_SOURCE }),
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(result!.skillCount).toBe(MARKETPLACE_SKILL_IDS.length);
+    });
+
+    it("does not count a skill directory the configuration never declared", async () => {
+      mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({
+        [projectSkillsDir]: [
+          ...MARKETPLACE_SKILL_IDS.map((id) => createDirent(id, { isDir: true })),
+          createDirent(UNDECLARED_SKILL_DIR, { isDir: true }),
+        ],
+      });
+      mockPluginSkillsByDir({});
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "eject-project",
+          skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: EJECT_SOURCE }),
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.skillCount,
+        "a directory this CLI never installed is not part of what it reports it manages",
+      ).toBe(MARKETPLACE_SKILL_IDS.length);
+    });
+
+    it("does not count a tombstoned entry", async () => {
+      mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      // The tombstoned skill's files can outlive the exclusion — the tombstone masks a globally
+      // installed skill for THIS project, it does not uninstall it.
+      mockReaddirByDir({
+        [projectSkillsDir]: MARKETPLACE_SKILL_IDS.map((id) => createDirent(id, { isDir: true })),
+      });
+      mockPluginSkillsByDir({});
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "tombstoned-project",
+          skills: [
+            ...buildSkillConfigs(MARKETPLACE_SKILL_IDS.slice(0, 2), {
+              scope: "project",
+              origin: EJECT_SOURCE,
+            }),
+            ...buildSkillConfigs(MARKETPLACE_SKILL_IDS.slice(2), {
+              scope: "global",
+              origin: EJECT_SOURCE,
+              excluded: true,
+            }),
+          ],
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.skillCount,
+        "a tombstone records a skill this project has excluded, not one it manages",
+      ).toBe(2);
+    });
+
+    /**
+     * The counterpart of the tombstone case above, and its control: an entry the configuration
+     * declares twice is one skill. Without it, a count that simply took `skills.length` would
+     * satisfy every other test here while reporting a dual-scope install one too high.
+     */
+    it("counts a skill declared at both scopes once", async () => {
+      mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({});
+      mockPluginSkillsByDir({});
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({
+          name: "dual-scope-project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+              scope: "global",
+              origin: DEFAULT_PUBLIC_SOURCE_NAME,
+            }),
+            ...buildSkillConfigs(["web-state-zustand", "web-testing-vitest"], {
+              scope: "project",
+              origin: DEFAULT_PUBLIC_SOURCE_NAME,
+            }),
+          ],
+        }),
+        configPath,
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result).not.toBeNull();
+      expect(
+        result!.skillCount,
+        "four entries name three skills, and a skill installed at both scopes is one skill",
+      ).toBe(3);
     });
   });
 

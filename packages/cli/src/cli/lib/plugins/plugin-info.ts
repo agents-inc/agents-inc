@@ -2,20 +2,16 @@ import { readdir } from "fs/promises";
 import type { Dirent } from "fs";
 
 import { DEFAULT_PLUGIN_NAME } from "../../consts";
-import { typedKeys } from "../../utils/typed-object";
-import { loadProjectConfig } from "../configuration";
+import { loadProjectConfig, type LoadedProjectConfig } from "../configuration";
 import {
   detectInstallation,
-  installBaseDir,
   isHomeDirectory,
   resolveInstallPaths,
   INSTALL_MODE_LABELS,
   type Installation,
   type InstallMode,
 } from "../installation";
-import type { SkillDefinitionMap } from "../../types";
 import type { SkillScope } from "../../types/config";
-import { discoverAllPluginSkills } from "./plugin-discovery";
 
 const AGENT_FILE_EXTENSION = ".md";
 
@@ -33,17 +29,16 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
   const installation = await detectInstallation();
   if (!installation) return null;
 
-  const scopes = installedScopes(installation);
-  const skillCount = await countInstalledSkills(installation, scopes);
-  const agentDirCounts = await countCompiledAgentsPerScope(installation, scopes);
-
   const loaded = await loadProjectConfig(installation.projectDir);
-  const name = loaded?.config.name || DEFAULT_PLUGIN_NAME;
+  const agentDirCounts = await countCompiledAgentsPerScope(
+    installation,
+    installedScopes(installation),
+  );
 
   return {
     mode: installation.mode,
-    name,
-    skillCount,
+    name: loaded?.config.name || DEFAULT_PLUGIN_NAME,
+    skillCount: countManagedSkills(loaded),
     agentCount: sumCounts(agentDirCounts),
     configPath: installation.configPath,
     agentDirs: agentDirCounts.filter(hasEntries).map((scopeCount) => scopeCount.dir),
@@ -51,8 +46,26 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
 }
 
 /**
- * Scopes whose artifacts belong to this installation, in report order (global
- * first, mirroring the init success report). A project context also owns
+ * The number of skills the CLI reports it manages, which is what its own configuration declares
+ * and nothing else. Neither the plugin registry nor `.claude/skills/` answers that question:
+ * each holds only the half of an installation its own install path writes — so a mixed install
+ * read from either one reports a fraction of itself — and each also holds entries this CLI never
+ * wrote, which it has no business claiming. The install mode is therefore irrelevant here.
+ *
+ * A tombstone (`excluded: true`) records a skill this project has switched OFF, so it is not one
+ * of them; and a skill enabled under both roots is two registrations of one skill, so the entries
+ * merge by id.
+ */
+function countManagedSkills(loaded: LoadedProjectConfig | null): number {
+  if (!loaded) return 0;
+
+  const managed = loaded.config.skills.filter((skill) => !skill.excluded);
+  return new Set(managed.map((skill) => skill.id)).size;
+}
+
+/**
+ * Scopes whose compiled agents belong to this installation, in report order
+ * (global first, mirroring the init success report). A project context also owns
  * everything installed globally under HOME, so both roots are counted; at the
  * home root the two resolve to the same directory and only one pass runs so
  * nothing is counted twice.
@@ -72,28 +85,6 @@ function hasEntries(scopeCount: ScopeCount): boolean {
 
 function sumCounts(scopeCounts: ScopeCount[]): number {
   return scopeCounts.reduce((total, scopeCount) => total + scopeCount.count, 0);
-}
-
-async function sumOverScopes(
-  scopes: SkillScope[],
-  count: (scope: SkillScope) => Promise<number>,
-): Promise<number> {
-  const counts = await Promise.all(scopes.map(count));
-  return counts.reduce((total, current) => total + current, 0);
-}
-
-/** Plugin-mode skills live in the plugin registry, not under a scope's skills dir. */
-async function countInstalledSkills(
-  installation: Installation,
-  scopes: SkillScope[],
-): Promise<number> {
-  if (installation.mode === "plugin") return countPluginSkills(installation.projectDir, scopes);
-
-  return sumOverScopes(scopes, (scope) =>
-    countDirEntries(resolveInstallPaths(installation.projectDir, scope).skillsDir, (entry) =>
-      entry.isDirectory(),
-    ),
-  );
 }
 
 /**
@@ -127,29 +118,6 @@ async function countDirEntries(dir: string, pred: (entry: Dirent) => boolean): P
   } catch {
     return 0;
   }
-}
-
-/**
- * Counts the skills each scope's `settings.json` enables, resolved through the
- * global plugin cache; 0 on failure.
- */
-async function countPluginSkills(projectDir: string, scopes: SkillScope[]): Promise<number> {
-  try {
-    const skillsPerScope = await Promise.all(
-      scopes.map((scope) => discoverAllPluginSkills(installBaseDir(projectDir, scope))),
-    );
-    return countDistinctSkillIds(skillsPerScope);
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * A skill enabled under both roots is one skill, so plugin scopes merge by id
- * where eject scopes — whose skills dirs are disjoint — sum (`sumOverScopes`).
- */
-function countDistinctSkillIds(skillsPerScope: SkillDefinitionMap[]): number {
-  return new Set(skillsPerScope.flatMap(typedKeys)).size;
 }
 
 export function formatInstallationDisplay(info: InstallationInfo): string {

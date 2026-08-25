@@ -6,16 +6,19 @@ import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { getDashboardData, formatDashboardText } from "../../../commands/init";
+import { formatInstallationDisplay, getInstallationInfo } from "../../plugins";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
   DEFAULT_BRANDING,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  EJECT_SOURCE,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../../consts";
 import { renderConfigTs } from "../content-generators";
 import { EXPECTED_SKILLS } from "../expected-values";
-import type { BrandingConfig } from "../../../types";
+import type { BrandingConfig, SkillConfig, SkillId } from "../../../types";
 
 /**
  * A `branding.name` a project config supplies, sharing no substring with
@@ -23,6 +26,51 @@ import type { BrandingConfig } from "../../../types";
  * other's output.
  */
 const WHITE_LABEL_NAME = "Northwind";
+
+/**
+ * The marketplace-carried half of the mixed installation the count tests below report on. Held
+ * against `SkillId` so retiring one of these ids reddens this line rather than a consumer of it.
+ */
+const MARKETPLACE_SKILL_IDS = [
+  "web-framework-react",
+  "web-state-zustand",
+  "web-testing-vitest",
+] as const satisfies readonly SkillId[];
+
+/** The locally ejected half — the one skill of a mixed install that owns a directory on disk. */
+const EJECTED_SKILL_ID = "web-mocks-msw" satisfies SkillId;
+
+/**
+ * A directory under `.claude/skills/` that no configuration declares. The CLI did not install it
+ * and does not manage it, so it is deliberately not a member of `SkillId`.
+ */
+const UNDECLARED_SKILL_DIR = "context7-mcp";
+
+/**
+ * Writes an installed project: the `.claude-src/config.ts` declaring `skills`, and a
+ * `.claude/skills/<id>` directory for each id in `onDisk`.
+ *
+ * The two lists are separate parameters because they genuinely differ in every installation the
+ * counts are asserted over — a plugin skill is declared and owns no directory, an undeclared
+ * directory owns one and is declared nowhere.
+ */
+async function writeInstallation(
+  projectDir: string,
+  skills: SkillConfig[],
+  onDisk: readonly string[],
+): Promise<void> {
+  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(
+    path.join(configDir, STANDARD_FILES.CONFIG_TS),
+    renderConfigTs({ name: "test-project", skills }),
+  );
+  for (const skillId of onDisk) {
+    await mkdir(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId), {
+      recursive: true,
+    });
+  }
+}
 
 /**
  * Writes the `.claude-src/config.ts` the dashboard reads: a project declaring no skills, carrying
@@ -218,6 +266,89 @@ describe("init command", () => {
       const text = formatDashboardText(data);
       expect(text).toContain("0 installed");
       expect(text).toContain("0 compiled");
+    });
+  });
+
+  /**
+   * The number of skills the CLI reports it manages, on the two surfaces that report it: the
+   * dashboard's `Skills: N installed` and `list`'s `Skills:  N`.
+   *
+   * **Both are asserted on the same installation in the same test, and that pairing is the
+   * point.** They read one producer — `getInstallationInfo` — and each was only ever compared
+   * against itself, which is how the two dashboard paths silently diverged once already
+   * (`todo/archive.md`, 2026-08-24). A number is not a surface's own answer; it is the
+   * installation's, and both must say it.
+   */
+  describe("the number of skills the CLI reports it manages", () => {
+    const MIXED_INSTALL_SKILLS: SkillConfig[] = [
+      ...buildSkillConfigs(MARKETPLACE_SKILL_IDS, {
+        scope: "project",
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
+      }),
+      ...buildSkillConfigs([EJECTED_SKILL_ID], { scope: "project", origin: EJECT_SOURCE }),
+    ];
+
+    it("counts every skill a mixed installation declares, on both surfaces alike", async () => {
+      // Only the ejected skill owns a directory; the plugin skills live in the Claude registry.
+      await writeInstallation(projectDir, MIXED_INSTALL_SKILLS, [EJECTED_SKILL_ID]);
+
+      const data = await getDashboardData(projectDir);
+      const info = await getInstallationInfo();
+
+      expect(data.mode, "a config mixing marketplace and ejected origins is a mixed install").toBe(
+        "mixed",
+      );
+      expect(
+        data.skillCount,
+        "a mixed installation manages its plugin skills as much as its ejected ones",
+      ).toBe(MIXED_INSTALL_SKILLS.length);
+      expect(formatDashboardText(data)).toContain(`${MIXED_INSTALL_SKILLS.length} installed`);
+
+      expect(info).not.toBeNull();
+      expect(
+        info!.skillCount,
+        "the dashboard and list read one installation, so they cannot report two numbers",
+      ).toBe(data.skillCount);
+      expect(formatInstallationDisplay(info!)).toContain(`Skills:  ${data.skillCount}`);
+    });
+
+    it("does not count a skill directory the configuration never declared", async () => {
+      await writeInstallation(projectDir, MIXED_INSTALL_SKILLS, [
+        EJECTED_SKILL_ID,
+        UNDECLARED_SKILL_DIR,
+      ]);
+
+      const data = await getDashboardData(projectDir);
+      const info = await getInstallationInfo();
+
+      expect(
+        data.skillCount,
+        "a directory this CLI never installed is not part of what it reports it manages",
+      ).toBe(MIXED_INSTALL_SKILLS.length);
+      expect(info).not.toBeNull();
+      expect(info!.skillCount).toBe(data.skillCount);
+    });
+
+    it("does not count a tombstoned entry", async () => {
+      const tombstoned: SkillConfig[] = [
+        ...MIXED_INSTALL_SKILLS,
+        ...buildSkillConfigs(["web-testing-visual-regression"], {
+          scope: "global",
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
+          excluded: true,
+        }),
+      ];
+      await writeInstallation(projectDir, tombstoned, [EJECTED_SKILL_ID]);
+
+      const data = await getDashboardData(projectDir);
+      const info = await getInstallationInfo();
+
+      expect(
+        data.skillCount,
+        "a tombstone records a skill this project has excluded, not one it manages",
+      ).toBe(MIXED_INSTALL_SKILLS.length);
+      expect(info).not.toBeNull();
+      expect(info!.skillCount).toBe(data.skillCount);
     });
   });
 
