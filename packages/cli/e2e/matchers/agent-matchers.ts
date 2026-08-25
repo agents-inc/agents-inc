@@ -68,6 +68,12 @@ export type AgentDynamicSkillsExpectations = {
   allPreloaded?: boolean;
 };
 
+/**
+ * `agentName` is `string` on both matchers below, not `AgentName`. A user-authored agent
+ * compiles to `.claude/agents/` under a name the generated union cannot contain, so the
+ * union would make a supported product behaviour inexpressible; the measurement that
+ * refused the narrowing is above the `declare module "vitest"` block in setup.ts.
+ */
 export const agentMatchers = {
   /** Verify parsed YAML frontmatter fields of a compiled agent */
   async toHaveAgentFrontmatter(

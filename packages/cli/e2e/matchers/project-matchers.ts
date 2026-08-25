@@ -46,7 +46,14 @@ export type SettingsExpectations = {
   keyValue?: unknown;
 };
 
-/** The skill ids `toHaveLocalSkills` requires to be present; omitted means "any entries". */
+/**
+ * The skill ids `toHaveLocalSkills` requires to be present; omitted means "any entries".
+ *
+ * `readonly string[]`, not `readonly SkillId[]`, for the reason the note above the
+ * `declare module "vitest"` block in setup.ts measures: the ids most of these call sites
+ * pass belong to a fixture marketplace's namespace and are not members of the public
+ * catalogue's union.
+ */
 export type LocalSkillIds = readonly string[];
 
 /**
