@@ -5,7 +5,21 @@ sidebar:
   order: 1
 ---
 
-Everything defaults to global scope. Your first `npx agents-inc init` sets up your personal default stack — skills, agents, and sources that apply across all projects. Most of the time, that's all you need.
+Everything defaults to global scope. Your first setup — picked in the [editor](https://agentsinc.sh) or in the terminal wizard — is your personal default stack: skills, agents, and sources that apply across all projects. Most of the time, that's all you need.
+
+## Quick start
+
+Open [agentsinc.sh](https://agentsinc.sh), click the stack you want, and press **Install**. There's no scope decision to make — every skill and every sub-agent rests at global until you move it. Copy the command out of the dialog and run it:
+
+```bash
+npx agents-inc init --from Ab3xY9_Q
+```
+
+Your config lands at `~/.claude-src/config.ts` and your compiled sub-agents at `~/.claude/agents/`, and every project on the machine sees them. That's the whole of a single-stack setup. The rest of this page is for when one project has to differ.
+
+:::note[Doing this from the terminal]
+`npx agents-inc init` runs the same selection as a wizard and installs at global scope the same way. `npx agents-inc edit` from `~/` changes what that global install holds.
+:::
 
 ## Why global-first
 
@@ -15,7 +29,7 @@ Global scope means one installation to maintain. Project scope is only for when 
 
 ## Setting up your global stack
 
-Run `npx agents-inc init` from any directory. Select your primary technologies, agents, and sources. Everything installs at global scope by default.
+Pick your primary technologies, sub-agents and install modes, and leave every scope word alone. `global` is where a fresh pick rests in both front doors — it's one default, read by the editor's grid, by the editor's roster and by the CLI's own decode of a shared id, so an untouched selection means the same thing wherever you made it.
 
 Your global config lives at `~/.claude-src/config.ts`. Agents are compiled to `~/.claude/agents/`.
 
@@ -23,14 +37,28 @@ Your global config lives at `~/.claude-src/config.ts`. Agents are compiled to `~
 
 Use project scope when a project needs something different from your global defaults. For example, your global stack uses React but one project uses Vue — that project gets its own project-scoped config.
 
+Two words carry that decision, and a project-scoped setup needs both. On a skill's cell in the grid, the `global` badge flips to `project`. On a sub-agent's row in the roster, the `global` word does the same. Pick only what this project adds and move every one of those words — your global install stays exactly where it is, and this project sees it as well as its own, because a project inherits global and not the other way round.
+
+Then install from the project it's for:
+
 ```bash
 cd ~/projects/vue-app
-npx agents-inc init
+npx agents-inc init --from Ab3xY9_Q
 ```
 
-Toggle specific skills and agents to project scope using the scope hotkey in the wizard. Only override what differs — everything else falls through to global.
+Leave anything in that selection at global scope and the install is refused rather than merged, because it would be writing into a `~/.claude` that's already installed — [Editing](#editing) below is the route for a change that reaches the global side.
 
-Project config lives at `.claude-src/config.ts` in the project directory. Project-scoped agents are compiled to `.claude/agents/` in the project.
+Project config lives at `.claude-src/config.ts` in the project directory. Project-scoped agents are compiled to `.claude/agents/` in the project. [Scopes and paths](/docs/configuration/scopes-and-paths) lists every directory each scope writes to.
+
+:::note[Doing this from the terminal]
+Press `s` on the focused row in the wizard's Skills step to flip that skill's scope. It's suppressed when you're already editing at global scope, where there's nothing to flip to.
+:::
+
+## Project skills never reach global sub-agents
+
+Global skills reach any sub-agent; project skills reach only project ones. A global sub-agent's front-matter is written to `~/.claude`, where every project on the machine sees it, so it can't name a skill installed under one project's `.claude` — from anywhere else, that skill isn't there.
+
+Both front doors enforce that from the same rule. Hand a project skill to a sub-agent still resting at global and the editor marks the roster row `This sub-agent must be set to project scope too`, and holds both Install and Share until you move one of the two — the sub-agent's own scope word, one line above, is the click that resolves it. `compile` states the same pair from the other side: it drops it, compiles the sub-agent without it, and says so on every run.
 
 ## What goes where
 
@@ -40,7 +68,16 @@ Project config lives at `.claude-src/config.ts` in the project directory. Projec
 
 ## Editing
 
-`npx agents-inc edit` from a project directory shows both global and project skills. Global items appear as locked and **cannot be removed from a project** — space is inert on those rows and the wizard says `Global skills cannot be changed from project scope`. The global install is shared by every project, so one project must not uninstall it for the others.
+**Once a global install exists, `init --from` won't touch it.** A payload carrying global-scoped content writes into your own `~/.claude`, so an installation already there is in its way even when the project you're standing in is spotless — the refusal names it and points at `uninstall`. `edit` is the command that accepts a setup already in place, in either direction:
+
+```bash
+npx agents-inc edit --ui              # publishes what's installed and opens it at agentsinc.sh
+npx agents-inc edit --from Ab3xY9_Q   # applies what you changed there
+```
+
+`edit --ui` prints `init --from <id>` beside the link, and that is not the command to come back with. [Switch a skill to eject](/docs/recipes/switch-a-skill-to-eject) walks the round trip once, start to finish.
+
+`npx agents-inc edit` with no flags does the same in the terminal. From a project directory it shows both global and project skills. Global items appear as locked and **cannot be removed from a project** — space is inert on those rows and the wizard says `Global skills cannot be changed from project scope`. The global install is shared by every project, so one project must not uninstall it for the others.
 
 To change a global item, edit at global scope: run `npx agents-inc edit` from `~/` (or from any directory without a project-scoped installation).
 

@@ -36,8 +36,10 @@ skill. Vitest is a skill. Code review is a skill. The default catalogue has
 {SKILL_COUNT} of them, and it lives in its own repository:
 [github.com/agents-inc/skills](https://github.com/agents-inc/skills).
 
-You select the skills matching the stack you actually use. Then the CLI
-**compiles** those skills into sub-agents.
+You select the skills matching the stack you actually use — in the browser at
+[agentsinc.sh](https://agentsinc.sh), or in a terminal wizard if you would
+rather stay where you are. Then the CLI **compiles** those skills into
+sub-agents.
 
 That compile step is the mechanism, and it is worth being precise about.
 Each sub-agent definition is not a prompt file — it is a set of partials:
@@ -64,7 +66,9 @@ See [Editing your config](/docs/guides/editing-config).
 
 ## What you actually get
 
-After `npx agents-inc init`:
+Selecting happens in the browser and installing happens in the terminal, since
+a browser page cannot write to your disk. Once the command the editor hands
+you has run:
 
 - **Compiled sub-agents** in `.claude/agents/`, one markdown file each. The
   catalogue currently defines {AGENT_COUNT} of them — a developer, a tester and
@@ -124,6 +128,9 @@ and Claude Code plugins. Nothing here targets another agent runtime.
 
 ## Next
 
-- [Quickstart](/docs/quickstart) — run it and see what lands on disk.
-- [CLI or web](/docs/cli-or-web) — if you would rather select skills in a
-  visual grid than a terminal.
+- [Quickstart](/docs/quickstart) — pick a stack, run the one command, and see
+  what lands on disk.
+- [The editor](/docs/editor) — the browser front door in full: what each
+  column holds, and what it deliberately cannot do.
+- [CLI or web](/docs/cli-or-web) — what each surface can do, and how a
+  configuration moves between them.

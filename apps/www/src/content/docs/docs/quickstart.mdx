@@ -1,0 +1,215 @@
+---
+title: Quickstart
+description: Pick your skills at agentsinc.sh, run the command it hands you, and see exactly which files land on disk.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components"
+
+Setting up is two moves: choose your skills at
+[agentsinc.sh](https://agentsinc.sh), then run the command it hands you. The
+editor is where you choose; the CLI is what writes to disk. Nothing reaches
+your filesystem until that command runs, so the browser half is safe to poke
+at. This page walks the run and names every file it leaves behind. Read it end
+to end the first time; after that the only command you need daily is
+`compile`.
+
+## Before you start
+
+You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+installed. Everything Agents Inc produces is a Claude Code sub-agent file or a
+Claude Code plugin.
+
+Nothing needs to be installed globally. `npx` fetches the CLI for you.
+
+## Quick start
+
+1. Open [agentsinc.sh](https://agentsinc.sh) and click a stack.
+2. Press **Install** at the foot of the right-hand column, and copy the
+   command out of the dialog.
+3. Run it. This is the CLI, and it is the part that writes to disk.
+
+`npx agents-inc init --ui` opens the same page from your shell if you would
+rather not leave it. It prints the address before it tries a browser, so it
+also works over SSH and on a machine with no desktop session — but it opens on
+the bare catalogue and carries nothing with it, so it is a link rather than a
+different route.
+
+```bash
+npx agents-inc init --from Ab3xY9_Q
+```
+
+Run it from your project root — the folder holding `package.json`. Anything
+you set to project scope is written relative to it; anything global lands in
+`~/.claude` wherever you run from. Global is the recommended starting point —
+see [Global-first setup](/docs/guides/global-first-setup).
+
+:::note[Prefer the terminal?]
+`npx agents-inc init` runs the same selection as a wizard. Same catalogue, same
+output — it skips the id because it is already standing where the files go.
+:::
+
+{/* WALKTHROUGH VIDEO PLACEHOLDER. */}
+{/* A recorded walkthrough of `init` exists and is embedded in the CLI's README */}
+{/* (packages/cli/README.md, under "Walkthrough (recommended)") as a GitHub */}
+{/* user-attachment URL. That URL only renders inside GitHub, so it cannot */}
+{/* simply be pasted here. */}
+{/* What belongs in this slot: the same walkthrough, re-hosted somewhere this */}
+{/* site can embed it. It records the terminal wizard rather than the editor, */}
+{/* so it belongs in the CLI tab of the section below — the reader has just */}
+{/* been told the wizard is there and has not yet been told what they will see */}
+{/* in it. */}
+
+## What you're choosing
+
+<Tabs syncKey="tool">
+  <TabItem label="Editor">
+
+Three columns. The middle one holds the stack grid under **choose your
+stack**, and below it every skill in the catalogue, laid out in cells under
+its domain. The right-hand column is the roster: every sub-agent there is,
+with the skills each one carries listed underneath.
+
+1. **Click a stack.** Its skills are selected and handed to the sub-agents
+   that want them, so you are adjusting a starting point rather than filling a
+   blank grid. The first cell is **Start from scratch** if you would rather
+   not. See [Stacks](/docs/concepts/stacks).
+2. **Click skill cells** to add or drop them. The search field and the domain
+   chips above the grid narrow what is on screen; they change nothing about
+   what is selected.
+3. **Set the two words on a cell** if the defaults are wrong: its install mode,
+   `plugin` or `eject`, and its scope, `project` or `global`. The `•••` button
+   opens both as a panel, along with which sub-agents carry the skill. See
+   [Install modes](/docs/concepts/install-modes).
+4. **Turn sub-agents on and off** in the roster, and set each one's model and
+   reasoning effort by clicking the words on its row.
+5. **Press Install** and copy the command.
+
+[The editor](/docs/editor) covers the whole screen, including the things it
+deliberately cannot do.
+
+  </TabItem>
+  <TabItem label="CLI">
+
+The wizard has six steps. You can go back at any point.
+
+1. **Stack** — pick a pre-built stack, or "Start from scratch". A stack is a
+   named selection of skills for a common setup; picking one gives you a
+   starting point rather than a blank grid. See
+   [Stacks](/docs/concepts/stacks).
+2. **Domains** — which areas you are configuring: web, api, cli, mobile,
+   shared, and so on. This decides which categories the next step shows you.
+3. **Skills** — the skill grid, organised by category. This is the main step:
+   one framework, one styling approach, one test runner, and so on. Categories
+   marked exclusive take a single choice.
+4. **Sources** — where each skill's files should live: `Plugin`, registered
+   with Claude Code, or `Local`, copied into your project. It is set per skill,
+   so a mixed installation is normal. See
+   [Install modes](/docs/concepts/install-modes).
+5. **Agents** — which sub-agents to compile from what you just selected.
+6. **Confirm** — the summary. Nothing is written until you accept it.
+
+Picking a stack always lands you on **Domains**. From there, press `A` on the
+**Skills** step to accept the stack's selections exactly as they stand and go
+straight to **Confirm**; Sources and Agents are skipped with it.
+
+Model and reasoning effort are not wizard choices. They are config fields —
+see [Models and effort](/docs/configuration/models-and-effort).
+
+  </TabItem>
+</Tabs>
+
+## What exists afterwards
+
+Take the wording of the summary the CLI prints seriously — it names the exact
+directories it wrote to, and where those are depends on the scope you chose.
+
+**Your configuration**, in `.claude-src/`:
+
+| File              | What it is                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `config.ts`       | Plain TypeScript, meant to be hand-edited. Your skills, your sub-agents, and the skill-to-agent `stack` mapping. |
+| `config-types.ts` | Generated. Type unions narrowed to what you actually installed, so a mistyped skill id is a type error.          |
+
+At global scope these live at `~/.claude-src/`.
+
+**Your compiled sub-agents**, in `.claude/agents/`, or `~/.claude/agents/` at
+global scope — one markdown file per sub-agent. These are build outputs.
+Editing them directly works until the next compile overwrites them; to change a
+sub-agent for real, see
+[Customizing subagents](/docs/guides/customizing-subagents).
+
+**Your skills**, in one of two places depending on install mode:
+
+- **Plugin** (the default) — registered as Claude Code plugins, under
+  `~/.claude/plugins/` at global scope and `.claude/plugins/` at project scope.
+  Nothing is copied into your project source.
+- **Eject** — copied into `.claude/skills/`, or `~/.claude/skills/` at global
+  scope. Yours to modify.
+
+Mode is chosen per skill, so a real installation is often mixed. See
+[Install modes](/docs/concepts/install-modes).
+
+:::note[Seeing this before you run anything]
+**Preview generated code**, above the editor's Install button, draws the same
+file tree with each file's contents beside it. It is rendered by the same
+package the CLI compiles with, so the paths are the ones you will get rather
+than an illustration of them.
+:::
+
+## The next command
+
+Open `.claude-src/config.ts`, change something, and run:
+
+```bash
+npx agents-inc compile
+```
+
+`compile` is the command you will run most. It rebuilds every sub-agent from
+the current config and is non-interactive, so it is safe in scripts and CI.
+[Editing your config](/docs/guides/editing-config) covers what is worth
+changing in there — mainly the `stack` mapping, which decides which skills each
+sub-agent receives, and whether each one is preloaded or loaded on demand. Every
+field the file accepts is listed in the
+[config reference](/docs/configuration/config-reference).
+
+## When something looks wrong
+
+```bash
+npx agents-inc doctor
+```
+
+Health checks over the installation: config parses, skills resolve, sub-agents
+compiled, no orphans, marketplace reachable. It exits non-zero if any check
+fails.
+
+`npx agents-inc list` shows what is installed. The full set is in the
+[commands reference](/docs/reference/commands), and
+[Troubleshooting](/docs/troubleshooting) covers what each refusal means.
+
+## Changing your mind
+
+The editor cannot read what is on your disk, so going back to it is a round
+trip through two commands:
+
+```bash
+npx agents-inc edit --ui          # publishes this installation and opens it
+npx agents-inc edit --from <id>   # applies what you changed there
+```
+
+The second command is the one to get right. The install dialog only ever hands
+out `init --from`, and that one refuses a directory that already has an
+installation — `An installation already exists at …`. `edit --from` is the one
+that accepts a setup already in place. It states a whole roster, so whatever it
+leaves out is removed, and every removal is named before anything is written.
+
+:::note[Doing this from the terminal]
+`npx agents-inc edit` reopens the wizard with your current selections loaded,
+shows a diff at the confirm step, and on confirm reinstalls, rewrites the
+config and recompiles.
+:::
+
+To pull newer skill content from the marketplace, `npx agents-inc update`. It
+refreshes every marketplace your config names through Claude Code's own plugin
+registry, and that is all it does — it asks nothing, and it recompiles nothing,
+because a sub-agent references a plugin skill by pointer rather than by copy.
+Ejected skills are copies you own, so it never touches them.

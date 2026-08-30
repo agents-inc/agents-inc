@@ -5,9 +5,21 @@
  * Its one job is the thing people say they struggle with most: understanding
  * *why* they would use this. A visitor who reads only the top third should be
  * able to say what it is and what it does for them. Everything here is
- * subordinate to that — which is why the sections are the five of the research
- * note's "minimum first ship" (nav · hero · what-it-is · free-and-open-source ·
- * footer) and not the twelve-section plan beside it.
+ * subordinate to that.
+ *
+ * The sections were the five of the research note's "minimum first ship" until
+ * 2026-08-27, and that list was missing the one block the note calls the
+ * centrepiece — so the page did not meet its own stated bar. It now runs nav ·
+ * hero · stats · what-it-is · catalogue · how-it-works · recording ·
+ * write-your-own · free-and-open-source · final CTA · footer.
+ *
+ * TWO OF THE NOTE'S TWELVE ARE DELIBERATELY ABSENT, and neither is an
+ * oversight. "Three pillars" is a shape rather than a claim, and "The
+ * approach" already does that job in prose. A proof block has nothing true to
+ * put in it — no users, no testimonial, no dated benchmark — and the note's
+ * own anti-pattern list is what rules it out: an empty proof block is how
+ * `warp.dev` came to serve "0K Active Developers". The same reasoning keeps a
+ * GitHub star count out of the nav; it would render zero.
  *
  * This page is not a Starlight page. It gets no sidebar, no docs header and no
  * prefetch script; it shares only the design tokens, via the stylesheet below.
@@ -41,6 +53,115 @@ import cliPackage from "../../../../packages/cli/package.json"
  * how it survived the catalogue growing to 228 — see src/lib/catalog-counts.ts.
  */
 import { SKILL_COUNT } from "../lib/catalog-counts"
+
+/**
+ * The stats strip and the catalogue teaser both count rather than claim. The
+ * research note this page follows is explicit about why: a round number reads
+ * as invented where `turborepo`'s "9,001,168 hours of compute saved" reads as
+ * measured. 238 / 18 / 9 are odd because they are real, and they are read from
+ * the catalogue at build time so they cannot drift from it.
+ */
+import { AGENT_COUNT, DOMAIN_COUNT } from "../lib/catalog-counts"
+import { CATALOG } from "@workspace/matrix"
+
+/**
+ * THE CATALOGUE TEASER'S DATA. A teaser, not a catalogue — the research note's
+ * one hard limit is "never the whole catalogue", because dumping it is the
+ * failure mode this section exists to fix.
+ *
+ * Six categories per domain and four skills each, so the widest tab shows
+ * about twenty of its skills and says how many it did not show. The shape is
+ * the editor's own grid in miniature: categories down, skills within, which
+ * makes this a preview of the thing rather than a word cloud.
+ *
+ * Ordered as the catalogue orders them rather than by size. Sorting by
+ * skill-count would put whichever category grew last at the top and quietly
+ * reorder the page on a catalogue change nobody made for this page.
+ */
+const TEASER_CATEGORIES = 6
+const TEASER_SKILLS_PER_CATEGORY = 4
+
+const TEASER_DOMAINS = CATALOG.domains.map((domain) => {
+  const categories = domain.categories.slice(0, TEASER_CATEGORIES).map((category) => ({
+    id: category.id,
+    displayName: category.displayName,
+    exclusive: category.exclusive,
+    skills: category.skills.slice(0, TEASER_SKILLS_PER_CATEGORY),
+  }))
+  const shown = categories.reduce((total, category) => total + category.skills.length, 0)
+  return {
+    id: domain.id,
+    label: domain.label,
+    skillCount: domain.skillCount,
+    categories,
+    // Suppressed at zero rather than rendered as "+ 0 more": the CLI domain
+    // ships three skills in two categories, so the teaser shows all of them.
+    remaining: domain.skillCount - shown,
+  }
+})
+
+/**
+ * THE TAB RULES, generated from the same array the markup renders so a domain
+ * cannot appear in one and not the other. Nine `:checked` pairs: one showing
+ * that domain's panel, one marking its label. Written as a raw string and
+ * shipped `is:inline` because Astro's scoped styles rewrite selectors, and
+ * these are generated rather than authored.
+ */
+const CATALOGUE_CSS = [
+  /* Off-screen but still focusable: `hidden` would take the tabs out of the
+     keyboard order, and the radios ARE the keyboard interface. */
+  ".catalogue-input{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
+  ".catalogue-panel{display:none}",
+  /* The resting and hover halves of packages/ui's Chip, `size: filter`. The
+     active half is generated per domain below, because only a `:checked`
+     sibling selector knows which one it is. */
+  ".catalogue-tab{border-color:var(--color-chip-border);background:transparent;color:var(--color-muted-foreground)}",
+  ".catalogue-tab:hover{border-color:var(--color-line-hover)}",
+  ...CATALOG.domains.flatMap((domain) => [
+    `#catalogue-${domain.id}:checked~.catalogue-panel[data-domain="${domain.id}"]{display:block}`,
+    `#catalogue-${domain.id}:checked~div label[for="catalogue-${domain.id}"]{border-color:var(--color-brand-border);background:var(--color-wash);color:var(--color-brand-ink)}`,
+    `#catalogue-${domain.id}:focus-visible~div label[for="catalogue-${domain.id}"]{outline:1px solid var(--color-ring);outline-offset:2px}`,
+  ]),
+  /* SECTION HEADINGS ARE THEIR OWN ANCHOR. Clicking one puts its id in the
+     address bar, so any section on this page can be linked to directly — which
+     is what replaced the `#id` labels that used to sit in the margin beside
+     them. Amber on hover, the same accent the chips carry, because following
+     one is a deliberate act. */
+  ".heading-anchor{color:inherit;text-decoration:none}",
+  ".heading-anchor:hover{color:var(--color-brand-ink)}",
+  ".heading-anchor:focus-visible{outline:1px solid var(--color-ring);outline-offset:3px}",
+].join("")
+
+/** The tab that opens. Web is the largest domain and the one most visitors are in. */
+const TEASER_DEFAULT = TEASER_DOMAINS[0]?.id ?? "web"
+
+/**
+ * HOW IT WORKS, as three steps rather than as an argument. This replaced a
+ * section headed "Two front doors" whose closing words were "use whichever you
+ * prefer" — which the owner overruled on 2026-08-27: the two are not on equal
+ * footing, and they are not alternatives at all. A browser cannot write to a
+ * filesystem, so selecting and installing are sequential, and every editor
+ * visitor runs a CLI command. Steps show that; a comparison argued the
+ * opposite.
+ */
+const STEPS = [
+  {
+    label: "Choose",
+    body:
+      "Open the editor and click a stack, or pick skills yourself. The whole catalogue is on one screen.",
+  },
+  {
+    label: "Copy",
+    body:
+      "Press Install. The editor hands you one command carrying everything you selected.",
+  },
+  {
+    label: "Run",
+    body:
+      "Run it in your project. The CLI installs the skills and compiles one sub-agent per role you kept.",
+  },
+]
+
 
 /** The destinations this page shares with the header, the footer and 404. */
 import {
@@ -120,9 +241,10 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{PAGE_TITLE}</title>
     <meta name="description" content={PAGE_DESCRIPTION} />
+    <style is:inline set:html={CATALOGUE_CSS}></style>
   </head>
   <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
-  <body>
+  <body class="framed">
     {/*
       Every developer-facing note below this line is a JSX-style comment rather
       than an HTML one, because Astro strips these from the output and ships
@@ -133,6 +255,15 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
       so there is no hairline under this header and none between any two
       sections below. The only borders on the page enclose something: the mark,
       the command block, the outline button and the video slot.
+
+      THE FRAME IS THE ONE RULED EXCEPTION, added 2026-08-27. `body.framed` in
+      site.css draws a hatched gutter, a content rail each side and a tick
+      ruler along the top. The rails comply with rule 5 as written — they
+      enclose the content column — but the hatch and the ruler are vocabulary
+      the rule does not cover, and they are deliberate rather than drift.
+      Chosen by the owner from a lab of eleven treatments; the reasoning is in
+      site.css's FRAME block and the constraint is recorded in todo/www.md so
+      a later pass does not read them as a violation and remove them.
     */}
     {/*
       `px-8 sm:px-gutter` on all three wrappers — the header's is inside the
@@ -146,7 +277,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
     */}
     <SiteHeader />
 
-    <main class="mx-auto max-w-3xl px-8 pt-gutter pb-gutter sm:px-gutter">
+    <main class="mx-auto max-w-page px-8 pt-gutter pb-gutter sm:px-gutter">
       <section aria-labelledby="headline">
         {/* Muted, not amber: rule 4 reserves the accent for what the user
             deliberately chose, and an eyebrow is not a choice. The same six
@@ -161,7 +292,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
             presumed the reader already knew what a Claude Code sub-agent was
             and why composing them mattered, which is the one thing a stranger
             does not know. Pain first, mechanism second, in that order. */}
-        <h1 id="headline" class="text-h1 text-ink mt-4 max-w-xl font-semibold">
+        <h1 id="headline" class="text-h1 text-ink mt-4 max-w-measure font-semibold">
           Hand-written Claude Code sub-agents duplicate each other and go stale
         </h1>
 
@@ -176,7 +307,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
             page ever did: prompt files "duplicate each other, drift apart, and
             cannot be composed". Concrete rather than abstract on purpose — the
             same paragraph pasted three times is the thing people recognise. */}
-        <p class="text-body text-ink-3 mt-4 max-w-xl">
+        <p class="text-body text-ink-3 mt-4 max-w-measure">
           A sub-agent is a specialised Claude Code assistant with its own instructions —
           in practice, a long prompt file. Once you have three of them, all three need the
           same paragraph about React, so you paste it into all three. Then React changes,
@@ -186,13 +317,29 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         {/* And only now the mechanism, kept to two sentences: the fuller
             version is "The approach" below, and repeating it verbatim here
             would just be the same paragraph twice. */}
-        <p class="text-body text-ink-3 mt-4 max-w-xl">
+        <p class="text-body text-ink-3 mt-4 max-w-measure">
           Agents Inc breaks that expertise into atomic skills instead and compiles them
           into sub-agents. The React knowledge exists once; recompile, and every sub-agent
           built from it is rewritten.
         </p>
 
         <div class="mt-8 flex flex-wrap items-start gap-[0.6875rem]">
+          {/* The Button primitive's `outline` variant, same reason as above.
+              A different action to a different place, so it is not a second
+              copy of the primary one.
+
+              IT LEADS, and that is an owner ruling rather than a layout
+              preference. The editor is the main way in; the command block
+              beside it is the terminal route, which is the alternative for
+              SELECTING and not an alternative to installing. Position is what
+              says so — amber cannot, because rule 4 reserves it for what the
+              user deliberately chose and neither of these is a choice yet. */}
+          <a
+            href={EDITOR_URL}
+            class="inline-flex shrink-0 cursor-pointer items-center justify-center border border-rule bg-cell px-[0.9375rem] py-[0.625rem] font-mono text-9_5 font-semibold tracking-[.11em] whitespace-nowrap text-ink-3 uppercase outline-none select-none hover:border-dialog-border hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
+            >Build a stack &rarr;</a
+          >
+
           <div>
             {/*
               packages/ui's CommandBlock, `copyable`, rebuilt in plain markup
@@ -229,24 +376,46 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
             >
             </p>
           </div>
-
-          {/* The Button primitive's `outline` variant, same reason as above.
-              A different action to a different place, so it is not a second
-              copy of the primary one. */}
-          <a
-            href={EDITOR_URL}
-            class="inline-flex shrink-0 cursor-pointer items-center justify-center border border-rule bg-cell px-[0.9375rem] py-[0.625rem] font-mono text-9_5 font-semibold tracking-[.11em] whitespace-nowrap text-ink-3 uppercase outline-none select-none hover:border-dialog-border hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
-            >Build a stack &rarr;</a
-          >
         </div>
+      </section>
+
+      {/*
+        THE STATS STRIP. Three counted facts, and every one of them is read
+        from the catalogue at build time — see the note on the imports. The
+        research warns against two things here specifically and both are
+        avoided: no round numbers, because they read as invented, and no
+        animated counters, because a counter with no static fallback is how
+        `warp.dev` came to serve "0K Active Developers" to anybody whose
+        JavaScript had not run. These are three numbers in the markup.
+
+        Rule 5 — whitespace separates content, not rules — so the three sit in
+        a grid with no dividers between them and no border around them.
+      */}
+      <section class="mt-gutter" aria-label="The catalogue in numbers">
+        <dl class="grid grid-cols-3 gap-x-8 gap-y-6 sm:gap-x-10">
+          <div>
+            <dt class={LABEL_ROW_CLASS}>Skills</dt>
+            <dd class="text-h2 mt-1.5 font-semibold text-ink">{SKILL_COUNT}</dd>
+          </div>
+          <div>
+            <dt class={LABEL_ROW_CLASS}>Sub-agents</dt>
+            <dd class="text-h2 mt-1.5 font-semibold text-ink">{AGENT_COUNT}</dd>
+          </div>
+          <div>
+            <dt class={LABEL_ROW_CLASS}>Domains</dt>
+            <dd class="text-h2 mt-1.5 font-semibold text-ink">{DOMAIN_COUNT}</dd>
+          </div>
+        </dl>
       </section>
 
       {/* WHAT IT IS. The problem used to open this run of sections; it is in
           the hero now, so what remains is what this does instead and — because
           it is the question people actually ask — how the terminal and the web
           editor relate. */}
-      <section class="mt-gutter max-w-xl" aria-labelledby="the-approach">
-        <h2 id="the-approach" class={SECTION_HEADING_CLASS}>The approach</h2>
+      <section class="mt-gutter max-w-measure" aria-labelledby="the-approach">
+        <h2 id="the-approach" class={SECTION_HEADING_CLASS}>
+          <a class="heading-anchor" href="#the-approach">The approach</a>
+        </h2>
         <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
           A skill is one atomic, reusable unit — one library or one practice: React,
           Tailwind, Zod, Vitest, Hono. You choose the ones matching the stack you actually
@@ -256,14 +425,121 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         </p>
       </section>
 
-      <section class="mt-8 max-w-xl" aria-labelledby="two-front-doors">
-        <h2 id="two-front-doors" class={SECTION_HEADING_CLASS}>Two front doors</h2>
-        <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
-          <em class={INLINE_CODE_CLASS}>{INSTALL_COMMAND}</em> runs the whole selection as a
-          wizard in your terminal. The editor is that same selection as a visual grid:
-          it hands back an id, and you give the id to the same command as{" "}
-          <em class={INLINE_CODE_CLASS}>--from &lt;id&gt;</em>. Same catalogue, same output —
-          use whichever you prefer.
+      {/*
+        THE CATALOGUE TEASER — the centrepiece, in the research note's own
+        words, and the section whose absence meant this page did not meet its
+        own stated minimum. It answers the question a stranger actually has:
+        what is in it.
+
+        NO JAVASCRIPT. The tabs are nine radio inputs and CSS sibling
+        selectors. Radios give keyboard support for free — arrow keys move
+        between them, exactly what a tab strip should do — and the page already
+        ships one inline script for the copy button, which is one more than a
+        landing page wants. The inputs are positioned off-screen rather than
+        `hidden`, because `hidden` takes them out of the focus order too.
+
+        Rule 5 holds here as it does everywhere else on this page: the tabs are
+        separated from the grid by space, not by a rule, and no cell has a box
+        around it. The one visual marker is the active tab, and it is ink
+        against muted rather than amber — rule 4 reserves amber for what the
+        user deliberately chose, and which tab is open is a view, not a choice
+        about their stack.
+      */}
+      <section class="mt-gutter" aria-labelledby="the-catalogue">
+        <h2 id="the-catalogue" class={SECTION_HEADING_CLASS}>
+          <a class="heading-anchor" href="#the-catalogue">The catalogue</a>
+        </h2>
+        <p class={`mt-3 max-w-measure ${PARAGRAPH_CLASS}`}>
+          {SKILL_COUNT} skills across {DOMAIN_COUNT} domains, grouped the way the editor groups
+          them. Most rows take one choice — picking React rules out Solid — which is what
+          makes this a stack rather than a list.
+        </p>
+
+        <div class="catalogue mt-7">
+          {
+            TEASER_DOMAINS.map((domain) => (
+              <input
+                class="catalogue-input"
+                type="radio"
+                name="catalogue-domain"
+                id={`catalogue-${domain.id}`}
+                checked={domain.id === TEASER_DEFAULT}
+              />
+            ))
+          }
+
+          <div class="flex flex-wrap gap-[0.125rem]" role="presentation">
+            {
+              TEASER_DOMAINS.map((domain) => (
+                <label
+                  class="catalogue-tab cursor-pointer border px-[0.5625rem] py-[0.375rem] font-mono text-9 font-medium tracking-[.07em] whitespace-nowrap uppercase"
+                  for={`catalogue-${domain.id}`}
+                >
+                  {domain.label} {domain.skillCount}
+                </label>
+              ))
+            }
+          </div>
+
+          {
+            TEASER_DOMAINS.map((domain) => (
+              <div class="catalogue-panel mt-7" data-domain={domain.id}>
+                <div class="grid gap-x-8 gap-y-7 sm:grid-cols-3 sm:gap-x-10">
+                  {domain.categories.map((category) => (
+                    <div>
+                      <p class="text-body font-semibold text-ink">{category.displayName}</p>
+                      <ul class="mt-2">
+                        {category.skills.map((skill) => (
+                          <li class="text-body text-ink-3 leading-[1.7]">{skill.displayName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+                {
+                  domain.remaining > 0 && (
+                    <p class={`mt-7 ${LABEL_ROW_CLASS}`}>
+                      + {domain.remaining} more {domain.label.toLowerCase()} skills
+                    </p>
+                  )
+                }
+              </div>
+            ))
+          }
+        </div>
+
+        <a
+          href={EDITOR_URL}
+          class="mt-7 inline-flex shrink-0 cursor-pointer items-center justify-center border border-rule bg-cell px-[0.9375rem] py-[0.625rem] font-mono text-9_5 font-semibold tracking-[.11em] whitespace-nowrap text-ink-3 uppercase outline-none select-none hover:border-dialog-border hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
+          >Browse the catalogue &rarr;</a
+        >
+      </section>
+
+      {/*
+        HOW IT WORKS. See the STEPS note in the frontmatter for what this
+        replaced and why. Three columns at the page's full width, which is what
+        the 20% widening bought — at 48rem this was two columns and a widow.
+      */}
+      <section class="mt-gutter" aria-labelledby="how-it-works">
+        <h2 id="how-it-works" class={SECTION_HEADING_CLASS}>
+          <a class="heading-anchor" href="#how-it-works">How it works</a>
+        </h2>
+        <ol class="mt-5 grid gap-x-8 gap-y-7 sm:grid-cols-3 sm:gap-x-10">
+          {
+            STEPS.map((step, index) => (
+              <li>
+                <p class={LABEL_ROW_CLASS}>
+                  {String(index + 1).padStart(2, "0")} &middot; {step.label}
+                </p>
+                <p class={`mt-2 ${PARAGRAPH_CLASS}`}>{step.body}</p>
+              </li>
+            ))
+          }
+        </ol>
+        <p class={`mt-6 max-w-measure ${PARAGRAPH_CLASS}`}>
+          Prefer the terminal? <em class={INLINE_CODE_CLASS}>{INSTALL_COMMAND}</em> runs the
+          same selection as a wizard, and ends at the same install. The browser cannot write
+          to your disk, so step three is the CLI either way.
         </p>
       </section>
 
@@ -289,12 +565,12 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         everything below it down the day a real file lands. `aspect-video` on
         a fixed-width box holds exactly the space the file will occupy.
 
-        WHY max-w-xl. Same measure as every paragraph on this page, so it
+        WHY max-w-measure. Same measure as every paragraph on this page, so it
         reads as part of the column rather than as a banner across it. It also
         shrinks: measured at 1440 wide, 576x324, where full-bleed in `main` it
         would be 660x371. (It was 634x356 until 2026-08-21, when site.css
         stopped the site inheriting the editor's 110% root font-size — the box
-        is the same `aspect-video max-w-xl` it always was, and 36rem simply
+        is the same `aspect-video max-w-measure` it always was, and 36rem simply
         stopped meaning 634px.)
 
         TO FILL IT IN: drop the file into apps/www/public/ and replace the
@@ -322,7 +598,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
             would need downloading into public/ rather than hotlinking.
       */}
       <div
-        class="mt-gutter flex aspect-video w-full max-w-xl items-center justify-center border border-hairline bg-code"
+        class="mt-gutter flex aspect-video w-full max-w-measure items-center justify-center border border-hairline bg-code"
       >
         {/* `subtle`, not the quieter `faint` one step below it: `faint` on
             this surface measures 3.4:1, under the 4.5:1 this size of text
@@ -338,8 +614,39 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
           anyone has to go looking. No star count and no contributor avatars —
           both would have to be fetched, and a number nobody measured is worse
           than no number. */}
-      <section class="mt-gutter max-w-xl" aria-labelledby="free-and-open-source">
-        <h2 id="free-and-open-source" class={SECTION_HEADING_CLASS}>Free and open source</h2>
+      {/*
+        AUTHOR YOUR OWN. The catalogue teaser says what exists; this says the
+        set is not closed. It sits after the teaser and before the licence
+        block for the reason the research gives — the reader has just seen the
+        scale of the thing, and the next question is whether they are stuck
+        with it.
+      */}
+      <section class="mt-gutter max-w-measure" aria-labelledby="author-your-own">
+        <h2 id="author-your-own" class={SECTION_HEADING_CLASS}>
+          <a class="heading-anchor" href="#author-your-own">Write your own</a>
+        </h2>
+        <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
+          A skill is two files in a directory — <em class={INLINE_CODE_CLASS}>SKILL.md</em> and{" "}
+          <em class={INLINE_CODE_CLASS}>metadata.yaml</em> — so anything the catalogue does not
+          cover, you can add. Drop one into{" "}
+          <em class={INLINE_CODE_CLASS}>.claude/skills/</em> and the CLI finds it on the next
+          compile, or start from a working copy with{" "}
+          <em class={INLINE_CODE_CLASS}>eject skills</em>. The catalogue itself is a public
+          repository, so a skill you write for yourself is one pull request from being everyone
+          else's.
+        </p>
+        <p class="mt-4">
+          <a
+            href={`${DOCS_PATH}/guides/writing-custom-skills`}
+            class={`${LABEL_ROW_CLASS} ${FOOTER_LINK_CLASS}`}>Writing custom skills &rarr;</a
+          >
+        </p>
+      </section>
+
+      <section class="mt-gutter max-w-measure" aria-labelledby="free-and-open-source">
+        <h2 id="free-and-open-source" class={SECTION_HEADING_CLASS}>
+          <a class="heading-anchor" href="#free-and-open-source">Free and open source</a>
+        </h2>
         <p class={`mt-3 ${PARAGRAPH_CLASS}`}>
           Agents Inc is {cliPackage.license} licensed and free to use. The CLI and the skill
           catalogue are both public repositories — read them, fork them, or open a pull
@@ -354,10 +661,32 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
           >
         </p>
       </section>
+
+      {/*
+        THE FINAL CTA. One, and it is the editor — the research warns against
+        two identical calls to action, and the hero's pair is the terminal
+        route beside it rather than a second copy of this. Nothing new is
+        claimed here; it is the same destination the page opened with, offered
+        again to somebody who has now read why.
+      */}
+      <section class="mt-gutter" aria-labelledby="start">
+        <h2 id="start" class={SECTION_HEADING_CLASS}>
+          <a class="heading-anchor" href="#start">Start with your stack</a>
+        </h2>
+        <p class={`mt-3 max-w-measure ${PARAGRAPH_CLASS}`}>
+          Pick the skills you actually use. The editor hands you one command, and nothing
+          reaches your filesystem until you run it.
+        </p>
+        <a
+          href={EDITOR_URL}
+          class="mt-5 inline-flex shrink-0 cursor-pointer items-center justify-center border border-rule bg-cell px-[0.9375rem] py-[0.625rem] font-mono text-9_5 font-semibold tracking-[.11em] whitespace-nowrap text-ink-3 uppercase outline-none select-none hover:border-dialog-border hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
+          >Build a stack &rarr;</a
+        >
+      </section>
     </main>
 
     <footer
-      class={`mx-auto flex max-w-3xl flex-wrap items-center gap-x-[1.125rem] gap-y-2 px-8 pb-gutter sm:px-gutter ${LABEL_ROW_CLASS}`}
+      class={`mx-auto flex max-w-page flex-wrap items-center gap-x-[1.125rem] gap-y-2 px-8 pb-gutter sm:px-gutter ${LABEL_ROW_CLASS}`}
     >
       <span>{cliPackage.license} licensed</span>
       <span>v{cliPackage.version}</span>

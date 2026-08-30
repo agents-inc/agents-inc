@@ -36,14 +36,14 @@ const PAGE_TITLE = "Page not found | Agents Inc"
     <meta name="robots" content="noindex" />
   </head>
   <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
-  <body>
+  <body class="framed">
     <SiteHeader />
 
     {/* The landing page's own main wrapper, so a miss lands in the same column
         the site's other unstyled-by-Starlight page uses. */}
-    <main class="mx-auto max-w-3xl px-8 pt-gutter pb-gutter sm:px-gutter">
-      <h1 class="text-h1 text-ink max-w-xl font-semibold">Page not found</h1>
-      <p class="text-body text-ink-3 mt-4 max-w-xl">
+    <main class="mx-auto max-w-page px-8 pt-gutter pb-gutter sm:px-gutter">
+      <h1 class="text-h1 text-ink max-w-measure font-semibold">Page not found</h1>
+      <p class="text-body text-ink-3 mt-4 max-w-measure">
         That page does not exist. It may have moved, or the link that sent you here may be
         out of date.
       </p>

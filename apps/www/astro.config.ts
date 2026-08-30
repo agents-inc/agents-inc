@@ -1,6 +1,7 @@
 import starlight from "@astrojs/starlight"
 import type { StarlightExpressiveCodeOptions } from "@astrojs/starlight/expressive-code"
 import tailwindcss from "@tailwindcss/vite"
+import { inkRampSyntaxTheme } from "@workspace/ui/lib/syntax-theme"
 import { defineConfig } from "astro/config"
 
 // The same three destinations the header, the footer and the 404 page use.
@@ -33,94 +34,38 @@ import {
 const CODE_BLOCK_DEFAULTS = { frame: "none" } as const
 
 /**
- * SYNTAX COLOUR, from the palette that exists rather than from a theme that
- * ships with the tool.
+ * SYNTAX COLOUR, from @workspace/ui rather than from a theme that ships with
+ * the tool.
  *
- * Starlight's default light theme is Night Owl Light, whose plain code text is
- * `#403f53` and whose keywords are `#3b61b0` — a blue that appears nowhere in
- * this design system, which has a warm ink ramp and exactly one accent.
+ * The theme itself — its palette, its scope groups, and why it ranks code by
+ * lightness rather than by hue — lives in packages/ui/src/lib/syntax-theme.ts,
+ * beside the globals.css tokens whose five hexes it mirrors. It was declared
+ * here while this site was its only consumer, and stopped being one when the
+ * editor's output preview needed the same colours: a second copy of a palette
+ * is a second syntax identity, drifting from the first. So nothing about the
+ * theme may come back into this file, and scripts/check-syntax-theme.ts reads
+ * both this config and the built HTML to hold that.
  *
- * So this theme ranks by *lightness* and spends the one accent, which is what
- * the design does everywhere else — "the design ranks text with tiny contrast
- * steps" is globals.css's own description of its ink ramp. Four rules:
- *   · everything, by default → `ink`, the same weight as body text
- *   · keywords and punctuation → `subtle`, because they are structure
- *   · string and numeric literals → `brand-ink`, because a literal is the part
- *     of an example a reader substitutes, and amber marks a chosen value
- *   · comments → `faint`, italic
+ * WHAT IS THIS SITE'S OWN, AND STAYS: the pair. Two themes are required
+ * whenever `themes` is set, and Starlight will not accept one. Both entries are
+ * the same light theme, because the site ships a single light theme by decision
+ * (see src/components/theme-provider.astro) — so the dark slot must not be
+ * allowed to resolve to Night Owl Dark on the no-JS path, where Starlight's own
+ * Page.astro hardcodes `data-theme="dark"`.
  *
- * Two themes are required whenever `themes` is set, and Starlight will not
- * accept one. Both entries are this same light theme: the site ships a single
- * light theme by decision (see src/components/theme-provider.astro), so the
- * dark slot must not be allowed to resolve to Night Owl Dark on the no-JS path
- * where Starlight's own Page.astro hardcodes `data-theme="dark"`.
+ * The shape is Starlight's own, taken from the option the pair is handed to
+ * rather than restated. The shared factory declares its return structurally and
+ * imports nothing, precisely so each consumer satisfies its own toolchain's
+ * type at the call site; the annotation below is this site doing that.
  *
  * ONE THING TO KNOW BEFORE CHANGING ANY OF THIS: Expressive Code caches its
  * rendered output, and a stale cache survives an ordinary rebuild. If an edit
- * here appears to do nothing, `rm -rf dist .astro node_modules/.astro` before
+ * appears to do nothing, `rm -rf dist .astro node_modules/.astro` before
  * concluding it did not work.
- */
-
-/**
- * The five design tokens this theme spends, by their names in
- * packages/ui/src/styles/globals.css. They are literal hex here and nowhere
- * else on this site, because a TextMate theme is consumed by a syntax
- * highlighter at build time and cannot read a CSS custom property. If the
- * palette moves, these five move with it.
- */
-const PALETTE = {
-  ink: "#242320",
-  subtle: "#6a675c",
-  faint: "#8b8778",
-  brandInk: "#a06a1c",
-  codeSurface: "#faf9f5",
-} as const
-
-/**
- * TextMate scopes, grouped by what they MEAN rather than by what they match,
- * so the three rules below read as the sentence the design makes: structure is
- * quieter than content, a literal is the part you would change, and a comment
- * is the quietest thing on the page.
- */
-const STRUCTURE_SCOPES = [
-  "keyword",
-  "storage",
-  "punctuation",
-  "operator",
-  "entity.name.tag",
-]
-const LITERAL_SCOPES = ["string", "constant.numeric", "constant.language"]
-const COMMENT_SCOPES = ["comment", "punctuation.definition.comment"]
-
-/**
- * The theme's shape is Starlight's own, taken from the option it is handed to
- * rather than restated. `as const` cannot be used on the object below for the
- * ordinary reason it usually can: the highlighter mutates `settings` while it
- * resolves scopes, so a readonly array is rejected at the boundary.
  */
 type SyntaxTheme = NonNullable<StarlightExpressiveCodeOptions["themes"]>[number]
 
-const inkRampSyntaxTheme = (
-  name: string,
-  type: "light" | "dark"
-): SyntaxTheme => ({
-  name,
-  type,
-  colors: {
-    "editor.background": PALETTE.codeSurface,
-    "editor.foreground": PALETTE.ink,
-  },
-  settings: [
-    { scope: STRUCTURE_SCOPES, settings: { foreground: PALETTE.subtle } },
-    { scope: LITERAL_SCOPES, settings: { foreground: PALETTE.brandInk } },
-    {
-      scope: COMMENT_SCOPES,
-      settings: { foreground: PALETTE.faint, fontStyle: "italic" },
-    },
-  ],
-})
-
-const SYNTAX_THEMES = [
+const SYNTAX_THEMES: SyntaxTheme[] = [
   inkRampSyntaxTheme("agents-inc-dark", "dark"),
   inkRampSyntaxTheme("agents-inc", "light"),
 ]
@@ -293,7 +238,12 @@ export default defineConfig({
             { slug: "docs/concepts/skills" },
             { slug: "docs/concepts/sub-agents" },
             { slug: "docs/concepts/stacks" },
+            // Install mode and scope are the two independent per-skill choices
+            // and sit as a pair. They were one page until 2026-08-27; the title
+            // said "Install modes" while half the body was scope, so a reader
+            // looking for project-versus-global could not find it by name.
             { slug: "docs/concepts/install-modes" },
+            { slug: "docs/concepts/scopes" },
           ],
         },
         // Autogenerated groups are nested inside `items` rather than sitting
@@ -302,6 +252,35 @@ export default defineConfig({
         {
           label: "Guides",
           items: [{ autogenerate: { directory: "docs/guides" } }],
+        },
+
+        // The four groups below join the three above them in ascending
+        // commitment: a reader arrives at Guides with a task, at Configuration
+        // once the wizard's choices stop being enough, at The editor if they
+        // would rather see the catalogue than type at it, and at Recipes and
+        // Troubleshooting with something specific already in mind.
+        //
+        // `autogenerate` rather than a hand-listed `items` for all four, so a
+        // page added to one of these directories joins the sidebar by existing.
+        // The five hand-listed groups above predate the convention and are left
+        // alone; the cost of the automatic form is that ordering is delegated
+        // to each page's own `sidebar: order:` frontmatter, which every page in
+        // these four directories carries.
+        {
+          label: "Configuration",
+          items: [{ autogenerate: { directory: "docs/configuration" } }],
+        },
+        {
+          label: "The editor",
+          items: [{ autogenerate: { directory: "docs/editor" } }],
+        },
+        {
+          label: "Recipes",
+          items: [{ autogenerate: { directory: "docs/recipes" } }],
+        },
+        {
+          label: "Troubleshooting",
+          items: [{ autogenerate: { directory: "docs/troubleshooting" } }],
         },
         {
           label: "Reference",

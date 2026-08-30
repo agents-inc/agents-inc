@@ -46,6 +46,33 @@
 @import "@workspace/ui/globals.css";
 
 /**
+ * THE LANDING PAGE'S MEASURE. Owner ruling 2026-08-27, revised the same day.
+ *
+ * It was `max-w-3xl` — 48rem — on the header, `main`, the footer and the 404,
+ * and the four have to move together or the wordmark stops sitting above the
+ * text it belongs to. 64rem is the common step in this range and the one most
+ * sites in this category stop at; Tailwind calls it `5xl`, and 1024px is a
+ * width readers are used to.
+ *
+ * `--measure` is the second half and the one that matters more. The prose was
+ * capped at 36rem, which is 67 characters — textbook-optimal, and the reason
+ * the page looked ragged once the wide blocks landed beside it: paragraphs
+ * stopped 226px short of the catalogue grid. It now runs to the container, so
+ * the column has one edge instead of two.
+ *
+ * THE NUMBER, so the next person changing this is changing it knowingly:
+ * measured in a browser at 1440 wide, full-width prose is about 105 characters
+ * per line against the 45-75 usually recommended. That is the owner's call
+ * rather than an oversight — pull `--measure` back to 44rem for ~82, or 40rem
+ * for ~74, and every paragraph on the page follows, because they all read this
+ * one token.
+ */
+@theme {
+  --container-page: 64rem;
+  --measure: 64rem;
+}
+
+/**
  * globals.css only scans `.ts` and `.tsx` under `apps`, which was written for
  * React apps and matches almost nothing in this workspace. Paths are relative
  * to this file, so `../` is `apps/www/src/`.
@@ -413,3 +440,407 @@
 :root .expressive-code .frame > figcaption:empty {
   display: none;
 }
+
+/**
+ * SEARCH. The one surface Starlight hands to somebody else's component, and
+ * the only one this file had never reconciled.
+ *
+ * What was actually wrong, and it is worth writing down because the obvious
+ * diagnosis is the wrong one. The COLOURS were already right: Starlight maps
+ * `--pagefind-ui-background`, `-border`, `-primary`, `-tag` and `-text` onto
+ * its own `--sl-color-*`, which the block near the top of this file has
+ * already pointed at the palette. Radius was right too — the universal reset
+ * under rule 1 reaches Pagefind's corners like everything else's.
+ *
+ * What was wrong was CHROME and SCALE, neither of which any variable covers:
+ *
+ *   1. `--pagefind-ui-scale: .8` multiplies every size in the component, so
+ *      the modal rendered its input and result titles at 16.8px and excerpts
+ *      at 12.8px — measured — against a site whose body is 16px and whose
+ *      smallest prose is 14px. Three sizes that appear nowhere else, and the
+ *      reason the modal read as a different product. `check-type-scale.ts`
+ *      holds three shared roles across four pages and cannot see inside a
+ *      component that mounts at runtime, so nothing caught it.
+ *   2. Pagefind draws each result as a BORDERED CARD with a gap between them.
+ *      This design has no cards; it has hairline dividers.
+ *   3. Nested results carry tree-branch connectors, and every result title
+ *      carries a document glyph. The design ships no icon set beyond the
+ *      GitHub mark, so both are ornament from another vocabulary.
+ *   4. The input took a 2px border and a focus ring, making it the heaviest
+ *      element on a site built from 1px warm hairlines.
+ *
+ * So this block sets the two variables that are genuinely unmapped and then
+ * removes chrome. Unlayered like the rest of the file; `#starlight__search`
+ * is Starlight's own mount point and gives every rule the specificity it
+ * needs over Pagefind's shipped stylesheet.
+ */
+:root #starlight__search {
+  /* 1 rather than .8: sizes below are then the site's own, not multiples. */
+  --pagefind-ui-scale: 1;
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-font: var(--font-sans);
+}
+
+/* THE INPUT is the same box the design gives a command: hairline, code
+   surface, no radius. Amber on focus, because amber marks what the user
+   did — and typing a query is the most deliberate thing on this screen. */
+:root #starlight__search .pagefind-ui__search-input {
+  border: 1px solid var(--color-hairline);
+  background: var(--color-code);
+  font-size: var(--text-body);
+  font-weight: 400;
+  color: var(--color-ink);
+}
+
+:root #starlight__search .pagefind-ui__search-input:focus,
+:root #starlight__search .pagefind-ui__search-input:focus-visible {
+  border-color: var(--color-brand);
+  outline: none;
+  box-shadow: none;
+}
+
+:root #starlight__search .pagefind-ui__search-clear {
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-body-sm);
+}
+
+:root #starlight__search .pagefind-ui__search-clear:hover {
+  color: var(--color-ink);
+}
+
+/* THE COUNT is a label naming a set, so it takes the label treatment this
+   file already gives the sidebar and table-of-contents headings. */
+:root #starlight__search .pagefind-ui__message {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  padding-bottom: 0;
+  margin-bottom: 1.5rem;
+}
+
+/* RESULTS ARE ROWS, NOT CARDS. Pagefind draws each result as a white panel
+   and separates its nested rows with a 1px FLEX GAP, letting the page show
+   through as a pretend divider. Both go: the surfaces become transparent and
+   the dividers become real hairlines, so the modal is the same flat column of
+   rules the sidebar and the table of contents are. */
+:root #starlight__search .pagefind-ui__result {
+  border: 0;
+  border-top: 1px solid var(--color-divider);
+  background: transparent;
+  padding: 1.25rem 0;
+}
+
+:root #starlight__search .pagefind-ui__result:first-child {
+  border-top: 0;
+  padding-top: 0.5rem;
+}
+
+:root #starlight__search .pagefind-ui__result-inner {
+  gap: 0;
+}
+
+/* THE PAGE TITLE names which page the hits below came from, which makes it a
+   LABEL rather than a heading — so rule 3 applies and it is set in mono, the
+   same treatment this file already gives the sidebar and table-of-contents
+   headings. That is not only consistency: a page called `Skills` whose first
+   hit is a heading called `Skills` is unreadable when both are 16px sans, and
+   no weight difference fixes it. Two vocabularies do.
+
+   Pagefind sized it the same as its children and indented it 60px for a
+   document glyph, so it read as the weakest thing in its own group, pushed
+   off the modal's left edge for an icon this design does not have. */
+:root
+  #starlight__search
+  .pagefind-ui__result-inner
+  > .pagefind-ui__result-title {
+  background: transparent;
+  padding: 0 0 0.625rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+/* The nested rows: the headings within that page. Hairline between them, and
+   none above the first, which already sits under its own title. */
+:root #starlight__search .pagefind-ui__result-nested {
+  background: transparent;
+  border-top: 1px solid var(--color-divider);
+  padding: 0.75rem 0 0.75rem 0.875rem;
+  margin-left: 0;
+}
+
+:root #starlight__search .pagefind-ui__result-nested:first-of-type {
+  border-top: 0;
+}
+
+/* The document glyph and the tree-branch connectors are ornament from a
+   vocabulary this design does not have. Both are drawn rather than marked
+   up, so both are removed where they are drawn. */
+:root #starlight__search .pagefind-ui__result-title::before,
+:root #starlight__search .pagefind-ui__result-inner::before,
+:root #starlight__search .pagefind-ui__result-nested::before {
+  content: none;
+  display: none;
+}
+
+:root #starlight__search .pagefind-ui__result-link {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+/* The label's own link inherits the label, not the row treatment above it. */
+:root
+  #starlight__search
+  .pagefind-ui__result-inner
+  > .pagefind-ui__result-title
+  .pagefind-ui__result-link {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+:root #starlight__search .pagefind-ui__result-link:hover {
+  color: var(--color-brand-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* A heading WITHIN a page is prose, not a label — sans, ink, medium. The two
+   vocabularies are what make a page called `Skills` legible above a heading
+   also called `Skills`; no weight difference on one typeface does it. */
+:root
+  #starlight__search
+  .pagefind-ui__result-nested
+  > .pagefind-ui__result-title {
+  background: transparent;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.4;
+  text-transform: none;
+  color: var(--color-ink);
+}
+
+:root #starlight__search .pagefind-ui__result-excerpt {
+  font-size: var(--text-body-sm);
+  line-height: 1.6;
+  color: var(--color-ink-3);
+  margin-top: 0.125rem;
+}
+
+/* THE MATCHED TERM. Amber ink and nothing else — a highlight block would be
+   a second surface, and this design marks with colour rather than with fill. */
+:root #starlight__search .pagefind-ui__result-excerpt mark,
+:root #starlight__search mark {
+  background: transparent;
+  color: var(--color-brand-ink);
+  font-weight: 600;
+}
+
+/**
+ * THE FRAME — the landing page and the 404, not the documentation.
+ *
+ * Owner design, chosen from a lab of fourteen treatments across four rounds on
+ * 2026-08-27: a dot field combined with a content column that paints over it.
+ * What it does is make the page's own box model visible — the margin is drawn
+ * rather than merely left empty, so content stopping short of an edge reads as
+ * a decision instead of an accident.
+ *
+ * THE HATCH FILLS EVERY VOID, not only the side gutters. One layer runs the
+ * whole frame and every block of content is painted opaque over it, so the
+ * hatch surfaces exactly where nothing is: the two gutters, the band between
+ * each pair of sections, and the page's own head and foot. That is why it is
+ * one background rather than several — a per-gap treatment would need a rule
+ * for every gap and would drift the first time somebody added a section.
+ *
+ * ONE COLOUR, ONE WEIGHT, EVERYWHERE. `--color-divider`, a 1px dot on a 12px
+ * grid. Do not vary either per region — the uniformity is the point, and it is
+ * what makes the field read as one surface the content sits on rather than as
+ * decoration around it.
+ *
+ * IT WAS A DIAGONAL HATCH UNTIL 2026-08-27, and the swap was a judgement about
+ * what a background is for rather than a preference. A rake of diagonals has a
+ * direction, so it carries a small amount of energy and the eye follows it; a
+ * dot field is inert, which is what a background should be. Ten patterns were
+ * drawn in the band beside a real content column before this one was chosen —
+ * crosshatch, square grid, single-direction rules, dot-on-grid and the
+ * diagonal at several pitches among them.
+ *
+ * TWO PSEUDO-ELEMENTS ON `body`, AND NO MARKUP. `::before` is the hatch,
+ * `::after` the rails and ruler. Both `position: absolute` against a
+ * `relative` body, so they span the whole document rather than the viewport —
+ * the hatch runs the length of the page and scrolls with it.
+ *
+ * WHY THIS BENDS RULE 5, AND WHY IT IS ALLOWED TO. That rule reads "whitespace
+ * separates content, not rules — the only borders on the page enclose
+ * something". The rails enclose the content column, so they comply as written.
+ * The hatch and the ruler are new vocabulary the rule does not cover, and they
+ * are the owner's decision rather than drift: see todo/www.md, amended in the
+ * same change so a later pass does not read them as a violation and strip them.
+ *
+ * `--frame-gutter` tracks the padding on the wrappers themselves; the two must
+ * agree or the rails land somewhere other than the content edge.
+ */
+body.framed {
+  /* How much of the page the hatch takes. It is not a decorative margin: it
+     is what pulls the measure in, so the number is chosen from the line length
+     it produces rather than from how it looks empty. At 8.75rem each side the
+     content column lands near 80 characters, against 99 when the band was
+     3.75rem. */
+  --frame-gutter: 2rem;
+
+  /* Breathing room INSIDE the rail. Without it the rails read as a box the
+     text is crammed into rather than a margin it respects — which was the
+     original complaint, and drawing the gutter alone did not fix it. */
+  --frame-inset: 1rem;
+
+  position: relative;
+}
+
+@media (width >= 40rem) {
+  body.framed {
+    --frame-gutter: var(--spacing-gutter);
+    --frame-inset: 1.75rem;
+  }
+}
+
+/* The wide band only once the page has reached its full 64rem. Applying it at
+   the 40rem breakpoint would leave a tablet 432px of content and crush the
+   three-column grids into 117px columns — the band has to come out of slack
+   the page actually has. */
+@media (width >= 64rem) {
+  body.framed {
+    --frame-gutter: 8.75rem;
+  }
+}
+
+/* The wrappers' own `px-8 sm:px-gutter` positions them at the rail; this moves
+   the content in from it. Unlayered, so it beats Tailwind's utility layer —
+   the same mechanism the rest of this file relies on. */
+body.framed > header,
+body.framed > main,
+body.framed > footer {
+  padding-inline: calc(var(--frame-gutter) + var(--frame-inset));
+}
+
+/* THE HATCH. Unmasked: the opaque blocks below decide where it shows. */
+body.framed::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: var(--container-page);
+  max-width: 100%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(var(--color-divider) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+body.framed > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* WHAT PAINTS OVER THE HATCH. Each block carries the page's own colour and
+   bleeds out to the hatch's inner edge — the negative margin is what keeps the
+   hatch from reappearing in the inset, so the band has one clean edge rather
+   than a second stripe inside it. Text stays at the inset because the padding
+   puts it back. */
+/* Sections carry no surface of their own any more — `main` paints the whole
+   column in one pass below, so a section is only a positioning context. */
+body.framed main > section {
+  position: relative;
+  z-index: 1;
+}
+
+/* The header and footer cannot take that negative margin: they carry their own
+   `mx-auto max-w-page`, and setting `margin-inline` overrides the `auto` that
+   centres them — which threw both of them to the viewport edge the first time.
+   They paint rail-to-rail with a gradient instead, which needs no margin at
+   all and leaves the two gutters transparent for the hatch. */
+body.framed > header,
+body.framed > footer {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(
+    to right,
+    transparent 0 var(--frame-gutter),
+    var(--color-column) var(--frame-gutter) calc(100% - var(--frame-gutter)),
+    transparent calc(100% - var(--frame-gutter)) 100%
+  );
+}
+
+/**
+ * THE CONTENT COLUMN IS ONE CONTINUOUS WHITE FIELD, and the diagonals show
+ * only behind it — in the two background bands and nowhere else.
+ *
+ * It painted per section until 2026-08-27, which put hatching in every gap
+ * between them. Owner's call: the diagonals belong to the background, not
+ * between blocks. So the column is painted once, here, band to band.
+ *
+ * The column takes `--color-column`, which is the surface the editor gives its
+ * own middle column — the two halves now sit on the same ground rather than
+ * one on white and one very slightly off it.
+ *
+ * The column guides ride on the same declaration, sized and positioned to the
+ * content rather than to the frame — six across what is actually readable,
+ * not across the bands as well. One declaration because `background` and a
+ * later `background-image` fought over the same property once already.
+ */
+body.framed > main {
+  position: relative;
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--color-badge) 0 1px,
+      transparent 1px calc((100% - var(--frame-gutter) * 2) / 6)
+    ),
+    linear-gradient(
+      to right,
+      transparent 0 var(--frame-gutter),
+      var(--color-column) var(--frame-gutter) calc(100% - var(--frame-gutter)),
+      transparent calc(100% - var(--frame-gutter)) 100%
+    );
+  background-size:
+    calc(100% - var(--frame-gutter) * 2) 100%,
+    100% 100%;
+  background-position:
+    var(--frame-gutter) 0,
+    0 0;
+  background-repeat: no-repeat;
+}
+
+/**
+ * THE GRID INSIDE THE CONTENT. Diagonals mark what is empty; these mark what
+ * is not, so the two textures never occupy the same space.
+ *
+ * SIX COLUMNS, NOT TWELVE. At twelve the guides land 57px apart and stop
+ * reading as structure — they become a second texture competing with the
+ * hatch. At six the three-column sections visibly sit on every other line,
+ * which is the guides doing work rather than decorating.
+ *
+ * THE BASELINE IS A RHYTHM, NOT A CONTRACT. 28px is the prose line-height
+ * (1rem x 1.75), so paragraphs sit on it. Headings carry their own
+ * line-heights and do not, and making them would mean reworking the type
+ * scale rather than adding a gradient. Read it as "the prose has a beat",
+ * not as a baseline grid that everything snaps to.
+ */

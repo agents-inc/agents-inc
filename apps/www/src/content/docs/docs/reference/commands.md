@@ -81,7 +81,7 @@ Re-enters the wizard with the current selections pre-loaded. Diff is shown at th
 
 **File:** [`src/cli/commands/compile.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/compile.ts)
 
-Re-runs the agent compiler using the persisted config. Non-interactive — safe in scripts and CI. Dual-pass (global + project) when both installations exist.
+Re-runs the agent compiler using the persisted config. Non-interactive — safe in scripts and CI. One scope per run: inside a project it compiles that project and writes nothing outside it, and the global pass is reached only where there's no project installation. To rebuild global sub-agents, run it from your home directory.
 
 **Flags:** `--verbose/-v`. The source comes from the config being recompiled.
 

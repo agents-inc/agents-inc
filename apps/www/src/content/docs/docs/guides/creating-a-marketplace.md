@@ -5,7 +5,23 @@ sidebar:
   order: 7
 ---
 
-Build a personal or org-level marketplace with skills curated for your conventions.
+Build a personal or org-level marketplace with skills curated for your conventions. Authoring one is
+a terminal job start to finish — a marketplace is a Git repository the CLI scaffolds, packages and
+indexes, and the [editor](https://agentsinc.sh) reads catalogues rather than building them.
+Distributing one is the other way round, and that section is at the foot of this page.
+
+## Quick start
+
+```bash
+npx agents-inc new marketplace acme   # scaffold a marketplace the CLI already accepts
+cd acme                               # replace the placeholder author, then the example skill
+npx agents-inc build plugins          # package each skill and agent
+npx agents-inc build marketplace      # write marketplace.json, the index an install reads
+```
+
+Point a project at it with `npx agents-inc init --marketplace github:acme/skills`. The rest of
+this page is what each of those steps expects of the directory, and what `build marketplace`
+refuses to publish.
 
 ## Getting Started
 
@@ -20,7 +36,7 @@ file loads, and `doctor` passes in the new directory. You can also build one by 
 make a directory a marketplace the CLI can read:
 
 ```
-package.json                  # name, version and description are required; author is optional
+package.json                  # name, version, description and author — all four required
 config/skill-categories.ts    # the categories your skills fall into
 config/skill-rules.ts         # relationships — see the note below
 config/stacks.ts              # the stacks the wizard offers
@@ -32,7 +48,7 @@ currently name skills from the **public catalogue only**. Your own skills cannot
 and a rule that names one will fail to load. The file itself is still required, so ship it with a
 version and no relationships:
 
-```ts
+```typescript
 export default { version: "1.0.0" }
 ```
 
@@ -108,7 +124,22 @@ come from. `edit` changes what you have installed, not where it comes from.
 
 ## Distribution
 
-Marketplaces are Git repositories. Share them by giving your team access to the repo. Skills and stacks can also be packaged as Claude Code plugins:
+Marketplaces are Git repositories. Share them by giving your team access to the repo, and the route
+in from there is the [editor](https://agentsinc.sh)'s **Marketplace** button: `owner/repo`, plus a
+token for a private one. That fetch goes straight to GitHub from the browser, so the token stays
+there and reaches nothing else. The id the editor hands out afterwards carries the marketplace it
+read, so a teammate running `init --from <id>` resolves your skills against your repository without
+having to name it. See [Marketplaces in the editor](/docs/editor/marketplaces), and
+[Use a private marketplace](/docs/recipes/use-a-private-marketplace) for the consumer's whole side
+of it.
+
+:::note[Doing this from the terminal]
+`npx agents-inc init --marketplace github:acme/skills` names it at install time. The flag outranks
+whatever a `--from` payload carries — naming one is an instruction about this install, where the
+payload's ref is only a record of where the sharer's came from.
+:::
+
+Skills and stacks can also be packaged as Claude Code plugins:
 
 ```bash
 npx agents-inc build plugins    # Package individual skills and agents

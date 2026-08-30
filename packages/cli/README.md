@@ -63,7 +63,7 @@ npx agents-inc init
 | [Writing custom skills and subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
 | [Importing third-party skills](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/importing-skills.md)             | Install skills from external repositories                            |
 | [Creating a marketplace](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/creating-a-marketplace.md)             | Build a personal or org-level marketplace with curated skills        |
-| [Using the codex-keeper subagent](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/using-codex-keeper.md)        | Generate and maintain AI-focused reference documentation             |
+| [Documenting your codebase](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/documenting-your-codebase.md)       | Generate and maintain AI-focused reference documentation             |
 
 ## Skills
 

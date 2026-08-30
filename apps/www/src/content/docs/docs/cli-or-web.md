@@ -3,21 +3,25 @@ title: CLI or web
 description: The terminal wizard and the web editor are the same catalogue and the same output. How a configuration moves from either one to the other.
 ---
 
-There are two ways to select skills. They are two front doors onto one thing,
-and the confusion is worth clearing up before anything else: **same catalogue,
-same output, pick whichever you prefer.**
+There are two ways to select skills, and one way to install what you selected.
+They are two front doors onto one thing — **same catalogue, same output** — and
+the confusion worth clearing up before anything else is that they are not two
+complete paths. Selecting is the part that differs. Installing is the CLI,
+every time.
 
-|                  | Terminal wizard         | Web editor                           |
-| ---------------- | ----------------------- | ------------------------------------ |
-| How you start it | `npx agents-inc init`   | [agentsinc.sh](https://agentsinc.sh) |
-| Where you select | Ink UI in your terminal | Visual grid in the browser           |
-| What it produces | The installation itself | An id you hand to the CLI            |
+|                     | Web editor                           | Terminal wizard                 |
+| ------------------- | ------------------------------------ | ------------------------------- |
+| How you start it    | [agentsinc.sh](https://agentsinc.sh) | `npx agents-inc init`           |
+| Where you select    | Visual grid in the browser           | Ink UI in your terminal         |
+| What it hands you   | An id                                | Its own confirm step            |
+| What writes to disk | `npx agents-inc init --from <id>`    | The same `init` run, on confirm |
 
-Neither is the "real" one. The web editor does not install anything —
-your browser cannot write to `.claude/` — so it hands you a short id, and
-`init --from <id>` does the install. The terminal wizard skips the id because
-it is already where the files go, and mints one on demand with `share` when you
-want to leave.
+The editor is the front door and the CLI is the engine. Your browser cannot
+write to `.claude/`, so the editor installs nothing: it hands you a short id,
+and `init --from <id>` does the install. The terminal wizard skips the id
+because it is already standing where the files go, and mints one on demand with
+`share` when you want to leave. Either way you run a CLI command — the wizard
+is another way to select, not a way to skip the install.
 
 An id is the only thing that crosses between them, and it crosses in both
 directions.
@@ -53,9 +57,11 @@ Some details that matter if you are relying on this:
   change underneath its id.
 - **`--from` runs headless.** It does not open the wizard and does not need a
   terminal, so it works over a pipe and in CI.
-- **`--from` overrides an existing installation.** A bare `init` in an
-  already-installed directory shows the dashboard instead; an id is an explicit
-  instruction to install _that_ configuration, so it does not divert.
+- **`--from` refuses an existing installation.** Installing a shared
+  configuration is a fresh setup rather than a merge, so `init --from` in an
+  already-installed directory stops and names the config it found rather than
+  writing over it. To bring an id into a setup that already exists, the command
+  is `edit --from <id>` — see [CLI to web](#cli-to-web) below.
 - **Unknown ids are skipped, not fatal.** If the configuration names a skill or
   a sub-agent this catalogue no longer has, the CLI names what it dropped and
   installs the rest. Ids are catalogue slugs rather than positions, so a
@@ -120,16 +126,28 @@ reader, so one directory has one id, and the id is still the configuration's
 own hash. Sharing an unchanged installation twice returns what it returned the
 first time.
 
-## Which should you use
+## Which one to select in
 
-Use the **terminal wizard** if you are already in the project, want to install
-right now, or need to do this without a browser — CI, a remote machine, a
-container.
+**Start in the editor.** It lays the whole catalogue out at once, it is what
+you hand to somebody else when you want them to look before anyone installs
+anything, and several choices exist nowhere else: a sub-agent's model and
+reasoning effort, which sub-agents carry which skill and whether each copy is
+preloaded, and a skill from outside the catalogue.
 
-Use the **web editor** if you would rather see the whole catalogue laid
-out at once, or you want to hand a selection to someone else before anyone
-installs anything.
+**Reach for the terminal wizard** when a browser is not available or not
+wanted — CI, a remote machine, a container — or when you are already in the
+project and want this over with.
 
-Either way the next page you want is
-[Quickstart](/docs/quickstart), which covers what lands on disk once the
-install runs.
+The choice does not change the install. Both end at `npx agents-inc init`, and
+the next page you want either way is [Quickstart](/docs/quickstart), which
+covers what lands on disk once it runs.
+
+After that install, the CLI does things the editor has no answer for at all:
+`compile`, `doctor`, `update`, `eject`, `uninstall`, `search`, and any hand
+edit of `.claude-src/config.ts`. None of it has a browser equivalent — the
+editor never touches a filesystem and never runs a command.
+
+For the whole picture rather than the headline,
+[Capabilities](/docs/reference/capabilities) lists what each front door can do,
+area by area, and the last section on it explains why a few things live in only
+one of them.
