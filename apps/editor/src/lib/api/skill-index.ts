@@ -5,12 +5,10 @@ import {
   type SkillIndex,
   type SkillIndexFreshness,
 } from "@workspace/matrix/skill-index"
-import { hc } from "hono/client"
 
-import { env } from "@/env"
 import { reportIssue } from "@/lib/observability/report"
 
-import type { AppType } from "server"
+import { api } from "./client"
 
 // The federated skill index — the add-skills dialog's search surface, and the
 // app's only other call to the worker. The whole index arrives in one response
@@ -18,12 +16,13 @@ import type { AppType } from "server"
 // keystroke request and the rate limit the old GitHub search had to design
 // around.
 //
-// Typed off the worker's own routes exactly as `configs.ts` is, and for the
-// same reasons — the note there covers why `AppType` is a type-only import and
-// why there is no fallback for `VITE_API_URL`. Its own client rather than a
-// shared one: two calls to `hc` are cheaper than a module every api file has
-// to reach through, and each file stays readable on its own.
-const api = hc<AppType>(env.VITE_API_URL)
+// THE SHARED CLIENT, not its own. This file argued for a second `hc` call on
+// the grounds that two are cheaper than a module every api file reaches
+// through — which was true about lines of code and wrong about what a client
+// carries. The shared one states `credentials: "include"` once; a second call
+// silently omitted it, so `GET /skills` went out as `same-origin` while every
+// other worker call carried the session. Nothing depended on that today, and
+// nothing warned either.
 
 // What the caller learns about the list it just received. `fresh` and `stale`
 // are the worker's own two words; `unknown` is a third answer the wire type

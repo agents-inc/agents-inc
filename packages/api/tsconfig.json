@@ -1,0 +1,12 @@
+{
+  "extends": "@workspace/typescript-config/node.json",
+  "compilerOptions": {
+    "paths": {
+      "@workspace/api": ["./src/client.ts"]
+    }
+  },
+  // vitest.config.ts is here so ESLint's project service can find it: a file in
+  // no tsconfig is a parse error under type-aware linting, not a skipped file.
+  "include": ["src", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

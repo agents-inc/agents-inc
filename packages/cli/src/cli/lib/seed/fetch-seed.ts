@@ -1,3 +1,4 @@
+import { createApiClient } from "@workspace/api";
 import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix/seed";
 
 /** The config store behind agentsinc.sh. Overridable so tests never touch the network. */
@@ -12,6 +13,22 @@ export const SEED_API_URL = process.env.AGENTS_INC_API_URL ?? "https://api.agent
  */
 export const SEED_USER_AGENT = "agents-inc-cli";
 
+/**
+ * The worker's routes, typed from the worker itself, configured for a terminal.
+ *
+ * `credentials: "omit"` is named rather than left to the shared default. The default is `include`
+ * because the editor's session is a cookie the browser holds; a terminal holds no cookie jar at
+ * all, so inheriting that default would claim a session that cannot exist.
+ *
+ * Built once at module scope, like `SEED_API_URL` above and for the same reason — the base URL is
+ * read from the environment once at import, so there is nothing per-call for a client to pick up.
+ */
+const store = createApiClient({
+  baseUrl: SEED_API_URL,
+  headers: { accept: "application/json", "user-agent": SEED_USER_AGENT },
+  credentials: "omit",
+});
+
 export type FetchSeedResult = { ok: true; payload: SeedPayload } | { ok: false; error: string };
 
 /**
@@ -21,13 +38,11 @@ export type FetchSeedResult = { ok: true; payload: SeedPayload } | { ok: false; 
  * there is nothing to roll back and the caller's job is to explain rather than recover.
  */
 export async function fetchSeedConfig(id: string): Promise<FetchSeedResult> {
-  const url = `${SEED_API_URL}/configs/${encodeURIComponent(id)}`;
-
   let response: Response;
   try {
-    response = await fetch(url, {
-      headers: { accept: "application/json", "user-agent": SEED_USER_AGENT },
-    });
+    // Escaped here rather than by the client: hono's `replaceUrlParam` substitutes a path
+    // parameter verbatim, so an id carrying a `/` or a `?` would silently address another route.
+    response = await store.configs[":id"].$get({ param: { id: encodeURIComponent(id) } });
   } catch {
     return { ok: false, error: `Could not reach ${SEED_API_URL} — check your connection.` };
   }

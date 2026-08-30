@@ -1,0 +1,31 @@
+{
+  "name": "@workspace/api",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "hono": "^4.11.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/prettier-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "@workspace/vitest-config": "workspace:*",
+    "eslint": "^10",
+    "globals": "^17",
+    "server": "workspace:*",
+    "typescript": "~6",
+    "vitest": "^4"
+  },
+  "//exports": "One module, one entry. The package is the transport and nothing else, so there is no second thing a consumer could want to import separately — and a barrel over a single module would only be a name to keep in step.",
+  "exports": {
+    ".": "./src/client.ts"
+  }
+}

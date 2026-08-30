@@ -1,23 +1,9 @@
 import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix"
-import { hc } from "hono/client"
 import { z } from "zod"
 
-import { env } from "@/env"
 import { reportIssue } from "@/lib/observability/report"
 
-import type { AppType } from "server"
-
-// The config-sharing worker (apps/server). Dev talks to `wrangler dev` on its
-// default port; a deployment points VITE_API_URL at the real thing. There is
-// no fallback on purpose — see `env.schema.ts`.
-const API_URL = env.VITE_API_URL
-
-// The worker's own route types, read straight off the app it exports, so the
-// two calls below cannot drift from what it serves: a renamed path or a
-// changed body shape fails this file rather than a share link. `AppType` is a
-// type and nothing else — `import type` erases before the bundler sees it, so
-// no worker code is reachable from here.
-const api = hc<AppType>(API_URL)
+import { api } from "./client"
 
 // Kept even though `api` types the response, because those types describe the
 // worker this was *built* against. What answers at runtime is whatever is

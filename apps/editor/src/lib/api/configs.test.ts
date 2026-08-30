@@ -1,9 +1,10 @@
 import {
+  CONFIGS_URL,
   DEAD_LINK_ID,
   STORED_ID,
   STORED_PAYLOAD,
   UNREADABLE_CONFIG_ID,
-  WORKER_ORIGIN,
+  configUnreachableHandler,
   storeRefusedHandler,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
@@ -32,22 +33,15 @@ const sink = {
   error: vi.fn<ReportingSink["error"]>(),
 }
 
-const CREATE_CONFIG_URL = `${WORKER_ORIGIN}/configs`
-
 // The worker's answer to a payload naming a seed version it does not serve.
 // Defined here rather than beside the other config handlers because it is the
 // only response in the set that describes the CALLER rather than the worker:
 // what is stale is this bundle, and the worker is behaving perfectly.
-const staleBundleHandler = http.post(CREATE_CONFIG_URL, () =>
+const staleBundleHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.text(
     "Reload the page: this configuration names another version of the sharing contract",
     { status: 409 }
   )
-)
-
-/** Offline, DNS, a proxy that dropped it — no answer at all rather than a bad one. */
-const unreachableWorkerHandler = http.post(CREATE_CONFIG_URL, () =>
-  HttpResponse.error()
 )
 
 beforeEach(() => {
@@ -104,7 +98,7 @@ describe("createSharedConfig", () => {
   // Offline, DNS, a proxy that dropped it. The fetch throws rather than
   // answering, so this is the one failure that never reaches a status at all.
   it("reads an unreachable worker as its own refusal", async () => {
-    configMockServer.use(unreachableWorkerHandler)
+    configMockServer.use(configUnreachableHandler)
 
     const result = await createSharedConfig(STORED_PAYLOAD)
 
