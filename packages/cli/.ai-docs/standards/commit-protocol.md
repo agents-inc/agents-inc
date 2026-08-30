@@ -51,9 +51,11 @@ source" — while reporting nothing at all for a path git has never seen, so a g
 emitting a new file passes.
 
 Write the check into the generator instead: emit into memory, compare against the bytes on disk,
-name **every** drifted path, exit non-zero. `generate:types:check`, `generate:schemas:check` and
-`generate:matrix:check` are all that shape, so `prepublishOnly` can be run by whoever changed the
-generator.
+name **every** drifted path, exit non-zero. `generate:types:check`, `generate:schemas:check`,
+`generate:matrix:check` and `generate:compile:check` are all that shape, so any of them can be run
+by whoever changed the generator. **`prepublishOnly` carries only two of the four** — schemas and
+types — so a stale vendored matrix or agent corpus is caught by CI and by the pre-commit hook but
+not by the publish itself. Run all four before a release rather than trusting the publish gate to.
 
 ### The one roster no gate covers
 
@@ -86,8 +88,8 @@ Every release MUST complete all steps. No exceptions.
 - [ ] Create `changelogs/{version}.md` with full release notes
 - [ ] Prepend brief summary to `CHANGELOG.md` with link to detailed file
 - [ ] Release commit title uses em-dash (`—`, not `-`) separator: `chore(release): {version} — {summary}`
-- [ ] Summary references every task ID shipped in the release (e.g. ``)
-- [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: grep `### D-` in the detailed file, grep `D-xxx` in the corresponding `CHANGELOG.md` block, diff the sets.
+- [ ] Summary references every task ID shipped in the release (e.g. `CLI-823`, `EDITOR-52`)
+- [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: `grep -oE '^### [A-Z]+-[0-9]+'` in the detailed file against the IDs inside that release's `CHANGELOG.md` block, diff the sets. **`D-` is no longer the only family** — `CLI-`, `EDITOR-`, `SERVER-`, `REPO-`, `WWW-` and `SKILLS-` all exist, so a grep written for `D-` alone reports parity over an empty set.
 - [ ] Every `.ai-docs/agent-findings/*.md` path cited in the changelog must exist on disk
 - [ ] Never edit old entries in `CHANGELOG.md` or old `changelogs/` files
 - [ ] Publish: `npm publish` from `packages/cli`

@@ -249,7 +249,7 @@ Deleting files, changing architecture, adding dependencies, modifying config sch
 
 ### Cross-Repository Work
 
-May coordinate across `/home/vince/dev/cli` (CLI tool) and `/home/vince/dev/skills` (plugin marketplace). Ensure consistency, track changes in both, note cross-repo dependencies.
+May coordinate across this repository (the CLI) and the skills marketplace repository beside it. Ensure consistency, track changes in both, note cross-repo dependencies.
 
 ---
 

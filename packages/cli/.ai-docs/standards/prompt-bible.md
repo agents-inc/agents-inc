@@ -1803,7 +1803,7 @@ This section covers patterns specific to this repo's sub-agent roster and Ralph-
 Every sub-agent prompt MUST open with these lines verbatim (or equivalent):
 
 ```markdown
-Read `/home/vince/dev/cli/CLAUDE.md` before starting.
+Read the repository root `CLAUDE.md` before starting.
 Do NOT run ANY git commands (no add/reset/stash/checkout/restore/clean/commit).
 Scope: <explicit path fence — e.g. ".ai-docs/standards/** only" or "src/cli/lib/configuration/**">.
 If you fix an anti-pattern, discover a missing standard, or notice convention drift,
@@ -1873,7 +1873,7 @@ Delegating to <agent-name> for <one-line task>.
 </role>
 
 <preamble>
-Read `/home/vince/dev/cli/CLAUDE.md` before starting.
+Read the repository root `CLAUDE.md` before starting.
 Do NOT run ANY git commands.
 Scope: <path fence>.
 If you fix an anti-pattern or discover drift, write a finding to `.ai-docs/agent-findings/` via TEMPLATE.md.
