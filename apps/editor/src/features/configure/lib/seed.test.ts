@@ -1,4 +1,7 @@
-import { MARKETPLACE_CATALOG, MARKETPLACE_REF } from "@workspace/api-mocks"
+import {
+  MARKETPLACE_CANONICAL_REF,
+  MARKETPLACE_CATALOG,
+} from "@workspace/api-mocks"
 import {
   CATALOG,
   MATRIX_VERSION,
@@ -126,12 +129,21 @@ describe("toSeedPayload", () => {
     expect(toSeedPayload(config())).not.toHaveProperty("marketplace")
   })
 
+  // Seated with the CANONICAL ref, because that is the only form production ever
+  // seats: the dialog canonicalises before it calls `load`, so a bare
+  // `owner/repo` reaches this store nowhere. The mint is verbatim pass-through,
+  // which is exactly why the seat has to be honest — seeding the form the FIELD
+  // takes made this read as a statement that the editor mints a bare ref, and it
+  // does not. The receiver routes on the prefix, so the two are a repository and
+  // a local directory rather than two spellings of one thing.
   it("names the marketplace the loaded catalogue came from", () => {
-    useCatalogStore.getState().load(MARKETPLACE_CATALOG, MARKETPLACE_REF)
+    useCatalogStore
+      .getState()
+      .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
 
     const payload = toSeedPayload(config())
 
-    expect(payload.marketplace).toBe(MARKETPLACE_REF)
+    expect(payload.marketplace).toBe(MARKETPLACE_CANONICAL_REF)
     // Stamped from the loaded catalogue too, so a receiver explaining skipped
     // ids is told which catalogue they were minted against.
     expect(payload.matrixVersion).toBe(MARKETPLACE_CATALOG.version)
