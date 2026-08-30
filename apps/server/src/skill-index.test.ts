@@ -1,12 +1,13 @@
 import { SELF, env } from "cloudflare:test"
 import { hc } from "hono/client"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 
 import {
   SKILL_INDEX_FRESHNESS_HEADER,
   skillIndexSchema,
 } from "@workspace/matrix/skill-index"
 
+import { upstreamMock } from "../vitest.setup"
 import { SKILL_INDEX_KEY } from "./skill-index"
 
 import type { SkillIndex } from "@workspace/matrix/skill-index"
@@ -83,10 +84,6 @@ describe("GET /skills", () => {
     await env.CONFIGS.delete(SKILL_INDEX_KEY)
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
   it("serves the whole index the scheduled build published", async () => {
     const published = indexBuiltAt(someTimeAgo(RECENTLY))
     await publish(published)
@@ -100,17 +97,23 @@ describe("GET /skills", () => {
   // The point of the move. A request that reaches upstream is a request that
   // can be slow, rate-limited or refused, and this route can now be none of
   // those things — so any outbound call at all is the regression.
+  //
+  // Two things say so, and the assertion is the half that NAMES it. The other
+  // half is free: `vitest.setup.ts` starts msw holding no handlers at all with
+  // `onUnhandledRequest: "error"`, so a request this route made would fail the
+  // test on its own. What the list adds is the URL — a bare failure would say
+  // that something called out and not where to.
   it("reaches no upstream at all", async () => {
     await publish(indexBuiltAt(someTimeAgo(RECENTLY)))
-    const upstream = vi.fn(() =>
-      Promise.reject(new Error("nothing may call out"))
-    )
-    vi.stubGlobal("fetch", upstream)
+    const reached: string[] = []
+    upstreamMock.events.on("request:start", ({ request }) => {
+      reached.push(request.url)
+    })
 
     const response = await getIndex()
 
     expect(response.status).toBe(200)
-    expect(upstream).not.toHaveBeenCalled()
+    expect(reached).toStrictEqual([])
   })
 
   // Reachable exactly once in this worker's life: between a first deploy and
@@ -239,9 +242,9 @@ describe("GET /skills", () => {
     )
   })
 
-  // Same reason the config routes have one: apps/editor reads its client off
-  // `AppType`, so a route dropped out of the exported chain vanishes from the
-  // editor's surface rather than failing here.
+  // Same reason the config routes have one: `packages/api` builds the editor's
+  // client off `AppType`, so a route dropped out of the exported chain vanishes
+  // from the editor's surface rather than failing here.
   it("is reachable through the typed client the editor uses", async () => {
     await publish(indexBuiltAt(someTimeAgo(RECENTLY)))
     const client = hc<AppType>(BASE, { fetch: SELF.fetch.bind(SELF) })

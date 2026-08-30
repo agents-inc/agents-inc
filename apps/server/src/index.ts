@@ -10,8 +10,20 @@ import {
 } from "@workspace/matrix/skill-index"
 import { cors } from "hono/cors"
 
+import { createAuth } from "./auth"
+import { compose, composeRoute } from "./compose"
 import { messageOf } from "./log"
 import { freshnessOf, readSkillIndex, secondsUntilStale } from "./skill-index"
+import {
+  createStack,
+  createStackRoute,
+  deleteStack,
+  deleteStackRoute,
+  listStacks,
+  listStacksRoute,
+  renameStack,
+  renameStackRoute,
+} from "./stacks"
 
 import type { RouteHandler, RouteHook } from "@hono/zod-openapi"
 import type { Context } from "hono"
@@ -154,9 +166,17 @@ const app = new OpenAPIHono<WorkerEnv>()
 // half the job and sending it is the other half. Nothing in either workspace's
 // suite is a browser, which is why the editor keeps a Playwright stub that
 // withholds this and a spec asserting the dialog survives it.
+//
+// `credentials: true` arrived with SERVER-04 and is not optional for any route
+// a signed-in browser touches. Without it the browser accepts the response and
+// SILENTLY DROPS THE COOKIE — sign-in appears to work, the next request is
+// anonymous again, and nothing on either side logs a reason. It is set for
+// every route rather than only the authenticated ones because the value has to
+// agree with what the preflight said, and one middleware is one answer.
 const allowOnlyWebOrigin = cors({
   origin: (origin, c: Context<WorkerEnv>) =>
     origin === c.env.WEB_ORIGIN ? origin : null,
+  credentials: true,
   exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER],
 })
 
@@ -170,6 +190,44 @@ app.use("/skills/*", allowOnlyWebOrigin)
 // The tunnel is called cross-origin from the web app, and an envelope's
 // content type is not CORS-safelisted, so it preflights like the rest.
 app.use("/monitoring", allowOnlyWebOrigin)
+app.use("/stacks", allowOnlyWebOrigin)
+app.use("/stacks/*", allowOnlyWebOrigin)
+app.use("/api/auth/*", allowOnlyWebOrigin)
+app.use("/compose", allowOnlyWebOrigin)
+
+// Better Auth owns everything under its own base path — the GitHub redirect,
+// the callback, the session endpoint, the sign-out. Mounted with `app.on`
+// rather than folded into the OpenAPI chain below because it is one handler
+// serving a dozen paths this repository does not define: describing them in
+// `createRoute` would be transcribing somebody else's contract, and the
+// transcription would be what rots. The editor reaches these through Better
+// Auth's own client rather than through `hc<AppType>`, so nothing is lost by
+// their absence from that type.
+app.on(["GET", "POST"], "/api/auth/*", (c) =>
+  createAuth(c.env).handler(c.req.raw)
+)
+
+// BEFORE the body is read, and before anything is parsed: a refusal has to be
+// cheaper than the flood it refuses, or the limiter is just a slower way to
+// spend the same resources. Keyed on the caller's address — `cf-connecting-ip`
+// is set by Cloudflare's own edge and cannot be spoofed by a client, unlike
+// `x-forwarded-for`.
+//
+// Only the write. `GET /configs/:id` is left alone deliberately: it is what the
+// CLI calls to resolve a share link, and it neither writes nor costs a quota.
+//
+// A missing address is let through rather than refused. It means the request
+// did not arrive through Cloudflare's edge — `wrangler dev`, or a test — and
+// failing closed there would fail every local run rather than any attacker.
+app.use("/configs", async (c, next) => {
+  if (c.req.method !== "POST") return next()
+
+  const address = c.req.header("cf-connecting-ip")
+  if (address === undefined) return next()
+
+  const { success } = await c.env.CONFIG_WRITES.limit({ key: address })
+  return success ? next() : c.text("Too many requests", 429)
+})
 
 // Refused on the declared length alone — bodies without one parse as usual and
 // the JSON validator rejects anything that is not a payload anyway.
@@ -400,19 +458,26 @@ const tunnelEnvelope: RouteHandler<typeof tunnelRoute, WorkerEnv> = async (
 // than a style. `.openapi()` returns the app with the route folded into its
 // *type* while returning the very same instance at runtime, so registering
 // each route on its own line throws the return value away and leaves
-// `typeof app` claiming to serve nothing. apps/editor infers its client from
-// exactly that type, so a route dropped out of this chain would vanish from
-// the editor's API surface rather than fail here.
+// `typeof app` claiming to serve nothing. `packages/api` infers the editor's
+// client from exactly that type, so a route dropped out of this chain would
+// vanish from the editor's API surface rather than fail here.
 const api = app
   .openapi(createConfigRoute, createConfig, refuseAnotherSeedVersion)
   .openapi(getConfigRoute, getConfig)
   .openapi(skillIndexRoute, getSkillIndex)
   .openapi(tunnelRoute, tunnelEnvelope)
+  .openapi(listStacksRoute, listStacks)
+  .openapi(createStackRoute, createStack)
+  .openapi(renameStackRoute, renameStack)
+  .openapi(deleteStackRoute, deleteStack)
+  .openapi(composeRoute, compose)
 
-// What apps/editor imports, and the only thing it imports from this worker:
-// `hc<AppType>` reads the routes off it and gives the editor a client that
-// cannot outlive them. A type erases at compile time, so nothing here reaches
-// the browser bundle.
+// What `packages/api` imports, and the only thing anything imports from this
+// worker: `hc<AppType>` reads the routes off it and gives the editor and the
+// CLI one client that cannot outlive them. Neither front door reaches in here
+// itself — `@workspace/api` is the single seam, and
+// `grep -rn 'from "server"' apps packages --include='*.ts'` is what says so. A
+// type erases at compile time, so nothing here reaches either bundle.
 export type AppType = typeof api
 
 // Named for build-time OpenAPI spec generation; default for the Workers

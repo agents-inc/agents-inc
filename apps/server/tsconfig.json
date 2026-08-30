@@ -5,5 +5,12 @@
     "lib": ["ES2023"],
     "types": ["@cloudflare/vitest-pool-workers/types"]
   },
-  "include": ["src", "scripts", "worker-configuration.d.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "scripts",
+    "worker-configuration.d.ts",
+    "vitest.config.ts",
+    "vitest.setup.ts",
+    "drizzle.config.ts"
+  ]
 }

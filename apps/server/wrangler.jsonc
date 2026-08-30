@@ -19,10 +19,79 @@
   "name": "agents-inc-api",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-01",
+  // Required by better-auth, which reaches for `node:crypto` and
+  // `node:async_hooks`. NOT optional and NOT a warning: without it the worker
+  // does not boot at all — `wrangler dev` dies with `No such module
+  // "node:crypto"` before serving a request.
+  //
+  // Worth knowing how this was found, because it says what the test suite can
+  // and cannot see: the whole worker suite passed against this exact code. The
+  // vitest pool tolerates the import; the runtime `wrangler dev` and the edge
+  // both start does not. A green suite is not evidence that the thing runs,
+  // which is why the process here has "run it by hand" as its own step.
+  "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "upload_source_maps": true,
   "kv_namespaces": [
     { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" },
+  ],
+  // SERVER-04. Better Auth's own tables plus `saved_stacks`, which is a name and
+  // a pointer to a payload KV already holds — so this database carries no
+  // configuration bytes and the share-link path is untouched by it.
+  //
+  // D1 rather than a second KV key space, and the reason is consistency rather
+  // than shape: KV is eventually consistent, which is right for immutable
+  // content-addressed payloads and wrong for a list somebody renames and
+  // deletes. A rename that reads back stale is a bug report nobody can
+  // reproduce.
+  //
+  // `DATABASE` is the binding name `better-auth-cloudflare` uses in its own
+  // documentation. Matching it costs nothing and means the adapter's examples
+  // read against this file without translation.
+  //
+  // The same id appears here and under `env.production`, exactly as CONFIGS
+  // does, and for the same reason: `wrangler dev` and the vitest pool simulate
+  // D1 locally against their own SQLite, so only a deploy reaches this one.
+  // The first rate limit on anything this worker serves that is not an auth
+  // route. `POST /configs` is an UNAUTHENTICATED PUBLIC WRITE into KV: CORS is
+  // the only thing in front of it today, and CORS is a browser convention that
+  // `curl` ignores entirely.
+  //
+  // 20 a minute per address. Sized against use rather than against fear: a
+  // share link is one write per click of Share, and the install dialog mints
+  // one per open — so twenty is far past anything a person does and far under
+  // what it takes to spend a KV quota. The free tier allows 1000 writes a day,
+  // which one unthrottled client reaches in under a minute.
+  //
+  // `namespace_id` is an arbitrary label scoped to this worker, not something
+  // Cloudflare issues. `period` accepts only 10 or 60.
+  //
+  // NOT a replacement for a quota. This bounds the rate one address can write
+  // at; it does nothing about a thousand addresses, and nothing about cost. It
+  // is the cheap half of the answer, and the honest description of what it
+  // leaves open.
+  "ratelimits": [
+    {
+      "name": "CONFIG_WRITES",
+      "namespace_id": "1001",
+      "simple": { "limit": 20, "period": 60 },
+    },
+    // EDITOR-54. Keyed by USER rather than by address, because this route is
+    // signed-in only and a person is the unit that gets billed for. Ten a
+    // minute is far past thinking-and-typing speed and far under what a script
+    // holding one session could spend.
+    {
+      "name": "COMPOSE_CALLS",
+      "namespace_id": "1002",
+      "simple": { "limit": 10, "period": 60 },
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DATABASE",
+      "database_name": "agents-inc-db",
+      "database_id": "7e0a4407-89d0-4d24-893f-2fe0b70fa890",
+    },
   ],
   "vars": {
     // The one origin allowed to POST from a browser; the CLI's GET is not a
@@ -30,6 +99,24 @@
     // `wrangler dev` reads it, and so does vitest via `configPath`, which is
     // what `index.test.ts`'s CORS cases assert against.
     "WEB_ORIGIN": "http://localhost:5173",
+    // SERVER-04. The GitHub OAuth app's client id is PUBLIC — it travels in the
+    // authorization URL the browser is sent to on every sign-in — so it is a
+    // var rather than a secret, and its partner `GITHUB_CLIENT_SECRET` is a
+    // secret that appears in no file here (locally in .dev.vars, in production
+    // via `wrangler secret put`).
+    //
+    // Two apps rather than one, and this value differs between the two blocks
+    // for the same reason `WEB_ORIGIN` does: a GitHub OAuth app pins exactly
+    // one callback URL, and localhost and the edge are different URLs. This is
+    // "agents Inc local", whose callback is
+    // http://localhost:8787/api/auth/callback/github.
+    "GITHUB_CLIENT_ID": "Ov23liHANitAG2b0NDXj",
+    // THIS WORKER'S OWN address, which is not derivable from WEB_ORIGIN — the
+    // editor and the API are different hosts. Better Auth warns without it
+    // ("Base URL is not set ... callbacks and redirects may not work
+    // correctly") and then derives an origin from whatever arrives, which is
+    // the wrong thing to trust for the URL GitHub is told to come back to.
+    "AUTH_BASE_URL": "http://localhost:8787",
     // Which Sentry project `/monitoring` will relay to, and only that one.
     // Not secret — both already ship inside the browser bundle as part of the
     // DSN — but kept as config so the open-relay guard has something to check
@@ -44,6 +131,11 @@
     // would remove it at the edge rather than fall back.
     "production": {
       "name": "agents-inc-api",
+      // Restated because BINDINGS AND VARS do not inherit — `main`,
+      // `compatibility_date`, `routes` and this flag's siblings above do, which
+      // is why they appear once. An omission in this block is a worker that
+      // boots locally and fails to start at the edge.
+      "compatibility_flags": ["nodejs_compat"],
       "routes": [{ "pattern": "api.agentsinc.sh", "custom_domain": true }],
       "observability": { "enabled": true },
       "upload_source_maps": true,
@@ -51,8 +143,35 @@
       "kv_namespaces": [
         { "binding": "CONFIGS", "id": "6a69c245741c40c9b6a1f3d22935b7d2" },
       ],
+      // Restated because a BINDING does not inherit into a named environment,
+      // however much else in this file does. An omission here removes the
+      // binding at the edge rather than falling back to the top level.
+      // Restated: bindings do not inherit into a named environment.
+      "ratelimits": [
+        {
+          "name": "CONFIG_WRITES",
+          "namespace_id": "1001",
+          "simple": { "limit": 20, "period": 60 },
+        },
+        {
+          "name": "COMPOSE_CALLS",
+          "namespace_id": "1002",
+          "simple": { "limit": 10, "period": 60 },
+        },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DATABASE",
+          "database_name": "agents-inc-db",
+          "database_id": "7e0a4407-89d0-4d24-893f-2fe0b70fa890",
+        },
+      ],
       "vars": {
         "WEB_ORIGIN": "https://agentsinc.sh",
+        // "agents Inc prod", callback
+        // https://api.agentsinc.sh/api/auth/callback/github.
+        "GITHUB_CLIENT_ID": "Ov23liy1WGblcNBDJoXc",
+        "AUTH_BASE_URL": "https://api.agentsinc.sh",
         "SENTRY_INGEST_HOST": "o4509197991346176.ingest.de.sentry.io",
         "SENTRY_PROJECT_ID": "4511832531796048",
       },

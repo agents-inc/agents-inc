@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787949394272,
+      "tag": "0000_accounts_and_saved_stacks",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787949646628,
+      "tag": "0001_rate_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787952288943,
+      "tag": "0002_account_issuer",
+      "breakpoints": true
+    }
+  ]
+}

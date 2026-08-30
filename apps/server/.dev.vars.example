@@ -1,0 +1,38 @@
+# Copy to `.dev.vars` and fill in. `wrangler dev` reads that file and nothing
+# else does; it is gitignored, which is why this template exists — without it a
+# fresh clone has no way to know the worker needs three values, and the failure
+# is a worker that starts and then fails at the first sign-in.
+#
+# NONE of these belong in `.env`, and none belong in GitHub Actions secrets: they
+# are read by the worker at runtime, not by CI. Their production counterparts are
+# Worker secrets set with `wrangler secret put --env production` and live in no
+# file at all.
+
+# The "agents Inc local" GitHub OAuth app's client secret. Its client id is
+# public and is in wrangler.jsonc; the callback is
+# http://localhost:8787/api/auth/callback/github.
+GITHUB_CLIENT_SECRET=
+
+# Signs and encrypts sessions. Any 32+ characters of real entropy —
+# `openssl rand -base64 32`. Deliberately NOT the same value as production:
+# the two sign different databases behind different cookie domains.
+BETTER_AUTH_SECRET=
+
+# EDITOR-54, the composer's AI backend — read by src/compose.ts. Unlike the
+# secret above, the same key is fine in both environments: it authenticates to
+# one account against one bill either way.
+ANTHROPIC_API_KEY=
+
+# EDITOR-54, optional. Empty or absent means the worker talks to Anthropic
+# directly, which is what a local run does; a Cloudflare AI Gateway URL
+# routes through one instead. BYOK either way — the gateway adds no token
+# markup, and is caching, analytics and a second place to throttle rather
+# than something this route needs to work.
+#
+# Here rather than in wrangler.jsonc's `vars`, and that is a typing
+# constraint rather than a preference: `wrangler types` gives a var the
+# LITERAL it holds, so `"AI_GATEWAY_URL": ""` types as `""` and every
+# `env.AI_GATEWAY_URL ? …` is provably dead code — eslint says so. Values
+# from this file type as `string`. Production sets it with
+# `wrangler secret put AI_GATEWAY_URL --env production`.
+AI_GATEWAY_URL=

@@ -1,7 +1,15 @@
 import { SELF, env } from "cloudflare:test"
+import {
+  NO_CONFIG_BODY,
+  UNREADABLE_CONFIG_BODY,
+  seedPayload,
+} from "@workspace/api-mocks/fixtures"
 import { SEED_VERSION } from "@workspace/matrix/seed"
 import { hc } from "hono/client"
-import { describe, expect, it } from "vitest"
+import { http, HttpResponse } from "msw"
+import { describe, expect, it, vi } from "vitest"
+
+import { upstreamMock } from "../vitest.setup"
 
 import type { SeedPayload } from "@workspace/matrix/seed"
 import type { AppType } from "./index"
@@ -12,38 +20,18 @@ import type { AppType } from "./index"
 
 const BASE = "https://api.test"
 
-// The worker deliberately never checks ids against the catalog — that is the
-// CLI's warn-and-skip job — so an arbitrary skill id is a valid payload here.
+// The canonical configuration, from the shared fixture rather than written out
+// again here. The copy this replaced restated every field the suite does not
+// exercise — the version as a bare `5`, the project-scoped skill, the sub-agent
+// pinned so that skill can reach it — each free to drift from the contract and
+// from the payload both of apps/editor's suites read. The builder parses itself
+// with `seedPayloadSchema`, so drift fails at import rather than as a 400 in
+// whichever assertion happens to provoke one.
 //
-// Model and effort belong to the agent, so the skill carries neither and the
-// payload has a second map. A pinned-on agent with no skills is expressible
-// there, which is why `agents` is not simply derivable from the assignments.
-//
-// Annotated rather than inferred: a bare literal widens `v` to `number` and
-// every enum to `string`, which the typed client below rejects — and rightly,
-// since that is the same widening that would let a fixture drift from the
-// contract and only say so as a 400 at runtime.
-const payload = (): SeedPayload => ({
-  v: 5,
-  matrixVersion: "1.0.0",
-  stackId: "next",
-  skills: {
-    "web-framework-react": {
-      install: "plugin",
-      scope: "project",
-      assignments: { "web-developer": "preloaded" },
-    },
-  },
-  agents: {
-    // Pinned into the project, and load-bearing rather than flavour: the skill
-    // above is project-scoped, and a project skill never reaches a sub-agent
-    // whose front-matter is written to ~/.claude. Without the pin this is a
-    // payload the wire now refuses, which is not what the canonical "a valid
-    // configuration" fixture should be.
-    "web-developer": { model: "haiku", effort: "max", scope: "project" },
-    "api-developer": { on: true },
-  },
-})
+// `stackId` is the one field this suite overrides, and it is why the builder
+// takes overrides at all: the default is `null`, and a round trip reading back
+// `null` cannot tell a value that survived from one that was never sent.
+const payload = () => seedPayload({ stackId: "next" })
 
 const post = (body: unknown) =>
   SELF.fetch(`${BASE}/configs`, {
@@ -190,9 +178,16 @@ describe("GET /configs/:id", () => {
     expect(await response.json()).toEqual(payload())
   })
 
+  // The body as well as the status, and against the constant packages/api-mocks
+  // serves rather than a literal restated here. That package mirrors this
+  // worker's refusals so the editor's suites assert on what really arrives, and
+  // nothing held the mirror to the worker: a reworded body here would have left
+  // every one of those suites green against a sentence the worker had stopped
+  // sending. This is the assertion that reddens instead.
   it("404s an unknown id", async () => {
     const response = await SELF.fetch(`${BASE}/configs/unknown1`)
     expect(response.status).toBe(404)
+    expect(await response.text()).toBe(NO_CONFIG_BODY)
   })
 
   // Nothing this worker writes can land here — the POST validates first and the
@@ -206,6 +201,7 @@ describe("GET /configs/:id", () => {
     const response = await SELF.fetch(`${BASE}/configs/corrupt1`)
 
     expect(response.status).toBe(500)
+    expect(await response.text()).toBe(UNREADABLE_CONFIG_BODY)
   })
 
   it("500s rather than serving stored bytes that are not JSON", async () => {
@@ -214,11 +210,12 @@ describe("GET /configs/:id", () => {
     const response = await SELF.fetch(`${BASE}/configs/corrupt2`)
 
     expect(response.status).toBe(500)
+    expect(await response.text()).toBe(UNREADABLE_CONFIG_BODY)
   })
 })
 
-// apps/editor reaches these two routes through `hc<AppType>` rather than a
-// hand-written fetch, which makes the exported type half of the contract and
+// The editor reaches these two routes through `packages/api`'s `hc<AppType>`
+// client rather than a hand-written fetch, which makes the exported type half of the contract and
 // not a convenience. Running the editor's own client against the real worker
 // here is what keeps the two halves honest about each other: a route that
 // stops being chained onto the exported app disappears from the client's
@@ -366,5 +363,24 @@ describe("POST /monitoring", () => {
     const response = await tunnel(`${JSON.stringify({ event_id: "abc" })}\n{}`)
 
     expect(response.status).toBe(400)
+  })
+
+  // The relay itself, which every case above stops short of — and the one test
+  // in this workspace that exercises a fetch the WORKER makes rather than one a
+  // test makes. That is what `vitest.config.ts` claims about `msw/node` in this
+  // pool, and a claim a comment makes and nothing runs is a claim that rots:
+  // without this, msw could stop patching the global the worker calls and every
+  // other file here would stay green, because every other outbound call in the
+  // suite is made by the test file itself.
+  it("relays an envelope addressed to this project", async () => {
+    const sentry = vi.fn(() => new HttpResponse(null, { status: 200 }))
+    upstreamMock.use(
+      http.post(`https://${INGEST}/api/${PROJECT}/envelope/`, sentry)
+    )
+
+    const response = await tunnel(envelope(`https://key@${INGEST}/${PROJECT}`))
+
+    expect(response.status).toBe(200)
+    expect(sentry).toHaveBeenCalledTimes(1)
   })
 })
