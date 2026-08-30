@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.161.0] - 2026-08-30
+
+**The renderers leave the CLI for a package both front doors call, an install's config arrives already formatted, and the worker gets one typed client**
+
+- The pure config-pair and compiled-agent renderers leave `packages/cli` for `@workspace/compile`, and the CLI's own writers call it — which was the acceptance criterion, not a follow-up, because a shared package the editor imports and the CLI does not is client-side reconstruction with a `package.json`. `config-writer.ts` is a re-export facade now, and `preview-matches-install.e2e.test.ts` byte-compares a real PTY-driven `init` against the package's renderers (EDITOR-52)
+- The emitted `config.ts` and `config-types.ts` arrive already formatted — a prettier fixed point under settings matching neither repository config, because these bytes land in a user's project. `"origin":"eject"` is `origin: 'eject'` from this release on; both parse. One printer replaced three serialisation styles that had coexisted in one file, and the spec was a fixed-point test rather than a literal, so it could not be satisfied by pasting what the emitter already did
+- One typed client for both front doors: `packages/api` holds the `hc<AppType>` client and `fetch-seed.ts` stops hand-writing its fetch. The bundle cost was measured rather than estimated before the ruling was taken — 1,755,475 → 1,765,345 bytes, +9,870, +0.562% (SERVER-02)
+- `generate:compile` is a fourth generator with its own CI drift step, writing the 90 markdown partials and 7 Liquid templates the editor's preview draws with — so a template edit landing without a regeneration turns the commit red instead of leaving the preview drawing bytes no install writes
+- The CLI's network mocks resolve one shared description of the worker: `msw/node` for the unit suite, a real `node:http` server for the e2e suite that spawns the binary. Injecting `NODE_OPTIONS` into the child was ruled out rather than overlooked. The migration's own defect is the lesson — a filter made `stubSignedOut` a total no-op with five call sites passing on the fixture default, and a guard whose failure mode is silence needs a test that the guard fired
+
 ## [0.160.0] - 2026-08-25
 
 **A category is no longer required, a mixed installation counts what it declares, and two rows close by being refuted rather than fixed**
