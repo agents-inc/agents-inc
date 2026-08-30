@@ -56,12 +56,15 @@ if printf '%s\n' "$pushed" | grep -q '^packages/cli/'; then
 	run_cli=yes
 fi
 
-# packages/cli devDepends on @workspace/matrix and tsup bundles it, so a
-# matrix-only change moves the CLI without touching packages/cli/. The web line
-# below excludes agents-inc — the one package that consumes matrix — so without
-# this, the CLI suite never runs for the change most likely to move under its
-# integration specs.
-if printf '%s\n' "$pushed" | grep -q '^packages/matrix/'; then
+# packages/cli devDepends on @workspace/matrix, @workspace/compile,
+# @workspace/api and @workspace/api-mocks, and tsup bundles the first three
+# (see noExternal in tsup.config.ts), so a change confined to any of them moves
+# the CLI without touching packages/cli/. The web line below runs
+# --filter='!agents-inc', which excludes the very package that consumes them —
+# so without this clause the CLI is linted by nothing at all for the change most
+# likely to move under its integration specs. The list grew from matrix alone on
+# 2026-08-30, when the renderer extraction gave the CLI three more of them.
+if printf '%s\n' "$pushed" | grep -qE '^packages/(matrix|compile|api|api-mocks)/'; then
 	run_cli=yes
 fi
 
