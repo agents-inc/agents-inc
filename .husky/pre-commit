@@ -27,10 +27,10 @@ bunx lint-staged
 # nothing above it holds a config.
 #
 # What keeps ESLint on this line as well is a rule inventory, not a mechanism.
-# Twenty-four of the rules enabled in all seven workspaces are type-aware, and a
+# Some of the rules every workspace enables are type-aware, and a
 # type-aware verdict reads a whole TypeScript program: a change in a staged file
 # can produce a report in a file the commit does not touch, and no staged-file
-# run can see that one. Nothing else in the seven configs needs more than the
+# run can see that one. Nothing else in those configs needs more than the
 # file it is handed — the config-gate import bans are no-restricted-imports,
 # which matches the literal specifier string and never resolves a module, the
 # task-ID and dynamic-import bans are no-restricted-syntax selectors, and no
