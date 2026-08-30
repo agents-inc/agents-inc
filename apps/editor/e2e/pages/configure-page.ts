@@ -1,10 +1,12 @@
 import type { Locator, Page } from "@playwright/test"
 
+import { Composer } from "./composer"
 import {
   AddSkillDialog,
   InstallDialog,
   MarketplaceDialog,
   MarketplaceSwitchDialog,
+  OutputPreviewDialog,
   SkillContentsDialog,
   StackSwitchDialog,
 } from "./dialogs"
@@ -14,6 +16,8 @@ import { SkillCell } from "./skill-cell"
 const CONFIGURE_URL = "/"
 
 const MARKETPLACE_STORAGE_KEY = "agents-inc:marketplace:v1"
+
+const UI_STORAGE_KEY = "agents-inc:ui:v1"
 
 // The SHAPE this release writes, which the `v1` in the key above is not. Seeded
 // blobs carry it so a slot written by hand is the one the app would have
@@ -35,6 +39,20 @@ const UNNORMALISED_PERSIST_VERSION = 1
 export type SavedMarketplaces = {
   current: string
   saved: Record<string, string>
+}
+
+/**
+ * The arrangement slot: how the panel is banded, which bands are shut, and
+ * whether the stack grid is folded away.
+ *
+ * Everything else this store holds is transient — an open dialog, a pending
+ * confirmation, a decaying flash — and reloading into any of it is never
+ * right, so none of it reaches storage.
+ */
+export type StoredUi = {
+  rosterCollapsed: Record<string, boolean>
+  rosterGroupBy: string
+  stackCollapsed: boolean
 }
 
 // Every skill cell on the screen. The filter bar sits outside every section,
@@ -60,6 +78,11 @@ export const SAVED_STACK = "Saved stack"
 // the page is navigable.
 export class ConfigurePage {
   readonly stacks: Locator
+  // The 24px square on the first hinge's content edge, which folds the stack
+  // grid away. Its accessible NAME carries the state — `Show stacks` while the
+  // grid is gone, `Hide stacks` while it is there — so a spec can locate it
+  // through either and assert on the other, the same shape `shareButton` uses.
+  readonly stackToggle: Locator
   readonly searchInput: Locator
   readonly addSkillButton: Locator
   readonly emptyState: Locator
@@ -73,9 +96,14 @@ export class ConfigurePage {
   readonly importNotice: Locator
 
   readonly roster: RosterPanel
+  // The docked natural-language composer at the foot of the same column the
+  // marketplace button floats in — which is why the two are asserted against
+  // each other rather than each on its own.
+  readonly composer: Composer
   readonly installDialog: InstallDialog
   readonly addSkillDialog: AddSkillDialog
   readonly skillContentsDialog: SkillContentsDialog
+  readonly outputPreviewDialog: OutputPreviewDialog
   readonly marketplaceDialog: MarketplaceDialog
   readonly marketplaceSwitchDialog: MarketplaceSwitchDialog
   readonly stackSwitchDialog: StackSwitchDialog
@@ -83,9 +111,16 @@ export class ConfigurePage {
   // floating button. Absent entirely until there is more than one to choose
   // between, because a switcher with one entry is furniture.
   readonly marketplaceSwitcher: Locator
+  // The account, at the foot of the nav rail. Located by role and by a
+  // `data-slot` rather than by the person's name, which is data.
+  readonly signInButton: Locator
+  readonly accountName: Locator
 
   constructor(readonly page: Page) {
     this.stacks = page.getByRole("group", { name: "Stacks" })
+    this.stackToggle = page.getByRole("button", {
+      name: /^(Show|Hide) stacks$/,
+    })
     this.searchInput = page.getByLabel("Search skills")
     this.addSkillButton = page.getByRole("button", { name: "＋ Add skill" })
     this.emptyState = page.getByText("No skills match this filter.")
@@ -93,15 +128,19 @@ export class ConfigurePage {
     this.importNotice = page.locator("main").getByRole("alert")
 
     this.roster = new RosterPanel(page)
+    this.composer = new Composer(page)
     this.installDialog = new InstallDialog(page)
     this.addSkillDialog = new AddSkillDialog(page)
     this.skillContentsDialog = new SkillContentsDialog(page)
+    this.outputPreviewDialog = new OutputPreviewDialog(page)
     this.marketplaceDialog = new MarketplaceDialog(page)
     this.marketplaceSwitchDialog = new MarketplaceSwitchDialog(page)
     this.stackSwitchDialog = new StackSwitchDialog(page)
     this.marketplaceSwitcher = page.getByRole("group", {
       name: "Saved marketplaces",
     })
+    this.signInButton = page.getByRole("button", { name: "Sign in" })
+    this.accountName = page.locator('[data-slot="account-name"]')
   }
 
   // What the browser kept, read back rather than inferred from the screen: the
@@ -141,6 +180,17 @@ export class ConfigurePage {
   async savedMarketplaceRefs() {
     const slot = await this.savedMarketplaces()
     return slot === null ? [] : Object.keys(slot.saved)
+  }
+
+  /** Seeds the local saved-stack slot, as a visitor with no account has it. */
+  async seedSavedStack(payload: unknown) {
+    await this.page.evaluate(
+      ([key, blob]) => window.localStorage.setItem(key!, blob!),
+      [
+        "agents-inc:saved-stack:v1",
+        JSON.stringify({ state: { saved: payload }, version: 0 }),
+      ]
+    )
   }
 
   /** Seeds the slot as the single-slot release wrote it, version and all. */
@@ -197,6 +247,20 @@ export class ConfigurePage {
     return this.page.evaluate(
       () => window.localStorage.getItem("agents-inc:config:v1") ?? ""
     )
+  }
+
+  // The arrangement slot, PARSED for the reason `savedMarketplaces` is: what
+  // is asserted has to be the shape. A blob holding the right words in the
+  // wrong fields still contains both strings, so `toContain` passes on exactly
+  // the reshape this slot exists to make impossible.
+  async storedUi(): Promise<StoredUi | null> {
+    const raw = await this.page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      UI_STORAGE_KEY
+    )
+    if (raw === null) return null
+
+    return (JSON.parse(raw) as { state: StoredUi }).state
   }
 
   async goto() {

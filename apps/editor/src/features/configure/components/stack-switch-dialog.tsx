@@ -18,6 +18,10 @@ import { useUiStore, type StackRequest } from "@/stores/ui-store"
 // catalogue entry describes it.
 const targetNameOf = (request: StackRequest) => {
   if (request.kind === "saved") return SAVED_STACK_NAME
+  // An account's stack: the grid knows its name and this dialog does not, and
+  // the honest answer is the generic one rather than a second lookup that can
+  // disagree with the cell the person just clicked.
+  if (request.kind === "remote") return "your saved stack"
   if (request.stackId === null) return "Start from scratch"
 
   return (

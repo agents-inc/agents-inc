@@ -15,6 +15,7 @@ import {
   SAVED_STACK_NAME,
   useSavedStackStore,
 } from "@/stores/saved-stack-store"
+import { useAccountStore } from "@/stores/account-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
 
 type StackCell = {
@@ -68,6 +69,24 @@ const savedCell = (payload: SeedPayload): StackCell => ({
   request: { kind: "saved" },
 })
 
+// An account's stacks, which REPLACE the local slot rather than sitting beside
+// it — one place a person looks for their own work, not two that disagree. The
+// local slot is not deleted, only unshown: signing out is not a reason to lose
+// what was saved before signing in.
+//
+// No members line. The payload is behind an id these cells hold rather than
+// carry, so listing what is in one would mean a fetch per cell at first paint,
+// for a line of text.
+const accountCells = (
+  stacks: readonly { id: string; name: string; configId: string }[]
+): StackCell[] =>
+  stacks.map((saved) => ({
+    key: saved.id,
+    name: saved.name,
+    members: "saved to your account",
+    request: { kind: "remote", configId: saved.configId },
+  }))
+
 // The test is `isStackCustom`, not "is anything selected": a stack's own
 // expansion is not something the user chose, so browsing between stacks has
 // nothing to lose. Prompting every time trains people to dismiss it unread.
@@ -78,6 +97,8 @@ export function StackGrid() {
   const skills = useConfigStore((state) => state.skills)
   const agents = useConfigStore((state) => state.agents)
   const saved = useSavedStackStore((state) => state.saved)
+  const account = useAccountStore((state) => state.session)
+  const accountStacks = useAccountStore((state) => state.stacks)
   const stacks = useCatalogStore((state) => state.stacks)
   const requestStack = useUiStore((state) => state.requestStack)
   const applyStackRequest = useApplyStackRequest()
@@ -108,23 +129,34 @@ export function StackGrid() {
 
   // Straight after scratch, and only while a snapshot exists: it is a starting
   // point rather than a stack the catalogue knows about.
-  const cells = useMemo(
-    () =>
-      saved
-        ? [scratchCell, savedCell(saved), ...catalogueCells]
-        : [scratchCell, ...catalogueCells],
-    [saved, catalogueCells]
-  )
+  // Signed in, the account's stacks. Signed out, the one local slot. Never
+  // both: two lists of "your saved stacks" that can disagree is worse than
+  // either, and the local slot survives untouched under the account's.
+  const cells = useMemo(() => {
+    if (account)
+      return [scratchCell, ...accountCells(accountStacks), ...catalogueCells]
+
+    return saved
+      ? [scratchCell, savedCell(saved), ...catalogueCells]
+      : [scratchCell, ...catalogueCells]
+  }, [account, accountStacks, saved, catalogueCells])
 
   // The saved cell is drawn as the current stack by the selection *being* the
   // snapshot, since that is all it can be recognised by. That reading wins over
   // the id underneath: a snapshot restored whole is the stack the user is on,
   // and one taken from scratch would otherwise light up "Start from scratch"
   // over a selection they deliberately named.
-  const isApplied = (request: StackRequest) =>
-    request.kind === "saved"
-      ? savedApplied
-      : !savedApplied && request.stackId === stackId
+  // An account's stack never reads as applied. What it points at is behind a
+  // fetch, so answering would mean holding every payload the grid can offer
+  // just to draw a border — and `savedApplied` already covers the case that
+  // matters, which is the selection currently on screen having come from a
+  // snapshot rather than from a catalogue stack.
+  const isApplied = (request: StackRequest) => {
+    if (request.kind === "saved") return savedApplied
+    if (request.kind === "remote") return false
+
+    return !savedApplied && request.stackId === stackId
+  }
 
   // Both kinds replace the whole selection, so both stand behind the same
   // confirm — and behind nothing at all when there is no work to lose.

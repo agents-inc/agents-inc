@@ -33,6 +33,7 @@ import {
   type AgentScope,
   type LoadState,
   type PersistedConfig,
+  type RosterGroupBy,
   type SkillEntry,
 } from "@/stores/persisted-schema"
 
@@ -431,8 +432,11 @@ export type RosterAgentRow = {
   skills: RosterSkillRow[]
 }
 
-export type RosterDomainGroup = {
-  domainId: string
+export type RosterGroup = {
+  // Domain mode writes the bare domain id; scope mode writes `scope:<scope>`.
+  // One `rosterCollapsed` record serves both, and the prefix is what keeps the
+  // two key spaces disjoint — a domain id can never contain a colon.
+  key: string
   label: string
   onCount: number
   agents: RosterAgentRow[]
@@ -529,38 +533,98 @@ const liveUsesBySkill = (config: ConfigSelection) => {
   return uses
 }
 
-// The whole right panel: every domain that has agents, every agent it has —
-// on or off — and under each agent every assignment it holds, including the
-// switched-off ones, which render recessed rather than vanish.
-export const selectRosterGroups = (
-  config: ConfigSelection
-): RosterDomainGroup[] => {
+// The destination each scope band names, verbatim. Space, U+00B7 MIDDLE DOT,
+// space. Global first, which is the REVERSE of `AGENT_SCOPES` — that order is
+// the cycle the roster's scope word steps through and must not be re-sorted,
+// so the banding reverses it here instead.
+const SCOPE_BANDS = [
+  { scope: "global", label: "~/.claude · global" },
+  { scope: "project", label: "./.claude · project" },
+] as const satisfies readonly { scope: AgentScope; label: string }[]
+
+// One agent's whole row, identical whichever way the panel is banded — which
+// is what lets one renderer serve both modes.
+//
+// The three lookups are built once per derivation and closed over, rather than
+// once per agent: the roster draws eighteen rows and two of the three are the
+// whole catalogue. Closing over them is what makes that structural instead of
+// a note the caller has to honour.
+const agentRowBuilder = (config: ConfigSelection) => {
   const byAgent = skillsByAgent(config)
   const uses = liveUsesBySkill(config)
-  // Once per derivation, not once per agent row: the roster draws eighteen of
-  // them and the map is the whole catalogue.
   const inGridOrder = byCatalogPosition(catalogPositions())
 
-  return SUB_AGENT_GROUPS.map((group) => {
-    const agents = group.agents.map((agent): RosterAgentRow => ({
-      agent,
-      on: isAgentOn(config, agent.id),
-      ...resolveAgentOptions(config.agents, agent.id),
-      skills: [...(byAgent.get(agent.id) ?? [])]
-        .sort(inGridOrder)
-        .map((skill): RosterSkillRow => ({
-          ...skill,
-          usedBy: uses.get(skill.id) ?? [],
-        })),
-    }))
-
-    return {
-      domainId: group.domainId,
-      label: group.label,
-      onCount: agents.filter((row) => row.on).length,
-      agents,
-    }
+  return (agent: SubAgent): RosterAgentRow => ({
+    agent,
+    on: isAgentOn(config, agent.id),
+    ...resolveAgentOptions(config.agents, agent.id),
+    skills: [...(byAgent.get(agent.id) ?? [])]
+      .sort(inGridOrder)
+      .map((skill): RosterSkillRow => ({
+        ...skill,
+        usedBy: uses.get(skill.id) ?? [],
+      })),
   })
+}
+
+type ToRosterRow = ReturnType<typeof agentRowBuilder>
+
+const toGroup = (
+  key: string,
+  label: string,
+  agents: RosterAgentRow[]
+): RosterGroup => ({
+  key,
+  label,
+  // One expression, both bandings. Only the denominator's MEANING moves:
+  // "enabled Web agents of all Web agents", or "enabled agents writing to that
+  // destination of all agents writing to it".
+  onCount: agents.filter((row) => row.on).length,
+  agents,
+})
+
+const bandByDomain = (toRow: ToRosterRow): RosterGroup[] =>
+  SUB_AGENT_GROUPS.map((group) =>
+    toGroup(group.domainId, group.label, group.agents.map(toRow))
+  )
+
+const bandByScope = (
+  config: ConfigSelection,
+  toRow: ToRosterRow
+): RosterGroup[] =>
+  SCOPE_BANDS.map(({ scope, label }) =>
+    toGroup(
+      `scope:${scope}`,
+      label,
+      allAgents()
+        .filter(
+          (agent) =>
+            resolveAgentOptions(config.agents, agent.id).scope === scope
+        )
+        .map(toRow)
+    )
+  )
+
+const hasAgents = (group: RosterGroup) => group.agents.length > 0
+
+// The whole right panel: every band that has agents, every agent it has — on
+// or off — and under each agent every assignment it holds, including the
+// switched-off ones, which render recessed rather than vanish.
+//
+// Two bandings, one shape. Only the key, the label and which agents fall into
+// which band differ; the rows themselves are byte-identical between modes.
+//
+// A band nobody writes to is not drawn empty; it is not drawn. The filter is a
+// no-op for domain mode, where `SUB_AGENT_GROUPS` is built BY grouping agents.
+export const selectRosterGroups = (
+  config: ConfigSelection,
+  groupBy: RosterGroupBy = "domain"
+): RosterGroup[] => {
+  const toRow = agentRowBuilder(config)
+
+  return (
+    groupBy === "scope" ? bandByScope(config, toRow) : bandByDomain(toRow)
+  ).filter(hasAgents)
 }
 
 // ── Summaries ────────────────────────────────────────────────────────────

@@ -62,11 +62,10 @@ export function FilterBar({ search }: { search: ConfigureSearch }) {
           stuck ? "bg-ink px-0" : "bg-column px-gutter"
         }`}
       >
-        {/* The gap is constant. The design collapses it to 0 when stuck so the
-            two blocks butt together as one toolbar, but that snaps the add
-            button sideways at the same instant the bar is already changing
-            width and losing its border — three simultaneous shifts read as a
-            jump. Holding the gap costs nothing and the transition stays calm. */}
+        {/* The gap is constant. Snapping the add button sideways at the same
+            instant the bar is already changing width and losing its border
+            would be three simultaneous shifts, which read as a jump. Holding
+            it costs nothing and the transition stays calm. */}
         <div className="flex items-stretch gap-2.5">
           <div
             // Equal vertical padding in both states, for the same reason: any

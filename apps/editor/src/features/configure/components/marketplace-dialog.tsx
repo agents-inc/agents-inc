@@ -148,15 +148,25 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
  * is instead of guessing, so this tracks the grid at every width and carries no
  * layout constant of its own.
  *
+ * The STICKY ITSELF now lives one level up, on the wrapper in
+ * `configure-screen.tsx` that holds this row above the docked composer. The
+ * composer docks to the same column foot, so the two float as one element with
+ * this as the previous sibling — which is what keeps the dock's height
+ * intrinsic instead of becoming an offset somebody has to maintain here. Every
+ * word above still holds: the mechanism moved, the ruling did not.
+ *
  * `w-fit` because the box is over the grid: any width it does not need is a
- * strip of skill cells that cannot be clicked.
+ * strip of skill cells that cannot be clicked — and `pointer-events-auto`
+ * because that wrapper switches them off for exactly this reason, so the strip
+ * beside this row falls through to the cells rather than merely looking as
+ * though it does.
  */
 export function MarketplaceButton() {
   const setDialog = useUiStore((state) => state.setDialog)
   const marketplace = useCatalogStore((state) => state.marketplace)
 
   return (
-    <div className="sticky bottom-5 z-40 flex w-fit items-center gap-[0.5625rem]">
+    <div className="pointer-events-auto flex w-fit items-center gap-[0.5625rem]">
       <Button variant="outline" onClick={() => setDialog("marketplace")}>
         {/* The name when one is loaded, so the button doubles as the answer to
             "which catalogue am I looking at?" — the only place on screen that

@@ -1,5 +1,8 @@
 import { Badge } from "@workspace/ui/components/badge"
-import { LatticeCell } from "@workspace/ui/components/lattice"
+import {
+  LatticeCell,
+  LatticeCellButton,
+} from "@workspace/ui/components/lattice"
 import { useEffect, useMemo, useRef } from "react"
 
 import { SkillIcon } from "@/components/skill-icon"
@@ -19,8 +22,14 @@ const agentSummary = (count: number) => {
   return count === 1 ? "1 agent" : `${count} agents`
 }
 
-// The whole cell toggles selection, so every control inside stops propagation
-// — otherwise flipping Install to Eject would also deselect the skill.
+// The whole cell toggles selection — through a `LatticeCellButton` stretched
+// over it, not through the cell itself, because the cell also holds the •••
+// and two badges and a control cannot contain controls.
+//
+// The toggle is a SIBLING of those controls rather than their ancestor, which
+// is why none of them stops propagation any more: a press on a badge lands on
+// the badge and bubbles past nothing that would also flip the selection. It
+// had to, while the cell itself was the control (EDITOR-45).
 export function SkillCell({
   view,
   column,
@@ -52,9 +61,6 @@ export function SkillCell({
   const remembered = useConfigStore((state) => state.remembered[skill.id])
   const untouched = useMemo(() => freshEntry(skill.id), [skill.id])
   const options = entry ?? remembered ?? untouched
-
-  const stop = (event: { stopPropagation: () => void }) =>
-    event.stopPropagation()
 
   // Nothing inside an incompatible cell may select it — the whole cell, the
   // •••, and both badges all funnel into `toggleSkill`, so each entry point
@@ -116,29 +122,21 @@ export function SkillCell({
       interactive={!incompatible}
       overflow={selected || open ? "visible" : "clip"}
       className={`group/cell px-3 py-[0.6875rem] ${open ? "z-58" : ""}`}
-      role="button"
-      tabIndex={incompatible ? -1 : 0}
-      // Otherwise the accessible name is every string in the cell, run
-      // together. It stays the plain name even when the skill is ruled out —
-      // `title` becomes the accessible *description*, which is where a reason
-      // belongs, and a name that changes under you is its own problem.
-      aria-label={skill.displayName}
-      aria-pressed={selected}
-      aria-disabled={incompatible || undefined}
-      title={view.incompatibleReason}
-      onClick={select}
-      onKeyDown={(event) => {
-        // Only when the cell itself holds focus. The ••• and the badges are
-        // real buttons inside it, and their Enter would otherwise both
-        // activate them and toggle the skill underneath.
-        if (event.target !== event.currentTarget) return
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          select()
-        }
-      }}
     >
-      <div className="flex items-start gap-2.5">
+      <LatticeCellButton
+        tabIndex={incompatible ? -1 : 0}
+        // Otherwise the accessible name is every string in the cell, run
+        // together. It stays the plain name even when the skill is ruled out —
+        // `title` becomes the accessible *description*, which is where a reason
+        // belongs, and a name that changes under you is its own problem.
+        aria-label={skill.displayName}
+        aria-pressed={selected}
+        aria-disabled={incompatible || undefined}
+        title={view.incompatibleReason}
+        onClick={select}
+      />
+
+      <div className="pointer-events-none relative z-1 flex items-start gap-2.5">
         <SkillIcon
           monogram={skill.monogram}
           slug={skill.slug}
@@ -163,14 +161,12 @@ export function SkillCell({
               <Badge
                 variant="tag"
                 interactive
+                className="pointer-events-auto"
                 render={
                   <button
                     type="button"
                     aria-label={`Contents of ${skill.displayName}`}
-                    onClick={(event) => {
-                      stop(event)
-                      previewSkill(skill.id)
-                    }}
+                    onClick={() => previewSkill(skill.id)}
                   />
                 }
               >
@@ -193,11 +189,8 @@ export function SkillCell({
           type="button"
           aria-label={`Options for ${skill.displayName}`}
           aria-expanded={open}
-          onClick={(event) => {
-            stop(event)
-            requestPanel()
-          }}
-          className={`group/dots ml-auto flex shrink-0 cursor-pointer flex-col gap-[2px] p-1 transition-opacity duration-[120ms] outline-none hover:bg-badge focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring ${
+          onClick={requestPanel}
+          className={`group/dots pointer-events-auto ml-auto flex shrink-0 cursor-pointer flex-col gap-[2px] p-1 transition-opacity duration-[120ms] outline-none hover:bg-badge focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring ${
             open ? "opacity-100" : "opacity-0 group-hover/cell:opacity-100"
           }`}
         >
@@ -213,34 +206,31 @@ export function SkillCell({
         </button>
       </div>
 
-      <div className="mt-[0.5625rem] -ml-[0.3125rem] flex items-center gap-[0.125rem]">
+      <div className="pointer-events-none relative z-1 mt-[0.5625rem] -ml-[0.3125rem] flex items-center gap-[0.125rem]">
         <Badge
           interactive={!ejectOnly}
           alt={options.install === "eject"}
+          className="pointer-events-auto"
           render={
             ejectOnly ? (
               // A statement rather than a control: an added skill has no plugin
-              // form, so there is nothing here to press. The press is still
-              // caught — without that it reached the cell underneath and
-              // TOGGLED SELECTION, which made one target on screen mean two
-              // different things depending on the kind of skill under it
-              // (EDITOR-45). A badge that says it cannot flip must not select
-              // either.
-              <span
-                aria-label={`Install mode: ${options.install}`}
-                onClick={stop}
-              />
+              // form, so there is nothing here to press. It still has to CATCH
+              // the press — while the cell was the control, one that fell
+              // through TOGGLED SELECTION, which made one target on screen mean
+              // two different things depending on the kind of skill under it
+              // (EDITOR-45). It catches it by being the topmost thing at that
+              // point rather than by stopping anything now.
+              <span aria-label={`Install mode: ${options.install}`} />
             ) : (
               <button
                 type="button"
                 // "plugin, button" tells a screen reader nothing on its own.
                 aria-label={`Install mode: ${options.install}`}
-                onClick={(event) => {
-                  stop(event)
+                onClick={() =>
                   flip({
                     install: options.install === "eject" ? "plugin" : "eject",
                   })
-                }}
+                }
               />
             )
           }
@@ -251,16 +241,16 @@ export function SkillCell({
         <Badge
           interactive
           alt={options.scope === "global"}
+          className="pointer-events-auto"
           render={
             <button
               type="button"
               aria-label={`Scope: ${options.scope}`}
-              onClick={(event) => {
-                stop(event)
+              onClick={() =>
                 flip({
                   scope: options.scope === "global" ? "project" : "global",
                 })
-              }}
+              }
             />
           }
         >

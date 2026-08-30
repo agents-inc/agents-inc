@@ -1,5 +1,13 @@
 import { DOMAIN_LABELS, type SubAgent } from "@workspace/matrix"
 import { Button } from "@workspace/ui/components/button"
+import { Hinge } from "@workspace/ui/components/divider"
+import {
+  Menu,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "@workspace/ui/components/menu"
 import { useEffect, useRef, useState } from "react"
 
 import {
@@ -17,17 +25,56 @@ import {
   AGENT_EFFORTS,
   AGENT_MODELS,
   AGENT_SCOPES,
+  ROSTER_GROUP_BYS,
+  restingAgentOptions,
   type AgentEffort,
   type AgentModel,
   type AgentScope,
+  type RosterGroupBy,
 } from "@/stores/persisted-schema"
-import { useSavedStackStore } from "@/stores/saved-stack-store"
+import { createSharedConfig, type ShareRefusal } from "@/lib/api/configs"
+import type { StackRefusal } from "@/lib/api/stacks"
+import { useAccountStore } from "@/stores/account-store"
+import {
+  SAVED_STACK_NAME,
+  useSavedStackStore,
+} from "@/stores/saved-stack-store"
 import { useUiStore } from "@/stores/ui-store"
 
 // What would install, under the Install button's own name.
 const installLabel = ({ agentCount, skillCount }: ConfigSummary) =>
   `${agentCount} ${agentCount === 1 ? "sub-agent" : "sub-agents"} and ` +
   `${skillCount} ${skillCount === 1 ? "skill" : "skills"}`
+
+/**
+ * Every way a signed-in Save can END, and what the button says about it.
+ *
+ * A save signed in is two round trips — mint the payload, then store the
+ * pointer — so it can be refused for the three reasons a share can be, plus
+ * the one a share cannot have: the session lapsing between the click and the
+ * write. Signed out it is a write to localStorage and cannot fail at all,
+ * which is exactly why silence here made one button mean two things.
+ *
+ * `decays` is the same rule `useShareLink` follows and is not styling: a word
+ * that REPORTS is noise once it has been read, and a word that names something
+ * to DO has to still be there when the person looks up from doing it.
+ *
+ * The words are this button's own rather than `SHARE_NARRATIONS`'s, because
+ * two of the four differ — "Saving failed" is not "Sharing failed", and no
+ * share ending is a lapsed session.
+ */
+type SaveRefusal = ShareRefusal | StackRefusal
+
+type SaveNarration = { label: string; decays: boolean }
+
+const SAVE_NARRATIONS = {
+  "out-of-date": { label: "Out of date — reload", decays: false },
+  refused: { label: "Saving failed", decays: true },
+  unreachable: { label: "Offline — try again", decays: true },
+  "signed-out": { label: "Signed out — sign in", decays: false },
+} as const satisfies Record<SaveRefusal, SaveNarration>
+
+const SAVE_RESET_DELAY_MS = 2_000
 
 // And what is stopping it instead. The number IS the number of clicks left:
 // each of these sub-agents is one scope word away from resolving.
@@ -155,7 +202,7 @@ function WhereUsedTip({ tip }: { tip: UseTip }) {
   )
 }
 
-// Nothing on the right edge of a skill row may compete with the effort meter
+// Nothing on the right edge of a skill row may compete with the effort word
 // above it, so both of them wait to be asked for: revealed while the pointer is
 // anywhere over the agent block, or while focus is inside it — the keyboard
 // half, without which the load word could be tabbed to but never read.
@@ -188,10 +235,10 @@ function ScopeErrorMark({ reason }: { reason: string }) {
       type="button"
       aria-label={reason}
       title={reason}
-      // The row underneath toggles the assignment; asking what is wrong with it
-      // is not asking to switch it off.
-      onClick={(event) => event.stopPropagation()}
-      className="ml-1 inline-flex shrink-0 cursor-help align-[-0.125rem] text-destructive outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      // No handler at all: asking what is wrong with a row is not asking to
+      // switch it off, and catching the press is enough to say so — the row's
+      // own toggle is a sibling beneath this rather than an ancestor above it.
+      className="pointer-events-auto ml-1 inline-flex shrink-0 cursor-help align-[-0.125rem] text-destructive outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <svg
         width="12"
@@ -214,6 +261,12 @@ function ScopeErrorMark({ reason }: { reason: string }) {
 // One assignment line: bullet · name · load word · where-used. A 4-track grid
 // so the bullet occupies the first track and every skill name shares the
 // agents' flush left edge — indentation by structure, not padding.
+//
+// The whole line toggles the assignment, through a button stretched over it
+// rather than through the line itself: the line also holds the load word, the
+// where-used count and the scope marker, and a control that contains controls
+// hides every one of them from a screen reader (`nested-interactive`). Same
+// division as a skill cell, and `LatticeCellButton` carries the reasoning.
 function SkillRow({
   skill,
   agentOn,
@@ -238,32 +291,23 @@ function SkillRow({
   const live = agentOn && skill.enabled
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={skill.enabled}
-      aria-label={`${skill.displayName} on ${agentId}`}
-      onClick={() => toggleAssignmentEnabled(skill.id, agentId)}
-      onKeyDown={(event) => {
-        // Only when the row itself is focused — the nested load-word and
-        // where-used buttons must keep their own native activation.
-        if (event.target !== event.currentTarget) return
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          toggleAssignmentEnabled(skill.id, agentId)
-        }
-      }}
-      className="-mx-1 grid w-[calc(100%+0.5rem)] cursor-pointer grid-cols-[1rem_minmax(0,1fr)_1.875rem_1.625rem] items-center px-1 py-0.5 hover:bg-skill-hover"
-    >
+    <div className="relative -mx-1 grid w-[calc(100%+0.5rem)] cursor-pointer grid-cols-[1rem_minmax(0,1fr)_1.875rem_1.625rem] items-center px-1 py-0.5 hover:bg-skill-hover">
+      <button
+        type="button"
+        aria-pressed={skill.enabled}
+        aria-label={`${skill.displayName} on ${agentId}`}
+        onClick={() => toggleAssignmentEnabled(skill.id, agentId)}
+        className="absolute inset-0 z-0 cursor-[inherit] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
       <span
         aria-hidden
-        className={`mx-0.5 block size-[0.3125rem] ${
+        className={`relative z-1 mx-0.5 block size-[0.3125rem] ${
           live
             ? "bg-brand"
             : "bg-transparent shadow-[inset_0_0_0_1px_var(--color-hairline)]"
         }`}
       />
-      <span className="flex min-w-0 items-center">
+      <span className="pointer-events-none relative z-1 flex min-w-0 items-center">
         <span
           className={`truncate text-10_5 leading-[1.35] font-normal ${
             live ? "text-brand" : "text-roster-off"
@@ -277,16 +321,13 @@ function SkillRow({
       </span>
       {/* `pre` / `lazy` — never "preloaded" — and never amber: that is
           reserved for the name's on-state. One grey for both words, since the
-          distinction they used to draw competes with the effort meter directly
+          distinction they used to draw competes with the effort word directly
           above them. Click flips this agent's copy. */}
       <button
         type="button"
         aria-label={`Load mode: ${skill.load}`}
-        onClick={(event) => {
-          event.stopPropagation()
-          flipAssignmentLoad(skill.id, agentId)
-        }}
-        className={`cursor-pointer pr-1.5 text-right font-mono text-8 font-medium tracking-[.06em] text-roster-off uppercase hover:text-roster-ink ${QUIET_AT_REST}`}
+        onClick={() => flipAssignmentLoad(skill.id, agentId)}
+        className={`relative z-1 cursor-pointer pr-1.5 text-right font-mono text-8 font-medium tracking-[.06em] text-roster-off uppercase hover:text-ink-primary ${QUIET_AT_REST}`}
       >
         {skill.load === "preloaded" ? "pre" : "lazy"}
       </button>
@@ -300,8 +341,7 @@ function SkillRow({
           // Keyboard users get the same answer: focus opens, blur closes.
           onFocus={(event) => onShowUses(event.currentTarget, skill)}
           onBlur={onHideUses}
-          onClick={(event) => event.stopPropagation()}
-          className={`mr-0.5 flex size-[0.8125rem] cursor-help items-center justify-center justify-self-end font-mono text-7_5 font-medium text-use-ink hover:bg-wash hover:text-brand-ink ${QUIET_AT_REST}`}
+          className={`relative z-1 mr-0.5 flex size-[0.8125rem] cursor-help items-center justify-center justify-self-end font-mono text-7_5 font-medium text-use-ink hover:bg-wash hover:text-brand-ink ${QUIET_AT_REST}`}
         >
           {skill.usedBy.length}
         </button>
@@ -336,7 +376,7 @@ function ModelWord({
         setAgentOption(agentId, { model: nextInCycle(AGENT_MODELS, model) })
       }
       className={`cursor-pointer font-mono text-9_5 font-medium ${
-        on ? "text-matrix-ink hover:text-roster-ink" : "text-roster-off"
+        on ? "text-matrix-ink hover:text-ink-primary" : "text-roster-off"
       }`}
     >
       {model}
@@ -366,7 +406,7 @@ function ScopeWord({
         setAgentOption(agentId, { scope: nextInCycle(AGENT_SCOPES, scope) })
       }
       className={`cursor-pointer font-mono text-8 font-medium tracking-[.06em] uppercase ${
-        on ? "text-matrix-ink hover:text-roster-ink" : "text-roster-off"
+        on ? "text-matrix-ink hover:text-ink-primary" : "text-roster-off"
       }`}
     >
       {scope}
@@ -374,10 +414,18 @@ function ScopeWord({
   )
 }
 
-// Five squares, one per level — the design draws three because its placeholder
-// scale had three; the contract's scale has five and the meter follows it.
-// Drawn, never written, so the value lives in the accessible name alone.
-function EffortMeter({
+// How much thinking the agent is given, as the word itself — the same shape
+// the model word takes, and for the same reason. It was five drawn squares
+// until the word replaced them; the design had already built and rejected a
+// meter ("max effort was unreadable"), and a drawn value says itself only to a
+// screen reader.
+//
+// The floor is `medium` at six characters — IBM Plex Mono's advance is 0.6em,
+// so 6 × 0.6 × 9.5px = 34.2px and 36px clears it. Right-aligned against it so
+// the row does not jitter as the word cycles.
+const EFFORT_WORD_WIDTH = "min-w-[2.25rem] text-right"
+
+function EffortWord({
   agentId,
   effort,
   on,
@@ -387,7 +435,15 @@ function EffortMeter({
   on: boolean
 }) {
   const setAgentOption = useConfigStore((state) => state.setAgentOption)
-  const filled = AGENT_EFFORTS.indexOf(effort) + 1
+  // Written through the resolver rather than against the literal `"medium"`.
+  // There is no per-role effort default yet — `persisted-schema.ts` says so —
+  // so the two read identically today, and the day the CLI puts an effort on
+  // agent metadata this line becomes per-role with no edit here.
+  //
+  // Computed here rather than added to `RosterAgentRow`: the resolver is
+  // already exported and pure, and a boolean only one word needs would
+  // otherwise touch every spec under the derive layer's two roster blocks.
+  const isDefault = effort === restingAgentOptions(agentId).effort
 
   return (
     <button
@@ -396,32 +452,36 @@ function EffortMeter({
       onClick={() =>
         setAgentOption(agentId, { effort: nextInCycle(AGENT_EFFORTS, effort) })
       }
-      className="flex cursor-pointer items-center gap-[0.125rem]"
+      // Amber has no hover step, deliberately: amber means "the user chose
+      // this", so nothing the pointer does may mask it. The design's own
+      // cascade darkens it by accident; here the arm simply carries no hover.
+      className={`cursor-pointer font-mono text-9_5 font-medium ${EFFORT_WORD_WIDTH} ${
+        on
+          ? isDefault
+            ? "text-matrix-ink hover:text-ink-primary"
+            : "text-brand-ink"
+          : "text-roster-off"
+      }`}
     >
-      {AGENT_EFFORTS.map((level, index) => (
-        <span
-          key={level}
-          aria-hidden
-          className={`block size-[0.3125rem] border ${
-            index < filled
-              ? on
-                ? "border-brand bg-brand"
-                : "border-meter-off bg-meter-off"
-              : "border-meter-border"
-          }`}
-        />
-      ))}
+      {effort}
     </button>
   )
 }
 
 function AgentBlock({
   row,
+  domainPrefix,
   flashed,
   onShowUses,
   onHideUses,
 }: {
   row: RosterAgentRow
+  // Scope mode only: the band names a destination rather than a domain, so
+  // the row has to name its own. `null` in domain mode, where the band
+  // already said it. NOT `aria-hidden` — it is part of the agent's name here,
+  // and a screen reader hearing a bare `developer` under `~/.claude · global`
+  // has been told less than the screen shows.
+  domainPrefix: string | null
   flashed: boolean
   onShowUses: (anchor: HTMLElement, skill: RosterSkillRow) => void
   onHideUses: () => void
@@ -455,17 +515,28 @@ function AgentBlock({
               flashed
                 ? "font-medium text-brand-ink"
                 : on
-                  ? "font-medium text-roster-ink"
+                  ? "font-medium text-ink-primary"
                   : "font-normal text-roster-off"
             }`}
           >
+            {domainPrefix !== null && (
+              // One colour for the whole name row when the agent is off. The
+              // prototype recedes the role to #b4b0a2 but targets the prefix
+              // separately and never overrides it, so on a disabled agent the
+              // "muted" prefix renders DARKER than the role it prefixes.
+              // Inverted, and corrected here: off, the prefix takes no class
+              // of its own and inherits the role's one grey.
+              <span className={on ? "font-normal text-faint" : undefined}>
+                {domainPrefix}
+              </span>
+            )}
             {agent.label.toLowerCase()}
           </span>
         </button>
 
         <span className="flex flex-none items-center gap-2 pr-1">
           <ModelWord agentId={agent.id} model={model} on={on} />
-          <EffortMeter agentId={agent.id} effort={effort} on={on} />
+          <EffortWord agentId={agent.id} effort={effort} on={on} />
           <ScopeWord agentId={agent.id} scope={scope} on={on} />
         </span>
       </div>
@@ -490,20 +561,162 @@ function AgentBlock({
   )
 }
 
+// How the panel is banded, as the word itself plus U+25BE — the same idiom
+// the three agent-row words use, except that at two values a menu is what the
+// design draws rather than a cycle.
+//
+// The accessible name is the ACTION, not the value: the visible text is
+// `domain ▾`, which says nothing about what pressing it would do, and it
+// changes the moment it is used.
+function GroupControl({ onPick }: { onPick: () => void }) {
+  const rosterGroupBy = useUiStore((state) => state.rosterGroupBy)
+  const setRosterGroupBy = useUiStore((state) => state.setRosterGroupBy)
+
+  const pick = (groupBy: RosterGroupBy) => {
+    setRosterGroupBy(groupBy)
+    onPick()
+  }
+
+  return (
+    <Menu>
+      {/* The design gives this control neither a hover nor an open state —
+          both its rules restate the resting colour, which leaves it the one
+          interactive element in the panel with no state at all. It gets the
+          hover step every other word here has. */}
+      <MenuTrigger
+        aria-label={`Group sub-agents by ${rosterGroupBy}`}
+        className="shrink-0 cursor-pointer font-mono text-9_5 font-normal tracking-[.02em] whitespace-nowrap text-ink normal-case hover:text-ink-primary"
+      >
+        {rosterGroupBy} ▾
+      </MenuTrigger>
+      <MenuPopup>
+        <MenuRadioGroup value={rosterGroupBy} onValueChange={pick}>
+          {ROSTER_GROUP_BYS.map((groupBy) => (
+            <MenuRadioItem key={groupBy} value={groupBy}>
+              {groupBy}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
+  )
+}
+
+// The band's own type, which is the only thing that changes with the banding:
+// a domain is a short uppercase word and a destination is a path, so lower-
+// casing or tracking one out would misread it.
+const BAND_LABEL_CLASS = {
+  domain: "text-7_5 tracking-[.12em] uppercase",
+  scope: "text-8_5 tracking-[.02em] normal-case",
+} as const satisfies Record<RosterGroupBy, string>
+
+// The way into the output preview, and the panel's one recessed field.
+//
+// A real `<button>` rather than the prototype's `div` with an `onClick`: it
+// sits between Share and Install in the tab order, which is where the design
+// put it, and a div would have no place in that order at all.
+//
+// "Generated" is load-bearing in the label — it says the files do not exist
+// yet. The glyph is a code-brackets pair at Lucide's geometry, drawn here
+// because the design ships no icon set beyond the GitHub mark, and it keeps its
+// amber under the pointer: the design gives the block a hover surface and a
+// hover label, and no hover rule for the glyph.
+function PreviewEntryPoint({ disabled }: { disabled: boolean }) {
+  const setDialog = useUiStore((state) => state.setDialog)
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => setDialog("output")}
+      className="group/preview mb-[0.5625rem] flex w-full cursor-pointer items-center gap-[0.4375rem] bg-track px-3 py-2.5 outline-none hover:bg-track-hover focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50 disabled:hover:bg-track"
+    >
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="flex-none text-brand"
+      >
+        <path d="M16 18l6-6-6-6" />
+        <path d="M8 6l-6 6 6 6" />
+      </svg>
+      <span className="truncate font-mono text-10 font-semibold tracking-[.04em] text-track-ink uppercase group-hover/preview:text-ink-primary">
+        Preview generated code
+      </span>
+    </button>
+  )
+}
+
 // The right column: every sub-agent there is, grouped under stacking sticky
-// domain bands, with each agent's assignments inline. Everything is derived
-// from `assignments` + `agents` — the panel stores nothing but hover geometry.
+// bands — by domain, or by the destination each agent writes into — with each
+// agent's assignments inline. Everything is derived from `assignments` +
+// `agents` — the panel stores nothing but hover geometry.
 export function RosterPanel({ config }: { config: ConfigSelection }) {
   const collapsed = useUiStore((state) => state.rosterCollapsed)
+  const rosterGroupBy = useUiStore((state) => state.rosterGroupBy)
   const toggleRosterDomain = useUiStore((state) => state.toggleRosterDomain)
   const flashedAgentIds = useUiStore((state) => state.flashedAgentIds)
   const setDialog = useUiStore((state) => state.setDialog)
   const saveStack = useSavedStackStore((state) => state.save)
+  const account = useAccountStore((state) => state.session)
+  const saveToAccount = useAccountStore((state) => state.save)
+
+  const [refusal, setRefusal] = useState<SaveRefusal | null>(null)
+  const narration = refusal === null ? null : SAVE_NARRATIONS[refusal]
+
+  // Signed out, the local slot, unchanged. Signed in, the SAME payload is
+  // minted through the very call a share link makes and what is stored against
+  // the account is the id it came back with — a name and a pointer, no
+  // configuration bytes. That is why saving and sharing can never restore
+  // different things: it is one serialization and now one route as well.
+  //
+  // A refused mint leaves the account untouched rather than saving a name
+  // pointing at nothing — and says so on the button, because a cell appearing
+  // is the only feedback this button has and a refusal produces no cell.
+  // Signed in, a save is TWO round trips — mint the payload, then store the
+  // pointer — and the button stays live through both unless something stops
+  // it. A second click during the mint stores a second KV entry and a second
+  // row for one press, which is the same question the composer answered by
+  // disabling Send: a round trip is a state the control is IN, not an instant
+  // it passes through. Answered the same way here.
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    const payload = toSeedPayload(config)
+    if (!account) {
+      saveStack(payload)
+      return
+    }
+    if (saving) return
+
+    // Cleared before the attempt rather than after it, so a second click on a
+    // failure that ends the same way restarts the decay instead of inheriting
+    // the first one's timer — setting a state to the value it already holds
+    // re-renders nothing, and the words would vanish mid-attempt.
+    setRefusal(null)
+    setSaving(true)
+
+    try {
+      const minted = await createSharedConfig(payload)
+      if (!minted.ok) return setRefusal(minted.refusal)
+
+      const saved = await saveToAccount(SAVED_STACK_NAME, minted.id)
+      if (!saved.ok) setRefusal(saved.refusal)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const asideRef = useRef<HTMLElement>(null)
   const [tip, setTip] = useState<UseTip | null>(null)
 
-  const groups = selectRosterGroups(config)
+  const groups = selectRosterGroups(config, rosterGroupBy)
   const stats = summarize(config)
   const {
     state: shareState,
@@ -512,6 +725,16 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
     blocked,
   } = useShareLink(config)
   const flashed = new Set(flashedAgentIds)
+
+  // The endings that report rather than instruct clear themselves. The
+  // narration is a member of the table above, so this re-runs when the ending
+  // changes and not on every render.
+  useEffect(() => {
+    if (!narration?.decays) return
+
+    const timer = setTimeout(() => setRefusal(null), SAVE_RESET_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [narration])
 
   // The tooltip's position was measured against a scroll state that no longer
   // holds — any scroll while it is open dismisses it. Capture phase, because
@@ -549,12 +772,17 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
       {tip && <WhereUsedTip tip={tip} />}
 
       <div className="rail-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-2">
-        <div className="flex items-center gap-2 pr-0.5 pb-3 pl-4 font-mono text-10 font-medium tracking-[.14em] text-muted-foreground uppercase">
-          Sub-agents
-        </div>
+        {/* The main column's section rule, stubless: the panel has no gutter
+            to bleed into, and a stub would push the header's first ink 76px in
+            while every row beneath it is locked to the 17px flush edge. */}
+        <Hinge
+          variant="panel"
+          label="Sub-agents grouped by"
+          control={<GroupControl onPick={() => setTip(null)} />}
+        />
 
         {groups.map((group, index) => {
-          const shut = collapsed[group.domainId] ?? false
+          const shut = collapsed[group.key] ?? false
 
           return (
             // `display: contents` is doing real work here, not tidying.
@@ -569,7 +797,7 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
             // Removing the box makes the scroll container their shared
             // containing block, so they stack. The element stays because it is
             // what groups a band with its agents in the DOM.
-            <section className="contents" key={group.domainId}>
+            <section className="contents" key={group.key}>
               {/* 26px unfilled band, hairline top and bottom, pinned at
                   index × 26px so collapsed headers stack flush. */}
               <button
@@ -578,13 +806,17 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
                 onClick={() => {
                   // Collapsing can take the tooltip's anchor with it.
                   setTip(null)
-                  toggleRosterDomain(group.domainId)
+                  toggleRosterDomain(group.key)
                 }}
                 style={{ top: `${index * BAND_REM}rem` }}
                 className="sticky z-[5] flex h-[1.625rem] w-full cursor-pointer items-center border-y border-roster-band bg-page pl-[1.0625rem] text-left whitespace-nowrap"
               >
-                <span className="font-mono text-7_5 font-semibold tracking-[.12em] text-ink-3 uppercase">
-                  {group.label.toLowerCase()}
+                <span
+                  className={`font-mono font-semibold text-ink-3 ${BAND_LABEL_CLASS[rosterGroupBy]}`}
+                >
+                  {rosterGroupBy === "scope"
+                    ? group.label
+                    : group.label.toLowerCase()}
                 </span>
                 {/* Never changes on hover — the tooltip answers usage. */}
                 <span className="ml-auto font-mono text-7_5 font-medium tracking-[.06em] text-roster-off">
@@ -600,6 +832,11 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
                     <AgentBlock
                       key={row.agent.id}
                       row={row}
+                      domainPrefix={
+                        rosterGroupBy === "scope"
+                          ? `${DOMAIN_LABELS[row.agent.domainId].toLowerCase()} · `
+                          : null
+                      }
                       flashed={flashed.has(row.agent.id)}
                       onShowUses={(event, skill) =>
                         showUses(event, skill, row.agent.id)
@@ -616,16 +853,16 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
 
       <div className="flex-none border-t border-divider pt-3.5 pr-0.5 pl-4">
         {/* Snapshots the selection into the stack grid, where it becomes a
-            starting point like any stack. Its label never moves: the grid cell
-            appearing is the feedback, and a button that renames itself cannot
-            be clicked twice in a row. Nothing to snapshot without skills, the
-            same rule Share follows. */}
+            starting point like any stack. Its label moves only when nothing
+            arrived in the grid: a cell appearing is the feedback on the way
+            that works, and a refusal produces no cell to read. Nothing to
+            snapshot without skills, the same rule Share follows. */}
         <Button
           className="mb-2 w-full"
-          disabled={stats.skillCount === 0}
-          onClick={() => saveStack(toSeedPayload(config))}
+          disabled={stats.skillCount === 0 || saving}
+          onClick={() => void save()}
         >
-          Save
+          {narration?.label ?? "Save"}
         </Button>
         {/* Copies a `?fromId=` link. The button is the only feedback surface
             the panel has, so the words belong to whichever ending happened —
@@ -642,6 +879,19 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
         >
           {shareLabel}
         </Button>
+        {/* Above Install and below Share, which is the design's own reason:
+            "above the Install button reads as a step before it; below reads as
+            an aside. I prefer above — you preview, then you install."
+
+            A recessed field rather than a fourth outline or a second fill:
+            Install is the panel's only filled element and the panel has no
+            borders to spend, so this is the segmented track's colour used
+            inverted. Disabled with nothing selected, the same rule Save and
+            Share follow and for the same reason — nothing to write.
+
+            No count beside the label, deliberately: at 250px the label is all
+            that fits, and the dialog's own footer states the file count. */}
+        <PreviewEntryPoint disabled={stats.skillCount === 0} />
         {/* One rule, both doors (EDITOR-08). A project skill on a sub-agent
             resting at global is a pair `init --from` THROWS on, so a link
             minted from here would fail on the recipient — which is worse than

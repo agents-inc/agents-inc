@@ -1,9 +1,4 @@
-import {
-  SUB_AGENT_GROUPS,
-  type Domain,
-  type SubAgent,
-  type SubAgentGroup,
-} from "@workspace/matrix"
+import type { SubAgent } from "@workspace/matrix"
 import {
   MatrixGrid,
   matrixCellVariants,
@@ -17,6 +12,13 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 import { useState } from "react"
 
+import {
+  ROLE_COLUMNS,
+  matrixGroups,
+  metaAgents,
+  type MatrixGroup,
+  type RoleColumn,
+} from "@/features/configure/lib/agent-placement"
 import { isEjectOnly, useConfigStore } from "@/stores/config-store"
 import type { LoadState, SkillEntry } from "@/stores/persisted-schema"
 
@@ -24,76 +26,6 @@ import type { LoadState, SkillEntry } from "@/stores/persisted-schema"
 // one that gets explained — on demand rather than as standing hint text.
 const SCOPE_TIP =
   "Determines where the skill is installed to. Project-level skills inherit global, but not vice versa."
-
-// The design's unified matrix: the same role columns over every
-// implementation domain, with Meta held out as the stated exception. Auto-
-// assignment reaches one role more than the grid draws — see the note on
-// `matrixGroups` below. The reviewer and PM columns died with the per-domain
-// reviewers and PMs (CLI-398, CLI-399): a consolidated role agent has no
-// domain row to sit on, so both are hand-assignable through the Meta fold
-// like the other prefix-less agents.
-const ROLE_COLUMNS = [
-  { id: "developer", short: "dev" },
-  { id: "tester", short: "test" },
-] as const
-
-type RoleColumn = (typeof ROLE_COLUMNS)[number]
-
-const CANONICAL_ROLES = new Set<string>(ROLE_COLUMNS.map((role) => role.id))
-
-// Agent ids are `<domain>-<role>`; anything else has no role to read.
-const roleOf = (agentId: string, domainId: Domain) =>
-  agentId.startsWith(`${domainId}-`) ? agentId.slice(domainId.length + 1) : null
-
-const isCanonicalRole = (role: string | null): role is string =>
-  role !== null && CANONICAL_ROLES.has(role)
-
-const canonicalAgentsByRole = (group: SubAgentGroup) => {
-  const byRole = new Map<string, SubAgent>()
-
-  for (const agent of group.agents) {
-    const role = roleOf(agent.id, group.domainId)
-    if (isCanonicalRole(role)) byRole.set(role, agent)
-  }
-
-  return byRole
-}
-
-const hasAnyRole = (group: { byRole: Map<string, SubAgent> }) =>
-  group.byRole.size > 0
-
-const implementationGroups = SUB_AGENT_GROUPS.filter(
-  (group) => group.domainId !== "meta"
-)
-
-// Implementation domains that actually have at least one role-column agent.
-//
-// The grid is deliberately the whole story for these domains: the design draws
-// the four roles and nothing else, and the roster gained a fifth role after
-// that design (CLI-351 in todo/archive.md; a column for it is EDITOR-10). The
-// researchers — web, api, ai and cli — still take skills from a stack and from
-// auto-assignment, and still appear in the roster, where they can be switched
-// off; they are just not hand-assignable here. The same now goes for planning:
-// the consolidated `pm` is one agent for every domain, so it belongs to the
-// Meta fold rather than to a per-domain column.
-type MatrixGroup = {
-  domainId: Domain
-  label: string
-  byRole: Map<string, SubAgent>
-}
-
-const matrixGroups: MatrixGroup[] = implementationGroups
-  .map((group) => ({
-    domainId: group.domainId,
-    label: group.label,
-    byRole: canonicalAgentsByRole(group),
-  }))
-  .filter(hasAnyRole)
-
-// The exception, folded shut by default behind the design's `＋`.
-const metaAgents = SUB_AGENT_GROUPS.filter(
-  (group) => group.domainId === "meta"
-).flatMap((group) => group.agents)
 
 // Reads as the word it is: nothing, `lazy`, or `pre`.
 const loadWord = (state: LoadState | null) =>
@@ -235,7 +167,11 @@ export function SkillOptionsPanel({
     <div
       role="group"
       aria-label="Skill options"
-      // The panel lives inside the cell, whose click toggles selection. Without
+      // Kept, and no longer for the reason it was written. The panel used to sit
+      // inside a cell that was itself a button, so a click reaching the ancestor
+      // toggled the selection. Since EDITOR-58 the target is a sibling and nothing
+      // above the panel handles a click — this guards against the cell becoming an
+      // ancestor handler again rather than against one that exists today. Without
       // this, configuring a skill would also deselect it.
       onClick={(event) => event.stopPropagation()}
       className={`absolute top-0 z-30 w-[18.5rem] border border-rule bg-cell pt-1 pb-2 text-left shadow-panel ${

@@ -54,7 +54,7 @@ type ConfigActions = {
   // — a pinned-off agent stays off as skills arrive, a pinned-on one installs
   // bare.
   toggleAgentPin: (agentId: string) => void
-  // The roster's model word and effort meter. Only non-resting choices are
+  // The roster's model word and effort word. Only non-resting choices are
   // kept, so cycling a field back to the agent's own default removes it again.
   setAgentOption: (agentId: string, patch: Partial<AgentOptions>) => void
   // The inbound half of sharing: a fetched config replaces the selection

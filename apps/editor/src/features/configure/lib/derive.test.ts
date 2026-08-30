@@ -484,7 +484,7 @@ describe("selectRosterGroups", () => {
         },
       })
     )
-    const web = groups.find((group) => group.domainId === "web")!
+    const web = groups.find((group) => group.key === "web")!
 
     expect(web.onCount).toBe(2)
     expect(web.agents.length).toBeGreaterThan(2)
@@ -502,8 +502,8 @@ describe("selectRosterGroups", () => {
       })
     )
 
-    expect(groups.find((group) => group.domainId === "web")!.onCount).toBe(1)
-    expect(groups.find((group) => group.domainId === "meta")!.onCount).toBe(1)
+    expect(groups.find((group) => group.key === "web")!.onCount).toBe(1)
+    expect(groups.find((group) => group.key === "meta")!.onCount).toBe(1)
   })
 
   it("lists where-used only across on agents carrying the skill live", () => {
@@ -612,6 +612,103 @@ describe("selectRosterGroups", () => {
         .find((row) => row.agent.id === "reviewer")!
         .skills[0]!.usedBy.map((agent) => agent.id)
     ).toEqual(["web-developer", "reviewer"])
+  })
+})
+
+// The second banding. One renderer serves both modes, so the shape a group
+// hands back must not vary with the mode — only the key, the label and which
+// agents fall into which band.
+describe("selectRosterGroups grouped by scope", () => {
+  // Prefixed keys, and the prefix is what keeps the two key spaces disjoint:
+  // `rosterCollapsed` is ONE record serving both modes, a bare `global` is a
+  // plausible future domain id, and a domain id can never contain a colon.
+  const SCOPE_GROUP_KEYS = ["scope:global", "scope:project"] as const
+  // The destination each band names, verbatim. Space, U+00B7 MIDDLE DOT,
+  // space — and global first, which is the reverse of `AGENT_SCOPES`, whose
+  // order is a cycle the scope word depends on and must not be re-sorted.
+  const SCOPE_GROUP_LABELS = [
+    "~/.claude · global",
+    "./.claude · project",
+  ] as const
+
+  // Every agent rests at global, so a configuration with two bands is one
+  // where somebody moved an agent — which makes it the interesting case as
+  // well as the only two-band one.
+  const withOneAtProject = () =>
+    scratch(
+      {
+        a: {
+          ...DEFAULT_SKILL_OPTIONS,
+          assignments: { "web-developer": live() },
+        },
+      },
+      { "web-developer": { scope: "project" } }
+    )
+
+  it("bands by destination, global first", () => {
+    const groups = selectRosterGroups(withOneAtProject(), "scope")
+
+    expect(groups.map((group) => group.key)).toStrictEqual([
+      ...SCOPE_GROUP_KEYS,
+    ])
+  })
+
+  it("labels each band with the path it writes into", () => {
+    const groups = selectRosterGroups(withOneAtProject(), "scope")
+
+    expect(groups.map((group) => group.label)).toStrictEqual([
+      ...SCOPE_GROUP_LABELS,
+    ])
+  })
+
+  it("moves an agent out of one band and into the other", () => {
+    const groups = selectRosterGroups(withOneAtProject(), "scope")
+    const idsIn = (key: string) =>
+      groups
+        .find((group) => group.key === key)!
+        .agents.map((row) => row.agent.id)
+
+    expect(idsIn("scope:project")).toStrictEqual(["web-developer"])
+    expect(idsIn("scope:global")).not.toContain("web-developer")
+  })
+
+  // The band that would have no rows is not drawn empty — it is not drawn.
+  // With nobody moved, every agent rests at global and `project` has nothing
+  // to say, which is the state every visitor opens on.
+  it("omits a destination nobody writes to", () => {
+    const groups = selectRosterGroups(scratch(), "scope")
+
+    expect(groups.map((group) => group.key)).toStrictEqual(["scope:global"])
+  })
+
+  // One expression, both modes — only the denominator's MEANING changes. The
+  // count has to be recomputed against the band's own members rather than
+  // inherited from whichever domain the agent came out of.
+  it("recounts per band rather than carrying the domain's count over", () => {
+    const groups = selectRosterGroups(withOneAtProject(), "scope")
+    const countsByKey = Object.fromEntries(
+      groups.map((group) => [
+        group.key,
+        `${group.onCount} of ${group.agents.length}`,
+      ])
+    )
+    const everyAgent = SUB_AGENT_GROUPS.flatMap((group) => group.agents).length
+
+    expect(countsByKey["scope:project"]).toBe("1 of 1")
+    expect(countsByKey["scope:global"]).toBe(`0 of ${everyAgent - 1}`)
+  })
+
+  // The "one renderer" claim, asserted rather than assumed: for the same
+  // input the same agent's whole row — its skills, its three words, its
+  // where-used — is identical whichever way the panel is banded.
+  it("hands back a byte-identical agent row in either mode", () => {
+    const config = withOneAtProject()
+    const rowIn = (groupBy: "domain" | "scope") =>
+      selectRosterGroups(config, groupBy)
+        .flatMap((group) => group.agents)
+        .find((row) => row.agent.id === "web-developer")!
+
+    expect(rowIn("scope")).toStrictEqual(rowIn("domain"))
   })
 })
 

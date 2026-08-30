@@ -1,19 +1,21 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 
-import {
-  canonicalMarketplaceRef,
-  fetchCatalog,
-  type CatalogFailure,
-} from "@/lib/api/catalog"
 import { fetchSharedConfig } from "@/lib/api/configs"
-import { activeMarketplace, useCatalogStore } from "@/stores/catalog-store"
 import {
   detachSavedConfig,
   readSavedConfig,
   useConfigStore,
 } from "@/stores/config-store"
-import { tokenFor, useMarketplaceStore } from "@/stores/marketplace-store"
+import { useMarketplaceStore } from "@/stores/marketplace-store"
 import { useUiStore } from "@/stores/ui-store"
+import {
+  STAYS_PARKED,
+  droppedNotice,
+  parkedNotice,
+  seatCatalog,
+  type RecoveryEndings,
+  type Unseated,
+} from "./seat-catalog"
 import { adoptSeedPayload, unknownPayloadIds } from "./seed"
 
 import type { SeedPayload } from "@workspace/matrix"
@@ -21,13 +23,18 @@ import type { SeedPayload } from "@workspace/matrix"
 // The app's opening, in the one order it can be done in.
 //
 // Nothing may resolve an id before the catalogue those ids were minted against
-// is seated. The app resolves ids in exactly two places — the configuration
-// this browser saved, and the one a `?fromId=` link addresses — and both used
-// to run against whatever catalogue happened to be loaded, which for the first
-// paint is always the vendored public one. So a selection made on a marketplace
-// pruned as unknown on the way back in, by reload and by link alike. One bug,
-// two doors; it is sequenced here once rather than shimmed at each door,
-// because two orderings that have to agree eventually will not.
+// is seated. The app resolves ids in exactly two places while it opens — the
+// configuration this browser saved, and the one a `?fromId=` link addresses —
+// and both used to run against whatever catalogue happened to be loaded, which
+// for the first paint is always the vendored public one. So a selection made on
+// a marketplace pruned as unknown on the way back in, by reload and by link
+// alike. One bug, two doors; it is sequenced here once rather than shimmed at
+// each door, because two orderings that have to agree eventually will not.
+//
+// The seating itself is `seat-catalog.ts` and no longer lives here, because
+// this hook is not the only thing that seats a catalogue: applying a saved
+// stack fetches the same payload from the same route and owes the same
+// sequence (EDITOR-59). What stays here is what is genuinely about an ADDRESS.
 //
 // The two doors are two ADDRESSES (EDITOR-37, owner 2026-08-17). `/` is this
 // browser's own editor and the marketplace it stored governs it;
@@ -41,57 +48,13 @@ import type { SeedPayload } from "@workspace/matrix"
 // Which address is open is the only branch below, and each opening says for
 // itself where its writes go.
 
-// A catalogue that would not load, and the marketplace it belongs to. One
-// value because the two only ever travel together, from the seating that
-// produced them to the dialog that has to show both.
-type Unseated = { marketplace: string; failure: CatalogFailure }
-
-/**
- * The two ways a parked recovery can end, answered by whichever opening parked
- * it — because they are not the same question asked twice.
- *
- * The dialog offers exactly these two outcomes: name a marketplace that loads,
- * or clear the field, which is how the public catalogue is asked for by name.
- * Whether the second one FINISHES what is parked depends on where the waiting
- * ids get their marketplace from, and only the opening knows that.
- */
-type RecoveryEndings = {
-  /** Seated at last: finish what was parked on it. */
-  onSeated: () => void
-  /** The marketplace given up on instead, and the public catalogue taken. */
-  onPublic: () => void
-}
-
-/**
- * A catalogue this browser could not reach, and whatever was waiting on it.
- *
- * The marketplace is SHOWN rather than asked for — the browser already knows
- * which one, whether from the link or from its own slot — and the failure
- * travels with it so the dialog opens with the answer already in it: a token
- * field and a retry for the refusals a credential can change, the precise
- * validation error and no retry for a catalogue that will not parse however it
- * is authorized.
- */
-export type MarketplaceRecovery = Unseated & RecoveryEndings
-
-// A parked IMPORT is not re-pointed by clearing the field. Its ids belong to
-// the marketplace its PAYLOAD names, and this browser's slot says nothing about
-// that — so continuing it against the public catalogue would prune every one of
-// them, which is exactly the silent partial import the recovery exists to
-// prevent. It stays parked, and its notice stays on screen saying so.
-const STAYS_PARKED = () => undefined
-
-export type CatalogFirstState = {
-  /** What the opening had to say for itself, in one line above the grid. */
-  notice: string | null
-  recovery: MarketplaceRecovery | null
-}
+// Where the two dialogs that can resolve a parked recovery still reach for its
+// shape. Re-exported rather than moved through them, because the seating is no
+// longer this module's and the components are no longer this lane's.
+export type { MarketplaceRecovery } from "./seat-catalog"
 
 // Everything an opening can have to say, each named for the state it describes
 // rather than built inline where it happens.
-
-// Which catalogue is answering, in the words the notice needs it in.
-const catalogueName = () => activeMarketplace() ?? "the public catalogue"
 
 /** The link itself did not fetch — a dead id, or a worker that is not there. */
 const refusedNotice = (error: string) =>
@@ -106,9 +69,9 @@ const refusedNotice = (error: string) =>
 const SHARED_NOTICE =
   "A shared configuration, not your own. Yours is untouched under Configure, and nothing changed here is saved."
 
-/** The link fetched and its catalogue did not, so none of it was applied. */
-const parkedNotice = (marketplace: string) =>
-  `This link's skills come from ${marketplace}, which could not be loaded — nothing from it was applied. Load it from Marketplace to finish.`
+// What a payload arriving at an address is called in the sentence that says its
+// catalogue would not load.
+const A_LINK = "This link"
 
 // The same refusal on the other door, and the reason EDITOR-30's "a failed
 // restore is silent" was overturned: since hydration waits on the catalogue, a
@@ -118,15 +81,7 @@ const parkedNotice = (marketplace: string) =>
 const restoreParkedNotice = (marketplace: string) =>
   `Your configuration is saved against ${marketplace}, which could not be loaded — nothing has been read from it yet. Load it from Marketplace to restore it.`
 
-// The ids themselves rather than a count: a name a reader can go and look up is
-// the difference between a warning and a fact. Phrased with no plural to get
-// wrong, since one dropped id is as common as six.
-const droppedNotice = (unknownIds: string[]) =>
-  unknownIds.length === 0
-    ? null
-    : `Not in ${catalogueName()}, so not applied: ${unknownIds.join(", ")}.`
-
-// One line, however many things it has to say.
+// One line, however many things an opening has to say.
 const sentences = (parts: (string | null)[]) =>
   parts.filter((part) => part !== null).join(" ")
 
@@ -144,91 +99,13 @@ const withDropped = (said: string | null, dropped: string[]) => {
   return sentences([said, also])
 }
 
-// The two seats, and both are idempotent: seating what is already seated does
-// nothing at all. That is load-bearing twice over — a 400 KB catalogue must not
-// be fetched again to arrive where it already is, and re-seating drops the
-// external skills added this session, which a payload that did not name them
-// has no business taking away.
-
-// Fetch and seat, and nothing written down.
-//
-// Which catalogue is loaded is a fact about this tab; which one this browser
-// CHOSE is a fact about its slot, and only the dialog and the switcher put
-// anything in that one. An address a visitor was sent may change what is on
-// screen and may not change what they had. It is the rule `seatPublicCatalog`
-// already states, said for the named case too.
-//
-// The token comes from the marketplace being seated rather than from whatever
-// this browser last chose, which is the one call site EDITOR-39's keyed slot
-// makes SIMPLER. It also closes a leak the single slot could not: a shared
-// address picks the marketplace, so `whatever token I hold` meant anyone who
-// could send a URL could have this browser present its PAT to a repository it
-// was never issued for. Keyed, a marketplace this browser holds nothing for is
-// read with no `Authorization` header at all.
-const seatMarketplace = async (
-  marketplace: string
-): Promise<CatalogFailure | null> => {
-  if (marketplace === activeMarketplace()) return null
-
-  const result = await fetchCatalog(
-    marketplace,
-    tokenFor(marketplace) || undefined
-  )
-  if (!result.ok) return result
-
-  useCatalogStore.getState().load(result.matrix, marketplace)
-  return null
-}
-
-// The vendored one. Deliberately not paired with a `choosePublic()`: a
-// marketplace can be named again from the dialog in a second, and a token
-// cannot be recovered at all, so an arriving link may drop what is seated and
-// may not drop what is stored.
-const seatPublicCatalog = () => {
-  if (activeMarketplace() === null) return
-
-  useCatalogStore.getState().reset()
-}
-
-/**
- * The catalogue a set of ids was minted against, seated before anything
- * resolves them.
- *
- * Naming none means the vendored public one — every payload minted before a
- * marketplace could be loaded at all, and every browser that has never named
- * one — and seating that cannot fail, which is why only the named case comes
- * back with a reason. Seating it is not optional either way: a public payload
- * read against a loaded marketplace prunes exactly as a marketplace payload
- * read against the public catalogue does, and leaving one address to open the
- * other is precisely when the wrong one is still seated.
- */
-const seatCatalog = async (
-  marketplace: string | undefined
-): Promise<Unseated | null> => {
-  if (!marketplace) {
-    seatPublicCatalog()
-    return null
-  }
-
-  // The other door a ref arrives through, and the one that carries the refs
-  // already out in the world: an id minted before this was normalised names its
-  // marketplace the way the field took it. Canonicalised on the way in, so the
-  // token lookup finds the entry this browser really holds and a payload minted
-  // from a shared address goes on naming a repository.
-  const named = canonicalMarketplaceRef(marketplace)
-  const failure = await seatMarketplace(named)
-  return failure ? { marketplace: named, failure } : null
-}
-
 // The catalogue this browser last chose, seated before anything reads what was
 // saved against it. One of however many it has saved — the choice is the field
 // that says which, and the switcher is the other way to move it.
 const restoreSavedCatalog = () =>
   seatCatalog(useMarketplaceStore.getState().current)
 
-export const useCatalogFirst = (fromId: string): CatalogFirstState => {
-  const [notice, setNotice] = useState<string | null>(null)
-  const [recovery, setRecovery] = useState<MarketplaceRecovery | null>(null)
+export const useCatalogFirst = (fromId: string): void => {
   // The address this hook has opened, rather than a count of openings — and
   // deliberately no cancellation beside it. Those two do not compose:
   // StrictMode mounts, unmounts and remounts, so a `stale` flag set by the
@@ -244,6 +121,8 @@ export const useCatalogFirst = (fromId: string): CatalogFirstState => {
     if (opened.current === fromId) return
     opened.current = fromId
 
+    const { sayCatalogue, parkCatalogue } = useUiStore.getState()
+
     // Whatever the last address had to say describes the last address. Moving
     // between the two is a real navigation on a screen the router keeps
     // mounted, so nothing clears on the way out unless it is cleared here.
@@ -255,33 +134,26 @@ export const useCatalogFirst = (fromId: string): CatalogFirstState => {
     // reason and one more: its endings close over the payload the LAST address
     // was applying, so a load from the visitor's own address would finish
     // somebody else's import into it.
-    setNotice(null)
-    setRecovery(null)
+    sayCatalogue(null)
 
-    // One dialog, whichever opening is waiting on it. The dialog stays the
-    // single owner of whether it is open, so the request arrives the same way
-    // the floating button's does. Cancelling therefore closes it without
-    // discarding anything: the notice says what is still waiting, and
-    // re-opening it from the button offers the same pre-filled form and the
-    // same way to finish.
     const park = (
       unseated: Unseated,
       waiting: string,
       endings: RecoveryEndings
-    ) => {
-      setRecovery({ ...unseated, ...endings })
-      useUiStore.getState().setDialog("marketplace")
-      setNotice(waiting)
-    }
+    ) => parkCatalogue({ ...unseated, ...endings }, waiting)
+
+    // Read back from the store rather than closed over, because the two
+    // sentences are written by two different steps of one opening.
+    const alsoSay = (dropped: string[]) =>
+      sayCatalogue(withDropped(useUiStore.getState().catalogueNotice, dropped))
 
     const finishRestore = async () => {
       const dropped = await readSavedConfig()
-      setRecovery(null)
       // Replaced rather than added to: the notice standing here describes a
       // restore that had not happened, and this one has. What takes its place
       // is what the restore cost — and `droppedNotice` answers `null` for a
       // restore that cost nothing, which is the clear this always did.
-      setNotice(droppedNotice(dropped))
+      sayCatalogue(droppedNotice(dropped))
     }
 
     const openOwn = async () => {
@@ -311,15 +183,13 @@ export const useCatalogFirst = (fromId: string): CatalogFirstState => {
       // cannot place is dropped here exactly as one the public catalogue cannot
       // place is dropped through the recovery above. Nothing parked, nobody
       // asked, and a silent prune is a silent prune wherever it happens.
-      const dropped = await readSavedConfig()
-      setNotice((said) => withDropped(said, dropped))
+      alsoSay(await readSavedConfig())
     }
 
     const applyShared = (payload: SeedPayload) => {
       const config = adoptSeedPayload(payload)
       useConfigStore.getState().importConfig(config)
-      setRecovery(null)
-      setNotice(
+      sayCatalogue(
         sentences([
           SHARED_NOTICE,
           droppedNotice(unknownPayloadIds(payload, config)),
@@ -332,7 +202,7 @@ export const useCatalogFirst = (fromId: string): CatalogFirstState => {
       if (!result.ok) {
         // An id that names nothing has no state to govern, so this address is
         // the visitor's own editor and it opens as one.
-        setNotice(refusedNotice(result.error))
+        sayCatalogue(refusedNotice(result.error))
         await openOwn()
         return
       }
@@ -347,7 +217,10 @@ export const useCatalogFirst = (fromId: string): CatalogFirstState => {
       if (unseated) {
         park(
           unseated,
-          sentences([SHARED_NOTICE, parkedNotice(unseated.marketplace)]),
+          sentences([
+            SHARED_NOTICE,
+            parkedNotice(A_LINK, unseated.marketplace),
+          ]),
           { onSeated: () => applyShared(payload), onPublic: STAYS_PARKED }
         )
         return
@@ -361,6 +234,4 @@ export const useCatalogFirst = (fromId: string): CatalogFirstState => {
     if (fromId) void openShared(fromId)
     else void openOwn()
   }, [fromId])
-
-  return { notice, recovery }
 }

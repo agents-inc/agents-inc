@@ -58,6 +58,166 @@ export class InstallDialog {
   }
 }
 
+// What an install writes, drawn by the code that writes it. Two roots in one
+// tree, a content pane, and no action at all — installing is a CLI command,
+// the same rule the Install dialog follows.
+//
+// ROWS ARE LOCATED BY THEIR PATH, never by their text. A row's text is its
+// bare filename, so `config.ts` names two rows the moment both roots are
+// emitted — and telling them apart is most of what the specs here are for. The
+// path is also what the header subtitle shows, so this is the row's identity
+// rather than a locator's private handle.
+const ROW_SELECTOR = '[data-slot="preview-row"]'
+
+export class OutputPreviewDialog {
+  readonly root: Locator
+  // The 250px column on the left. Fixed width, against `DialogPane`'s default
+  // of a flexible left and a fixed right — the inverse, which is why B3.4 sends
+  // the change into `packages/ui` rather than overriding it from here.
+  readonly treePane: Locator
+  // The flexible right, holding one element per line of the selected file.
+  readonly contentPane: Locator
+  // `{path} · {marker}`, which changes as rows are clicked. There is no
+  // breadcrumb in the body: the header IS the breadcrumb, and that is the whole
+  // of the decision and its stated cost.
+  readonly subtitle: Locator
+  readonly footerNote: Locator
+  readonly closeButton: Locator
+
+  constructor(page: Page) {
+    this.root = page.getByRole("dialog", { name: "Output preview" })
+    this.treePane = this.root.locator('[data-slot="preview-tree"]')
+    this.contentPane = this.root.locator('[data-slot="preview-content"]')
+    this.subtitle = this.root.locator('[data-slot="preview-subtitle"]')
+    this.footerNote = this.root.locator('[data-slot="dialog-footer-note"]')
+    this.closeButton = this.root
+      .locator('[data-slot="dialog-footer"]')
+      .getByRole("button", { name: "Close" })
+  }
+
+  row(path: string): Locator {
+    return this.root.locator(`${ROW_SELECTOR}[data-path="${path}"]`)
+  }
+
+  /**
+   * THE SENTINEL BOTH TREE READS TAKE FIRST, and it is a race fix rather than a
+   * courtesy.
+   *
+   * `allInnerTexts` and `evaluateAll` are documented as NON-RETRYING: each is a
+   * single read of whatever is in the DOM at that instant, with no actionability
+   * wait in front of it. Every caller below runs immediately after
+   * `previewButton.click()`, and the model behind the tree arrives through
+   * `import()` by design — `Preview` renders its shell in the `loading` state
+   * with the tree pane present and no rows inside it. So a read taken before the
+   * chunk resolves returns `[]` and reports it as the tree.
+   *
+   * Waiting for the FIRST ROW is what makes the read retrying at the only point
+   * it can be: a row exists only in the `ready` state, so this separates ready
+   * from both loading and the refusal state. This is the "non-wizard page
+   * objects need their own screen-specific sentinel" half of `packages/cli`'s
+   * `waitForWizardFooter` rule.
+   *
+   * A locator `waitFor` rather than an `expect`, because this file locates and
+   * the specs expect — the rule `roster-panel.ts` states in as many words.
+   */
+  private async waitForTree() {
+    await this.root.locator(ROW_SELECTOR).first().waitFor({ state: "visible" })
+  }
+
+  /** Every row's own name, in emission order — the tree, as a list. */
+  async rowNames() {
+    await this.waitForTree()
+    return this.root.locator('[data-slot="preview-row-name"]').allInnerTexts()
+  }
+
+  /** Every row's path, in emission order. */
+  async rowPaths() {
+    await this.waitForTree()
+    return this.root
+      .locator(ROW_SELECTOR)
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-path")))
+  }
+
+  /**
+   * Every row's ARIA position, in emission order.
+   *
+   * The rows are DOM siblings — one flat run of buttons with `padding-left`
+   * doing all the nesting — so `aria-level`, `aria-posinset` and `aria-setsize`
+   * are the whole of what says where a row sits. Read together and off the
+   * rendered attributes, because that is the only form the values have: a
+   * screen reader is handed these three strings and nothing else.
+   *
+   * `getAttribute` answers strings, and they are left as strings rather than
+   * parsed here. A number would be this page object's opinion of the attribute
+   * rather than the attribute.
+   */
+  async rowPositions() {
+    await this.waitForTree()
+    return this.root.locator(ROW_SELECTOR).evaluateAll((rows) =>
+      rows.map((row) => ({
+        path: row.getAttribute("data-path"),
+        level: row.getAttribute("aria-level"),
+        posinset: row.getAttribute("aria-posinset"),
+        setsize: row.getAttribute("aria-setsize"),
+      }))
+    )
+  }
+
+  /** Which row is the tree's single tab stop, and which are reachable only by arrow. */
+  async rowTabStops() {
+    await this.waitForTree()
+    return this.root.locator(ROW_SELECTOR).evaluateAll((rows) =>
+      rows.map((row) => ({
+        path: row.getAttribute("data-path"),
+        tabIndex: row.tabIndex,
+      }))
+    )
+  }
+
+  /**
+   * The row holding DOM focus, as its path — `null` when focus is elsewhere.
+   *
+   * The arrows move focus without moving the selection, so nothing rendered
+   * says where focus went. `activeElement` is the only reading of it, and the
+   * selector travels in as an argument rather than being written out again
+   * inside the browser callback, which cannot close over this module.
+   */
+  async focusedRowPath() {
+    return this.treePane.evaluate((pane, selector) => {
+      const active = pane.ownerDocument.activeElement
+      return active instanceof HTMLElement && active.matches(selector)
+        ? active.getAttribute("data-path")
+        : null
+    }, ROW_SELECTOR)
+  }
+
+  /** The state label a row carries, and `null` on a root or a directory. */
+  async markerOf(path: string) {
+    return this.row(path).getAttribute("data-marker")
+  }
+
+  /**
+   * The selected file's text, one entry per line.
+   *
+   * Read through `textContent` rather than through a text assertion, for the
+   * reason `SkillContentsDialog.body` is: this is a preview of bytes the CLI
+   * will write, and normalised whitespace would be a different file.
+   */
+  async lines() {
+    return this.contentPane
+      .locator('[data-slot="preview-line"]')
+      .allTextContents()
+  }
+
+  async select(path: string) {
+    await this.row(path).click()
+  }
+
+  async close() {
+    await this.closeButton.click()
+  }
+}
+
 // What an added skill actually holds: one file's text, and the directory it
 // came in beside it. Located by its accessible name rather than by substring —
 // two dialogs are open at once whenever this is reached from Install, so the

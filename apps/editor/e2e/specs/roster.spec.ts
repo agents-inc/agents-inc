@@ -13,11 +13,44 @@ import {
 const { web } = DOMAINS
 const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
 
+// `#5f5c52` — an agent's cycling word at rest, on an agent that is on.
+const RESTING_WORD = "rgb(95, 92, 82)"
+// `#a06a1c` — the reserved amber, and it means one thing only: the user chose
+// this rather than taking what the row rests on.
+const AMBER_TEXT = "rgb(160, 106, 28)"
+// The roster's off-grey. A recessed agent's words take it whether
+// the user chose them or not, which is what makes amber mean anything.
+const RECESSED_WORD = "rgb(182, 176, 160)"
+
+// The header's copy and the two destinations a scope band names, written out
+// rather than imported from the page object that locates them: an assertion
+// bound to the string its own locator was built from cannot fail, because both
+// halves move together. Separator is space, U+00B7 MIDDLE DOT, space.
+const HEADER_LABEL = "Sub-agents grouped by"
+const GLOBAL_PATH = "~/.claude · global"
+const PROJECT_PATH = "./.claude · project"
+
+// The floor under the header's trailing rule. The label and the control are
+// both `shrink-0`, so the rule is the only shrinkable item in a 300px column
+// and without a floor it collapses to nothing and the treatment disappears.
+const MIN_HEADER_RULE_PX = 10
+
 // Quiet-at-rest is a reveal, not a mount: the controls stay in the layout at
 // zero opacity so nothing reflows when they fade in, which means "hidden" is an
 // assertion on opacity rather than on visibility.
 const opacityOf = (locator: Locator) =>
   locator.evaluate((node) => Number(getComputedStyle(node).opacity))
+
+// Where an element's ink starts, live. Two of these compared against each
+// other is the only way to state the panel's one alignment rule: a visibility
+// assertion is true of a header whose first ink sits 76px in, and so is every
+// assertion about its text.
+const inkStartOf = async (locator: Locator) => {
+  const box = await locator.boundingBox()
+  if (!box) throw new Error("the element must be drawn to be measured")
+
+  return box.x
+}
 
 // The roster stores nothing — every line is derived from `assignments` and
 // `agents`. These assertions are the guard on that: if a copy is ever
@@ -261,7 +294,15 @@ test.describe("roster panel", () => {
     await configure.chooseStack(STACKS.nextjs)
 
     const rail = page.locator("aside .rail-scrollbar")
-    const bands = page.locator("aside .rail-scrollbar button[aria-expanded]")
+    // Scoped through `section`, which is what a band sits in and the header
+    // hinge does not. `aria-expanded` alone also matches the grouping control
+    // — Base UI writes the attribute on a menu trigger whether the menu is
+    // open or not — and that control precedes the bands in the same scroller,
+    // so it became `first()` and `step` became its 14px instead of the band's
+    // 26px, with every offset below measured off the wrong ruler.
+    const bands = page.locator(
+      "aside .rail-scrollbar section button[aria-expanded]"
+    )
 
     const total = await bands.count()
     const step = (await bands.first().boundingBox())!.height
@@ -318,11 +359,14 @@ test.describe("agent model and effort", () => {
     await expect(configure.roster.installButton).toContainText("0 sub-agents")
   })
 
-  test("the effort meter rests on medium and cycles upward", async ({
+  test("the effort word rests on medium and cycles upward", async ({
     configure,
   }) => {
-    const effort = configure.roster.effortMeter("web-developer")
+    const effort = configure.roster.effortWord("web-developer")
 
+    // The value is the visible text as well as the accessible name now, the
+    // same as the model word beside it — a drawn meter said it only once.
+    await expect(effort).toHaveText(AGENT_OPTIONS.restingEffort)
     await expect(effort).toHaveAccessibleName(
       `Effort for web-developer: ${AGENT_OPTIONS.restingEffort}`
     )
@@ -332,7 +376,71 @@ test.describe("agent model and effort", () => {
     await effort.click()
     await effort.click()
 
+    await expect(effort).toHaveText("xhigh")
     await expect(effort).toHaveAccessibleName("Effort for web-developer: xhigh")
+  })
+
+  // Amber means "the user chose this", and nothing in the suite asserted a
+  // colour on any of the three words before — so the one signal that
+  // distinguishes a chosen effort from a resting one had no channel at all.
+  test("the effort word goes amber once it leaves the resting value", async ({
+    configure,
+  }) => {
+    // Amber is suppressed on a recessed agent, so the agent has to be on for
+    // there to be an amber rule to assert at all — the same way the pinned-off
+    // test below reaches its state, and the case this leaves out is the test
+    // that follows the next one.
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    const effort = configure.roster.effortWord("web-developer")
+
+    // The channel first: at rest it is the ordinary word colour, so the
+    // assertion below can tell a state from a stylesheet.
+    await expect(effort).toHaveCSS("color", RESTING_WORD)
+
+    await effort.click()
+
+    await expect(effort).toHaveCSS("color", AMBER_TEXT)
+  })
+
+  // The design's own cascade darkens the amber word on hover by accident;
+  // here it must not, because hovering something must never mask the fact
+  // that the user chose it.
+  test("the amber word does not darken under the pointer", async ({
+    configure,
+  }) => {
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    const effort = configure.roster.effortWord("web-developer")
+
+    await effort.click()
+    await expect(effort).toHaveCSS("color", AMBER_TEXT)
+
+    await effort.hover()
+
+    await expect(effort).toHaveCSS("color", AMBER_TEXT)
+  })
+
+  // The other half of the two above, and neither means much without it: an
+  // amber assertion on its own cannot tell a rule that fires when the user
+  // chose something from one that fires whenever the value is not the resting
+  // one. A recessed agent installs nothing, so its choice is kept and its
+  // colour is not — which is also why both tests above have to switch the
+  // agent on before they can see amber at all.
+  test("a recessed agent keeps its chosen effort without the amber", async ({
+    configure,
+  }) => {
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    const effort = configure.roster.effortWord("web-developer")
+    const developer = configure.roster.agentButton("web", "developer")
+
+    await effort.click()
+    await expect(effort).toHaveCSS("color", AMBER_TEXT)
+
+    await developer.click()
+
+    await expect(developer).toHaveAttribute("aria-pressed", "false")
+    // Kept, not reset — the choice survives the agent going quiet.
+    await expect(effort).toHaveText("high")
+    await expect(effort).toHaveCSS("color", RECESSED_WORD)
   })
 
   test("choosing an effort does not switch the agent on", async ({
@@ -340,7 +448,7 @@ test.describe("agent model and effort", () => {
   }) => {
     const developer = configure.roster.agentButton("web", "developer")
 
-    await configure.roster.effortMeter("web-developer").click()
+    await configure.roster.effortWord("web-developer").click()
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
   })
@@ -355,11 +463,11 @@ test.describe("agent model and effort", () => {
     await expect(developer).toHaveAttribute("aria-pressed", "false")
 
     await expect(configure.roster.modelWord("web-developer")).toBeVisible()
-    await expect(configure.roster.effortMeter("web-developer")).toBeVisible()
+    await expect(configure.roster.effortWord("web-developer")).toBeVisible()
   })
 })
 
-// Nothing on the right edge of a skill row may compete with the effort meter
+// Nothing on the right edge of a skill row may compete with the effort word
 // above it, so the load word and the where-used count are invisible until the
 // pointer — or the keyboard — is somewhere in the agent's block.
 test.describe("quiet at rest", () => {
@@ -436,5 +544,172 @@ test.describe("quiet at rest", () => {
       .poll(() => opacityOf(configure.roster.loadWord(REACT, "web-developer")))
       .toBe(1)
     expect(await opacityOf(neighbour)).toBe(0)
+  })
+})
+
+// The panel header stopped being a bare word and became the third hinge: the
+// same 10px tracked label the two in the main column use, with a rule running
+// to the panel edge. What it must NOT take from them is the 60px leading stub
+// — the panel has no gutter, and a stub would push the header's first ink 76px
+// in against rows locked to 17px.
+test.describe("roster header", () => {
+  test("names what the panel is grouped by", async ({ configure }) => {
+    await expect(configure.roster.heading).toHaveText(HEADER_LABEL)
+  })
+
+  // The one declaration a reimplementation drops. Both the label and the
+  // control refuse to shrink, so the rule is the only item in the row that
+  // can — and with no floor it goes to zero and the treatment vanishes.
+  test("carries a rule that never collapses to nothing", async ({
+    configure,
+  }) => {
+    const rule = await configure.roster.headerRule.boundingBox()
+    if (!rule) throw new Error("the header rule must be drawn")
+
+    expect(rule.width).toBeGreaterThanOrEqual(MIN_HEADER_RULE_PX)
+  })
+
+  // The panel's only alignment rule, and the whole reason the header takes a
+  // stubless variant rather than the column one. Asserted as a RELATIONSHIP
+  // between two live boxes rather than against a pixel: the header's first ink
+  // and the band's first ink are the same edge, at any width and any root
+  // font size, and a stub would move one of them by 76px while every
+  // visibility and text assertion in this file stayed green.
+  test("starts its ink on the same edge the bands do", async ({
+    configure,
+  }) => {
+    const header = await inkStartOf(configure.roster.heading)
+    const band = await inkStartOf(configure.roster.bandLabel("web"))
+
+    expect(header).toBeCloseTo(band, 0)
+  })
+})
+
+// Two bandings, one renderer. The rows, their three words, their skills and
+// the where-used tooltip are identical between the modes; what changes is
+// which band an agent falls into, what that band is called, and whether the
+// row has to name its own domain.
+test.describe("roster grouping", () => {
+  // The visible text is the current VALUE plus U+25BE, which is why the
+  // control is located by an aria-label instead: `domain ▾` names no action.
+  const AT_DOMAIN = "domain ▾"
+  const AT_SCOPE = "scope ▾"
+  // Scope mode moves the domain off the band and onto the row.
+  const PREFIXED_DEVELOPER = "web · developer"
+  const BARE_DEVELOPER = "developer"
+
+  test("rests on domain, with the domain bands on screen", async ({
+    configure,
+  }) => {
+    await expect(configure.roster.groupControl).toHaveText(AT_DOMAIN)
+    await expect(configure.roster.domainBand("web")).toBeVisible()
+    await expect(configure.roster.scopeBand("global")).toHaveCount(0)
+  })
+
+  test("picking scope replaces the domain bands with the two destinations", async ({
+    configure,
+  }) => {
+    await configure.roster.scopeControl("web-developer").click()
+
+    await configure.roster.groupBy("scope")
+
+    await expect(configure.roster.groupControl).toHaveText(AT_SCOPE)
+    await expect(configure.roster.scopeBand("global")).toContainText(
+      GLOBAL_PATH
+    )
+    await expect(configure.roster.scopeBand("project")).toContainText(
+      PROJECT_PATH
+    )
+    await expect(configure.roster.domainBand("web")).toHaveCount(0)
+  })
+
+  // A destination nobody writes to is not drawn empty; it is not drawn. This
+  // is the state every visitor opens on, so it is the common case rather than
+  // an edge one.
+  test("draws only the destination that has agents", async ({ configure }) => {
+    await configure.roster.groupBy("scope")
+
+    await expect(configure.roster.scopeBand("global")).toBeVisible()
+    await expect(configure.roster.scopeBand("project")).toHaveCount(0)
+  })
+
+  // Which mode is active is state, so it goes on the accessibility tree
+  // rather than into a glyph — the tick is decoration over the top of it.
+  test("marks the active mode on the accessibility tree", async ({
+    configure,
+  }) => {
+    await configure.roster.groupControl.click()
+
+    await expect(configure.roster.groupOption("domain")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    await expect(configure.roster.groupOption("scope")).toHaveAttribute(
+      "aria-checked",
+      "false"
+    )
+  })
+
+  // Both directions, in one test, because the absence half is worthless on
+  // its own: the prefixed locator has to be shown reporting the row when the
+  // prefix IS there before its silence in domain mode means anything.
+  //
+  // The bare form is the one asymmetry. Panel-wide it is not a locator at all
+  // — four domains field a `developer`, so `agentNamed` resolves to four rows
+  // and violates strict mode — so its positive goes through the band, which
+  // is the only thing that tells the four apart while the row does not. Its
+  // negative below stays panel-wide, and has to: "no row anywhere is called
+  // `developer`" is the claim, and a band-scoped version of it would be
+  // satisfied by the section having gone away.
+  test("the row names its own domain in scope mode and not in domain mode", async ({
+    configure,
+  }) => {
+    await expect(
+      configure.roster.agentButton("web", BARE_DEVELOPER)
+    ).toBeVisible()
+    await expect(configure.roster.agentNamed(PREFIXED_DEVELOPER)).toHaveCount(0)
+
+    await configure.roster.groupBy("scope")
+
+    await expect(configure.roster.agentNamed(PREFIXED_DEVELOPER)).toBeVisible()
+    await expect(configure.roster.agentNamed(BARE_DEVELOPER)).toHaveCount(0)
+  })
+
+  // The scope word is the edit target for the banding it is banded by, so the
+  // row has to move under it — and the band it leaves disappears when it was
+  // that band's last member.
+  test("cycling an agent's scope moves its row to the other band", async ({
+    configure,
+  }) => {
+    await configure.roster.groupBy("scope")
+    await expect(configure.roster.scopeBand("project")).toHaveCount(0)
+
+    await configure.roster.scopeControl("web-developer").click()
+
+    await expect(configure.roster.scopeBand("project")).toBeVisible()
+    await expect(configure.roster.scopeBand("project")).toContainText("of 1")
+  })
+
+  // One `rosterCollapsed` record serves both modes, and the two key spaces are
+  // disjoint by construction — a bare domain id in one, a `scope:` prefix in
+  // the other. So neither mode has to reset the other's state, and this test
+  // is what fails if the prototype's `shut: {}` reset is ported across.
+  test("a band shut in domain mode is still shut after a trip through scope", async ({
+    configure,
+  }) => {
+    await configure.roster.toggleDomain("web")
+    await expect(configure.roster.domainBand("web")).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+
+    await configure.roster.groupBy("scope")
+    await configure.roster.groupBy("domain")
+
+    await expect(configure.roster.domainBand("web")).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+    await expect(configure.roster.agentButton("web", "developer")).toBeHidden()
   })
 })
