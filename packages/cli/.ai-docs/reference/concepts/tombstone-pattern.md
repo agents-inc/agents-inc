@@ -270,7 +270,7 @@ The merge layer needs no tombstone-specific handling for either behavior: a full
 - `computeScopeDiff`, `prevSkillKeySet`, `prevSourceMap`, `removedSkills`, `uniqueExcludedGlobalSkills`, `inheritedGlobalSkills`, `deriveScopeBadges`, `formatScopeTag` — `src/cli/lib/wizard/scope-diff.ts`.
 - `SkillAgentSummary` (renders `computeScopeDiff` output) — `src/cli/components/wizard/skill-agent-summary.tsx`.
 - `mergeConfigs` compound keys — `src/cli/lib/configuration/config-merger.ts`.
-- `splitConfigByScope` tombstone routing — `src/cli/lib/configuration/config-generator.ts`.
+- `splitConfigByScope` tombstone routing — `packages/compile/src/seed-to-config.ts`. `src/cli/lib/configuration/config-generator.ts` re-exports it and declares nothing.
 - `generateProjectConfigWithInlinedGlobal` — `packages/compile/src/config-source.ts`, module-private. `src/cli/lib/configuration/config-writer.ts` re-exports `generateConfigSource`, which is the only way in.
 
 > **See also:** [concepts/scope-system.md](./scope-system.md) for full scope system documentation; [config/scope-split.md](../config/scope-split.md) for tombstone routing; [config/config-merger.md](../config/config-merger.md) for compound-key reconciliation.

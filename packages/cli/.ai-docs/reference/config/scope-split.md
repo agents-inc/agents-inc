@@ -32,8 +32,8 @@ last_validated: 2026-08-18
 
 | Function                        | File                                                    | Purpose                                                                                                                |
 | ------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `splitConfigByScope`            | `src/cli/lib/configuration/config-generator.ts`         | Partitions a merged `ProjectConfig` into `{ global, project }` halves on `scope` + `excluded`.                         |
-| `scopeEligibilityKey`           | `src/cli/lib/configuration/config-generator.ts`         | Encodes `(agent, skillId)` as `"${agent}\|${skillId}"` for set-membership lookups in the stack builder.                |
+| `splitConfigByScope`            | `packages/compile/src/seed-to-config.ts`                | Partitions a merged `ProjectConfig` into `{ global, project }` halves on `scope` + `excluded`.                         |
+| `scopeEligibilityKey`           | `packages/compile/src/seed-to-config.ts`                | Encodes `(agent, skillId)` as `"${agent}\|${skillId}"` for set-membership lookups in the stack builder.                |
 | `computeNewlyAddedSkillIds`     | `src/cli/lib/installation/local-installer.ts` (private) | Diff: skill ids active in current config but not in prior. Feeds `generateProjectConfigFromSkills.newlyAddedSkillIds`. |
 | `computeScopeEligibilityGained` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: `(agent, skill)` pairs whose scope-compatibility flipped from incompatible to compatible this session.           |
 
