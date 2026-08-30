@@ -755,6 +755,7 @@ describe("PRELOAD_DEFAULTS", () => {
   it("preloads the methodology craft on the researcher and keeps the PM lazy", () => {
     expect(PRELOAD_DEFAULTS[METHODOLOGY_CRAFT_SKILL]).toStrictEqual([
       "researcher",
+      "meta",
     ])
 
     for (const agentId of RESEARCHER_IDS) {

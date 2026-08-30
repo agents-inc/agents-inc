@@ -251,8 +251,8 @@ export const PRELOAD_DEFAULTS: PreloadDefaults = {
   // Meta — the review PROCESS is every review session's material; the domain
   // checklists are one diff's, so they carry no row and arrive per diff
   "meta-design-composable-components": ["developer"],
-  "meta-design-expressive-typescript": ["developer"],
-  "meta-methodology-research-methodology": ["researcher"],
+  "meta-design-expressive-typescript": ["developer", "meta"],
+  "meta-methodology-research-methodology": ["researcher", "meta"],
   "meta-reviewing-reviewing": ["reviewer"],
 
   // Shared — carried across every implementation domain

@@ -52,13 +52,6 @@ const ROSTER: readonly SubAgent[] = SUB_AGENT_GROUPS.flatMap(
 const isCrossDomainRoleAgent = (agent: SubAgent) =>
   agent.domainId === "meta" && agent.flavor !== "meta"
 
-// Every implementation-ROLE agent. Cross-domain use is a shared skill's
-// nature; the meta-flavor agents are the one standing exclusion — a review
-// role and a planning role are not meta ones, so both belong here.
-const NON_META_ROSTER: readonly SubAgent[] = ROSTER.filter(
-  (agent) => agent.flavor !== "meta"
-)
-
 // An implementation-domain skill reaches its own domain's agents plus the
 // cross-domain role agents — the reviewer reviews web and api diffs alike and
 // the PM specs both, so web and api skills alike must be able to reach them.
@@ -87,6 +80,16 @@ const implementationDomainReach = (domainId: CatalogSkill["domainId"]) =>
 // api features alike — so the category is the whole rule, as it is for the
 // reviewer's checklists.
 //
+// The meta agents' craft is the design and methodology bodies, by the owner's
+// 2026-08-30 ruling (CLI-846). Before it they had NO entry here and no row named
+// their flavor, which meant `metaSkillReach` admitted them for nothing: four of
+// eighteen agents sat outside the default system entirely and no pick could
+// reach them. They take the two bodies that are nobody's role in particular —
+// how code is meant to read, and how research is run — because that is what a
+// convention-keeper enforces, a codex-keeper documents against and a
+// skill-summoner writes with. The reviewing and planning crafts stay off them
+// deliberately: a diff checklist and a spec playbook are a role's material.
+//
 // A craft reach is targeting alone. Eagerness stays the row's answer, so a
 // craft the rows never name for that flavor arrives lazily — which is how the
 // reviewer receives the design skills its developers preload, and how the PM
@@ -94,6 +97,7 @@ const implementationDomainReach = (domainId: CatalogSkill["domainId"]) =>
 const CRAFT_CATEGORIES_BY_FLAVOR: Partial<
   Record<RoleFlavor, readonly CatalogSkill["categoryId"][]>
 > = {
+  meta: ["meta-design", "meta-methodology"],
   planning: ["meta-methodology", "meta-planning"],
   reviewer: ["meta-reviewing", "meta-design"],
 }
@@ -105,10 +109,10 @@ const isRoleCraftFor = (skill: SkillTaxonomy, agent: SubAgent): boolean => {
 }
 
 // A meta skill reaches exactly the flavors its authored row names — across
-// implementation domains, and the meta agents themselves only when a row says
-// "meta". No row, no agents — except the crafts: a role reaches its own craft
-// categories with or without a row. Relevance is otherwise the author's to
-// claim.
+// implementation domains and the meta agents alike. No row, no agents — except
+// the crafts: a role reaches its own craft categories with or without a row, and
+// since CLI-846 the meta flavor has a craft of its own. Relevance is otherwise
+// the author's to claim.
 const metaSkillReach = (
   skill: SkillTaxonomy,
   rowFlavors: readonly RoleFlavor[]
@@ -125,7 +129,9 @@ const targetsOf = (
   rowFlavors: readonly RoleFlavor[]
 ): readonly SubAgent[] => {
   if (skill.domainId === "meta") return metaSkillReach(skill, rowFlavors)
-  if (skill.domainId === "shared") return NON_META_ROSTER
+  // Every agent, the meta ones included since CLI-846: what a workspace is built
+  // with is the convention-keeper's subject as much as the developer's.
+  if (skill.domainId === "shared") return ROSTER
 
   return implementationDomainReach(skill.domainId)
 }

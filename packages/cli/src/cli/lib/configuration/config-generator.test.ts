@@ -468,7 +468,10 @@ describe("config-generator", () => {
       });
     });
 
-    it("assigns a shared skill to no meta agent", () => {
+    // Reversed by CLI-846: a shared skill is what every workspace is built with,
+    // so the meta agents reach it too — lazily, since the row names `developer`
+    // and `researcher` and not `meta`.
+    it("assigns a shared skill to a meta agent lazily", () => {
       initializeMatrix(SHARED_SECURITY_MATRIX);
       const selectedAgents: AgentName[] = ["agent-summoner", "web-developer"];
 
@@ -483,11 +486,13 @@ describe("config-generator", () => {
       );
 
       expect(config.stack).toStrictEqual({
+        "agent-summoner": {
+          "shared-security": [{ id: "shared-security-auth-security" }],
+        },
         "web-developer": {
           "shared-security": [{ id: "shared-security-auth-security", preloaded: true }],
         },
       });
-      expect(config.stack?.["agent-summoner"]).toBeUndefined();
     });
 
     it("handles bare category paths", () => {

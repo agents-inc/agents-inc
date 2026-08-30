@@ -177,9 +177,10 @@ const agentIdsWithFlavor = (...flavors: readonly string[]) =>
 // domainless role agents trapdoor into the meta display group, but a review
 // role and a planning role are not meta ones, so shared skills reach them like
 // any implementation agent.
-const nonMetaFlavorAgentIds = ROSTER.filter((agent) => agent.flavor !== "meta")
-  .map((agent) => agent.id as string)
-  .sort()
+// Every agent the roster fields. A shared skill reaches all of them since the
+// owner's 2026-08-30 ruling (CLI-846) — the tooling a repository is built with
+// is the convention-keeper's subject as much as the developer's.
+const allAgentIds = ROSTER.map((agent) => agent.id as string).sort()
 
 const reachOf = (skillId: string) =>
   resolveAssignment(skillId)
@@ -225,17 +226,21 @@ describe("targeting: a domain skill reaches its own domain's agents plus the rol
   })
 })
 
-describe("targeting: a shared skill reaches every implementation-role agent", () => {
-  it("reaches the whole non-meta-flavor roster, both role agents included", () => {
-    expect(reachOf(SHARED_SKILL)).toStrictEqual(nonMetaFlavorAgentIds)
+describe("targeting: a shared skill reaches every agent the roster fields", () => {
+  it("reaches the whole roster, both role agents included", () => {
+    expect(reachOf(SHARED_SKILL)).toStrictEqual(allAgentIds)
     expect(new Set(reachOf(SHARED_SKILL)).has(REVIEWER)).toBe(true)
     expect(new Set(reachOf(SHARED_SKILL)).has(PM)).toBe(true)
   })
 
-  it("never reaches a meta-flavor agent", () => {
+  // Reversed by CLI-846. The exclusion read as a rule about meta agents and was
+  // really a rule about nothing: a shared skill is what every workspace is built
+  // with, and the agents that keep conventions and document the codebase are the
+  // ones most often asked about it.
+  it("reaches the meta-flavor agents too", () => {
     const reached = new Set(reachOf(SHARED_SKILL))
-    expect(reached.has("agent-summoner")).toBe(false)
-    expect(reached.has("codex-keeper")).toBe(false)
+    expect(reached.has("agent-summoner")).toBe(true)
+    expect(reached.has("codex-keeper")).toBe(true)
   })
 })
 
@@ -253,7 +258,7 @@ describe("targeting: a meta skill reaches the flavors its row names", () => {
       asTesters(METHODOLOGY_CRAFT_SKILL)
         .map((target) => target.agentId as string)
         .sort()
-    ).toStrictEqual(agentIdsWithFlavor("planning", "tester"))
+    ).toStrictEqual(agentIdsWithFlavor("meta", "planning", "tester"))
   })
 
   it("reaches its craft's agents and nobody else with no row at all", () => {
@@ -263,15 +268,13 @@ describe("targeting: a meta skill reaches the flavors its row names", () => {
       noRows(METHODOLOGY_CRAFT_SKILL)
         .map((target) => target.agentId as string)
         .sort()
-    ).toStrictEqual(agentIdsWithFlavor("planning"))
+    ).toStrictEqual(agentIdsWithFlavor("meta", "planning"))
   })
 
   // The domain is the catalog's category-derived one, never the id prefix: a
   // `meta-` named skill that lives in a shared category takes the shared rule.
   it("places a meta-prefixed shared-category skill by its catalog domain", () => {
-    expect(reachOf(META_PREFIXED_SHARED_SKILL)).toStrictEqual(
-      nonMetaFlavorAgentIds
-    )
+    expect(reachOf(META_PREFIXED_SHARED_SKILL)).toStrictEqual(allAgentIds)
   })
 
   // Read against the row-less answer above, so what the row adds is what this
@@ -302,9 +305,9 @@ describe("targeting: a meta skill reaches the flavors its row names", () => {
 // this one names the researcher alone, so a researcher's copy is resident
 // where the PM's arrives when the spec calls for it.
 describe("targeting: the methodology craft reaches the PM lazily", () => {
-  it("adds the PM to the researchers its row names", () => {
+  it("adds the PM and the meta agents to the researchers its row names", () => {
     expect(reachOf(METHODOLOGY_CRAFT_SKILL)).toStrictEqual(
-      agentIdsWithFlavor("planning", "researcher")
+      agentIdsWithFlavor("meta", "planning", "researcher")
     )
     expect(reachOf(METHODOLOGY_CRAFT_SKILL)).toContain(PM)
   })
@@ -331,22 +334,25 @@ describe("targeting: the methodology craft reaches the PM lazily", () => {
 
     expect(
       targets.map((target) => target.agentId as string).sort()
-    ).toStrictEqual(agentIdsWithFlavor("planning"))
+    ).toStrictEqual(agentIdsWithFlavor("meta", "planning"))
 
     for (const target of targets) {
       expect(target.load, target.agentId).toBe("lazy")
     }
   })
 
-  // The reach is the planners' alone: a methodology skill is neither a diff
-  // checklist nor a design body, so no other row-less agent picks it up.
-  it("reaches no reviewer, developer, tester or meta-flavor agent without a row", () => {
+  // The reach is the two crafts' alone: a methodology skill is neither a diff
+  // checklist nor a design body, so no implementation-role agent picks it up
+  // row-lessly. The meta agents do, since CLI-846 — how research is run is what
+  // the codex-keeper documents a codebase with and what the skill-summoner
+  // researches a new skill with.
+  it("reaches no reviewer, developer or tester without a row", () => {
     const reached = new Set(reachOf(METHODOLOGY_CRAFT_SKILL))
 
     expect(reached.has(REVIEWER)).toBe(false)
     expect(reached.has("web-developer")).toBe(false)
     expect(reached.has("web-tester")).toBe(false)
-    expect(reached.has("agent-summoner")).toBe(false)
+    expect(reached.has("agent-summoner")).toBe(true)
   })
 })
 
@@ -357,9 +363,9 @@ describe("targeting: the methodology craft reaches the PM lazily", () => {
 // the reviewer's copy arrives when a diff calls for it, where a developer's is
 // resident in the prompt.
 describe("targeting: the design craft reaches the reviewer lazily", () => {
-  it("adds the reviewer to the developers its row names", () => {
+  it("adds the reviewer and the meta agents to the developers its row names", () => {
     expect(reachOf(META_SKILL)).toStrictEqual(
-      [...agentIdsWithFlavor("developer"), REVIEWER as string].sort()
+      [...agentIdsWithFlavor("developer", "meta"), REVIEWER as string].sort()
     )
   })
 
@@ -391,20 +397,29 @@ describe("targeting: the design craft reaches the reviewer lazily", () => {
     const noRows = createAssignmentResolver({})
 
     for (const skillId of DESIGN_CRAFT_SKILLS) {
-      expect(noRows(skillId), skillId).toStrictEqual([
-        { agentId: REVIEWER, load: "lazy" },
-      ])
+      expect(
+        noRows(skillId)
+          .map((target) => target.agentId as string)
+          .sort(),
+        skillId
+      ).toStrictEqual(agentIdsWithFlavor("meta", "reviewer"))
+
+      for (const target of noRows(skillId)) {
+        expect(target.load, `${skillId} ${target.agentId}`).toBe("lazy")
+      }
     }
   })
 
-  // The reach is the reviewer's alone: a design skill is neither a planning
-  // playbook nor a diff checklist, so no other row-less agent picks it up.
-  it("reaches no PM, tester or meta-flavor agent without a row", () => {
+  // The reach is the two crafts' alone: a design skill is neither a planning
+  // playbook nor a diff checklist, so no implementation-role agent picks it up
+  // row-lessly. The meta agents do, since CLI-846 — how code is meant to read is
+  // the convention-keeper's whole subject.
+  it("reaches no PM or tester without a row", () => {
     const reached = new Set(reachOf(META_SKILL))
 
     expect(reached.has(PM)).toBe(false)
     expect(reached.has("web-tester")).toBe(false)
-    expect(reached.has("agent-summoner")).toBe(false)
+    expect(reached.has("agent-summoner")).toBe(true)
   })
 })
 
@@ -487,12 +502,12 @@ describe("targeting: a marketplace's own skill is placed by its taxonomy", () =>
     ).toStrictEqual(reachOf(WEB_SKILL))
   })
 
-  it("reaches the whole implementation roster for a shared-domain skill", () => {
+  it("reaches the whole roster for a shared-domain skill", () => {
     expect(
       resolveAssignment(NAMESPACED_SHARED_SKILL)
         .map((target) => target.agentId as string)
         .sort()
-    ).toStrictEqual(nonMetaFlavorAgentIds)
+    ).toStrictEqual(allAgentIds)
   })
 
   // The craft branch reads the category alone, so a marketplace's reviewing
@@ -815,5 +830,81 @@ describe("factory binding", () => {
     expect(loads.get("web-developer")).toBe("lazy")
     expect(loads.get(REVIEWER)).toBe("lazy")
     expect(loads.get(PM)).toBe("lazy")
+  })
+})
+
+// CLI-846. Until the owner's 2026-08-30 ruling the four meta-flavor agents were
+// reachable by nothing: `metaSkillReach` admits an agent only when a row names
+// its flavor or the skill is one of its craft categories, no row in
+// PRELOAD_DEFAULTS named `meta`, and CRAFT_CATEGORIES_BY_FLAVOR had keys for
+// `planning` and `reviewer` alone. Four of eighteen agents were outside the
+// default system entirely.
+//
+// The ruling is reading (a): the Admin-tier and Meta-tier skills broadcast to
+// the Admin and Meta agents, and the core skills stay domain-scoped.
+const META_FLAVOR_AGENTS: readonly AgentName[] = [
+  "agent-summoner",
+  "codex-keeper",
+  "convention-keeper",
+  "skill-summoner",
+]
+
+const agentsReachedBy = (skill: SkillId | SkillTaxonomy) =>
+  resolveAssignment(skill).map(({ agentId }) => agentId)
+
+const loadOnFor = (skill: SkillId, agentId: AgentName) =>
+  resolveAssignment(skill).find((t) => t.agentId === agentId)?.load
+
+describe("CLI-846: the meta-flavor agents are inside the default system", () => {
+  it("reaches every meta-flavor agent with a design skill", () => {
+    for (const skill of DESIGN_CRAFT_SKILLS) {
+      expect(agentsReachedBy(skill)).toEqual(
+        expect.arrayContaining([...META_FLAVOR_AGENTS])
+      )
+    }
+  })
+
+  it("reaches every meta-flavor agent with the methodology skill", () => {
+    expect(agentsReachedBy(METHODOLOGY_CRAFT_SKILL)).toEqual(
+      expect.arrayContaining([...META_FLAVOR_AGENTS])
+    )
+  })
+
+  it("reaches every meta-flavor agent with a shared skill", () => {
+    expect(agentsReachedBy(SHARED_SKILL)).toEqual(
+      expect.arrayContaining([...META_FLAVOR_AGENTS])
+    )
+  })
+
+  it("keeps the reviewing craft away from the meta-flavor agents", () => {
+    const reached = agentsReachedBy(WEB_REVIEWING_SKILL)
+    for (const agentId of META_FLAVOR_AGENTS)
+      expect(reached).not.toContain(agentId)
+  })
+
+  it("keeps the planning craft away from the meta-flavor agents", () => {
+    const reached = agentsReachedBy(WEB_PLANNING_SKILL)
+    for (const agentId of META_FLAVOR_AGENTS)
+      expect(reached).not.toContain(agentId)
+  })
+
+  it("keeps an implementation-domain skill away from the meta-flavor agents", () => {
+    const reached = agentsReachedBy(WEB_SKILL)
+    for (const agentId of META_FLAVOR_AGENTS)
+      expect(reached).not.toContain(agentId)
+  })
+
+  it("preloads the design and methodology crafts on the meta flavor", () => {
+    for (const agentId of META_FLAVOR_AGENTS) {
+      expect(loadOnFor("meta-design-expressive-typescript", agentId)).toBe(
+        "preloaded"
+      )
+      expect(loadOnFor(METHODOLOGY_CRAFT_SKILL, agentId)).toBe("preloaded")
+    }
+  })
+
+  it("carries a shared skill lazily on the meta flavor", () => {
+    for (const agentId of META_FLAVOR_AGENTS)
+      expect(loadOnFor(SHARED_SKILL, agentId)).toBe("lazy")
   })
 })

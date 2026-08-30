@@ -1,6 +1,7 @@
 import { CATALOG, SUB_AGENT_GROUPS, resolveAssignment } from "@workspace/matrix"
 import { describe, expect, it } from "vitest"
 
+import { activeSkillById } from "@/stores/catalog-store"
 import { defaultAssignmentsFor } from "./default-assignments"
 
 // The auto-assignment rule is what turns "select a skill" into "these agents
@@ -57,9 +58,12 @@ const agentIdsInDomain = (domainId: string) =>
     .map((agent) => agent.id as string)
     .sort()
 
-const NON_META_FLAVOR_AGENT_IDS = ROSTER.filter(
-  (agent) => agent.flavor !== "meta"
-)
+// Every agent the roster fields. A shared skill reaches all of them since
+// CLI-846 — the tooling a repository is built with is the convention-keeper's
+// subject as much as the developer's.
+const ALL_AGENT_IDS = ROSTER.map((agent) => agent.id as string).sort()
+
+const META_FLAVOR_AGENT_IDS = ROSTER.filter((agent) => agent.flavor === "meta")
   .map((agent) => agent.id as string)
   .sort()
 
@@ -97,22 +101,27 @@ describe("defaultAssignmentsFor", () => {
     expect(reachOf("desktop-framework-tauri")).toEqual([PM, REVIEWER])
   })
 
-  // Cross-domain use is a shared skill's nature: every implementation-ROLE
-  // agent, the reviewer included — only the meta-flavor agents stay out.
-  it("assigns a shared skill to every non-meta-flavor agent", () => {
-    expect(reachOf(SHARED_SKILL)).toEqual(NON_META_FLAVOR_AGENT_IDS)
+  // Cross-domain use is a shared skill's nature, and since CLI-846 that reaches
+  // the meta-flavor agents too: what a repository is built with is what the
+  // convention-keeper and the codex-keeper are asked about.
+  it("assigns a shared skill to every agent", () => {
+    expect(reachOf(SHARED_SKILL)).toEqual(ALL_AGENT_IDS)
   })
 
   // A meta skill reaches exactly the flavors its authored mapping row names,
   // across implementation domains — `developer` alone for this one — plus the
   // reviewer, which the design craft reaches with no row at all. Off the row
   // is off the roster for a meta skill, the two crafts aside.
-  it("assigns a design-craft meta skill to its row's developers plus the reviewer", () => {
+  it("assigns a design-craft meta skill to its row's developers, the reviewer and the meta agents", () => {
     expect(reachOf(META_SKILL)).toEqual([
+      "agent-summoner",
       "ai-developer",
       "api-developer",
       "cli-developer",
+      "codex-keeper",
+      "convention-keeper",
       REVIEWER,
+      "skill-summoner",
       "web-developer",
     ])
   })
@@ -146,17 +155,22 @@ describe("defaultAssignmentsFor", () => {
   // The planner's other craft, read on the surface that draws it: the PM's
   // grid lights up for the methodology skill with no mapping row behind it,
   // and lights up lazily — the researcher is the only role that carries it.
-  it("assigns the methodology craft to every researcher and the PM", () => {
+  it("assigns the methodology craft to every researcher, the PM and the meta agents", () => {
     const assignments = defaultAssignmentsFor(METHODOLOGY_CRAFT_SKILL)
 
     expect(Object.keys(assignments).sort()).toEqual([
+      "agent-summoner",
       "ai-researcher",
       "api-researcher",
       "cli-researcher",
+      "codex-keeper",
+      "convention-keeper",
       "pm",
+      "skill-summoner",
       "web-researcher",
     ])
     expect(assignments["web-researcher"]?.load).toBe("preloaded")
+    expect(assignments["codex-keeper"]?.load).toBe("preloaded")
     expect(assignments[PM]?.load).toBe("lazy")
   })
 
@@ -250,26 +264,38 @@ describe("defaultAssignmentsFor", () => {
     expect(assignments[REVIEWER]?.load).toBe("lazy")
   })
 
-  // The meta-FLAVOR agents carry no domain prefix — `agent-summoner` splits to
-  // "agent" — so a prefix check would let them through. Their ids are what
-  // this asserts on: no rule of the resolver reaches them, whatever the skill.
+  // Reversed by CLI-846, and this is the assertion that had pinned the defect:
+  // it read as a rule about the meta-FLAVOR agents and was really a statement
+  // that four of eighteen agents were outside the default system entirely. What
+  // replaces it is the rule that actually holds — a meta-flavor agent is reached
+  // by the meta and shared skills and by nothing else, so an implementation
+  // domain's depth still cannot land on it.
+  //
   // The reviewer and the PM share their display group but not their flavor, so
   // they are deliberately outside this set.
-  it("never assigns a meta-flavor agent, whatever the skill", () => {
-    const metaFlavorIds = new Set(
-      ROSTER.filter((agent) => agent.flavor === "meta").map(
-        (agent) => agent.id as string
-      )
-    )
+  it("assigns a meta-flavor agent only the meta and shared skills", () => {
+    const metaFlavorIds = new Set(META_FLAVOR_AGENT_IDS)
 
     expect(metaFlavorIds.has("agent-summoner")).toBe(true)
     expect(metaFlavorIds.has(REVIEWER)).toBe(false)
     expect(metaFlavorIds.has(PM)).toBe(false)
 
     for (const skillId of [...everySkillId, ADDED_SKILL]) {
-      for (const agentId of Object.keys(defaultAssignmentsFor(skillId))) {
-        expect(metaFlavorIds.has(agentId), `${skillId}: ${agentId}`).toBe(false)
-      }
+      const skill = activeSkillById(skillId)
+      const reachesMeta = Object.keys(defaultAssignmentsFor(skillId)).some(
+        (agentId) => metaFlavorIds.has(agentId)
+      )
+      const isMetaOrShared =
+        skill?.domainId === "meta" || skill?.domainId === "shared"
+
+      // The reviewing and planning crafts are the one exception inside the meta
+      // domain: they are a role's material rather than everyone's, so they stay
+      // off the meta agents even though their domain would admit them.
+      const isRoleCraft =
+        skill?.categoryId === "meta-reviewing" ||
+        skill?.categoryId === "meta-planning"
+
+      expect(reachesMeta, skillId).toBe(isMetaOrShared && !isRoleCraft)
     }
   })
 
