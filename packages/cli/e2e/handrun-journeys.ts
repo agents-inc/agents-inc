@@ -32,7 +32,7 @@ import {
   runEditFrom,
   type SeedConfigStore,
 } from "./fixtures/seed-config-store.js";
-import { createE2ESource } from "./helpers/create-e2e-source.js";
+import { createE2ESource, buildSharedE2ESourceInto } from "./helpers/create-e2e-source.js";
 import { CLI } from "./fixtures/cli.js";
 import {
   readAgentEntries,
@@ -41,7 +41,14 @@ import {
   setupDualScopeWithEject,
   runEditWithFirstSkillAction,
 } from "./fixtures/dual-scope-helpers.js";
-import { createE2EPluginSource } from "./helpers/create-e2e-plugin-source.js";
+import {
+  createE2EPluginSource,
+  buildPluginSourceInto,
+} from "./helpers/create-e2e-plugin-source.js";
+import {
+  buildSharedSource,
+  removeSharedSource,
+} from "../src/cli/lib/__tests__/helpers/shared-source.js";
 import { claudePluginMarketplaceAdd } from "../src/cli/utils/exec.js";
 import { InitWizard } from "./pages/wizards/init-wizard.js";
 import { initGlobalWithEject } from "./fixtures/dual-scope-helpers.js";
@@ -1130,6 +1137,38 @@ async function journeySharedDirectoryOwnership(): Promise<void> {
   }
 }
 
+/**
+ * The two shared fixtures, built exactly as `e2e/global-setup.ts` builds them.
+ *
+ * This is not a convenience. `createE2EPluginSource()` called with no options RETURNS the shared
+ * frozen tree rather than building one — that is the whole point of the fixture, and it is why 51
+ * call sites stopped paying ~1.65s each. Nothing outside vitest runs `globalSetup`, so a hand-run
+ * reached for a directory no one had built and journeys 5 / 17 died on
+ * `Failed to add marketplace: Path does not exist: <tmp>/agents-inc-e2e-shared-fixtures/fixture`.
+ *
+ * The failure was invisible in the shape that matters: `attempt` catches it, prints COULD NOT RUN,
+ * and the run still exits 0 — so a hand-run reporting a clean sweep had silently not exercised
+ * plugin mode at all, which is the one install mode the other journeys never touch.
+ *
+ * Built here rather than in `scripts/handrun.mjs` because the builders are TypeScript and that
+ * file is a plain bundler; putting them here keeps the two setups the same two calls in the same
+ * order, so a fixture that gains a step gains it for both.
+ */
+async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
+  process.stdout.write("building the shared fixtures (plugin tree + plain tree)...\n");
+  await buildSharedSource(async (root) => {
+    await buildPluginSourceInto(root);
+    await buildSharedE2ESourceInto(root);
+  });
+
+  try {
+    await run();
+  } finally {
+    await removeSharedSource();
+    process.stdout.write("shared fixtures removed\n");
+  }
+}
+
 async function main(): Promise<void> {
   const store = await startSeedConfigStore();
   try {
@@ -1168,4 +1207,4 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+await withSharedFixtures(main);
