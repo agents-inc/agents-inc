@@ -311,22 +311,60 @@ The site is deployed and `/skills` is live. **With no audience, wrong documentat
 — so none of this is urgent, and it is cheapest to write the docs once the go-live legs have settled
 what they describe rather than twice.
 
-Two rows are defects rather than gaps, and are what to fix first whenever this lane comes up:
-**WWW-04** (three pages tell readers to run `new skill` / `new agent` / `new marketplace` — all off,
-and `new agent` is never coming back) and **WWW-10** (the docs claim 7 domains; there are 9).
+One row is a defect rather than a gap, and it is the cheapest thing here: **WWW-11** (the CLI README
+links `guides/importing-skills.md`, a guide deliberately deleted when `import skill` retired — the
+fix is deleting the row, not writing the page back). It is live on the published npm page.
 
-Then the build-out: **WWW-01** (5 of 10 sidebar sections) · **WWW-02** (5 of 12 landing blocks) ·
-**WWW-03** (apex path split) · **WWW-06** (empty video slots — needs your recordings) · **WWW-07**
-(the two halves do not read as one product) · **WWW-08** (the shared header was never extracted).
+Two rows are missing gates rather than missing work, and both were filed after a hand-diff found
+something no checker could have: **WWW-12** (`check-cli-claims.ts` reads one page while CLI claims
+now live on several) and **WWW-13** (nothing gates the search modal's styling, and it mounts at
+runtime so even a computed-style check has to open the modal first). Neither blocks anything; both
+are the kind of row that only gets written while the memory of the defect is fresh.
+
+Then the build-out: **WWW-02** (5 of 12 landing blocks, and the catalogue teaser — the centrepiece —
+is not one of them) · **WWW-03** (apex path split, and the one that actually gates an audience:
+until it lands this build serves a `workers.dev` URL while `agentsinc.sh` serves the editor) ·
+**WWW-01** (what is left of it — the reference is per-group rather than per-command, and there is no
+Releases section) · **WWW-06** (empty video slots — needs your recordings).
+
+**WWW-01 shrank on 2026-08-27** when the site went from 19 pages to 37 and from five sidebar groups
+to nine — Configuration, The editor, Recipes and Troubleshooting joined, and the exhaustive
+`.claude-src/config.ts` field reference closed what that row called the single largest gap on the
+site. One of its bullets was **withdrawn rather than done**: the owner ruled that the older
+README-linked guides carry the correct voice, which is the reverse of what the row asserted, so a
+future pass must not "fix" them. WWW-04, WWW-07, WWW-08 and WWW-10 all landed and were removed from
+the tracker; this line named them for a fortnight after they had.
+
+## In flight — the editor v6 design programme (started 2026-08-26)
+
+**EDITOR-09** is no longer design-gated: the design folder was refreshed in place on 2026-08-25 and
+the programme is running. Phases, decisions and the live dispatch log are in
+[`plans/editor-v6/`](./plans/editor-v6/) — **that folder is canonical for this work, not this
+section**, which only orders it.
+
+| Phase                                                                                                                                                          | Rows      | State                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| A — chrome and roster: design tokens, the effort word, the roster group-by toggle, the collapsible stack header, the roster hinge header, the ink token rename | EDITOR-09 | **Landed**                                                                                                                                    |
+| B — the output preview: a shared pure renderer the CLI's write path also calls, then the dialog                                                                | EDITOR-52 | **Landed and retired** — extraction verified by imports, not intent                                                                           |
+| C — the docked composer, UI only                                                                                                                               | EDITOR-53 | **Landed and retired** — shipped in a shape the row never described: no modes                                                                 |
+| D — the composer's AI backend                                                                                                                                  | EDITOR-54 | **LANDED 2026-08-29** and retired — `POST /compose` calls Claude, the composer is wired to it, and Turnstile was replaced by required sign-in |
+| E — the proposal diagram: `MatrixGrid` becomes a diff, so a proposal can draw a REMOVAL                                                                        | EDITOR-56 | **Ready for dev** — owner-ruled and fully designed in `phase-c-spec.md` §11.1/§11.9/§11.10                                                    |
+
+**Phase E exists because a ruling went missing.** The diagram ruling was recorded only inside Phase
+C's spec, and Phase C is retired — so until 2026-08-26 the work was reachable from no tracker and no
+roadmap. It was listed after D by dependency-freedom rather than by need; D has since landed.
+
+**EDITOR-10 (the researcher row) LANDED 2026-08-26** and is retired. Its stated gate — "a fifth
+column diverges from a design file that draws four" — had expired without anyone noticing: the code
+drew TWO, because CLI-398/CLI-399 consolidated the per-domain reviewer and PM, so adding researchers
+moved the panel toward the design rather than away. The skill options panel now places all 18
+sub-agents; it placed 14.
 
 ## The editor, beyond go-live
 
-**EDITOR-02** (one 1.07 MB chunk, nothing code-split) · **EDITOR-05** (descriptions describe the
-library, not the skill — fix is upstream in the CLI) · **EDITOR-08** (a project-scoped skill can be
-assigned to a global sub-agent that cannot resolve it) · **EDITOR-22** (a "custom skills only"
+**EDITOR-22** (a "custom skills only"
 filter — provenance is a filter, not a category) · **EDITOR-28** (favourites) · design-gated:
-**EDITOR-07** (five never-designed surfaces) / **EDITOR-09** (rebuild from the latest Claude Design
-files) / **EDITOR-10** (the researcher row, against a design file that draws four).
+**EDITOR-07** (five never-designed surfaces).
 
 ## Housekeeping
 
@@ -334,17 +372,30 @@ files) / **EDITOR-10** (the researcher row, against a design file that draws fou
 not fire (`repository_dispatch` reads the token, not the workflow), so a marketplace merge still
 wants the catalog regenerated by hand here. State unconfirmed as of 2026-08-16; check before
 assuming either way. · **CLI-467** (the knip deletion rounds against the recorded baseline) ·
-**REPO-37** (dependency-cruiser graph + one architecture assessment) · **REPO-24** (drop the
-`@agents-inc/cli/config` jiti alias — with no installed base, this is now a free deletion whenever
-you want it) · **REPO-09** (a local `.env` can ship a live site pointed at your own machine) ·
-**CLI-737** (README GIF).
+**REPO-37** (dependency-cruiser graph + one architecture assessment) · **REPO-40** (`packages/api-mocks` describes the worker for one workspace out of ten; `apps/server` and `packages/cli` each re-implement `/configs`) · **CLI-737** (README GIF).
+
+## The editor's open rows this file did not carry
+
+Added 2026-08-29 after an audit found the roadmap listing five archived ids and none of the editor's
+newer ones. EDITOR-51 was here for a few hours and is archived — the error colour was chosen the
+same day. **EDITOR-55** (responsive below 1300px) · **EDITOR-58** — now ONE accessibility defect, not
+three: `nested-interactive` and the missing `h1` landed 2026-08-29, and `scrollable-region-focusable`
+is live on the output-preview state, which is why it outlived them · **EDITOR-61** (a ruled-out cell
+offers three controls that do nothing) · **EDITOR-62** (the proposal footer says "1 changes" — the
+model is wired now, so the count that was unreachable is reachable) · **EDITOR-63** (two literals
+standing where imports belong).
 
 ## Waiting on an owner signal
 
 **SKILLS-01** + **CLI-405** (adapter migration, ~160 skills) · **SKILLS-09** (the observability setup
 skill is Next-only in all but name) · **CLI-739** (prune built-in stacks) · **SERVER-01** registry
-adapters (each lands only with hand-verification against the live registry) · **SERVER-02**
-(`packages/api` + mocks — worth more as SERVER-01/03 add surface) · **CLI-453** (`new skill`).
+adapters (each lands only with hand-verification against the live registry) · **CLI-453**
+(`new skill`).
+
+**SERVER-02 landed 2026-08-29** — one configured client in the editor, mocks and unit coverage
+for the three newest worker clients. The lane declined to create `packages/api` and **the owner
+overruled that on the same day**, on the measured grounds that the bundle cost was negligible; the
+workspace exists, and `apps/server/src/index.ts`'s `AppType` is imported by it and by nothing else.
 
 ## The long tail
 

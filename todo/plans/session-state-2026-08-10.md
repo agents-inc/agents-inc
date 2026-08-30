@@ -1,4 +1,10 @@
-# Session state — 2026-08-10 (read this first if you are picking the work up)
+# Session state — 2026-08-10 (HISTORICAL — do not read this first)
+
+> **Superseded, and kept only as a record.** It was written as a hand-off and opened "read this
+> first", which is why it moved here on 2026-08-29: it sat at the top of `todo/` claiming NOTHING
+> had been committed, against a tree that has moved on by well over a hundred commits, and it was
+> named in CLAUDE.md's `todo/` inventory nowhere and linked from nothing. Every figure below is a
+> fact about 2026-08-10. Re-derive before acting on any of it.
 
 **The working tree carries ~96 uncommitted paths and NOTHING has been committed.** `HEAD` is
 `67418c07`, level with `origin/main`. The owner runs every commit; git writes are forbidden to the

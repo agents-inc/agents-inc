@@ -21,40 +21,56 @@ pieces of the docs-site item** that are distinct enough to be picked up on their
 **The site builds cleanly with no warnings and every navigation link resolves.** Nothing below
 blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 
-| ID                               | Task                                                                                    | Status           | Type    | Complexity |
-| -------------------------------- | --------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
-| WWW-01 (was editor-todo item 8)  | Docs site: 5 of 10 sidebar sections, reference is per-group, config fields undocumented | Ready for Dev    | feature | complex    |
-| WWW-02 (was editor-todo item 9)  | Landing page: 5 of 12 blocks, and the catalogue teaser centrepiece is not one of them   | Ready for Dev    | feature | complex    |
-| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes             | Ready for Dev    | feature | complex    |
-| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings             | Needs Assistance | feature | easy       |
+| ID                               | Task                                                                                      | Status           | Type    | Complexity |
+| -------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
+| WWW-01 (was editor-todo item 8)  | Docs site: reference is per-group not per-command, and there is no Releases section       | Ready for Dev    | feature | medium     |
+| WWW-11 (new, 2026-08-27)         | The CLI README links a guide that was deliberately deleted — `guides/importing-skills.md` | Ready for Dev    | docs    | trivial    |
+| WWW-12 (new, 2026-08-27)         | `check-cli-claims.ts` reads one page, and CLI claims now live on several                  | Ready for Dev    | test    | medium     |
+| WWW-13 (new, 2026-08-27)         | Nothing gates the search modal's styling, and it is the one surface a browser must open   | Ready for Dev    | test    | medium     |
+| WWW-02 (was editor-todo item 9)  | Landing page: the free-and-open-source block does not do its job, and two a11y defects    | Ready for Dev    | feature | easy       |
+| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes               | Ready for Dev    | feature | complex    |
+| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings               | Needs Assistance | feature | easy       |
 
 ---
 
 ## Active items
 
-#### WWW-01: The docs site is five of ten sections
+#### WWW-01: The docs site's remaining sections
 
 **What exists.** `apps/www` is an Astro 7.1.6 project with Starlight 0.41.6. One build serves the
-landing page at `/` and the documentation at `/docs`; the editor stays its own Vite build. Twenty
-pages build, eighteen of them documentation. `prefetch: false` and `disable404Route: true` are set.
+landing page at `/` and the documentation at `/docs`; the editor stays its own Vite build.
+`prefetch: false` and `disable404Route: true` are set. Re-derive the page count rather than reading
+one here: `cd apps/www && bun run build` prints it.
+
+**Three of the row's five bullets landed 2026-08-27** — the section build-out, the exhaustive config
+reference, and the compiled-sub-agent page. One was withdrawn. What is written below is what is left.
 
 **Still to do.**
 
-- **The sidebar is five sections, not ten.** Start here, Concepts, Guides, Reference and Resources
-  exist. **Recipes**, **Configuration**, **Releases** and **Troubleshooting** do not. What stands in
-  for Releases is a single external link labelled "Changelog" inside the Resources group, pointing at
-  the repository's GitHub releases page — a link, not the planned section — and there is no
-  troubleshooting page at all beyond two lines about `doctor`.
-- **The reference is still one page per group, not one page per command**, and **nothing anywhere
-  documents the `.claude-src/config.ts` fields exhaustively.** The second is the single largest gap
-  in the whole site.
-- **No page shows what a compiled sub-agent actually looks like.** Every page describes the compile
-  step; none shows its output. For a tool whose entire pitch is "we generate this for you", one real
-  excerpt of `.claude/agents/web-developer.md` is the most convincing thing available, and it is
-  nowhere on the site.
-- **The voice splits.** `why.md`, `quickstart.md`, `cli-or-web.md` and `concepts/stacks.md` were
-  written for this site. The migrated guides read as lifted from an older README — title-case
-  headings, imperative bullets, no links back into the narrative.
+- **The reference is still one page per group, not one page per command.** Deliberately deferred
+  rather than forgotten: thirteen command pages was judged overwhelming against the row's own
+  "comprehensive without being overwhelming" brief, and `reference/commands.md` already carries the
+  whole roster in a matrix that `apps/www/scripts/check-cli-claims.ts` binds to
+  `packages/cli/src/cli/commands/**`. **Anything that splits that page must keep the two literal
+  markers `## Command matrix` and `**This table is the roster, and it is checked.**` intact**, or the
+  site's own gate stops judging the roster.
+- **There is no Releases section**, and the sidebar is nine groups rather than ten because of it.
+  What stands in for it is a single external link labelled "Changelog" in Resources, pointing at the
+  repository's GitHub releases page. Decide whether a real section is wanted before building one —
+  a page that restates a changelog is a second copy that rots.
+
+**WITHDRAWN — the voice bullet.** This row used to say the migrated guides "read as lifted from an
+older README — title-case headings, imperative bullets, no links back into the narrative", and
+listed `why.md` / `quickstart.md` / `cli-or-web.md` / `concepts/stacks.md` as the pages written
+natively for the site. **The owner ruled the opposite on 2026-08-27: the older guides linked from
+`packages/cli/README.md` carry the correct language and tone, and they are the model for the whole
+site.** `why.mdx` and `cli-or-web.md` are the discursive outliers, not the standard. Measured while
+settling it: the guides run unwrapped prose (`global-first-setup.md` 360 columns,
+`customizing-subagents.md` 418, `editing-config.md` 430) against 79 for `why.mdx` and
+`cli-or-web.md`; the guides lean American in spelling and use contractions freely; markdown is not
+prettier-wrapped here, so the difference is authorial rather than enforced. **Do not "fix" the
+guides' voice, and do not convert their title-case headings** — a pass acting on the old bullet
+would damage the pages the ruling protects.
 
 **Ownership settled, duplicates gone (2026-08-06, repo.md REPO-14).** The site's copies are now the
 only copies: the ten originals under `docs/cli/` were deleted, `docs/cli/` keeps contributor
@@ -66,7 +82,199 @@ sub-agents. The CLI README's doc links point at the site's source files on GitHu
 `agentsinc.sh/docs/...` when WWW-03 lands**, and note the links in the ALREADY-PUBLISHED 0.152.0 npm
 page broke when the originals were deleted; the next publish heals them.
 
+---
+
+#### WWW-13: Nothing gates the search modal's styling
+
+The search modal was reconciled with the design language on 2026-08-27 — see `site.css`'s SEARCH
+block for what was wrong and why the obvious diagnosis was the wrong one. **Nothing holds it.**
+
+**The gap is precisely the one `check-type-scale.ts` was written for, one level deeper.** That script
+exists because "a class name is a string, and `text-9` on an `<h2>` is a perfectly valid string" —
+the defect only exists once a browser has resolved a token, so a browser is what has to look. The
+search modal is worse than that: it is a component that **mounts at runtime**, so its type is
+invisible even to a script that loads the page and reads computed style, unless the script opens the
+modal first. That is exactly how it rendered its input and result titles at 16.8px and its excerpts
+at 12.8px — three sizes appearing nowhere else on the site — while every gate stayed green.
+
+**What could silently revert it.** Most of the modal's colour comes from Starlight mapping
+`--pagefind-ui-*` onto its own `--sl-color-*`. That mapping is Starlight's implementation detail, not
+a documented contract, so a minor release can change it and the site would follow without a warning.
+The rules in `site.css` that remove Pagefind's cards, connectors and document glyphs are keyed on
+`pagefind-ui__*` class names, which are likewise Pagefind's to rename.
+
+**Extend `check-type-scale.ts` rather than writing a sibling.** It already serves `dist/`, drives
+Chromium, and owns the vocabulary of roles and sizes; a second browser-driving script would pay the
+same startup cost twice for one more assertion. The addition is one page visit that clicks
+`button[data-open-modal]`, types a query, waits for results, and asserts the modal agrees with the
+prose scale — the result heading at the body size and the excerpt at the small-prose size, neither a
+fractional multiple of anything.
+
+**Two things to know before writing it.** The check has to type a real query and wait, because
+Pagefind renders nothing until it has results — an assertion against the empty modal would pass
+forever. And `.pagefind-ui__result-title` is used for **both** the page label and each heading
+within it, so any selector has to go through the direct-child forms
+(`.pagefind-ui__result-inner > …` versus `.pagefind-ui__result-nested > …`) or it will read the
+wrong one; that ambiguity already caused one wrong fix while the styling was being written.
+
+Re-derive before working: `sed -n '55,80p' apps/www/scripts/check-type-scale.ts` and
+`grep -n "SEARCH" apps/www/src/styles/site.css`
+
+---
+
+#### WWW-12: The CLI-claims gate reads one page, and CLI claims now live on several
+
+`apps/www/scripts/check-cli-claims.ts` binds `reference/commands.md` to
+`packages/cli/src/cli/commands/**` — in both directions, as membership rather than as a count. It is
+the gate that exists because three pages once documented commands that had been deleted while
+`share` shipped undocumented.
+
+**It reads exactly one file.** `REFERENCE` in that script resolves to
+`src/content/docs/docs/reference/commands.md` and nothing else. Every command claim on every other
+page is unchecked, and the site now has many more of them than it did when the gate was written —
+`reference/capabilities.md` alone carries seventeen invocations, and the recipes, troubleshooting and
+configuration sections carry more. The defect the gate was built to catch can now reappear one
+directory over from where it is watching.
+
+**Do not simply widen the glob to every page.** The gate's second claim is per-command flag
+membership, read out of a markdown table with named `Command` and `Flags` columns — a shape only
+`commands.md` has, and one that would be wrong to impose on a prose page. The two claims need
+splitting: the roster claim stays where it is, and a second, weaker check over the rest of the site
+would assert only that every `agents-inc <command>` string a page prints resolves to a module under
+the commands tree, and that any `--flag` beside it appears in that command's `static flags`.
+
+**Sequence this after the editor-first reshape settles**, since that work moves where command claims
+live and would date any inventory taken now. Re-derive before starting:
+`grep -rn "npx agents-inc" apps/www/src/content/docs | wc -l` and
+`sed -n '68,80p' apps/www/scripts/check-cli-claims.ts`
+
+---
+
+#### WWW-11: The CLI README links a guide that was deliberately deleted
+
+`packages/cli/README.md`'s **Guides** table has a row **Importing third-party skills** pointing at
+`apps/www/src/content/docs/docs/guides/importing-skills.md`. That file does not exist. It was
+deleted in `5898ef23`, after the `import skill` command itself retired in `95738763`, and
+[`archive.md`](./archive.md) records **D-14** — "import skills from third-party marketplaces" —
+retired as superseded by the editor's Add skill dialog.
+
+**The fix is deleting the row, not writing the page back.** What the row advertised is covered
+today by `guides/writing-custom-skills.md`, which describes the editor's Add skill dialog carrying a
+GitHub-sourced skill inline into the configuration `init --from <id>` installs.
+
+The link is live on the **already-published npm page** as well as on GitHub, so it 404s for anyone
+who follows it. Note `sidebar: order: 6` is vacant in `guides/` — that is the slot the deleted page
+held, and nothing needs to fill it.
+
+Re-derive before working: `ls apps/www/src/content/docs/docs/guides/` and
+`grep -n "importing-skills" packages/cli/README.md`
+
+---
+
 ### Constraints already settled — do not undo these
+
+**THE LANDING PAGE AND THE 404 CARRY A FRAME, AND IT IS AN EXCEPTION TO RULE 5 (owner design,
+2026-08-27).** `body.framed` in `site.css` fills every void the page has with diagonal hatching —
+both side bands, the gap between each pair of sections, and the page's own head and foot — plus a
+tick ruler along the top. It makes the box model visible, so content stopping short of an edge reads
+as a decision rather than as an accident.
+
+Rule 5 reads "whitespace separates content, not rules — the only borders on the page enclose
+something", and it is stated in `index.astro`'s own comments. The hatch and the ruler are vocabulary
+that rule does not cover, and they are allowed anyway — chosen from a lab of seventeen treatments
+across five rounds. Do not remove them as a rule-5 violation; the rule has an exception and this is
+it.
+
+Five things about it that are easy to break:
+
+- **ONE COLOUR, ONE WEIGHT, EVERYWHERE** — `--color-divider`, a 1px dot on a 12px grid. Owner ruling,
+  and the uniformity is the point: it is what makes the field read as one surface the content sits on
+  rather than as decoration around it. Do not vary it per region.
+- **IT WAS A DIAGONAL HATCH UNTIL 2026-08-27**, and the swap was a judgement about what a background
+  is for. A rake of diagonals has direction, so it carries energy and the eye follows it; a dot field
+  is inert, which is what a background should be. Ten patterns were drawn in the band beside a real
+  content column before this one was picked — crosshatch, square grid, single-direction rules,
+  dot-on-grid, and the diagonal at several pitches among them. Do not reintroduce any of them.
+- **THERE IS NO RULER AND NO COORDINATE FIGURES.** A tick strip along the top and `0` / `1024` at its
+  ends were built and removed the same day. The page states its own width nowhere, deliberately.
+- **THE CONTENT COLUMN IS `--color-column`, NOT `--color-page`** — `#fdfdfc`, the surface the editor
+  gives its own middle column (`configure-screen.tsx`, `bg-column`). The header, `main` and the
+  footer must all carry it; they briefly disagreed, with two on `#fdfdfc` and one on white, which is
+  invisible by eye and obvious in computed style.
+- **THE BAND IS A MEASURE CONTROL, NOT A MARGIN.** `--frame-gutter` is 8.75rem because that is what
+  pulls the prose to 80 characters; at the old 3.75rem it ran to 99. Change it and the line length
+  changes with it — that is the knob, not `--measure`, which now simply lets prose fill what the
+  band leaves.
+- **The wide band is gated to `width >= 64rem`.** Applying it at the 40rem breakpoint leaves a tablet
+  432px of content and crushes the three-column grids to 117px columns. The band has to come out of
+  slack the page actually has.
+- **The pitch was chosen by eye against a full-height page.** At 7px it vibrates; at 12px it stops
+  reading as hatching. Not an arbitrary number.
+
+**THE DIAGONALS ARE BACKGROUND ONLY (owner ruling, 2026-08-27).** They filled every void for part of
+the day — both bands AND the gap between each pair of sections. They no longer do: `main` paints one
+continuous white column band-to-band, so the hatch shows behind the page and nowhere between blocks.
+Sections carry no surface of their own; a section rule that sets a background is a regression.
+
+**SECTION HEADINGS ARE THEIR OWN ANCHOR, and the `#id` labels that sat in the margin are gone.**
+Clicking a heading puts its id in the address bar, so any section can be linked to directly. That
+replaced the margin annotations rather than joining them — the same "saying it twice" reasoning that
+removed the vertical rails. Amber on hover, the accent the chips carry.
+
+**THE CATALOGUE'S TAB BAR IS packages/ui's CHIP, `size: filter`, ported verbatim.** Resting
+`--color-chip-border` on transparent with muted text, hover `--color-line-hover`, active
+`--color-brand-border` on `--color-wash` with `--color-brand-ink`. **Amber for the active tab is
+correct and not a rule-4 violation** — the editor's own domain filter chip is amber when active, so
+this is the precedent rather than an exception to it. The values were read out of `chip.tsx`, not
+matched by eye; if that component changes, this should follow it.
+
+**THE CATALOGUE HAS THREE TYPE TIERS AND THEY MUST STAY DISTINCT.** Chips are mono uppercase in a
+border; category names are sans semibold ink; skills are sans regular in `--color-ink-3`. The bug
+this fixed was categories and tabs rendering at the same size in the same mono, so a reader could
+not tell a tab bar from a group heading. Two vocabularies plus a border is what separates them —
+do not collapse any tier back into mono.
+
+**The guides and the page colour are ONE declaration.** They were two rules — a `background`
+shorthand and a later `background-image` — fighting over the same property, which is how a variant
+test silently rendered the wrong one for two rounds before anybody noticed.
+
+**Two structural traps.** The hatch is ONE unmasked layer that the content paints over, so it
+surfaces wherever nothing is — a per-gap treatment would need a rule per gap and would drift the
+first time somebody added a section. And **the header and footer must not take the sections'
+negative inline margin**: they carry their own `mx-auto max-w-page`, and setting `margin-inline`
+overrides the `auto` that centres them, which threw both to the viewport edge the first time. They
+paint band-to-band with a gradient instead.
+
+**Nothing gates any of this** — the same gap as WWW-13, one surface over.
+
+**THE SITE IS EDITOR-FIRST, AND THE CLI IS THE ENGINE (owner ruling, 2026-08-27).** In the owner's
+words: _"a user wants to install Agents Inc on their machine and the easiest way is to use the web
+editor and install it via CLI. The CLI is then only additive — they can choose to do things with
+the CLI, but the main way is the editor."_ The guides were all written CLI-first because the CLI
+existed first, and that is a historical accident rather than a design.
+
+Four things follow, and they are the ones easiest to reverse by accident:
+
+- **The two front doors are NOT presented on equal footing.** The editor leads; the CLI follows.
+- **They are sequential, not alternative, and this is the fact that shapes every page.** The editor
+  runs in a browser and cannot write to disk — `install-dialog.tsx`'s own comment calls itself "an
+  inventory of what will be written, then the two commands that write it". Every editor user runs a
+  CLI command. A page framing them as two complete paths would strand its reader at the install
+  step. Select in the editor → install with the CLI → maintain with either.
+- **An aside is the default; a tab set is the exception.** `<Tabs>` draws two panels of equal size
+  with equal labels, which is a parity claim this ruling rejects. The test: _would a reader who has
+  never opened a terminal be stuck here?_ If no, it is a `:::note`. **The core install flow is never
+  tabbed** — it is one path with two steps. The site currently runs **two** tab sets against
+  seventeen asides, and that ratio is the point rather than an accident of how far the pass got.
+- **Where tabs are used the mechanism is exact**: `syncKey="tool"` with labels exactly `Editor` and
+  `CLI`, Editor first. Starlight syncs on the label TEXT, so a single `Web editor` silently
+  desynchronises that page from the whole site, and nothing would catch it. Starlight persists the
+  choice across page navigations — that persistence IS the "one fork point" the ruling asked for,
+  and it is a preference rather than a route. Do not build a forked page tree.
+
+Re-derive the counts rather than trusting the two above:
+`grep -rn "<Tabs" apps/www/src/content/docs | wc -l` and
+`grep -rn ":::note" apps/www/src/content/docs | wc -l`
 
 **Six of these were added 2026-08-21 by the WWW-07 type pass.** They are listed first because they
 are the newest and therefore the easiest to reverse by accident.
@@ -105,8 +313,12 @@ should have, and each is easy to reverse by accident.
   packages/ui story gate (`packages/ui/.storybook/preview.ts`) — every structural a11y check still
   gates. Do not "fix" the palette for contrast.
 
-- **One theme, light. The theme toggle was removed.** The design system declares a dark variant but
-  ships no dark colours for it, so a toggle would have switched into Starlight's own blue-grey theme
+- **One theme, light. The theme toggle was removed** — and the reason it was removed expired on
+  2026-08-29, so this constraint is now a decision to re-take rather than a fact. At the time the
+  design system declared a dark variant and shipped no dark colours for it; it now ships a dark
+  value for all 42 core tokens, though that ramp is generated rather than designed (EDITOR-07).
+  The original reasoning, kept because it is what a re-take has to answer: a toggle would have
+  switched into Starlight's own blue-grey theme
   — one half of the site looking like a different product. A missing switch reads as deliberate; a
   switch that leads somewhere unstyled reads as broken. Forcing it took two changes rather than one:
   Starlight's page component hardcodes `dark` and is not in its list of overridable components, and
@@ -192,46 +404,51 @@ repository should publish `.ai-docs/` at all is a separate question and lives in
 
 ---
 
-#### WWW-02: The landing page is five of twelve blocks
+#### WWW-02: What is left on the landing page
 
-**What is there.** `apps/www/src/pages/index.astro`, seven blocks: nav (mark, wordmark, and Docs /
-Skills / GitHub) · hero (an eyebrow reading `MIT · v0.149.0 · 222 skills`, a headline naming the
-pain, the problem stated in two paragraphs, the `npx agents-inc init` copy component and a secondary
-"Build a stack →") · the approach · two front doors · the empty recording slot · free and open
-source · footer.
+**The build-out landed 2026-08-27.** The page runs eleven blocks: nav · hero · stats · what-it-is ·
+catalogue · how-it-works · recording · write-your-own · free-and-open-source · final CTA · footer.
+Re-derive rather than trusting that list: `grep -n "<section" apps/www/src/pages/index.astro`.
 
-Every number on it is verified rather than typed. The version and the licence are read out of
-`packages/cli/package.json` at build time, so they cannot go stale; 222 was counted in the generated
-catalogue. Every class is lifted from a component that already exists rather than invented.
+**Three of the note's twelve were DECLINED, not deferred**, and the note's own anti-pattern list is
+what declined them. **Three pillars** is a shape rather than a claim, and "The approach" already does
+that job in prose. **A proof block** has nothing true to put in it — no users, no testimonial, no
+dated benchmark — and an empty one is how `warp.dev` came to serve "0K Active Developers". **A
+GitHub star count in the nav** would render zero, which is the same failure. Do not re-add any of
+them without the thing that would fill it.
 
-**What the plan asked for and did not get.** Of the twelve blocks below, five are built. Missing: the
-**catalogue teaser** — the centrepiece, and the section that distinguishes the product · the stats
-strip · three pillars · one proof block · how it works · author your own · the final CTA · a GitHub
-star count in the nav. The free-and-open-source block exists but is only two repository links: no
-contributor avatars, no star or sponsor CTA, which is the job it is actually meant to do.
+**Still to do.**
 
-**Minimum first ship**, matching what four respected sites actually run: nav → hero → what-it-is →
-catalogue teaser → free/community → footer. What shipped is that list **with the catalogue teaser
-missing**, so the page does not yet meet its own minimum bar.
+- **The free-and-open-source block still does not do its job.** It is two repository links. The note
+  puts it exactly where a commercial site puts pricing, and asks for the same work: an explicit
+  "this is free" sentence — that part exists — plus contributor avatars and a star or sponsor CTA.
+  Both of the missing halves need the repository to be public first, so this sits behind the same
+  gate as the star count.
+- **Two accessibility defects, unchanged.** `aria-live` on the copy-command note makes a screen
+  reader announce "click to copy" at page load, because the script fills the empty element after
+  paint. And the decorative `$` in the command block sits at 3.64:1 with the hairlines at
+  1.44–1.64:1 — reported and not fixed, because that fix belongs in `packages/ui` and the WCAG AA
+  ruling (below) is deliberate.
+- **"Build a stack →" points at the absolute `https://agentsinc.sh`**, where the editor lives today,
+  rather than at `/editor` — which this build serves nothing at. It becomes `/editor` when WWW-03
+  lands, and there are now **three** of these anchors on the page rather than one.
 
-**Three judgement calls made while building it, and none should be undone casually.** The
-copy-command is a `div` with a script-added button role rather than a `<button>`, because browsers
-make button text unselectable — if the script failed, the one command on the page could not be copied
-at all; the cost is that the page ships one inline script where the placeholder had none. The page
-carries exactly one breakpoint, where `apps/editor` deliberately has none, because a landing page is
-the one surface that has to survive a phone. And "Build a stack →" points at the absolute
-`https://agentsinc.sh`, where the editor lives today, rather than at `/editor` — which this build
-serves nothing at, so a shipped page cannot link to it. The button works; it becomes `/editor` when
-WWW-03 lands.
+**THE MEASURE IS THE OWNER'S CALL AND IS DELIBERATELY LONG.** The page is 64rem wide (1024px, the
+common step in this range and Tailwind's `5xl`), and prose runs the full content width rather than
+stopping at the 36rem it used to. Measured in a browser at 1440: **105 characters per line**, against
+the 45–75 usually recommended. That was chosen after seeing both — the old 36rem cap read as 67
+characters and left every paragraph 226px short of the catalogue grid beside it, so the page had two
+ragged right edges instead of one. **One token moves it**: `--measure` in `site.css`, read by every
+paragraph on the page and by the 404. 44rem gives ~82 characters, 40rem gives ~74. Do not re-pin
+individual paragraphs — that is what made this hard to change the first time.
 
-**Two accessibility defects on this page.**
-
-- `aria-live` on the copy-command note makes a screen reader announce "click to copy" at page load,
-  because the script fills the empty element after paint.
-- **Where the design system fights the page**, reported and not fixed because the fix belongs in
-  `packages/ui`: the decorative `$` in the command block sits at 3.64:1 contrast (it is hidden from
-  screen readers, and the value is copied verbatim from the shared `CommandBlock`), and the hairline
-  borders are 1.44–1.64:1 against the page, below the 3:1 that a UI boundary wants.
+**Three judgement calls from the original build, none to be undone casually.** The copy-command is a
+`div` with a script-added button role rather than a `<button>`, because browsers make button text
+unselectable — if the script failed, the one command on the page could not be copied at all. The
+page carries exactly one breakpoint, where `apps/editor` deliberately has none, because a landing
+page is the one surface that has to survive a phone. And the hero's editor CTA now leads the command
+block, which is the 2026-08-27 editor-first ruling expressed as position rather than as colour —
+rule 4 reserves amber for what the user deliberately chose, and neither CTA is a choice yet.
 
 ### The research the missing blocks still need
 

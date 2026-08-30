@@ -13,15 +13,15 @@ There is no done column and nothing is struck through. Landed items get one line
 **Rows are one-liners.** Detail lives below the table under the item's ID. Each ID permanently
 carries the identifier the item had before this folder existed.
 
-**The worker itself is built and deployed** — it serves the shared-config store and the Sentry
-tunnel, and `api.agentsinc.sh/configs/:id` has been live since 0.149.0. The app is not the work;
-the three items below are.
+**The worker itself is built and deployed.** It grew a lot on 2026-08-29 — accounts on D1, saved
+stacks, an AI compose route — so re-derive its surface rather than trusting a count here:
+`grep -n 'app.openapi\|app.on(' apps/server/src/index.ts`. The app is not the work; the items below
+are.
 
-| ID                                                    | Task                                                                                                                                                                                                            | Status                       | Type    | Complexity |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
-| SERVER-01 (was editor-todo item 3)                    | v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling)      | Deferred                     | feature | complex    |
-| SERVER-02 (was editor-todo "Phase 7")                 | `packages/api` + `packages/api-mocks` — a typed client and matching MSW handlers, so the editor's worker calls are generated rather than hand-written. Worth more as SERVER-01/03 add surface; two routes today | Investigate                  | feature | complex    |
-| SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                           | Ready for Dev — next session | feature | easy       |
+| ID                                                    | Task                                                                                                                                                                                                                                                                                                                                                                                                                             | Status                       | Type    | Complexity |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
+| SERVER-01 (was editor-todo item 3)                    | **Re-read against SERVER-04 before starting: the owner ruled 2026-08-28 that sign-in keeps the GitHub access token, and the unauthenticated 10 req/min ceiling this row exists for is exactly what a token removes.** v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling) | Deferred                     | feature | complex    |
+| SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                                                                                                                                                                                                                                            | Ready for Dev — next session | feature | easy       |
 
 ---
 
@@ -39,17 +39,6 @@ place the editor talks to GitHub, so the client change is swapping one base URL.
 
 This item was listed twice in the old tracker, once as item 3 and once under "Phase 7". It is one
 piece of work.
-
----
-
-#### SERVER-02: `packages/api` + `packages/api-mocks`
-
-A typed client package and a matching MSW handler package, so the editor's calls to the worker are
-generated rather than hand-written and the tests have one place to mock them.
-
-Filed under the old tracker's "Phase 7 — backend, only if the deferred features land", which is why
-this is `Investigate`: it is worth doing when there is more than one route to type, and today there
-are two. SERVER-01 and SERVER-03 both add surface, so this gets more valuable as they land, not less.
 
 ---
 
