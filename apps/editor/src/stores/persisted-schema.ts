@@ -40,7 +40,7 @@ export const skillEntrySchema = z.object({
 })
 
 // The cycle orders as well as the value sets: the roster's model word and
-// effort meter step through these in exactly this sequence.
+// effort word step through these in exactly this sequence.
 export const AGENT_MODELS = ["opus", "fable", "sonnet", "haiku"] as const
 export const AGENT_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const
 // Two values, so the cycle is a toggle — but it steps through the same helper
@@ -50,6 +50,13 @@ export const AGENT_SCOPES = ["project", "global"] as const
 export const agentModelSchema = z.enum(AGENT_MODELS)
 export const agentEffortSchema = z.enum(AGENT_EFFORTS)
 export const agentScopeSchema = z.enum(AGENT_SCOPES)
+
+// The two ways the roster can be banded. `domain` is the shipped arrangement
+// and stays the default. Declared here, beside AGENT_SCOPES, because the menu
+// reads the members and the schema reads the same array.
+export const ROSTER_GROUP_BYS = ["domain", "scope"] as const
+export const rosterGroupBySchema = z.enum(ROSTER_GROUP_BYS)
+export type RosterGroupBy = z.infer<typeof rosterGroupBySchema>
 
 // Every decision about one sub-agent, all of it optional. `on` is tri-state on
 // purpose: `true` pins it on, `false` pins it off, and *absent* means "ask the
@@ -205,9 +212,24 @@ export const isWorthRemembering = (entry: SkillEntry) =>
   entry.scope !== DEFAULT_SKILL_OPTIONS.scope
 
 export const persistedUiSchema = z.object({
-  // Domain id → collapsed, sparse. Keyed by id rather than position so a
-  // reordered catalog cannot collapse the wrong accordion.
+  // Group key → collapsed, sparse. Keyed by id rather than position so a
+  // reordered catalog cannot collapse the wrong accordion. One record serves
+  // both bandings: domain mode writes the bare domain id, scope mode writes
+  // `scope:<scope>`, and a domain id can never contain a colon — so neither
+  // mode has to reset the other's state.
   rosterCollapsed: z.record(z.string(), z.boolean()),
+  // Both of these are `.catch()`-ed rather than required. This schema gates
+  // every read of localStorage and `ui-store`'s `merge` returns `current` on a
+  // failed parse WITHOUT reporting — so a required key here would silently
+  // reset every existing visitor's collapsed bands. `.catch()` fires on a
+  // MISSING key as well as an invalid one, so the parsed object always carries
+  // both with a valid value and the `{ ...current, ...parsed.data }` spread
+  // never depends on whether Zod omits an absent optional.
+  //
+  // For the same reason that store's `version` is NOT bumped: it has no
+  // `migrate`, so a bump is an unreported discard of everyone's arrangement.
+  rosterGroupBy: rosterGroupBySchema.catch("domain"),
+  stackCollapsed: z.boolean().catch(false),
 })
 
 export type PersistedUi = z.infer<typeof persistedUiSchema>

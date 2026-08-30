@@ -9,8 +9,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { setReportingSink } from "@/lib/observability/report"
 
 import {
+  AGENT_EFFORTS,
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
+  agentEffortSchema,
   isAgentOn,
   isScopePairCompatible,
   isWorthRemembering,
@@ -62,6 +64,37 @@ const config = (over: Partial<PersistedConfig> = {}): PersistedConfig => ({
 describe("PERSIST_VERSION", () => {
   it("is 8", () => {
     expect(PERSIST_VERSION).toBe(8)
+  })
+})
+
+// The scale is a wire contract, not a display choice, and narrowing it fails
+// in the worst possible direction: `agentEffortSchema` is `z.enum` over this
+// array and sits inside `persistedConfigSchema`, so one stored `xhigh` that
+// stops being a member fails the WHOLE `safeParse` in `config-store`'s
+// `merge` — which returns `current` and discards the visitor's entire saved
+// configuration. Renaming `medium` breaks the share link in both directions
+// at once: links minted here would not decode on the CLI, and links arriving
+// from the CLI would not decode here.
+//
+// Members against a literal, never a count: a count cannot see a member
+// swapped for another, which is exactly the shape a design file drawing four
+// levels would produce.
+describe("AGENT_EFFORTS", () => {
+  it("holds five levels, spelled as the contract spells them", () => {
+    expect(AGENT_EFFORTS).toStrictEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ])
+  })
+
+  it("accepts every one of them and nothing else", () => {
+    for (const effort of AGENT_EFFORTS) {
+      expect(agentEffortSchema.safeParse(effort).success).toBe(true)
+    }
+    expect(agentEffortSchema.safeParse("med").success).toBe(false)
   })
 })
 
