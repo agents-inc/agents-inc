@@ -4,7 +4,7 @@
  *
  * **Deliberately NOT a structural load through `loadConfigOrFail`, and that is the whole
  * reason this module exists.** Loading the file gives you the data and destroys the layout:
- * `compactAssignment` (`configuration/config-writer.ts`) writes `{ id, preloaded: false }` as
+ * `compactAssignment` (`@workspace/compile`'s `config-source.ts`) writes `{ id, preloaded: false }` as
  * a bare string and `compactCategoryAssignments` drops an exclusive category's array wrapper,
  * while `normalizeAgentConfig` (`stacks/stacks-loader.ts`) expands both back on load — a bare
  * string to `{ id, preloaded: false }`, a bare value to a one-element array. An assertion
@@ -22,7 +22,7 @@ export type CompactedSkillAssignment = string | { id: string; preloaded?: boolea
  * A written stack — agent name to category to that category's value. The value is the bare
  * assignment when the category is exclusive (it holds at most one skill, so the array wrapper
  * carries nothing) and an array otherwise; see `compactCategoryAssignments` in
- * `configuration/config-writer.ts`.
+ * `@workspace/compile`'s `config-source.ts`.
  */
 export type CompactedStack = Record<
   string,
