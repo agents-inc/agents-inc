@@ -31,7 +31,7 @@ related:
   - reference/testing/infrastructure.md
   - reference/monorepo-layout.md
   - reference/commands/index.md
-last_validated: 2026-08-04
+last_validated: 2026-08-30
 ---
 
 # E2E Harness — Settled Decisions and CLI Behaviour
@@ -56,16 +56,25 @@ last_validated: 2026-08-04
 `null`** — it renders nothing itself. The element it returns is a static `<Box>` of `<Text>`: no
 `useInput`, no `useApp().exit()`. Nothing in it can ever resolve `waitUntilExit()`.
 
-`Init.run` is the only production caller, and it branches:
+`Init.showPermissionNotice` in `src/cli/commands/init.tsx` is the only production caller — reached from
+`Init.handleInstallation` — and it branches:
 
 ```ts
-if (interactive) {
-  const { waitUntilExit } = render(permissionWarning);
-  await waitUntilExit(); // waits for a person
-} else {
+const permissionWarning = await checkPermissions(projectDir);
+if (!permissionWarning) return;
+
+if (!interactive) {
   const { unmount } = render(permissionWarning);
-  unmount(); // one frame, then let go
+  unmount();
+  return;
 }
+
+const { waitUntilExit } = render(permissionWarning);
+await waitUntilExit();
+```
+
+```
+grep -rn 'checkPermissions' src scripts --include='*.ts' --include='*.tsx'
 ```
 
 Two consequences that look unrelated and share one cause:
@@ -116,11 +125,24 @@ exists. The precedence table for every other kind of source override is
 source. A stack referencing an absent skill fails the copy during install, and the failure surfaces
 as a non-zero exit from the whole run rather than as anything that names the stack.
 
-### 1.5 Zero-state is a clean exit, not an error, for the directory-scanning commands
+### 1.5 Zero-state is a clean exit for two of the directory-scanning commands, and a refusal for the third
 
-`build plugins`, `build marketplace` and `update` all operate on whatever is present and report
-nothing found rather than failing. `build` reports `0`; `update` warns `No installation found` and
-returns. Both are worth a spec of their own, and neither needs setup.
+Per command, because they do not agree and a spec written from the wrong one asserts the opposite
+exit code:
+
+| Command             | Zero-state behaviour                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `build plugins`     | Clean. Logs `Compiled 0 skill plugins`, then `Plugin compilation complete!`, and exits `EXIT_CODES.SUCCESS` |
+| `update`            | Clean. Warns `ERROR_MESSAGES.NO_INSTALLATION` (`No installation found. …`) and returns                      |
+| `build marketplace` | **Refuses.** `noPluginsToPublish` in `src/cli/commands/build/marketplace.ts`, at `EXIT_CODES.ERROR`         |
+
+The refusal is not a scan failure — the command logs `Found 0 plugins` first and then declines to
+write, because `marketplaceSchema` rejects an empty `plugins` array and a file this CLI would refuse
+to read back is not one it writes. Nothing is left on disk, so a spec asserting the absence of
+`marketplace.json` is asserting the whole behaviour.
+
+Neither the clean pair nor the refusal needs setup beyond a temp directory, and
+`e2e/commands/build.e2e.test.ts` carries a spec for each.
 
 ### 1.6 `search` is a zero-flag command
 

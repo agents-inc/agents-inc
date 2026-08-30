@@ -129,8 +129,11 @@ first wrong turn.
 Runs for every test across all projects:
 
 - **Module scope, before any hook:** `delete process.env.CI` and `delete process.env.GITHUB_ACTIONS`. **Unit-test rendering is CI-independent by construction, and this is what makes it so.** Ink consults those variables (through `is-in-ci`) to decide when frames are written and what unmount appends, so the same component test read differently locally and on a runner and grew per-test workarounds. The deletion is at module scope rather than in a hook because `is-in-ci` reads the environment **once, at import** — a `beforeEach` would run too late. Nothing under `src/` reads either variable itself. The E2E harness is the deliberate opposite: it passes both through, so every CI run proves the CLI trusts a real terminal over the CI guess (see [`harness-decisions.md`](./harness-decisions.md) and [`commands/index.md`](../commands/index.md)).
-- **`beforeAll`:** Mocks `os.homedir()` to a per-run temp dir (`vitest-home-*`). This prevents `loadProjectConfig()`'s global fallback from hitting the developer's real `~/.claude-src/config.yaml`. Tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override.
-- **`beforeEach`:** Calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`). Guarantees matrix + store isolation between tests.
+- **Module scope:** `chalk.level = 0`. Ink paints through chalk, and every component assertion in this suite was written against a plain frame — a developer's exported `FORCE_COLOR` otherwise inserts truecolour escapes BETWEEN words, and a `toContain` reports a missing string that is a harness artefact rather than a regression. Pinned rather than defaulted, so a gate result does not depend on which shell produced it. The three `describe` blocks in `source-grid.test.tsx` that assert ON colour save `chalk.level`, force truecolor and restore it; needing colour belongs to the test.
+- **Module scope:** `process.env.AGENTS_INC_API_URL = WORKER_ORIGIN` (`@workspace/api-mocks/fixtures`). `SEED_API_URL` in `src/cli/lib/seed/fetch-seed.ts` is `process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh"`, **read once at module load**, so a spec setting the variable in a `beforeEach` has already imported the production URL and any request it fails to intercept leaves the machine. Setup files run before a test file's imports, which is what makes this the only place the substitution can be made. The value is the mock's own origin because every handler in `@workspace/api-mocks` is anchored on it — see `useMockWorker()` in [`factories.md`](./factories.md).
+- **`beforeAll`:** Creates the per-run temp home dir (`vitest-home-*`).
+- **`beforeEach`:** Mocks `os.homedir()` to that temp dir, preventing `loadProjectConfig()`'s global fallback from hitting the developer's real `~/.claude-src/config.yaml`; tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override. **Installed per TEST rather than once per file**, because a single `vi.restoreAllMocks()` in a spec's own `afterEach` withdrew the spy for every later test in that file, after which `os.homedir()` answered from the developer's machine — `home-dir-read-at-call-time.test.ts` pins the re-installation. Also calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`).
+- **`beforeEach` and `afterEach`:** `guardAgainstDistReplacement(CLI_ROOT)` — both hooks, one check. A second agent's `bun run build` empties `dist/` mid-run (tsup has `clean: true`), and the `commands` project resolves oclif through `./dist/commands`, so a spec running inside that window fails as an ordinary assertion with no mention of a build. `beforeEach` refuses a test that would run over a replaced build; `afterEach` names the cause on the test that was in flight when the rebuild landed.
 - **`afterAll`:** Restores all mocks and removes the temp home dir.
 
 ### Global Setup File (`vitest.global-setup.ts`) and `dist-staleness.ts`
@@ -146,8 +149,9 @@ that section for what it ignores and why it refuses instead of rebuilding. Rule
 [6.19](../../standards/clean-code-standards.md) is the standard it enforces.
 
 **It is two files, and which half is where is the point.** The scan, the comparison, the
-`BUILD_INPUT_TREES` list and every message live in `src/cli/lib/testing/dist-staleness.ts`, whose
-sole export is `assertDistIsFresh(cliRoot)`. `vitest.global-setup.ts` holds three statements: it
+`BUILD_INPUT_TREES` list and every message live in `src/cli/lib/testing/dist-staleness.ts`, which
+exports `assertDistIsFresh(cliRoot)` for the global hook, `assertDistIsPresent` and
+`guardAgainstDistReplacement(cliRoot)` for the per-test guard in `vitest.setup.ts`. `vitest.global-setup.ts` holds three statements: it
 resolves its own directory as the CLI package root, exports `setup`, and calls that function.
 Package-root files sit in no tsconfig of this package (`tsconfig.json` includes `src/**/*` only) and
 match no `files` block in `eslint.config.js` — `npx eslint vitest.global-setup.ts` still reports

@@ -255,9 +255,17 @@ wide.
 **That specimen is a fixture because the assertion layer no longer holds one, and the absence is the
 finding rather than an inconvenience.** It used to: `assertConfigIntegrity` took `SkillId[]` and
 `AgentName[]` in the same module as `ExpectedConfig.skillIds: string[]`, and both went when
-`config-assertions.ts` lost its zero-caller helpers on 2026-08-19. What remains is uniform — every
-id-shaped field and parameter under `e2e/assertions/`, `e2e/matchers/`, `e2e/helpers/` and
-`src/cli/lib/__tests__/assertions/` is `string[]` or `readonly string[]`. So this rule is **unmet across its whole subject**, not satisfied. The
+`config-assertions.ts` lost its zero-caller helpers on 2026-08-19. What remains is very
+nearly uniform, and the two commands are the worklist rather than a figure to carry — the first
+finds the `string[]` fields this rule is about, the second the narrow-union sites that already
+satisfy it:
+
+```
+grep -rnE 'skillIds\??: (readonly )?string\[\]' e2e/assertions e2e/matchers e2e/helpers src/cli/lib/__tests__/assertions --include='*.ts'
+grep -rnE ': (readonly )?(SkillId|AgentName|Category|Domain)\[\]' e2e/assertions e2e/matchers e2e/helpers src/cli/lib/__tests__/assertions --include='*.ts'
+```
+
+So this rule is **largely unmet across its subject**, not satisfied. The
 exemplar and the defect it illustrated were deleted in one stroke, which is the failure to guard
 against: a rule whose worked example is gone reads as discharged and quietly stops being applied.
 
@@ -299,25 +307,24 @@ await expect(project).toHaveAgentFrontmatter("web-developer", {
 
 ### `toHaveAgentDynamicSkills(name, expectations?)`
 
-**Searches the whole body, not the activation-protocol section.** It strips the LEADING frontmatter block with a single non-global `replace` — anchored at string start, so the `---` section rules that recur throughout an agent body are untouched — and then runs `body.includes(id)` for every `skillIds` / `noSkillIds` entry over everything that remains.
+**Reads the parsed sections, not the raw body.** It runs `parseCompiledAgentSections` (`src/cli/lib/__tests__/helpers/compiled-agent-sections.ts`) over the compiled file and compares against the two lists that come back — `preloadedRefs` from the frontmatter and `dynamicEntries` from the activation protocol.
 
 ```typescript
 await expect(project).toHaveAgentDynamicSkills("web-developer", {
-  skillIds: ["web-testing-vitest"], // present ANYWHERE in the body
-  noSkillIds: ["api-framework-hono"], // absent from the whole body
+  skillIds: ["web-testing-vitest"], // named by the activation protocol
+  noSkillIds: ["api-framework-hono"], // in neither list
 });
 ```
 
-What each expectation actually proves:
+`AgentDynamicSkillsExpectations` (`e2e/matchers/agent-matchers.ts`) declares three fields and no others:
 
-| Expectation             | Proves                                                                | Also satisfied by                                                                                                                           |
-| ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skillIds: [x]`         | x's id appears somewhere below the frontmatter                        | any body prose naming x — `src/agents/meta/{agent-summoner,codex-keeper,skill-summoner}` name real skill ids in `playbook.md` / `output.md` |
-| `noSkillIds: [x]`       | x's id appears nowhere below the frontmatter                          | a body that renders no skill section at all                                                                                                 |
-| `hasActivationProtocol` | the body carries `<skill_activation_protocol>` **or** `<skills_note>` | an agent holding NO skills — the template emits `<skills_note>` for it                                                                      |
-| `allPreloaded`          | the body carries no `<skill_activation_protocol>`                     | the same skill-less agent                                                                                                                   |
+| Expectation       | Proves                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| `skillIds: [x]`   | every id is among the activation protocol's parsed entry ids                                       |
+| `noSkillIds: [x]` | every id is in neither the parsed entries nor `preloadedRefs`, in either ref form (`id` / `id:id`) |
+| `allPreloaded`    | the parsed entry list is empty — nothing is lazy                                                   |
 
-Two consequences. `hasActivationProtocol` is a weaker subject guard than its name suggests: it fires on the skills-note branch, so it proves the file has one of the two skill sections rather than that the dynamic list rendered. And because the id search is unscoped, a laziness claim is carried by the PAIR, never by `skillIds` alone — put `toHaveAgentFrontmatter({ exactSkills })` or `{ noSkills: true }` beside it so the preload list is pinned on the surface Claude Code actually reads.
+**A `skillIds` hit is a claim about the protocol alone, so a laziness claim still needs the preload side named.** `skillIds` says an id IS activated dynamically and says nothing about what the frontmatter preloads, so put `toHaveAgentFrontmatter({ exactSkills })` or `{ noSkills: true }` beside it to pin the surface Claude Code actually reads. Reading off the parsed section is what closed the older hazard: a bare `body.includes(id)` was satisfied by an id sitting inside a longer id, inside a preload's `id:id` ref, and inside the agent's own prose — and every compiled body in this tree carries prose naming skills.
 
 **Preloaded vs dynamic in the fixture:** the stack decides. `createMockSkillAssignment(id, true)` in `e2e/helpers/create-e2e-source.ts` means preloaded, `createMockSkillAssignment(id)` means dynamic. Note that the `AGENT_TEMPLATE` in that same file is NOT what fixture agents compile from — `createLiquidEngine` (`src/cli/lib/compiler.ts`) resolves `agent.liquid` from the project's own `.claude-src/agents/_templates`, then `.claude/templates`, then the CLI's `src/agents/_templates`, and a marketplace source's template directory is never one of those roots.
 
@@ -406,7 +413,7 @@ expect(result.global.stack, "...").toStrictEqual({});
 
 **The tell is that the fallback's value equals the expected value** — `x ?? {}` compared against `{}`, `xs ?? []` against `[]`, `n ?? 0` against `0`. That pairing can never fail on the axis it was written for, whatever the product does. Where the two values differ the assertion is not vacuous, but the construct still costs a diagnostic: `expect(error?.message).toContain(...)` reports an absent `error` as the matcher complaining about `undefined` rather than as the absence the run actually found.
 
-**A field that is optional on the TYPE but always written by the function under test is exactly the case worth pinning, not the case that justifies a fallback.** The type permits the regression and only the spec can refuse it. `splitConfigByScope` (`src/cli/lib/configuration/config-generator.ts`) writes `stack` on both partitions unconditionally because the merger reads an ABSENT stack as no statement and keeps the stale rows, while an EMPTY one says the derivation ran and yielded nothing — so the invariant has two halves: the stack must be EMPTY, and it must be PRESENT. Both specs covering it carried `?? {}`, which can only ever check emptiness — the presence half, the one the function's own doc comment calls the reason the code is shaped this way, was unpinned in the two specs whose subject it is.
+**A field that is optional on the TYPE but always written by the function under test is exactly the case worth pinning, not the case that justifies a fallback.** The type permits the regression and only the spec can refuse it. `splitConfigByScope` (`packages/compile/src/seed-to-config.ts`, re-exported through `src/cli/lib/configuration/config-generator.ts`) writes `stack` on both partitions unconditionally because the merger reads an ABSENT stack as no statement and keeps the stale rows, while an EMPTY one says the derivation ran and yielded nothing — so the invariant has two halves: the stack must be EMPTY, and it must be PRESENT. Both specs covering it carried `?? {}`, which can only ever check emptiness — the presence half, the one the function's own doc comment calls the reason the code is shaped this way, was unpinned in the two specs whose subject it is.
 
 This is not the never-broaden rule in [README.md § Critical Rules](./README.md#critical-rules), and it is not the ARITY/LENGTH/ABSENCE rule in CLAUDE.md: nothing here was failing, and nothing was weakened to make it pass. The fallback is written defensively against an optional type, which is why it reads as harmless at the call site and why review passes over it.
 
@@ -514,7 +521,7 @@ expect(rawOutput, "the removal of an unresolvable skill must say why it went").t
 );
 ```
 
-`- <id> [P] (` cannot appear in a `warn()` line, so only the Changes block can satisfy it. The three reason strings are `STEP_TEXT` members (`REMOVED_REASON_NOT_IN_SOURCE`, `REMOVED_REASON_FILES_GONE`, `REMOVED_REASON_NOT_INSTALLED`) so no spec can spell one a fourth way, and `edit-unresolvable-entry-removal-reasons.e2e.test.ts` anchors the NEGATIVE half the same way, by prefixing the forbidden reason with the row's own `[P] (`. An unanchored negative there would be answered by the warning too, and answered wrongly.
+`- <id> [P] (` cannot appear in a `warn()` line, so only the Changes block can satisfy it. Every removal reason is a `STEP_TEXT` member (`grep -n 'REMOVED_REASON' e2e/pages/constants.ts`) so no spec can spell one its own way, and `edit-unresolvable-entry-removal-reasons.e2e.test.ts` anchors the NEGATIVE half the same way, by prefixing the forbidden reason with the row's own `[P] (`. An unanchored negative there would be answered by the warning too, and answered wrongly.
 
 ### A `toContain` over an enumerated refusal is answered by one line of it
 
@@ -522,7 +529,7 @@ A refusal that names every item it could not handle is a multi-line string, and 
 
 **Where a refusal enumerates per-item failures, assert the COUNT line as well as the item.** `copyFailureMessage` (`src/cli/lib/skills/skill-copier.ts`) opens with `Could not copy <failures> of <attempted> skills:` and follows it with one indented `  <id>: <problem>` per failure, so those two operands are the whole difference between the fault a spec names and a fixture that produced the rest of them.
 
-Measured on `e2e/commands/eject-default-source-skill-absent.e2e.test.ts`, whose subject is one catalogue skill missing from a fetched checkout. `BUILT_IN_MATRIX` carries 238 skills, so the refusal that spec means to pin reads `Could not copy 1 of 238 skills`. Its first fixture wrote each carried skill's `SKILL.md` and no `metadata.yaml`; `injectForkedFromMetadata` reads that file to stamp provenance into the copy, so every other skill failed at the destination too and the refusal ran to a line per skill in the catalogue. The spec was **green** throughout, because the one line it asserts — `<id>: ENOENT` — was in there, surrounded by 237 lines of noise it could not distinguish itself from. `seedDefaultSourceCache` (`e2e/fixtures/default-source-cache.ts`) writes both files now and states the reason at the writer.
+Measured on `e2e/commands/eject-default-source-skill-absent.e2e.test.ts`, whose subject is one catalogue skill missing from a fetched checkout. The refusal that spec means to pin reads `Could not copy 1 of <catalogue size> skills` — `reference/type-system.md` owns that figure, and nothing here restates it. Its first fixture wrote each carried skill's `SKILL.md` and no `metadata.yaml`; `injectForkedFromMetadata` reads that file to stamp provenance into the copy, so every other skill failed at the destination too and the refusal ran to a line per skill in the catalogue. The spec was **green** throughout, because the one line it asserts — `<id>: ENOENT` — was in there, surrounded by a line of noise per remaining catalogue skill, none of which it could distinguish itself from. `seedDefaultSourceCache` (`e2e/fixtures/default-source-cache.ts`) writes both files now and states the reason at the writer.
 
 The count line is the only assertable form of "and nothing else went wrong", because the failure lines have no fixed cardinality to pin and no order to slice:
 

@@ -117,7 +117,7 @@ to one of them cannot land without a line here naming it — and the same comman
 
 ### mock-matrices.ts
 
-`MatrixConfig` and compile-config fixtures. Not enumerated — see above.
+`MergedSkillsMatrix` fixtures, plus the `MockMatrixConfig` and `CompileConfig` ones beside them. Not enumerated — see above.
 
 `CATEGORY_EXCLUSIVITY_MATRIX` is the one that needs a sentence: it is the only fixture whose
 categories carry a REAL `exclusive` flag. `createMockMatrix`'s default categories map is empty, so
