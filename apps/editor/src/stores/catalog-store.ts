@@ -76,6 +76,16 @@ export type ExternalSkill = {
 type CatalogSeat = {
   /** The whole grid: domains, their categories, and both indexes. */
   catalog: Catalog
+  /**
+   * The wire catalogue the read models above were built from, external skills
+   * merged in — the shape `@workspace/compile` renders against.
+   *
+   * Held beside the built `Catalog` rather than derived again by whoever wants
+   * it: `seatFor` already computes it, and the output preview hands it to every
+   * renderer AND seats it on the compile package's own catalogue, so a second
+   * derivation is a second answer to "which catalogue is this drawn against".
+   */
+  matrix: Matrix
   /** The stack rail's cells, this catalogue's own. */
   stacks: CatalogStack[]
   /** Stamped into every payload, so a receiver can explain skipped ids. */
@@ -127,6 +137,7 @@ const PUBLIC_SOURCE: CatalogSource = { matrix: MATRIX, marketplace: null }
 // added a skill — which is every session that never opens the add dialog.
 const PUBLIC_SEAT: CatalogSeat = {
   catalog: CATALOG,
+  matrix: MATRIX,
   stacks: STACKS,
   version: MATRIX_VERSION,
   marketplace: null,
@@ -174,6 +185,7 @@ const seatFor = (
 
   return {
     catalog,
+    matrix: merged,
     stacks: buildStacks(merged),
     version: matrix.version,
     marketplace,
@@ -268,6 +280,9 @@ export const useCatalogStore = create<CatalogState>()((set, get) => {
 // import would be the vendored catalogue forever, which is the exact bug this
 // store exists to make unrepresentable.
 export const activeCatalog = () => useCatalogStore.getState().catalog
+
+/** The wire catalogue, for the renderers that take one as a parameter. */
+export const activeMatrix = () => useCatalogStore.getState().matrix
 export const activeStacks = () => useCatalogStore.getState().stacks
 export const activeVersion = () => useCatalogStore.getState().version
 export const activeMarketplace = () => useCatalogStore.getState().marketplace
