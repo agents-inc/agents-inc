@@ -425,7 +425,7 @@ catalogue ships a skill whose prefix contradicts it.
 
 **The two readings are not near-misses of each other.** `resolveAssignment`
 (`packages/matrix/src/read-model/assignment-defaults.ts`) branches on `skill.domainId`: a `shared`
-skill reaches `NON_META_ROSTER` — every implementation-role agent in the catalogue — while a `meta`
+skill reaches the whole `ROSTER` — every sub-agent, the meta-flavor ones included — while a `meta`
 skill reaches, per `metaSkillReach`, the flavors its `PRELOAD_DEFAULTS` row names **or** the flavor
 whose craft its category is. `meta-config-stack-detect` has neither: no row, and `shared-tooling` is
 in no craft list, so reading the prefix turns the whole roster into an empty list, silently, at the
@@ -437,13 +437,18 @@ is `meta`, the row is a floor rather than the whole answer:
 
 | Craft flavor | Categories it reaches with or without a row |
 | ------------ | ------------------------------------------- |
+| `meta`       | `meta-design`, `meta-methodology`           |
 | `planning`   | `meta-methodology`, `meta-planning`         |
 | `reviewer`   | `meta-reviewing`, `meta-design`             |
 
-`meta-design-expressive-typescript` is the live demonstration: its row is `["developer"]`, and it
-still reaches every `reviewer`-flavor agent because `meta-design` is the reviewer's craft. Reach and
-eagerness are separate answers — a craft reach the rows never name for that flavor arrives `lazy`,
-which is `createLoadStateResolver`'s decision, not `metaSkillReach`'s.
+The `meta` flavor is the four `agent-summoner` / `codex-keeper` / `convention-keeper` /
+`skill-summoner` agents. `meta-reviewing` and `meta-planning` are deliberately not their craft: a
+diff checklist and a spec playbook are one role's material.
+
+`meta-design-expressive-typescript` is the live demonstration: its row is `["developer", "meta"]`,
+and it still reaches every `reviewer`-flavor agent because `meta-design` is the reviewer's craft.
+Reach and eagerness are separate answers — a craft reach the rows never name for that flavor arrives
+`lazy`, which is `createLoadStateResolver`'s decision, not `metaSkillReach`'s.
 
 Both live readers take the catalogue's category-derived value: `resolveAssignment` reads
 `skill.domainId`, and `domainOfSkill` in `packages/matrix/src/read-model/preload-defaults.ts`
