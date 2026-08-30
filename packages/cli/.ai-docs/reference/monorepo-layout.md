@@ -17,13 +17,16 @@ keywords:
     syncpack,
     LICENSE,
     README,
-    SCHEMA_BASE_URL,
+    SCHEMA_PATHS,
     astro,
     starlight,
     apps-www,
     apps-editor,
     apps-server,
     packages-matrix,
+    packages-compile,
+    packages-api,
+    packages-api-mocks,
     packages-ui,
     CLI_ROOT,
     MONOREPO_ROOT,
@@ -47,7 +50,7 @@ related:
   - reference/build-and-packaging.md
   - reference/features/seed-contract.md
   - reference/testing/harness-decisions.md
-last_validated: 2026-08-04
+last_validated: 2026-08-30
 ---
 
 # Monorepo Layout
@@ -147,13 +150,22 @@ way it does for the config. Fanning `format` out per workspace therefore makes t
 (`packages/matrix/src/vendor/`, `packages/matrix/src/generated/`) get reformatted, which then reads
 as drift against their generator. The root `format` script carries this in its own `"//"` comment.
 
-### `packages/cli/.prettierignore` restates three rules that also live in `.gitignore`
+### `packages/cli/.prettierignore` restates rules that also live in `.gitignore`
 
 Same mechanism, opposite direction. Prettier reads a `.gitignore` only from its working directory.
 `packages/cli`'s own `format` / `format:check` run from inside the package, which holds no
-`.gitignore`, so `CLAUDE.md`, `V2.md` and `todo/*` do not count as ignored there — and
-`format:check` is the first step of `prepublishOnly`. The three rules are restated locally so
-`prettier --check .` agrees with git from either directory. The file carries the reason inline.
+`.gitignore`, so nothing the root file ignores counts as ignored there — and `format:check` is the
+first step of `prepublishOnly`. Every rule that has to hold from either directory is therefore
+restated locally, and the file carries a reason beside each one. Read the current set rather than a
+list written here:
+
+```
+grep -v '^\s*#' packages/cli/.prettierignore | grep -v '^\s*$'
+```
+
+The class is wider than the private working files it started with: `.scratch*` and
+`e2e/helpers/*.gen.mjs` are restatements of root `.gitignore` rules for exactly the same reason, and
+an untracked file matched by neither fails `prettier --check .` for the whole package.
 
 ### Every tracked `CLAUDE.md` is named as a `.gitignore` negation, and forgetting one is silent
 
@@ -172,7 +184,7 @@ fixture is read from disk by a test, so a fresh clone would have failed on CI wh
 The root `CLAUDE.md` and `packages/ui/CLAUDE.md` were instead **written new into an ignored path**,
 and that route has no failure at all.
 
-`packages/ui/CLAUDE.md` is the cautionary one (REPO-41, un-ignored 2026-08-29). It held 12KB of
+`packages/ui/CLAUDE.md` is the cautionary one. It held 12KB of
 design-system guidance and lived on a single machine for the whole of its life. Nothing broke: no
 gate reddens, no checker fires, no clone reports a missing file it was never told to expect — the
 guidance is simply absent, and every agent working from a fresh clone silently works without it. It
@@ -191,7 +203,7 @@ Removing them re-arms the deletion.
 ### `apps/www` has no React integration, deliberately
 
 The Astro site depends on `@workspace/ui` for its **tokens** — plain CSS custom properties — and on
-nothing React. `apps/www/astro.config.ts` opens with an explicit
+nothing React. `apps/www/astro.config.ts` carries an explicit
 `NO REACT INTEGRATION, DELIBERATELY. Please do not "fix" this by adding @astrojs/react.` and gives
 both reasons: the tokens need no React, and taking no React dependency means the workspace inherits
 none of the repository's React-version question. Adding `@astrojs/react` is one dependency and one
@@ -267,9 +279,20 @@ one used to run in the first.
 | `bunx lint-staged`   | `eslint --fix` then `prettier --write`                                | Staged files, from the git root                                    |
 | `bun run deps:check` | syncpack, shared-tsconfig, shared-vitest-config, shared-eslint-config | Every workspace, whenever a manifest or a shared-tool config moved |
 | `bunx turbo run …`   | `lint`, `typecheck`, `test`                                           | Changed packages **and their dependents**                          |
+| `bunx turbo run …`   | `db:generate:check`                                                   | Same filter — so `apps/server` only, and only when it moved        |
 
-The last stage is `bunx turbo run lint typecheck test --filter='...[HEAD]'`. No `test:e2e`: it is
-the slowest thing either side owns and it belongs to the push.
+The turbo stage is `bunx turbo run lint typecheck test --filter='...[HEAD]'`. No `test:e2e`: it is
+the slowest thing either side owns, and since 2026-08-23 it is not in the push hook either — see
+`.husky/pre-push` below.
+
+**`db:generate:check` is a second turbo line rather than a fourth task on the first.**
+`apps/server`'s `scripts/check-migrations.ts` regenerates on top of a throwaway copy and reports what
+it would have written, so a schema edit that arrived with no migration beside it fails here. It
+cannot be regenerated from scratch and byte-compared the way the two vendoring checks are, because
+drizzle-kit diffs against the snapshot in `migrations/meta/` and from scratch everything looks new. It carries the same `...[HEAD]` filter deliberately: a schema edit can only
+have arrived when `apps/server` or something it depends on moved. It is separate because folding a
+`drizzle-kit` spawn into `test` would put it inside the suite that runs most often, which is how a
+check gets skipped.
 
 **`typecheck` joined that line on 2026-08-08.** Two reference docs had been claiming for months
 that TypeScript is checked on every commit while no hook had ever run it, and the ruling was to
@@ -292,16 +315,16 @@ per-file run in which the type-aware rules had not really loaded would have fail
 instead of exiting 0. There is still no root fallback: `eslint vitest.config.mjs` at the root exits
 2, because nothing above it holds a config.
 
-**What keeps ESLint on the turbo line as well is a rule inventory.** Twenty-four of the rules
-enabled in all seven workspaces are type-aware — typescript-eslint's `recommendedTypeChecked`, plus
-`no-unnecessary-condition` from the shared base — and a type-aware verdict reads a whole TypeScript
-program, so a change in a staged file can produce a report in a file the commit does not touch and
-no staged-file run can see it. Nothing else in the seven configs needs more than the file it is
-handed: the config-gate import bans are `no-restricted-imports`, which matches the literal
-specifier string and never resolves a module; the task-ID, vacuous-comparison and dynamic-import
-bans are `no-restricted-syntax` selectors; `no-self-compare` is a syntactic shape; the sixteen
-`react-hooks` rules and `react-refresh` are single-module analyses; and there is no import-cycle
-plugin anywhere in the repository. So
+**What keeps ESLint on the turbo line as well is a rule inventory.** Every workspace extending the
+shared base gets type-aware rules — typescript-eslint's `recommendedTypeChecked`, plus
+`no-unnecessary-condition` and `consistent-type-assertions` from `typeCheckedConfig` — and a
+type-aware verdict reads a whole TypeScript program, so a change in a staged file can produce a
+report in a file the commit does not touch and no staged-file run can see it. Nothing else in the
+per-workspace configs needs more than the file it is handed: the config-gate import bans are
+`no-restricted-imports`, which matches the literal specifier string and never resolves a module;
+the task-ID, vacuous-comparison and dynamic-import bans are `no-restricted-syntax` selectors;
+`no-self-compare` is a syntactic shape; the `react-hooks` rules and `react-refresh` are
+single-module analyses; and there is no import-cycle plugin anywhere in the repository. So
 `lint-staged` is the fast half — a violation in a file you staged fails there in ~4s rather than
 ~19s here, and the fixable ones are fixed and re-staged before turbo sees them — and the turbo line
 is the complete one, which turbo also caches.
@@ -332,24 +355,36 @@ hook spelled out by hand is now turbo's, and wider than it was.
 
 ### `.husky/pre-push`
 
-Everything that used to run at commit time, unchanged: `deps:check` when a manifest or a
-shared-tool config moved, then
-`lint test test:e2e` for a whole **side** — `--filter=agents-inc` for the CLI,
-`--filter='!agents-inc'` for the web. The side is decided by grepping
-`git diff --name-only --no-renames '@{push}..HEAD'`: `packages/cli/` or `packages/matrix/` sets the
-CLI side, any other path under `apps/` or `packages/` sets the web side, root tooling sets both.
-When `@{push}` does not resolve — the first push of a new branch, a detached HEAD — there is no
-range to narrow by and both sides run.
+`deps:check` when a manifest or a shared-tool config moved, then **`lint` for a whole side** —
+`--filter=agents-inc` for the CLI, `--filter='!agents-inc'` for the web. That is the whole hook.
+The side is decided by grepping `git diff --name-only --no-renames '@{push}..HEAD'`:
+`packages/cli/` or `packages/matrix/` sets the CLI side, any other path under `apps/` or
+`packages/` sets the web side, root tooling sets both. When `@{push}` does not resolve — the first
+push of a new branch, a detached HEAD — there is no range to narrow by and both sides run.
+
+**The suites are not in this hook, and their absence is a decision rather than an omission.** It
+asked for `lint test test:e2e` in ONE turbo invocation; turbo runs those concurrently because they
+do not depend on each other, and `test` and `test:e2e` each carry an npm pre-hook that runs
+`bun run build`. Two tsup builds with `clean: true` then raced on one `dist/` — one enumerated the
+directory while the other unlinked a chunk — and the push died on `ENOENT … unlink dist/chunk-*.js`
+before a single spec ran, with the cause hundreds of lines up in interleaved output. Running the
+suites is the pusher's job now: `bun run test` and `bun run test:e2e` from the root, **separately**,
+because running the two in one turbo invocation reproduces the same race. The hook says all of this
+in its own header.
 
 **This tier is coarse on purpose, and that is what lets the other one be narrow.** Scoping by side
 cannot miss a dependent, because it never tries to work out what the dependents are.
 
-> The changed-package filter was tried at commit time once before and was **wrong on its own**: a
-> commit to `packages/matrix` selected `matrix` and `apps/editor` but **not** `apps/server`, which
-> depends on `matrix` too, so a change that broke the worker committed clean. The hook carried a
-> "please do not narrow it again" note for months afterwards. What retired that note is not a repair
-> to the filter but this second hook: a dependent the commit-time filter misses now costs an amended
-> commit, because nothing reaches the remote until the side-scoped suites have passed.
+**The CLI's side-grep names two paths and the CLI now devDepends on four workspaces.**
+`packages/cli` takes `@workspace/matrix`, `@workspace/compile`, `@workspace/api` and
+`@workspace/api-mocks` as devDependencies and tsup bundles them, so a change confined to
+`packages/compile/` moves the CLI while setting only the web side — the web line excludes
+`agents-inc`, so nothing lints the CLI for it. Re-derive the edges rather than trusting this
+sentence:
+
+```
+grep -n '"@workspace/' packages/cli/package.json
+```
 
 **`run_deps` is a third flag, not a third condition on the two above.** The cross-workspace checks
 read every `package.json`, every `tsconfig.json`, every `vitest.config.*` and every
@@ -380,13 +415,24 @@ repository now, so the mechanism has nothing left to do. In their place `check-w
 `packages/matrix`'s generated surface and fails if it drifted: a check, not a cross-repo pull
 request.
 
-**The catalog check runs from `packages/cli`, and writes nothing.** The step is
-`bun run generate:matrix:check` with `working-directory: packages/cli` — `packages/cli` owns the
-writer, because every input is the CLI's own types, agent metadata and default stacks. It compares
-the emitted bytes against the committed files **in memory**, so it needs neither a regenerate step
-nor a `git diff` afterwards, and **it reports a file it emits that is not committed at all** — which
-a diff, seeing only tracked paths, could not. Replacing it with a regenerate-then-diff pair
-reintroduces that blind spot.
+**Two vendoring checks run from `packages/cli`, and both write nothing.** The steps are
+`bun run generate:matrix:check` and `bun run generate:compile:check`, each with
+`working-directory: packages/cli` — that package owns both writers, because every input is the
+CLI's own types, agent metadata, default stacks, agent partials and templates. The first guards
+`packages/matrix`'s vendored catalogue; the second guards the agent corpus `packages/compile` holds,
+which the editor's output preview reads, so without it the preview draws bytes no install writes.
+Each compares the emitted bytes against the committed files **in memory**, so neither needs a
+regenerate step nor a `git diff` afterwards, and each **reports a file it emits that is not
+committed at all** — which a diff, seeing only tracked paths, could not. Replacing either with a
+regenerate-then-diff pair reintroduces that blind spot.
+
+**A third check in the same job belongs to `apps/server`.** `bun run db:generate:check` with
+`working-directory: apps/server` asks whether the D1 migrations match the schema they are generated
+from. A `notNull`, an index or a foreign key added to `src/db/*.schema.ts` type-checks, lints and
+passes the whole suite — the suite applies the COMMITTED migrations — so the first sign of a missing
+file would otherwise be the deploy shipping code against schema nothing created. The `deploy` job
+applies the migrations before `turbo deploy` for the same reason, `wrangler deploy` shipping code
+and not schema.
 
 `generate:types` is deliberately absent from CI: it reads a sibling `skills` checkout no runner has.
 `.ai-docs/reference/features/code-generation.md` carries the generator inventory.
@@ -405,7 +451,7 @@ needs a browser too. `bunx playwright install --with-deps chromium` therefore si
 step and `test`, and installs once for both suites. Only chromium is configured, so only chromium is
 installed. Moving that step back down to just above `test:e2e` fails the unit run.
 
-**Node is pinned, not inherited.** `env.NODE_VERSION: 22` and an `actions/setup-node` step in all
+**Node is pinned, not inherited.** `env.NODE_VERSION: 22`, and an `actions/setup-node` step in
 every job. Installing bun and nothing else leaves a run on whatever Node `ubuntu-latest` ships that
 week, and that Node is not incidental: the CLI's E2E harness launches
 the CLI with `pty.spawn("node", …)`, so the runner's Node is the runtime that executes the thing
@@ -537,13 +583,13 @@ convention across three keys, so learn it once:
 | `//no-shared-vitest-config` | `check-shared-vitest-config.ts` | `packages/cli` and `packages/ui` |
 | `//no-shared-eslint-config` | `check-shared-eslint-config.ts` | `packages/vitest-config`         |
 
-`bun run deps:check` prints the tally per axis, and the three lines are the fastest way to read
-today's shape:
+`bun run deps:check` prints one tally line per axis — how many workspaces are bound, how many
+record why they are not, and on the two axes that have the state, how many are not judged at all.
+Reading those three lines is the fastest way to see today's shape, and they are deliberately not
+copied here: three workspaces landed on 2026-08-29 and every figure moved.
 
 ```
-✓ 7 workspaces extend @workspace/typescript-config, 4 record why they do not
-✓ 3 workspaces extend @workspace/vitest-config, 2 record why they do not, 6 run no vitest
-✓ 7 workspaces extend @workspace/eslint-config, 1 record why they do not, 3 hold no eslint config
+bun run deps:check
 ```
 
 - **It lives in the workspace's own `package.json`**, not in the config it excuses. That is the one
@@ -704,13 +750,17 @@ mutation proof for both halves, and it lints the shared base by path
 (`packages/eslint-config/base.js`) rather than by package specifier, because the package ships plain
 `.js` with no declaration file.
 
-## The schema base URL moved with the package
+## The schema URL prefix encodes the repository name and this package's location
 
-`SCHEMA_BASE_URL` in `packages/cli/src/cli/consts.ts` is
-`https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas`. The CLI writes
-this address into every metadata file it generates, so it is a **live URL in users' files** — it is
-not an internal path and it does not follow a local refactor. It already moved once, when the CLI
-went one directory deeper. Renaming the repository moves it again; see the outstanding work.
+`SCHEMA_PKG_PREFIX` in `packages/cli/src/cli/consts.ts` — module-private, and reachable only
+through the `SCHEMA_PATHS` object it builds — is
+`https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas`. The CLI
+writes those addresses into every metadata file it generates, so they are **live URLs in users'
+files**: not internal paths, and they do not follow a local refactor. Both halves of the prefix have
+already moved once each — the repository was renamed, and this package went a level down in the
+merge — and if either moves again the constant must move with it or every generated `$schema`
+comment 404s. GitHub redirects the old forms, verified two renames deep, but a redirect is a
+courtesy rather than a contract. The constant carries the argument inline.
 
 ## Two roots, and why E2E needs both
 

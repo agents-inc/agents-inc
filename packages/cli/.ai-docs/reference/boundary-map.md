@@ -21,7 +21,7 @@ last_validated: 2026-07-30
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/cli/base-command.ts`                          | Shared command behaviour (error handling, terminal-geometry startup gate) — no flags: it declares no `baseFlags`                                                            |
 | `src/cli/commands/init.tsx`                        | `--marketplace` flag definition — the one command that carries it                                                                                                           |
-| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--marketplace` before oclif parsing (for the `init` command alone)                                                                                  |
+| `src/cli/hooks/init.ts`                            | The bare-invocation dashboard, and nothing else — it parses no argv and resolves no marketplace (section 1.2)                                                               |
 | `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                                                               |
 | `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                                                                  |
 | `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                                                        |
@@ -31,7 +31,7 @@ last_validated: 2026-07-30
 | `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                                                              |
 | `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` ROSTER load boundary; `ConfigLoadError` for corrupt-but-present configs                                                                             |
 | `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                                                      |
-| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                                                             |
+| `src/cli/lib/configuration/config-types-writer.ts` | A re-export barrel: the renderers from `@workspace/compile/config-types-source`, the disk half from `config-types-io.ts`. It declares nothing of its own                    |
 | `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                                                               |
 | `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                                                                   |
 | `src/cli/lib/compiler.ts`                          | Reads agent partials off disk, resolves template roots, re-exports the sanitizers. Sanitization, render and pluginRef derivation are `packages/compile/src/agent-source.ts` |
@@ -40,6 +40,7 @@ last_validated: 2026-07-30
 | `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                                                                                                |
 | `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                                                                                                                                   |
 | `src/cli/lib/source-validator.ts`                  | Source directory validation (`checkDirNameMatchesSkillId` compares dir name to the SKILL.md machine id)                                                                     |
+| `src/cli/commands/share.ts`                        | The piped-payload boundary — the one document a producer outside this repository writes (section 1.5)                                                                       |
 | `src/cli/commands/uninstall.tsx`                   | Filesystem DELETE boundary (plugins, skills, agents, config manifest) + registry deregistration                                                                             |
 | `src/cli/consts.ts`                                | File size limit constants                                                                                                                                                   |
 
@@ -69,35 +70,25 @@ Passing `--marketplace` to any other command is refused by the parser (`Nonexist
 halves are pinned by `e2e/commands/source-flag-is-init-only.e2e.test.ts`, which asserts the refused
 commands as a set rather than one specimen.
 
-### 1.2 Init Hook: Raw argv Extraction
+### 1.2 Init Hook: Not an Input Boundary
 
-| Property       | Value                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/hooks/init.ts`                                                                     |
-| **Direction**  | IN                                                                                          |
-| **Data**       | `--marketplace` and `-m` flags extracted from raw `options.argv` when the command is `init` |
-| **Validation** | Manual string extraction (indexOf + split), then passed to `resolveSource()`                |
-| **Schema**     | None at extraction point; downstream `validateSourceFormat()` validates                     |
+`src/cli/hooks/init.ts` reads no input. Its whole body branches on `options.id === undefined` — no
+command named — and calls `runDashboardFlow` from `commands/init.js`, exiting `EXIT_CODES.SUCCESS`
+if the dashboard was shown. It parses no argv, resolves no marketplace, and attaches nothing to the
+oclif config. `BaseCommand` has no `sourceConfig` getter either.
 
-> **This section is stale and is not safe to follow.** `src/cli/hooks/init.ts` no longer resolves a
-> marketplace: it runs the bare-`cc` dashboard and nothing else, so there is no pre-parse argv
-> extraction and no `sourceConfig` on `BaseCommand`. `init` now reads `flags.marketplace` from
-> oclif's own parse and passes it to `loadSkillsMatrixFromSource` as `sourceFlag`, which is where
-> `resolveSource()` is called. Re-derive before relying on any of it:
->
-> ```
-> grep -rn 'resolveSource(' src --include='*.ts' --include='*.tsx' --exclude='*.test.ts'
-> ```
+The marketplace flag reaches `resolveSource()` through oclif's own parse instead: `init.tsx` passes
+`flags.marketplace` to `loadSkillsMatrixFromSource` as `sourceFlag`, alongside `caller: "init"`.
+That caller identity is what makes `init` the one command `resolveSource` reads `CC_MARKETPLACE` for
+(`SOURCE_ENV_VAR` in `configuration/config.ts` — the identifier kept the old word, its value did
+not); every other site passes `caller: "stored"`. Re-derive:
 
-The boundary this section described was a raw CLI input with no validation at extraction --
-validation happened in `resolveSource()` in `config.ts`. Validation still does; the extraction step
-does not exist.
+```
+grep -rn 'resolveSource(' src --include='*.ts' --include='*.tsx' --exclude='*.test.ts'
+```
 
-The extraction is gated on `options.id === "init"`, and so is the caller identity the hook passes
-(`caller: "init" | "stored"`): `init` is the one command that may name a marketplace, so it is the
-one command whose argv can carry the flag and the one caller `resolveSource` reads `CC_MARKETPLACE`
-for (`SOURCE_ENV_VAR` in `configuration/config.ts` — the identifier kept the old word, its value did
-not).
+The section is kept rather than deleted because the argv extraction it used to describe is the
+obvious place to look for pre-parse validation, and there is none to find.
 
 ### 1.3 Per-Command Flag Definitions
 
@@ -105,12 +96,14 @@ Every command extends `BaseCommand` and defines `static flags`. oclif handles ty
 
 | Command             | File                            | Flags                                                                                                                                   |
 | ------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`              | `commands/init.tsx`             | `--marketplace` / `-m` (string, the only command that has it), `--from` (string)                                                        |
-| `edit`              | `commands/edit.tsx`             | `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                                                             |
+| `init`              | `commands/init.tsx`             | `--marketplace` / `-m` (string, the only command that has it), `--from` (string), `--ui` (boolean)                                      |
+| `edit`              | `commands/edit.tsx`             | `--ui` (boolean), `--from` (string), `--project-setup` (boolean, hidden internal flag `EDIT_PROJECT_SETUP_FLAG`)                        |
 | `compile`           | `commands/compile.ts`           | `--verbose` (boolean)                                                                                                                   |
 | `list`              | `commands/list.tsx`             | (none); alias `ls`                                                                                                                      |
 | `eject`             | `commands/eject.ts`             | `type` (**positional, optional**, enum: `agent-partials` \| `templates` \| `skills` \| `all`); `--force` (boolean), `--output` (string) |
 | `search`            | `commands/search.ts`            | `query` (positional, required); no flags                                                                                                |
+| `share`             | `commands/share.ts`             | `--stdin` (boolean) — the piped-payload boundary, section 1.5                                                                           |
+| `new marketplace`   | `commands/new/marketplace.ts`   | `name` (positional); no flags                                                                                                           |
 | `update`            | `commands/update.ts`            | (none) — a marketplace refresh takes no argument and confirms nothing                                                                   |
 | `uninstall`         | `commands/uninstall.tsx`        | `--yes` / `-y` (boolean). **`--all` was removed** — manifest removal is now unconditional.                                              |
 | `doctor`            | `commands/doctor.ts`            | (none) — the zero-flag command the former `validate` folded into                                                                        |
@@ -247,28 +240,46 @@ Caller handling of `ConfigLoadError` is tabulated in `architecture-overview.md` 
 
 ### 2.4 JSON Parse Boundaries (Production)
 
-| File                          | What Is Parsed                                     | Validation After Parse                                                 |
-| ----------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------- |
-| `utils/exec.ts`               | Claude CLI JSON stdout (`marketplace list --json`) | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure) |
-| `plugins/plugin-finder.ts`    | `plugin.json` manifest                             | `pluginManifestSchema.parse()` (throws on failure)                     |
-| `plugins/plugin-validator.ts` | `plugin.json` for validation                       | `pluginManifestValidationSchema.safeParse()`                           |
-| `plugins/plugin-validator.ts` | `plugin.json` as raw Record                        | Type assertion only (`loadManifestForValidation()`)                    |
-| `plugins/plugin-settings.ts`  | `.claude/settings.json`                            | `pluginSettingsSchema.safeParse()`                                     |
-| `plugins/plugin-settings.ts`  | `~/.claude/plugins/installed_plugins.json`         | `installedPluginsSchema.safeParse()`                                   |
-| `marketplace-generator.ts`    | `plugin.json` for marketplace build                | `pluginManifestSchema.parse()`                                         |
-| `versioning.ts`               | `plugin.json` for version check                    | `pluginManifestSchema.parse()`                                         |
-| `loading/source-fetcher.ts`   | `marketplace.json` from fetched source             | `validateNestingDepth()` + `marketplaceSchema.safeParse()`             |
-| `schema-validator.ts`         | `plugin.json` in validation targets                | `pluginManifestSchema` via `safeParse()`                               |
+Re-derive the roster rather than reading the rows — one grep answers it, and the list has gained
+four sites and lost two since it was last written:
+
+```
+grep -rn 'JSON.parse(' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude-dir=__tests__
+```
+
+| File                            | What Is Parsed                                       | Validation After Parse                                                     |
+| ------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------- |
+| `utils/exec.ts`                 | Claude CLI JSON stdout (`marketplace list --json`)   | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure)     |
+| `plugins/plugin-finder.ts`      | `plugin.json` manifest                               | `pluginManifestSchema.parse()` (throws on failure)                         |
+| `plugins/plugin-validator.ts`   | `plugin.json` for validation                         | `pluginManifestValidationSchema.safeParse()`                               |
+| `plugins/plugin-validator.ts`   | `plugin.json` as raw Record                          | Type assertion only (`loadManifestForValidation()`)                        |
+| `plugins/plugin-settings.ts`    | `<pluginsDir>/installed_plugins.json` (registry)     | `installedPluginsSchema.safeParse()` — throws, see 2.6                     |
+| `plugins/plugin-settings.ts`    | `.claude/settings.json`                              | `pluginSettingsSchema.safeParse()`                                         |
+| `plugins/plugin-settings.ts`    | `~/.claude/plugins/installed_plugins.json`           | `installedPluginsSchema.safeParse()` — degrades to `[]`, see 2.6           |
+| `permission-checker.tsx`        | `.claude/settings.json` permissions block            | `settingsFileSchema.safeParse()`; a malformed file warns and is skipped    |
+| `agents/agent-provenance.ts`    | this CLI's OWN `package.json`, for its version       | `ownPackageJsonSchema.safeParse()`; throws when it cannot be read          |
+| `configuration/config.ts`       | a source repo's `package.json`, for its `name`       | `packageIdentitySchema.safeParse()`; unparseable answers `null`            |
+| `commands/build/marketplace.ts` | the project `package.json`, for marketplace identity | `packageJsonSchema.safeParse()`; a parse failure exits with the cause      |
+| `versioning.ts`                 | `plugin.json` for version check                      | `pluginManifestSchema.parse()`                                             |
+| `loading/source-fetcher.ts`     | `marketplace.json` from fetched source               | `validateNestingDepth()` + `marketplaceSchema.safeParse()`                 |
+| `loading/source-fetcher.ts`     | the cached revalidation record                       | `parseJsonOrUndefined()` — a corrupt record re-fetches rather than failing |
+| `seed/read-piped-payload.ts`    | a `SeedPayload` off stdin                            | `seedPayloadSchema.safeParse()` behind a `JsonRead` verdict (1.5)          |
+
+`marketplace-generator.ts` and `schema-validator.ts` were rows here and are not parse sites: the
+generator reaches `plugin.json` through `readPluginManifest()` in `plugins/plugin-finder.ts`, and
+`schema-validator.ts` formats Zod issues and parses nothing. `config-gate/classify.ts` calls
+`JSON.parse(JSON.stringify(config))` and is not a boundary either — it is a deep clone of a value
+this process built.
 
 ### 2.5 File Size Enforcement
 
-| Constant                    | Value  | File        | Used By                                                                                |
-| --------------------------- | ------ | ----------- | -------------------------------------------------------------------------------------- |
-| `MAX_CONFIG_FILE_SIZE`      | 1 MB   | `consts.ts` | `permission-checker.tsx`, `plugin-settings.ts`                                         |
-| `MAX_PLUGIN_FILE_SIZE`      | 1 MB   | `consts.ts` | `plugin-finder.ts`, `plugin-validator.ts`, `versioning.ts`, `marketplace-generator.ts` |
-| `MAX_MARKETPLACE_FILE_SIZE` | 10 MB  | `consts.ts` | `source-fetcher.ts`                                                                    |
-| `MAX_JSON_NESTING_DEPTH`    | 10     | `consts.ts` | `source-fetcher.ts` (marketplace.json)                                                 |
-| `MAX_MARKETPLACE_PLUGINS`   | 10,000 | `consts.ts` | `source-fetcher.ts` (`fetchMarketplace`)                                               |
+| Constant                    | Value  | File        | Used By                                                    |
+| --------------------------- | ------ | ----------- | ---------------------------------------------------------- |
+| `MAX_CONFIG_FILE_SIZE`      | 1 MB   | `consts.ts` | `permission-checker.tsx`, `plugin-settings.ts`             |
+| `MAX_PLUGIN_FILE_SIZE`      | 1 MB   | `consts.ts` | `plugin-finder.ts`, `plugin-validator.ts`, `versioning.ts` |
+| `MAX_MARKETPLACE_FILE_SIZE` | 10 MB  | `consts.ts` | `source-fetcher.ts`                                        |
+| `MAX_JSON_NESTING_DEPTH`    | 10     | `consts.ts` | `source-fetcher.ts` (marketplace.json)                     |
+| `MAX_MARKETPLACE_PLUGINS`   | 10,000 | `consts.ts` | `source-fetcher.ts` (`fetchMarketplace`)                   |
 
 All enforced via `readFileSafe()` in `utils/fs.ts` which checks `stats.size` before reading.
 
@@ -301,10 +312,14 @@ Both use `readFileSafe(MAX_CONFIG_FILE_SIZE)` -> `JSON.parse()` -> `installedPlu
 
 **Why it matters:** without `matrixOnly` the default-source path performs a git clone on a cold cache. `compile` and `uninstall` both need a matrix but no skill files, and both must work offline.
 
-| Caller                                 | Options                                    | Purpose                                                                                    |
-| -------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `Compile.refreshConfigTypes()`         | `skipExtraSources: true, matrixOnly: true` | Regenerate `config-types.ts` for the compiled scope without touching the network.          |
-| `Uninstall.prepareGlobalPropagation()` | `skipExtraSources: true, matrixOnly: true` | Load the matrix needed to prune registered projects before the global manifest is deleted. |
+Three production sites pass it — re-derive with
+`grep -rn 'matrixOnly: true' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts'`:
+
+| Caller                                     | Options                                    | Purpose                                                                                                  |
+| ------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `Compile.refreshConfigTypes()`             | `skipExtraSources: true, matrixOnly: true` | Regenerate `config-types.ts` for the compiled scope without touching the network.                        |
+| `Uninstall.prepareGlobalPropagation()`     | `skipExtraSources: true, matrixOnly: true` | Load the matrix needed to prune registered projects before the global manifest is deleted.               |
+| `lazyGateDeps()` in `config-gate/index.ts` | `skipExtraSources: true, matrixOnly: true` | Load the matrix a consequence tier needs, through the lazy `await import` that keeps lib off operations. |
 
 Both combinations are byte-identical to the wizard's fully-tagged load for config-types purposes — the config-types writer never reads the extra-source annotations. Pinned by the `skipExtraSources` parity test in `src/cli/lib/installation/local-installer.test.ts`.
 
@@ -316,25 +331,37 @@ Both combinations are byte-identical to the wizard's fully-tagged load for confi
 
 `configuration/config-writer.ts` **writes nothing** — every export returns a string. The only code that puts either half of the global config pair on disk is `src/cli/lib/config-gate/` (see 3.4a).
 
-| Function                                 | File                             | What It Writes           | Where                        |
-| ---------------------------------------- | -------------------------------- | ------------------------ | ---------------------------- |
-| `generateConfigSource()`                 | `configuration/config-writer.ts` | TypeScript config source | Returns string (gate writes) |
-| `generateBlankGlobalConfigSource()`      | `configuration/config-writer.ts` | Empty global config      | Returns string               |
-| `generateBlankGlobalConfigTypesSource()` | `configuration/config-writer.ts` | Never-type config types  | Returns string               |
+| Function                                 | Declared in                              | Reached through                        | What It Writes   |
+| ---------------------------------------- | ---------------------------------------- | -------------------------------------- | ---------------- |
+| `generateConfigSource()`                 | `@workspace/compile/config-source`       | `configuration/config-writer.ts`       | Returns a string |
+| `generateBlankGlobalConfigSource()`      | `@workspace/compile/config-source`       | `configuration/config-writer.ts`       | Returns a string |
+| `generateBlankGlobalConfigTypesSource()` | `@workspace/compile/config-types-source` | `configuration/config-types-writer.ts` | Returns a string |
+| `getGlobalConfigImportPath()`            | `configuration/config-writer.ts`         | itself                                 | Returns a path   |
 
-Config writer uses `JSON.parse(JSON.stringify(x))` to strip undefined values before generating TypeScript source.
+**`config-writer.ts` declares exactly one function of its own** — `getGlobalConfigImportPath()`,
+which is the one thing the shared package cannot hold, being derived from `os.homedir()`. Everything
+else in it is a re-export, which is what puts the editor's output preview behind the same renderer
+rather than a second copy of it.
+
+The renderers strip undefined values with `JSON.parse(JSON.stringify(x))` before emitting TypeScript
+source.
 
 ### 3.2 Config Types Writer
 
-| Function                             | File                                   | What It Writes                                                             | Where                                   |
-| ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------- |
-| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`           | Standalone union types narrowed to the config (global path only)           | `~/.claude-src/config-types.ts`         |
-| `regenerateConfigTypes()`            | `configuration/config-types-writer.ts` | Project config-types.ts; emits import-from-global when global exists       | `<project>/.claude-src/config-types.ts` |
-| `generateConfigTypesSource()`        | `configuration/config-types-writer.ts` | Standalone union source string                                             | Returns string                          |
-| `generateProjectConfigTypesSource()` | `configuration/config-types-writer.ts` | Project source extending global types via `import type`                    | Returns string                          |
-| `loadConfigTypesDataInBackground()`  | `configuration/config-types-writer.ts` | (reads the marketplace matrix and the CLI's own sub-agent roster)          | Loads in background                     |
-| `getGlobalConfigTypesPath()`         | `configuration/config-types-writer.ts` | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
-| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                 | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
+`configuration/config-types-writer.ts` is the surface every caller reads, and it declares nothing:
+the renderers come from `@workspace/compile/config-types-source` and the disk half from
+`configuration/config-types-io.ts`. The **Declared in** column is what a rename or a deletion would
+move; the module column above it would not change.
+
+| Function                             | Declared in                              | What It Writes                                                             | Where                                   |
+| ------------------------------------ | ---------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------- |
+| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`             | Standalone union types narrowed to the config (global path only)           | `~/.claude-src/config-types.ts`         |
+| `regenerateConfigTypes()`            | `configuration/config-types-io.ts`       | Project config-types.ts; emits import-from-global when global exists       | `<project>/.claude-src/config-types.ts` |
+| `generateConfigTypesSource()`        | `@workspace/compile/config-types-source` | Standalone union source string                                             | Returns string                          |
+| `generateProjectConfigTypesSource()` | `@workspace/compile/config-types-source` | Project source extending global types via `import type`                    | Returns string                          |
+| `buildConfigTypesBackgroundData()`   | `configuration/config-types-io.ts`       | (reads the matrix and the CLI's own sub-agent roster)                      | Returns `ConfigTypesBackgroundData`     |
+| `getGlobalConfigTypesPath()`         | `configuration/config-types-io.ts`       | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
+| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                   | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
 
 **Writer Selection Rule:** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts` (the former `writeStandaloneConfigTypes()` export is gone).
 
@@ -356,7 +383,7 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 
 ### 3.4a The config-gate — the only writer of the global pair
 
-**Privileged zone:** `src/cli/lib/config-gate/**`, plus `configuration/config-types-writer.ts` (which the gate drives) and `utils/fs.ts` (which holds the tripwire). Nothing else in `src/` may write `~/.claude-src/config.ts` or `~/.claude-src/config-types.ts`.
+**Privileged zone:** `src/cli/lib/config-gate/**`, plus `configuration/config-types-io.ts` (which the gate drives, through the `config-types-writer.ts` barrel) and `utils/fs.ts` (which holds the tripwire). Nothing else in `src/` may write `~/.claude-src/config.ts` or `~/.claude-src/config-types.ts`.
 
 | Function                                     | File                         | What It Writes                                                                                      | Where                                 |
 | -------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
@@ -383,7 +410,11 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 
 For the two uncovered families the check is still by hand: write a throwaway file that violates every guard at once, lint it, confirm each one fires, delete the file. The guard most exposed to a parser change is the `no-restricted-syntax` selector catching dynamic imports of `config-gate/*`, whose regex contains a unicode escape. **Run this check on any ESLint major upgrade**; the guards enforce real invariants and their silence is not evidence.
 
-**`no-restricted-imports` and `no-restricted-syntax` both take options, and a rule's options are not merged across flat-config blocks — the last block naming it for a file owns all of them.** That is why each of the five nested zones restates every restriction it still owes rather than inheriting it, and why a zone added below them inherits nothing by default. `packages/eslint-config/base.js`'s `no-self-compare` is the counter-example that makes the rule legible: it takes no options, so it merges, which is exactly why it could move to the shared base while these could not.
+**`no-restricted-imports` and `no-restricted-syntax` both take options, and a rule's options are not merged across flat-config blocks — the last block naming it for a file owns all of them.** That is why each nested zone restates every restriction it still owes rather than inheriting it, and why a zone added below them inherits nothing by default. Read the zones off the config rather than counting them here — one of them was re-pointed from `config-types-writer.ts` to `config-types-io.ts` when the renderers moved into `@workspace/compile`:
+
+````
+grep -n 'files:' packages/cli/eslint.config.js
+``` `packages/eslint-config/base.js`'s `no-self-compare` is the counter-example that makes the rule legible: it takes no options, so it merges, which is exactly why it could move to the shared base while these could not.
 
 **Return-channel contract:** every gate entry returns a `GateReport { globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a **record of completed work**, not a to-do list: a write that propagates has already recompiled the propagated projects' agents. `skipped` is surfaced to the user by `commands/uninstall.tsx` and `commands/compile.ts` via `registeredProjectUpdateSkipped()`; `init.tsx` and `edit.tsx` render only the recompile summary.
 
@@ -640,6 +671,11 @@ The wire contract, the version-discard policy and the payload -> `WizardResultV2
 
 ## 7. Schema Reference
 
+**These three tables are the boundary-relevant subset, not the roster.**
+[types/zod-schemas.md](./types/zod-schemas.md) owns every schema in `src/cli/lib/schemas.ts` and the
+count; the building blocks that compose into the schemas below — the hook records, `pluginAuthorSchema`,
+`sourceRevalidationSchema` — are there and deliberately not here.
+
 ### Lenient Schemas (Parse Boundaries)
 
 Used at data entry points with `.passthrough()` for forward compatibility.
@@ -694,8 +730,10 @@ crosses this boundary as an inline `z.string() as z.ZodType<...>` cast inside th
 consumes it. Reasoning and the full inventory are in
 [types/zod-schemas.md](./types/zod-schemas.md), which owns the schema roster.
 
-```
+````
+
 grep -n 'as z.ZodType<\(SkillId\|Domain\|Category\|AgentName\)>' src/cli/lib/schemas.ts
+
 ```
 
 ### Helper Functions
@@ -734,31 +772,35 @@ grep -n 'as z.ZodType<\(SkillId\|Domain\|Category\|AgentName\)>' src/cli/lib/sch
 All data entering the system follows one of these validated paths:
 
 ```
-CLI flags     --> oclif type checking --> downstream semantic validation (validateSourceFormat)
-YAML files    --> readFileSafe(sizeLimit) --> parseYaml() --> schema.safeParse()
-JSON files    --> readFileSafe(sizeLimit) --> JSON.parse() --> schema.safeParse() or schema.parse()
-TS configs    --> fileExists() --> jiti.import() --> optional schema.safeParse()
-                  (project config: missing => null; present-but-broken => throw ConfigLoadError)
+
+CLI flags --> oclif type checking --> downstream semantic validation (validateSourceFormat)
+YAML files --> readFileSafe(sizeLimit) --> parseYaml() --> schema.safeParse()
+JSON files --> readFileSafe(sizeLimit) --> JSON.parse() --> schema.safeParse() or schema.parse()
+TS configs --> fileExists() --> jiti.import() --> optional schema.safeParse()
+(project config: missing => null; present-but-broken => throw ConfigLoadError)
 Plugin registry --> readFileSafe(MAX_CONFIG_FILE_SIZE) --> JSON.parse() --> installedPluginsSchema.safeParse()
-                  (listRegisteredPluginInstalls THROWS on invalid; resolvePluginInstallPaths degrades to [])
-Shell output  --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (Zod)
+(listRegisteredPluginInstalls THROWS on invalid; resolvePluginInstallPaths degrades to [])
+Shell output --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (Zod)
+
 ```
 
 ### Data OUT: Generation Chain
 
 ```
+
 Project config --> reconcileProjectSplitAgainstGlobal() (self-heal masks, then mask collisions)
-                   --> writeProjectConfigPair() --> JSON.parse(JSON.stringify(x)) to strip undefined
-                   --> generateConfigSource() --> writeFile()
-Global pair    --> config-gate/index.ts entry opens withGateToken(...) around the whole flow
-                   --> classifyGlobalChange() (tier T1..T4) --> writeIfChanged() --> writeFile()
-                   --> propagateGlobalChangesToProjects() --> recompilePropagated()   [T1]
-Config types   --> reconcileTypesFromDisk
-                   --> {pair-writer.renderStandaloneTypes | regenerateConfigTypes} --> writeFile()
-Agent data     --> sanitizeCompiledAgentData() --> Liquid template rendering --> writeFile()
-Skill files    --> validateSkillPath() (traversal check) --> copy()
+--> writeProjectConfigPair() --> JSON.parse(JSON.stringify(x)) to strip undefined
+--> generateConfigSource() --> writeFile()
+Global pair --> config-gate/index.ts entry opens withGateToken(...) around the whole flow
+--> classifyGlobalChange() (tier T1..T4) --> writeIfChanged() --> writeFile()
+--> propagateGlobalChangesToProjects() --> recompilePropagated() [T1]
+Config types --> reconcileTypesFromDisk
+--> {pair-writer.renderStandaloneTypes | regenerateConfigTypes} --> writeFile()
+Agent data --> sanitizeCompiledAgentData() --> Liquid template rendering --> writeFile()
+Skill files --> validateSkillPath() (traversal check) --> copy()
 Shell commands --> validate{PluginPath|PluginName|MarketplaceSource}() --> spawn() with args array
-Deletions      --> detectUninstallTarget() --> buildRemovalPlan() --> confirm --> remove() + removeDirIfEmpty()
+Deletions --> detectUninstallTarget() --> buildRemovalPlan() --> confirm --> remove() + removeDirIfEmpty()
+
 ```
 
 ### Shell-Output Boundaries (Now Zod-Validated)
@@ -768,3 +810,4 @@ Deletions      --> detectUninstallTarget() --> buildRemovalPlan() --> confirm --
 | `claudePluginMarketplaceList()` in `exec.ts` | JSON.parse of Claude CLI stdout, then `marketplaceInfoListSchema.safeParse()` (`z.ZodType<MarketplaceInfo[]>`); returns `[]` and warns on failure |
 
 The prior gap (only `Array.isArray()`, no schema) is closed — the Claude CLI marketplace-list output is now validated per-element by a Zod array schema. This boundary is low-risk regardless since the data comes from the locally-installed Claude CLI binary (trusted source), not from user or network input.
+```

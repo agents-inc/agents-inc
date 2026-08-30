@@ -24,7 +24,7 @@ related:
   - reference/concepts/scope-system.md
   - reference/commands/index.md
   - reference/component-patterns.md
-last_validated: 2026-07-30
+last_validated: 2026-08-30
 ---
 
 # Architecture Overview
@@ -44,18 +44,28 @@ last_validated: 2026-07-30
 
 ## Technology Stack
 
-| Layer             | Library              | Version     | Purpose                                      |
-| ----------------- | -------------------- | ----------- | -------------------------------------------- |
-| CLI Framework     | oclif                | @oclif/core | Command parsing, flags, plugins, hooks       |
-| Terminal UI       | Ink + React          | ink v7      | Interactive wizard, prompts, terminal render |
-| State Management  | Zustand              | v5          | Wizard state store                           |
-| Schema Validation | Zod                  | v4.3.6      | YAML/JSON parse boundaries                   |
-| Template Engine   | LiquidJS             | -           | Agent prompt compilation                     |
-| Config Loader     | jiti                 | -           | TypeScript config file loading at runtime    |
-| YAML              | yaml                 | -           | Config/matrix/metadata parsing               |
-| Utilities         | Remeda               | v2.33.6     | Functional array/object utilities            |
-| File System       | fs-extra + fast-glob | -           | File operations and globbing                 |
-| Testing           | Vitest               | -           | Unit, integration, and command tests         |
+Ranges are `packages/cli/package.json`'s and are not copied here; the shared-tool majors every
+workspace must agree on are [monorepo-layout.md](./monorepo-layout.md) § One answer per tool.
+
+| Layer             | Library              | Purpose                                                         |
+| ----------------- | -------------------- | --------------------------------------------------------------- |
+| CLI Framework     | `@oclif/core`        | Command parsing, flags, plugins, hooks                          |
+| Terminal UI       | Ink + React          | Interactive wizard, prompts, terminal render                    |
+| State Management  | Zustand              | Wizard state store                                              |
+| Schema Validation | Zod                  | YAML/JSON parse boundaries                                      |
+| Template Engine   | LiquidJS             | Agent prompt compilation — declared by `@workspace/compile` too |
+| Config Loader     | jiti                 | TypeScript config file loading at runtime                       |
+| YAML              | yaml                 | Config/matrix/metadata parsing                                  |
+| Utilities         | Remeda               | Functional array/object utilities                               |
+| File System       | fs-extra + fast-glob | File operations and globbing                                    |
+| Testing           | Vitest               | Unit, integration, and command tests                            |
+
+**Four workspace packages are devDependencies that tsup bundles into `dist/`.**
+`@workspace/compile` holds the pure renderers (config source, config-types source, agent source,
+the Liquid engine, the vendored agent corpus) and the path vocabulary `consts.ts` re-exports;
+`@workspace/matrix` holds the browser-safe catalogue and the seed wire schema;
+`@workspace/api` is the typed worker client; `@workspace/api-mocks` is the msw description of that
+worker. Re-derive the set with `grep -n '"@workspace/' packages/cli/package.json`.
 
 ## Directory Structure
 
@@ -64,21 +74,24 @@ src/cli/
   index.ts                  # CLI entry: oclif run()
   base-command.ts           # BaseCommand class (shared flags, error handling)
   config-exports.ts         # Public API re-exports for agents-inc/config
-  consts.ts                 # ALL global constants (paths, colors, symbols, limits)
+  consts.ts                 # Global constants (colors, symbols, limits, size gates). The PATH
+                            #   vocabulary — DIRS, STANDARD_FILES, CLAUDE_DIR, CLI_INVOKE_COMMAND and
+                            #   the rest — is declared in @workspace/compile and re-exported here,
+                            #   so every call site is unchanged. PROJECT_ROOT and globalInstallRoot()
+                            #   stay declared here because they read the machine.
   commands/                 # oclif command classes (one per CLI command)
-    build/                  # Build subcommands (marketplace, plugins) — no `stack` subcommand
-    import/                 # Import subcommands (skill)
-    new/                    # New subcommands (agent, marketplace, skill) — all feature-gated
+    build/                  # Build subcommands: marketplace.ts, plugins.ts — no `stack` subcommand
+    new/                    # New subcommands: marketplace.ts only — `new agent` and `new skill` retired
     compile.ts              # Compile agents from installed skills
-    doctor.ts               # Health check
+    doctor.ts               # Health check — the former `validate` command folded into it
     edit.tsx                # Edit installed skills (wizard re-entry, per-agent scope)
     eject.ts                # Eject skills/templates to local filesystem
-    init.tsx                # Initialize project (wizard)
+    init.tsx                # Initialize project (wizard); also owns runDashboardFlow
     list.tsx                # Show installation information (Ink component)
     search.ts               # Search for skills across sources (plain ts, no Ink)
+    share.ts                # Publish what is installed here as a seed id (also reads a piped payload)
     uninstall.tsx           # Uninstall project or global install (manifest removal unconditional; no `--all`)
     update.ts               # Refresh the configured marketplaces
-    validate.ts             # Validate installation
   components/               # Ink React components
     render.ts               # THE ONLY caller of ink's render(). Every Ink render in the CLI goes
                             #   through it — never `import { render } from "ink"` in a command or a
@@ -86,18 +99,23 @@ src/cli/
                             #   `interactive: true`, so a real terminal beats Ink's CI guess; off-TTY
                             #   it passes nothing and Ink's own detection stands. An explicit
                             #   `interactive` from the caller always wins (spread order).
-                            #   Five call sites: commands/{init,edit,list}, common/prompt-confirm.tsx,
-                            #   wizard/run-wizard-session.tsx
-    common/                 # Shared UI: confirm, prompt-confirm, select-list, spinner
+                            #   Four call sites: commands/{init,edit,list} and
+                            #   common/prompt-confirm.tsx. run-wizard-session.tsx is NOT one of them —
+                            #   it mounts the wizard through promptValue, which owns the render call.
+    common/                 # Shared UI: confirm, prompt-confirm (owns the only shared render call),
+                            #   removal-plan-confirm, select-list, spinner
     hooks/                  # React hooks for wizard behavior (hook table: reference/component-patterns.md)
     themes/                 # Ink theme (CLI_COLORS -> theme)
     wizard/                 # Wizard step components + utilities
       scroll-affordance.tsx # ScrollAffordance — shared "N more above / N more below" overflow hint
+      skill-agent-summary.tsx # SkillAgentSummary — the diff rows; reads the store, not props, which
+                            #   is why `list` hydrates the store before rendering it
       summary-panel.tsx     # SummaryPanel — the ONE skills/agents summary, rendered by BOTH
                             #   wizard-layout.tsx (the `I` overlay) and step-confirm.tsx.
       wizard-layout.tsx     # Chrome + the in-render terminal-size guard (section 18)
   hooks/
-    init.ts                 # oclif init hook: resolves source, attaches to config
+    init.ts                 # oclif init hook: routes a bare invocation to runDashboardFlow and
+                            #   nothing else. It resolves no marketplace and reads no argv.
   lib/                      # Core business logic (no UI)
     agents/                 # Agent fetching, compilation, recompilation
       list-compiled-agents.ts # listAgentMdFiles() — on-disk compiled-agent enumeration
@@ -147,11 +165,16 @@ src/cli/
     testing/                # Support for the test infrastructure itself, not for any command
       dist-staleness.ts     # assertDistIsFresh() — the vitest.global-setup.ts guard's whole body
     wizard/                 # Build step logic + session diff (pure functions): computeScopeDiff(), skillSlotKey(), agentSlotKey(), deriveScopeBadges(), formatScopeTag(), orderDomains(), buildCategoriesForDomain()
-    compiler.ts             # Liquid template engine, agent/skill compilation
+    seed/                   # The shared-configuration round trip: payload build, publish, fetch,
+                            #   piped read, external skills, seed -> wizard, seed -> config apply
+    compile-seat.ts         # Binds the CLI's catalogue into @workspace/compile's renderer seat
+    compiler.ts             # Reads agent partials, resolves template roots; re-exports the
+                            #   sanitizers and renderers from @workspace/compile/agent-source
+    content-validator.ts    # Installed-content checks reached from `doctor`
     exit-codes.ts           # Named EXIT_CODES constants
     marketplace-generator.ts # Marketplace.json generation
+    marketplace-scaffold.ts  # `new marketplace` scaffold writer
     metadata-keys.ts        # Metadata key constants
-    output-validator.ts     # Compiled agent output validation
     permission-checker.tsx  # Claude Code permissions check
     resolver.ts             # Skill/agent reference resolution
     schema-validator.ts     # Zod error formatting (formatZodErrors, formatZodIssue)
@@ -179,8 +202,10 @@ src/cli/
     exec.ts                 # Shell command execution (claude plugin install/uninstall)
     frontmatter.ts          # YAML frontmatter extraction
     fs.ts                   # File system wrappers (fs-extra + fast-glob)
-    logger.ts               # log(), warn(), verbose(), setVerbose()
+    logger.ts               # log(), warn(), verbose(), setVerbose(), and the buffering window
     messages.ts             # All user-facing message constants
+    open-url.ts             # openUrl() — the platform link opener, over exec.ts
+    read-stream.ts          # readAllOf() — drains stdin for `share --stdin`
     string.ts               # truncateText(), toTitleCase() string utilities
     terminal.ts             # clearTerminalScreen(), isTerminalLargeEnough(),
                             #   formatTerminalTooSmallMessage() — the shared size gate (section 18)
@@ -205,7 +230,9 @@ Command.run() (commands/init.tsx)
   -> runWizardSession({ hydrate, props }) (components/wizard/run-wizard-session.tsx)
        -> hydrateIntoStartupBand() -- hydrates the store inside a logger buffering
           window, appending what hydration warned to what the load said
-       -> render(<Wizard version logo installedSkillIds initialAgents startupMessages />)
+       -> promptValue(<Wizard ... />) (components/common/prompt-confirm.tsx), which
+          owns the render() call -- three endings settle one promise: completed,
+          cancelled, or the Ink app exited having chosen neither
   |
   v
 Wizard (Ink/React UI)
@@ -228,6 +255,11 @@ Installation (commands use operations layer as composable building blocks)
        -> returns GateReport { globalWritten, changes, propagated, recompile }
   -> compileAgents() / compileAgentsAllScopes() compiles agent prompts for this install
   -> init.tsx / edit.tsx render GateReport.recompile — the work is already done
+
+Round trip (out and back)
+  -> `share` / `edit --ui`: seedPayloadForInstallation() -> publishSeedConfig() -> an id
+  -> `init --from` / `edit --from`: fetchSeedConfig() -> seedToWizardResult() -> WizardResultV2
+  -> `share --stdin` reads a payload a producer outside this repository wrote (boundary-map 1.5)
   |
   v
 Compilation (lib/compiler.ts)
@@ -253,10 +285,19 @@ BaseCommand provides:
        This is the STARTUP gate, not the only one -- WizardLayout enforces the
        same constant every render. See section 18. Uses clearTerminal() ->
        clearTerminalScreen() from utils/terminal.ts)
-  - sourceConfig getter (from init hook)
   - handleError() -> this.error() with EXIT_CODES.ERROR
   - requireMarketplaceOrExit() -> requireMarketplace() (operations/source/require-marketplace.ts)
-  - logSuccess(), logWarning(), logInfo()
+  - installPluginSkillsReported() / announcePluginInstall() / reportPluginInstalls()
+      (the ONE plugin-install guard: hard-errors before any config write on a
+       non-empty `failed`, so no command imports installPluginSkills itself)
+  - ensureConfigReadable() / ensureSavedSkillsReadable()  -- startup abort postures
+  - refuseProjectScopedContentAtHome()  -- shared by both --from producers
+  - reportValidationErrors(), reportUnassignedSkills(), reportPropagatedRecompile()
+  - recordIncompleteWork() / hasIncompleteWork / reportIncompleteWork() / exitIfWorkIncomplete()
+  - resolveBrandingName(), clearTerminal(), logSuccess(), logWarning(), logInfo()
+
+There is NO sourceConfig getter. It went with the init hook's argv extraction;
+`init` reads flags.marketplace from oclif's own parse instead (section 2).
 ```
 
 Commands are discovered via oclif pattern strategy from `dist/commands/`.
@@ -265,7 +306,15 @@ Commands are discovered via oclif pattern strategy from `dist/commands/`.
 
 File: `src/cli/hooks/init.ts`
 
-Runs before every command. For `init` alone it extracts `--marketplace` / `-m` from raw argv (before oclif parses); it then calls `resolveSource()` with the caller identity (`"init"` for the init command, `"stored"` for every other) and attaches `ResolvedConfig` to the oclif config object.
+**Its whole body is the bare-invocation dashboard.** When `options.id` is `undefined` — no command
+named — it calls `runDashboardFlow(process.cwd(), options.config, "standalone")` from
+`commands/init.js` and exits `EXIT_CODES.SUCCESS` if the dashboard was shown. It performs no argv
+extraction, resolves no marketplace and attaches nothing to the oclif config.
+
+The caller identity `resolveSource` reads is passed by the command instead: `init.tsx` hands
+`caller: "init"` and `sourceFlag: flags.marketplace` to `loadSkillsMatrixFromSource`, which is where
+`resolveSource()` runs. Every other site passes `caller: "stored"` — re-derive with
+`grep -rn 'resolveSource(' src --include='*.ts' --include='*.tsx' --exclude='*.test.ts'`.
 
 ### 3. Source Resolution Precedence
 
@@ -277,7 +326,10 @@ Runs before every command. For `init` alone it extracts `--marketplace` / `-m` f
         project config.
 ```
 
-Implemented in: `src/cli/lib/configuration/config.ts` (`resolveSource()`)
+Implemented in: `src/cli/lib/configuration/config.ts` (`resolveSource()`), which reads the env var
+through `SOURCE_ENV_VAR` — the identifier kept the old word, its value did not. The stored
+marketplace NAME travels beside the resolved ref on every return, so a caller can report which
+marketplace answered without re-reading the config.
 
 ### 4. Install Modes
 

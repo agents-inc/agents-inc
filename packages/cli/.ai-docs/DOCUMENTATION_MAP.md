@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-08-06
+last_validated: 2026-08-30
 ---
 
 # Documentation Map
@@ -170,7 +170,7 @@ because what a total counts is the half that drifts silently. "TypeScript files"
 `.tsx` here, `.d.ts` included; `src/cli/` has both extensions and `e2e/` has none of the second, so
 a reader who guesses wrong is right about one of them and cannot tell which.
 
-- **`src/cli/`:** 406 TypeScript files — 172 specs (`*.test.ts(x)`), the rest production and test
+- **`src/cli/`:** 447 TypeScript files — 199 specs (`*.test.ts(x)`), the rest production and test
   support.
 
   ```
@@ -202,7 +202,7 @@ then `prettier --write` over staged `{apps,packages}` sources, and `prepublishOn
 `reference/monorepo-layout.md` carries the two-tier hook split (pre-commit vs pre-push) that
 invokes it.
 
-Config is `eslint.config.js` (ESLint 9 flat config via `defineConfig()`), over
+Config is `eslint.config.js` (ESLint 10 flat config via `defineConfig()`), over
 `src/**/*.{ts,tsx}`, `e2e/**/*.ts` and `scripts/**/*.ts`. It does not compose the recommended sets
 itself — it extends `baseConfig` and `typeCheckedConfig(import.meta.dirname)` from
 `@workspace/eslint-config/base`, which between them bring `js.configs.recommended`,
@@ -227,7 +227,7 @@ not merge across config blocks, adding only `caughtErrorsIgnorePattern`.
 | `eslint-plugin-react-hooks`                                 | `src/cli/**/*.tsx`, `components/**/*.ts`, `stores/**/*.ts` | `rules-of-hooks` + `exhaustive-deps`, both `error` — **exactly those two**, because the v7 recommended set's React-Compiler rules outlaw Ink's measure-on-a-ref idiom                                                                                                                                                                                                                                                  |
 | `no-restricted-syntax` (task IDs)                           | Test files and fixtures                                    | Bans task IDs in `describe`/`it`/`test` names and `expect` messages; file-level JSDoc is the sanctioned home                                                                                                                                                                                                                                                                                                           |
 | `@typescript-eslint/triple-slash-reference: off`            | `**/*.d.ts`                                                | The correct idiom in a declaration file; for `@lydell/node-pty` it is the only reachable one                                                                                                                                                                                                                                                                                                                           |
-| `no-restricted-imports` / `no-restricted-syntax` (L2 zones) | Five nested zones                                          | Config-gate enforcement: private-module bans, raw-write bans, pair-renderer bans. Every block above excludes `src/cli/lib/config-gate/**`, so that zone inherits nothing from them and restates the vacuous-comparison selectors itself. `src/cli/lib/__tests__/spec-gates.test.ts` is the mutation proof for the selector family: per zone it asserts the vacuous shape IS reported and the discriminating one is not |
+| `no-restricted-imports` / `no-restricted-syntax` (L2 zones) | Nested zones, widest first                                 | Config-gate enforcement: private-module bans, raw-write bans, pair-renderer bans. Every block above excludes `src/cli/lib/config-gate/**`, so that zone inherits nothing from them and restates the vacuous-comparison selectors itself. `src/cli/lib/__tests__/spec-gates.test.ts` is the mutation proof for the selector family: per zone it asserts the vacuous shape IS reported and the discriminating one is not |
 
 `reference/component-patterns.md` carries the react-hooks carve-out; `reference/boundary-map.md`
 carries the config-gate enforcement layers.
@@ -251,7 +251,10 @@ unsanctioned.
 | `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-section-scroll.ts`     | Measure-every-render effect                                                                               |
 | `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-panel-scroll.ts`       | Measure-every-render effect                                                                               |
 
-**Open gap: no generator check runs at pre-commit.** There are four. `generate:schemas:check` runs
+**Open gap: none of THIS package's generator checks runs at pre-commit.** There are four. (The
+commit hook does run one generator check — `db:generate:check`, which is `apps/server`'s drizzle
+migrations under the same `...[HEAD]` filter — so "no generator check runs at pre-commit" is no
+longer true as written and was never about that one.) `generate:schemas:check` runs
 in `ci.yml`'s `check-cli` job and in `prepublishOnly`; `generate:matrix:check` and
 `generate:compile:check` both run in `ci.yml`'s `check-web` job, from `packages/cli`;
 `generate:types:check` runs in `prepublishOnly` only, because `generate:types` reads a `skills`
@@ -289,13 +292,17 @@ one is the only way it runs**:
 
 | Checker                      | Judges                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-boundary-union-casts` | A cast that widens a boundary `string` straight into a generated union. Three compiler predicates, because a grep cannot tell `as SkillId` on a literal from `as SkillId` on a `path.basename(...)`                                                                                                                                                                                         |
+| `check-briefing-contract`    | That the briefing contract stays reachable from the files an agent is told to open — the two `CLAUDE.md` files and `DOCUMENTATION_MAP.md`. It judges no brief, because a brief is not a tracked file; it judges whether the standard a brief is written under can still be found                                                                                                            |
 | `check-enumeration-drift`    | A document's list of names against the membership of the symbol, module or directory it claims to enumerate — and, where a row asks for pairs, the VALUE each named member holds                                                                                                                                                                                                            |
 | `check-finding-citations`    | Every finding cited by basename from `todo/` (all citations) or `changelogs/` (bracketed links only) still exists in `agent-findings/` or `agent-suggestions/`. `.ai-docs/` is deliberately out of scope, because `agent-findings/INDEX.md` names deleted findings on purpose                                                                                                               |
 | `check-findings-frontmatter` | Every `agent-findings/` block parses, declares a `root_cause` read out of `TEMPLATE.md`'s own frontmatter, and is not an uncross-linked duplicate                                                                                                                                                                                                                                           |
 | `check-mirrored-constants`   | Every structural value `e2e/pages/constants.ts` MIRRORS still reads what the product declares — `EXIT_CODES`, `TERMINAL_SIZE.SHORT.rows` against the size gate, and `SOURCE_PATHS.PLUGINS_DIST`. The numeric and nested half of the boundary `check-screen-sentinels` draws; `EXIT_CODES` is compared one-directionally, because the mirror legitimately names statuses the CLI never emits |
 | `check-screen-sentinels`     | An `e2e/pages/constants.ts` literal a page object WAITS on against the string the product paints — drift there times out rather than asserting                                                                                                                                                                                                                                              |
 | `check-spawn-doors`          | Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK`. Judged per DOOR, following a spawn's env expression through the local declarations it names, and recognising a door by the binary path it hands the spawn rather than by the constant it reaches it through                                                                                                 |
-| `check-symbol-citations`     | Every `@link` citation in this package's TypeScript resolves to a symbol, asked of the type checker over the three tsconfig projects `typecheck` names. The only check here that builds a `ts.Program`; a citation in a `//` comment is outside it, and so is every other workspace                                                                                                         |
+| `check-spec-name-vocabulary` | That a SCREAMING_SNAKE token in a spec's own NAME still names something this package holds. A test name is the rename surface that can never go red, and only underscored tokens are read, so prose and `CLI` / `YAML` / `JSON` are left alone                                                                                                                                              |
+| `check-symbol-citations`     | Every `@link` citation in this package's TypeScript resolves to a symbol, asked of the type checker over the three tsconfig projects `typecheck` names. A citation in a `//` comment is outside it, and so is every other workspace                                                                                                                                                         |
+| `check-symbol-file-pairs`    | A document's `symbol \| file` table against what the named file DECLARES — not what it mentions, which is why this one needs the compiler too. A helper that moved to a sibling module leaves a row reading as a correct address                                                                                                                                                            |
 
 **A documentation edit can turn that suite red, and that is the point.** After changing any document
 that states a list, run `npx vitest run --project unit scripts/` from `packages/cli`. Which document

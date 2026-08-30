@@ -6,7 +6,7 @@ related:
   - reference/architecture-overview.md
   - reference/boundary-map.md
   - reference/features/operations-layer.md
-last_validated: 2026-07-30
+last_validated: 2026-08-30
 ---
 
 # Dependency Graph
