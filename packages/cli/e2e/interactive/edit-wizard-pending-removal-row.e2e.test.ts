@@ -97,7 +97,7 @@ describe.skipIf(!hasSkillsSource)("edit wizard pending-removal row (real marketp
     configAfterInit = await readTestFile(configTsPath(projectDir));
     // Setup proof: React Router is genuinely a saved project-scoped skill, so a
     // missing Sources row later is the render bug, not a setup miss.
-    expect(configAfterInit).toMatch(/"web-routing-react-router","scope":"project"/);
+    expect(configAfterInit).toMatch(/'web-routing-react-router', scope: 'project'/);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {

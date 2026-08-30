@@ -159,7 +159,7 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       agents: ["web-developer", "api-developer"],
     });
     const globalConfig = await readTestFile(configTsPath(fakeHome));
-    expect(globalConfig).toContain('"scope":"global"');
+    expect(globalConfig).toContain("scope: 'global'");
 
     // D-5: Project config does NOT have api-developer at project scope
     expect(
@@ -225,7 +225,7 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
       agents: ["api-developer", "web-developer"],
     });
     const projectConfig = await readTestFile(configTsPath(projectDir));
-    expect(projectConfig).toContain('"scope":"project"');
+    expect(projectConfig).toContain("scope: 'project'");
 
     // D-6: Global config STILL has web-developer (global untouched)
     await expect({ dir: fakeHome }).toHaveConfig({
@@ -305,7 +305,7 @@ describe("dual-scope edit lifecycle -- scope changes via S hotkey", () => {
         },
       });
       const projectConfig = await readTestFile(configTsPath(projectDir));
-      expect(projectConfig).toContain('"scope":"project"');
+      expect(projectConfig).toContain("scope: 'project'");
 
       await result.destroy();
     },

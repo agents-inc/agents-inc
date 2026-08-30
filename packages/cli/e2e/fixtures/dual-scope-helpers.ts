@@ -315,23 +315,6 @@ async function finalizeEdit(
 }
 
 /**
- * Runs Phase A + Phase B to establish dual-scope state.
- */
-export async function setupDualScope(
-  source: E2ESource,
-  fakeHome: string,
-  projectDir: string,
-): Promise<void> {
-  // Phase A: Init global
-  const phaseA = await initGlobal(source, fakeHome);
-  expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
-
-  // Phase B: Init project with scope toggling
-  const phaseB = await initProject(source, fakeHome, projectDir);
-  expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
-}
-
-/**
  * Runs Phase A: Init from HOME directory with eject mode (local sources).
  * Like initGlobal() but navigates through sources step to set all local.
  */
@@ -448,6 +431,15 @@ export async function initProjectWithProjectScopedAgent(
 /**
  * Runs Phase A (with eject) + Phase B to establish dual-scope state
  * where all skills are installed in eject mode.
+ *
+ * There is no plugin-mode counterpart and there was never a state one could reach: the shared
+ * plain source ships no `.claude-plugin/marketplace.json`, so plugin install mode has no
+ * marketplace to resolve and `init` refuses the whole run. Phase B sets every source local
+ * anyway, so eject is also what makes the two halves agree. A `setupDualScope` taking the
+ * {@link initGlobal} route sat here unused until 2026-08-26 for exactly that reason, and was
+ * deleted rather than left as a second name for this one. A dual-scope flow that genuinely needs
+ * a PLUGIN global drives {@link initGlobal} against a plugin fixture directly — see
+ * `lifecycle/dual-scope-edit-mixed-sources.e2e.test.ts`.
  */
 export async function setupDualScopeWithEject(
   source: E2ESource,

@@ -1,0 +1,41 @@
+{
+  "name": "@workspace/compile",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "//generate": "Delegates: packages/cli is the single writer of src/generated/**, and its scripts/generate-compile-package.ts is what emits them. Kept as an entry point here because the files it writes carry a header telling the reader to run it from this package.",
+  "scripts": {
+    "generate": "cd ../cli && bun run generate:compile",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@workspace/matrix": "workspace:*",
+    "liquidjs": "^10.24.0",
+    "remeda": "^2.33.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/prettier-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "@workspace/vitest-config": "workspace:*",
+    "eslint": "^10",
+    "globals": "^17",
+    "typescript": "~6",
+    "vitest": "^4"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./paths": "./src/paths.ts",
+    "./config-source": "./src/config-source.ts",
+    "./config-types-source": "./src/config-types-source.ts",
+    "./agent-source": "./src/agent-source.ts",
+    "./engine": "./src/engine.ts",
+    "./seed-to-config": "./src/seed-to-config.ts",
+    "./corpus": "./src/generated/corpus.ts",
+    "./preview": "./src/preview.ts"
+  }
+}

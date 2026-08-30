@@ -30,7 +30,7 @@ import "../matchers/setup.js";
  *    The exit code is NOT the assertion that matters, though — a fix that errors and still
  *    lets the write happen satisfies it. The config pair was watched separately, with the
  *    exit assertion temporarily removed so the run reached it: pre-fix `config.ts` held
- *    `"origin":"eject"` for the skill whose copy the destination had refused, which is the
+ *    `origin: 'eject'` for the skill whose copy the destination had refused, which is the
  *    orphan row this spec exists for.
  *  - Test two: the exit code under a `this.warn`, and — the more informative one — the
  *    `Could not update config` assertion when the skills directory is locked as well. That

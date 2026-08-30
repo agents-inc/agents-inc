@@ -216,17 +216,21 @@ const GATE_PRIVATE_IMPORT =
 const GATE_PRIVATE_IMPORT_ALLOWED = [
   // Holds the L3 tripwire; needs `assertGateToken`.
   "src/cli/utils/fs.ts",
-  // Refuses a home-directory types write by name; needs `GlobalPairWriteViolation`.
-  "src/cli/lib/configuration/config-types-writer.ts",
+  // Refuses a home-directory types write by name; needs `GlobalPairWriteViolation`. It was
+  // `config-types-writer.ts` until the renderers moved into `@workspace/compile`; what is left
+  // in the CLI is this module, and it is the half that writes.
+  "src/cli/lib/configuration/config-types-io.ts",
 ];
 
 /**
  * The privileged zone: the gate, plus the two modules that must name the pair to
  * do their job.
  *
- * `config-types-writer.ts` renders AND writes the types half — it is the
- * implementation the gate deep-imports. Eslint (L2c) keeps every other caller
- * off it, and its own first line refuses the home directory.
+ * `config-types-io.ts` writes the types half — it is the implementation the gate
+ * deep-imports, through the `config-types-writer.ts` facade that re-exports it.
+ * Eslint (L2c) keeps every other caller off it, and its own first line refuses the
+ * home directory. The RENDERING half moved to `@workspace/compile` and writes
+ * nothing, so it drops out of this scan the way `config-writer.ts` already had.
  *
  * `utils/fs.ts` names the pair in order to REFUSE it: it holds the L3 tripwire,
  * and a guard that compares a write target against the pair's paths necessarily
@@ -237,7 +241,7 @@ const GATE_PRIVATE_IMPORT_ALLOWED = [
  */
 const PRIVILEGED_ZONE = [
   "src/cli/lib/config-gate/**",
-  "src/cli/lib/configuration/config-types-writer.ts",
+  "src/cli/lib/configuration/config-types-io.ts",
   "src/cli/utils/fs.ts",
 ];
 

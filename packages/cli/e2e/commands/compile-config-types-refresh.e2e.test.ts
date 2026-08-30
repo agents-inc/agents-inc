@@ -75,9 +75,9 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     const firstTypes = await readTestFile(configTypesTsPath(projectDir));
     const firstSkillId = readGeneratedUnion(firstTypes, "SkillId");
     expect(firstSkillId, "config-types.ts must declare a SkillId alias").toBeDefined();
-    expect(firstSkillId?.trim()).toBe(`"${E2E_SKILL.react.id}"`);
+    expect(firstSkillId?.trim()).toBe(`'${E2E_SKILL.react.id}'`);
     expect(firstTypes, "union must follow config.ts, not installed files").not.toContain(
-      `"${E2E_SKILL.vitest.id}"`,
+      `'${E2E_SKILL.vitest.id}'`,
     );
 
     // Hand-edit: remove react, add vitest (installed) and web-mocks-msw (never
@@ -111,9 +111,9 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // ships it — so the union carries no section headings at all.
     const secondSkillId = readGeneratedUnion(secondTypes, "SkillId");
     expect(secondSkillId, "config-types.ts must declare a SkillId alias").toBeDefined();
-    expect(secondSkillId?.trim()).toBe(`"${E2E_SKILL.vitest.id}" | "web-mocks-msw"`);
-    expect(secondTypes).not.toContain(`"${E2E_SKILL.react.id}"`);
-    expect(secondTypes).toContain(`export type AgentName = "${E2E_AGENT["web-developer"].name}";`);
+    expect(secondSkillId?.trim()).toBe(`'${E2E_SKILL.vitest.id}' | 'web-mocks-msw'`);
+    expect(secondTypes).not.toContain(`'${E2E_SKILL.react.id}'`);
+    expect(secondTypes).toContain(`export type AgentName = '${E2E_AGENT["web-developer"].name}'`);
 
     // Compile refreshes config-types.ts only — the hand-edited config.ts must
     // stay byte-identical, and the agents must still be compiled
@@ -154,8 +154,8 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     const types = await readTestFile(configTypesTsPath(projectDir));
     const skillId = readGeneratedUnion(types, "SkillId");
     expect(skillId, "config-types.ts must declare a SkillId alias").toBeDefined();
-    expect(skillId?.trim()).toBe(`// Custom\n  | "${E2E_SKILL.react.id}"`);
-    expect(types).toContain(`export type AgentName = "${E2E_AGENT["web-developer"].name}";`);
+    expect(skillId?.trim()).toBe(`// Custom\n  '${E2E_SKILL.react.id}'`);
+    expect(types).toContain(`export type AgentName = '${E2E_AGENT["web-developer"].name}'`);
     expect(types, "stale stub must be replaced").not.toContain("export type SkillId = string;");
 
     // The refresh touches only config-types.ts — config.ts stays byte-identical
@@ -228,8 +228,8 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // Global scope: standalone unions narrowed to the global config's entries
     const globalTypes = await readTestFile(configTypesTsPath(globalHome));
     expect(globalTypes).not.toContain("as GlobalSkillId");
-    expect(globalTypes).toContain('export type SkillId = "web-testing-cypress-e2e";');
-    expect(globalTypes).not.toContain('"web-mocks-msw"');
+    expect(globalTypes).toContain("export type SkillId = 'web-testing-cypress-e2e'");
+    expect(globalTypes).not.toContain("'web-mocks-msw'");
     expect(globalTypes, "stale stub must be replaced").not.toContain(
       "export type SkillId = string;",
     );
@@ -237,7 +237,7 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     // Project scope: import-and-extend form on top of the fresh global types
     const projectTypes = await readTestFile(configTypesTsPath(projectDir));
     expect(projectTypes).toContain("SkillId as GlobalSkillId");
-    expect(projectTypes).toContain('export type SkillId = GlobalSkillId | "web-mocks-msw"');
+    expect(projectTypes).toContain("export type SkillId = GlobalSkillId | 'web-mocks-msw'");
     expect(projectTypes).not.toContain('"web-testing-cypress-e2e"');
     expect(projectTypes, "stale stub must be replaced").not.toContain(
       "export type SkillId = string;",

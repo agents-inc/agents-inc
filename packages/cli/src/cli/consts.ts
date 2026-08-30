@@ -3,6 +3,33 @@ import path from "path";
 import { fileURLToPath } from "url";
 import type { Domain, InstallMode } from "./types/index.js";
 
+/**
+ * The pure half of this file lives in `@workspace/compile/paths` and is re-exported here, so no
+ * call site moved. What stays declared below is the half that reads the machine: `PROJECT_ROOT`
+ * is derived with `fileURLToPath(import.meta.url)` at module load and `globalInstallRoot()` calls
+ * `os.homedir()` — and every renderer the editor now shares reached this module for the path
+ * vocabulary alone.
+ */
+import { DEFAULT_PLUGIN_NAME } from "@workspace/compile";
+
+export {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  CLI_INVOKE_COMMAND,
+  DEFAULT_PLUGIN_NAME,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  DIRS,
+  EJECT_SOURCE,
+  GLOBAL_CONFIG_NAME,
+  LOCAL_PSEUDO_CATEGORY,
+  LOCAL_SKILLS_PATH,
+  PLUGIN_MANIFEST_FILE,
+  SKILLS_DIR_PATH,
+  SOURCE_SRC_DIR,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "@workspace/compile";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -12,11 +39,8 @@ const isInDist = __dirname.includes("/dist");
 const CLI_ROOT = isInDist ? path.resolve(__dirname, "..") : path.resolve(__dirname, "../..");
 export const PROJECT_ROOT = CLI_ROOT;
 
-export const CLAUDE_DIR = ".claude";
-export const CLAUDE_SRC_DIR = ".claude-src";
 export const PLUGINS_SUBDIR = "plugins";
 export const PLUGIN_MANIFEST_DIR = ".claude-plugin";
-export const PLUGIN_MANIFEST_FILE = "plugin.json";
 export const MARKETPLACE_JSON = "marketplace.json";
 
 /**
@@ -53,7 +77,6 @@ export const PLUGINS_DIST_PATH = "dist/plugins";
 export function marketplaceManifestPath(dir: string): string {
   return path.join(dir, PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
 }
-export const DEFAULT_PLUGIN_NAME = "agents-inc";
 
 /**
  * Home directory used as the root for global installations, read when it is asked for.
@@ -79,23 +102,6 @@ export function globalInstallRoot(): string {
 export function cacheRoot(): string {
   return path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
 }
-
-/**
- * Promoted invocation prefix shown in user-facing messages (e.g. "Run '<CLI_INVOKE_COMMAND> init'").
- *
- * `bin` in package.json registers BOTH names — `agents-inc` (primary, matching this constant and
- * the package name) and `agentsinc` (kept so existing global installs keep working). A global
- * install therefore answers to either spelling.
- *
- * `agents-inc` rather than `agentsinc` because it is the published package name, so `npx
- * agents-inc` resolves with nothing installed, and it is what agentsinc.sh hands people when they
- * copy an install command.
- *
- * CONVENTION: every user-facing instruction in this repo — messages, docs, code comments, agent
- * playbooks — writes commands in this `npx agents-inc <cmd>` form. Prose that merely names a
- * command ("the `agents-inc list` table") does not.
- */
-export const CLI_INVOKE_COMMAND = "npx agents-inc";
 
 /**
  * The editor — the web half of the product, where a configuration is built without the wizard
@@ -129,60 +135,6 @@ export const EDIT_PROJECT_SETUP_FLAG = "project-setup";
 export const SKILL_CATEGORIES_PATH = "config/skill-categories.ts";
 export const SKILL_RULES_PATH = "config/skill-rules.ts";
 export const STACKS_FILE_PATH = "config/stacks.ts";
-/** Source root directory inside a marketplace/source repo (holds skills/, agents/, etc.). */
-export const SOURCE_SRC_DIR = "src";
-export const SKILLS_DIR_PATH = `${SOURCE_SRC_DIR}/skills`;
-export const LOCAL_SKILLS_PATH = ".claude/skills";
-
-/** Synthetic source name for skills copied into the project (ejected) rather than installed as plugins. */
-export const EJECT_SOURCE = "eject";
-
-/** Pseudo-category assigned to local skills — not a `Category` union member; category traversals skip it. */
-export const LOCAL_PSEUDO_CATEGORY = "local";
-
-export const DIRS = {
-  agents: "src/agents",
-  skills: SKILLS_DIR_PATH,
-  stacks: "src/stacks",
-  templates: "src/agents/_templates",
-} as const;
-
-/** Single source for the metadata file name shared by skill and agent metadata. */
-const METADATA_YAML_FILE = "metadata.yaml";
-
-export const STANDARD_FILES = {
-  SKILL_MD: "SKILL.md",
-  METADATA_YAML: METADATA_YAML_FILE,
-  METADATA_JSON: "metadata.json",
-  CONFIG_YAML: "config.yaml",
-  SKILL_CATEGORIES_TS: "skill-categories.ts",
-  SKILL_RULES_TS: "skill-rules.ts",
-  AGENT_METADATA_YAML: METADATA_YAML_FILE,
-  PLUGIN_JSON: PLUGIN_MANIFEST_FILE,
-  CONFIG_TS: "config.ts",
-  CONFIG_TYPES_TS: "config-types.ts",
-  CLAUDE_MD: "CLAUDE.md",
-  README_MD: "README.md",
-  REFERENCE_MD: "reference.md",
-  IDENTITY_MD: "identity.md",
-  PLAYBOOK_MD: "playbook.md",
-  OUTPUT_MD: "output.md",
-  CRITICAL_REQUIREMENTS_MD: "critical-requirements.md",
-  CRITICAL_REMINDERS_MD: "critical-reminders.md",
-  SETTINGS_JSON: "settings.json",
-  SETTINGS_LOCAL_JSON: "settings.local.json",
-  PACKAGE_JSON: "package.json",
-} as const;
-
-export const STANDARD_DIRS = {
-  EXAMPLES: "examples",
-  SCRIPTS: "scripts",
-  SKILLS: "skills",
-  AGENTS: "agents",
-  /** Legacy per-project template override directory (`.claude/templates`). */
-  TEMPLATES: "templates",
-} as const;
-
 export const DEFAULT_VERSION = "1.0.0";
 
 // "0.0.0" indicates no version was explicitly set
@@ -249,9 +201,6 @@ export const GITHUB_SOURCE = {
   GITHUB_PREFIX: "github:",
   GH_PREFIX: "gh:",
 } as const;
-
-/** Name written into a global-scope config's `name` field (`~/.claude-src/config.ts`). */
-export const GLOBAL_CONFIG_NAME = "global";
 
 /** Strict kebab-case: starts with letter, segments separated by single hyphens, no trailing hyphens */
 export const KEBAB_CASE_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -343,16 +292,9 @@ export const DEFAULT_BRANDING = {
 } as const;
 
 /**
- * Fallback name for the default public marketplace when marketplace.json is
- * unavailable. Same value as `DEFAULT_PLUGIN_NAME` but a distinct concept: this
- * is the resolved source/marketplace name, that is the plugin bundle name.
- */
-export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME;
-
-/**
  * The npm package the public catalogue publishes from, and the one thing that
  * tells the catalogue apart from a marketplace merely calling itself
- * {@link DEFAULT_PUBLIC_SOURCE_NAME}.
+ * `DEFAULT_PUBLIC_SOURCE_NAME` (declared in `@workspace/compile/paths` and re-exported above).
  *
  * Nothing a marketplace ships is unforgeable — every signal is a string in a file
  * its author controls, this one included. What it does is make the reserved

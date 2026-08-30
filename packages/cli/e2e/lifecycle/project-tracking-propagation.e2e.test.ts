@@ -89,7 +89,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
       expect(await fileExists(globalConfigPath), "Global config must exist").toBe(true);
 
       const globalConfig = await readTestFile(globalConfigPath);
-      expect(globalConfig, "Global config must contain projects field").toContain('"projects"');
+      expect(globalConfig, "Global config must contain projects field").toContain("projects:");
 
       // Both project paths should be registered (realpath-normalized)
       const realProject1 = realpathSync(project1Dir);
@@ -187,7 +187,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       expect(
         configTypesContent,
         "Project config-types must name the global skill IDs its config.ts inlines",
-      ).toContain(`"${E2E_SKILL.react.id}"`);
+      ).toContain(`'${E2E_SKILL.react.id}'`);
 
       // Global config should have project registered
       const globalConfigPath = configTsPath(fakeHome);
@@ -317,7 +317,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       expect(
         projectTypesAfter,
         "the extend form must declare the newly-added global skill its config.ts now inlines",
-      ).toContain(`"${E2E_SKILL["vue-composition-api"].id}"`);
+      ).toContain(`'${E2E_SKILL["vue-composition-api"].id}'`);
 
       // Proof the fan-out reached this project rather than leaving it untouched.
       expect(

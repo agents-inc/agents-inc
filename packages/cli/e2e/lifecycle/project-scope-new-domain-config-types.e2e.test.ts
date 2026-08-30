@@ -65,10 +65,10 @@ const NEW_CATEGORY = "api-api";
  * is a different defect. The global pair is the control — an extension is only an extension if
  * the thing it extends lacks the member.
  */
-const GLOBAL_CATEGORY_LINE = `export type Category = "web-framework";`;
-const GLOBAL_DOMAIN_LINE = `export type Domain = "api" | "mobile" | "web";`;
-const PROJECT_CATEGORY_LINE = `export type Category = GlobalCategory | "api-api" | "web-framework";`;
-const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | "api" | "mobile" | "web";`;
+const GLOBAL_CATEGORY_LINE = `export type Category = 'web-framework'`;
+const GLOBAL_DOMAIN_LINE = `export type Domain = 'api' | 'mobile' | 'web'`;
+const PROJECT_CATEGORY_LINE = `export type Category = GlobalCategory | 'api-api' | 'web-framework'`;
+const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | 'api' | 'mobile' | 'web'`;
 
 /**
  * One scratch init in a project directory with no prior global install: react selected on the

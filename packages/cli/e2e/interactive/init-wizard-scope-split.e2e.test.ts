@@ -115,7 +115,7 @@ describe("init wizard — mixed scope config split", () => {
       // SUPPLIES the directory name when the field is absent, so a structural
       // read alone would pass over a config that never carried one.
       const projectName = path.basename(projectDir);
-      expect(await readTestFile(configTsPath(projectDir))).toContain(`name: "${projectName}"`);
+      expect(await readTestFile(configTsPath(projectDir))).toContain(`name: '${projectName}'`);
       expect((await loadConfigOrFail(projectDir)).name).toBe(projectName);
 
       // A MIXED install writes assignments into both files — a project-scoped

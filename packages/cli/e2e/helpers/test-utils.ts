@@ -12,6 +12,7 @@ import {
 } from "../../src/cli/consts.js";
 import { cliVersion, stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
 import {
   generateConfigSource,
   type ConfigSourceOptions,
@@ -284,8 +285,8 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
  * renders its own JSON writes a file shape the CLI never produces, and every assertion over it is
  * then pinned to the fixture rather than to the product. The two disagreed on all four of the
  * things an assertion can see — field order (the writer canonicalises; `JSON.stringify` keeps
- * insertion order), entry spacing (`{"id":"x"}` against `{ "id": "x" }`, which decides whether a
- * `toContain('"scope":"project"')` matches at all), the typed named variables the writer hoists
+ * insertion order), entry spacing and quoting (`{"id":"x"}` against `{ id: 'x' }`, which decides
+ * whether a `toContain("scope: 'project'")` matches at all), the typed named variables it hoists
  * above the export, and the stack compaction in `compactStackAssignments` that writes an unflagged
  * assignment as a bare id and drops an exclusive category's array wrapper. A spec built on the
  * fixture shape passes over a writer that has changed underneath it, which is the divergence this
@@ -306,7 +307,7 @@ export async function writeProjectConfig(
   const resolved: FixtureProjectConfig = { skills: [], agents: [], ...config };
   const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
   await mkdir(configDir, { recursive: true });
-  const source = generateConfigSource(resolved as ProjectConfig, options);
+  const source = generateConfigSource(resolved as ProjectConfig, matrix, options);
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
   await refuseUnreachableConfig(baseDir, source, options);
 }
@@ -338,7 +339,7 @@ async function refuseUnreachableConfig(
   const reread = await loadProjectConfigFromDir(baseDir);
   if (!reread) return;
 
-  const again = generateConfigSource(reread.config, options);
+  const again = generateConfigSource(reread.config, matrix, options);
   if (again === source) return;
 
   throw new Error(

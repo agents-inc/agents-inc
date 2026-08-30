@@ -145,7 +145,7 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
       const activeNames = agentRows.filter((agent) => !agent.excluded).map((agent) => agent.name);
       expect(activeNames, "the fixture must install at least one agent").not.toStrictEqual([]);
       expect(
-        activeNames.filter((name) => !selectedAgentName?.includes(`"${name}"`)),
+        activeNames.filter((name) => !selectedAgentName?.includes(`'${name}'`)),
         "every active agent row must appear in SelectedAgentName",
       ).toStrictEqual([]);
 

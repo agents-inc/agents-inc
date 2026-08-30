@@ -17,14 +17,24 @@ import ts from "typescript";
  * 1. the SOURCE type is `string` itself — `TypeFlags.String`, not a literal, so a cast between two
  *    known members is not the subject here;
  * 2. the TARGET is a union whose every member is a string literal;
- * 3. the target's declaration lives under {@link GENERATED_DIR}.
+ * 3. the union names a declaration under one of {@link GENERATED_DIRS}.
  *
  * **Scoped by DIRECTORY and never by an on-site comment.** A gate a comment can satisfy is one the
  * next author silences instead of answering, and this repository already has that failure on
  * record. {@link PARSE_BOUNDARIES} names the directories where reading an unvalidated string IS the
  * job; everything else must narrow through a guard rather than assert.
+ *
+ * **Two homes, one union.** `src/cli/types/generated/` is where these are generated;
+ * `scripts/generate-matrix-package.ts` copies that file byte-for-byte to
+ * `packages/matrix/src/vendor/generated/`, which is the declaration every other workspace resolves
+ * to. Same unions, so the same ban — which is why the homes are a LIST rather than a parameter each
+ * invocation supplies. Scoping them per package would let a cast into the vendored copy pass inside
+ * `packages/cli`, and a cast into the original pass everywhere else.
  */
-export const GENERATED_DIR = path.join("types", "generated");
+export const GENERATED_DIRS: readonly string[] = [
+  path.join("types", "generated"),
+  path.join("vendor", "generated"),
+];
 
 /**
  * Directories where a `string` arriving from outside the type system is the whole point.
@@ -33,6 +43,11 @@ export const GENERATED_DIR = path.join("types", "generated");
  * value ENTERS the union rather than a claim about one already inside it. Kept as directories
  * because the exemption is a property of what a module is for, and a per-site marker would let any
  * module claim it.
+ *
+ * Package-RELATIVE, and this list names only the CLI's. A second package earns an entry here by
+ * having a directory whose job is reading unvalidated bytes, not by holding a module that does some
+ * of that among other work — `@workspace/compile`'s seed decode is the live example, and it sits in
+ * a backlog rather than here for exactly that reason.
  */
 export const PARSE_BOUNDARIES: readonly string[] = [path.join("src", "cli", "lib", "loading")];
 
@@ -99,7 +114,7 @@ function widensIntoGeneratedUnion(node: ts.AsExpression, checker: ts.TypeChecker
   const source = checker.getTypeAtLocation(node.expression);
   if ((source.flags & ts.TypeFlags.String) === 0) return false;
 
-  return isGenerated(target);
+  return isGenerated(node.type, checker);
 }
 
 function isStringLiteralUnion(type: ts.Type): boolean {
@@ -108,12 +123,45 @@ function isStringLiteralUnion(type: ts.Type): boolean {
   return type.types.every((member) => member.isStringLiteral());
 }
 
-/** Where the union was declared, which is what makes it OURS rather than a library's. */
-function isGenerated(type: ts.Type): boolean {
-  const declarations = type.aliasSymbol?.getDeclarations() ?? [];
+/**
+ * Where the union was declared, which is what makes it OURS rather than a library's.
+ *
+ * Asked of the type NODE rather than of the resolved type's `aliasSymbol`, because TypeScript keeps
+ * that alias for only some of the shapes `source-types.ts` generates. Every union there is an index
+ * into a generated table, and the two index forms do not behave alike: indexing by a union key —
+ * `SkillId = (typeof SKILL_MAP)[SkillSlug]` — keeps its `aliasSymbol`, while indexing a `readonly`
+ * tuple by `number` — `Category`, `Domain`, `AgentName`, and `SkillSlug` itself — resolves straight
+ * to the member union carrying no `aliasSymbol` at all. Asking the type could not tell a union
+ * declared somewhere else from a union whose alias the compiler had dropped, so this predicate
+ * answered `false` for both and the gate judged `SkillId` and nothing else. The node's own symbol
+ * always names the alias the author wrote.
+ */
+function isGenerated(node: ts.TypeNode, checker: ts.TypeChecker): boolean {
+  return declaringFilesOf(node, checker).some((file) =>
+    GENERATED_DIRS.some((dir) => file.includes(dir.split(path.sep).join("/"))),
+  );
+}
 
-  return declarations.some((declaration) =>
-    declaration.getSourceFile().fileName.includes(GENERATED_DIR.split(path.sep).join("/")),
+/**
+ * The files declaring the type this node NAMES, with the import chain followed to the end.
+ *
+ * An inline union — `as "a" | "b"` — names nothing and so declares nothing, which is the right
+ * answer: the ban is about a union this repository generates, and one written at the cast site is
+ * not that. `getAliasedSymbol` is what carries a re-export chain to its origin, which is the only
+ * reason a cast inside `@workspace/compile` resolves to the vendored copy rather than stopping at
+ * the barrel that re-exported it.
+ */
+function declaringFilesOf(node: ts.TypeNode, checker: ts.TypeChecker): string[] {
+  if (!ts.isTypeReferenceNode(node)) return [];
+
+  const named = checker.getSymbolAtLocation(node.typeName);
+  const declared =
+    named !== undefined && (named.flags & ts.SymbolFlags.Alias) !== 0
+      ? checker.getAliasedSymbol(named)
+      : named;
+
+  return (declared?.getDeclarations() ?? []).map(
+    (declaration) => declaration.getSourceFile().fileName,
   );
 }
 

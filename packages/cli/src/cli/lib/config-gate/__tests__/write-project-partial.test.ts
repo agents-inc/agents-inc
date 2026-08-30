@@ -63,7 +63,7 @@ describe("writeProjectPartial", () => {
     const content = await readFile(configPath, "utf-8");
 
     expect(content).toContain("export default");
-    expect(content).toContain('import type { ProjectConfig } from "./config-types"');
+    expect(content).toContain("import type { ProjectConfig } from './config-types'");
     expect(content).toContain("satisfies ProjectConfig");
   });
 
@@ -215,7 +215,7 @@ describe("writeProjectPartial", () => {
       expect(
         await readFile(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS), "utf-8"),
         "the writer must emit the exclusive category in its bare form",
-      ).toMatch(/"web-framework":\s*"web-framework-react"/);
+      ).toMatch(/'web-framework':\s*'web-framework-react'/);
 
       await saveSource(tempDir, "github:my-org/skills", "stack-project");
 

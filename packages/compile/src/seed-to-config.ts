@@ -1,0 +1,1139 @@
+import {
+  AGENT_NAMES,
+  isSeedScopePairWritable,
+  resolveAssignment,
+  resolveLoadState,
+  seedAgentScope,
+  SKILL_IDS,
+  type LoadState,
+  type SeedAgent,
+  type SeedLoadState,
+  type SeedPayload,
+  type SkillTaxonomy,
+} from "@workspace/matrix"
+import { groupBy, indexBy, partition } from "remeda"
+
+import {
+  byCategoryDeclarationOrder,
+  categoryDomain,
+  type CatalogSkill,
+  type CompileCatalog,
+} from "./catalog.js"
+import { seatedCatalog } from "./catalog-seat.js"
+import { diagnostics } from "./diagnostics.js"
+import { orderDomains } from "./domain-order.js"
+import {
+  CLI_INVOKE_COMMAND,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  EJECT_SOURCE,
+  GLOBAL_CONFIG_NAME,
+  LOCAL_PSEUDO_CATEGORY,
+} from "./paths.js"
+import {
+  activeAgentScopeMap,
+  effectivelyExcludedSkillIds,
+  isActiveAt,
+} from "./scope-predicates.js"
+import { validateSelection } from "./selection.js"
+import { typedEntries, typedFromEntries, typedKeys } from "./typed-object.js"
+import type {
+  AgentName,
+  AgentScopeConfig,
+  Category,
+  CategoryPath,
+  Domain,
+  DomainSelections,
+  ProjectConfig,
+  SelectionValidation,
+  SkillAssignment,
+  SkillConfig,
+  SkillId,
+  SkillScope,
+  Stack,
+  StackAgentConfig,
+} from "./types.js"
+
+export type SplitConfigResult = {
+  global: ProjectConfig
+  project: ProjectConfig
+}
+
+export type ProjectConfigOptions = {
+  description?: string
+  author?: string
+}
+
+/** How many catalogue ids the verbose diagnostic names when a lookup misses. */
+const MATRIX_SAMPLE_SIZE = 5
+
+function extractCategoryFromPath(
+  categoryPath: CategoryPath
+): Category | undefined {
+  if (categoryPath === LOCAL_PSEUDO_CATEGORY) return undefined
+  // TypeScript narrows CategoryPath to Category after excluding "local"
+  return categoryPath
+}
+
+type StackBuildInputs = {
+  agentList: AgentName[]
+  activeSkillsByCategory: Map<Category, SkillId[]>
+  skillScope: Map<SkillId, SkillScope>
+  agentScope: Map<AgentName, SkillScope>
+  existingStack: Partial<Record<AgentName, StackAgentConfig>>
+  catalog: CompileCatalog
+  /**
+   * Skills that are new to this session's top-level selection (not in the prior
+   * `existing.config.skills`). When `undefined`, the per-agent curation
+   * preservation rule is disabled and every scope-compatible, resolver-relevant
+   * skill lands on every existing agent (legacy behavior). When defined
+   * (possibly empty), the preservation rule applies: skills NOT in an agent's
+   * prior stack entry and NOT in this set are omitted from that agent's stack —
+   * respecting the user's curation.
+   */
+  newlyAddedSkillIds?: ReadonlySet<SkillId>
+  /**
+   * Keys of `(agent, skillId)` pairs whose scope-compatibility was GAINED this
+   * session — either the skill's scope was flipped so it now reaches this
+   * agent, or the agent's scope was flipped so previously-filtered skills now
+   * reach it. Parallel to `newlyAddedSkillIds`: when the caller opts into
+   * per-agent curation preservation, this set admits triples that the skill-id
+   * diff would miss. Keys are produced by `scopeEligibilityKey()`.
+   */
+  scopeEligibilityGained?: ReadonlySet<string>
+}
+
+/**
+ * Encodes an `(agent, skillId)` pair as a single string for set-membership
+ * lookups. Both arguments are typed string unions so a `|` delimiter produces
+ * a unique, stable key.
+ */
+export function scopeEligibilityKey(
+  agent: AgentName,
+  skillId: SkillId
+): string {
+  return `${agent}|${skillId}`
+}
+
+/** Runtime check that a string is a valid AgentName from the generated union */
+function isAgentName(value: string): value is AgentName {
+  return (AGENT_NAMES as readonly string[]).includes(value)
+}
+
+/** Runtime check that a string is a valid SkillId from the generated union */
+function isSkillId(value: string): value is SkillId {
+  return (SKILL_IDS as readonly string[]).includes(value)
+}
+
+/**
+ * What the prior save said about this triple, or `undefined` when it carried
+ * no entry for it at all. An entry with no flag is not silence: the generator
+ * only ever writes `preloaded` where it is true, so a bare `{ id }` read back
+ * off disk is the user's curated lazy and outranks any default.
+ */
+function priorLoadState(
+  existingStack: Partial<Record<AgentName, StackAgentConfig>>,
+  agent: AgentName,
+  category: Category,
+  skillId: SkillId
+): LoadState | undefined {
+  const prior = existingStack[agent]?.[category]?.find((a) => a.id === skillId)
+  if (prior === undefined) return undefined
+
+  return prior.preloaded === true ? "preloaded" : "lazy"
+}
+
+/**
+ * The shared mapping's word for a triple nobody has decided on yet — the same
+ * table the editor's default assignments read, so a skill picked in either
+ * place arrives loaded the same way.
+ *
+ * Only catalog skills on roster agents are put to it. The mapping is keyed by
+ * generated skill id and agent role, so a local skill, a marketplace one or a
+ * hand-written agent has no entry it could ever match — those are lazy by
+ * rule, not by rescue. `resolveLoadState` throws on ids it does not know, and
+ * catching that throw is what would make this a silent fallback.
+ */
+function mappedLoadState(skillId: SkillId, agent: AgentName): LoadState {
+  if (!isSkillId(skillId) || !isAgentName(agent)) return "lazy"
+
+  return resolveLoadState({ skillId, agentId: agent })
+}
+
+/**
+ * How the shared resolver is told about a skill. Targeting reads a domain and a
+ * category, never catalog membership, so what goes is the taxonomy the LOADED
+ * catalogue carries: a marketplace's skill wears its marketplace's namespace in
+ * its id, belongs to no catalog-keyed table, and is still placed by its domain
+ * like any other.
+ *
+ * A category the catalogue gives no domain leaves no taxonomy to state, so the id
+ * goes alone and the resolver answers for it — nobody, unless the catalog knows
+ * it. `checkMatrixHealth` reports such a category in its own right.
+ */
+function taxonomyOrIdOf(
+  catalog: CompileCatalog,
+  skillId: SkillId,
+  category: Category
+): SkillId | SkillTaxonomy {
+  // Boundary cast: a catalogue category's `domain` is a Domain, typed `string` on the narrow
+  // catalogue shape so the wire `Matrix` satisfies it too.
+  const domainId = categoryDomain(catalog, category) as Domain | undefined
+  if (domainId === undefined) return skillId
+
+  return { id: skillId, domainId, categoryId: category }
+}
+
+/**
+ * The shared resolver's word on whether this sub-agent would reasonably use
+ * this skill — the same targeting the editor's default assignments read, so a
+ * pick lands on the same agents from either surface.
+ */
+function isRelevantPair(
+  catalog: CompileCatalog,
+  skillId: SkillId,
+  category: Category,
+  agent: AgentName
+): boolean {
+  return resolveAssignment(taxonomyOrIdOf(catalog, skillId, category)).some(
+    (target) => target.agentId === agent
+  )
+}
+
+/**
+ * The relevance rule as it applies inside a stack build: a triple the prior
+ * save carries is the user's curation and rides through wherever it
+ * sits, cross-domain included; a triple arriving this session lands only where
+ * the shared resolver targets it.
+ */
+function isPreservedOrRelevant(
+  agent: AgentName,
+  category: Category,
+  skillId: SkillId,
+  inputs: StackBuildInputs
+): boolean {
+  const hasPriorEntry =
+    priorLoadState(inputs.existingStack, agent, category, skillId) !== undefined
+  return (
+    hasPriorEntry || isRelevantPair(inputs.catalog, skillId, category, agent)
+  )
+}
+
+function getScopeOrThrow<K>(
+  map: Map<K, SkillScope>,
+  key: K,
+  kind: "skill" | "agent"
+): SkillScope {
+  const scope = map.get(key)
+  if (scope === undefined) {
+    throw new Error(
+      `generateProjectConfigFromSkills: ${kind} '${String(key)}' missing from ` +
+        `${kind === "skill" ? "skillConfigs" : "agentConfigs"}. ` +
+        `Caller must pass a ${kind === "skill" ? "SkillConfig" : "AgentScopeConfig"} ` +
+        `for every selected ${kind}.`
+    )
+  }
+  return scope
+}
+
+/**
+ * Project skills never reach global agents; global skills reach any agent.
+ *
+ * The rule itself lives on the wire contract (`isSeedScopePairWritable` in
+ * `@workspace/matrix/seed`), because the editor and this CLI each used to carry a verbatim copy
+ * of it and a shared rule with three implementations is a rule three surfaces can disagree about.
+ * This stays as the name the CLI's own call sites read it under.
+ */
+export function isScopePairCompatible(
+  skillScope: SkillScope,
+  agentScope: SkillScope
+): boolean {
+  return isSeedScopePairWritable(skillScope, agentScope)
+}
+
+function isScopeCompatible(
+  skillId: SkillId,
+  agent: AgentName,
+  skillScope: Map<SkillId, SkillScope>,
+  agentScope: Map<AgentName, SkillScope>
+): boolean {
+  const sScope = getScopeOrThrow(skillScope, skillId, "skill")
+  const aScope = getScopeOrThrow(agentScope, agent, "agent")
+  return isScopePairCompatible(sScope, aScope)
+}
+
+/**
+ * Decides whether a given `(agent, category, skillId)` triple lands in the
+ * agent's stack for this save. The scope filter has already run in the caller
+ * — this function only enforces the per-agent curation rule.
+ *
+ * Branches:
+ *   - `agent ∉ existingStack`  → seed branch (new agent); every scope-compatible
+ *     skill the shared resolver targets at this agent lands, and with no prior
+ *     entry to inherit a `preloaded` flag from, each one takes the shared
+ *     mapping's default (see `toStackAssignment`).
+ *   - `agent ∈ existingStack`  → preservation branch:
+ *       * skillId was in `existingStack[agent][category]` → KEEP (idempotent).
+ *       * skillId ∈ `newlyAddedSkillIds` OR `(agent, skillId)` ∈
+ *         `scopeEligibilityGained` → APPEND (user's session-level addition or
+ *         scope-compat flip).
+ *       * otherwise → OMIT (respect user's prior per-agent curation removal).
+ *
+ * Legacy path: when `newlyAddedSkillIds` is not provided, the curation check
+ * is disabled — every scope-compatible skill passes this gate (the relevance
+ * filter in `buildAgentStack` still applies). This preserves the contract of
+ * callers that pre-date per-agent curation preservation.
+ */
+function shouldIncludeTriple(
+  agent: AgentName,
+  category: Category,
+  skillId: SkillId,
+  inputs: StackBuildInputs
+): boolean {
+  // Legacy path: callers that don't opt in keep the seed-everything behavior.
+  if (inputs.newlyAddedSkillIds === undefined) return true
+
+  const agentExistingStack = inputs.existingStack[agent]
+  if (agentExistingStack === undefined) {
+    // Seeding branch: agent is new this session → full ownership-derived stack.
+    return true
+  }
+
+  const priorCategory = agentExistingStack[category]
+  if (priorCategory && priorCategory.some((a) => a.id === skillId)) return true
+
+  if (inputs.newlyAddedSkillIds.has(skillId)) return true
+  const scopeEligibility = inputs.scopeEligibilityGained
+  if (
+    scopeEligibility &&
+    scopeEligibility.has(scopeEligibilityKey(agent, skillId))
+  ) {
+    return true
+  }
+  return false
+}
+
+/** The prior stack's word for this triple, or the mapping's when it is new. */
+function toStackAssignment(
+  id: SkillId,
+  agent: AgentName,
+  category: Category,
+  inputs: StackBuildInputs
+): SkillAssignment {
+  const prior = priorLoadState(inputs.existingStack, agent, category, id)
+  const load = prior ?? mappedLoadState(id, agent)
+
+  return load === "preloaded" ? { id, preloaded: true } : { id }
+}
+
+/**
+ * The selection's categories in the catalogue's own declaration order, so a newly
+ * built stack's key order is a property of the roster rather than of the order
+ * the skills happened to be picked in — two sessions that select the same
+ * skills emit the same bytes, and an agent whose skill set did not change is
+ * not rewritten. The writer holds the same rule for a stack it did not build.
+ */
+function inCanonicalCategoryOrder(
+  activeSkillsByCategory: Map<Category, SkillId[]>,
+  catalog: CompileCatalog
+): [Category, SkillId[]][] {
+  const byDeclaration = byCategoryDeclarationOrder(catalog)
+  return [...activeSkillsByCategory].sort(([a], [b]) => byDeclaration(a, b))
+}
+
+function buildAgentStack(
+  agent: AgentName,
+  inputs: StackBuildInputs
+): StackAgentConfig | undefined {
+  const agentStack: StackAgentConfig = {}
+  for (const [category, skillIds] of inCanonicalCategoryOrder(
+    inputs.activeSkillsByCategory,
+    inputs.catalog
+  )) {
+    const assignments = skillIds
+      .filter((id) =>
+        isScopeCompatible(id, agent, inputs.skillScope, inputs.agentScope)
+      )
+      .filter((id) => shouldIncludeTriple(agent, category, id, inputs))
+      .filter((id) => isPreservedOrRelevant(agent, category, id, inputs))
+      .map((id) => toStackAssignment(id, agent, category, inputs))
+    if (assignments.length > 0) {
+      agentStack[category] = assignments
+    }
+  }
+  return typedKeys<Category>(agentStack).length > 0 ? agentStack : undefined
+}
+
+function buildStackForSelection(
+  inputs: StackBuildInputs
+): Partial<Record<AgentName, StackAgentConfig>> | undefined {
+  // No agents in play → this caller is not managing the stack. Return
+  // `undefined` (key omitted) so the merger preserves any existing stack.
+  if (inputs.agentList.length === 0) {
+    diagnostics().verbose(
+      `buildStackForSelection: no agents — returning undefined (stack untouched)`
+    )
+    return undefined
+  }
+
+  // Agents are in play → the generator authoritatively rebuilt the stack from
+  // the current selection. An empty result is a real "nothing preloads" outcome
+  // (e.g. the last categorized skill was removed), so return `{}` — NOT
+  // `undefined`. The merger trusts `{}` and drops the stale existing stack,
+  // whereas `undefined` would resurrect it (the removed-last-skill bug).
+  const result: Partial<Record<AgentName, StackAgentConfig>> = {}
+  for (const agent of inputs.agentList) {
+    const built = buildAgentStack(agent, inputs)
+    if (built) result[agent] = built
+  }
+  return result
+}
+
+type ResolvedSkillEntry = { skillId: SkillId; category: Category }
+
+/**
+ * Resolves selected ids against the catalogue: reports and drops the ids this marketplace does
+ * not carry, extracts each skill's category, and drops ids whose every config entry is
+ * excluded. A skill with an excluded global entry AND an active project entry is KEPT —
+ * the active entry still needs to reach the stack builder.
+ */
+function resolveValidSkills(
+  selectedSkillIds: SkillId[],
+  skillConfigs: SkillConfig[],
+  catalog: CompileCatalog
+): {
+  validSkills: ResolvedSkillEntry[]
+  foundCount: number
+  skippedCount: number
+} {
+  const looked = selectedSkillIds.map((skillId) => ({
+    skillId,
+    skill: catalog.skills[skillId],
+  }))
+  const found = looked.filter(
+    (
+      entry
+    ): entry is typeof entry & { skill: NonNullable<typeof entry.skill> } =>
+      entry.skill != null
+  )
+  const absentSkillIds = looked
+    .filter((entry) => entry.skill == null)
+    .map((entry) => entry.skillId)
+
+  reportAbsentSkills(absentSkillIds, catalog)
+
+  const excludedSkillIds = effectivelyExcludedSkillIds(skillConfigs)
+
+  const validSkills = found
+    .map(({ skillId, skill }) => ({
+      skillId,
+      // Boundary cast: a catalogue category id is a CategoryPath.
+      category: extractCategoryFromPath(skill.category as CategoryPath),
+    }))
+    .filter(
+      (entry): entry is typeof entry & { category: Category } =>
+        entry.category != null
+    )
+    .filter((entry) => !excludedSkillIds.has(entry.skillId))
+
+  return {
+    validSkills,
+    foundCount: found.length,
+    skippedCount: absentSkillIds.length,
+  }
+}
+
+/**
+ * Two audiences, one fact: what the user is told about an id this marketplace does not carry,
+ * and what the run's verbose diagnostics keep for whoever is debugging the loader.
+ *
+ * A sample of catalogue keys belongs to the second audience entirely — five arbitrary ids explain
+ * nothing to anyone not comparing them against a catalogue — so it goes where this project's
+ * logging convention puts a diagnostic, and the warning carries only what a user can act on.
+ */
+function reportAbsentSkills(
+  absentSkillIds: SkillId[],
+  catalog: CompileCatalog
+): void {
+  if (absentSkillIds.length === 0) return
+
+  for (const skillId of absentSkillIds) {
+    diagnostics().warn(absentSkillWarning(skillId), { suppressInTest: true })
+  }
+
+  const matrixSample = typedKeys<SkillId>(catalog.skills)
+    .slice(0, MATRIX_SAMPLE_SIZE)
+    .join(", ")
+  diagnostics().verbose(
+    `${absentSkillIds.length} skills absent from the matrix. Matrix keys sample: [${matrixSample}]`
+  )
+}
+
+/**
+ * What an unplaceable id means and what changes it.
+ *
+ * The outcome first, because it is the part the user cannot see: the entry stays in `config.ts`
+ * — nothing here removes it — and the skill reaches no sub-agent, which is what a stack built
+ * without it amounts to. Both ways out are named because the fact has two readings: a catalogue
+ * that has moved on since this configuration was written, and an id this one never carried.
+ */
+function absentSkillWarning(skillId: SkillId): string {
+  return (
+    `Skill '${skillId}' is not in this marketplace — it stays in the configuration and no ` +
+    `sub-agent is given it. Run '${CLI_INVOKE_COMMAND} update' to refresh the marketplace, or ` +
+    `remove it with '${CLI_INVOKE_COMMAND} edit'.`
+  )
+}
+
+/**
+ * Per-skill scope, active-entry-authoritative: when a skill has both an excluded
+ * and an active entry (excluded global + active project), excluded entries spread
+ * first so active entries overwrite them.
+ */
+function buildSkillScopeMap(
+  skillConfigs: SkillConfig[]
+): Map<SkillId, SkillScope> {
+  const [excludedConfigs, activeConfigs] = partition(skillConfigs, (s) =>
+    Boolean(s.excluded)
+  )
+  return new Map(
+    [...excludedConfigs, ...activeConfigs].map((s) => [s.id, s.scope])
+  )
+}
+
+/**
+ * One active AgentScopeConfig per selected agent. When the caller provided
+ * agentConfigs, every selected agent MUST have a non-excluded entry (invariant
+ * throw); otherwise agents default to project scope.
+ */
+function resolveActiveAgentConfigs(
+  agentList: AgentName[],
+  providedConfigs: AgentScopeConfig[] | undefined
+): AgentScopeConfig[] {
+  const providedByName = providedConfigs
+    ? indexBy(
+        providedConfigs.filter((a) => !a.excluded),
+        (a) => a.name
+      )
+    : {}
+  return agentList.map((agentName) => {
+    if (providedConfigs) {
+      const provided = providedByName[agentName]
+      if (!provided) {
+        throw new Error(
+          `generateProjectConfigFromSkills: selected agent '${agentName}' has no ` +
+            `non-excluded AgentScopeConfig in agentConfigs.`
+        )
+      }
+      return provided
+    }
+    return { name: agentName, scope: "project" as const }
+  })
+}
+
+/**
+ * Generates a ProjectConfig from a list of selected skill IDs, rebuilding the
+ * stack property (agent -> category -> SkillAssignment[]) from the current
+ * wizard selection plus any previously-saved stack entries.
+ *
+ * Ownership rules (what lands in each agent's stack):
+ * - agent is selected AND skill is non-excluded AND agent is non-excluded
+ * - scope filter: a project-scoped skill never lands on a global-scoped agent
+ * - relevance filter: a NEW triple lands only where the shared resolver targets
+ *   the (skill, agent) pair — a sub-agent carries only skills it would
+ *   reasonably use. Prior entries are preserved verbatim, wherever
+ *   they sit.
+ *
+ * Load state per (agent, category, skill) triple: a triple `options.existingStack`
+ * already carries keeps exactly what it carried — flag or no flag, that entry is
+ * the author's stack YAML or the user's own curation. A triple that is new to
+ * this save has nobody's word to inherit and takes the shared mapping's default,
+ * which is what the editor resolves against too.
+ *
+ * The catalogue comes from {@link seatedCatalog}, not from an argument, and that
+ * module's docblock is where the reason lives.
+ */
+export function generateProjectConfigFromSkills(
+  name: string,
+  selectedSkillIds: SkillId[],
+  options?: ProjectConfigOptions & {
+    selectedAgents?: AgentName[]
+    skillConfigs?: SkillConfig[]
+    agentConfigs?: AgentScopeConfig[]
+    existingStack?: Partial<Record<AgentName, StackAgentConfig>>
+    /**
+     * Skills new to this session (not present in the prior on-disk config).
+     * Passing this field (even as an empty array) opts into per-agent
+     * curation preservation: existing agents' stack entries are treated as
+     * authoritative, and skills absent from a given agent's prior stack are
+     * only appended when they appear in this set (or in `scopeEligibilityGained`).
+     * When undefined, behavior falls back to seed-everything semantics.
+     */
+    newlyAddedSkillIds?: readonly SkillId[]
+    /**
+     * `(agent, skillId)` keys whose scope-compat transitioned from incompatible
+     * to compatible this session. Admits scope-flip cases that `newlyAddedSkillIds`
+     * (keyed by skill id only) cannot express. Keys are built with
+     * {@link scopeEligibilityKey}.
+     */
+    scopeEligibilityGained?: ReadonlySet<string>
+  }
+): ProjectConfig {
+  const catalog = seatedCatalog()
+  const agentList = options?.selectedAgents
+    ? [...options.selectedAgents].sort()
+    : []
+
+  // Invariant: when selectedAgents is provided, callers must also supply the
+  // authoritative SkillConfig and AgentScopeConfig entries so scope lookups
+  // never silently default.
+  if (agentList.length > 0) {
+    if (!options?.skillConfigs) {
+      throw new Error(
+        `generateProjectConfigFromSkills: selectedAgents was passed without skillConfigs. ` +
+          `Callers must pass a SkillConfig for every selected skill.`
+      )
+    }
+    if (!options.agentConfigs) {
+      throw new Error(
+        `generateProjectConfigFromSkills: selectedAgents was passed without agentConfigs. ` +
+          `Callers must pass an AgentScopeConfig for every selected agent.`
+      )
+    }
+  }
+
+  // Safe after invariant: when agentList is non-empty these are guaranteed present.
+  // When agentList is empty, no scope/ownership work runs so `[]` is a valid no-op.
+  const skillConfigs = options?.skillConfigs ?? []
+  const agentConfigs = options?.agentConfigs ?? []
+
+  diagnostics().verbose(
+    `generateProjectConfigFromSkills: ${selectedSkillIds.length} skills, ` +
+      `matrix has ${typedKeys<SkillId>(catalog.skills).length} entries, ` +
+      `agents=[${agentList.join(", ")}]`
+  )
+
+  const { validSkills, foundCount, skippedCount } = resolveValidSkills(
+    selectedSkillIds,
+    skillConfigs,
+    catalog
+  )
+
+  diagnostics().verbose(
+    `generateProjectConfigFromSkills: ${foundCount} found, ${skippedCount} not found, ` +
+      `${agentList.length} agents in stack`
+  )
+
+  const activeSkillsByCategory = new Map(
+    typedEntries(groupBy(validSkills, (entry) => entry.category)).map(
+      ([category, entries]) => [category, entries.map((entry) => entry.skillId)]
+    )
+  )
+
+  const skillScope = buildSkillScopeMap(skillConfigs)
+  const agentScope = activeAgentScopeMap(agentConfigs)
+
+  // Opt-in per-agent curation preservation: only when the caller provides the delta set.
+  const newlyAddedSkillIdsSet: ReadonlySet<SkillId> | undefined =
+    options?.newlyAddedSkillIds === undefined
+      ? undefined
+      : new Set(options.newlyAddedSkillIds)
+
+  const stackProperty = buildStackForSelection({
+    agentList,
+    activeSkillsByCategory,
+    skillScope,
+    agentScope,
+    catalog,
+    existingStack: options?.existingStack ?? {},
+    ...(newlyAddedSkillIdsSet !== undefined && {
+      newlyAddedSkillIds: newlyAddedSkillIdsSet,
+    }),
+    ...(options?.scopeEligibilityGained !== undefined && {
+      scopeEligibilityGained: options.scopeEligibilityGained,
+    }),
+  })
+
+  const skills: SkillConfig[] =
+    options?.skillConfigs ??
+    selectedSkillIds.map((id) => ({
+      id,
+      scope: "project" as const,
+      origin: EJECT_SOURCE,
+    }))
+
+  const activeAgentConfigs = resolveActiveAgentConfigs(
+    agentList,
+    options?.agentConfigs
+  )
+  // Excluded agents aren't in selectedAgents but must be preserved in config
+  const excludedAgentConfigs = agentConfigs.filter((ac) => ac.excluded)
+  const finalAgentConfigs: AgentScopeConfig[] = [
+    ...activeAgentConfigs,
+    ...excludedAgentConfigs,
+  ]
+
+  return {
+    name,
+    agents: finalAgentConfigs,
+    skills,
+    ...(stackProperty && { stack: stackProperty }),
+    ...(options?.description && { description: options.description }),
+    ...(options?.author && { author: options.author }),
+  }
+}
+
+/**
+ * One stack entry's load. A flag the author wrote is somebody's word and rides
+ * through untouched — a third-party source's stacks file is the explicit tier,
+ * and `loadStacks` gives even its bare strings an explicit `preloaded: false`.
+ * An entry with no flag at all is a stack stating only WHICH skill an agent
+ * gets, so HOW it loads is the shared mapping's answer, exactly as it is for a
+ * skill picked by hand. The built-in stacks carry no flags, by design.
+ */
+function toStackPropertyAssignment(
+  assignment: SkillAssignment,
+  agent: AgentName
+): SkillAssignment {
+  if (assignment.preloaded !== undefined) return assignment
+  if (mappedLoadState(assignment.id, agent) === "lazy") return assignment
+
+  return { ...assignment, preloaded: true }
+}
+
+/**
+ * Extracts the stack property (agent -> category -> SkillAssignment[]) from a Stack definition.
+ *
+ * Stack values are already normalized to SkillAssignment[] by loadStacks().
+ * Preserves every assignment, and every load its author stated; an assignment
+ * that states none takes the shared mapping's, per `(skill, agent)` pair.
+ */
+export function buildStackProperty(
+  stack: Stack
+): Partial<Record<AgentName, StackAgentConfig>> {
+  return typedFromEntries(
+    typedEntries<AgentName, StackAgentConfig>(stack.agents)
+      .filter(
+        ([, agentConfig]) =>
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+          agentConfig && typedKeys<Category>(agentConfig).length > 0
+      )
+      .map(([agentId, agentConfig]) => {
+        const resolvedMappings: StackAgentConfig = typedFromEntries(
+          typedEntries<Category, SkillAssignment[]>(agentConfig)
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+            .filter(([, assignments]) => assignments && assignments.length > 0)
+            .map(([category, assignments]) => [
+              category,
+              assignments.map((assignment) =>
+                toStackPropertyAssignment(assignment, agentId)
+              ),
+            ])
+        )
+        return [agentId, resolvedMappings] as const
+      })
+      .filter(([, mappings]) => typedKeys<Category>(mappings).length > 0)
+  )
+}
+
+/** Splits one agent's stack per category: global skills → global config, project skills → project config. */
+function splitAgentStack(
+  agentStack: StackAgentConfig,
+  globalSkillIds: ReadonlySet<SkillId>
+): { global: StackAgentConfig; project: StackAgentConfig } {
+  const perCategory = typedEntries<Category, SkillAssignment[]>(agentStack)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    .filter(([, assignments]) => assignments !== undefined)
+    .map(([category, assignments]) => {
+      const [globalOnly, projectOnly] = partition(assignments, (a) =>
+        globalSkillIds.has(a.id)
+      )
+      return { category, globalOnly, projectOnly }
+    })
+  return {
+    global: Object.fromEntries(
+      perCategory
+        .filter((c) => c.globalOnly.length > 0)
+        .map((c) => [c.category, c.globalOnly])
+    ),
+    project: Object.fromEntries(
+      perCategory
+        .filter((c) => c.projectOnly.length > 0)
+        .map((c) => [c.category, c.projectOnly])
+    ),
+  }
+}
+
+/**
+ * Splits a ProjectConfig by scope into global and project partitions.
+ * Skills with `scope: "global"` go to the global partition, `scope: "project"` to the project partition.
+ * Agents are split based on which skills reference them in the stack.
+ * Selected domains go to BOTH partitions, because a project owns its own domain selection
+ * (owner ruling 2026-08-20).
+ */
+export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
+  // Every entry is either active-global or project-owned (project-scoped, or an
+  // excluded-global tombstone routed to the project partition as an override).
+  const [globalSkills, projectSkills] = partition(config.skills, (s) =>
+    isActiveAt(s, "global")
+  )
+  const [globalAgents, projectAgents] = partition(config.agents, (a) =>
+    isActiveAt(a, "global")
+  )
+
+  // Split stack by agent partition, filtering global agents' stacks to only reference global skills.
+  // Project agents keep ALL skill references (both project and global) since global skills are available everywhere.
+  const globalSkillIds = new Set(globalSkills.map((s) => s.id))
+  const globalStack: NonNullable<ProjectConfig["stack"]> = {}
+  const projectStack: NonNullable<ProjectConfig["stack"]> = {}
+
+  if (config.stack) {
+    for (const agent of globalAgents) {
+      const agentStack = config.stack[agent.name]
+      if (!agentStack) continue
+      const split = splitAgentStack(agentStack, globalSkillIds)
+      if (typedKeys<Category>(split.global).length > 0) {
+        globalStack[agent.name] = split.global
+      }
+      if (typedKeys<Category>(split.project).length > 0) {
+        projectStack[agent.name] = split.project
+      }
+    }
+    for (const agent of projectAgents) {
+      const agentStack = config.stack[agent.name]
+      if (agentStack) {
+        projectStack[agent.name] = agentStack
+      }
+    }
+  }
+
+  // Domains ride the spread onto BOTH partitions: a project owns its own domain selection
+  // rather than inheriting the global one (owner ruling 2026-08-20).
+  //
+  // `stack` is written on BOTH partitions unconditionally, and that is the whole of what
+  // keeps each one to its own rows: the spread above carries the undivided stack, so an
+  // override that declines to fire hands a partition every row the other partition earned.
+  // A derivation that yielded nothing is a partition with no stack, and `{}` is how that is
+  // said — the same word `buildStackForSelection` uses and for the same reason, since the
+  // merger reads an absent stack as no statement and keeps the stale one. `generateConfigSource`
+  // omits an empty stack from the file it writes, so nothing emits `stack: {}` on this account.
+  const globalConfig: ProjectConfig = {
+    ...config,
+    name: GLOBAL_CONFIG_NAME,
+    agents: globalAgents,
+    skills: globalSkills,
+    stack: globalStack,
+  }
+
+  const projectConfig: ProjectConfig = {
+    ...config,
+    name: config.name,
+    agents: projectAgents,
+    skills: projectSkills,
+    stack: projectStack,
+  }
+
+  return { global: globalConfig, project: projectConfig }
+}
+
+/**
+ * What a completed selection hands the install pipeline.
+ *
+ * Declared here rather than beside the wizard component that produces it, because
+ * `seedToWizardResult` below produces one too and this package cannot import a
+ * React module. `components/wizard/wizard.tsx` re-exports this name, so every CLI
+ * call site reads it where it always did.
+ */
+export type WizardResultV2 = {
+  skills: SkillConfig[]
+  selectedAgents: AgentName[]
+  agentConfigs: AgentScopeConfig[]
+  /**
+   * What each sub-agent holds and what preloads, when the producer knows per `(skill, sub-agent)`.
+   * A shared configuration installed with `init --from` does: it assigns each skill to named
+   * sub-agents at a named load state, and that curation is the whole of what was shared.
+   *
+   * The wizard has no per-agent granularity — a skill is selected for the project, not for one
+   * sub-agent — so it leaves this undefined and the install pipeline's ownership rules build the
+   * stack as they always have.
+   */
+  assignedStack?: Partial<Record<AgentName, StackAgentConfig>>
+  selectedStackId: string | null
+  /**
+   * What the written config should record about itself, when the producer already knows.
+   *
+   * A shared configuration installed with `init --from` does: its payload carries the sharer's own
+   * description, because it names no stack for the install to resolve one out of. The wizard leaves
+   * this undefined and the install pipeline takes the applied stack's description instead — there
+   * IS a loaded stack on that path, and it is the authority on its own sentence.
+   */
+  description?: string
+  domainSelections: DomainSelections
+  selectedDomains: Domain[]
+  /**
+   * Skill ids from the saved config that could not be resolved against the loaded source matrix
+   * this session. The wizard could not represent them, so they are absent from `skills` and the
+   * merge removes their config entries. Carried out of the wizard so the command can NAME each
+   * removal and say why it happened — a removal the user never asked for must never be silent.
+   */
+  unresolvableSkillIds: SkillId[]
+  cancelled: boolean
+  validation: SelectionValidation
+}
+
+export type SeedMapping = {
+  result: WizardResultV2
+  /** Ids this catalogue does not know. Reported, never fatal — see the decode policy. */
+  skippedSkillIds: string[]
+  skippedAgentNames: string[]
+}
+
+const KNOWN_AGENTS = new Set<string>(AGENT_NAMES)
+
+/** A skill's primary source, or the default marketplace. Mirrors the wizard's own resolution. */
+function sourceForSkill(skill: CatalogSkill): string {
+  return (
+    skill.availableSources?.find((s) => s.primary)?.name ??
+    DEFAULT_PUBLIC_SOURCE_NAME
+  )
+}
+
+function addToDomainSelections(
+  selections: DomainSelections,
+  domain: Domain,
+  category: Category,
+  skillId: SkillId
+): void {
+  const categorySelections = (selections[domain] ??= {})
+  const skillList = (categorySelections[category] ??= [])
+  if (!skillList.includes(skillId)) skillList.push(skillId)
+}
+
+/**
+ * The stack mirror of {@link addToDomainSelections}: one sub-agent's own category lists, appended
+ * in payload order. A `(skill, sub-agent)` pair can only occur once — `skills` is keyed by id — so
+ * there is nothing to de-duplicate here.
+ */
+function addToAgentStack(
+  stack: Partial<Record<AgentName, StackAgentConfig>>,
+  agent: AgentName,
+  category: Category,
+  assignment: SkillAssignment
+): void {
+  const agentStack = (stack[agent] ??= {})
+  const assignments = (agentStack[category] ??= [])
+  assignments.push(assignment)
+}
+
+/** A load state is per `(skill, sub-agent)`; `preloaded` is the stack's word for the same thing. */
+function toSkillAssignment(
+  skillId: SkillId,
+  load: SeedLoadState
+): SkillAssignment {
+  return { id: skillId, preloaded: load === "preloaded" }
+}
+
+/** The payload's `agents` map, split by what this catalog can do with each entry. */
+type SeedAgentMap = {
+  /** Known agents the map has something to say about, keyed by name. */
+  known: Map<AgentName, SeedAgent>
+  /** Names explicitly switched off — dropped, and their assignment rows ignored with them. */
+  switchedOff: Set<string>
+  /** Names this catalog does not know. Reported, never fatal — same policy as unknown skill ids. */
+  unknown: string[]
+}
+
+function readAgentMap(agents: SeedPayload["agents"]): SeedAgentMap {
+  const known = new Map<AgentName, SeedAgent>()
+  const switchedOff = new Set<string>()
+  const unknown: string[] = []
+
+  for (const [name, entry] of Object.entries(agents)) {
+    if (!isAgentName(name)) unknown.push(name)
+    else if (entry.on === false) switchedOff.add(name)
+    else known.set(name, entry)
+  }
+
+  return { known, switchedOff, unknown }
+}
+
+/**
+ * A sub-agent's own row. Model and effort ride along on the same terms as its scope — an absent
+ * key means "keep whatever the agent's metadata says".
+ */
+function agentScopeConfig(
+  name: AgentName,
+  entry: SeedAgent | undefined
+): AgentScopeConfig {
+  return {
+    name,
+    scope: seedAgentScope(entry),
+    ...(entry?.model !== undefined && { model: entry.model }),
+    ...(entry?.effort !== undefined && { effort: entry.effort }),
+  }
+}
+
+/** A `(skill, sub-agent)` assignment the config model has nowhere to write. */
+type UnwritableAssignment = { skillId: SkillId; agent: AgentName }
+
+/**
+ * Names every unwritable pair, not just the first: a sharer who fixes one only to be refused for
+ * the next learns nothing the first message could not have told them. Both halves of each pair are
+ * named because neither alone says what to change — the skill can move to global scope, or the
+ * sub-agent can be pinned to the project, and only the sharer knows which they meant.
+ */
+function unwritableAssignmentsError(
+  assignments: UnwritableAssignment[]
+): string {
+  return [
+    "This configuration cannot be installed: a project-scoped skill never reaches a sub-agent " +
+      "that rests at global scope, so these assignments have nowhere to be written:",
+    ...assignments.map(({ skillId, agent }) => `  ${skillId} -> ${agent}`),
+    "Re-share it with each sub-agent above pinned to the project, or each skill above at global scope.",
+  ].join("\n")
+}
+
+/**
+ * Turns a shared configuration into the shape the install pipeline already consumes, so
+ * `init --from` reuses `writeProjectConfig` -> skill install -> `compileAgentsAllScopes`
+ * unchanged rather than growing a second path that can drift from the wizard's.
+ *
+ * Unknown ids are skipped, never fatal. Payloads carry catalog slugs precisely so they survive
+ * catalog churn: a config shared before a skill was renamed should still install everything else,
+ * and failing the whole decode would make every rename retroactively break every shared id.
+ *
+ * A sub-agent reaches the roster two ways: named by a surviving skill's assignment, or switched on
+ * in the `agents` map. The map is the only place a configuration can say anything about an agent
+ * no skill mentions, which is what makes a bare (skill-less) agent shareable at all; it also
+ * carries that agent's model and effort onto its `AgentScopeConfig`.
+ *
+ * The `assignments` map is per `(skill, sub-agent)` and carries a load state, so it decides three
+ * things the wizard cannot express separately: which sub-agents are selected, which skills land in
+ * each one's stack entry, and which of those preload. That is why the result carries an
+ * `assignedStack` — the install pipeline's ownership rules broadcast every scope-compatible skill
+ * to every selected agent, which would hand a bare sub-agent someone else's skills.
+ *
+ * An unwritable `(skill, sub-agent)` pair is the one thing here that IS fatal, and it is fatal for
+ * the opposite reason to the skips: an unknown id is content this catalog does not have, while an
+ * unwritable pair is content it has and cannot place. Because `assignedStack` replaces the derived
+ * stack wholesale, no scope filter runs on these rows downstream — they reach the writers, which
+ * put them in neither half of the split config and say nothing. Refusing at the decode is what
+ * keeps a payload from installing as a quieter configuration than the one that was shared.
+ */
+export function seedToWizardResult(
+  payload: SeedPayload,
+  catalog: CompileCatalog
+): SeedMapping {
+  const domainSelections: DomainSelections = {}
+  const assignedStack: Partial<Record<AgentName, StackAgentConfig>> = {}
+  const skills: SkillConfig[] = []
+  const skippedSkillIds: string[] = []
+  const unwritable: UnwritableAssignment[] = []
+  const agentNames = new Set<AgentName>()
+  const agentMap = readAgentMap(payload.agents)
+  const skippedAgentNames = new Set<string>(agentMap.unknown)
+
+  for (const [skillId, entry] of Object.entries(payload.skills)) {
+    const skill = catalog.skills[skillId]
+    const domain = skill?.category
+      ? categoryDomain(catalog, skill.category)
+      : undefined
+
+    if (!skill?.category || domain === undefined) {
+      skippedSkillIds.push(skillId)
+      continue
+    }
+
+    // Past the guard the catalogue knows this id, and its category is a real one: the `local`
+    // pseudo-category has no domain, so it left with the skips.
+    // Boundary casts: both were read out of the catalogue's own keys.
+    const id = skillId as SkillId
+    const category = skill.category as Category
+
+    addToDomainSelections(domainSelections, domain as Domain, category, id)
+
+    skills.push({
+      id,
+      scope: entry.scope,
+      // "eject" is an origin in its own right; anything else names the marketplace it came from.
+      origin: entry.install === "eject" ? EJECT_SOURCE : sourceForSkill(skill),
+    })
+
+    // Only assignments on skills that survived — an agent should not be switched on by a skill
+    // this catalog cannot install.
+    for (const [agentName, load] of Object.entries(entry.assignments)) {
+      if (agentMap.switchedOff.has(agentName)) continue
+      if (!KNOWN_AGENTS.has(agentName)) {
+        skippedAgentNames.add(agentName)
+        continue
+      }
+
+      // Boundary cast: guarded by KNOWN_AGENTS immediately above.
+      const agent = agentName as AgentName
+      // Rows the decode was going to ignore anyway have already left, so what reaches here is a
+      // pair the payload really asked for — and the config model's one rule about pairs applies.
+      if (
+        !isScopePairCompatible(
+          entry.scope,
+          seedAgentScope(agentMap.known.get(agent))
+        )
+      ) {
+        unwritable.push({ skillId: id, agent })
+        continue
+      }
+
+      agentNames.add(agent)
+      // The assignment is the curation: this sub-agent holds this skill, at this load state, and
+      // no sub-agent the payload did not name holds it at all.
+      addToAgentStack(
+        assignedStack,
+        agent,
+        category,
+        toSkillAssignment(id, load)
+      )
+    }
+  }
+
+  if (unwritable.length > 0)
+    throw new Error(unwritableAssignmentsError(unwritable))
+
+  // Bare agents: switched on by the map alone, with no skill to carry them in.
+  for (const [name, entry] of agentMap.known) {
+    if (entry.on === true) agentNames.add(name)
+  }
+
+  const selectedAgents = [...agentNames]
+
+  return {
+    result: {
+      skills,
+      selectedAgents,
+      agentConfigs: selectedAgents.map((name) =>
+        agentScopeConfig(name, agentMap.known.get(name))
+      ),
+      assignedStack,
+      selectedStackId: payload.stackId,
+      // Spread-conditional rather than passed through, because absent and present-holding-undefined
+      // are different files on disk: a config describing itself with no key is not one describing
+      // itself with an empty sentence, and the writer emits whichever key it is handed.
+      ...(payload.description !== undefined && {
+        description: payload.description,
+      }),
+      domainSelections,
+      selectedDomains: orderDomains(typedKeys<Domain>(domainSelections)),
+      // Nothing was dropped from a *saved config* — the skipped ids came off the wire and are
+      // reported to the user directly, so there is no config removal to explain.
+      unresolvableSkillIds: [],
+      cancelled: false,
+      // Revalidated here rather than taken on trust from the app that built the payload. That app
+      // validated against ITS catalog; this one skips ids it does not know and carries its own
+      // relationship rules, so a configuration that was consistent where it was authored can
+      // arrive with a requirement genuinely unmet.
+      validation: validateSelection(
+        skills.map((skill) => skill.id),
+        catalog
+      ),
+    },
+    skippedSkillIds,
+    skippedAgentNames: [...skippedAgentNames],
+  }
+}

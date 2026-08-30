@@ -102,7 +102,7 @@ describe("config-scope integrity -- source priority preservation", () => {
       // Verify Phase A: config has source: "eject"
       const globalConfigPath = configTsPath(fakeHome);
       const configAfterInit = await readTestFile(globalConfigPath);
-      expect(configAfterInit).toContain('"eject"');
+      expect(configAfterInit).toContain("'eject'");
 
       // The entries the install wrote. Captured rather than counted: Phase C used
       // to open on `skillEntries.length >= 3`, and three wrong entries pass a floor
@@ -192,13 +192,18 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       // Remove every api-framework-hono object entry: its `skills[]` record, and in
       // the stack the preloaded assignment, which the writer emits bare at the
       // category-value position because `api-api` is exclusive. The optional
-      // `"<category>": ` prefix takes that whole property with it, so no key is left
+      // `'<category>': ` prefix takes that whole property with it, so no key is left
       // without a value. `[^{}]*` (not `[^}]*`) keeps each match inside the innermost
       // object so the surrounding stack/agent braces stay balanced — the result is a
       // structurally VALID config in which the "api" domain simply has no skills.
+      //
+      // Keyed on the emitted shape — a bare `id` key and single-quoted values — which
+      // is what the pair has looked like since it became a fixed point of prettier on
+      // 2026-08-26. The structural assertions below are what caught the previous
+      // spelling once the format moved and this replace silently matched nothing.
       const modifiedConfig = originalConfig.replace(
         new RegExp(
-          `(?:"[\\w-]+"\\s*:\\s*)?\\{[^{}]*"id"\\s*:\\s*"${E2E_SKILL.hono.id}"[^{}]*\\},?\\s*`,
+          `(?:'[\\w-]+'\\s*:\\s*)?\\{[^{}]*\\bid\\s*:\\s*'${E2E_SKILL.hono.id}'[^{}]*\\},?\\s*`,
           "g",
         ),
         "",
@@ -252,9 +257,9 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       // never declared, so a Domain type that simply lists every known domain (and
       // would therefore pass the positives without reading the config) fails here.
       for (const domain of editedConfig.selectedDomains ?? []) {
-        expect(domainTypeBlock).toContain(`"${domain}"`);
+        expect(domainTypeBlock).toContain(`'${domain}'`);
       }
-      expect(domainTypeBlock).not.toContain(`"${UNDECLARED_DOMAIN}"`);
+      expect(domainTypeBlock).not.toContain(`'${UNDECLARED_DOMAIN}'`);
     },
   );
 });
@@ -325,9 +330,9 @@ describe.skipIf(!claudeAvailable)(
 
         // The top-level "marketplace" field in the export default block should reference
         // the E2E source directory. The config writer formats it as:
-        //   "marketplace": "/path/to/source",
+        //   marketplace: '/path/to/source',
         expect(globalConfig, "Global config must contain a top-level marketplace field").toContain(
-          `"marketplace": "${pluginSource.sourceDir}"`,
+          `marketplace: '${pluginSource.sourceDir}'`,
         );
 
         // Phase D: Verify project config also includes the source field
@@ -337,7 +342,7 @@ describe.skipIf(!claudeAvailable)(
         expect(
           projectConfig,
           "Project config must contain a top-level marketplace field",
-        ).toContain(`"marketplace": "${pluginSource.sourceDir}"`);
+        ).toContain(`marketplace: '${pluginSource.sourceDir}'`);
       },
     );
   },

@@ -398,8 +398,8 @@ describe.skipIf(!claudeAvailable)(
 
         // Config mentions both per-skill source modes.
         const initConfigContent = await readTestFile(configTsPath(fakeHome));
-        expect(initConfigContent).toContain(`"eject"`);
-        expect(initConfigContent).toContain(`"${fixture.marketplaceName}"`);
+        expect(initConfigContent).toContain("'eject'");
+        expect(initConfigContent).toContain(`'${fixture.marketplaceName}'`);
 
         // Non-toggled plugin skill(s) land in fake HOME's settings.json.
         // web-testing-vitest is the plugin-only skill from the plugin fixture

@@ -228,7 +228,7 @@ describe("eject command", () => {
 
       const content = await readFile(configPath, "utf-8");
       expect(content).toContain("export default");
-      expect(content).toContain('"name": "project"');
+      expect(content).toContain("name: 'project'");
     });
 
     it("should not overwrite existing config.yaml", async () => {

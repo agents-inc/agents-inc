@@ -41,7 +41,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
       testTempDir = tempDir;
 
       // ================================================================
-      // Phase A+B: setupDualScope
+      // Phase A+B: setupDualScopeWithEject
       // Phase A inits globally (all skills/agents at global scope).
       // Phase B inits from project, toggling api-framework-hono to project
       // scope and api-developer agent to project scope.
@@ -71,7 +71,7 @@ describe("exclusion lifecycle: scope toggle persistence and file placement", () 
 
       // Excluded tombstone entries must exist in project config
       const configWithExclusions = await readTestFile(configTsPath(projectDir));
-      expect(configWithExclusions).toContain('"excluded":true');
+      expect(configWithExclusions).toContain("excluded: true");
 
       // Snapshot config before passthrough edit
       const configBeforeEdit = await readTestFile(configTsPath(projectDir));

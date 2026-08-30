@@ -22,7 +22,7 @@ describe("getDomainDisplayName", () => {
 });
 
 describe("orderDomains", () => {
-  it("should order built-in domains per the shared DOMAIN_ORDER", () => {
+  it("should order built-in domains per the shared domain order", () => {
     const result = orderDomains(["shared", "web", "cli", "api", "mobile"]);
     expect(result).toStrictEqual(["web", "api", "mobile", "cli", "shared"]);
   });

@@ -11,6 +11,7 @@ import {
   type ConfigTypesBackgroundData,
 } from "../config-types-writer";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils";
+import { matrix } from "../../matrix/matrix-provider";
 import { createMockSkill } from "../../__tests__/factories/skill-factories.js";
 import { buildCategoryMap, createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../../__tests__/factories/category-factories.js";
@@ -82,8 +83,8 @@ describe("generateConfigTypesSource", () => {
   it("generates SkillId union from matrix skills", () => {
     const matrix = FULLSTACK_PAIR_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain('"api-framework-hono"');
-    expect(source).toContain('"web-framework-react"');
+    expect(source).toContain("'api-framework-hono'");
+    expect(source).toContain("'web-framework-react'");
     expect(source).toContain("export type SkillId =");
   });
 
@@ -91,8 +92,8 @@ describe("generateConfigTypesSource", () => {
     const matrix = EMPTY_MATRIX;
     const agentNames: AgentName[] = ["web-developer", "api-developer"];
     const source = generateConfigTypesSource(matrix, agentNames);
-    expect(source).toContain('"api-developer"');
-    expect(source).toContain('"web-developer"');
+    expect(source).toContain("'api-developer'");
+    expect(source).toContain("'web-developer'");
     expect(source).toContain("export type AgentName =");
   });
 
@@ -104,16 +105,16 @@ describe("generateConfigTypesSource", () => {
     // Verify skill IDs are sorted (api before web)
     const skillIdLine = source.split("\n").find((l) => l.startsWith("export type SkillId"));
     expect(skillIdLine).toContain("export type SkillId");
-    const apiIdx = source.indexOf('"api-framework-hono"');
-    const webFrameworkIdx = source.indexOf('"web-framework-react"');
-    const webStylingIdx = source.indexOf('"web-styling-scss-modules"');
+    const apiIdx = source.indexOf("'api-framework-hono'");
+    const webFrameworkIdx = source.indexOf("'web-framework-react'");
+    const webStylingIdx = source.indexOf("'web-styling-scss-modules'");
     expect(apiIdx).toBeLessThan(webFrameworkIdx);
     expect(webFrameworkIdx).toBeLessThan(webStylingIdx);
 
     // Verify agent names are sorted
-    const apiDevIdx = source.indexOf('"api-developer"');
-    const cliDevIdx = source.indexOf('"cli-developer"');
-    const webDevIdx = source.indexOf('"web-developer"');
+    const apiDevIdx = source.indexOf("'api-developer'");
+    const cliDevIdx = source.indexOf("'cli-developer'");
+    const webDevIdx = source.indexOf("'web-developer'");
     expect(apiDevIdx).toBeLessThan(cliDevIdx);
     expect(cliDevIdx).toBeLessThan(webDevIdx);
   });
@@ -126,7 +127,7 @@ describe("generateConfigTypesSource", () => {
 
     const matrix = createMockMatrix({}, { categories });
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain('export type Domain = "api" | "web";');
+    expect(source).toContain("export type Domain = 'api' | 'web'");
   });
 
   it("generates Category union from matrix category keys", () => {
@@ -138,28 +139,28 @@ describe("generateConfigTypesSource", () => {
 
     const matrix = createMockMatrix({}, { categories });
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain('export type Category = "api-api" | "web-framework" | "web-styling";');
+    expect(source).toContain("export type Category = 'api-api' | 'web-framework' | 'web-styling'");
   });
 
   it("emits never for empty categories", () => {
     const matrix = createMockMatrix({}, { categories: buildCategoryMap({}) });
     const source = generateConfigTypesSource(matrix, []);
     expect(source, "an empty category union must accept no category, not every string").toContain(
-      "export type Category = never;",
+      "export type Category = never",
     );
   });
 
   it("generates InstallMode type", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain('export type InstallMode = "eject" | "plugin" | "mixed";');
+    expect(source).toContain("export type InstallMode = 'eject' | 'plugin' | 'mixed'");
   });
 
   it("generates generic SkillAssignment type with default type parameter", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain(
-      "export type SkillAssignment<S extends SkillId = SkillId> = S | { id: S; preloaded: boolean };",
+      "export type SkillAssignment<S extends SkillId = SkillId> = S | { id: S; preloaded: boolean }",
     );
   });
 
@@ -172,16 +173,16 @@ describe("generateConfigTypesSource", () => {
     const source = generateConfigTypesSource(EMPTY_MATRIX, []);
 
     expect(source).toContain("export type SkillConfig = {");
-    expect(source).toContain("  origin: string;");
-    expect(source).not.toContain("  source: string;");
+    expect(source).toContain("  origin: string");
+    expect(source).not.toContain("  source: string");
   });
 
   it("declares the marketplace ref and the marketplace name on ProjectConfig", () => {
     const source = generateConfigTypesSource(EMPTY_MATRIX, []);
 
-    expect(source).toContain("  marketplace?: string;");
-    expect(source).toContain("  marketplaceName?: string;");
-    expect(source).not.toContain("  source?: string;");
+    expect(source).toContain("  marketplace?: string");
+    expect(source).toContain("  marketplaceName?: string");
+    expect(source).not.toContain("  source?: string");
   });
 
   it("falls back to loose StackAgentConfig when no categories have skills", () => {
@@ -190,7 +191,7 @@ describe("generateConfigTypesSource", () => {
     // Project configs always get the loose line, and they carry bare entries for exclusive
     // categories — so the loose line has to admit a single assignment as well as an array.
     expect(source).toContain(
-      "export type StackAgentConfig = Partial<Record<Category, SkillAssignment | SkillAssignment[]>>;",
+      "export type StackAgentConfig = Partial<Record<Category, SkillAssignment | SkillAssignment[]>>",
     );
   });
 
@@ -201,8 +202,8 @@ describe("generateConfigTypesSource", () => {
     const matrix = createMockMatrix(SKILLS.react, { categories });
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain("export type StackAgentConfig = {");
-    expect(source).toContain('  "web-framework"?: SkillAssignment<"web-framework-react">;');
-    expect(source).toContain("};");
+    expect(source).toContain("  'web-framework'?: SkillAssignment<'web-framework-react'>");
+    expect(source).toContain("\n}");
   });
 
   it("generates per-category StackAgentConfig, arrays only for non-exclusive categories", () => {
@@ -214,9 +215,9 @@ describe("generateConfigTypesSource", () => {
     const matrix = createMockMatrix(SKILLS.react, SKILLS.scss, SKILLS.hono, { categories });
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain("export type StackAgentConfig = {");
-    expect(source).toContain('  "api-api"?: SkillAssignment<"api-framework-hono">;');
-    expect(source).toContain('  "web-framework"?: SkillAssignment<"web-framework-react">;');
-    expect(source).toContain('  "web-styling"?: SkillAssignment<"web-styling-scss-modules">[];');
+    expect(source).toContain("  'api-api'?: SkillAssignment<'api-framework-hono'>");
+    expect(source).toContain("  'web-framework'?: SkillAssignment<'web-framework-react'>");
+    expect(source).toContain("  'web-styling'?: SkillAssignment<'web-styling-scss-modules'>[]");
   });
 
   it("names a category pair that locale's collation orders against their code units", () => {
@@ -252,9 +253,9 @@ describe("generateConfigTypesSource", () => {
     expect(source).toContain(
       [
         "export type StackAgentConfig = {",
-        `  "${storage.category}"?: SkillAssignment<"${storage.id}">[];`,
-        `  "${styling.category}"?: SkillAssignment<"${styling.id}">[];`,
-        "};",
+        `  '${storage.category}'?: SkillAssignment<'${storage.id}'>[]`,
+        `  '${styling.category}'?: SkillAssignment<'${styling.id}'>[]`,
+        "}",
       ].join("\n"),
     );
   });
@@ -272,12 +273,12 @@ describe("generateConfigTypesSource", () => {
       { categories },
     );
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain('  "web-framework"?: SkillAssignment<');
-    expect(source).toContain('    | "web-framework-original"');
-    expect(source).toContain('    | "web-framework-react"');
-    expect(source).toContain('    | "web-framework-simple"');
-    expect(source).toContain('    | "web-framework-vue-composition-api"');
-    expect(source).toContain("  >[];");
+    expect(source).toContain("  'web-framework'?: SkillAssignment<");
+    expect(source).toContain("    | 'web-framework-original'");
+    expect(source).toContain("    | 'web-framework-react'");
+    expect(source).toContain("    | 'web-framework-simple'");
+    expect(source).toContain("    | 'web-framework-vue-composition-api'");
+    expect(source).toContain("\n  >[]\n");
   });
 
   it("generates multi-line union without the array wrapper for an exclusive category", () => {
@@ -295,9 +296,9 @@ describe("generateConfigTypesSource", () => {
     const source = generateConfigTypesSource(matrix, []);
     // The union is over which skill may be assigned; exclusivity is about how many, so a long
     // candidate list still yields one assignment.
-    expect(source).toContain('  "web-framework"?: SkillAssignment<');
-    expect(source).toContain("  >;");
-    expect(source).not.toContain("  >[];");
+    expect(source).toContain("  'web-framework'?: SkillAssignment<");
+    expect(source).toContain("\n  >\n");
+    expect(source).not.toContain("\n  >[]\n");
   });
 
   it("omits categories that have no matching skills from StackAgentConfig", () => {
@@ -309,33 +310,33 @@ describe("generateConfigTypesSource", () => {
     const matrix = createMockMatrix(SKILLS.react, { categories });
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain("export type StackAgentConfig = {");
-    expect(source).toContain('"web-framework"?:');
-    expect(source).not.toContain('"web-styling"?:');
+    expect(source).toContain("'web-framework'?:");
+    expect(source).not.toContain("'web-styling'?:");
   });
 
   it("generates ProjectConfig interface with ProjectAgentName stack keys", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
     expect(source).toContain("export interface ProjectConfig {");
-    expect(source).toContain("name: string;");
-    expect(source).toContain("agents: AgentScopeConfig[];");
-    expect(source).toContain("skills: SkillConfig[];");
-    expect(source).toContain("stack?: Partial<Record<ProjectAgentName, StackAgentConfig>>;");
-    expect(source).toContain("selectedDomains?: Domain[];");
+    expect(source).toContain("name: string");
+    expect(source).toContain("agents: AgentScopeConfig[]");
+    expect(source).toContain("skills: SkillConfig[]");
+    expect(source).toContain("stack?: Partial<Record<ProjectAgentName, StackAgentConfig>>");
+    expect(source).toContain("selectedDomains?: Domain[]");
     expect(source, "the active agents list is the only record of who is selected").not.toContain(
       "selectedAgents",
     );
-    expect(source).toContain("marketplace?: string;");
-    expect(source).toContain("marketplaceName?: string;");
-    expect(source).toContain("agentsSource?: string;");
-    expect(source).toContain("author?: string;");
-    expect(source).toContain("description?: string;");
+    expect(source).toContain("marketplace?: string");
+    expect(source).toContain("marketplaceName?: string");
+    expect(source).toContain("agentsSource?: string");
+    expect(source).toContain("author?: string");
+    expect(source).toContain("description?: string");
   });
 
   it("generates SelectedAgentName = AgentName for standalone config without config param", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
-    expect(source).toContain("export type SelectedAgentName = AgentName;");
+    expect(source).toContain("export type SelectedAgentName = AgentName");
   });
 
   it("generates ProjectAgentName = SelectedAgentName for global config", () => {
@@ -345,7 +346,7 @@ describe("generateConfigTypesSource", () => {
       agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
     });
     const source = generateConfigTypesSource(matrix, agentNames, [], undefined, config);
-    expect(source).toContain("export type ProjectAgentName = SelectedAgentName;");
+    expect(source).toContain("export type ProjectAgentName = SelectedAgentName");
   });
 
   it("generates ProjectAgentName narrowed to project-scoped agents", () => {
@@ -358,7 +359,7 @@ describe("generateConfigTypesSource", () => {
       ],
     });
     const source = generateConfigTypesSource(matrix, agentNames, [], undefined, config);
-    expect(source).toContain('export type ProjectAgentName = "web-researcher" | "api-developer"');
+    expect(source).toContain("export type ProjectAgentName = 'web-researcher' | 'api-developer'");
     expect(source).not.toContain("export type ProjectAgentName = SelectedAgentName");
   });
 
@@ -373,14 +374,14 @@ describe("generateConfigTypesSource", () => {
       ],
     });
     const source = generateConfigTypesSource(matrix, agentNames, [], undefined, config);
-    expect(source).toContain('export type SelectedAgentName = "web-developer" | "web-researcher";');
+    expect(source).toContain("export type SelectedAgentName = 'web-developer' | 'web-researcher'");
   });
 
   it("emits never for empty skills", () => {
     const matrix = EMPTY_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
     expect(source, "an empty skill union must accept no skill id, not every string").toContain(
-      "export type SkillId = never;",
+      "export type SkillId = never",
     );
   });
 
@@ -388,7 +389,7 @@ describe("generateConfigTypesSource", () => {
     const matrix = SINGLE_REACT_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
     expect(source, "an empty agent union must accept no agent name, not every string").toContain(
-      "export type AgentName = never;",
+      "export type AgentName = never",
     );
   });
 
@@ -398,7 +399,7 @@ describe("generateConfigTypesSource", () => {
     });
     const source = generateConfigTypesSource(matrix, []);
     expect(source, "an empty domain union must accept no domain, not every string").toContain(
-      "export type Domain = never;",
+      "export type Domain = never",
     );
   });
 
@@ -406,7 +407,7 @@ describe("generateConfigTypesSource", () => {
     const matrix = HONO_REACT_MATRIX;
     const source = generateConfigTypesSource(matrix, []);
     // 2 skills = single-line union
-    expect(source).toContain('export type SkillId = "api-framework-hono" | "web-framework-react";');
+    expect(source).toContain("export type SkillId = 'api-framework-hono' | 'web-framework-react'");
   });
 
   it("uses multi-line format for 6 or more union members", () => {
@@ -423,8 +424,8 @@ describe("generateConfigTypesSource", () => {
     );
     const source = generateConfigTypesSource(matrix, []);
     // 6 skills = multi-line union with leading pipes
-    expect(source).toContain('  | "api-database-drizzle"');
-    expect(source).toContain('  | "web-styling-scss-modules"');
+    expect(source).toContain("  | 'api-database-drizzle'");
+    expect(source).toContain("  | 'web-styling-scss-modules'");
   });
 
   describe("sectioned unions with custom and marketplace comments", () => {
@@ -458,16 +459,16 @@ describe("generateConfigTypesSource", () => {
       expect(customIdx).toBeLessThan(marketplaceIdx);
 
       // Verify custom skills are in the custom section
-      const acmeDeployIdx = source.indexOf('"acme-deploy-pipeline"');
-      const acmeAuditIdx = source.indexOf('"acme-audit-runner"');
+      const acmeDeployIdx = source.indexOf("'acme-deploy-pipeline'");
+      const acmeAuditIdx = source.indexOf("'acme-audit-runner'");
       expect(acmeAuditIdx).toBeGreaterThan(customIdx);
       expect(acmeAuditIdx).toBeLessThan(marketplaceIdx);
       expect(acmeDeployIdx).toBeGreaterThan(customIdx);
       expect(acmeDeployIdx).toBeLessThan(marketplaceIdx);
 
       // Marketplace skills appear after the marketplace comment
-      const reactIdx = source.indexOf('"web-framework-react"');
-      const scssIdx = source.indexOf('"web-styling-scss-modules"');
+      const reactIdx = source.indexOf("'web-framework-react'");
+      const scssIdx = source.indexOf("'web-styling-scss-modules'");
       expect(reactIdx).toBeGreaterThan(marketplaceIdx);
       expect(scssIdx).toBeGreaterThan(marketplaceIdx);
     });
@@ -482,7 +483,7 @@ describe("generateConfigTypesSource", () => {
       expect(source).toContain("// Marketplace");
 
       const customIdx = source.indexOf("// Custom");
-      const extraIdx = source.indexOf('"acme-deploy-pipeline"');
+      const extraIdx = source.indexOf("'acme-deploy-pipeline'");
       expect(extraIdx).toBeGreaterThan(customIdx);
     });
 
@@ -497,7 +498,7 @@ describe("generateConfigTypesSource", () => {
       const skillSection = source.slice(skillStart, skillEnd);
 
       expect(skillSection).not.toContain("// Custom");
-      expect(skillSection).toContain('"web-framework-react"');
+      expect(skillSection).toContain("'web-framework-react'");
     });
 
     it("omits comments when no custom skills exist", () => {
@@ -543,7 +544,7 @@ describe("generateConfigTypesSource", () => {
 
       const customIdx = source.indexOf("// Custom");
       const marketplaceIdx = source.indexOf("// Marketplace");
-      const acmeIdx = source.indexOf('"acme-deployer"');
+      const acmeIdx = source.indexOf("'acme-deployer'");
       expect(acmeIdx).toBeGreaterThan(customIdx);
       expect(acmeIdx).toBeLessThan(marketplaceIdx);
     });
@@ -559,7 +560,7 @@ describe("generateConfigTypesSource", () => {
       expect(source).toContain("// Marketplace");
 
       const customIdx = source.indexOf("// Custom");
-      const customAgentIdx = source.indexOf('"custom-agent"');
+      const customAgentIdx = source.indexOf("'custom-agent'");
       expect(customAgentIdx).toBeGreaterThan(customIdx);
     });
 
@@ -575,7 +576,7 @@ describe("generateConfigTypesSource", () => {
       const agentSection = source.slice(agentStart, agentEnd);
 
       expect(agentSection).not.toContain("// Custom");
-      expect(agentSection).toContain('"web-developer"');
+      expect(agentSection).toContain("'web-developer'");
     });
 
     it("leaves a declared domain out of the custom section when it arrives as an extra", () => {
@@ -588,7 +589,7 @@ describe("generateConfigTypesSource", () => {
       const domainSection = source.slice(domainStart, domainEnd);
 
       expect(domainSection).not.toContain("// Custom");
-      expect(domainSection).toContain('"web"');
+      expect(domainSection).toContain("'web'");
     });
 
     it("labels nothing custom when the extras name the whole configuration", () => {
@@ -635,8 +636,8 @@ describe("generateConfigTypesSource", () => {
 
       // Both categories are the catalogue's — it declares them — however custom their skills are.
       expect(categorySection).not.toContain("// Custom");
-      expect(categorySection).toContain('"acme-deploy"');
-      expect(categorySection).toContain('"web-framework"');
+      expect(categorySection).toContain("'acme-deploy'");
+      expect(categorySection).toContain("'web-framework'");
     });
 
     it("leaves a declared category out of the custom section when it arrives as an extra", () => {
@@ -654,7 +655,7 @@ describe("generateConfigTypesSource", () => {
       const categorySection = source.slice(categoryStart, categoryEnd);
 
       expect(categorySection).not.toContain("// Custom");
-      expect(categorySection).toContain('"web-framework"');
+      expect(categorySection).toContain("'web-framework'");
     });
 
     it("marks a category no declaration covers as custom", () => {
@@ -672,9 +673,9 @@ describe("generateConfigTypesSource", () => {
       expect(categorySection).toContain("// Marketplace");
       const customIdx = categorySection.indexOf("// Custom");
       const marketplaceIdx = categorySection.indexOf("// Marketplace");
-      expect(categorySection.indexOf('"acme-deploy"')).toBeGreaterThan(customIdx);
-      expect(categorySection.indexOf('"acme-deploy"')).toBeLessThan(marketplaceIdx);
-      expect(categorySection.indexOf('"web-framework"')).toBeGreaterThan(marketplaceIdx);
+      expect(categorySection.indexOf("'acme-deploy'")).toBeGreaterThan(customIdx);
+      expect(categorySection.indexOf("'acme-deploy'")).toBeLessThan(marketplaceIdx);
+      expect(categorySection.indexOf("'web-framework'")).toBeGreaterThan(marketplaceIdx);
     });
 
     it("does not mark a domain custom because a custom skill's category carries it", () => {
@@ -702,8 +703,8 @@ describe("generateConfigTypesSource", () => {
       const domainSection = source.slice(domainStart, domainEnd);
 
       expect(domainSection).not.toContain("// Custom");
-      expect(domainSection).toContain('"devops"');
-      expect(domainSection).toContain('"web"');
+      expect(domainSection).toContain("'devops'");
+      expect(domainSection).toContain("'web'");
     });
 
     it("treats extra domains as custom", () => {
@@ -719,8 +720,8 @@ describe("generateConfigTypesSource", () => {
       expect(domainSection).toContain("// Marketplace");
       const customIdx = domainSection.indexOf("// Custom");
       const marketplaceIdx = domainSection.indexOf("// Marketplace");
-      expect(domainSection.indexOf('"devops"')).toBeGreaterThan(customIdx);
-      expect(domainSection.indexOf('"devops"')).toBeLessThan(marketplaceIdx);
+      expect(domainSection.indexOf("'devops'")).toBeGreaterThan(customIdx);
+      expect(domainSection.indexOf("'devops'")).toBeLessThan(marketplaceIdx);
     });
 
     it("does not mark domain as custom if it appears on both custom and non-custom categories", () => {
@@ -766,8 +767,8 @@ describe("generateConfigTypesSource", () => {
       const source = generateConfigTypesSource(matrix, []);
 
       // Even with just 2 members, section comments force multi-line format
-      expect(source).toContain('  | "acme-deploy-pipeline"');
-      expect(source).toContain('  | "web-framework-react"');
+      expect(source).toContain("  | 'acme-deploy-pipeline'");
+      expect(source).toContain("  | 'web-framework-react'");
     });
   });
 });
@@ -796,7 +797,7 @@ describe("regenerateConfigTypes", () => {
     const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
     expect(content).toContain("// AUTO-GENERATED by agents-inc");
-    expect(content).toContain('"web-framework-react"');
+    expect(content).toContain("'web-framework-react'");
   });
 
   it("creates .claude-src/ and writes config-types.ts when data is provided", async () => {
@@ -809,7 +810,7 @@ describe("regenerateConfigTypes", () => {
 
     const configTypesPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
-    expect(content).toContain('"web-framework-react"');
+    expect(content).toContain("'web-framework-react'");
   });
 
   it("includes extra skill IDs in the generated output", async () => {
@@ -826,8 +827,8 @@ describe("regenerateConfigTypes", () => {
 
     const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
-    expect(content).toContain('"acme-deploy-pipeline"');
-    expect(content).toContain('"web-framework-react"');
+    expect(content).toContain("'acme-deploy-pipeline'");
+    expect(content).toContain("'web-framework-react'");
   });
 
   it("does not duplicate extra skill IDs already in the matrix", async () => {
@@ -844,7 +845,7 @@ describe("regenerateConfigTypes", () => {
 
     const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
-    const matches = content.match(/"web-framework-react"/g);
+    const matches = content.match(/'web-framework-react'/g);
     // Should appear in SkillId union only once (plus possibly in other type references)
     expect(matches).not.toBeNull();
     expect(matches!.length).toBeGreaterThanOrEqual(1);
@@ -862,8 +863,8 @@ describe("regenerateConfigTypes", () => {
 
     const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
-    expect(content).toContain('"custom-agent"');
-    expect(content).toContain('"web-developer"');
+    expect(content).toContain("'custom-agent'");
+    expect(content).toContain("'web-developer'");
   });
 
   it("does not duplicate extra agent names already in the data", async () => {
@@ -883,7 +884,7 @@ describe("regenerateConfigTypes", () => {
     const agentSectionStart = content.indexOf("export type AgentName =");
     const agentSectionEnd = content.indexOf(";", agentSectionStart);
     const agentSection = content.slice(agentSectionStart, agentSectionEnd);
-    const matches = agentSection.match(/"web-developer"/g);
+    const matches = agentSection.match(/'web-developer'/g);
     expect(matches).toHaveLength(1);
   });
 
@@ -905,7 +906,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectDomains: [],
     });
     expect(source).toContain("// AUTO-GENERATED by agents-inc — DO NOT EDIT");
-    expect(source).toContain('from "../../.claude-src/config-types"');
+    expect(source).toContain("from '../../.claude-src/config-types'");
     expect(source).toContain("SkillId as GlobalSkillId");
     expect(source).toContain("AgentName as GlobalAgentName");
     expect(source).toContain("Domain as GlobalDomain");
@@ -919,7 +920,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: [],
       projectDomains: [],
     });
-    expect(source).toContain('export type SkillId = GlobalSkillId | "acme-deploy-pipeline"');
+    expect(source).toContain("export type SkillId = GlobalSkillId | 'acme-deploy-pipeline'");
   });
 
   it("extends global types with project-only agent names", () => {
@@ -929,7 +930,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: ["custom-reviewer"],
       projectDomains: [],
     });
-    expect(source).toContain('export type AgentName = GlobalAgentName | "custom-reviewer"');
+    expect(source).toContain("export type AgentName = GlobalAgentName | 'custom-reviewer'");
   });
 
   it("extends global types with project-only domains", () => {
@@ -939,7 +940,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: [],
       projectDomains: ["devops"],
     });
-    expect(source).toContain('export type Domain = GlobalDomain | "devops"');
+    expect(source).toContain("export type Domain = GlobalDomain | 'devops'");
   });
 
   it("uses bare global type when no project members exist", () => {
@@ -949,10 +950,10 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: [],
       projectDomains: [],
     });
-    expect(source).toContain("export type SkillId = GlobalSkillId;");
-    expect(source).toContain("export type AgentName = GlobalAgentName;");
-    expect(source).toContain("export type Domain = GlobalDomain;");
-    expect(source).toContain("export type Category = GlobalCategory;");
+    expect(source).toContain("export type SkillId = GlobalSkillId");
+    expect(source).toContain("export type AgentName = GlobalAgentName");
+    expect(source).toContain("export type Domain = GlobalDomain");
+    expect(source).toContain("export type Category = GlobalCategory");
   });
 
   it("generates SelectedAgentName for project config with selectedAgentNames", () => {
@@ -964,7 +965,7 @@ describe("generateProjectConfigTypesSource", () => {
       selectedAgentNames: ["custom-reviewer", "project-deployer"],
     });
     expect(source).toContain(
-      'export type SelectedAgentName = "custom-reviewer" | "project-deployer";',
+      "export type SelectedAgentName = 'custom-reviewer' | 'project-deployer'",
     );
   });
 
@@ -975,7 +976,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: [],
       projectDomains: [],
     });
-    expect(source).toContain("export type SelectedAgentName = AgentName;");
+    expect(source).toContain("export type SelectedAgentName = AgentName");
   });
 
   it("re-exports GlobalCategory when no project categories exist", () => {
@@ -985,7 +986,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: [],
       projectDomains: [],
     });
-    expect(source).toContain("export type Category = GlobalCategory;");
+    expect(source).toContain("export type Category = GlobalCategory");
     expect(source).toContain("Category as GlobalCategory");
   });
 
@@ -997,7 +998,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectDomains: [],
       projectCategories: ["custom-tooling"],
     });
-    expect(source).toContain('export type Category = GlobalCategory | "custom-tooling"');
+    expect(source).toContain("export type Category = GlobalCategory | 'custom-tooling'");
     expect(source).toContain("Category as GlobalCategory");
   });
 
@@ -1009,7 +1010,7 @@ describe("generateProjectConfigTypesSource", () => {
       projectDomains: [],
     });
     expect(source).toContain("export interface ProjectConfig {");
-    expect(source).toContain('export type InstallMode = "eject" | "plugin" | "mixed"');
+    expect(source).toContain("export type InstallMode = 'eject' | 'plugin' | 'mixed'");
   });
 
   it("sorts multiple project members alphabetically", () => {
@@ -1019,8 +1020,8 @@ describe("generateProjectConfigTypesSource", () => {
       projectAgentNames: [],
       projectDomains: [],
     });
-    const aIdx = source.indexOf('"a-custom-tool"');
-    const zIdx = source.indexOf('"z-custom-tool"');
+    const aIdx = source.indexOf("'a-custom-tool'");
+    const zIdx = source.indexOf("'z-custom-tool'");
     expect(aIdx).toBeLessThan(zIdx);
   });
 
@@ -1035,14 +1036,14 @@ describe("generateProjectConfigTypesSource", () => {
       projectCategories: ["web-framework", "web-testing"],
     });
     expect(source).toContain(
-      'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+      "export type SkillId = GlobalSkillId | 'web-framework-react' | 'web-testing-vitest'",
     );
     expect(source).toContain(
-      'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
+      "export type AgentName = GlobalAgentName | 'web-developer' | 'web-researcher'",
     );
-    expect(source).toContain('export type Domain = GlobalDomain | "web"');
+    expect(source).toContain("export type Domain = GlobalDomain | 'web'");
     expect(source).toContain(
-      'export type Category = GlobalCategory | "web-framework" | "web-testing"',
+      "export type Category = GlobalCategory | 'web-framework' | 'web-testing'",
     );
   });
 
@@ -1057,10 +1058,10 @@ describe("generateProjectConfigTypesSource", () => {
       projectCategories: ["web-framework"],
     });
     expect(source).toContain(
-      'export type SkillId = GlobalSkillId | "project-custom-skill" | "web-framework-react"',
+      "export type SkillId = GlobalSkillId | 'project-custom-skill' | 'web-framework-react'",
     );
     expect(source).toContain(
-      'export type AgentName = GlobalAgentName | "custom-reviewer" | "web-developer"',
+      "export type AgentName = GlobalAgentName | 'custom-reviewer' | 'web-developer'",
     );
   });
 });
@@ -1112,9 +1113,9 @@ describe("regenerateConfigTypes with global install", () => {
     // Should have import from global, not standalone unions
     expect(content).toContain("import type {");
     expect(content).toContain("SkillId as GlobalSkillId");
-    expect(content).toContain("export type SkillId = GlobalSkillId;");
+    expect(content).toContain("export type SkillId = GlobalSkillId");
     // Should NOT contain inline skill IDs from the matrix
-    expect(content).not.toContain('"web-framework-react"');
+    expect(content).not.toContain("'web-framework-react'");
   });
 
   it("includes project-only extras when global exists", async () => {
@@ -1136,8 +1137,8 @@ describe("regenerateConfigTypes with global install", () => {
     const content = await readFile(configTypesPath, "utf-8");
 
     expect(content).toContain("SkillId as GlobalSkillId");
-    expect(content).toContain('"acme-deploy-pipeline"');
-    expect(content).toContain('"custom-reviewer"');
+    expect(content).toContain("'acme-deploy-pipeline'");
+    expect(content).toContain("'custom-reviewer'");
   });
 
   it("narrows SelectedAgentName from the project config's agents", async () => {
@@ -1154,6 +1155,7 @@ describe("regenerateConfigTypes with global install", () => {
       buildProjectConfig({
         agents: buildAgentConfigs(["web-developer", "api-developer"]),
       }),
+      matrix,
     );
     await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
 
@@ -1164,7 +1166,7 @@ describe("regenerateConfigTypes with global install", () => {
     const content = await readFile(configTypesPath, "utf-8");
 
     // SelectedAgentName should be narrowed to the config's agents
-    expect(content).toContain('export type SelectedAgentName = "web-developer" | "api-developer"');
+    expect(content).toContain("export type SelectedAgentName = 'web-developer' | 'api-developer'");
     // Should NOT fall back to AgentName
     expect(content).not.toContain("export type SelectedAgentName = AgentName");
   });
@@ -1185,6 +1187,7 @@ describe("regenerateConfigTypes with global install", () => {
           ...buildAgentConfigs(["api-developer"], { scope: "project" }),
         ],
       }),
+      matrix,
     );
     await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
 
@@ -1195,11 +1198,11 @@ describe("regenerateConfigTypes with global install", () => {
     const content = await readFile(configTypesPath, "utf-8");
 
     // ProjectAgentName should be narrowed to only project-scoped agent
-    expect(content).toContain('export type ProjectAgentName = "api-developer"');
+    expect(content).toContain("export type ProjectAgentName = 'api-developer'");
     // Should NOT fall back to SelectedAgentName
     expect(content).not.toContain("export type ProjectAgentName = SelectedAgentName");
     // SelectedAgentName should still span both scopes
-    expect(content).toContain('export type SelectedAgentName = "web-developer" | "api-developer"');
+    expect(content).toContain("export type SelectedAgentName = 'web-developer' | 'api-developer'");
   });
 
   it("falls back ProjectAgentName to SelectedAgentName when all agents are global", async () => {
@@ -1215,6 +1218,7 @@ describe("regenerateConfigTypes with global install", () => {
       buildProjectConfig({
         agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
       }),
+      matrix,
     );
     await writeFile(path.join(projectClaudeSrc, STANDARD_FILES.CONFIG_TS), configContent);
 
@@ -1276,6 +1280,7 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
           skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
           agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         }),
+        matrix,
       ),
     );
 
@@ -1293,14 +1298,14 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
       "utf-8",
     );
 
-    expect(content, "an installed skill must stay in the union").toContain('"web-framework-react"');
+    expect(content, "an installed skill must stay in the union").toContain("'web-framework-react'");
     expect(content, "the just-created skill must be added to the union").toContain(
-      '"acme-deploy-pipeline"',
+      "'acme-deploy-pipeline'",
     );
     expect(
       content,
       "a matrix skill the config does not install must not appear in the union",
-    ).not.toContain('"api-framework-hono"');
+    ).not.toContain("'api-framework-hono'");
   });
 
   it("omits an agent definition the on-disk config does not install, and keeps the just-created one", async () => {
@@ -1313,6 +1318,7 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
           skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
           agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         }),
+        matrix,
       ),
     );
 
@@ -1329,14 +1335,14 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
       "utf-8",
     );
 
-    expect(content, "an installed agent must stay in the union").toContain('"web-developer"');
+    expect(content, "an installed agent must stay in the union").toContain("'web-developer'");
     expect(content, "the just-created agent must be added to the union").toContain(
-      '"custom-reviewer"',
+      "'custom-reviewer'",
     );
     expect(
       content,
       "an agent definition the config does not install must not appear in the union",
-    ).not.toContain('"api-developer"');
+    ).not.toContain("'api-developer'");
   });
 });
 
@@ -1423,9 +1429,14 @@ describe("every producer of ConfigTypesBackgroundData", () => {
       why: "The configuration barrel.",
     },
     {
-      file: "src/cli/lib/configuration/config-types-writer.ts",
+      file: "src/cli/lib/configuration/config-types-io.ts",
       posture: "the one constructor",
       why: "The type is declared here, so the constructor is too. Every producer is handed the matrix and the agent roster it builds from; none loads them for itself.",
+    },
+    {
+      file: "src/cli/lib/configuration/config-types-writer.ts",
+      posture: "re-export only",
+      why: "The surface both halves are read through: the renderers from `@workspace/compile/config-types-source`, the disk-probing half from `config-types-io.ts`.",
     },
   ] as const satisfies readonly BackgroundDataReader[];
 
@@ -1473,6 +1484,6 @@ describe("every producer of ConfigTypesBackgroundData", () => {
     expect(
       await productionFilesNaming(["?.custom === true"]),
       "two modules deriving which sub-agents are custom is two answers to one question",
-    ).toStrictEqual(["src/cli/lib/configuration/config-types-writer.ts"]);
+    ).toStrictEqual(["src/cli/lib/configuration/config-types-io.ts"]);
   });
 });

@@ -2,51 +2,51 @@ import { describe, it, expect } from "vitest";
 import { extractNamedSection, extractScopeSections } from "./config-source-sections.js";
 
 const CONFIG_SOURCE = `export default {
-  name: "test",
-} satisfies ProjectConfig;
+  name: 'test',
+} satisfies ProjectConfig
 
 const skills: SkillConfig[] = [
   // global
-  { id: "web-framework-react", scope: "global", origin: "eject" },
+  { id: 'web-framework-react', scope: 'global', origin: 'eject' },
   // project
-  { id: "web-testing-vitest", scope: "project", origin: "eject" },
-];
+  { id: 'web-testing-vitest', scope: 'project', origin: 'eject' },
+]
 
-const agents: AgentScopeConfig[] = [
-  { name: "web-dev", scope: "project" },
-];
+const agents: AgentScopeConfig[] = [{ name: 'web-dev', scope: 'project' }]
 
 const stack: Stack = {
-  web: { "web-framework": "web-framework-react" },
-};
+  web: { 'web-framework': 'web-framework-react' },
+}
 `;
 
 const CONFIG_SOURCE_WITHOUT_STACK = `const skills: SkillConfig[] = [
-  { id: "web-framework-react", scope: "global", origin: "eject" },
-];
+  { id: 'web-framework-react', scope: 'global', origin: 'eject' },
+]
 `;
 
 const CONFIG_SOURCE_WITH_UNTERMINATED_SKILLS = `const skills: SkillConfig[] = [
-  { id: "web-framework-react", scope: "global", origin: "eject" },
+  { id: 'web-framework-react', scope: 'global', origin: 'eject' },
+
+const agents: AgentScopeConfig[] = []
 `;
 
 const GLOBAL_ONLY_SECTION = `const skills: SkillConfig[] = [
   // global
-  { id: "web-framework-react", scope: "global", origin: "eject" },
-];`;
+  { id: 'web-framework-react', scope: 'global', origin: 'eject' },
+]`;
 
 const PROJECT_ONLY_SECTION = `const skills: SkillConfig[] = [
   // project
-  { id: "web-testing-vitest", scope: "project", origin: "eject" },
-];`;
+  { id: 'web-testing-vitest', scope: 'project', origin: 'eject' },
+]`;
 
 describe("extractNamedSection", () => {
   it("slices an array section from its declaration to its closing bracket", () => {
     const section = extractNamedSection(CONFIG_SOURCE, "agents");
 
     expect(section.startsWith("const agents: AgentScopeConfig[] = [")).toBe(true);
-    expect(section.endsWith("];")).toBe(true);
-    expect(section).toContain('{ name: "web-dev", scope: "project" }');
+    expect(section.endsWith("]")).toBe(true);
+    expect(section).toContain("{ name: 'web-dev', scope: 'project' }");
     expect(section).not.toContain("const stack");
   });
 
@@ -54,7 +54,7 @@ describe("extractNamedSection", () => {
     const section = extractNamedSection(CONFIG_SOURCE, "stack");
 
     expect(section.startsWith("const stack: Stack = {")).toBe(true);
-    expect(section.endsWith("};")).toBe(true);
+    expect(section.endsWith("}")).toBe(true);
     expect(section).toContain("web-framework-react");
   });
 
@@ -71,9 +71,9 @@ describe("extractNamedSection", () => {
     );
   });
 
-  it("throws naming the closing marker when the section is unterminated", () => {
+  it("throws naming the closing bracket when the section does not close", () => {
     expect(() => extractNamedSection(CONFIG_SOURCE_WITH_UNTERMINATED_SKILLS, "skills")).toThrow(
-      'Marker "];" not found in the "skills" section.',
+      'The "skills" section does not close with "]"',
     );
   });
 });

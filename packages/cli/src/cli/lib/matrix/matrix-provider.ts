@@ -1,3 +1,5 @@
+import { seatCatalog } from "@workspace/compile";
+
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import type {
   Category,
@@ -7,14 +9,22 @@ import type {
   ResolvedStack,
   SkillId,
 } from "../../types";
-import { typedKeys, typedValues } from "../../utils/typed-object";
+import { typedValues } from "../../utils/typed-object";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
 export let matrix: MergedSkillsMatrix = BUILT_IN_MATRIX;
 
-/** Merge local/custom skills on top of BUILT_IN_MATRIX. Called once on CLI startup. */
+/**
+ * Merge local/custom skills on top of BUILT_IN_MATRIX. Called once on CLI startup.
+ *
+ * Also seats `@workspace/compile`'s catalogue, which is what `generateProjectConfigFromSkills`
+ * reads — one writer for both, so the CLI and the shared builder can never hold different
+ * catalogues. Everything else in that package takes its catalogue as an argument; the reason
+ * this one does not is in `packages/compile/src/catalog-seat.ts`.
+ */
 export function initializeMatrix(merged: MergedSkillsMatrix): void {
   matrix = merged;
+  seatCatalog(merged);
 }
 
 /** Asserting skill lookup by ID — throws if not found. */
@@ -53,25 +63,4 @@ export function hasSkill(id: string): boolean {
 /** Optional stack lookup by ID. */
 export function findStack(stackId: string): ResolvedStack | undefined {
   return matrix.suggestedStacks.find((s) => s.id === stackId);
-}
-
-/**
- * A comparator putting categories in the order the matrix declares them, so any
- * surface that emits categories emits them in an order decided by the roster
- * rather than by the order it happened to build them in. A category the matrix
- * does not declare sorts after every declared one, keeping the order it arrived
- * in — `Array.prototype.sort` is stable.
- *
- * Built per call rather than once at module load because `initializeMatrix`
- * replaces the matrix after the local-skill merge, which is where a custom
- * skill's synthesized category first appears.
- */
-export function byCategoryDeclarationOrder(): (a: string, b: string) => number {
-  const declarationRank = new Map<string, number>(
-    typedKeys<Category>(matrix.categories).map((category, rank) => [category, rank]),
-  );
-  const afterEveryDeclared = declarationRank.size;
-  const rankOf = (category: string): number => declarationRank.get(category) ?? afterEveryDeclared;
-
-  return (a, b) => rankOf(a) - rankOf(b);
 }

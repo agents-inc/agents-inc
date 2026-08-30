@@ -12,13 +12,10 @@ export function toTitleCase(kebabCase: string): string {
 }
 
 /**
- * Locale-free string ordering for anything emitted into a file somebody commits. `localeCompare`
- * with no locale argument reads the process's default collation, which Node takes from LC_ALL /
- * LANG — so it is a colleague's desktop language, not a future ICU build, that reorders a
- * regenerated catalogue. Lithuanian and Latvian both place `y` immediately after `i`, which is
- * enough to swap the shipped `mobile-storage` and `mobile-styling`. `<` compares code units and
- * cannot.
+ * Locale-free string ordering for anything emitted into a file somebody commits.
+ *
+ * Declared in `@workspace/compile` because the emitters moved there — `generateStackAgentConfig`
+ * orders a config-types.ts property list with it — and re-exported here so no CLI call site
+ * moved. The reason it is not `localeCompare` lives with the declaration.
  */
-export function bytewise(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
+export { bytewise } from "@workspace/compile";

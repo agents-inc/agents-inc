@@ -60,7 +60,7 @@ describe("eject at the home directory writes a complete config pair", () => {
     expect(
       await readTestFile(configTsPath(fakeHome)),
       "the invented config.ts must import from its config-types sibling",
-    ).toContain(`from "./config-types"`);
+    ).toContain("from './config-types'");
 
     expect(
       await fileExists(configTypesTsPath(fakeHome)),

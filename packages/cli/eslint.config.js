@@ -86,14 +86,33 @@ const FS_WRITE_PATHS = ["fs", "node:fs", "fs/promises", "node:fs/promises", "fs-
  */
 const CONFIG_WRITER_MESSAGE =
   "Config pair sources are rendered and written by src/cli/lib/config-gate/ — call its entry points instead.";
+// The renderers now live in `@workspace/compile`, and this rule matches on the
+// import SPECIFIER — so the move would have stopped it firing with nothing to
+// signal that: no directive is involved, and `reportUnusedDisableDirectives`
+// cannot see a pattern that matches nothing. Both specifiers are named, the
+// package's and the CLI's own re-exports, because a re-export from
+// `config-writer.ts` would otherwise be the bypass. Naming the subpaths rather
+// than the package is deliberate: a rule refusing `@workspace/compile` outright
+// would ban the extraction it exists to permit.
 const CONFIG_WRITER_IMPORTS = [
   {
-    group: ["**/config-writer", "**/config-writer.js"],
+    group: ["**/config-writer", "**/config-writer.js", "@workspace/compile/config-source"],
     importNames: ["generateConfigSource"],
     message: CONFIG_WRITER_MESSAGE,
   },
   {
-    group: ["**/config-types-writer", "**/config-types-writer.js"],
+    // `config-types-io` is where `regenerateConfigTypes` is DECLARED; the other two
+    // specifiers re-export it. Naming all three is the same rule as above one level
+    // on: the extraction moved the declaration to a new module and left the old
+    // specifiers matching only a re-export, which is precisely the bypass this list
+    // is written to close.
+    group: [
+      "**/config-types-writer",
+      "**/config-types-writer.js",
+      "**/config-types-io",
+      "**/config-types-io.js",
+      "@workspace/compile/config-types-source",
+    ],
     importNames: [
       "generateConfigTypesSource",
       "assembleConfigTypesSource",
@@ -413,7 +432,11 @@ export default defineConfig(
     // Enforcement guard #1: refuses a home-directory types write by name, and needs
     // the gate's error class to do it. gate-token.ts is a dependency-free leaf, so
     // the import cannot cycle back through the gate.
-    files: ["src/cli/lib/configuration/config-types-writer.ts"],
+    //
+    // It was `config-types-writer.ts` until the renderers moved into
+    // `@workspace/compile`; that module is now a re-export facade and the half that
+    // probes disk and writes is this one.
+    files: ["src/cli/lib/configuration/config-types-io.ts"],
     rules: restrictedImports({ paths: FS_WRITE_PATHS }),
   },
 

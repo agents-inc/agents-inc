@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { generateConfigSource } from "../../src/cli/lib/configuration/config-writer.js";
+import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import { cleanupTempDir, createTempDir, writeProjectConfig } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -32,7 +33,7 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
       expect(reread, `no config at ${dir}`).not.toBeNull();
       if (!reread) continue;
 
-      const rewritten = generateConfigSource(reread.config);
+      const rewritten = generateConfigSource(reread.config, matrix);
       expect(
         rewritten,
         `${dir} holds a configuration the CLI would not have written — the fixture and the product disagree about it`,
@@ -54,7 +55,8 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
 
     const reread = await loadProjectConfigFromDir(dir);
     expect(reread).not.toBeNull();
-    if (reread) expect(generateConfigSource(reread.config)).toBe(await readConfigSource(dir));
+    if (reread)
+      expect(generateConfigSource(reread.config, matrix)).toBe(await readConfigSource(dir));
 
     await cleanupTempDir(dir);
   });

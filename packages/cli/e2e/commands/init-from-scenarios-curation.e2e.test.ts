@@ -340,9 +340,9 @@ describe("init --from <id>: per-sub-agent curation", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const configSource = await readFile(configTsPath(env.projectDir), "utf8");
-    expect(configSource).toContain(`"web-framework": "${E2E_SKILL.react.id}"`);
+    expect(configSource).toContain(`'web-framework': '${E2E_SKILL.react.id}'`);
     expect(configSource).toContain(
-      `"meta-reviewing": [\n      "${E2E_SKILL.reviewing.id}",\n      "${E2E_SKILL["cli-reviewing"].id}"\n    ]`,
+      `'meta-reviewing': [\n      '${E2E_SKILL.reviewing.id}',\n      '${E2E_SKILL["cli-reviewing"].id}',\n    ]`,
     );
 
     // The compact text and the array text load back to the same normalized shape.

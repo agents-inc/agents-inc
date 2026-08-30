@@ -14,17 +14,31 @@ function requireMarkerIndex(text: string, marker: string, description: string, f
 
 /**
  * Slice a named `const <name>: ...` block out of generated config.ts source.
- * Returns the text from the declaration up to and including its closing
- * `];` (arrays) or `};` (the stack object).
+ * Returns the text from the declaration to the end of its statement.
+ *
+ * The end is the BLANK LINE the writer puts between declarations, not the
+ * closing bracket. Both of the closing brackets this used to key on stopped
+ * being markers on 2026-08-26, when the emitted pair became a fixed point of
+ * prettier under `semi: false`: `];` and `};` are no longer in the file at all,
+ * and an array short enough to sit on one line — a single skill, a single
+ * sub-agent — has no closing line to find either.
  */
 export function extractNamedSection(source: string, name: "skills" | "agents" | "stack"): string {
-  const startMarker = `const ${name}:`;
-  const endMarker = name === "stack" ? "};" : "];";
+  const start = requireMarkerIndex(source, `const ${name}:`, "config source");
+  const blankLine = source.indexOf("\n\n", start);
+  const section = (
+    blankLine === -1 ? source.slice(start) : source.slice(start, blankLine)
+  ).trimEnd();
 
-  const start = requireMarkerIndex(source, startMarker, "config source");
-  const end = requireMarkerIndex(source, endMarker, `the "${name}" section`, start);
+  // The guard the end marker used to be: a section that does not close is one
+  // this reader has run past, and every caller's `not.toContain` would pass
+  // vacuously on the fragment rather than fail.
+  const closer = name === "stack" ? "}" : "]";
+  if (!section.endsWith(closer)) {
+    throw new Error(`The "${name}" section does not close with "${closer}": ${section}`);
+  }
 
-  return source.slice(start, end + endMarker.length);
+  return section;
 }
 
 /**

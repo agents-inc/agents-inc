@@ -10,7 +10,7 @@ import {
 import { generateProjectConfigFromSkills } from "./config-generator";
 import { generateConfigSource } from "./config-writer";
 import type { AgentName } from "../../types";
-import { initializeMatrix } from "../matrix/matrix-provider";
+import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 import { setVerbose } from "../../utils/logger";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
@@ -347,7 +347,7 @@ describe("round-trip tests", () => {
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      generateConfigSource(generated),
+      generateConfigSource(generated, matrix),
     );
 
     // Load it back
@@ -394,7 +394,7 @@ describe("round-trip tests", () => {
     });
     await writeFile(
       path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      generateConfigSource(regenerated),
+      generateConfigSource(regenerated, matrix),
     );
 
     const reloaded = await loadProjectConfig(tempDir);
@@ -456,7 +456,7 @@ describe("round-trip tests", () => {
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      generateConfigSource(generated),
+      generateConfigSource(generated, matrix),
     );
 
     // Load it back

@@ -12,6 +12,10 @@ import { loadProjectConfigFromDir } from "../configuration/project-config";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { isActiveAt } from "../configuration/scope-predicates";
 import { splitConfigByScope } from "../configuration/config-generator";
+// The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
+// startup, which is what `generateConfigSource` read directly before the renderers moved into
+// `@workspace/compile` and the editor became a second caller with a catalogue of its own.
+import { matrix as activeMatrix } from "../matrix/matrix-provider";
 import { generateConfigSource } from "../configuration/config-writer";
 import {
   buildConfigTypesBackgroundData,
@@ -584,7 +588,10 @@ export async function writeProjectPartial(
   await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
   await writeFile(
     configPath,
-    generateConfigSource(fillRequiredFields(withNormalizedStack(partial), options.fallbackName)),
+    generateConfigSource(
+      fillRequiredFields(withNormalizedStack(partial), options.fallbackName),
+      activeMatrix,
+    ),
   );
 }
 

@@ -178,8 +178,8 @@ describe("config-types.ts written by init and refreshed by compile", () => {
 
     const selectedBefore = readGeneratedUnion(afterInit, "SelectedAgentName");
     const projectBefore = readGeneratedUnion(afterInit, "ProjectAgentName");
-    expect(selectedBefore).toBe(' "fixture-marketplace-only-agent" | "web-developer"');
-    expect(projectBefore).toBe(' "fixture-marketplace-only-agent"');
+    expect(selectedBefore).toBe(" 'fixture-marketplace-only-agent' | 'web-developer'");
+    expect(projectBefore).toBe(" 'fixture-marketplace-only-agent'");
     expect(
       projectBefore,
       "the two unions must not be the same string, or a collapse of one into the other reads as green",

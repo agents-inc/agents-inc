@@ -14,6 +14,11 @@ import { assertDistIsFresh, guardAgainstDistReplacement } from "./dist-staleness
  */
 const CLI_ROOT_SEGMENTS = ["packages", "cli"];
 const MATRIX_SRC_SEGMENTS = ["packages", "matrix", "src"];
+const COMPILE_SRC_SEGMENTS = ["packages", "compile", "src"];
+// Added 2026-08-29 with the workspace itself: the fixture mirrors the real
+// layout, so a tree the guard scans and the fixture does not create reads as an
+// incomplete checkout and fails every case in this file rather than one.
+const API_SRC_SEGMENTS = ["packages", "api", "src"];
 
 const DIST_DIR = "dist";
 const CLI_SRC_DIR = "src";
@@ -30,6 +35,8 @@ const EDITOR_SWAP_SUFFIX = ".swap";
 const CLI_TESTS_DIR = "src/cli/lib/__tests__";
 const CLI_TESTS_HELPER_FILE = "src/cli/lib/__tests__/helpers/cli-runner.ts";
 const MATRIX_SRC_FILE = "index.ts";
+const COMPILE_SRC_FILE = "index.ts";
+const API_SRC_FILE = "client.ts";
 
 const BEFORE_BUILD = new Date("2026-01-01T00:00:00.000Z");
 const BUILT_AT = new Date("2026-01-02T00:00:00.000Z");
@@ -76,11 +83,15 @@ describe("assertDistIsFresh", () => {
   let tempDir: string;
   let cliRoot: string;
   let matrixSrcDir: string;
+  let compileSrcDir: string;
+  let apiSrcDir: string;
 
   beforeEach(async () => {
     tempDir = await createTempDir("dist-staleness-");
     cliRoot = path.join(tempDir, ...CLI_ROOT_SEGMENTS);
     matrixSrcDir = path.join(tempDir, ...MATRIX_SRC_SEGMENTS);
+    compileSrcDir = path.join(tempDir, ...COMPILE_SRC_SEGMENTS);
+    apiSrcDir = path.join(tempDir, ...API_SRC_SEGMENTS);
 
     for (const distFile of DIST_FILES) {
       await writeFixtureFile(path.join(cliRoot, distFile));
@@ -90,6 +101,8 @@ describe("assertDistIsFresh", () => {
     await writeFixtureFile(path.join(cliRoot, CLI_SPEC_FILE));
     await writeFixtureFile(path.join(cliRoot, CLI_TESTS_HELPER_FILE));
     await writeFixtureFile(path.join(matrixSrcDir, MATRIX_SRC_FILE));
+    await writeFixtureFile(path.join(compileSrcDir, COMPILE_SRC_FILE));
+    await writeFixtureFile(path.join(apiSrcDir, API_SRC_FILE));
 
     await setModifiedTimeDeep(tempDir, BEFORE_BUILD);
     await setModifiedTimeDeep(path.join(cliRoot, DIST_DIR), BUILT_AT);

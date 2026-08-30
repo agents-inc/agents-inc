@@ -56,7 +56,7 @@ describe("project config identity under an existing global install", () => {
     // Asserted on the written text as well as structurally: the loader SUPPLIES
     // the directory name when the field is absent, so a structural read alone
     // would pass over a config that never carried one.
-    expect(await readTestFile(configTsPath(projectDir))).toContain(`name: "${projectName}"`);
+    expect(await readTestFile(configTsPath(projectDir))).toContain(`name: '${projectName}'`);
     expect((await loadConfigOrFail(projectDir)).name).toBe(projectName);
   });
 

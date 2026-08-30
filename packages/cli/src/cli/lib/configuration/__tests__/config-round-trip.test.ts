@@ -4,7 +4,9 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { generateConfigSource } from "../config-writer";
 import { loadConfig } from "../config-loader";
+import { matrix } from "../../matrix/matrix-provider";
 import { loadProjectConfig } from "../project-config";
+import { useWizardStore } from "../../../stores/wizard-store";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils";
 import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
 import {
@@ -12,7 +14,8 @@ import {
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
 import { expectAgentConfigs, expectSkillConfigs } from "../../__tests__/assertions/index.js";
-import type { ProjectConfig } from "../../../types";
+import { elementAt } from "../../__tests__/helpers/element-at.js";
+import type { ProjectConfig, SkillConfig, SkillId } from "../../../types";
 import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
 
@@ -42,7 +45,7 @@ function stripTypeOnlySyntax(source: string): string {
  */
 async function writeAndLoad(config: ProjectConfig): Promise<unknown> {
   const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
-  await writeFile(configPath, stripTypeOnlySyntax(generateConfigSource(config)));
+  await writeFile(configPath, stripTypeOnlySyntax(generateConfigSource(config, matrix)));
 
   return loadConfig(configPath);
 }
@@ -57,12 +60,38 @@ async function writeAndLoadProjectConfig(config: ProjectConfig): Promise<Project
   await mkdir(claudeSrcDir, { recursive: true });
   await writeFile(
     path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-    stripTypeOnlySyntax(generateConfigSource(config)),
+    stripTypeOnlySyntax(generateConfigSource(config, matrix)),
   );
 
   const loaded = await loadProjectConfig(tempDir);
   if (!loaded) throw new Error("the generated config.ts must be loadable");
   return loaded.config;
+}
+
+/**
+ * A global tombstone minted by the real producer rather than by a factory.
+ *
+ * The key ORDER of the entry is the whole subject of the spec below, so it has to
+ * come from the code that mints one in production: `toggleSkillScope` inserts
+ * `{ id, scope, excluded, origin }` and the loader rebuilds every entry in
+ * `SkillConfig` declaration order, `{ id, scope, origin, excluded }`.
+ * `buildSkillConfig` already emits the loader's order, so a fixture built from it
+ * agrees with the loader for free and the round trip it feeds cannot fail.
+ */
+function mintGlobalTombstoneThroughTheWizard(skillId: SkillId): SkillConfig[] {
+  const installed = buildSkillConfigs([skillId], {
+    scope: "global",
+    origin: DEFAULT_PUBLIC_SOURCE_NAME,
+  });
+  useWizardStore.setState({
+    skillConfigs: installed,
+    installedSkillConfigs: installed,
+    isEditingFromGlobalScope: false,
+  });
+
+  useWizardStore.getState().toggleSkillScope(skillId);
+
+  return useWizardStore.getState().skillConfigs;
 }
 
 /**
@@ -123,7 +152,9 @@ describe("config round-trip", () => {
     });
 
     // The file on disk carries the bare form...
-    expect(generateConfigSource(config)).toMatch(/"web-framework":\s*"web-framework-react"/);
+    expect(generateConfigSource(config, matrix)).toMatch(
+      /'web-framework':\s*'web-framework-react'/,
+    );
 
     // ...and every consumer downstream of the loader still sees SkillAssignment[].
     const loaded = await writeAndLoadProjectConfig(config);
@@ -145,7 +176,9 @@ describe("config round-trip", () => {
     });
 
     // The file on disk carries the bare form...
-    expect(generateConfigSource(config)).toMatch(/"web-framework":\s*"web-framework-react"/);
+    expect(generateConfigSource(config, matrix)).toMatch(
+      /'web-framework':\s*'web-framework-react'/,
+    );
 
     // ...and the loader hands every consumer back a normalized SkillAssignment[].
     const loaded = await writeAndLoadProjectConfig(config);
@@ -231,7 +264,7 @@ describe("config round-trip", () => {
         },
       },
     });
-    const firstEmission = generateConfigSource(config);
+    const firstEmission = generateConfigSource(config, matrix);
 
     const loaded = await writeAndLoadProjectConfig(config);
 
@@ -240,7 +273,7 @@ describe("config round-trip", () => {
     expect(loaded.marketplace).toBe(TEST_SOURCE_URL);
     expect(loaded.author).toBe("@vince");
     expect(
-      generateConfigSource(loaded),
+      generateConfigSource(loaded, matrix),
       "writing back a config just read off disk must not move a single byte",
     ).toBe(firstEmission);
   });
@@ -274,7 +307,7 @@ describe("config round-trip", () => {
       marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
       author: "@vince",
     });
-    const firstEmission = generateConfigSource(config);
+    const firstEmission = generateConfigSource(config, matrix);
 
     const loaded = await writeAndLoadProjectConfig(config);
 
@@ -284,7 +317,107 @@ describe("config round-trip", () => {
     expect(loaded.marketplaceName).toBe(DEFAULT_PUBLIC_SOURCE_NAME);
     expect(loaded.skills.map((skill) => skill.origin)).toStrictEqual([DEFAULT_PUBLIC_SOURCE_NAME]);
     expect(
-      generateConfigSource(loaded),
+      generateConfigSource(loaded, matrix),
+      "writing back a config just read off disk must not move a single byte",
+    ).toBe(firstEmission);
+  });
+
+  /**
+   * The fixed point above holds for every entry a factory builds, because the
+   * factory happens to insert keys in the loader's order. It is not a property of
+   * the writer: `renderEntryLine` is `JSON.stringify(entry)`, so an entry's key
+   * order is its producer's, and `toggleSkillScope` is a producer that disagrees
+   * with the loader. An `edit` run that changes nothing about a tombstoned skill
+   * still rewrites its line, and a second implementation drawing the same bytes
+   * draws a line no install writes.
+   */
+  it("re-emits a config carrying a wizard-minted global tombstone with the same bytes", async () => {
+    const skills = mintGlobalTombstoneThroughTheWizard("web-styling-tailwind");
+
+    // Subject guard: the entry whose key order is in question is really in the
+    // config. `toStrictEqual` compares values and is blind to key order, which is
+    // what makes it a guard for the byte comparison below rather than a duplicate
+    // of it.
+    expect(skills, "the wizard must have minted a global tombstone to re-emit").toStrictEqual([
+      { id: "web-styling-tailwind", scope: "project", origin: DEFAULT_PUBLIC_SOURCE_NAME },
+      {
+        id: "web-styling-tailwind",
+        scope: "global",
+        excluded: true,
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
+      },
+    ]);
+
+    const config = buildProjectConfig({
+      name: "tombstone-fixed-point-project",
+      agents: buildAgentConfigs(["web-developer"]),
+      skills,
+    });
+    const firstEmission = generateConfigSource(config, matrix);
+
+    const loaded = await writeAndLoadProjectConfig(config);
+
+    // Second subject guard: the tombstone survived the round trip, so the byte
+    // comparison is about ORDER and not about an entry the loader dropped.
+    expect(loaded.skills).toStrictEqual(skills);
+    expect(
+      generateConfigSource(loaded, matrix),
+      "writing back a config just read off disk must not move a single byte",
+    ).toBe(firstEmission);
+  });
+
+  /**
+   * The agent-side twin of the pin above, and the reason it needs one of its own:
+   * `withEntriesInSchemaOrder` reorders `skills` and `agents` through two separate
+   * arms, and nothing in this repository exercised the second. Every agent entry
+   * every other spec builds is `{ name, scope }` or `{ name, scope, excluded }`,
+   * which happens to be `AgentScopeConfig`'s own declaration order — so the agent
+   * arm has nothing to move, and deleting it leaves the whole suite green.
+   *
+   * It stops being a coincidence the day an override lands. `model` and `effort`
+   * sit BETWEEN `scope` and `excluded` in the loader's schema, so an entry that
+   * carries one and reaches the writer with `excluded` first comes back off disk
+   * as different bytes. That entry is a real shape, not a fixture curiosity:
+   * `maskCollidingGlobalAgents` in `lib/config-gate/propagate.ts` mints a
+   * tombstone by spreading a live global entry, overrides and all.
+   */
+  it("re-emits a config whose agent tombstone carries model and effort with the same bytes", async () => {
+    const agents = [
+      ...buildAgentConfigs(["web-developer"], { scope: "project", model: "opus", effort: "high" }),
+      ...buildAgentConfigs(["web-developer"], {
+        scope: "global",
+        excluded: true,
+        model: "opus",
+        effort: "high",
+      }),
+    ];
+
+    // Subject guard, and the one thing keeping this spec from going vacuous: the
+    // producer's key order has to DISAGREE with the loader's for the byte
+    // comparison below to be about anything at all. Reorder `buildAgentConfigs`
+    // and this line reddens saying the pin needs a producer that still disagrees,
+    // rather than passing while testing nothing.
+    expect(
+      Object.keys(elementAt(agents, 1)),
+      "the tombstone must reach the writer with `excluded` ahead of the two overrides",
+    ).toStrictEqual(["name", "scope", "excluded", "model", "effort"]);
+
+    const config = buildProjectConfig({
+      name: "agent-override-fixed-point-project",
+      agents,
+      skills: buildSkillConfigs(["web-framework-react"]),
+    });
+    const firstEmission = generateConfigSource(config, matrix);
+
+    const loaded = await writeAndLoadProjectConfig(config);
+
+    // Second subject guard: both entries survived the round trip carrying both
+    // overrides, so the byte comparison is about ORDER and not about an entry the
+    // loader dropped or a field it stripped. `toStrictEqual` is key-order-blind,
+    // which is what makes it a guard rather than a duplicate of the comparison.
+    expect(loaded.agents).toStrictEqual(agents);
+    expect(
+      generateConfigSource(loaded, matrix),
       "writing back a config just read off disk must not move a single byte",
     ).toBe(firstEmission);
   });

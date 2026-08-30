@@ -298,6 +298,11 @@ describe("this repository", () => {
       "the standalone config that prompted this check must stay bound to the shared one",
     ).toContain("apps/server");
     expect(bound).toContain("packages/matrix");
+    // Joined the rule on 2026-08-29, when SERVER-02 gave it a suite of its own.
+    // Named here rather than merely removed from the list below, so the move is
+    // asserted in both directions.
+    expect(bound).toContain("packages/api-mocks");
+    expect(bound).toContain("packages/api");
   });
 
   it("does not judge the workspaces that run no suite", () => {
@@ -311,7 +316,6 @@ describe("this repository", () => {
     // see that, so this list and the `bound` list above are between them the only
     // thing that notices a workspace leaving the rule.
     expect(unjudged).toContain("apps/www");
-    expect(unjudged).toContain("packages/api-mocks");
     expect(unjudged).toContain("packages/eslint-config");
     expect(unjudged).toContain("packages/prettier-config");
     expect(unjudged).toContain("packages/typescript-config");

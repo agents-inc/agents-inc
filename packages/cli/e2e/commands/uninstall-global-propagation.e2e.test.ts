@@ -174,7 +174,7 @@ describe("global uninstall propagates to registered projects", () => {
     // replaced, the project's own skill is in the union, and nothing imports
     // from the deleted global config-types.ts.
     const rawTypes = await readTestFile(configTypesTsPath(projectDir));
-    expect(rawTypes).toContain(`"${E2E_SKILL.vitest.id}"`);
+    expect(rawTypes).toContain(`'${E2E_SKILL.vitest.id}'`);
     expect(rawTypes).not.toContain("GlobalSkillId");
     expect(rawTypes).not.toContain("export type SkillId = string");
 

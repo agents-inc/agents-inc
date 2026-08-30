@@ -70,10 +70,10 @@ const RERUN_HINT =
 // time a file inside it is created or deleted, so without the bare form
 // deleting a spec would read as a source change.
 //
-// The same list covers both trees below. packages/matrix has no `__tests__`
-// anywhere — its specs sit beside the code as `*.test.ts`, which the first
-// entry catches — so the bare directory forms are inert there rather than
-// wrong.
+// The same list covers every tree below. Neither packages/matrix nor
+// packages/compile has a `__tests__` anywhere — their specs sit beside the code
+// as `*.test.ts`, which the first entry catches — so the bare directory forms
+// are inert there rather than wrong.
 const NOT_BUILD_INPUT = [
   "**/*.test.ts",
   "**/*.test.tsx",
@@ -88,10 +88,21 @@ const WHY_DIST_DECIDES =
   "./dist/commands (package.json -> oclif.commands.target), so their result describes the last " +
   "build rather than the tree in front of you.";
 
+const WHY_COMPILE_COUNTS =
+  "@workspace/compile is private, unpublished and ships as TypeScript, so tsup inlines it rather " +
+  "than importing it (`noExternal` in tsup.config.ts). It holds the config-pair and " +
+  "compiled-agent renderers this CLI writes with, so a change there changes what a command emits.";
+
 const WHY_MATRIX_COUNTS =
   "@workspace/matrix is private, unpublished and ships as TypeScript, so tsup inlines it rather " +
   "than importing it (`noExternal` in tsup.config.ts). Its source is compiled into this package's " +
   "dist exactly as src/ is, and it has no build output of its own to go stale instead.";
+
+const WHY_API_COUNTS =
+  "@workspace/api is private and ships as TypeScript, so tsup inlines it the same way — and it " +
+  "brings hono/client with it, which is the whole of what `fetch-seed.ts` gained by moving onto " +
+  "the shared worker client. It arrived on 2026-08-29 and this list is what stops a dist built " +
+  "before it from being read as current.";
 
 const REBUILD_HINT =
   "Run `bun run build` first, or `turbo run test`, which orders a build ahead of it.";
@@ -101,10 +112,10 @@ const MISSING_DIST_MESSAGE = ["dist/ does not exist.", "", WHY_DIST_DECIDES, "",
 );
 
 // Every tree tsup compiles into dist/. `dir` is relative to the CLI package
-// root, which the caller supplies — the matrix hop leaves the package, and a
-// checkout where it no longer lands on a tree is the empty scan below.
-// `alsoBecause` is printed only when that tree is the one that moved, so
-// editing a command does not make anyone read about matrix.
+// root, which the caller supplies — the two sibling-package hops leave the
+// package, and a checkout where one no longer lands on a tree is the empty scan
+// below. `alsoBecause` is printed only when that tree is the one that moved, so
+// editing a command does not make anyone read about matrix or compile.
 type BuildInputTree = {
   readonly label: string;
   readonly dir: string;
@@ -122,6 +133,16 @@ const BUILD_INPUT_TREES = [
     label: "packages/matrix/src",
     dir: path.join("..", "matrix", "src"),
     alsoBecause: [WHY_MATRIX_COUNTS],
+  },
+  {
+    label: "packages/compile/src",
+    dir: path.join("..", "compile", "src"),
+    alsoBecause: [WHY_COMPILE_COUNTS],
+  },
+  {
+    label: "packages/api/src",
+    dir: path.join("..", "api", "src"),
+    alsoBecause: [WHY_API_COUNTS],
   },
 ] as const satisfies readonly BuildInputTree[];
 
@@ -144,7 +165,7 @@ const BUILD_INPUT_TREES = [
  * `build` script of its own (measured on turbo 2.10.8: a one-line matrix edit
  * turns the CLI's cached build from FULL TURBO into a re-run). Neither of those
  * sees `npx vitest run <file>`, which is how most scoped runs here are actually
- * made. So this scans both trees for the same reason turbo hashes both.
+ * made. So this scans every inlined tree for the same reason turbo hashes them all.
  *
  * Keep this module dependency-free beyond node builtins and fast-glob. It is
  * imported by a `globalSetup` hook, which runs before dist/ freshness is known

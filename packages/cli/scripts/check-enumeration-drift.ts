@@ -66,12 +66,20 @@ const E2E_INFRASTRUCTURE = ".ai-docs/reference/testing/e2e-infrastructure.md";
 const COMMANDS_INDEX = ".ai-docs/reference/commands/index.md";
 const UTILITIES = ".ai-docs/reference/utilities.md";
 const CONSTS = "src/cli/consts.ts";
+// The pure half of `consts.ts` moved into `@workspace/compile` so the editor's output preview can
+// hold the same path vocabulary the CLI writes with; `consts.ts` re-exports every name, so no call
+// site moved but the DECLARATIONS these rows enumerate did.
+const COMPILE_PATHS = "../compile/src/paths.ts";
 const EXIT_CODES_FILE = "src/cli/lib/exit-codes.ts";
 const SOURCE_TYPES = "src/cli/types/generated/source-types.ts";
-const CONFIG_WRITER = "src/cli/lib/configuration/config-writer.ts";
-const CONFIG_TYPES_WRITER = "src/cli/lib/configuration/config-types-writer.ts";
-const CONFIG_GENERATOR = "src/cli/lib/configuration/config-generator.ts";
-const SCOPE_PREDICATES = "src/cli/lib/configuration/scope-predicates.ts";
+// The config-pair renderers moved into `@workspace/compile` so the editor draws the bytes an
+// install writes; the CLI modules named in these claims re-export them.
+const CONFIG_WRITER = "../compile/src/config-source.ts";
+const CONFIG_TYPES_WRITER = "../compile/src/config-types-source.ts";
+// Moved with the renderers — `configuration/config-generator.ts` re-exports.
+const CONFIG_GENERATOR = "../compile/src/seed-to-config.ts";
+// Moved with the emitters that read them — `configuration/scope-predicates.ts` re-exports.
+const SCOPE_PREDICATES = "../compile/src/scope-predicates.ts";
 const CONFIG_WRITER_DOC = ".ai-docs/reference/config/config-writer.md";
 const SCOPE_SPLIT_DOC = ".ai-docs/reference/config/scope-split.md";
 const CONFIGURATION_DOC = ".ai-docs/reference/features/configuration.md";
@@ -495,7 +503,7 @@ export const REGISTRY: RegistryEntry[] = [
     // whole first cell, and `code-spans` matches a backticked name to its closing backtick — so a
     // qualified cell is unreadable to both, and the prefix was what hid `PACKAGE_JSON`.
     claim: "STANDARD_FILES in reference/utilities.md",
-    source: { file: CONSTS, symbol: "STANDARD_FILES" },
+    source: { file: COMPILE_PATHS, symbol: "STANDARD_FILES" },
     document: {
       document: UTILITIES,
       from: "readable as an enumeration — bound to source",
@@ -511,7 +519,7 @@ export const REGISTRY: RegistryEntry[] = [
     // to `METADATA_YAML_FILE` / `PLUGIN_MANIFEST_FILE`, and `DIRS` binds `skills` to
     // `SKILLS_DIR_PATH` — an identifier is a value `valueOf` refuses to guess at rather than read.
     claim: "STANDARD_DIRS in reference/utilities.md",
-    source: { file: CONSTS, entries: "STANDARD_DIRS" },
+    source: { file: COMPILE_PATHS, entries: "STANDARD_DIRS" },
     document: {
       document: UTILITIES,
       from: "`STANDARD_DIRS` constant, same convention:",
@@ -523,7 +531,7 @@ export const REGISTRY: RegistryEntry[] = [
   },
   {
     claim: "DIRS in reference/utilities.md",
-    source: { file: CONSTS, symbol: "DIRS" },
+    source: { file: COMPILE_PATHS, symbol: "DIRS" },
     document: {
       document: UTILITIES,
       from: "`DIRS` object:",
@@ -714,7 +722,7 @@ export const REGISTRY: RegistryEntry[] = [
     source: { file: CONFIG_GENERATOR, exports: "function" },
     document: {
       document: SCOPE_SPLIT_DOC,
-      from: "so a sixth export cannot land without this table naming it:",
+      from: "so a seventh export cannot land without this table naming it:",
       to: "Only `generateProjectConfigFromSkills` and `buildStackProperty`",
       states: "table-rows",
     },

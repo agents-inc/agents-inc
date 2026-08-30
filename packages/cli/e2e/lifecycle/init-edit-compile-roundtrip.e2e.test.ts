@@ -131,7 +131,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       // Verify project config has web-framework-react with project scope
       const projectConfigAfterEdit = await readTestFile(projectConfigPath);
       expect(projectConfigAfterEdit).toContain(E2E_SKILL.react.id);
-      expect(projectConfigAfterEdit).toMatch(/web-framework-react[^}]*"scope"\s*:\s*"project"/);
+      expect(projectConfigAfterEdit).toMatch(/web-framework-react[^}]*scope:\s*'project'/);
       expect(projectConfigAfterEdit, "version field is not emitted on edit").not.toContain(
         "version:",
       );

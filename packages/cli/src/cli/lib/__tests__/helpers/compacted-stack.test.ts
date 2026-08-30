@@ -5,9 +5,10 @@ import type { CompactedStack } from "./compacted-stack.js";
 
 /**
  * The writer's own layout, verbatim in shape from `generateStandaloneConfig`
- * (`configuration/config-writer.ts`): `JSON.stringify(stack, null, 2)` inside a
- * `const stack: … = …;` declaration, with the skills and agents sections above it and the
- * `export default` table of contents below.
+ * (`configuration/config-writer.ts`): the shared literal printer inside a `const stack: … = …`
+ * declaration, with the skills and agents sections above it and the `export default` table of
+ * contents below. Single-quoted, identifier keys bare, trailing commas — the emitted pair is a
+ * fixed point of prettier since 2026-08-26, so none of this is JSON any more.
  *
  * Both compactions are here because they are what every caller asserts on. An exclusive
  * category holds its assignment BARE — as the id alone when nothing else is being said, as an
@@ -17,44 +18,35 @@ import type { CompactedStack } from "./compacted-stack.js";
  * `api-developer` alone and looks entirely credible doing it.
  */
 const CONFIG_SOURCE_WITH_TWO_AGENTS = `const skills: SkillConfig[] = [
-  { "id": "web-framework-react", "scope": "project", "origin": "eject" },
-];
+  { id: 'web-framework-react', scope: 'project', origin: 'eject' },
+]
 
-const agents: AgentScopeConfig[] = [
-  { "name": "web-developer", "scope": "project" },
-];
+const agents: AgentScopeConfig[] = [{ name: 'web-developer', scope: 'project' }]
 
 const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
-  "api-developer": {
-    "api-api": "api-framework-hono"
+  'api-developer': {
+    'api-api': 'api-framework-hono',
   },
-  "web-developer": {
-    "web-framework": {
-      "id": "web-framework-react",
-      "preloaded": true
-    },
-    "web-testing": [
-      "web-testing-vitest"
-    ]
-  }
-};
+  'web-developer': {
+    'web-framework': { id: 'web-framework-react', preloaded: true },
+    'web-testing': ['web-testing-vitest'],
+  },
+}
 
-const selectedDomains: Domain[] = ["web", "api"];
+const selectedDomains: Domain[] = ['web', 'api']
 
 export default {
-  name: "fixture",
+  name: 'fixture',
   skills,
   agents,
   stack,
   selectedDomains,
-} satisfies ProjectConfig;
+} satisfies ProjectConfig
 `;
 
 const CONFIG_SOURCE_WITH_ONE_AGENT = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
-  "api-developer": {
-    "api-api": "api-framework-hono"
-  }
-};
+  'api-developer': { 'api-api': 'api-framework-hono' },
+}
 `;
 
 /**
@@ -64,34 +56,35 @@ const CONFIG_SOURCE_WITH_ONE_AGENT = `const stack: Partial<Record<ProjectAgentNa
  * of the two answers it is holding: an empty declaration reads as an empty stack, an absent
  * one throws.
  */
-const CONFIG_SOURCE_WITH_EMPTY_STACK = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {};
+const CONFIG_SOURCE_WITH_EMPTY_STACK = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {}
 `;
 
 const CONFIG_SOURCE_WITHOUT_STACK = `const skills: SkillConfig[] = [
-  { "id": "web-framework-react", "scope": "project", "origin": "eject" },
-];
+  { id: 'web-framework-react', scope: 'project', origin: 'eject' },
+]
 `;
 
 const CONFIG_SOURCE_WITH_UNTERMINATED_STACK = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
-  "api-developer": {}
+  'api-developer': {
 `;
 
 /**
- * A stack assigned from a name rather than written out. The `export default` below supplies the
- * `};` that ends the section, so the slice that follows the `=` is that block rather than any
- * stack — the plausible-looking fragment this reader must refuse instead of answering with.
+ * A stack assigned from a name rather than written out, with an `export default` block below it
+ * — the plausible-looking fragment this reader must refuse instead of answering with.
  */
-const CONFIG_SOURCE_WITH_STACK_BY_REFERENCE = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = SHARED_STACK;
+const CONFIG_SOURCE_WITH_STACK_BY_REFERENCE = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = SHARED_STACK
 
 export default {
-  name: "fixture",
+  name: 'fixture',
   stack,
-};
+}
 `;
 
-/** The same assignment with nothing after the `=` that opens an object at all. */
-const CONFIG_SOURCE_WITH_UNOPENED_STACK = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = SHARED_STACK;
-};
+/**
+ * The same assignment whose text happens to END in a brace, so the section reader hands it on
+ * and the inner guard is the one that has to refuse it.
+ */
+const CONFIG_SOURCE_WITH_UNOPENED_STACK = `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = SHARED_STACKS.web}
 `;
 
 const TWO_AGENT_STACK = {
@@ -131,14 +124,16 @@ describe("compactedStackIn", () => {
     );
   });
 
-  it("throws naming the closing marker when the declaration is unterminated", () => {
+  it("throws naming the closing brace when the declaration is unterminated", () => {
     expect(() => compactedStackIn(CONFIG_SOURCE_WITH_UNTERMINATED_STACK)).toThrow(
-      'Marker "};" not found in the "stack" section.',
+      'The "stack" section does not close with "}"',
     );
   });
 
   it("refuses the block below rather than answering with it when the stack is a reference", () => {
-    expect(() => compactedStackIn(CONFIG_SOURCE_WITH_STACK_BY_REFERENCE)).toThrow(SyntaxError);
+    expect(() => compactedStackIn(CONFIG_SOURCE_WITH_STACK_BY_REFERENCE)).toThrow(
+      'The "stack" section does not close with "}"',
+    );
   });
 
   it("throws when nothing after the assignment opens an object literal", () => {

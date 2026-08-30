@@ -32,8 +32,29 @@ export type CompactedStack = Record<
 /** The stack a `config.ts` source declares, parsed exactly as the writer laid it out. */
 export function compactedStackIn(configSource: string): CompactedStack {
   const declaration = extractNamedSection(configSource, "stack");
-  // Boundary: JSON embedded inside a TypeScript file, read back as data.
-  return JSON.parse(objectLiteralIn(declaration)) as CompactedStack;
+  // Boundary: an object literal embedded inside a TypeScript file, read back as data.
+  return JSON.parse(asJson(objectLiteralIn(declaration))) as CompactedStack;
+}
+
+/**
+ * A stack literal as JSON.
+ *
+ * The declaration used to BE JSON — `JSON.stringify(stack, null, 2)` inside a `const` — and
+ * `JSON.parse` read it directly. It stopped being JSON on 2026-08-26, when the emitted pair
+ * became a fixed point of prettier under `singleQuote: true` and `quoteProps: "as-needed"`:
+ * every string is single-quoted, an identifier key is bare, and every broken literal carries a
+ * trailing comma. The three rewrites below undo exactly those three.
+ *
+ * They are string substitutions rather than a parser, and that is sound HERE and nowhere
+ * wider: a stack holds skill ids, category ids, sub-agent names and booleans, none of which can
+ * contain a quote or a comma. Point this at a config field a user writes prose into — a
+ * `description`, an `author` — and it will corrupt it.
+ */
+function asJson(literal: string): string {
+  return literal
+    .replace(/'([^']*)'/g, '"$1"')
+    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
+    .replace(/,(\s*[}\]])/g, "$1");
 }
 
 /**

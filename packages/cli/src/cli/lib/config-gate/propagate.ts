@@ -28,6 +28,10 @@ import {
   deriveDomains,
   regenerateConfigTypes,
 } from "../configuration/config-types-writer";
+// The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
+// startup, which is what `generateConfigSource` read directly before the renderers moved into
+// `@workspace/compile` and the editor became a second caller with a catalogue of its own.
+import { matrix as activeMatrix } from "../matrix/matrix-provider";
 import { fileExists, writeFile } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
@@ -39,7 +43,7 @@ export async function writeConfigFile(
   configPath: string,
   options?: ConfigSourceOptions,
 ): Promise<void> {
-  const source = generateConfigSource(config, options);
+  const source = generateConfigSource(config, activeMatrix, options);
   await writeFile(configPath, source);
 }
 

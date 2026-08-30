@@ -317,9 +317,10 @@ function expectedPlacements(
 /**
  * The one place a skill's assignment and its `origin` put it.
  *
- * `origin` decides the ref form on the same rule `pluginRefFor` in `lib/compiler.ts`
- * applies: an ejected skill — and one with no config entry at all — renders bare, and
- * anything from a marketplace renders as `id:id`.
+ * `origin` decides the ref form on the same rule `pluginRefFor` applies — declared in
+ * `@workspace/compile`'s `agent-source.ts`, which `lib/compiler.ts` imports: an ejected skill,
+ * and one with no config entry at all, renders bare, and anything from a marketplace renders
+ * as `id:id`.
  */
 function placementFor(
   agent: string,

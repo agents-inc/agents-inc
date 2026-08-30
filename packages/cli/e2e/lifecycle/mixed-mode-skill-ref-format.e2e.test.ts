@@ -150,19 +150,17 @@ describe.skipIf(!claudeAvailable)(
           expect(await fileExists(configPath)).toBe(true);
           const configContent = await readTestFile(configPath);
 
-          // Both skills present as separate SkillConfig entries. Compact JSON
-          // shape (no inner spaces) is stable across the config-generator.
-          expect(configContent).toContain(`"id":"${E2E_SKILL.react.id}"`);
-          expect(configContent).toContain(`"id":"${E2E_SKILL.zustand.id}"`);
+          // Both skills present as separate SkillConfig entries, in the shape the
+          // shared literal printer emits: bare identifier key, single-quoted value.
+          expect(configContent).toContain(`id: '${E2E_SKILL.react.id}'`);
+          expect(configContent).toContain(`id: '${E2E_SKILL.zustand.id}'`);
 
           // react flipped to eject; the regex tolerates either scope so the
           // test does not depend on whether the install routes to project
           // or global agent dirs (matches the existing init-wizard-stack
           // test which asserts on result.project regardless of scope).
           expect(configContent).toMatch(
-            new RegExp(
-              `"id":"${E2E_SKILL.react.id}","scope":"(?:project|global)","origin":"eject"`,
-            ),
+            new RegExp(`id: '${E2E_SKILL.react.id}', scope: '(?:project|global)', origin: 'eject'`),
           );
 
           // zustand stays plugin — verifies the toggle was scoped to react.
@@ -170,7 +168,7 @@ describe.skipIf(!claudeAvailable)(
           // plugin install and the registry use.
           expect(configContent).toMatch(
             new RegExp(
-              `"id":"${E2E_SKILL.zustand.id}","scope":"(?:project|global)","origin":"${pluginSource!.marketplaceName}"`,
+              `id: '${E2E_SKILL.zustand.id}', scope: '(?:project|global)', origin: '${pluginSource!.marketplaceName}'`,
             ),
           );
 

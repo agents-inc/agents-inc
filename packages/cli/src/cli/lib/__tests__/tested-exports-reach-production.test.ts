@@ -65,6 +65,20 @@ type TestOnlyExport = ExportSite & { posture: Posture };
  */
 const TEST_ONLY_EXPORTS = [
   {
+    file: "src/cli/lib/configuration/config-writer.ts",
+    name: "getGlobalConfigImportPath",
+    // Not a test utility — a production function with no production caller, which is a different
+    // thing and is stated rather than hidden. It builds the specifier for the config form that
+    // extends the global config by IMPORTING it, and nothing selects that form: the one site
+    // passing `isProjectConfig` (`writeProjectConfigPair` in `config-gate/propagate.ts`) always
+    // passes `globalConfig` alongside, which takes the inlining branch instead. It became
+    // test-only when the renderers moved into `@workspace/compile` and the path became an
+    // argument (`options.globalImportPath`) rather than a read inside `generateConfigSource` —
+    // a browser has no `os.homedir()`. Delete-or-keep is a decision the extraction deliberately
+    // did not take.
+    posture: "unjudged",
+  },
+  {
     file: "src/cli/lib/testing/dist-staleness.ts",
     name: "assertDistIsFresh",
     // The one decision here. Every caller is a runner's own entry point or the E2E harness, and

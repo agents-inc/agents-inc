@@ -35,7 +35,7 @@ import type {
   ProjectConfig,
   SkillId,
 } from "../../types";
-import { initializeMatrix } from "../matrix/matrix-provider";
+import { initializeMatrix, matrix as activeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import {} from "../__tests__/factories/skill-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
@@ -378,12 +378,15 @@ describe("local-installer", () => {
       // Boundary cast: test provides a synthetic agent name not in the AgentName union
       await writeFile(
         path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        generateConfigSource({
-          name: "existing-project",
-          agents: [{ name: "existing-agent" as AgentName, scope: "project" as const }],
-          skills: [],
-          author: "@existing",
-        }),
+        generateConfigSource(
+          {
+            name: "existing-project",
+            agents: [{ name: "existing-agent" as AgentName, scope: "project" as const }],
+            skills: [],
+            author: "@existing",
+          },
+          activeMatrix,
+        ),
       );
 
       const matrix = EMPTY_MATRIX;
@@ -2003,10 +2006,10 @@ describe("local-installer", () => {
       // global-scoped ones the sibling config.ts inlines, which the imported aliases would
       // otherwise cover only until the next global-scope run narrows them.
       expect(typesContent).toContain(
-        'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+        "export type SkillId = GlobalSkillId | 'web-framework-react' | 'web-testing-vitest'",
       );
       expect(typesContent).toContain(
-        'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
+        "export type AgentName = GlobalAgentName | 'web-developer' | 'web-researcher'",
       );
     });
 
@@ -2059,8 +2062,8 @@ describe("local-installer", () => {
       // The project owns nothing at project scope, yet its config.ts inlines both global
       // rows, so its own unions still have to name them: covered by the import alone, this
       // file goes red the moment a global-scope run drops either entry.
-      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-framework-react"');
-      expect(typesContent).toContain('export type AgentName = GlobalAgentName | "web-developer"');
+      expect(typesContent).toContain("export type SkillId = GlobalSkillId | 'web-framework-react'");
+      expect(typesContent).toContain("export type AgentName = GlobalAgentName | 'web-developer'");
     });
 
     /**
@@ -2116,7 +2119,7 @@ describe("local-installer", () => {
       const typesContent = await readFile(projectTypesPath, "utf-8");
 
       expect(typesContent).toContain("SkillId as GlobalSkillId");
-      expect(typesContent).toContain('export type SkillId = GlobalSkillId | "web-framework-react"');
+      expect(typesContent).toContain("export type SkillId = GlobalSkillId | 'web-framework-react'");
     });
 
     /**
@@ -2182,19 +2185,19 @@ describe("local-installer", () => {
       // assertions below would be asking the types to cover something nobody wrote.
       const projectConfigContent = await readFile(projectConfigPath, "utf-8");
       expect(projectConfigContent).toContain(
-        '{"id":"web-framework-react","scope":"global","origin":"agents-inc"}',
+        "{ id: 'web-framework-react', scope: 'global', origin: 'agents-inc' }",
       );
 
       // Control: the project-scoped entry is in the extras today.
-      expect(readGeneratedUnion(typesContent, "SkillId")).toContain('"api-framework-hono"');
-      expect(readGeneratedUnion(typesContent, "Category")).toContain('"api-api"');
-      expect(readGeneratedUnion(typesContent, "Domain")).toContain('"api"');
+      expect(readGeneratedUnion(typesContent, "SkillId")).toContain("'api-framework-hono'");
+      expect(readGeneratedUnion(typesContent, "Category")).toContain("'api-api'");
+      expect(readGeneratedUnion(typesContent, "Domain")).toContain("'api'");
 
       // The defect: the inlined global entry must be covered by the project's own
       // unions, not merely by whatever the global unions happen to hold right now.
-      expect(readGeneratedUnion(typesContent, "SkillId")).toContain('"web-framework-react"');
-      expect(readGeneratedUnion(typesContent, "Category")).toContain('"web-framework"');
-      expect(readGeneratedUnion(typesContent, "Domain")).toContain('"web"');
+      expect(readGeneratedUnion(typesContent, "SkillId")).toContain("'web-framework-react'");
+      expect(readGeneratedUnion(typesContent, "Category")).toContain("'web-framework'");
+      expect(readGeneratedUnion(typesContent, "Domain")).toContain("'web'");
     });
 
     /**
@@ -2245,9 +2248,9 @@ describe("local-installer", () => {
       // The sibling config.ts really does name the domain — without this the
       // assertion below would be asking the types to cover something nobody wrote.
       const projectConfigContent = await readFile(projectConfigPath, "utf-8");
-      expect(projectConfigContent).toContain('const selectedDomains: Domain[] = ["api", "meta"];');
+      expect(projectConfigContent).toContain("const selectedDomains: Domain[] = ['api', 'meta']");
 
-      expect(readGeneratedUnion(typesContent, "Domain")).toContain('"meta"');
+      expect(readGeneratedUnion(typesContent, "Domain")).toContain("'meta'");
     });
   });
 
@@ -2286,9 +2289,9 @@ describe("local-installer", () => {
       expect(typesContent).not.toContain("as GlobalSkillId");
       // Unions narrowed to the config's entries — the added skill is in, the
       // removed one is out even though the matrix still knows it
-      expect(typesContent).toContain('export type SkillId = "web-framework-react";');
-      expect(typesContent).toContain('export type AgentName = "web-developer";');
-      expect(typesContent).not.toContain('"api-framework-hono"');
+      expect(typesContent).toContain("export type SkillId = 'web-framework-react'");
+      expect(typesContent).toContain("export type AgentName = 'web-developer'");
+      expect(typesContent).not.toContain("'api-framework-hono'");
     });
 
     // The enclosing useFakeHome already points HOME — and so globalInstallRoot() — at the
@@ -2340,10 +2343,10 @@ describe("local-installer", () => {
         // Extended with every active entry the compiled config carries, global rows
         // included: config.ts names them, so the types beside it must accept them
         expect(typesContent).toContain(
-          'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+          "export type SkillId = GlobalSkillId | 'web-framework-react' | 'web-testing-vitest'",
         );
         expect(typesContent).toContain(
-          'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
+          "export type AgentName = GlobalAgentName | 'web-developer' | 'web-researcher'",
         );
 
         // Regeneration touches only config-types.ts — config.ts stays byte-identical
@@ -2369,7 +2372,7 @@ describe("local-installer", () => {
         "utf-8",
       );
       expect(typesContent).not.toContain("as GlobalSkillId");
-      expect(typesContent).toContain('"web-framework-react"');
+      expect(typesContent).toContain("'web-framework-react'");
     });
 
     // The compile/uninstall refresh paths load the matrix with
@@ -2400,8 +2403,8 @@ describe("local-installer", () => {
         emptyAgents,
       );
       const untaggedTypes = await readFile(typesPath, "utf-8");
-      expect(untaggedTypes).toContain('"web-framework-react"');
-      expect(untaggedTypes).toContain('"api-framework-hono"');
+      expect(untaggedTypes).toContain("'web-framework-react'");
+      expect(untaggedTypes).toContain("'api-framework-hono'");
 
       // Tag a fresh copy of the same matrix exactly as the wizard load does
       const taggedMatrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.hono });
@@ -2944,10 +2947,10 @@ describe("local-installer", () => {
       // reach on a later narrowing run would stop type-checking against a
       // config.ts it still names them in.
       expect(typesContent).toContain(
-        'export type SkillId = GlobalSkillId | "web-framework-react" | "web-testing-vitest"',
+        "export type SkillId = GlobalSkillId | 'web-framework-react' | 'web-testing-vitest'",
       );
       expect(typesContent).toContain(
-        'export type AgentName = GlobalAgentName | "web-developer" | "web-researcher"',
+        "export type AgentName = GlobalAgentName | 'web-developer' | 'web-researcher'",
       );
     });
   });
@@ -3023,7 +3026,7 @@ describe("local-installer", () => {
         path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS),
         "utf-8",
       );
-      expect(typesContent).toContain('"web-testing-vitest"');
+      expect(typesContent).toContain("'web-testing-vitest'");
       expect(typesContent).not.toContain("GlobalSkillId");
       expect(typesContent).not.toContain("GlobalAgentName");
     });

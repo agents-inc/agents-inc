@@ -6,14 +6,18 @@ import { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import {
   generateBlankGlobalConfigSource,
-  generateBlankGlobalConfigTypesSource,
   generateConfigSource,
 } from "../configuration/config-writer";
 import {
   buildConfigTypesBackgroundData,
+  generateBlankGlobalConfigTypesSource,
   generateConfigTypesSource,
   type ConfigTypesExtras,
 } from "../configuration/config-types-writer";
+// The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
+// startup, which is what `generateConfigSource` read directly before the renderers moved into
+// `@workspace/compile` and the editor became a second caller with a catalogue of its own.
+import { matrix as activeMatrix } from "../matrix/matrix-provider";
 import { assertGateToken } from "./gate-token.js";
 
 /**
@@ -92,12 +96,17 @@ function renderStandaloneTypes(
  * Writes the config half of the pair at `configPath`. The global config never
  * takes the project writer's import/inline options — it is the file those
  * options resolve against.
+ *
+ * The one renderer call left reading the singleton rather than taking a
+ * catalogue: its sole caller is `mutateGlobal`, which writes this half BEFORE
+ * `resolveGateDeps` runs, deliberately — a mutation with no registered projects
+ * must not pay for the catalogue load. There is no catalogue in scope to pass.
  */
 export async function writeGlobalConfigHalf(
   config: ProjectConfig,
   configPath: string,
 ): Promise<boolean> {
-  return writeIfChanged(configPath, generateConfigSource(config));
+  return writeIfChanged(configPath, generateConfigSource(config, activeMatrix));
 }
 
 /** Writes the types half of the pair beside `configPath`. */
@@ -114,14 +123,22 @@ export async function writeGlobalTypesHalf(
   );
 }
 
-/** Writes both halves from one config, so they cannot disagree. */
+/**
+ * Writes both halves from one config AND one catalogue, so they cannot disagree.
+ *
+ * The catalogue is the caller's `matrix` for both halves. It was the caller's for
+ * the types half and the module singleton for the config half, which is the
+ * disagreement this function's name says cannot happen: the two are the same
+ * object on every production path today, and the whole reason the renderers take
+ * a catalogue parameter is that a second caller seats a different one.
+ */
 export async function writeGlobalPair(
   config: ProjectConfig,
   configPath: string,
   matrix: MergedSkillsMatrix,
   agents: Partial<Record<AgentName, AgentDefinition>>,
 ): Promise<boolean> {
-  const configWritten = await writeIfChanged(configPath, generateConfigSource(config));
+  const configWritten = await writeIfChanged(configPath, generateConfigSource(config, matrix));
   const typesWritten = await writeIfChanged(
     typesPathFor(configPath),
     renderStandaloneTypes(config, matrix, agents),

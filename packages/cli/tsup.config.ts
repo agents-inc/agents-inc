@@ -20,12 +20,13 @@ export default defineConfig({
   ],
   format: ["esm"],
   platform: "node",
-  // @workspace/matrix is private, unpublished and ships as TypeScript, so nothing it exports can
-  // be resolved at runtime from an installed tarball — it has to be inlined here. It is a
-  // devDependency, which tsup already bundles by default; naming it is what makes that load-bearing
-  // rather than incidental, because promoting it to `dependencies` would silently externalise it
-  // and break `init --from` in the published CLI.
-  noExternal: ["@workspace/matrix"],
+  // @workspace/matrix, @workspace/compile and @workspace/api are private, unpublished and ship as
+  // TypeScript, so nothing they export can be resolved at runtime from an installed tarball — all
+  // three have to be inlined here. They are devDependencies, which tsup already bundles by default;
+  // naming them is what makes that load-bearing rather than incidental, because promoting any of
+  // them to `dependencies` would silently externalise it and break `init --from` in the published
+  // CLI. `@workspace/api` was inlined only incidentally until it was named here on 2026-08-29.
+  noExternal: ["@workspace/matrix", "@workspace/compile", "@workspace/api"],
   // Ink 7 raised the runtime floor to Node 22. Must stay in step with `engines.node` in
   // package.json — this drifted once already, when `engines` was raised and this was not.
   target: "node22",

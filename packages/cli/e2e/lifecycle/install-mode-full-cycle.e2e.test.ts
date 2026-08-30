@@ -71,7 +71,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
       // --- Phase A: Snapshot -- verify all sources are "eject" ---
       const projectConfigPath = configTsPath(projectDir);
       const configPhaseA = await readTestFile(projectConfigPath);
-      expect(configPhaseA).toContain('"eject"');
+      expect(configPhaseA).toContain("'eject'");
 
       // The entries the setup wrote, read structurally. An in-file regex extractor
       // stood here with a `length > 0` floor beneath it — an untested parser whose

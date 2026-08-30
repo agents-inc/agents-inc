@@ -10,12 +10,13 @@
 import os from "os";
 import path from "path";
 import { describe, it, expect } from "vitest";
+import { matrix } from "../../matrix/matrix-provider";
 import {
   generateConfigSource,
   generateBlankGlobalConfigSource,
-  generateBlankGlobalConfigTypesSource,
   getGlobalConfigImportPath,
 } from "../config-writer";
+import { generateBlankGlobalConfigTypesSource } from "../config-types-writer";
 import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
 import {
   buildProjectConfig,
@@ -41,12 +42,12 @@ const EXTERNAL_SKILL_ID = "external-web-tooling-house" as SkillId;
 describe("generateConfigSource", () => {
   it("produces valid TypeScript with import type, export default, and named variables", () => {
     const config = buildProjectConfig();
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).not.toContain("defineConfig");
-    expect(source).toContain('from "./config-types"');
+    expect(source).toContain("from './config-types'");
     expect(source).toContain("export default {");
-    expect(source).toContain("satisfies ProjectConfig;");
-    expect(source).toContain('"name": "test-project"');
+    expect(source).toContain("satisfies ProjectConfig");
+    expect(source).toContain("name: 'test-project'");
     // Named variables below export default
     expect(source).toContain("const skills: SkillConfig[]");
     expect(source).toContain("const agents: AgentScopeConfig[]");
@@ -54,7 +55,7 @@ describe("generateConfigSource", () => {
 
   it("puts named variables before export default", () => {
     const config = buildProjectConfig();
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     const exportIdx = source.indexOf("export default");
     const skillsIdx = source.indexOf("const skills:");
     const agentsIdx = source.indexOf("const agents:");
@@ -68,10 +69,10 @@ describe("generateConfigSource", () => {
       agents: [],
       skills: [],
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).not.toContain("description");
     expect(source).not.toContain("author");
-    expect(source).toContain('"name": "sparse-project"');
+    expect(source).toContain("name: 'sparse-project'");
   });
 
   /**
@@ -86,13 +87,11 @@ describe("generateConfigSource", () => {
       agentsSource: TEST_CUSTOM_SOURCE_URL,
     });
 
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
 
-    const marketplaceIdx = source.indexOf(`"marketplace": ${JSON.stringify(TEST_SOURCE_URL)}`);
-    const nameIdx = source.indexOf(
-      `"marketplaceName": ${JSON.stringify(DEFAULT_PUBLIC_SOURCE_NAME)}`,
-    );
-    const agentsSourceIdx = source.indexOf(`"agentsSource"`);
+    const marketplaceIdx = source.indexOf(`marketplace: '${TEST_SOURCE_URL}'`);
+    const nameIdx = source.indexOf(`marketplaceName: '${DEFAULT_PUBLIC_SOURCE_NAME}'`);
+    const agentsSourceIdx = source.indexOf("agentsSource:");
     expect(marketplaceIdx).toBeGreaterThan(-1);
     expect(nameIdx, "the marketplace name follows the ref it names").toBeGreaterThan(
       marketplaceIdx,
@@ -108,11 +107,11 @@ describe("generateConfigSource", () => {
       skills: buildSkillConfigs(["web-framework-react"], { origin: EJECT_SOURCE }),
     });
 
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
 
-    expect(source).toContain(`"origin":"${EJECT_SOURCE}"`);
+    expect(source).toContain(`origin: '${EJECT_SOURCE}'`);
     expect(source, "no skill entry may still be keyed by the pre-rename name").not.toContain(
-      `"source":"`,
+      "source: '",
     );
   });
 
@@ -121,13 +120,13 @@ describe("generateConfigSource", () => {
       skills: buildSkillConfigs([EXTERNAL_SKILL_ID], { origin: EJECT_SOURCE }),
     });
 
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
 
-    expect(source).toContain(`"origin":"${EJECT_SOURCE}"`);
+    expect(source).toContain(`origin: '${EJECT_SOURCE}'`);
     expect(
       source,
       "whether a skill is custom is the matrix's answer and every reader of it holds one — a second copy written into config.ts is a copy that can disagree",
-    ).not.toContain(`"custom"`);
+    ).not.toContain("custom:");
   });
 
   it("uses inline empty arrays for empty skills/agents", () => {
@@ -136,7 +135,7 @@ describe("generateConfigSource", () => {
       agents: [],
       skills: [],
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     // Empty arrays should be inline, not extracted
     expect(source).toContain("skills: [],");
     expect(source).toContain("agents: [],");
@@ -153,10 +152,10 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     // web-framework is exclusive, so the array wrapper carries no information the reader needs
-    expect(source).toContain('"web-framework": "web-framework-react"');
-    expect(source).not.toMatch(/"web-framework":\s*\[/);
+    expect(source).toContain("'web-framework': 'web-framework-react'");
+    expect(source).not.toMatch(/'web-framework':\s*\[/);
     // Stack should be extracted as named variable
     expect(source).toContain("const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>");
   });
@@ -170,10 +169,12 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     // An assignment with nothing but an id says everything the id says — the object wrapper is noise
-    expect(source).toContain('"web-framework": "web-framework-react"');
-    expect(source).not.toContain('"id": "web-framework-react"');
+    expect(source).toContain("'web-framework': 'web-framework-react'");
+    // Scoped to the stack: the skills array carries `id:` for every entry it holds, so a
+    // whole-file negative would answer about that instead of about the assignment.
+    expect(extractNamedSection(source, "stack")).not.toContain("id:");
   });
 
   it("keeps the object form for an assignment carrying local and path", () => {
@@ -187,11 +188,11 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     // local/path are not defaults — flattening to a bare id would silently drop them
-    expect(source).toContain('"id": "web-framework-react"');
-    expect(source).toContain('"local": true');
-    expect(source).toContain('"path": ".claude/skills/react/"');
+    expect(source).toContain("id: 'web-framework-react'");
+    expect(source).toContain("local: true");
+    expect(source).toContain("path: '.claude/skills/react/'");
   });
 
   it("preserves preloaded flag as a bare object in an exclusive category", () => {
@@ -205,9 +206,9 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
-    expect(source).toContain('"preloaded": true');
-    expect(source).toContain('"api-framework-hono"');
+    const source = generateConfigSource(config, matrix);
+    expect(source).toContain("preloaded: true");
+    expect(source).toContain("'api-framework-hono'");
     // api-api is exclusive: the assignment object stands alone, unwrapped
     expect(source).not.toMatch(/"api-api":\s*\[/);
   });
@@ -222,9 +223,9 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     // web-styling can hold several skills, so the array is load-bearing even at length one
-    expect(source).toContain('"web-styling": [\n      "web-styling-tailwind"\n    ]');
+    expect(source).toContain("'web-styling': ['web-styling-tailwind']");
   });
 
   it("throws, naming the category, when an exclusive category holds two skills", () => {
@@ -242,12 +243,12 @@ describe("generateConfigSource", () => {
     });
     // Silently dropping the second entry would write a config that does not match what was
     // selected, and nothing downstream could tell. Fail where the contract breaks.
-    expect(() => generateConfigSource(config)).toThrow("web-framework");
+    expect(() => generateConfigSource(config, matrix)).toThrow("web-framework");
   });
 
   it("handles config without stack", () => {
     const config = buildProjectConfig({ name: "simple-project" });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).not.toContain("const stack:");
     expect(source).not.toContain("stack,");
   });
@@ -255,16 +256,16 @@ describe("generateConfigSource", () => {
   it("only imports used types", () => {
     // Empty skills/agents, no stack, no domains: only ProjectConfig needed
     const config = buildProjectConfig({ name: "minimal", agents: [], skills: [] });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     const importLine = source.split("\n")[0];
-    expect(importLine).toBe('import type { ProjectConfig } from "./config-types";');
+    expect(importLine).toBe("import type { ProjectConfig } from './config-types'");
     expect(source).not.toContain("defineConfig");
     expect(source).not.toContain("agents-inc/config");
   });
 
   it("imports SkillConfig and AgentScopeConfig when skills and agents are present", () => {
     const config = buildProjectConfig();
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).toContain("SkillConfig");
     expect(source).toContain("AgentScopeConfig");
   });
@@ -277,7 +278,7 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).toContain("ProjectAgentName");
     expect(source).toContain("StackAgentConfig");
   });
@@ -290,27 +291,27 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).not.toContain("SelectedAgentName");
   });
 
   it("imports Domain when selected domains are present", () => {
     const config = buildProjectConfig({ selectedDomains: ["web"] });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).toContain("Domain");
-    expect(source).toContain('const selectedDomains: Domain[] = ["web"]');
+    expect(source).toContain("const selectedDomains: Domain[] = ['web']");
   });
 
   it("extracts selected domains as named variable", () => {
     const config = buildProjectConfig({ selectedDomains: ["web", "api"] });
-    const source = generateConfigSource(config);
+    const source = generateConfigSource(config, matrix);
     expect(source).toContain("const selectedDomains: Domain[]");
-    expect(source).toContain('"web"');
-    expect(source).toContain('"api"');
+    expect(source).toContain("'web'");
+    expect(source).toContain("'api'");
     // In export default, selectedDomains should be a shorthand reference
     const exportBlock = source.slice(
       source.indexOf("export default"),
-      source.indexOf("satisfies ProjectConfig;"),
+      source.indexOf("satisfies ProjectConfig"),
     );
     expect(exportBlock).toContain("selectedDomains,");
   });
@@ -322,16 +323,16 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
-      expect(source).toContain('"name": "empty-project"');
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("name: 'empty-project'");
       expect(source).toContain("skills: [],");
       expect(source).toContain("agents: [],");
       expect(source).not.toContain("const stack:");
       expect(source).not.toContain("const selectedDomains:");
-      expect(source).toContain("satisfies ProjectConfig;");
+      expect(source).toContain("satisfies ProjectConfig");
       // Only ProjectConfig type should be imported
       const importLine = source.split("\n")[0];
-      expect(importLine).toBe('import type { ProjectConfig } from "./config-types";');
+      expect(importLine).toBe("import type { ProjectConfig } from './config-types'");
     });
 
     it("does not emit a selectedDomains field when selectedDomains is undefined", () => {
@@ -340,7 +341,7 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       expect(source).not.toContain("selectedDomains");
     });
 
@@ -351,7 +352,7 @@ describe("generateConfigSource", () => {
         agents: [],
         selectedDomains: [],
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       // Empty array: inline empty in export default, no extracted variable
       expect(source).toContain("selectedDomains: [],");
       expect(source).not.toContain("const selectedDomains:");
@@ -365,9 +366,9 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
-      const source = generateConfigSource(config);
-      expect(source).toContain('"scope":"global"');
-      expect(source).toContain('"id":"web-framework-react"');
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("scope: 'global'");
+      expect(source).toContain("id: 'web-framework-react'");
     });
 
     it("serializes agents with global scope", () => {
@@ -376,12 +377,12 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: buildAgentConfigs(["web-developer", "api-developer"], { scope: "global" }),
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       // Each agent object should contain scope: "global"
       const agentSection = extractNamedSection(source, "agents");
-      expect(agentSection).toContain('"scope":"global"');
-      expect(agentSection).toContain('"name":"web-developer"');
-      expect(agentSection).toContain('"name":"api-developer"');
+      expect(agentSection).toContain("scope: 'global'");
+      expect(agentSection).toContain("name: 'web-developer'");
+      expect(agentSection).toContain("name: 'api-developer'");
     });
 
     it("mixes project and global scope items", () => {
@@ -396,25 +397,26 @@ describe("generateConfigSource", () => {
           ...buildAgentConfigs(["api-developer"], { scope: "project" }),
         ],
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       // Both scopes should appear in the output
-      const globalCount = (source.match(/"scope":"global"/g) || []).length;
-      const projectCount = (source.match(/"scope":"project"/g) || []).length;
+      const globalCount = (source.match(/scope: 'global'/g) || []).length;
+      const projectCount = (source.match(/scope: 'project'/g) || []).length;
       expect(globalCount).toBe(2); // 1 skill + 1 agent
       expect(projectCount).toBe(2); // 1 skill + 1 agent
     });
   });
 
   describe("special characters in name", () => {
-    it("escapes double quotes in project name", () => {
+    it("keeps the quote that needs no escape in a project name", () => {
       const config = buildProjectConfig({
         name: 'my "quoted" project',
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
-      // JSON.stringify escapes quotes
-      expect(source).toContain('"name": "my \\"quoted\\" project"');
+      const source = generateConfigSource(config, matrix);
+      // The printer picks the quote prettier would: single here, because the value
+      // carries double ones and swapping would only add escapes.
+      expect(source).toContain(`name: 'my "quoted" project'`);
     });
 
     it("escapes backslashes in project name", () => {
@@ -423,8 +425,8 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
-      // JSON.stringify escapes backslashes
+      const source = generateConfigSource(config, matrix);
+      // A backslash is escaped whichever quote encloses the value.
       expect(source).toContain("my\\\\backslash\\\\project");
     });
 
@@ -434,38 +436,85 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
-      expect(source).toContain('"name": "projet-francais"');
-      expect(source).toContain("satisfies ProjectConfig;");
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("name: 'projet-francais'");
+      expect(source).toContain("satisfies ProjectConfig");
     });
   });
 
   describe("standalone generation (no global import)", () => {
     it("does not import from global config when isProjectConfig is not set", () => {
       const config = buildProjectConfig();
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       expect(source).not.toContain("globalConfig");
       expect(source).not.toContain("...globalConfig");
-      expect(source).toContain('from "./config-types"');
+      expect(source).toContain("from './config-types'");
     });
 
     it("does not import from global config when options is undefined", () => {
       const config = buildProjectConfig();
-      const source = generateConfigSource(config, undefined);
+      const source = generateConfigSource(config, matrix, undefined);
       expect(source).not.toContain("globalConfig");
     });
 
     it("does not import from global config when isProjectConfig is false", () => {
       const config = buildProjectConfig();
-      const source = generateConfigSource(config, { isProjectConfig: false });
+      const source = generateConfigSource(config, matrix, { isProjectConfig: false });
       expect(source).not.toContain("globalConfig");
     });
   });
 
+  /**
+   * A project emission names the global it extends by inlining it or by importing
+   * it, and those are the only two. Naming neither used to fall through to the
+   * standalone writer, which answers a project request with a GLOBAL-shaped file:
+   * `dropProjects` is false there, so the emitted config carries the `projects`
+   * tracking array a project root must never hold.
+   *
+   * The refusal is paired with the two permitted pairings deliberately. A refusal
+   * on its own cannot tell a guard scoped to the invalid pairing from one that has
+   * swallowed project emission whole — both leave the caller with no file and read
+   * identically from the assertion's side.
+   */
+  describe("project config with neither half of the global it extends", () => {
+    it("refuses the emission rather than answering it with a global-shaped file", () => {
+      const config = buildProjectConfig({ name: "project-without-a-global" });
+
+      expect(() => generateConfigSource(config, matrix, { isProjectConfig: true })).toThrowError(
+        "pass `globalConfig` to inline its entries, or `globalImportPath` to import and spread them",
+      );
+    });
+
+    it("emits the project config once either half is given", () => {
+      const config = buildProjectConfig({ name: "project-without-a-global" });
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
+      });
+
+      expect(
+        generateConfigSource(config, matrix, {
+          isProjectConfig: true,
+          globalImportPath: getGlobalConfigImportPath(),
+        }),
+        "an import path is one of the two halves the refusal above asks for",
+      ).toContain("import globalConfig from");
+
+      expect(
+        generateConfigSource(config, matrix, { isProjectConfig: true, globalConfig }),
+        "the inlined global is the other, and neither may be caught by the refusal",
+      ).toContain("'web-framework-react'");
+    });
+  });
+
   describe("project config with global import (spread fallback)", () => {
-    it("imports from global config when isProjectConfig is true without globalConfig", () => {
+    it("imports from global config when isProjectConfig is true and a globalImportPath is given", () => {
       const config = buildProjectConfig();
-      const source = generateConfigSource(config, { isProjectConfig: true });
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
       expect(source).toContain("import globalConfig from");
       expect(source).toContain("...globalConfig,");
     });
@@ -476,7 +525,10 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-framework-react"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(config, { isProjectConfig: true });
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
       expect(source).toContain("...globalConfig.skills,");
       expect(source).toContain("...globalConfig.agents,");
     });
@@ -487,11 +539,14 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config, { isProjectConfig: true });
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
       expect(source).toContain("const skills: SkillConfig[]");
       expect(source).toContain("const agents: AgentScopeConfig[]");
-      expect(source).toContain("...globalConfig.skills,");
-      expect(source).toContain("...globalConfig.agents,");
+      expect(source).toContain("[...globalConfig.skills]");
+      expect(source).toContain("[...globalConfig.agents]");
     });
 
     it("spreads global selected domains when project has selected domains", () => {
@@ -501,9 +556,12 @@ describe("generateConfigSource", () => {
         agents: [],
         selectedDomains: ["web"],
       });
-      const source = generateConfigSource(config, { isProjectConfig: true });
-      expect(source).toContain("...(globalConfig.selectedDomains ?? []),");
-      expect(source).toContain('"web"');
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
+      expect(source).toContain("[...(globalConfig.selectedDomains ?? []), 'web']");
+      expect(source).toContain("'web'");
     });
 
     it("does not declare a selectedDomains variable when project has no selected domains", () => {
@@ -512,7 +570,10 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config, { isProjectConfig: true });
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
       expect(source).not.toContain("const selectedDomains:");
     });
 
@@ -522,7 +583,10 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(config, { isProjectConfig: true });
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
       expect(source, "the active agents list is the only record of who is selected").not.toContain(
         "selectedAgents",
       );
@@ -534,8 +598,11 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config, { isProjectConfig: true });
-      expect(source).toContain('name: "agents-inc"');
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
+      expect(source).toContain("name: 'agents-inc'");
     });
   });
 
@@ -554,7 +621,7 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
@@ -568,13 +635,13 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
       expect(source).toContain("// global");
-      expect(source).toContain('"web-framework-react"');
-      expect(source).toContain('"scope":"global"');
+      expect(source).toContain("'web-framework-react'");
+      expect(source).toContain("scope: 'global'");
     });
 
     it("inlines global agents with // global comment", () => {
@@ -583,13 +650,13 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
       const agentsSection = extractNamedSection(source, "agents");
       expect(agentsSection).toContain("// global");
-      expect(agentsSection).toContain('"web-researcher"');
+      expect(agentsSection).toContain("'web-researcher'");
     });
 
     it("adds // project comment only when project items exist", () => {
@@ -598,13 +665,13 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
       expect(source).toContain("// project");
-      expect(source).toContain('"web-styling-tailwind"');
-      expect(source).toContain('"web-developer"');
+      expect(source).toContain("'web-styling-tailwind'");
+      expect(source).toContain("'web-developer'");
     });
 
     it("omits // project comment when no project skills exist", () => {
@@ -613,7 +680,7 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
@@ -628,12 +695,12 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
-      expect(source).toContain('"marketplace": "/path/to/skills"');
-      expect(source).toContain('"marketplaceName": "agents-inc"');
+      expect(source).toContain("marketplace: '/path/to/skills'");
+      expect(source).toContain("marketplaceName: 'agents-inc'");
     });
 
     it("uses project name instead of global name", () => {
@@ -642,12 +709,12 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
-      expect(source).toContain('name: "my-project"');
-      expect(source).not.toContain('"name": "global"');
+      expect(source).toContain("name: 'my-project'");
+      expect(source).not.toContain("name: 'global'");
     });
 
     it("uses default plugin name when project name is 'global'", () => {
@@ -656,11 +723,11 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
-      expect(source).toContain('name: "agents-inc"');
+      expect(source).toContain("name: 'agents-inc'");
     });
 
     it("never emits a selectedAgents constant when inlining global", () => {
@@ -674,7 +741,7 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithAgents,
       });
@@ -696,12 +763,12 @@ describe("generateConfigSource", () => {
         agents: [],
         selectedDomains: ["api"],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithDomains,
       });
-      expect(source).toContain('"web"');
-      expect(source).toContain('"api"');
+      expect(source).toContain("'web'");
+      expect(source).toContain("'api'");
       expect(source).toContain("const selectedDomains: Domain[]");
     });
 
@@ -716,13 +783,13 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-framework-react"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: emptyGlobal,
       });
       expect(source).not.toContain("// global");
       expect(source).toContain("// project");
-      expect(source).toContain('"web-framework-react"');
+      expect(source).toContain("'web-framework-react'");
     });
 
     it("generates valid JavaScript when type annotations are stripped", () => {
@@ -731,12 +798,12 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"]),
       });
-      let source = generateConfigSource(projectConfig, {
+      let source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
       source = source
-        .replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "")
+        .replace(/import type \{[^}]+\} from '\.\/config-types'\n/, "")
         .replace(/ satisfies ProjectConfig/, "")
         .replace(/const (\w+): [^=]+=/g, "const $1 =")
         .replace("export default", "const __config =");
@@ -752,11 +819,11 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
-      expect(source).toContain("} satisfies ProjectConfig;");
+      expect(source).toContain("} satisfies ProjectConfig");
     });
 
     it("excludes global agent stack entries from inlined project config", () => {
@@ -780,14 +847,14 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithStack,
       });
 
       // Project agents should appear in stack
-      expect(source).toContain('"api-developer"');
-      expect(source).toContain('"api-framework-hono"');
+      expect(source).toContain("'api-developer'");
+      expect(source).toContain("'api-framework-hono'");
       // Global agents' stack entries should NOT appear (they live in global config only)
       expect(source).not.toMatch(/"web-developer":\s*\{/);
     });
@@ -808,7 +875,7 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithStack,
       });
@@ -832,23 +899,23 @@ describe("generateConfigSource", () => {
         marketplace: "/project/skills",
         marketplaceName: "custom-marketplace",
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithSource,
       });
 
       // Project values should appear (they take precedence)
-      expect(source).toContain('"marketplace": "/project/skills"');
-      expect(source).toContain('"marketplaceName": "custom-marketplace"');
+      expect(source).toContain("marketplace: '/project/skills'");
+      expect(source).toContain("marketplaceName: 'custom-marketplace'");
 
       // Global values should NOT appear (overridden by project)
-      expect(source).not.toContain('"marketplace": "/global/skills"');
-      expect(source).not.toContain('"marketplaceName": "agents-inc"');
+      expect(source).not.toContain("marketplace: '/global/skills'");
+      expect(source).not.toContain("marketplaceName: 'agents-inc'");
 
       // Each key should appear exactly once in the export default block
       const exportBlock = source.slice(source.indexOf("export default {"));
-      const sourceMatches = exportBlock.match(/"marketplace":/g);
-      const marketplaceMatches = exportBlock.match(/"marketplaceName":/g);
+      const sourceMatches = exportBlock.match(/\bmarketplace:/g);
+      const marketplaceMatches = exportBlock.match(/\bmarketplaceName:/g);
       expect(sourceMatches).toHaveLength(1);
       expect(marketplaceMatches).toHaveLength(1);
     });
@@ -864,15 +931,15 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: buildProjectConfig({ name: "global", skills: [], agents: [] }),
       });
 
       const stackSection = extractNamedSection(source, "stack");
       // Exclusive category, one skill: the bare value IS the assignment
-      expect(stackSection).toMatch(/"web-framework":\s*"web-framework-react"/);
-      expect(stackSection).not.toMatch(/"web-framework":\s*\[/);
+      expect(stackSection).toMatch(/'web-framework':\s*'web-framework-react'/);
+      expect(stackSection).not.toMatch(/'web-framework':\s*\[/);
     });
 
     it("preserves multi-skill non-exclusive categories as multi-element arrays in inlined stack", () => {
@@ -892,16 +959,16 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: buildProjectConfig({ name: "global", skills: [], agents: [] }),
       });
 
       const stackSection = extractNamedSection(source, "stack");
       // Multi-skill category must be an array with both elements
-      expect(stackSection).toContain('"web-styling": [\n');
-      expect(stackSection).toContain('"web-styling-tailwind"');
-      expect(stackSection).toContain('"web-styling-scss-modules"');
+      expect(stackSection).toContain("'web-styling': [");
+      expect(stackSection).toContain("'web-styling-tailwind'");
+      expect(stackSection).toContain("'web-styling-scss-modules'");
     });
 
     it("compacts non-preloaded assignments to bare strings and preserves preloaded objects in inlined stack", () => {
@@ -919,19 +986,19 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: buildProjectConfig({ name: "global", skills: [], agents: [] }),
       });
 
       const stackSection = extractNamedSection(source, "stack");
       // Exclusive + non-preloaded: bare string, no array and no object wrapper
-      expect(stackSection).toMatch(/"web-framework":\s*"web-framework-react"/);
-      expect(stackSection).not.toMatch(/"web-framework":\s*\[/);
+      expect(stackSection).toMatch(/'web-framework':\s*'web-framework-react'/);
+      expect(stackSection).not.toMatch(/'web-framework':\s*\[/);
       // Non-exclusive + preloaded: object with preloaded: true, still inside its array
-      expect(stackSection).toContain('"web-styling": [\n');
-      expect(stackSection).toContain('"preloaded": true');
-      expect(stackSection).toContain('"id": "web-styling-tailwind"');
+      expect(stackSection).toContain("'web-styling': [");
+      expect(stackSection).toContain("preloaded: true");
+      expect(stackSection).toContain("id: 'web-styling-tailwind'");
     });
 
     it("never leaks global agent stack entries into project config", () => {
@@ -961,23 +1028,23 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithStack,
       });
 
       // Project agent stack entries must be present
       expect(source).toContain("const stack:");
-      expect(source).toContain('"api-developer"');
-      expect(source).toContain('"api-framework-hono"');
+      expect(source).toContain("'api-developer'");
+      expect(source).toContain("'api-framework-hono'");
 
       // Extract stack section to check it doesn't contain global agent entries
       const stackSection = extractNamedSection(source, "stack");
       // Global agent stack entries must NOT be present in stack
       expect(stackSection).not.toMatch(/"web-developer":\s*\{/);
       expect(stackSection).not.toMatch(/"web-researcher":\s*\{/);
-      expect(stackSection).not.toContain('"web-framework-react"');
-      expect(stackSection).not.toContain('"web-styling-tailwind"');
+      expect(stackSection).not.toContain("'web-framework-react'");
+      expect(stackSection).not.toContain("'web-styling-tailwind'");
     });
 
     it("shows skill in both sections when same skill exists at project and global scope", () => {
@@ -991,7 +1058,7 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
         agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
       });
-      const source = generateConfigSource(projectWithReact, {
+      const source = generateConfigSource(projectWithReact, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithReact,
       });
@@ -999,17 +1066,17 @@ describe("generateConfigSource", () => {
       const skillsSection = extractNamedSection(source, "skills");
 
       // React should appear in both global and project sections
-      const reactMatches = skillsSection.match(/"web-framework-react"/g);
+      const reactMatches = skillsSection.match(/'web-framework-react'/g);
       expect(reactMatches).toHaveLength(2);
 
       // Global entry appears in the global section
       const { global: globalSection, project: projectSection } =
         extractScopeSections(skillsSection);
-      expect(globalSection).toContain('"web-framework-react"');
-      expect(globalSection).toContain('"scope":"global"');
+      expect(globalSection).toContain("'web-framework-react'");
+      expect(globalSection).toContain("scope: 'global'");
       // Project entry appears in the project section
-      expect(projectSection).toContain('"web-framework-react"');
-      expect(projectSection).toContain('"scope":"project"');
+      expect(projectSection).toContain("'web-framework-react'");
+      expect(projectSection).toContain("scope: 'project'");
     });
 
     it("shows agent in both sections when same agent exists at project and global scope", () => {
@@ -1023,7 +1090,7 @@ describe("generateConfigSource", () => {
         skills: buildSkillConfigs(["web-styling-tailwind"]),
         agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
       });
-      const source = generateConfigSource(projectWithAgent, {
+      const source = generateConfigSource(projectWithAgent, matrix, {
         isProjectConfig: true,
         globalConfig: globalWithAgent,
       });
@@ -1031,16 +1098,16 @@ describe("generateConfigSource", () => {
       const agentsSection = extractNamedSection(source, "agents");
 
       // web-developer should appear in both global and project sections
-      const agentMatches = agentsSection.match(/"web-developer"/g);
+      const agentMatches = agentsSection.match(/'web-developer'/g);
       expect(agentMatches).toHaveLength(2);
 
       // Global entry appears in the global section, project entry in the project section
       const { global: globalSection, project: projectSection } =
         extractScopeSections(agentsSection);
-      expect(globalSection).toContain('"web-developer"');
-      expect(globalSection).toContain('"scope":"global"');
-      expect(projectSection).toContain('"web-developer"');
-      expect(projectSection).toContain('"scope":"project"');
+      expect(globalSection).toContain("'web-developer'");
+      expect(globalSection).toContain("scope: 'global'");
+      expect(projectSection).toContain("'web-developer'");
+      expect(projectSection).toContain("scope: 'project'");
     });
 
     it("preserves both scope entries for overlapping skill, non-overlapping skills kept", () => {
@@ -1057,7 +1124,7 @@ describe("generateConfigSource", () => {
         ],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
@@ -1065,19 +1132,19 @@ describe("generateConfigSource", () => {
       const skillsSection = extractNamedSection(source, "skills");
 
       // React should appear in both global and project sections
-      const reactMatches = skillsSection.match(/"web-framework-react"/g);
+      const reactMatches = skillsSection.match(/'web-framework-react'/g);
       expect(reactMatches).toHaveLength(2);
 
       // Global entry in global section, project entry in project section
       const { global: globalSection, project: projectSection } =
         extractScopeSections(skillsSection);
-      expect(globalSection).toContain('"web-framework-react"');
-      expect(globalSection).toContain('"scope":"global"');
-      expect(projectSection).toContain('"web-framework-react"');
-      expect(projectSection).toContain('"scope":"project"');
+      expect(globalSection).toContain("'web-framework-react'");
+      expect(globalSection).toContain("scope: 'global'");
+      expect(projectSection).toContain("'web-framework-react'");
+      expect(projectSection).toContain("scope: 'project'");
 
       // Tailwind should still be present (no conflict)
-      expect(skillsSection).toContain('"web-styling-tailwind"');
+      expect(skillsSection).toContain("'web-styling-tailwind'");
     });
 
     it("emits excluded tombstone in global section when same skill is active at project scope", () => {
@@ -1098,7 +1165,7 @@ describe("generateConfigSource", () => {
         ],
         agents: [],
       });
-      const source = generateConfigSource(projectConfig, {
+      const source = generateConfigSource(projectConfig, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
@@ -1106,17 +1173,17 @@ describe("generateConfigSource", () => {
       const skillsSection = extractNamedSection(source, "skills");
 
       // react should appear exactly twice: once excluded in global, once active in project
-      const reactMatches = skillsSection.match(/"web-framework-react"/g);
+      const reactMatches = skillsSection.match(/'web-framework-react'/g);
       expect(reactMatches).toHaveLength(2);
 
       // Global section should contain the excluded tombstone
       const { global: globalSection, project: projectSection } =
         extractScopeSections(skillsSection);
-      expect(globalSection).toContain('"excluded":true');
+      expect(globalSection).toContain("excluded: true");
 
       // Project section should contain the active entry without excluded flag
-      expect(projectSection).toContain('"scope":"project"');
-      expect(projectSection).not.toContain('"excluded"');
+      expect(projectSection).toContain("scope: 'project'");
+      expect(projectSection).not.toContain("excluded");
     });
   });
 
@@ -1142,23 +1209,23 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       // Stack should be extracted as named variable
       expect(source).toContain("const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>");
       // Both agents should appear in stack
-      expect(source).toContain('"web-developer"');
-      expect(source).toContain('"api-developer"');
+      expect(source).toContain("'web-developer'");
+      expect(source).toContain("'api-developer'");
       // Categories should appear
-      expect(source).toContain('"web-framework"');
-      expect(source).toContain('"web-styling"');
-      expect(source).toContain('"api-api"');
-      expect(source).toContain('"api-orm"');
+      expect(source).toContain("'web-framework'");
+      expect(source).toContain("'web-styling'");
+      expect(source).toContain("'api-api'");
+      expect(source).toContain("'api-orm'");
       // Preloaded skill should retain object format
-      expect(source).toContain('"preloaded": true');
+      expect(source).toContain("preloaded: true");
       // Non-preloaded single skills should be bare strings inside arrays
-      expect(source).toContain('"web-framework-react"');
-      expect(source).toContain('"api-framework-hono"');
-      expect(source).toContain('"api-database-drizzle"');
+      expect(source).toContain("'web-framework-react'");
+      expect(source).toContain("'api-framework-hono'");
+      expect(source).toContain("'api-database-drizzle'");
     });
 
     it("handles stack with multiple skills per non-exclusive category", () => {
@@ -1178,11 +1245,11 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       // Multiple skills should be an array of bare strings
-      expect(source).toContain('"web-testing": [\n');
-      expect(source).toContain('"web-testing-vitest"');
-      expect(source).toContain('"web-testing-playwright-e2e"');
+      expect(source).toContain("'web-testing': [");
+      expect(source).toContain("'web-testing-vitest'");
+      expect(source).toContain("'web-testing-playwright-e2e'");
     });
   });
 
@@ -1193,7 +1260,7 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       expect(source).toContain("skills: [],");
       expect(source).toContain("agents: [],");
     });
@@ -1204,7 +1271,7 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
+      const source = generateConfigSource(config, matrix);
       expect(source).not.toContain("const skills: SkillConfig[]");
       expect(source).not.toContain("const agents: AgentScopeConfig[]");
     });
@@ -1221,7 +1288,7 @@ describe("generateConfigSource", () => {
      */
     function stripTsForEval(source: string): string {
       return source
-        .replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "")
+        .replace(/import type \{[^}]+\} from '\.\/config-types'\n/, "")
         .replace(/ satisfies ProjectConfig/, "")
         .replace(/const (\w+): [^=]+=/g, "const $1 =")
         .replace("export default", "const __config =");
@@ -1239,7 +1306,7 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = stripTsForEval(generateConfigSource(config));
+      const source = stripTsForEval(generateConfigSource(config, matrix));
 
       // Should not throw when evaluated as JavaScript
       expect(() => {
@@ -1249,7 +1316,7 @@ describe("generateConfigSource", () => {
 
     it("generates valid output for minimal config", () => {
       const config = buildProjectConfig({ name: "minimal", skills: [], agents: [] });
-      const source = stripTsForEval(generateConfigSource(config));
+      const source = stripTsForEval(generateConfigSource(config, matrix));
 
       expect(() => {
         new Function(source);
@@ -1279,7 +1346,7 @@ describe("generateConfigSource", () => {
           },
         },
       });
-      const source = stripTsForEval(generateConfigSource(config));
+      const source = stripTsForEval(generateConfigSource(config, matrix));
 
       expect(() => {
         new Function(source);
@@ -1290,20 +1357,23 @@ describe("generateConfigSource", () => {
   describe("satisfies type assertion", () => {
     it("always ends export default with satisfies ProjectConfig", () => {
       const config = buildProjectConfig();
-      const source = generateConfigSource(config);
-      expect(source).toContain("} satisfies ProjectConfig;");
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("} satisfies ProjectConfig");
     });
 
     it("contains satisfies for empty config", () => {
       const config = buildProjectConfig({ name: "empty", skills: [], agents: [] });
-      const source = generateConfigSource(config);
-      expect(source).toContain("} satisfies ProjectConfig;");
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("} satisfies ProjectConfig");
     });
 
-    it("contains satisfies for project config mode", () => {
+    it("contains satisfies for the spread form a globalImportPath selects", () => {
       const config = buildProjectConfig();
-      const source = generateConfigSource(config, { isProjectConfig: true });
-      expect(source).toContain("} satisfies ProjectConfig;");
+      const source = generateConfigSource(config, matrix, {
+        isProjectConfig: true,
+        globalImportPath: getGlobalConfigImportPath(),
+      });
+      expect(source).toContain("} satisfies ProjectConfig");
     });
   });
 
@@ -1316,9 +1386,9 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
-      expect(source).toContain('"description": "A test project"');
-      expect(source).toContain('"author": "@tester"');
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("description: 'A test project'");
+      expect(source).toContain("author: '@tester'");
     });
 
     it("serializes the marketplace ref and the marketplace name", () => {
@@ -1329,9 +1399,9 @@ describe("generateConfigSource", () => {
         skills: [],
         agents: [],
       });
-      const source = generateConfigSource(config);
-      expect(source).toContain('"marketplace": "/path/to/skills"');
-      expect(source).toContain('"marketplaceName": "custom-marketplace"');
+      const source = generateConfigSource(config, matrix);
+      expect(source).toContain("marketplace: '/path/to/skills'");
+      expect(source).toContain("marketplaceName: 'custom-marketplace'");
     });
   });
 
@@ -1349,15 +1419,17 @@ describe("generateConfigSource", () => {
       const skillsSource = "/path/to/skills";
       const sourceFirst = generateConfigSource(
         buildProjectConfig({ name: "insertion-order", marketplace: skillsSource, author }),
+        matrix,
       );
       const authorFirst = generateConfigSource(
         buildProjectConfig({ name: "insertion-order", author, marketplace: skillsSource }),
+        matrix,
       );
 
       // Subject guard: both really carry both scalars, so the equality below is
       // not comparing two outputs that emitted neither.
-      expect(sourceFirst).toContain(`"author": "${author}"`);
-      expect(sourceFirst).toContain(`"marketplace": "${skillsSource}"`);
+      expect(sourceFirst).toContain(`author: '${author}'`);
+      expect(sourceFirst).toContain(`marketplace: '${skillsSource}'`);
       expect(authorFirst, "config.ts bytes must be decided by the config's values alone").toBe(
         sourceFirst,
       );
@@ -1390,19 +1462,19 @@ describe("generateConfigSource", () => {
         marketplaceName: "agents-inc",
       });
 
-      const beforeRoundTrip = generateConfigSource(inheritsMostScalars, {
+      const beforeRoundTrip = generateConfigSource(inheritsMostScalars, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
-      const afterRoundTrip = generateConfigSource(carriesEveryScalar, {
+      const afterRoundTrip = generateConfigSource(carriesEveryScalar, matrix, {
         isProjectConfig: true,
         globalConfig,
       });
 
       // Subject guard: the merged union really is all three scalars.
-      expect(beforeRoundTrip).toContain('"author": "@tester"');
-      expect(beforeRoundTrip).toContain('"marketplace": "/path/to/skills"');
-      expect(beforeRoundTrip).toContain('"marketplaceName": "agents-inc"');
+      expect(beforeRoundTrip).toContain("author: '@tester'");
+      expect(beforeRoundTrip).toContain("marketplace: '/path/to/skills'");
+      expect(beforeRoundTrip).toContain("marketplaceName: 'agents-inc'");
       expect(
         afterRoundTrip,
         "the inlined scalar union must be one ordered sequence, not a global block then a project block",
@@ -1466,42 +1538,34 @@ describe("generateConfigSource", () => {
     }
 
     it("emits the same bytes for two stacks that differ only in key insertion order", () => {
-      const fromRoster = generateConfigSource(configWithStack(IN_ROSTER_ORDER));
-      const fromPayload = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER));
+      const fromRoster = generateConfigSource(configWithStack(IN_ROSTER_ORDER), matrix);
+      const fromPayload = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER), matrix);
 
       // Subject guard: both really carry the whole curation, so the equality below
       // is not comparing two configs that emitted no stack at all.
       expect(fromRoster).toContain(
         "const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>",
       );
-      expect(fromRoster).toContain('"web-client-state"');
+      expect(fromRoster).toContain("'web-client-state'");
       expect(fromPayload, "config.ts bytes must be decided by the stack's content alone").toBe(
         fromRoster,
       );
     });
 
     it("emits each sub-agent in name order, and its categories in the matrix's declaration order", () => {
-      const source = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER));
+      const source = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER), matrix);
 
       expect(source).toContain(`const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
-  "api-developer": {
-    "api-api": {
-      "id": "api-framework-hono",
-      "preloaded": true
-    },
-    "api-orm": "api-database-drizzle"
+  'api-developer': {
+    'api-api': { id: 'api-framework-hono', preloaded: true },
+    'api-orm': 'api-database-drizzle',
   },
-  "web-developer": {
-    "web-framework": {
-      "id": "web-framework-react",
-      "preloaded": true
-    },
-    "web-client-state": "web-state-zustand",
-    "web-testing": [
-      "web-testing-vitest"
-    ]
-  }
-};`);
+  'web-developer': {
+    'web-framework': { id: 'web-framework-react', preloaded: true },
+    'web-client-state': 'web-state-zustand',
+    'web-testing': ['web-testing-vitest'],
+  },
+}`);
     });
   });
 });
@@ -1509,24 +1573,24 @@ describe("generateConfigSource", () => {
 describe("generateBlankGlobalConfigSource", () => {
   it("generates a config with name 'global'", () => {
     const source = generateBlankGlobalConfigSource();
-    expect(source).toContain('"name": "global"');
+    expect(source).toContain("name: 'global'");
   });
 
   it("has empty skills, agents, and selectedDomains arrays", () => {
     const source = generateBlankGlobalConfigSource();
-    expect(source).toContain('"skills": []');
-    expect(source).toContain('"agents": []');
-    expect(source).toContain('"selectedDomains": []');
+    expect(source).toContain("skills: []");
+    expect(source).toContain("agents: []");
+    expect(source).toContain("selectedDomains: []");
   });
 
   it("contains import type from config-types", () => {
     const source = generateBlankGlobalConfigSource();
-    expect(source).toContain('import type { ProjectConfig } from "./config-types"');
+    expect(source).toContain("import type { ProjectConfig } from './config-types'");
   });
 
   it("contains satisfies ProjectConfig", () => {
     const source = generateBlankGlobalConfigSource();
-    expect(source).toContain("satisfies ProjectConfig;");
+    expect(source).toContain("satisfies ProjectConfig");
   });
 
   it("ends with a trailing newline", () => {
@@ -1536,7 +1600,7 @@ describe("generateBlankGlobalConfigSource", () => {
 
   it("generates parseable JavaScript when type annotations are stripped", () => {
     let source = generateBlankGlobalConfigSource();
-    source = source.replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "");
+    source = source.replace(/import type \{[^}]+\} from '\.\/config-types'\n/, "");
     source = source.replace(/ satisfies ProjectConfig/, "");
     source = source.replace("export default", "const __config =");
 
@@ -1549,20 +1613,20 @@ describe("generateBlankGlobalConfigSource", () => {
 describe("generateBlankGlobalConfigTypesSource", () => {
   it("marks all union types as never", () => {
     const source = generateBlankGlobalConfigTypesSource();
-    expect(source).toContain("export type SkillId = never;");
-    expect(source).toContain("export type AgentName = never;");
-    expect(source).toContain("export type Domain = never;");
-    expect(source).toContain("export type Category = never;");
+    expect(source).toContain("export type SkillId = never");
+    expect(source).toContain("export type AgentName = never");
+    expect(source).toContain("export type Domain = never");
+    expect(source).toContain("export type Category = never");
   });
 
   it("includes SelectedAgentName = never for blank global config", () => {
     const source = generateBlankGlobalConfigTypesSource();
-    expect(source).toContain("export type SelectedAgentName = never;");
+    expect(source).toContain("export type SelectedAgentName = never");
   });
 
   it("includes ProjectAgentName = SelectedAgentName for blank global config", () => {
     const source = generateBlankGlobalConfigTypesSource();
-    expect(source).toContain("export type ProjectAgentName = SelectedAgentName;");
+    expect(source).toContain("export type ProjectAgentName = SelectedAgentName");
   });
 
   it("contains auto-generated header", () => {

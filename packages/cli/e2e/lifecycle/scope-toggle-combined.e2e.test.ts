@@ -113,7 +113,7 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         agents: ["api-developer", "web-developer"],
       });
       const projectConfig = await readTestFile(configTsPath(projectDir));
-      expect(projectConfig).toContain('"scope":"project"');
+      expect(projectConfig).toContain("scope: 'project'");
 
       // D-6: Global config still has both (unchanged)
       await expect({ dir: fakeHome }).toHaveConfig({

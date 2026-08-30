@@ -162,7 +162,7 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
       expect(
         configAfterFirst,
         "the re-emitted project config must inline the global scalars",
-      ).toContain(`"author": "${SHARED_AUTHOR}"`);
+      ).toContain(`author: '${SHARED_AUTHOR}'`);
       expect(agentAfterFirst, "the project's own agent must carry its project skill").toContain(
         PROJECT_SKILL.id,
       );

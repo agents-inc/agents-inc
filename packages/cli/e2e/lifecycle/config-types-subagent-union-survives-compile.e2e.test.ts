@@ -82,7 +82,7 @@ describe("the sub-agent unions an install generates", () => {
       // a count cannot see one sub-agent swapped for another, and the leading `// Custom` this
       // used to carry is inside the alias, so an exact match is what rejects it.
       expect(readGeneratedUnion(typesAfterInit, "AgentName")).toBe(
-        ` ${E2E_STACK_AGENTS.map((name) => `"${name}"`).join(" | ")}`,
+        ` ${E2E_STACK_AGENTS.map((name) => `'${name}'`).join(" | ")}`,
       );
 
       const refreshed = await CLI.run(["compile"], { dir: home, globalHome: home });

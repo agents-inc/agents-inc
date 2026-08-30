@@ -342,8 +342,10 @@ const WORKSPACES_ON_A_SHARED_CONFIG = [
   "apps/editor",
   "apps/server",
   "apps/www",
+  "packages/api",
   "packages/api-mocks",
   "packages/cli",
+  "packages/compile",
   "packages/matrix",
   "packages/ui",
 ];

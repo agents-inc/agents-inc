@@ -83,7 +83,7 @@ describe("global skill toggle guard from project scope", () => {
       const globalConfig = await readTestFile(configTsPath(env.fakeHome));
       expect(globalConfig).toContain(E2E_SKILL.react.id);
       // Guard against a silent scope flip: the skill must remain global-scoped.
-      expect(globalConfig).toContain('"scope":"global"');
+      expect(globalConfig).toContain("scope: 'global'");
 
       // Verify global skill directories still exist on disk
       await expect({ dir: env.fakeHome }).toHaveLocalSkills([E2E_SKILL.react.id]);
