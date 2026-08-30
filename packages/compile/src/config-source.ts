@@ -75,7 +75,7 @@ export type ConfigSourceOptions = {
   globalImportPath?: string
 }
 
-/** Fields that are extracted into typed named variables below the export default */
+/** Fields that are extracted into typed named variables above the export default */
 const EXTRACTED_FIELDS = new Set([
   "skills",
   "agents",
@@ -356,8 +356,9 @@ function cleanForEmission(
 
 /**
  * Generates a TypeScript config file source from a ProjectConfig object.
- * The export default sits at the top as a table of contents, with typed named
- * variables (skills, agents, stack, selectedDomains) declared below it.
+ * The typed named variables (skills, agents, stack, selectedDomains) are declared
+ * first, with the export default below them acting as a table of contents that
+ * refers to each by name.
  *
  * The catalogue is a parameter and never a module this file reaches: the bytes
  * depend on which categories are exclusive and on the order the catalogue
