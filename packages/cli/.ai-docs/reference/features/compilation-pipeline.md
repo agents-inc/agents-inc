@@ -21,7 +21,7 @@ related:
   - reference/features/plugin-system.md
   - reference/config/config-writer.md
   - reference/commands/index.md
-last_validated: 2026-07-30
+last_validated: 2026-08-30
 ---
 
 # Compilation Pipeline
@@ -71,7 +71,9 @@ not here.
       d. Project local skills (from <projectDir>/.claude/skills/, via LOCAL_SKILLS_PATH)
    -> Project wins on conflict (global-project pairs are skipped when projectDir is home)
    -> Returns DiscoveredSkills { allSkills, totalSkillCount, pluginSkillCount,
-      localSkillCount, globalPluginSkillCount, globalLocalSkillCount }
+      localSkillCount, globalPluginSkillCount, globalLocalSkillCount,
+      unusableMetadata } -- the last is every installed skill whose metadata.yaml
+      exists but describes no skill, from either scope
 
 4. Agent Resolution — recompileAgents() (agent-recompiler.ts)
    -> loadProjectConfig() reads project config (.claude-src/config.ts); a corrupt
@@ -127,29 +129,29 @@ not here.
 
 ### Compiled Output Is Not Validated
 
-`writeCompiledAgentsByScope()` writes each rendered agent straight to disk with no
-structural check. `src/cli/lib/output-validator.ts` — `validateCompiledAgent()` (XML tag
-balance, template artifacts, frontmatter validity, required patterns) and
-`printOutputValidationResult()` — has no caller outside its own
-`src/cli/lib/output-validator.test.ts`, so nothing inspects what the CLI writes.
+`writeCompiledAgentsByScope()` writes each rendered agent straight to disk with no structural
+check — no XML tag-balance pass, no template-artifact scan, no frontmatter validation. Nothing in
+the CLI inspects what it writes, and there is no module to call: the validators that once did this
+for no caller were reaped, so `grep -rn 'validateCompiledAgent' src` is the check and it returns
+nothing.
 
 ## Key Files
 
-| File                                                         | Purpose                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/cli/lib/compiler.ts`                                    | The disk half of a compile: Liquid engine, template roots, agent partial reads. Re-exports the renderers from `@workspace/compile/agent-source`, which is where the template context, the sanitizer and `renderAgent` are declared                           |
-| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                                                                                                                                                                                              |
-| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                                                                                                                                                                                                            |
-| `src/cli/lib/agents/agent-provenance.ts`                     | `cliVersion` — this CLI's own manifest version, which a browser has no equivalent of. The three marker functions (`provenanceMarker`, `hasProvenanceMarker`, `stampProvenanceMarker`) are declared in `@workspace/compile/agent-source` and re-exported here |
-| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `splitAgentsByProvenance` / `pruneStaleCompiledAgents`                                                                                                                                                       |
-| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                                                                                                                                                                                                  |
-| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                                                                                                                                                                                                     |
-| `src/cli/lib/resolver.ts`                                    | Resolves skill references and agent configs                                                                                                                                                                                                                  |
-| `src/cli/lib/output-validator.ts`                            | Compiled-agent validators with no caller — see "Compiled Output Is Not Validated"                                                                                                                                                                            |
-| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                                                                                                                                                                                                 |
-| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation                                                                                                                                                                                                 |
-| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                                                                                                                                                                                                |
-| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                                                                                                                                                                                              |
+| File                                                         | Purpose                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/compiler.ts`                                    | The disk half of a compile: Liquid engine, template roots, agent partial reads. Re-exports the renderers from `@workspace/compile/agent-source`, which is where the template context, the sanitizer and `renderAgent` are declared                                                                                |
+| `src/cli/lib/compile-seat.ts`                                | Side-effect module handing `@workspace/compile` this CLI's console (`seatDiagnostics({ warn, verbose })`). Imported by `compiler.ts` and `configuration/config-generator.ts` — the two modules owning the seated functions. The package's default sink discards, which is the honest answer for a browser preview |
+| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                                                                                                                                                                                                                                                   |
+| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                                                                                                                                                                                                                                                                 |
+| `src/cli/lib/agents/agent-provenance.ts`                     | `cliVersion` — this CLI's own manifest version, which a browser has no equivalent of. The three marker functions (`provenanceMarker`, `hasProvenanceMarker`, `stampProvenanceMarker`) are declared in `@workspace/compile/agent-source` and re-exported here                                                      |
+| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `splitAgentsByProvenance` / `pruneStaleCompiledAgents`                                                                                                                                                                                                            |
+| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                                                                                                                                                                                                                                                       |
+| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                                                                                                                                                                                                                                                          |
+| `src/cli/lib/resolver.ts`                                    | Resolves skill references and agent configs                                                                                                                                                                                                                                                                       |
+| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                                                                                                                                                                                                                                                      |
+| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation                                                                                                                                                                                                                                                      |
+| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                                                                                                                                                                                                                                                     |
+| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                                                                                                                                                                                                                                                   |
 
 ## The Provenance Marker
 
@@ -318,13 +320,16 @@ writes a `commands/` directory or a stack `CLAUDE.md` into the output.
 
 ## Security: Liquid Injection Prevention
 
-File: `src/cli/lib/compiler.ts`
+File: `packages/compile/src/agent-source.ts`, re-exported by `src/cli/lib/compiler.ts` so no CLI
+call site moved. The editor renders through the same sanitiser.
 
-Pattern constant: `LIQUID_SYNTAX_PATTERN`
+Pattern constant: `LIQUID_SYNTAX_PATTERN` — module-private there.
 
-`sanitizeLiquidSyntax()` (exported) strips individual strings of Liquid delimiters.
+`sanitizeLiquidSyntax()` strips individual strings of Liquid delimiters, and reports each strip
+through the seated diagnostics sink (`diagnostics().warn`), which is why a CLI run says what it
+removed and a browser preview silently discards.
 
-`sanitizeCompiledAgentData()` (exported) strips Liquid template syntax (`{{`, `}}`, `{%`, `%}`) from:
+`sanitizeCompiledAgentData()` strips Liquid template syntax (`{{`, `}}`, `{%`, `%}`) from:
 
 - Agent metadata: name, title, description, tools, disallowedTools, model, **effort**, permissionMode — the optional four (`disallowedTools`, `model`, `effort`, `permissionMode`) are conditionally spread, so an absent field is not written back as `undefined`
 - Skill metadata: id, description, usage, pluginRef — via `sanitizeSkills()`, applied to `skills`, `preloadedSkills`, and `dynamicSkills`
@@ -338,24 +343,13 @@ This prevents user-controlled metadata (from YAML/TS config files) from executin
 
 ### compiler.ts
 
-| Function                      | Signature                                                                                                         | Purpose                                                                            |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `sanitizeLiquidSyntax()`      | `<T extends string>(value: T, fieldName: string): T`                                                              | Strip Liquid syntax from a string                                                  |
-| `sanitizeCompiledAgentData()` | `(data: CompiledAgentData): CompiledAgentData`                                                                    | Sanitize all fields before template render                                         |
-| `buildAgentTemplateContext()` | `(name: AgentName, agent: AgentConfig, files: AgentFiles, mapSkill?: (skill: Skill) => Skill): CompiledAgentData` | Build template data; `mapSkill` transforms each skill (used to attach `pluginRef`) |
-| `compileAgentForPlugin()`     | `(name: AgentName, agent: AgentConfig, fallbackRoot: string, engine: Liquid): Promise<string>`                    | Per-skill-`pluginRef` agent render used by the live recompile + plugin paths       |
-| `createLiquidEngine()`        | `(projectDir?: string): Promise<Liquid>`                                                                          | Create Liquid engine with layered roots                                            |
-
-### output-validator.ts
-
-| Function                        | Signature                                                     | Purpose                                           |
-| ------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
-| `checkXmlTagBalance()`          | `(content: string): string[]`                                 | Check for unclosed/extra XML tags                 |
-| `checkTemplateArtifacts()`      | `(content: string): string[]`                                 | Find unprocessed {{ }} or {% %} tags              |
-| `checkRequiredPatterns()`       | `(content: string): string[]`                                 | Check frontmatter, <role>, principles, min length |
-| `validateFrontmatter()`         | `(content: string): { errors: string[]; warnings: string[] }` | Validate YAML frontmatter fields                  |
-| `validateCompiledAgent()`       | `(content: string): ValidationResult`                         | Full validation (all checks)                      |
-| `printOutputValidationResult()` | `(agentName: AgentName, result: ValidationResult): void`      | Print validation results                          |
+| Function                      | Signature                                                                                                      | Purpose                                                                            |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `sanitizeLiquidSyntax()`      | `<T extends string>(value: T, fieldName: string): T`                                                           | Strip Liquid syntax from a string                                                  |
+| `sanitizeCompiledAgentData()` | `(data: CompiledAgentData): CompiledAgentData`                                                                 | Sanitize all fields before template render                                         |
+| `buildAgentTemplateContext()` | `(name: string, agent: AgentConfig, files: AgentFiles, mapSkill?: (skill: Skill) => Skill): CompiledAgentData` | Build template data; `mapSkill` transforms each skill (used to attach `pluginRef`) |
+| `compileAgentForPlugin()`     | `(name: AgentName, agent: AgentConfig, fallbackRoot: string, engine: Liquid): Promise<string>`                 | Per-skill-`pluginRef` agent render used by the live recompile + plugin paths       |
+| `createLiquidEngine()`        | `(projectDir?: string): Promise<Liquid>`                                                                       | Create Liquid engine with layered roots                                            |
 
 ## Plugin-Mode Compilation
 
@@ -456,10 +450,15 @@ The `compile` command (`src/cli/commands/compile.ts`) uses these operations to:
    would write global-scoped agents into the project); a lone global pass is
    scope-UNfiltered and therefore authoritative over its `outputDir` (see the
    pruning stage above).
-4. For each pass (`runCompilePass`): discover skills -> warn about
-   configured-but-missing stack skills (`warnUnresolvedStackSkills()`) ->
-   compile agents via `compileAgents()` -> `refreshConfigTypes()`
-5. Zero passes with skills is a hard error.
+4. For each pass (`runCompilePass`): discover skills (`discoverAllSkills()`, which
+   REFUSES the run via `refuseUnusableSkillMetadata()` when `unusableMetadata` is
+   non-empty — before a count is printed, an agent is written or the unions are
+   regenerated) -> warn about configured-but-missing stack skills
+   (`warnUnresolvedStackSkills()`) and scope-dropped stack pairs
+   (`warnScopeDroppedStackPairs()`) -> compile agents via `compileAgents()` ->
+   `refreshConfigTypes()`
+5. Zero passes with skills is a hard error (`ERROR_MESSAGES.NO_SKILLS_TO_COMPILE`).
+   The pass list itself comes from the module-private `buildCompilePasses()`.
 
 A stack-referenced skill absent from disk is dropped from the recompiled agent.
 `warnUnresolvedStackSkills()` surfaces each dropped skill as a `this.warn()`, so the default output

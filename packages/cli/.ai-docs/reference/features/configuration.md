@@ -20,7 +20,7 @@ related:
   - reference/config/scope-split.md
   - reference/config/config-writer.md
   - reference/config/config-merger.md
-last_validated: 2026-07-30
+last_validated: 2026-08-30
 ---
 
 # Configuration System
@@ -229,7 +229,7 @@ The rest of that output holds no fifth posture: the class definition and its thr
 
 ### Content-less config is not an installation
 
-`detectInstallationInDir` returns `null` when a successfully-loaded config declares `skills.length === 0` AND `(agents ?? []).length === 0`. A manifest with no content no longer counts as an installation, so `init` routes to the setup wizard rather than the dashboard. `skills` is read directly (the loader defaults it); `agents` is guarded with `?? []` because the loader does not default it.
+`detectInstallationInDir` returns `null` when `declaresNoContent(loaded.config)` — `config.skills.length === 0 && config.agents.length === 0`, both read directly, since both are required fields on `ProjectConfig`. A manifest with no content no longer counts as an installation, so `init` routes to the setup wizard rather than the dashboard.
 
 ## Key Types
 
@@ -265,7 +265,7 @@ type ProjectConfig = {
 
 **`marketplace` and `marketplaceName` are two fields, not one.** The first is the ref the install reads from; the second is what that marketplace's own manifest calls itself, which is knowable only once it has been fetched — which is why it cannot fold into the first. `uninstall` reads `marketplaceName` to build the `<id>@<marketplace name>` registry key.
 
-**Six of the seventeen are not declared by `projectConfigLoaderSchema`.** `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile` appear on the type and on `projectSourceConfigSchema` (the scalar-only loader `config.ts` uses) but not on the full loader's `projectConfigFields`. They survive a full load anyway because that object is `.passthrough()`, and they survive a re-emit because `canonicalizeFieldOrder` in `config-writer.ts` appends every key `CANONICAL_FIELD_ORDER` does not name after the ones it does. So they round-trip — as passthrough data, in arrival order, with no schema validating their shape on the full-config path.
+**Six of the seventeen are not declared by `projectConfigLoaderSchema`.** `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile` appear on the type and on `projectSourceConfigSchema` (the scalar-only loader `config.ts` uses) but not on the full loader's `projectConfigFields`. They survive a full load anyway because that object is `.passthrough()`, and they survive a re-emit because `canonicalizeFieldOrder` (module-private in `packages/compile/src/config-source.ts`) appends every key `CANONICAL_FIELD_ORDER` does not name after the ones it does. So they round-trip — as passthrough data, in arrival order, with no schema validating their shape on the full-config path.
 
 `ProjectConfig` has no `version` field — no reader consumes it, so it is not emitted or parsed. It also has no `selectedAgents` field: the selected-agent set is derived from the non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts` (both the emitted `SelectedAgentName` union and wizard hydration read it from there).
 
@@ -313,21 +313,25 @@ type ResolvedConfig = {
 
 **One definition per member** of the generated `CATEGORIES` tuple in `src/cli/types/generated/source-types.ts` (`export type Category = (typeof CATEGORIES)[number]`). The number of definitions and the `exclusive: true` count are owned by [skills-and-matrix.md](./skills-and-matrix.md) ("Current Counts") and are not restated here.
 
-**The file must stay exhaustive.** With members missing, the `satisfies` assertion fails to type-check and every undefined category is auto-synthesized at load time by `synthesizeCategory` in `src/cli/lib/matrix/skill-resolution.ts` — `displayName` from `toTitleCase(category)` ("Api Graphql"), `description` `"Auto-generated category for <id>"`, `exclusive: false`, `order: 999` (`AUTO_SYNTH_ORDER`). That placeholder shape is what the wizard actually rendered. The 38 added definitions are derived from the marketplace matrix; 11 of them are exclusive.
+**The file must stay exhaustive.** With members missing, the `satisfies` assertion fails to type-check and every undefined category is auto-synthesized at load time by `synthesizeCategory` in `src/cli/lib/matrix/skill-resolution.ts` — `displayName` from `toTitleCase(category)` ("Api Graphql"), `description` `"Auto-generated category for <id>"`, `exclusive: false`, `order: 999` (`AUTO_SYNTH_ORDER`). That placeholder shape is what the wizard actually rendered.
 
 ### Per-domain breakdown
 
-| Domain    | Categories | `order` range | `exclusive: true`                                                                                                                                                                                                                 |
-| --------- | ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web`     | 33         | 1–33          | `web-framework`, `web-meta-framework`, `web-routing`, `web-client-state`, `web-server-state`, `web-graphql-client`, `web-form-library`, `web-e2e`, `web-ui-kit`, `web-docs`, `web-i18n`, `web-realtime`, `web-editor`, `web-maps` |
-| `api`     | 21         | 1–21          | `api-api`, `api-sql-engine`, `api-orm`, `api-document`, `api-kv`, `api-db-host`, `api-baas`, `api-auth`, `api-cms`, `api-search`, `api-vector-db`, `api-graphql`                                                                  |
-| `mobile`  | 15         | 1–15          | `mobile-navigation`, `mobile-styling`, `mobile-ui-components`                                                                                                                                                                     |
-| `desktop` | 12         | 1–12          | `desktop-framework`, `desktop-packaging`                                                                                                                                                                                          |
-| `ai`      | 5          | 1–5           | —                                                                                                                                                                                                                                 |
-| `infra`   | 5          | 1–5           | `infra-iac`                                                                                                                                                                                                                       |
-| `shared`  | 5          | 1–5           | `shared-task-runner`, `shared-lint`                                                                                                                                                                                               |
-| `meta`    | 4          | 1–4           | —                                                                                                                                                                                                                                 |
-| `cli`     | 2          | 1–2           | `cli-framework`                                                                                                                                                                                                                   |
+Every domain's `order` values run contiguously from 1, so the range below IS that domain's size —
+the count itself is [skills-and-matrix.md](./skills-and-matrix.md)'s ("Current Counts") and is not
+restated here at any granularity.
+
+| Domain    | `order` range | `exclusive: true`                                                                                                                                                                                                                 |
+| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web`     | 1–33          | `web-framework`, `web-meta-framework`, `web-routing`, `web-client-state`, `web-server-state`, `web-graphql-client`, `web-form-library`, `web-e2e`, `web-ui-kit`, `web-docs`, `web-i18n`, `web-realtime`, `web-editor`, `web-maps` |
+| `api`     | 1–21          | `api-api`, `api-sql-engine`, `api-orm`, `api-document`, `api-kv`, `api-db-host`, `api-baas`, `api-auth`, `api-cms`, `api-search`, `api-vector-db`, `api-graphql`                                                                  |
+| `mobile`  | 1–15          | `mobile-navigation`, `mobile-styling`, `mobile-ui-components`                                                                                                                                                                     |
+| `desktop` | 1–12          | `desktop-framework`, `desktop-packaging`                                                                                                                                                                                          |
+| `ai`      | 1–5           | —                                                                                                                                                                                                                                 |
+| `infra`   | 1–5           | `infra-iac`                                                                                                                                                                                                                       |
+| `shared`  | 1–5           | `shared-task-runner`, `shared-lint`                                                                                                                                                                                               |
+| `meta`    | 1–4           | —                                                                                                                                                                                                                                 |
+| `cli`     | 1–2           | `cli-framework`                                                                                                                                                                                                                   |
 
 ### Ordering rule
 
@@ -335,7 +339,7 @@ type ResolvedConfig = {
 
 ### Quirks worth knowing before editing
 
-- `api` runs 1–21 with no gaps: the two it used to skip closed when the six-way data split renumbered the domain. Nothing depends on contiguity either way — `order` is only a sort key.
+- Nothing depends on the contiguity stated above — `order` is only a sort key, and a gap would be harmless.
 - `mobile-framework` is `exclusive: false` — the only domain-anchor "framework" category that permits multiple selections.
 - `api-api` is the one API-framework category and holds all five frameworks, Elysia included. Its id does not match the `api-framework-*` skill-id prefix its members carry; the rename that would align them is deliberately a separate item, and any `*-framework` suffix rule reads all five as something else in the meantime.
 
@@ -493,7 +497,12 @@ This asymmetry is deliberate; do not "fix" one to match the other.
 
 ## Scope Predicates
 
-**File:** `src/cli/lib/configuration/scope-predicates.ts`
+**File:** `src/cli/lib/configuration/scope-predicates.ts` — a re-export facade over
+`packages/compile/src/scope-predicates.ts`, which is where all eight are declared and what the
+registry row below binds the table to. They moved with the emitters that read them: the
+`SelectedAgentName` and `ProjectAgentName` unions an emitted `config-types.ts` carries are derived
+with `activeAgentNames` / `activeProjectAgentNames`, and the scope split a config write performs is
+derived with `isActiveAt`.
 
 Shared predicates over scoped config entries (`{ scope?, excluded? }`), consumed by the merger, generator, writer, and installer so scope/tombstone logic has a single definition.
 
@@ -566,7 +575,7 @@ Validates:
 
 ## Config Generation
 
-**Function:** `generateProjectConfigFromSkills()` in `src/cli/lib/configuration/config-generator.ts`
+**Function:** `generateProjectConfigFromSkills()` — declared in `packages/compile/src/seed-to-config.ts`, re-exported by `src/cli/lib/configuration/config-generator.ts`, which every CLI call site still imports it from
 
 Generates `ProjectConfig` from wizard result:
 
@@ -586,11 +595,11 @@ Required when the `selectedAgents` option (a wizard-supplied `AgentName[]`, not 
 
 When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` unconditionally — which is not seed-everything, because `isPreservedOrRelevant` runs after it either way. See "Which agents a skill lands on" below.
 
-**Function:** `scopeEligibilityKey()` in `src/cli/lib/configuration/config-generator.ts` - Encodes `(agent, skillId)` as `` `${agent}|${skillId}` `` for set-membership lookups.
+**Function:** `scopeEligibilityKey()` (`packages/compile/src/seed-to-config.ts`) - Encodes `(agent, skillId)` as `` `${agent}|${skillId}` `` for set-membership lookups.
 
-**Function:** `buildStackProperty()` in `src/cli/lib/configuration/config-generator.ts` - Builds the `stack` record in config from a loaded Stack definition.
+**Function:** `buildStackProperty()` (`packages/compile/src/seed-to-config.ts`) - Builds the `stack` record in config from a loaded Stack definition.
 
-**Function:** `splitConfigByScope()` in `src/cli/lib/configuration/config-generator.ts` - Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Partitions:
+**Function:** `splitConfigByScope()` (`packages/compile/src/seed-to-config.ts`) - Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Partitions:
 
 - **skills** by `scope` + `excluded` (excluded globals route to project split as tombstones)
 - **agents** by `scope` + `excluded` (excluded globals route to project as overrides)
@@ -718,11 +727,13 @@ The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` 
 
 ## Config Types Writer
 
-**File:** `src/cli/lib/configuration/config-types-writer.ts`
+**File:** `src/cli/lib/configuration/config-types-writer.ts` — a re-export facade over
+`packages/compile/src/config-types-source.ts` (the renderers) and `config-types-io.ts` (the disk
+half).
 
-Generates `config-types.ts` files with typed union types narrowed to installed items. Every
-exported function, exhaustively — the same list [config-writer.md](../config/config-writer.md)
-carries, and both are bound to the module by `scripts/check-enumeration-drift.ts`:
+Generates `config-types.ts` files with typed union types narrowed to installed items. The renderer
+half exhaustively — every function the package module exports, the same list
+[config-writer.md](../config/config-writer.md) carries, and both are bound to the module by `scripts/check-enumeration-drift.ts`:
 
 | Function                                 | Purpose                                                                                   |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -750,7 +761,7 @@ In `config-gate/`:
 - `propagateGlobalChangesToProjects` per-project loop → the SAME `writeProjectConfigPair`.
 - `reconcileTypesFromDisk(projectDir, config, deps, opts?)` — the scope-dispatching entry: `isHomeDirectory(projectDir)` → standalone half, otherwise `regenerateConfigTypes`. The single entry point for callers holding a persisted config and only its scope.
 
-Helpers `buildConfigTypesBackgroundData(matrix, agents)` (beside the type, in `configuration/config-types-writer.ts`) and `buildProjectTypesExtras(config, matrix)` (`config-gate/propagate.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. The detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
+Helpers `buildConfigTypesBackgroundData(matrix, agents)` (beside the type, in `configuration/config-types-io.ts`) and `buildProjectTypesExtras(config, matrix)` (`config-gate/propagate.ts`) feed already-loaded matrix/agent data into `regenerateConfigTypes` without re-loading. The detailed call-site table and rationale live in [../config/config-writer.md](../config/config-writer.md).
 
 ### `compile` regenerates `config-types.ts`
 

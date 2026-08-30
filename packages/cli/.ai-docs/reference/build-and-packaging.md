@@ -42,7 +42,7 @@ related:
   - reference/features/code-generation.md
   - reference/features/seed-contract.md
   - reference/testing/e2e-infrastructure.md
-last_validated: 2026-08-09
+last_validated: 2026-08-30
 ---
 
 # Build, Packaging and Distribution
@@ -93,7 +93,10 @@ package root. Before them, editing one line of reference prose invalidated the c
 directory into `dist/` verbatim (§5), so its `.md` files genuinely are build input. The `*.md`
 negation is anchored at the package root precisely so it cannot reach them. The same file also
 declares `test` and `test:e2e` as `dependsOn: ["build"]` — deliberately without the caret, because
-both suites resolve oclif commands out of this package's own `dist/` (§8, §9).
+both suites resolve oclif commands out of this package's own `dist/` (§8, §9). The `test` task also
+WIDENS its inputs past the package boundary, to `../../todo/**` and `../../CLAUDE.md`, because two
+checker suites walk trees the default set stops short of and would otherwise replay a cached pass
+describing a tree they never opened; `turbo.json`'s own comment carries the measurement.
 
 **`packages/matrix` is in this hash, and nothing in `inputs` names it.** tsup inlines that package
 into the bundle (`noExternal`, §7), so its source is build input — and it has no `build` script, so
@@ -122,10 +125,10 @@ ships the web app to Cloudflare. Publication is a manual `npm publish`, and `pre
 only gate between the working tree and the registry.
 
 > **`prepublishOnly`'s first step is `format:check`, and it covers markdown.** `prettier --check .`
-> runs over the whole package, `.ai-docs/**/*.md` included — the package's `.prettierignore` names
-> `CLAUDE.md`, `V2.md` and `todo/*` and nothing else. So an unformatted reference doc fails the
-> publish gate at step one and hides every failure behind it (§10 trap 11). Run
-> `bun run format` after editing anything under `.ai-docs/`.
+> runs over the whole package, `.ai-docs/**/*.md` included — nothing in the package's own
+> `.prettierignore` reaches that tree (read the file rather than a list here). So an unformatted
+> reference doc fails the publish gate at step one and hides every failure behind it (§10 trap 11).
+> Run `bun run format` after editing anything under `.ai-docs/`.
 
 ---
 
@@ -181,18 +184,18 @@ match, and the negations do not, becomes its own output file under `dist/`, mirr
 
 ## 3. Build options
 
-| Option       | Value                                         | What it buys                                                                                                                                       |
-| ------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format`     | `["esm"]`                                     | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
-| `platform`   | `node`                                        | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
-| `noExternal` | `["@workspace/matrix", "@workspace/compile"]` | Forces both private workspace packages into the bundle. Load-bearing — see below                                                                   |
-| `target`     | `node22`                                      | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
-| `clean`      | `true`                                        | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
-| `sourcemap`  | `true`                                        | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
-| `shims`      | `true`                                        | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
-| `dts`        | `false`                                       | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
-| `outDir`     | `dist`                                        | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
-| `banner.js`  | `#!/usr/bin/env node`                         | See below                                                                                                                                          |
+| Option       | Value                                                           | What it buys                                                                                                                                       |
+| ------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`     | `["esm"]`                                                       | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
+| `platform`   | `node`                                                          | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
+| `noExternal` | `["@workspace/matrix", "@workspace/compile", "@workspace/api"]` | Forces all three private workspace packages into the bundle. Load-bearing — see below                                                              |
+| `target`     | `node22`                                                        | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
+| `clean`      | `true`                                                          | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
+| `sourcemap`  | `true`                                                          | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
+| `shims`      | `true`                                                          | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
+| `dts`        | `false`                                                         | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
+| `outDir`     | `dist`                                                          | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
+| `banner.js`  | `#!/usr/bin/env node`                                           | See below                                                                                                                                          |
 
 ### The runtime floor is declared in three places, and they must be changed together
 
@@ -238,52 +241,64 @@ and never exercised.
 > v4 predates the behaviour and does only one thing. If this is ever moved forward, `v7` needs
 > `package-manager-cache: false` alongside it.
 
-### Two workspace packages are bundled, and the pair of settings that does it applies to both
+### Three workspace packages are bundled, and the pair of settings that does it applies to each
 
 The seed wire contract lives in `packages/matrix/src/seed.ts` and is imported as
 `@workspace/matrix/seed` across `src/cli/lib/seed/`. The config-pair and compiled-agent renderers
 live in `packages/compile/src/` and are imported by the CLI's writer facades — `consts.ts`,
 `compiler.ts`, `agent-provenance.ts`, `config-writer.ts`, `config-types-writer.ts`,
-`config-generator.ts`, `seed-to-wizard.ts` among them. **Both packages are private, unpublished and
-ship TypeScript**, so nothing either exports can be resolved at runtime from an installed tarball.
-Two declarations per package make that safe:
+`config-types-io.ts`, `config-generator.ts`, `scope-predicates.ts`, `matrix-provider.ts` and
+`compile-seat.ts` among them. The typed worker client lives in `packages/api/` and has one
+production importer, `createApiClient` in `src/cli/lib/seed/fetch-seed.ts`. **All three are
+private, unpublished and ship TypeScript**, so nothing they export can be resolved at runtime from
+an installed tarball. Two declarations per package make that safe:
 
-| Declaration                                                   | File             | Effect                                                     |
-| ------------------------------------------------------------- | ---------------- | ---------------------------------------------------------- |
-| `"@workspace/matrix": "workspace:*"` under `devDependencies`  | `package.json`   | Never installed alongside the published package            |
-| `"@workspace/compile": "workspace:*"` under `devDependencies` | `package.json`   | Never installed alongside the published package            |
-| `noExternal: ["@workspace/matrix", "@workspace/compile"]`     | `tsup.config.ts` | Inlines both packages' source rather than emitting imports |
+| Declaration                                                                 | File             | Effect                                                          |
+| --------------------------------------------------------------------------- | ---------------- | --------------------------------------------------------------- |
+| `"@workspace/matrix": "workspace:*"` under `devDependencies`                | `package.json`   | Never installed alongside the published package                 |
+| `"@workspace/compile": "workspace:*"` under `devDependencies`               | `package.json`   | Never installed alongside the published package                 |
+| `"@workspace/api": "workspace:*"` under `devDependencies`                   | `package.json`   | Never installed alongside the published package                 |
+| `noExternal: ["@workspace/matrix", "@workspace/compile", "@workspace/api"]` | `tsup.config.ts` | Inlines all three packages' source rather than emitting imports |
+
+`hono` is deliberately absent from `dependencies` for the same reason one level on: `@workspace/api`
+pulls `hono/client` in, and tsup externalises exactly what `dependencies` names — so leaving `hono`
+out is what inlines it rather than adding a runtime install to a CLI that makes one GET.
+`package.json`'s `//devDependencies` note records the measurement that decision was taken on.
+`@workspace/api-mocks` is a different case and is named in neither list: nothing under `src/cli/`
+imports it outside tests, so it reaches no bundle at all.
 
 Verify against a built tree: the schema's Zod calls appear inline in `dist/chunk-*.js`, that chunk's
 sourcemap names `../../matrix/src/seed.ts` among its `sources`, and **no emitted `.js` contains
-either specifier** —
+any of the three specifiers** —
 
 ```
-grep -rl '@workspace/matrix\|@workspace/compile' dist --include='*.js'
+grep -rl '@workspace/matrix\|@workspace/compile\|@workspace/api' dist --include='*.js'
 ```
 
 **tsup bundles `devDependencies` by default and leaves `dependencies` external**, so `noExternal` is
-belt-and-braces — but the belt is what matters here: promoting either package to `dependencies`
+belt-and-braces — but the belt is what matters here: promoting any of the three to `dependencies`
 would silently externalise it, and the published CLI would fail at import time while every local
 gate stayed green (locally the workspace symlink resolves). `init --from` is the surface that dies
-for `@workspace/matrix`; for `@workspace/compile` it is every write path, since the config-pair
-renderers are on it. `tsup.config.ts` carries the same warning inline. Contract detail:
-[`features/seed-contract.md`](./features/seed-contract.md).
+for `@workspace/matrix` and for `@workspace/api`; for `@workspace/compile` it is every write path,
+since the config-pair renderers are on it. `tsup.config.ts` carries the same warning inline.
+Contract detail: [`features/seed-contract.md`](./features/seed-contract.md).
 
 ### `shims: true` is currently insurance, not load-bearing
 
-95 emitted files open with `init_esm_shims()`, but the initializer's body is `"use strict";` and the
-chunk exports no `__dirname`: both constants were tree-shaken because nothing in the bundle reads
-them as free variables. Every module here that needs its own directory derives it explicitly from
-`import.meta.url` (`src/cli/consts.ts`, `src/cli/lib/configuration/config-loader.ts`,
-`src/cli/lib/__tests__/helpers/cli-runner.ts`). Do not read the option as the mechanism that makes
-`CLI_ROOT` work — that is `import.meta.url`. `shims` is cheap cover for a bundled dependency that
-references the CJS globals, and it becomes load-bearing only when one does.
+`grep -rl 'esm_shims' dist --include='*.js'` returns nothing: no emitted file carries the shim
+initializer, because nothing in the bundle reads `__dirname` or `__filename` as a free variable.
+The one occurrence of either name in `dist/` is a renamed local — `var __dirname2 =
+path.dirname(__filename2)` in the chunk holding `consts.ts` — derived from `import.meta.url`. Every
+module here that needs its own directory derives it that way (`src/cli/consts.ts`,
+`src/cli/lib/configuration/config-loader.ts`, `src/cli/lib/__tests__/helpers/cli-runner.ts`). Do
+not read the option as the mechanism that makes `CLI_ROOT` work — that is `import.meta.url`.
+`shims` is cheap cover for a bundled dependency that references the CJS globals, and it becomes
+load-bearing only when one does.
 
 ### The shebang is injected, not written
 
-`src/cli/index.ts` is five lines and starts with `import { run, flush, Errors } from "@oclif/core";`.
-It carries **no shebang**. The `#!/usr/bin/env node` line that makes `dist/index.js` directly
+`src/cli/index.ts` starts with `import { run, flush, Errors } from "@oclif/core";` and carries
+**no shebang**. The `#!/usr/bin/env node` line that makes `dist/index.js` directly
 executable is `banner.js`, applied by the bundler.
 
 Two consequences that are easy to get wrong:
@@ -305,7 +320,7 @@ dist/
     build/  import/  new/
   hooks/init.js             # entry — the oclif lifecycle hook
   components/               # entry per source .tsx (common/ and wizard/ only)
-  stores/                   # entry per source .ts, tests included
+  stores/                   # entry per source .ts (the negations keep the specs out)
   chunk-<HASH>.js           # shared code, always FLAT at the dist root
   <module-name>-<HASH>.js   # dynamic-import split points, named after the module
   src/agents/               # NOT built — copied verbatim by onSuccess (§5)
@@ -316,17 +331,30 @@ sources were. This is what makes the `CLI_ROOT` arithmetic in §5 work for bundl
 breaks the `config-loader` arithmetic in §7 — same cause, opposite outcome.
 
 **`await import(...)` produces a named chunk, not an entry.** The lazy imports that exist to break
-`lib -> operations -> lib` load-time cycles (`recompile-project-agents`, `copy-local-skills`,
-`load-agent-defs`, `source-loader`) each surface as
-`dist/<module-name>-<HASH>.js`. They are output files with stable-looking names and are **not**
-addressable entry points — nothing may import them by path.
+`lib -> operations -> lib` load-time cycles each surface as `dist/<module-name>-<HASH>.js`. They are
+output files with stable-looking names and are **not** addressable entry points — nothing may import
+them by path. Enumerate the sites rather than trusting a list:
+
+```
+grep -rn 'await import(' src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
+```
 
 ---
 
 ## 5. `onSuccess` — the asset copy
 
-`tsup.config.ts` -> `onSuccess` performs one `fs.copy`, guarded by `fs.pathExists` and preceded by
-an `fs.remove` of its destination:
+`tsup.config.ts` -> `onSuccess` does two things, in this order.
+
+**First, it deletes any compiled test artefact the entry negations should already have kept out** —
+a `fast-glob` over `**/*.test.js`, `**/*.test.js.map` and `**/*.test.d.ts` under `dist/`, logging a
+count when it removes anything. The config's own comment records why: the same tsup has three times
+been observed emitting them despite the negations, never reproducibly, most recently inside a
+publish gate. This is belt over the negations rather than a replacement for them, and it makes the
+no-shipped-tests invariant unconditional instead of probabilistic. `packaging.test.ts` (§9) is the
+tripwire that caught every occurrence.
+
+**Then one `fs.copy`**, guarded by `fs.pathExists` and preceded by an `fs.remove` of its
+destination:
 
 | Source        | Destination        | Reason recorded in the config                                              | Status today     |
 | ------------- | ------------------ | -------------------------------------------------------------------------- | ---------------- |
@@ -406,17 +434,17 @@ quoting them. The `--ignore-scripts` is load-bearing: `prepare` runs husky, whic
 
 | Entry          | Files | Unpacked                                                          | Contents                                                                            |
 | -------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `dist/`        | 321   | 5.67 MB                                                           | 103 code files, 103 sourcemaps, plus the 115-file `dist/src/agents/` copy           |
+| `dist/`        | 297   | 6.00 MB                                                           | 91 code files, 91 sourcemaps, plus the 115-file `dist/src/agents/` copy             |
 | `assets/`      | 3     | 2.48 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                 |
 | `src/agents/`  | 115   | 0.60 MB                                                           | Agent partials and `_templates/` Liquid sources                                     |
 | `src/schemas/` | 12    | 0.04 MB                                                           | Generated JSON Schemas                                                              |
-| root files     | 4     | 0.12 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
-| **Total**      | 455   | 8,906,835 B (8.91 MB) unpacked / 3,713,566 B (3.71 MB) compressed |                                                                                     |
+| root files     | 4     | 0.14 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
+| **Total**      | 431   | 9,255,881 B (9.26 MB) unpacked / 3,840,868 B (3.84 MB) compressed |                                                                                     |
 
 Two things the tarball carries that nobody chose deliberately, and one that was fixed:
 
-- **Sourcemaps are the single largest code group** — 103 files, 3.35 MB unpacked, roughly twice the
-  1.73 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
+- **Sourcemaps are the single largest code group** — 91 files, 3.63 MB unpacked, roughly twice the
+  1.77 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
 - **`src/agents/` is published twice** — once directly, once inside `dist/src/agents/` (§5).
 - **No compiled test file ships.** The entry negations in §2 keep sixteen of them out and
   `packaging.test.ts` pins their absence.
@@ -659,10 +687,11 @@ patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `d
    nothing checks that they agree.** They agree today, by hand, and drifted once already. Change all
    three together. `tsconfig`'s `target` is a different question and stays out of it; CI's
    `NODE_VERSION` is a fourth place the same number lives (§3).
-10. **`@workspace/matrix` and `@workspace/compile` must both stay `devDependencies`.** Promoting
-    either to `dependencies` externalises the imports tsup currently inlines, and the published CLI
-    fails at import time with every local gate green — `init --from` for matrix, every config write
-    for compile (§3).
+10. **`@workspace/matrix`, `@workspace/compile` and `@workspace/api` must all stay
+    `devDependencies`.** Promoting any of them to `dependencies` externalises the imports tsup
+    currently inlines, and the published CLI fails at import time with every local gate green —
+    `init --from` for matrix and api, every config write for compile. `hono` must stay out of
+    `dependencies` for the mirror-image reason (§3).
 11. **`prepublishOnly` stops at its first failing step, and `format:check` is that first step.** A
     formatting regression alone blocks lint, typecheck, build and test from ever running, so it
     hides every other failure behind it. It covers markdown, so an unformatted `.ai-docs/` file

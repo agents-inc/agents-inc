@@ -14,7 +14,7 @@ keywords:
     ProjectConfigTypesOptions,
     ProjectAgentName,
     SelectedAgentName,
-    ValidationPartial,
+    SelectionValidation,
     leaf-exports,
     export-census,
   ]
@@ -29,15 +29,17 @@ related:
   - reference/features/compilation-pipeline.md
   - reference/config/config-writer.md
   - reference/component-patterns.md
-last_validated: 2026-08-02
+last_validated: 2026-08-30
 ---
 
 # Leaf Exports
 
 ## What this file is
 
-**Ten named exports** across seven sections, each sitting inside an area whose doc is otherwise
-thorough. Eight appear nowhere else under `.ai-docs/reference/`; the remaining two
+A handful of named exports across seven sections, each sitting inside an area whose doc is
+otherwise thorough. The disposition table below is the roster — no count is stated here, because
+the table is the thing to read and a total beside it is a second copy that can only drift. The
+selection criterion was "this identifier appears in no other reference doc"; two entries
 (`fetchAgentDefinitionsFromRemote`, `PROJECT_CONFIG_TYPES_BEFORE`) are partially covered elsewhere
 and this file carries only the remainder, saying so in place. Individually none justifies a file.
 
@@ -79,7 +81,7 @@ its owning doc was out of scope for whoever found it.
 | 4   | `fetchAgentDefinitionsFromRemote`                                                            | `lib/agents/agent-fetcher.ts`              | [features/agent-system.md](./features/agent-system.md)                                  |
 | 5   | `AgentPluginOptions`                                                                         | `lib/agents/agent-plugin-compiler.ts`      | [features/compilation-pipeline.md](./features/compilation-pipeline.md)                  |
 | 6   | `PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`, `ProjectConfigTypesOptions` | `lib/configuration/config-types-writer.ts` | [config/config-writer.md](./config/config-writer.md)                                    |
-| 7   | `ValidationPartial`                                                                          | `lib/matrix/matrix-resolver.ts`            | [features/skills-and-matrix.md](./features/skills-and-matrix.md) — Selection Validation |
+| 7   | `SelectionValidation.valid`                                                                  | `lib/matrix/matrix-resolver.ts`            | [features/skills-and-matrix.md](./features/skills-and-matrix.md) — Selection Validation |
 
 ---
 
@@ -95,20 +97,20 @@ export const METADATA_KEYS = {
   FORKED_FROM: "forkedFrom",
   CONTENT_HASH: "contentHash",
   USAGE_GUIDANCE: "usageGuidance",
+  CUSTOM: "custom",
 } as const;
 ```
 
-Its JSDoc says "Centralized to avoid string duplication across loaders and compilers." **The code
-does not match that description, and the gap is the trap.**
+Its JSDoc says "Centralized to avoid string duplication across loaders and compilers." **The trap
+is what "used" means here: every reference is inside a MESSAGE, never a property read.**
 
-| Claim                             | Reality (re-derived by grep over `src/`, `e2e/`, `scripts/`)                           |
-| --------------------------------- | -------------------------------------------------------------------------------------- |
-| Used across loaders and compilers | **One** importing module: `lib/matrix/matrix-loader.ts`                                |
-| Six keys centralized              | **One** key referenced: `DISPLAY_NAME`, inside `extractAllSkills` (`matrix-loader.ts`) |
-| Avoids string duplication         | The other five field names still appear as raw literals — see the table below          |
+```
+grep -rhoP 'METADATA_KEYS\.[A-Z_]+' src e2e scripts | sort | uniq -c
+```
 
-**The one use is inside an error message, not a property read.** The `displayName` guard in
-`extractAllSkills` (`matrix-loader.ts`):
+Run it and read the sites it names. Each one interpolates the constant into a `warn()`, a
+`verbose()` or a thrown `Error`, while the guard beside it reads the field as a literal —
+`extractAllSkills` in `matrix-loader.ts` is the clearest:
 
 ```typescript
 if (!metadata.displayName) {
@@ -119,20 +121,19 @@ if (!metadata.displayName) {
 ```
 
 The guard reads `metadata.displayName` as a literal property; the constant supplies only the text of
-the message. **Editing `METADATA_KEYS.DISPLAY_NAME` therefore changes what the error says and not
-what the loader reads** — the two would silently disagree. The real contract for these field names
-is the Zod layer (`skillMetadataLoaderSchema` in `lib/schemas.ts`), which spells them out
-independently; see [types/zod-schemas.md](./types/zod-schemas.md).
+the message. **Editing a `METADATA_KEYS` member therefore changes what an error says and not what
+the loader reads** — the two would silently disagree, and nothing would fail. The real contract for
+these field names is the Zod layer (`skillMetadataLoaderSchema` in `lib/schemas.ts`), which spells
+them out independently; see [types/zod-schemas.md](./types/zod-schemas.md).
 
-Raw-literal hits for each key across `src/cli/**`, excluding `metadata-keys.ts` itself:
+Members with no reference at all, and the field names still written as raw literals elsewhere, are
+the other half of the gap. Re-derive both rather than reading a figure here — the second command is
+per key, over `src/cli/**`, and `metadata-keys.ts` itself is the one hit to discount:
 
-| Key              | Raw `"literal"` hits | Where they live                                                           |
-| ---------------- | -------------------- | ------------------------------------------------------------------------- |
-| `displayName`    | 6                    | schemas, test fixtures                                                    |
-| `cliDescription` | 6                    | `isOverLengthCliDescription` in `lib/schemas.ts`, validator/command tests |
-| `forkedFrom`     | 1                    | `skill-metadata.test.ts`                                                  |
-| `usageGuidance`  | 1                    | the `TestSkill` `Pick` in `lib/__tests__/fixtures/create-test-source.ts`  |
-| `contentHash`    | 0                    | — reached only through typed objects, never by string key                 |
+```
+grep -rn 'METADATA_KEYS\.' src --include='*.ts' | grep -v 'metadata-keys.ts'
+grep -rn '"displayName"' src/cli --include='*.ts' --include='*.tsx'
+```
 
 **Adjacent exports in the same module are documented elsewhere — do not re-document them here.**
 `SKILL_CONTENT_FILES` and `SKILL_CONTENT_DIRS` are cited by
@@ -141,8 +142,10 @@ Raw-literal hits for each key across `src/cli/**`, excluding `metadata-keys.ts` 
 deliberate boundary cast to `CategoryPath` (`"dummy-category"`) — a placeholder that sits
 **outside** the generated `Category` union on purpose, annotated in place.
 
-**No test file references `METADATA_KEYS`.** Its behaviour is covered only transitively, through
-`matrix-loader`'s error-path specs.
+One spec references it by name — `local-skill-loader.test.ts`, asserting a warning CONTAINS
+`METADATA_KEYS.CATEGORY`, which is the message-vocabulary use above rather than a check on the
+field the loader reads. Everything else is covered only transitively, through the error-path specs
+of the modules that interpolate it.
 
 ---
 
@@ -177,8 +180,8 @@ What is left to say about these two records is one thing:
 `type SkillRequirement = ResolvedSkill["requires"][number]`, shadowing the exported name so the
 module needs no import for it. It resolves to the same type (`ResolvedSkill["requires"]` **is**
 `SkillRequirement[]`), so there is no divergence risk today — but a grep for the identifier returns
-two declaration sites, and the private one, used by `isRequirementMet`, `missingRequirementIds`
-and `wouldLoseRequirement`, is not the one to edit.
+two declaration sites, and the private one, used by `isRequirementMet` and `missingRequirementIds`,
+is not the one to edit.
 
 **Vestigial JSDoc.** `SkillRequirement.needsAny` carries `@default false` in its JSDoc
 (`types/matrix.ts`) but is
@@ -296,7 +299,9 @@ skill-primitives.md records for `SkillPluginOptions`.
 
 ## 6. The emitted `config-types.ts` template halves
 
-**File:** `src/cli/lib/configuration/config-types-writer.ts`. Owning doc:
+**File:** `packages/compile/src/config-types-source.ts`, re-exported by
+`src/cli/lib/configuration/config-types-writer.ts`, which is the address every CLI caller uses.
+Owning doc:
 [config/config-writer.md](./config/config-writer.md) → "Config Types Writer", which documents the
 five generator functions, the union-emission internals, `assembleConfigTypesSource`'s generated-file
 stamp, `STACK_AGENT_CONFIG_LOOSE_LINE` and `buildSkillsByCategory` — but not the two constants those
@@ -333,7 +338,7 @@ emitted `SkillAssignment` is generic; the runtime type of the same name is not.
 ### `ProjectAgentName` is emitted, not exported
 
 `ProjectAgentName` is _not_ a named export of
-`config-types-writer.ts`. It exists only inside the emitted text: declared by
+`config-types-source.ts` nor of the `config-types-writer.ts` facade over it. It exists only inside the emitted text: declared by
 `assembleConfigTypesSource` through `renderAlias("ProjectAgentName", parts.projectAgentName)` —
 which emits `export type ProjectAgentName = SelectedAgentName`, with no trailing semicolon, since
 the pair is emitted `semi: false` — and consumed by `PROJECT_CONFIG_INTERFACE_AFTER`
@@ -379,20 +384,15 @@ above that export block and config-writer.md's four-layer enforcement section).
 | `selectedAgentNames`      | no        | Narrows `SelectedAgentName`                                                                           |
 | `projectScopedAgentNames` | no        | Narrows `ProjectAgentName`                                                                            |
 
-**`projectCategories`' optionality is the only asymmetry, and it buys nothing.** The other three
-`project*` fields are required and go straight through `formatExtendedUnion`.
-`projectCategories` gets a bespoke ternary instead (`categoryUnion`): coalesce to `[]`, then emit
-the bare `GlobalCategory` when the list is empty. **That ternary is redundant** — `formatExtendedUnion`
-already returns the bare `globalTypeName` for an empty member list, so
-`formatExtendedUnion("GlobalCategory", projectCategories)` would produce identical output on every
-input. The optional-vs-required split in the type is a caller convenience with no emission
-consequence, and `regenerateConfigTypes` supplies all four anyway, each defaulted to
-`[]`, so no shipped call exercises the omission.
+**`projectCategories`' optionality is the only asymmetry, and it buys nothing.** All four
+`project*` unions go through `formatExtendedUnion`, `projectCategories` after a `?? []`, and that
+function already returns the bare `globalTypeName` for an empty member list — so the optional-vs-
+required split in the type is a caller convenience with no emission consequence. It is unexercised
+besides: `regenerateConfigTypes` supplies all four, each defaulted to `[]`.
 
-**A second vestige in the same function:** the comment above `categoryImport` reads "Import
-`Category` as `GlobalCategory` when we have project categories or need to re-export it", but
-`categoryImport` is an **unconditional** string constant. The import is always emitted. Read the
-comment as history, not as a condition.
+The import block is unconditional and says so — `renderTypeImportLine` emits all four
+`Global*` aliases whether or not this project adds anything, because `Category` is re-exported
+either way.
 
 `formatExtendedUnion` returns MEMBERS rather than finished text, so where they break is
 `renderAlias`'s call to `unionLayout` and not this function's business at all. That is safe because
@@ -434,7 +434,7 @@ and every `ValidationError` in `types/matrix.ts` is annotated "Advisory validati
 (non-blocking)". **A `false` here does not stop anything** — nothing branches on it. Note that the
 generic
 `mergeValidationResults` (`lib/validation-result.ts`) serves the string-based `ValidationResult`
-used by `output-validator.ts` and `plugins/plugin-validator.ts`, where `valid` _is_ meaningful.
+used by `plugins/plugin-validator.ts`, where `valid` _is_ meaningful.
 
 ---
 
@@ -449,24 +449,23 @@ wrong.
 | `src/cli/lib/agents/agent-fetcher.test.ts`                        | 15    | `getLocalAgentDefinitions`, `fetchAgentDefinitionsFromRemote`, `getAgentDefinitions` dispatch |
 | `src/cli/lib/wizard/build-step-logic.test.ts`                     | 44    | `buildCategoriesForDomain`                                                                    |
 | `src/cli/lib/configuration/__tests__/config-types-writer.test.ts` | 78    | emitted source of both generators                                                             |
-| `src/cli/lib/matrix/matrix-resolver.test.ts`                      | 115   | the four `ValidationPartial` passes plus the rest of the resolver                             |
+| `src/cli/lib/matrix/matrix-resolver.test.ts`                      | 114   | the three validation passes plus the rest of the resolver                                     |
 
-**No test file references `METADATA_KEYS`, `SkillRelation` or `MarketplaceRemoteSource` by name.**
-Those three are covered only transitively.
+**No test file references `SkillRelation` or `MarketplaceRemoteSource` by name.** Both are covered
+only transitively. `METADATA_KEYS` is referenced by one — see §1.
 
 ---
 
 ## Traps, collected
 
-| #   | Trap                                                                                                              | Anchor                                                                     |
-| --- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1   | Editing `METADATA_KEYS.DISPLAY_NAME` changes the error text, not the field the loader reads                       | `extractAllSkills` (`matrix-loader.ts`)                                    |
-| 2   | `SkillRequirement` is declared twice — the private alias in `matrix-resolver.ts` is not the one to edit           | the module-private `SkillRequirement` alias (`matrix-resolver.ts`)         |
-| 3   | `{ source: "github" }` with no `repo` and no `url` passes schema validation, deliberately                         | `marketplaceRemoteSourceSchema` (`schemas.ts`)                             |
-| 4   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup  | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`     |
-| 5   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                                | `assembleConfigTypesSource` (`config-types-writer.ts`)                     |
-| 6   | The `projectCategories` ternary is redundant, and the `categoryImport` comment describes a condition that is gone | `categoryUnion` and `categoryImport` in `generateProjectConfigTypesSource` |
-| 7   | `validateSelection` returns `valid: true` with a non-empty `errors` array — never branch on it                    | `validateSelection` (`matrix-resolver.ts`)                                 |
+| #   | Trap                                                                                                             | Anchor                                                                      |
+| --- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 1   | Editing any `METADATA_KEYS` member changes error text, not the field a loader reads                              | `extractAllSkills` (`matrix-loader.ts`)                                     |
+| 2   | `SkillRequirement` is declared twice — the private alias in `matrix-resolver.ts` is not the one to edit          | the module-private `SkillRequirement` alias (`matrix-resolver.ts`)          |
+| 3   | `{ source: "github" }` with no `repo` and no `url` passes schema validation, deliberately                        | `marketplaceRemoteSourceSchema` (`schemas.ts`)                              |
+| 4   | `agentsDir` cannot be set through `getAgentDefinitions`, and setting it also suppresses the source-config lookup | the `sourceProjectConfig` binding in `fetchAgentDefinitionsFromRemote`      |
+| 5   | `ProjectAgentName` / `SelectedAgentName` are emitted strings, not importable types                               | `assembleConfigTypesSource` (`packages/compile/src/config-types-source.ts`) |
+| 6   | `SelectionValidation.valid` is derived and agrees with `errors`, but nothing branches on it — never gate on it   | `validateSelection` (`matrix-resolver.ts`)                                  |
 
 ---
 

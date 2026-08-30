@@ -313,7 +313,7 @@ tightening of the first because minting and reading want opposite answers to the
 
 The one rule the installable schema adds is the scope-reach rule: **a project-scoped skill never
 reaches a sub-agent resting at global scope.** Its predicate is `isSeedScopePairWritable`, and it is
-the single definition — `isScopePairCompatible` in `lib/configuration/config-generator.ts` and the
+the single definition — `isScopePairCompatible` in `packages/compile/src/seed-to-config.ts` and the
 editor's roster marker both delegate to it. The sub-agent's side is resolved by `seedAgentScope`,
 which reads `DEFAULT_SELECTION_OPTIONS.scope` so the wire and the CLI's decode cannot disagree about
 what an absent `scope` key means.
@@ -557,7 +557,7 @@ sub-agent that rests at global scope** — explicitly global, or global by takin
 default. The message names **every** such pair as `<skillId> -> <agentName>`, not just the first.
 
 The rule is the config model's own, read from its single definition: `isScopePairCompatible` in
-`lib/configuration/config-generator.ts` — _"Project skills never reach global agents; global skills
+`packages/compile/src/seed-to-config.ts` — _"Project skills never reach global agents; global skills
 reach any agent."_ The scope a bare sub-agent rests at comes from `seedAgentScope`, the same helper
 `agentScopeConfig` uses, so the pair is judged against the scope that will actually be written.
 

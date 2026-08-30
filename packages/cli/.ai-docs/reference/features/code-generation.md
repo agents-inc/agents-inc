@@ -44,7 +44,7 @@ related:
   - reference/utilities.md
   - reference/features/skills-and-matrix.md
   - reference/testing/infrastructure.md
-last_validated: 2026-08-06
+last_validated: 2026-08-30
 ---
 
 # Code Generation Pipeline and Generated Artefacts
@@ -201,13 +201,13 @@ load-bearing: the same words in `packages/cli` run all four.
 
 Where each one runs:
 
-| Gate                | Composition                                                                                                                                                                      | Runs a generator?                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `prepublishOnly`    | `format:check && lint && typecheck && generate:schemas:check && generate:types:check && build && test`                                                                           | **Schemas and types**, via their checks                                              |
-| `.husky/pre-commit` | `bunx lint-staged` -> `bunx turbo run lint typecheck test --filter='...[HEAD]'` (changed packages and dependents)                                                                | **No**                                                                               |
-| `.husky/pre-push`   | `bun run deps:check` when a manifest or tool config moved, then `bunx turbo run lint` once per side touched                                                                      | **No**                                                                               |
-| GitHub Actions      | `ci.yml`: `check-cli` runs `generate:schemas:check`; `check-web` runs `generate:matrix:check` **and** `generate:compile:check` (both from `packages/cli`, before its own suites) | **Schemas, matrix and compile** (`ci.yml` has no marketplace checkout, so not types) |
-| GitHub Actions      | `regenerate-catalog.yml`: checks `agents-inc/skills` out, runs `generate:types` -> `generate:schemas` -> `generate:matrix`, opens a pull request with the outputs                | **Three of the four, as writers** — the only workflow that can run `generate:types`  |
+| Gate                | Composition                                                                                                                                                                                                                                          | Runs a generator?                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `prepublishOnly`    | `format:check && lint && typecheck && generate:schemas:check && generate:types:check && build && test`                                                                                                                                               | **Schemas and types**, via their checks                                              |
+| `.husky/pre-commit` | `bunx lint-staged`, then `bun run deps:check` when a manifest or tool config is staged, then `bunx turbo run lint typecheck test --filter='...[HEAD]'` and `bunx turbo run db:generate:check --filter='...[HEAD]'` (changed packages and dependents) | **No** — `db:generate:check` is drizzle's, in `apps/server`, and none of the four    |
+| `.husky/pre-push`   | `bun run deps:check` when a manifest or tool config moved, then `bunx turbo run lint` once per side touched                                                                                                                                          | **No**                                                                               |
+| GitHub Actions      | `ci.yml`: `check-cli` runs `generate:schemas:check`; `check-web` runs `generate:matrix:check` **and** `generate:compile:check` (both from `packages/cli`, before its own suites)                                                                     | **Schemas, matrix and compile** (`ci.yml` has no marketplace checkout, so not types) |
+| GitHub Actions      | `regenerate-catalog.yml`: checks `agents-inc/skills` out, runs `generate:types` -> `generate:schemas` -> `generate:matrix`, opens a pull request with the outputs                                                                                    | **Three of the four, as writers** — the only workflow that can run `generate:types`  |
 
 **`generate:matrix:check` and `generate:compile:check` are run by `check-web`, not `check-cli`, and
 from `packages/cli` anyway.** The files they guard belong to the web side; the writers and every
@@ -487,17 +487,18 @@ every mtime in its output directory untouched.
   `src/cli/types/generated/**`, and its comment reads "Emitted by `npm run generate:types` — fix the
   generator, not the output." Take the instruction literally: a lint fix applied to the artefact is
   erased by the next run.
-- **The generated directory is _not_ prettier-ignored.** `.prettierignore` covers `dist/`,
-  `node_modules/`, `.cache/`, `coverage/`, `*.js.map` and `.claude_backup/` — not
-  `src/cli/types/generated/` and not `src/schemas/`. The types and schemas generators each format
+- **The generated directory is _not_ prettier-ignored.** Neither `src/cli/types/generated/` nor
+  `src/schemas/` appears in `packages/cli/.prettierignore` — read the file rather than a list here,
+  which is why one is not given. The types and schemas generators each format
   their own output through Prettier's Node API for exactly this reason; skipping that step makes
   `format:check` fail — and would make `check` compare unformatted emission against formatted files,
   so it would report permanent drift as well. Both resolve Prettier's options from the generator's
   own path, not the destination, so the emitted bytes do not change with where they are written.
-  **`generate-matrix-package.ts` is the exception and must stay one:** it writes outside this
-  package, and the repository-root `.prettierignore` names `packages/matrix/src/vendor/` and
-  `packages/matrix/src/generated/`, so formatting them would show up as drift against the generator
-  on the next check.
+  **The two generators that write OUTSIDE this package are the exceptions and must stay so:**
+  `generate-matrix-package.ts` and `generate-compile-package.ts` format nothing, because the
+  repository-root `.prettierignore` names `packages/matrix/src/vendor/`,
+  `packages/matrix/src/generated/` and `packages/compile/src/generated/` — formatting them would
+  show up as drift against the generator on the next check.
 - **`tsc` still type-checks the generated files** (`include: ["src/**/*"]`), so a generator change
   that emits invalid TypeScript fails `npm run typecheck` even though ESLint ignores the output.
 - **`matrix.ts` imports from `../matrix`, which re-exports from `./generated/source-types`.**
@@ -690,7 +691,3 @@ while `scripts/` sat outside the typecheck programs. Do not reintroduce either b
    doc-comment, `STACK_SUBCATEGORY_ENUM` and the generator's `CATEGORIES` import are all retained and
    all inert. Recorded here rather than deleted because the doc-comment's `z.record(z.enum())`
    reasoning is worth keeping even if the injection is not.
-3. **Cross-surface mismatch, reported not fixed:** `reference/features/agent-system.md` pairs
-   `src/schemas/agent.schema.json` with Zod schema `agentYamlConfigSchema`. The generator's
-   `SCHEMA_ENTRIES` uses `agentYamlGenerationSchema` — a different export in the same file. That doc
-   is outside this file's scope; the mismatch is recorded here per the count/claim-ownership rule.

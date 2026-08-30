@@ -153,7 +153,7 @@ without reddening this table as well as the owner's.
 | `src/cli/stores/wizard-store.ts`                   | `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`                                                                                                                        |
 | `src/cli/lib/config-gate/index.ts`                 | `isActiveAt`                                                                                                                                                               |
 | `src/cli/lib/config-gate/propagate.ts`             | `isActiveAt`, `isGlobalTombstone`, `activeProjectAgentNames`, `ScopedEntry`                                                                                                |
-| `src/cli/lib/configuration/config-generator.ts`    | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`                                                             |
+| `packages/compile/src/seed-to-config.ts`           | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`                                                             |
 | `src/cli/lib/configuration/config-merger.ts`       | `isGlobalTombstone`, `isProjectOwned`, `ScopedEntry`                                                                                                                       |
 | `src/cli/lib/configuration/config-types-writer.ts` | `activeAgentNames`, `activeProjectAgentNames`                                                                                                                              |
 | `src/cli/lib/installation/local-installer.ts`      | `isActiveAt`, `activeSkillScopeMap`, `activeAgentScopeMap`, `effectivelyExcludedSkillIds` (prior-vs-next delta)                                                            |
@@ -165,7 +165,7 @@ as a caller.
 
 ## Config Splitting
 
-**Function:** `splitConfigByScope()` in `src/cli/lib/configuration/config-generator.ts`
+**Function:** `splitConfigByScope()`, declared in `packages/compile/src/seed-to-config.ts`. `src/cli/lib/configuration/config-generator.ts` is an 18-line re-export facade over it and declares nothing.
 
 Splits a `ProjectConfig` into global and project partitions by skill/agent scope. Partitions each of `config.skills` and `config.agents` with `isActiveAt(entry, "global")` from [Scope Predicates](#scope-predicates): active-global entries form the global split, everything else (project-scoped entries and global tombstones) forms the project split. Returns `SplitConfigResult` (`{ global: ProjectConfig; project: ProjectConfig }`). Tombstones (`scope: "global", excluded: true`) route to the PROJECT split because they are project-level directives suppressing a shared global install.
 
@@ -207,7 +207,7 @@ Either path alone can produce the malformed shape, so both must run the reconcil
 
 ## Config Writer Scope Handling
 
-`generateConfigSource()` in `src/cli/lib/configuration/config-writer.ts`:
+`generateConfigSource()`, declared in `packages/compile/src/config-source.ts` and re-exported by `src/cli/lib/configuration/config-writer.ts`:
 
 - When `isProjectConfig: true` with `globalConfig` provided (the standard path used by `writeProjectConfigPair`): generates a self-contained config snapshot via `generateProjectConfigWithInlinedGlobal()`. Both global and project entries for the same skill ID are preserved (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`. Excluded global entries (tombstones) replace their active global counterparts.
 - When `isProjectConfig: true` without `globalConfig` (fallback path): generates a config that imports from the global config and spreads global arrays into skills, agents, and domains.
