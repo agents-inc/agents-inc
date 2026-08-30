@@ -16,7 +16,15 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# `vite build --mode test` in apps/editor, which the appearance suite builds
+# and serves. Its own directory rather than `dist/`, so a visual run can never
+# overwrite what `bun run deploy` is about to upload.
+dist-test
 *.local
+# `storybook build` in packages/ui, which Chromatic runs for itself on every
+# publish. Unanchored like its neighbours, so a second workspace growing a
+# Storybook needs no second entry.
+storybook-static
 
 # Caches
 .turbo
@@ -51,6 +59,24 @@ dist-ssr
 # built artefact against. A `.env.production.local` is still ignored, which is
 # how you build against a local worker without touching this.
 !.env.production
+# ...and so is apps/editor/.env.test, for the same reasons: it holds the stub
+# worker's address, which the appearance suite's build needs and which is no
+# more secret than the production one. The file says why.
+!.env.test
+
+# Wrangler's local secret file — `wrangler dev` reads it and nothing else does.
+# It needs its own entry because the `.env*` rule above does NOT match it: the
+# pattern is anchored to the start of the name and this one begins `.dev`. That
+# near-miss is the whole reason this block is here rather than assumed — a
+# secret written to a file nobody checked is a secret in the next commit. Any
+# suffix too (`.dev.vars.production`).
+.dev.vars
+.dev.vars.*
+# ...except the template, which is the whole point of having one: the real file
+# is invisible, so without this a fresh clone cannot know the worker needs three
+# values and finds out when sign-in fails. Names and comments only — check that
+# before adding anything to it.
+!.dev.vars.example
 
 # Editor directories and files
 .vscode/*
@@ -76,6 +102,14 @@ apps/editor/test-results/
 apps/editor/playwright-report/
 apps/editor/blob-report/
 apps/editor/.playwright/
+# Argos writes its captures here on every `test:visual` run. Anchored like its
+# Playwright neighbours above, and it needs its own entry rather than riding on
+# theirs: Argos chooses `screenshots/` by default, which matches none of them.
+# Two and a half megabytes of PNG, one `git add -A` from being permanent — and
+# the `.png.argos.json` sidecars beside them also match lint-staged's
+# `*.{js,json,...}` pattern, so a commit would reformat machine output as well
+# as keep it.
+apps/editor/screenshots/
 
 # wrangler local state
 .wrangler
@@ -100,10 +134,20 @@ packages/cli/todo/*
 # suite. All four are anchored to their exact paths — the root file by a leading
 # slash, since an unanchored !CLAUDE.md would un-ignore every one in the tree —
 # so every other CLAUDE.md and V2.md in the repository stays ignored.
+#
+# `packages/ui/CLAUDE.md` is the fifth, and it is the one that shows why this
+# list is a hazard rather than a formality: it was written straight into an
+# ignored path, so it existed on ONE MACHINE for as long as it existed at all
+# and no clone had the design system's guidance — the focus-treatment rule, the
+# semantics rule, the flex-basis rule, the `LatticeCell` division of affordance.
+# Nothing failed. A doc that is never read by anyone else is not a doc that
+# breaks; it is a doc that quietly is not there (REPO-41, owner 2026-08-29).
+# A new workspace CLAUDE.md needs a line here on the day it is written.
 !/CLAUDE.md
 !packages/cli/CLAUDE.md
 !packages/cli/V2.md
 !packages/cli/src/cli/lib/__tests__/fixtures/stacks/default/CLAUDE.md
+!packages/ui/CLAUDE.md
 
 # The Skill Olympics corpus (todo plan CLI-729, was D-162), excluded outright — the plan and
 # its 879 supporting files both. `contestants/` is third-party skill text copied

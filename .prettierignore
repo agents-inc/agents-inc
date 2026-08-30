@@ -5,9 +5,11 @@
 # There is nothing to repeat per workspace.
 
 dist/
+dist-test/
 node_modules/
 .turbo/
 coverage/
+storybook-static/
 bun.lock
 
 # Caches and compiler leftovers
@@ -26,11 +28,20 @@ bun.lock
 # create diff noise on every regeneration.
 packages/matrix/src/vendor/
 packages/matrix/src/generated/
+packages/compile/src/generated/
 apps/editor/src/lib/skill-icons.ts
 # Emitted by `wrangler types`; regenerating it would undo any reformatting anyway.
 apps/server/worker-configuration.d.ts
+# Emitted by drizzle-kit: the numbered .sql files and the snapshot JSON beside
+# them. Both are rewritten on every `drizzle-kit generate`, so formatting them
+# is churn that reappears — and the snapshots are drizzle's own record of what
+# the schema was, which nothing should be editing by hand at all.
+apps/server/migrations/
 test-results/
 playwright-report/
+# Argos captures and their sidecar metadata — machine output, and the sidecars
+# are JSON, so without this a commit reformats them.
+screenshots/
 
 # The Skill Olympics corpus (todo plan D-162). `contestants/` is third-party skill text copied
 # verbatim from other authors, and `arena/` holds the outputs those skills produced — the very
