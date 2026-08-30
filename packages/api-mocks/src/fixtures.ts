@@ -461,22 +461,45 @@ const marketplacePayload = (marketplace: string, skillIds: string[]) =>
     agents: {},
   })
 
+// All three take the CANONICAL ref, never the bare one the dialog accepts.
+//
+// A payload is what the editor MINTS, and what it mints is what its marketplace
+// store holds — the canonical form. These three were built from the dialog's
+// input form instead, which is a different string with a different meaning: the
+// CLI routes a ref on its protocol, so a bare `acme/skills` is a LOCAL
+// DIRECTORY and a receiver looks for `<cwd>/acme/skills`.
+//
+// Nothing could see it. `seedPayloadSchema` types `marketplace` as a string
+// because all three spellings are legal, so the schema both suites share — the
+// thing that holds every other field of this payload honest — is structurally
+// unable to tell them apart. The editor's specs never install, so a ref that
+// only a receiver refuses reads as fine there; and the CLI's own end-to-end
+// specs build their payloads with an absolute local directory, a legal ref
+// taking the local branch, so nothing there ever carried this one.
+//
+// That is EDITOR-49 exactly, which is the reason this comment is long: every
+// custom-marketplace id the editor minted was uninstallable, both suites were
+// green throughout, and the defect had come back into the canonical fixture.
+// `packages/cli/src/cli/lib/seed/marketplace-ref-crossing.test.ts` is what
+// holds it now, by asking the CLI's own router what these refs are.
+
 /** A marketplace anyone may read. */
-export const MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
-  ACME_SKILL_ID,
-])
+export const MARKETPLACE_PAYLOAD = marketplacePayload(
+  MARKETPLACE_CANONICAL_REF,
+  [ACME_SKILL_ID]
+)
 
 /** One that needs a token, which is where the recovery flow starts. */
 export const PRIVATE_MARKETPLACE_PAYLOAD = marketplacePayload(
-  PRIVATE_MARKETPLACE_REF,
+  PRIVATE_MARKETPLACE_CANONICAL_REF,
   [ACME_SKILL_ID]
 )
 
 /** One naming a skill its own marketplace has since retired. */
-export const DRIFTED_MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
-  ACME_SKILL_ID,
-  RETIRED_SKILL_ID,
-])
+export const DRIFTED_MARKETPLACE_PAYLOAD = marketplacePayload(
+  MARKETPLACE_CANONICAL_REF,
+  [ACME_SKILL_ID, RETIRED_SKILL_ID]
+)
 
 /** The id a link carrying a pair the two scopes rule out is addressed by. */
 export const OUT_OF_SCOPE_IMPORT_ID = "AcmeSc_4"
