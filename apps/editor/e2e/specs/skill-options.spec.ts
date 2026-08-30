@@ -168,11 +168,20 @@ test.describe("skill options panel", () => {
   })
 
   // A label, not a control: only the ••• reaches the panel.
+  //
+  // `force` because the count is exactly what it claims to be — a span with no
+  // pointer events of its own, sitting over the cell's transparent selection
+  // target. Playwright refuses an ordinary click on a covered element; a real
+  // person's click lands on the target underneath, which is what this drives.
+  // Asserting the count is not a button as well, so the claim in the sentence
+  // above is checked rather than implied by a click that could not open a panel
+  // for a second reason.
   test("the agent count does not open the panel", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
     await skill.toggle()
 
-    await skill.agentCount.click()
+    await expect(skill.agentCount).not.toHaveRole("button")
+    await skill.agentCount.click({ force: true })
 
     await expect(skill.options.root).toBeHidden()
   })
@@ -286,8 +295,8 @@ test.describe("source code link", () => {
     configure,
     page,
   }) => {
-    await stubSkillIndex(page)
-    await stubSkillContents(page)
+    stubSkillIndex(page)
+    stubSkillContents(page)
     await configure.addSkillButton.click()
     await configure.addSkillDialog.stage(ADDED_NAME)
     await configure.addSkillDialog.categorise(ADDED_NAME, ADDED_CATEGORY)

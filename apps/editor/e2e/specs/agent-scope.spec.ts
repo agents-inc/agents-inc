@@ -37,7 +37,7 @@ test.describe("agent scope", () => {
   })
 
   // It sits on the agent's row, so the one thing it must never do is pin it —
-  // the same guard the model word and the effort meter carry.
+  // the same guard the model word and the effort word carry.
   test("choosing a scope does not switch the agent on", async ({
     configure,
   }) => {
@@ -96,7 +96,7 @@ test.describe("sharing an agent's scope", () => {
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     await configure.roster.scopeControl(DEVELOPER).click()
@@ -131,7 +131,7 @@ test.describe("sharing an agent's scope", () => {
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     await configure.roster.scopeControl(DEVELOPER).click()
@@ -156,7 +156,7 @@ test.describe("sharing an agent's scope", () => {
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
     const scope = configure.roster.scopeControl(DEVELOPER)
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
@@ -177,8 +177,8 @@ test.describe("sharing an agent's scope", () => {
 // front-matter was always written into the project. Scope is what makes it a
 // real split, exactly as the skills pane already splits.
 test.describe("install dialog agent scope", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubCreateConfig(page)
+  test.beforeEach(({ page }) => {
+    stubCreateConfig(page)
   })
 
   test("groups the agents pane by scope", async ({ configure }) => {

@@ -48,8 +48,8 @@ const EDITED_SKILL = MULTI_CATEGORY.first
 const ACME_SKILL = "Acme Widgets"
 
 test.describe("a shared link keeps its own address", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubGetConfig(page, STORED_ID)
+  test.beforeEach(({ page }) => {
+    stubGetConfig(page, STORED_ID)
   })
 
   test("keeps the id in the URL rather than consuming it", async ({
@@ -96,9 +96,9 @@ test.describe("a shared link keeps its own address", () => {
 })
 
 test.describe("a shared link naming a marketplace this browser has not stored", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMarketplaceCatalog(page)
-    await stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+  test.beforeEach(({ page }) => {
+    stubMarketplaceCatalog(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
   })
 
   test("reopens on that marketplace's catalogue after a reload", async ({
@@ -138,8 +138,8 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
   // built on the public catalogue. It used to apply, display correctly, and
   // then prune itself to nothing on the next reload.
   test.beforeEach(async ({ configure, page }) => {
-    await stubMarketplaceCatalog(page)
-    await stubGetConfig(page, STORED_ID)
+    stubMarketplaceCatalog(page)
+    stubGetConfig(page, STORED_ID)
 
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(MARKETPLACE_REF)
@@ -217,8 +217,8 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
 // So the fixture's own guarantee is the thing under test here — a fresh
 // context, and not one click before the navigation.
 test.describe("a visitor who has saved nothing", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubGetConfig(page, STORED_ID)
+  test.beforeEach(({ page }) => {
+    stubGetConfig(page, STORED_ID)
   })
 
   const goToOwn = async (configure: ConfigurePage) => {
@@ -301,7 +301,7 @@ test.describe("a visitor who has saved nothing", () => {
 
 test.describe("editing someone else's configuration", () => {
   test.beforeEach(async ({ configure, page }) => {
-    await stubGetConfig(page, STORED_ID)
+    stubGetConfig(page, STORED_ID)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, OWN_SKILL)
       .toggle()

@@ -122,8 +122,8 @@ test.describe("marketplace dialog", () => {
 })
 
 test.describe("loading a marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMarketplaceCatalog(page)
+  test.beforeEach(({ page }) => {
+    stubMarketplaceCatalog(page)
   })
 
   // The public catalogue costs nothing at all, and a load costs exactly one
@@ -134,7 +134,7 @@ test.describe("loading a marketplace", () => {
     configure,
     page,
   }) => {
-    const requests = await stubMarketplaceCatalog(page)
+    const requests = stubMarketplaceCatalog(page)
     await configure.goto()
     expect(requests).toHaveLength(0)
 
@@ -155,7 +155,7 @@ test.describe("loading a marketplace", () => {
     configure,
     page,
   }) => {
-    await stubSkillIndex(page)
+    stubSkillIndex(page)
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(ACME.ref)
     await configure.marketplaceDialog.load()
@@ -269,15 +269,15 @@ test.describe("loading a marketplace", () => {
 // the assertions below are on the exact string. A `toContain` would pass on the
 // bare ref, which is the whole defect.
 test.describe("the ref a loaded marketplace is stored and shared as", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMarketplaceCatalog(page)
+  test.beforeEach(({ page }) => {
+    stubMarketplaceCatalog(page)
   })
 
   test("mints a ref the CLI resolves as a repository, not as a path", async ({
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     await configure.marketplaceButton.click()
     // Typed as the placeholder asks for it, which is the form that was minted
@@ -324,8 +324,8 @@ test.describe("the ref a loaded marketplace is stored and shared as", () => {
 })
 
 test.describe("a marketplace that does not resolve", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMissingMarketplace(page)
+  test.beforeEach(({ page }) => {
+    stubMissingMarketplace(page)
   })
 
   // GitHub 404s a private repository for a caller who may not see it, so the
@@ -354,8 +354,8 @@ test.describe("a marketplace that does not resolve", () => {
 })
 
 test.describe("a private marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubPrivateMarketplaceCatalog(page)
+  test.beforeEach(({ page }) => {
+    stubPrivateMarketplaceCatalog(page)
   })
 
   // The progressive walk end to end: name it, get a 404, paste the token, get
@@ -400,8 +400,8 @@ test.describe("a private marketplace", () => {
 })
 
 test.describe("a catalogue that is not a catalogue", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMalformedCatalog(page)
+  test.beforeEach(({ page }) => {
+    stubMalformedCatalog(page)
   })
 
   // The one failure with no retry in it: the bytes parsed as JSON and are not a

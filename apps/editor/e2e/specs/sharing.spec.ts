@@ -1,3 +1,5 @@
+import { SEED_VERSION } from "@workspace/matrix/seed"
+
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
@@ -9,11 +11,11 @@ import {
   captureCreateConfig,
   stubCreateConfig,
   stubCreateConfigRefusal,
+  stubCreateConfigUnreachable,
   stubGetConfig,
   stubGetConfigMissing,
 } from "../support/sharing"
 
-const SEED_VERSION = 5
 const REACT_ID = "web-framework-react"
 
 // Longer than `RESET_DELAY_MS` in `use-share-link.ts`, with room for a render
@@ -29,7 +31,7 @@ test.describe("sharing a configuration", () => {
     configure,
     page,
   }) => {
-    await stubCreateConfig(page)
+    stubCreateConfig(page)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
       .toggle()
@@ -54,7 +56,7 @@ test.describe("sharing a configuration", () => {
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
@@ -94,7 +96,7 @@ test.describe("sharing a configuration", () => {
     configure,
     page,
   }) => {
-    await stubCreateConfigRefusal(page, OUT_OF_DATE)
+    stubCreateConfigRefusal(page, OUT_OF_DATE)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
       .toggle()
@@ -116,7 +118,7 @@ test.describe("sharing a configuration", () => {
     configure,
     page,
   }) => {
-    await stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
+    stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
       .toggle()
@@ -137,7 +139,7 @@ test.describe("sharing a configuration", () => {
     configure,
     page,
   }) => {
-    await page.route("**/configs", (route) => route.abort())
+    stubCreateConfigUnreachable(page)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
       .toggle()
@@ -157,7 +159,7 @@ test.describe("opening a share link", () => {
     configure,
     page,
   }) => {
-    await stubGetConfig(page, STORED_ID)
+    stubGetConfig(page, STORED_ID)
 
     await page.goto(`/?fromId=${STORED_ID}`)
 
@@ -177,7 +179,7 @@ test.describe("opening a share link", () => {
     configure,
     page,
   }) => {
-    await stubGetConfig(page, STORED_ID)
+    stubGetConfig(page, STORED_ID)
 
     await page.goto(`/?fromId=${STORED_ID}`)
 
@@ -196,7 +198,7 @@ test.describe("opening a share link", () => {
     configure,
     page,
   }) => {
-    await stubGetConfig(page, STORED_ID)
+    stubGetConfig(page, STORED_ID)
 
     await page.goto(`/?fromId=${STORED_ID}`)
 
@@ -204,7 +206,7 @@ test.describe("opening a share link", () => {
       configure.roster.modelWord("web-developer")
     ).toHaveAccessibleName("Model for web-developer: haiku")
     await expect(
-      configure.roster.effortMeter("web-developer")
+      configure.roster.effortWord("web-developer")
     ).toHaveAccessibleName("Effort for web-developer: max")
   })
 
@@ -214,7 +216,7 @@ test.describe("opening a share link", () => {
     configure,
     page,
   }) => {
-    await stubGetConfig(page, STORED_ID)
+    stubGetConfig(page, STORED_ID)
 
     await page.goto(`/?fromId=${STORED_ID}`)
 
@@ -229,7 +231,7 @@ test.describe("opening a share link", () => {
     configure,
     page,
   }) => {
-    await stubGetConfigMissing(page, DEAD_LINK_ID)
+    stubGetConfigMissing(page, DEAD_LINK_ID)
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.second)
       .toggle()

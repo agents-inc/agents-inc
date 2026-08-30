@@ -1,85 +1,76 @@
 import {
-  GITHUB_API_ORIGIN,
+  BIGCO_CANONICAL_REF,
+  BIGCO_CATALOG,
+  BIGCO_REF,
+  CATALOG_URL,
   MALFORMED_CATALOG,
   MARKETPLACE_CATALOG,
-  MARKETPLACE_TOKEN,
   PRIVATE_MARKETPLACE_REF,
-} from "@workspace/api-mocks/fixtures"
+  carriesMarketplaceToken,
+  githubNotFound,
+} from "@workspace/api-mocks"
+import { HttpResponse, delay, http } from "msw"
 
-import type { Page, Route } from "@playwright/test"
+import { stubWith } from "./stub"
 
-// A marketplace's `catalog.json`, stubbed at the browser boundary. What these
-// specs test is the editor's half — the dialog, the swap, and what a failure
-// looks like on screen — not GitHub, and not `build marketplace`, which has its
-// own suite in packages/cli.
+import type { Page } from "@playwright/test"
+
+// A marketplace's `catalog.json`. What these specs test is the editor's half —
+// the dialog, the swap, and what a failure looks like on screen — not GitHub,
+// and not `build marketplace`, which has its own suite in packages/cli.
 //
-// The interception is Playwright's because `page.route` is what works in a real
-// browser; what it answers with comes from `@workspace/api-mocks`, the same
-// fixtures MSW serves the unit suite. Two mechanisms, one statement of the
-// response — the arrangement `support/skill-index.ts` already established.
+// The handlers are msw's, resolved into the browser by `stubWith`, and the
+// route, the catalogues, GitHub's own 404 and the token check are all
+// `@workspace/api-mocks`' — the same ones the Vitest suite serves. What is
+// decided here rather than there is only WHICH repository answers, because that
+// is the whole subject of these specs and a fixture cannot hold a per-spec
+// estate.
 //
 // Every catalogue request goes to api.github.com and NOT to our worker, which
 // is the design rather than an implementation detail: org content never transits
 // anything of ours. A stub pointed anywhere else would be testing a different
 // architecture.
 
-const CATALOG_URL = `${GITHUB_API_ORIGIN}/repos/*/**/contents/**`
-
-const NOT_FOUND = 404
+// Re-exported so a spec reaches the second marketplace through the module that
+// serves it.
+export { BIGCO_CANONICAL_REF, BIGCO_CATALOG, BIGCO_REF }
 
 // Every stub returns the Authorization headers it was called with, in order.
 // Whether a token was sent — and whether it was sent when the field was left
 // empty — is the security half of the contract, so a spec about it needs the
 // headers and not only the body.
-const stubCatalogWith = async (
+//
+// Recorded inside the handler rather than off `page.on("request")`, because a
+// request carrying an Authorization header preflights and Playwright answers
+// that preflight itself: counting requests would count the OPTIONS too.
+const stubCatalogWith = (
   page: Page,
-  fulfil: (route: Route) => Promise<void>
+  answer: (repo: string, request: Request) => Response | Promise<Response>
 ) => {
   const authorizations: (string | null)[] = []
 
-  await page.route(CATALOG_URL, (route) => {
-    authorizations.push(route.request().headers()["authorization"] ?? null)
-    return fulfil(route)
-  })
+  stubWith(page, [
+    http.get<{ owner: string; repo: string }>(
+      CATALOG_URL,
+      ({ params, request }) => {
+        authorizations.push(request.headers.get("authorization"))
+        return answer(`${params.owner}/${params.repo}`, request)
+      }
+    ),
+  ])
 
   return authorizations
 }
 
-/** A marketplace anyone may read, answering with the catalogue it published. */
+/**
+ * A marketplace anyone may read, answering with the catalogue it published.
+ *
+ * Whichever repository is asked for, deliberately: a spec names the marketplace
+ * it is about, and GitHub refusing one it has never heard of is what
+ * `stubMissingMarketplace` is for.
+ */
 export const stubMarketplaceCatalog = (page: Page) =>
-  stubCatalogWith(page, (route) =>
-    route.fulfill({ status: 200, json: MARKETPLACE_CATALOG })
-  )
-
-// A SECOND marketplace, for the browser that has saved more than one.
-//
-// Derived from the first by renaming rather than written out again: every id,
-// category and display name carries `bigco` where the fixture carries `acme`.
-// CLI-498's prefix rule is what makes a rename enough — a marketplace's ids
-// carry its own name, so two catalogues share no id at all, which is both
-// realistic and what makes "which one is on the grid" observable rather than a
-// matter of counting.
-export const BIGCO_REF = "bigco/skills"
-
-// The same repository as `--marketplace` takes it, which is the form the slot
-// holds and the switcher lists. Written out for the reason its siblings in
-// `@workspace/api-mocks` are: a fixture states the wire value rather than
-// asking the app what it would produce.
-export const BIGCO_CANONICAL_REF = "github:bigco/skills"
-
-export const BIGCO_CATALOG = JSON.parse(
-  JSON.stringify(MARKETPLACE_CATALOG)
-    .replaceAll("acme", "bigco")
-    .replaceAll("Acme", "Bigco")
-) as typeof MARKETPLACE_CATALOG
-
-const repoSegment = (ref: string) => `/repos/${ref}/`
-
-const isFor = (route: Route, ref: string) =>
-  route.request().url().includes(repoSegment(ref))
-
-const isAuthorized = (route: Route) =>
-  route.request().headers()["authorization"] === `Bearer ${MARKETPLACE_TOKEN}`
+  stubCatalogWith(page, () => HttpResponse.json(MARKETPLACE_CATALOG))
 
 /**
  * Three marketplaces at once: two anyone may read, and one that answers only to
@@ -92,17 +83,16 @@ const isAuthorized = (route: Route) =>
  * there are two.
  */
 export const stubMarketplaceEstate = (page: Page) =>
-  stubCatalogWith(page, (route) => {
-    if (isFor(route, PRIVATE_MARKETPLACE_REF)) {
-      return isAuthorized(route)
-        ? route.fulfill({ status: 200, json: MARKETPLACE_CATALOG })
-        : route.fulfill({ status: NOT_FOUND, json: { message: "Not Found" } })
+  stubCatalogWith(page, (repo, request) => {
+    if (repo === PRIVATE_MARKETPLACE_REF) {
+      return carriesMarketplaceToken(request)
+        ? HttpResponse.json(MARKETPLACE_CATALOG)
+        : githubNotFound()
     }
 
-    return route.fulfill({
-      status: 200,
-      json: isFor(route, BIGCO_REF) ? BIGCO_CATALOG : MARKETPLACE_CATALOG,
-    })
+    return HttpResponse.json(
+      repo === BIGCO_REF ? BIGCO_CATALOG : MARKETPLACE_CATALOG
+    )
   })
 
 /**
@@ -112,24 +102,18 @@ export const stubMarketplaceEstate = (page: Page) =>
  * exist from one they may not see.
  */
 export const stubPrivateMarketplaceCatalog = (page: Page) =>
-  stubCatalogWith(page, (route) => {
-    const authorized =
-      route.request().headers()["authorization"] ===
-      `Bearer ${MARKETPLACE_TOKEN}`
-
-    return authorized
-      ? route.fulfill({ status: 200, json: MARKETPLACE_CATALOG })
-      : route.fulfill({ status: NOT_FOUND, json: { message: "Not Found" } })
-  })
+  stubCatalogWith(page, (_repo, request) =>
+    carriesMarketplaceToken(request)
+      ? HttpResponse.json(MARKETPLACE_CATALOG)
+      : githubNotFound()
+  )
 
 /**
  * A marketplace that does not resolve, for anyone, with any token. The failure
  * path a wrong name reaches.
  */
 export const stubMissingMarketplace = (page: Page) =>
-  stubCatalogWith(page, (route) =>
-    route.fulfill({ status: NOT_FOUND, json: { message: "Not Found" } })
-  )
+  stubCatalogWith(page, githubNotFound)
 
 // How long the refusal below takes to arrive. Long enough for a spec to open
 // the dialog by hand before an arriving payload's catalogue has failed, which
@@ -143,9 +127,9 @@ const SLOW_REFUSAL_MS = 1500
  * recovery turns up, and it has to take one it did not open with.
  */
 export const stubSlowMissingMarketplace = (page: Page) =>
-  stubCatalogWith(page, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, SLOW_REFUSAL_MS))
-    await route.fulfill({ status: NOT_FOUND, json: { message: "Not Found" } })
+  stubCatalogWith(page, async () => {
+    await delay(SLOW_REFUSAL_MS)
+    return githubNotFound()
   })
 
 /**
@@ -154,6 +138,4 @@ export const stubSlowMissingMarketplace = (page: Page) =>
  * that is wrong rather than invite another attempt.
  */
 export const stubMalformedCatalog = (page: Page) =>
-  stubCatalogWith(page, (route) =>
-    route.fulfill({ status: 200, json: MALFORMED_CATALOG })
-  )
+  stubCatalogWith(page, () => HttpResponse.json(MALFORMED_CATALOG))

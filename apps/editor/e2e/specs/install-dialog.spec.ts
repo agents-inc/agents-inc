@@ -39,7 +39,7 @@ test.describe("install dialog", () => {
   test.beforeEach(async ({ configure, page }) => {
     // Opening the dialog mints an id for the command, so the worker has to be
     // answering before the dialog is opened.
-    await stubCreateConfig(page)
+    stubCreateConfig(page)
     await configure.chooseStack(STACKS.nextjs)
     await configure.roster.installButton.click()
     await expect(configure.installDialog.root).toBeVisible()
@@ -123,7 +123,7 @@ test.describe("install dialog", () => {
 // refusals, which told the one reader with a remedy nothing about it.
 test.describe("install dialog when the id cannot be minted", () => {
   test("a stale page is told to reload", async ({ configure, page }) => {
-    await stubCreateConfigRefusal(page, OUT_OF_DATE)
+    stubCreateConfigRefusal(page, OUT_OF_DATE)
 
     await configure.roster.installButton.click()
 
@@ -138,7 +138,7 @@ test.describe("install dialog when the id cannot be minted", () => {
     configure,
     page,
   }) => {
-    await stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
+    stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
 
     await configure.roster.installButton.click()
 
@@ -151,8 +151,8 @@ test.describe("install dialog when the id cannot be minted", () => {
 
 // The agents pane follows the derived on/off state, pins included.
 test.describe("install dialog with pins", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubCreateConfig(page)
+  test.beforeEach(({ page }) => {
+    stubCreateConfig(page)
   })
 
   test("a pinned bare agent is listed as a base agent", async ({
@@ -192,8 +192,8 @@ test.describe("install dialog counts", () => {
   // Opening the dialog mints an id for the command, the same as it does above:
   // the counts these two read are painted beside a POST that has to be answered
   // here rather than by whatever is listening on the worker's port.
-  test.beforeEach(async ({ page }) => {
-    await stubCreateConfig(page)
+  test.beforeEach(({ page }) => {
+    stubCreateConfig(page)
   })
 
   test("the ejected count follows the cell badges", async ({ configure }) => {
@@ -239,9 +239,9 @@ test.describe("install dialog counts", () => {
 // will install, `toSeedPayload` stamps the payload with `activeMarketplace()`,
 // and a shared address can seat a marketplace this browser never chose.
 test.describe("install dialog on a loaded marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubCreateConfig(page)
-    await stubMarketplaceCatalog(page)
+  test.beforeEach(({ page }) => {
+    stubCreateConfig(page)
+    stubMarketplaceCatalog(page)
   })
 
   const load = async (configure: ConfigurePage) => {
@@ -294,7 +294,7 @@ test("the install dialog names the public marketplace when none is loaded", asyn
   configure,
   page,
 }) => {
-  await stubCreateConfig(page)
+  stubCreateConfig(page)
   await configure.roster.installButton.click()
 
   await expect(configure.installDialog.header).toContainText(

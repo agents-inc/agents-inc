@@ -105,7 +105,7 @@ test.describe("a project skill on a global sub-agent", () => {
   })
 
   test("mints nothing while it is blocked", async ({ configure, page }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
     const skill = configure.skillIn(web, CATEGORY, REACT)
 
     await skill.toggle()
@@ -189,9 +189,9 @@ test.describe("a project skill on a global sub-agent", () => {
 // in the error state with Install blocked, and the line above the grid says
 // what to do about it.
 test.describe("a shared link holding the pair", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubGetConfig(page, OUT_OF_SCOPE_IMPORT_ID, OUT_OF_SCOPE_PAYLOAD)
-    await stubCreateConfig(page)
+  test.beforeEach(({ page }) => {
+    stubGetConfig(page, OUT_OF_SCOPE_IMPORT_ID, OUT_OF_SCOPE_PAYLOAD)
+    stubCreateConfig(page)
   })
 
   test("applies the skill and marks the row", async ({ configure, page }) => {

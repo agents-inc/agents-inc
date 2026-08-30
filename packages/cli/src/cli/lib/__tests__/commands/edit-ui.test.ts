@@ -7,7 +7,11 @@ const { mockOpenUrl } = vi.hoisted(() => ({ mockOpenUrl: vi.fn() }));
 
 vi.mock("../../../utils/open-url.js", () => ({ openUrl: mockOpenUrl }));
 
+import { STORED_ID, storeRefusedHandler } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
+
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
@@ -22,35 +26,21 @@ import type { ProjectConfig } from "../../../types";
  * `edit --ui` is the outbound half of the editor round trip: it mints an id for the
  * installation in this directory and opens it in the editor, instead of opening the wizard.
  *
- * The seam is `fetch`, stubbed globally, exactly as the `share` specs stub it: reading the
- * config, mapping it onto the wire contract and refusing what the contract cannot carry all
- * run for real, because that mapping is the whole of what this flag contributes over `share`.
+ * The seam is the network, answered by `@workspace/api-mocks` exactly as the `share` specs
+ * answer it: reading the config, mapping it onto the wire contract and refusing what the contract
+ * cannot carry all run for real, because that mapping is the whole of what this flag contributes
+ * over `share`.
  * The browser opener is the one module mocked — it is a process boundary, and a spec that
  * launched a real browser would be unrunnable in CI.
  */
 
 const { default: Edit } = await import("../../../commands/edit.js");
 
-const MINTED_ID = "Ab3xY9_Q";
 const WEB_DEV = "web-developer";
 const REACT_ID = "web-framework-react";
 const REACT_CATEGORY = "web-framework";
 const PRIVATE_MARKETPLACE = "acme-internal";
 const OPENER_FAILURE = "Could not open your browser — 'xdg-open' exited 3.";
-
-let fetchStub: ReturnType<typeof vi.fn>;
-
-function stubStore(response: Response): void {
-  fetchStub = vi.fn().mockResolvedValue(response);
-  vi.stubGlobal("fetch", fetchStub);
-}
-
-function mintedResponse(id: string): Response {
-  return new Response(JSON.stringify({ id }), {
-    status: 201,
-    headers: { "content-type": "application/json" },
-  });
-}
 
 /** Runs the command, returning the oclif error it threw (or `undefined` on success). */
 function runEditUi(): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
@@ -61,6 +51,7 @@ function runEditUi(): Promise<(Error & { oclif?: { exit?: number } }) | undefine
 }
 
 describe("edit --ui", () => {
+  const worker = useMockWorker();
   let tempDir: string;
   let projectDir: string;
   let originalCwd: string;
@@ -94,14 +85,12 @@ describe("edit --ui", () => {
     process.stdin.isTTY = false;
 
     mockOpenUrl.mockResolvedValue({ ok: true });
-    stubStore(mintedResponse(MINTED_ID));
   });
 
   afterEach(async () => {
     process.stdout.write = origWrite;
     process.stdin.isTTY = origIsTTY;
     process.chdir(originalCwd);
-    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await cleanupTempDir(tempDir);
   });
@@ -134,9 +123,9 @@ describe("edit --ui", () => {
       const output = stdoutChunks.join("");
 
       expect(error).toBeUndefined();
-      expect(output).toContain(MINTED_ID);
-      expect(output).toContain(`${EDITOR_URL}/?fromId=${MINTED_ID}`);
-      expect(output).toContain(`init --from ${MINTED_ID}`);
+      expect(output).toContain(STORED_ID);
+      expect(output).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
+      expect(output).toContain(`init --from ${STORED_ID}`);
     });
 
     it("never loads the catalogue, because there is no wizard to open it for", async () => {
@@ -159,7 +148,7 @@ describe("edit --ui", () => {
 
       await runEditUi();
 
-      expect(mockOpenUrl).toHaveBeenCalledWith(`${EDITOR_URL}/?fromId=${MINTED_ID}`);
+      expect(mockOpenUrl).toHaveBeenCalledWith(`${EDITOR_URL}/?fromId=${STORED_ID}`);
     });
 
     it("opens nothing without a terminal, and prints the link instead", async () => {
@@ -170,7 +159,7 @@ describe("edit --ui", () => {
       // Piped or in CI there is nobody whose browser this would be. The link is the whole of
       // what such a run can offer, and it is printed either way.
       expect(mockOpenUrl).not.toHaveBeenCalled();
-      expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${MINTED_ID}`);
+      expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
     });
 
     it("leaves the link standing when the browser could not be opened", async () => {
@@ -182,7 +171,7 @@ describe("edit --ui", () => {
 
       // The id was minted and printed; a machine with no browser has lost nothing.
       expect(error).toBeUndefined();
-      expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${MINTED_ID}`);
+      expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
     });
   });
 
@@ -191,7 +180,7 @@ describe("edit --ui", () => {
       const error = await runEditUi();
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(fetchStub).not.toHaveBeenCalled();
+      expect(worker.requests).toStrictEqual([]);
       expect(mockOpenUrl).not.toHaveBeenCalled();
     });
 
@@ -206,12 +195,12 @@ describe("edit --ui", () => {
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(error?.message).toContain(PRIVATE_MARKETPLACE);
-      expect(fetchStub, "a refusal must precede the write, not follow it").not.toHaveBeenCalled();
+      expect(worker.requests, "a refusal must precede the write, not follow it").toStrictEqual([]);
     });
 
     it("exits non-zero when the store refuses the write, and opens nothing", async () => {
       await installConfig(installedOverrides());
-      stubStore(new Response("Could not store this config", { status: 503 }));
+      configMockServer.use(storeRefusedHandler);
 
       const error = await runEditUi();
 
@@ -220,7 +209,7 @@ describe("edit --ui", () => {
       expect(
         stdoutChunks.join(""),
         "a link printed beside a failure points at a configuration that was never stored",
-      ).not.toContain(MINTED_ID);
+      ).not.toContain(STORED_ID);
     });
   });
 });

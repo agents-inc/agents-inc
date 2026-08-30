@@ -33,8 +33,8 @@ const CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLo
 const UNMATCHED_TERM = "no-such-skill-anywhere"
 
 test.describe("add skill dialog", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubSkillIndex(page)
+  test.beforeEach(({ page }) => {
+    stubSkillIndex(page)
   })
 
   test("the add button opens the dialog", async ({ configure }) => {
@@ -162,7 +162,7 @@ test.describe("add skill dialog", () => {
     configure,
     page,
   }) => {
-    await stubSkillContents(page)
+    stubSkillContents(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -174,14 +174,16 @@ test.describe("add skill dialog", () => {
 
     const added = configure.skill(FIRST_NAME)
     await expect(added.root).toBeVisible()
-    await expect(added.root).toContainText("added")
+    // The tag is IN the cell, not on the pressable — the selection target is a
+    // transparent overlay with no text of its own since EDITOR-58.
+    await expect(added.cell).toContainText("added")
   })
 
   test("an added skill can be selected like any other", async ({
     configure,
     page,
   }) => {
-    await stubSkillContents(page)
+    stubSkillContents(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -276,7 +278,7 @@ test.describe("add skill dialog freshness and failure", () => {
     configure,
     page,
   }) => {
-    const requests = await stubSkillIndex(page)
+    const requests = stubSkillIndex(page)
     const dialog = configure.addSkillDialog
 
     await configure.addSkillButton.click()
@@ -294,7 +296,7 @@ test.describe("add skill dialog freshness and failure", () => {
     configure,
     page,
   }) => {
-    await stubStaleSkillIndex(page)
+    stubStaleSkillIndex(page)
     await configure.addSkillButton.click()
 
     await expect(configure.addSkillDialog.result(FIRST_NAME)).toBeVisible()
@@ -307,7 +309,7 @@ test.describe("add skill dialog freshness and failure", () => {
     configure,
     page,
   }) => {
-    const requests = await stubStaleSkillIndex(page)
+    const requests = stubStaleSkillIndex(page)
     const dialog = configure.addSkillDialog
 
     await configure.addSkillButton.click()
@@ -328,7 +330,7 @@ test.describe("add skill dialog freshness and failure", () => {
     configure,
     page,
   }) => {
-    const requests = await stubSkillIndexHidingFreshness(page)
+    const requests = stubSkillIndexHidingFreshness(page)
     const dialog = configure.addSkillDialog
 
     await configure.addSkillButton.click()
@@ -345,7 +347,7 @@ test.describe("add skill dialog freshness and failure", () => {
     configure,
     page,
   }) => {
-    await stubSkillIndexUnavailable(page)
+    stubSkillIndexUnavailable(page)
     await configure.addSkillButton.click()
 
     await expect(

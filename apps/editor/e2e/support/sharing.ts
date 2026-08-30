@@ -1,177 +1,129 @@
 import {
+  ACME_SKILL_ID,
+  CONFIGS_URL,
   DEAD_LINK_ID,
-  MARKETPLACE_CATALOG,
-  MARKETPLACE_REF,
-  NO_CONFIG_BODY,
-  PRIVATE_MARKETPLACE_REF,
+  DRIFTED_IMPORT_ID,
+  DRIFTED_MARKETPLACE_PAYLOAD,
+  MARKETPLACE_IMPORT_ID,
+  MARKETPLACE_PAYLOAD,
+  OUT_OF_DATE,
+  OUT_OF_SCOPE_IMPORT_ID,
+  OUT_OF_SCOPE_PAYLOAD,
+  PRIVATE_IMPORT_ID,
+  PRIVATE_MARKETPLACE_PAYLOAD,
+  RETIRED_SKILL_ID,
   STORED_ID,
   STORED_PAYLOAD,
-  WORKER_ORIGIN,
-} from "@workspace/api-mocks/fixtures"
-import { SEED_VERSION, seedPayloadSchema } from "@workspace/matrix/seed"
+  STORE_UNAVAILABLE,
+  configHandlers,
+  configRefusedHandlerFor,
+  configUnreachableHandler,
+  mintedConfig,
+  missingConfigHandlerFor,
+  storedConfigHandlerFor,
+} from "@workspace/api-mocks"
+import { http } from "msw"
+
+import { stubWith } from "./stub"
 
 import type { Page } from "@playwright/test"
-import type { SeedPayload } from "@workspace/matrix/seed"
+import type { JsonBodyType, PathParams } from "msw"
 
 // The sharing worker is the app's second network dependency (after GitHub
 // search). The specs mock it at the browser boundary: what these test is the
 // app's half of the round trip, not KV — apps/server has its own suite.
 //
-// The interception stays Playwright's, because `page.route` is what works in a
-// real browser. What it answers with does not: the ids, the payload and the
-// worker's own bodies come from `@workspace/api-mocks`, which is also what the
-// unit suite serves through MSW. Two mechanisms, one statement of the response
-// — so a change to the contract cannot land in one suite and not the other.
+// The handlers and the payloads are `@workspace/api-mocks`', the same ones the
+// Vitest suite runs; `stubWith` supplies only the interception a real browser
+// needs, so a change to the contract cannot land in one suite and not the
+// other. Nothing below decides what the worker SAYS — only which of its
+// answers a spec is standing in front of.
 
 // Re-exported so a spec still reaches the whole seam through one import.
-export { DEAD_LINK_ID, STORED_ID, STORED_PAYLOAD }
-
-// What `edit --ui` hands over: ids from a marketplace's catalogue, and the
-// marketplace named at the top so a receiver knows which catalogue can resolve
-// them. Every id below carries the marketplace's own name as a prefix
-// (CLI-498), so none of them exists in the public catalogue — which is what
-// makes "the catalogue was loaded before the ids were read" observable rather
-// than a coincidence of counting.
-
-const [ACME_SKILL_ID] = Object.keys(MARKETPLACE_CATALOG.skills) as [string]
-
-export { ACME_SKILL_ID }
-
-/** An id no catalogue carries — the drift a payload has to survive out loud. */
-export const RETIRED_SKILL_ID = "acme-web-retired"
-
-export const MARKETPLACE_IMPORT_ID = "AcmeMk_1"
-export const PRIVATE_IMPORT_ID = "AcmePv_2"
-export const DRIFTED_IMPORT_ID = "AcmeDr_3"
-
-// Parsed rather than asserted, for the reason every fixture beside it is: a
-// payload that drifts from the shared contract fails here rather than in
-// whichever assertion happens to read the changed field.
-const marketplacePayload = (marketplace: string, skillIds: string[]) =>
-  seedPayloadSchema.parse({
-    v: SEED_VERSION,
-    matrixVersion: MARKETPLACE_CATALOG.version,
-    stackId: null,
-    marketplace,
-    skills: Object.fromEntries(
-      skillIds.map((skillId) => [
-        skillId,
-        {
-          install: "plugin",
-          scope: "project",
-          assignments: { "web-developer": "preloaded" },
-        },
-      ])
-    ),
-    agents: {},
-  })
-
-/** A marketplace anyone may read. */
-export const MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
+export {
   ACME_SKILL_ID,
-])
-
-/** One that needs a token, which is where the recovery flow starts. */
-export const PRIVATE_MARKETPLACE_PAYLOAD = marketplacePayload(
-  PRIVATE_MARKETPLACE_REF,
-  [ACME_SKILL_ID]
-)
-
-/** One naming a skill its own marketplace has since retired. */
-export const DRIFTED_MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
-  ACME_SKILL_ID,
+  DEAD_LINK_ID,
+  DRIFTED_IMPORT_ID,
+  DRIFTED_MARKETPLACE_PAYLOAD,
+  MARKETPLACE_IMPORT_ID,
+  MARKETPLACE_PAYLOAD,
+  OUT_OF_DATE,
+  OUT_OF_SCOPE_IMPORT_ID,
+  OUT_OF_SCOPE_PAYLOAD,
+  PRIVATE_IMPORT_ID,
+  PRIVATE_MARKETPLACE_PAYLOAD,
   RETIRED_SKILL_ID,
-])
-
-/** The id a link carrying a pair the two scopes rule out is addressed by. */
-export const OUT_OF_SCOPE_IMPORT_ID = "AcmeSc_4"
+  STORED_ID,
+  STORED_PAYLOAD,
+  STORE_UNAVAILABLE,
+}
 
 /**
- * A configuration minted before the scope rule existed.
- *
- * A project-scoped skill assigned to a sub-agent the payload says nothing about
- * — so that agent rests at global, where a project skill can never reach it.
- * Every payload the editor minted up to now could carry one, and the CLI's own
- * `--from` decode throws on it rather than installing quietly around it, so
- * these links are out in the world and cannot be installed.
- *
- * On the public catalogue deliberately: what this exercises is the arrival, and
- * a marketplace to seat first would only add a second thing that could fail.
+ * The store answering as it does when nothing has gone wrong: the POST mints
+ * the content address, and the GET holds one payload and knows no other id.
  */
-export const OUT_OF_SCOPE_PAYLOAD = seedPayloadSchema.parse({
-  v: SEED_VERSION,
-  matrixVersion: "1.0.0",
-  stackId: null,
-  skills: {
-    "web-framework-react": {
-      install: "plugin",
-      scope: "project",
-      assignments: { "web-developer": "preloaded" },
-    },
-  },
-  agents: {},
-})
-
-export const stubCreateConfig = (page: Page) =>
-  page.route(`${WORKER_ORIGIN}/configs`, (route) =>
-    route.fulfill({ status: 201, json: { id: STORED_ID } })
-  )
+export const stubCreateConfig = (page: Page) => stubWith(page, configHandlers)
 
 // The same stub, keeping what was sent. The POST body *is* the contract with
 // the CLI, so a spec asserting on the wire needs the request rather than the
 // id the worker answers with. Appended in order: minting happens once per
 // install-dialog open, so a spec comparing two configurations reads the
 // entries it added around each one.
-export const captureCreateConfig = async (page: Page) => {
+export const captureCreateConfig = (page: Page) => {
   const posted: Record<string, unknown>[] = []
 
-  await page.route(`${WORKER_ORIGIN}/configs`, (route) => {
-    // Playwright decodes a body to `any`. The annotation is the boundary; the
-    // assertion after it is deliberate rather than a parse with
-    // `seedPayloadSchema` — the schema strips keys it does not know, and what
-    // these specs check is precisely that `model` and `effort` are *absent*
-    // from a skill. Parsing would make that assertion pass for free.
-    const body: unknown = route.request().postDataJSON()
-    posted.push(body as Record<string, unknown>)
-    return route.fulfill({ status: 201, json: { id: STORED_ID } })
-  })
+  stubWith(page, [
+    http.post<PathParams, Record<string, unknown>>(
+      CONFIGS_URL,
+      async ({ request }) => {
+        // Kept as it arrived rather than parsed with `seedPayloadSchema`: the
+        // schema strips keys it does not know, and what these specs check is
+        // precisely that `model` and `effort` are *absent* from a skill.
+        // Parsing would make that assertion pass for free.
+        posted.push(await request.json())
+
+        // The worker's own answer rather than one written out here, so a spy
+        // over the request says nothing about the response.
+        return mintedConfig()
+      }
+    ),
+    ...configHandlers,
+  ])
 
   return posted
 }
 
-// The payload defaults to the public-catalogue one, so every spec written
-// before marketplaces existed reads exactly as it did.
+/**
+ * The store holding one named id.
+ *
+ * The payload defaults to the public-catalogue one, so every spec written
+ * before marketplaces existed reads exactly as it did — and it is JSON rather
+ * than a `SeedPayload` because one spec serves back a body it captured off its
+ * own POST, unparsed on purpose.
+ */
 export const stubGetConfig = (
   page: Page,
   id: string,
-  payload: SeedPayload = STORED_PAYLOAD
-) =>
-  page.route(`${WORKER_ORIGIN}/configs/${id}`, (route) =>
-    route.fulfill({ status: 200, json: payload })
-  )
+  payload: JsonBodyType = STORED_PAYLOAD
+) => stubWith(page, [storedConfigHandlerFor(id, payload), ...configHandlers])
 
+/** The store having never heard of one named id. */
 export const stubGetConfigMissing = (page: Page, id: string) =>
-  page.route(`${WORKER_ORIGIN}/configs/${id}`, (route) =>
-    route.fulfill({ status: 404, body: NO_CONFIG_BODY })
-  )
-
-/**
- * The two statuses the POST refuses with, and they are two rather than one
- * because only the first names something the person at the keyboard can do
- * (SERVER-04): the tab is running a bundle from before the last deploy, and a
- * reload is the whole fix. Both of the app's doors on `createSharedConfig` —
- * the Share button and the install dialog's mint — read them.
- */
-export const OUT_OF_DATE = 409
-export const STORE_UNAVAILABLE = 503
+  stubWith(page, [missingConfigHandlerFor(id), ...configHandlers])
 
 /**
  * The POST refusing, named by the status it refuses with.
  *
- * Fulfilled with a status and nothing else on purpose. `createSharedConfig`
- * branches on the status alone and never reads a refusal's body, so a body
- * invented here would be a claim about what the worker sends that no assertion
- * ever checks — and `@workspace/api-mocks` mirrors the bodies that ARE read.
+ * The one route and no more, so a spec that already said what the GET holds
+ * keeps saying it: anything this stub does not claim falls through to whatever
+ * was installed before it.
  */
 export const stubCreateConfigRefusal = (page: Page, status: number) =>
-  page.route(`${WORKER_ORIGIN}/configs`, (route) => route.fulfill({ status }))
+  stubWith(page, [configRefusedHandlerFor(status)])
+
+/**
+ * The POST never getting an answer at all, which is a different ending from
+ * any refusal above — the worker never saw it, so there is no status to read.
+ */
+export const stubCreateConfigUnreachable = (page: Page) =>
+  stubWith(page, [configUnreachableHandler])

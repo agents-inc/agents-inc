@@ -135,7 +135,7 @@ test.describe("the saved stack in the grid", () => {
   // been handed at the moment it was saved. Same catalog, so `matrixVersion`
   // matches too.
   test("mints the payload it was saved from", async ({ configure, page }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     // Opening the install dialog mints an id for the command, which is what
     // puts the payload on the wire where it can be read.

@@ -62,8 +62,8 @@ const ADDED_CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.nam
 const STALE_TOKEN = "ghp_staleaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 test.describe("a configuration saved against a marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMarketplaceCatalog(page)
+  test.beforeEach(({ page }) => {
+    stubMarketplaceCatalog(page)
   })
 
   // The gap EDITOR-30 left standing by name. Persist hydration runs at module
@@ -101,7 +101,7 @@ test.describe("a saved marketplace that no longer loads", () => {
   // and then the token gone stale — which is what an expired PAT looks like to
   // the repository, and the one way in that costs no hand-written blob.
   test.beforeEach(async ({ configure, page }) => {
-    await stubPrivateMarketplaceCatalog(page)
+    stubPrivateMarketplaceCatalog(page)
 
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(PRIVATE_MARKETPLACE_REF)
@@ -263,7 +263,7 @@ test.describe("a saved marketplace that no longer loads", () => {
 // which is what makes it one answer rather than a second one.
 test.describe("a saved configuration its seated catalogue has outgrown", () => {
   test.beforeEach(async ({ configure, page }) => {
-    await stubMarketplaceCatalog(page)
+    stubMarketplaceCatalog(page)
 
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(MARKETPLACE_REF)
@@ -310,7 +310,7 @@ test.describe("a saved configuration its seated catalogue has outgrown", () => {
     configure,
     page,
   }) => {
-    await stubGetConfigMissing(page, DEAD_LINK_ID)
+    stubGetConfigMissing(page, DEAD_LINK_ID)
     await configure.seedSavedMarketplaces({ current: "", saved: {} })
 
     await page.goto(`/?fromId=${DEAD_LINK_ID}`)
@@ -335,7 +335,7 @@ test.describe("returning to the screen", () => {
     configure,
     page,
   }) => {
-    const requests = await stubMarketplaceCatalog(page)
+    const requests = stubMarketplaceCatalog(page)
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(MARKETPLACE_REF)
     await configure.marketplaceDialog.load()
@@ -352,8 +352,8 @@ test.describe("returning to the screen", () => {
     configure,
     page,
   }) => {
-    await stubSkillIndex(page)
-    await stubSkillContents(page)
+    stubSkillIndex(page)
+    stubSkillContents(page)
     await configure.addSkillButton.click()
     await configure.addSkillDialog.stage(ADDED_SKILL)
     await configure.addSkillDialog.categorise(ADDED_SKILL, ADDED_CATEGORY)
@@ -367,9 +367,9 @@ test.describe("returning to the screen", () => {
 })
 
 test.describe("importing a payload that names a marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMarketplaceCatalog(page)
-    await stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+  test.beforeEach(({ page }) => {
+    stubMarketplaceCatalog(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
   })
 
   test("loads that catalogue before it resolves a single id", async ({
@@ -405,7 +405,7 @@ test.describe("importing a payload that names a marketplace", () => {
     configure,
     page,
   }) => {
-    await stubGetConfig(page, DRIFTED_IMPORT_ID, DRIFTED_MARKETPLACE_PAYLOAD)
+    stubGetConfig(page, DRIFTED_IMPORT_ID, DRIFTED_MARKETPLACE_PAYLOAD)
 
     await page.goto(`/?fromId=${DRIFTED_IMPORT_ID}`)
 
@@ -415,9 +415,9 @@ test.describe("importing a payload that names a marketplace", () => {
 })
 
 test.describe("a payload naming a marketplace this browser cannot read", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubPrivateMarketplaceCatalog(page)
-    await stubGetConfig(page, PRIVATE_IMPORT_ID, PRIVATE_MARKETPLACE_PAYLOAD)
+  test.beforeEach(({ page }) => {
+    stubPrivateMarketplaceCatalog(page)
+    stubGetConfig(page, PRIVATE_IMPORT_ID, PRIVATE_MARKETPLACE_PAYLOAD)
   })
 
   // Shown, not asked. The payload already says which marketplace, so the field
@@ -475,9 +475,9 @@ test.describe("a payload naming a marketplace this browser cannot read", () => {
 })
 
 test.describe("a payload naming a marketplace with an unreadable catalogue", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMalformedCatalog(page)
-    await stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+  test.beforeEach(({ page }) => {
+    stubMalformedCatalog(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
   })
 
   // The one failure with no retry in it: the bytes parsed as JSON and are not a
@@ -504,8 +504,8 @@ test.describe("a dialog already open when the import parks", () => {
     configure,
     page,
   }) => {
-    await stubSlowMissingMarketplace(page)
-    await stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+    stubSlowMissingMarketplace(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
 
     await page.goto(`/?fromId=${MARKETPLACE_IMPORT_ID}`)
     await configure.marketplaceButton.click()
@@ -521,9 +521,9 @@ test.describe("a dialog already open when the import parks", () => {
 })
 
 test.describe("cancelling out of the recovery", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMissingMarketplace(page)
-    await stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+  test.beforeEach(({ page }) => {
+    stubMissingMarketplace(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
   })
 
   // The outcome the row forbids outright: applying a marketplace payload

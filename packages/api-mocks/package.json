@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@workspace/matrix": "workspace:*",
@@ -15,10 +17,12 @@
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "@workspace/vitest-config": "workspace:*",
     "eslint": "^10",
-    "typescript": "~6"
+    "typescript": "~6",
+    "vitest": "^4"
   },
-  "//exports": "Three entry points, each for a consumer that must not pay for the others. `./fixtures` is deliberately free of any msw import so the Playwright runner — which keeps its own interception and wants only the payloads — never loads an interceptor it will not use. `./node` is the one place msw/node is named, which is what keeps the environment choice out of every other file.",
+  "//exports": "Three entry points, each for a consumer that must not pay for the others. `./fixtures` is deliberately free of any msw import, so a consumer that wants a payload and not a handler loads no mocking library at all. `./node` is the one place msw/node is named, which is what keeps the environment choice out of every other file — the root entry names msw itself but never an interceptor, which is what lets the Playwright runner resolve these handlers with `answerFor` while intercepting its own way.",
   "exports": {
     ".": "./src/index.ts",
     "./fixtures": "./src/fixtures.ts",

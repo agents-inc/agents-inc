@@ -76,8 +76,8 @@ const loadPrivateMarketplace = async (configure: ConfigurePage) => {
 }
 
 test.describe("a browser that has saved more than one marketplace", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubMarketplaceEstate(page)
+  test.beforeEach(({ page }) => {
+    stubMarketplaceEstate(page)
   })
 
   // The row's own defect, stated as an assertion. Loading a second marketplace
@@ -163,7 +163,7 @@ test.describe("switching between saved marketplaces", () => {
   // Two saved, sitting on Acme with two of its skills picked — so there is
   // something concrete to lose and something concrete to name.
   test.beforeEach(async ({ configure, page }) => {
-    await stubMarketplaceEstate(page)
+    stubMarketplaceEstate(page)
 
     await loadMarketplace(configure, BIGCO.ref)
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
@@ -277,7 +277,7 @@ test.describe("switching between saved marketplaces", () => {
 // link minted from here that nothing on screen can explain.
 test.describe("loading another marketplace from the dialog", () => {
   test.beforeEach(async ({ configure, page }) => {
-    await stubMarketplaceEstate(page)
+    stubMarketplaceEstate(page)
 
     await loadMarketplace(configure, BIGCO.ref)
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
@@ -374,7 +374,7 @@ test.describe("loading another marketplace from the dialog", () => {
 // one, which is the strongest statement of it available.
 test.describe("loading a marketplace with nothing selected", () => {
   test("loads on the press that asked for it", async ({ configure, page }) => {
-    await stubMarketplaceEstate(page)
+    stubMarketplaceEstate(page)
 
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(ACME.ref)
@@ -395,7 +395,7 @@ test.describe("loading a marketplace with nothing selected", () => {
 // never told.
 test.describe("a payload minted after a catalogue change", () => {
   test.beforeEach(async ({ configure, page }) => {
-    await stubMarketplaceEstate(page)
+    stubMarketplaceEstate(page)
 
     await loadMarketplace(configure, BIGCO.ref)
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
@@ -414,7 +414,7 @@ test.describe("a payload minted after a catalogue change", () => {
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(BIGCO.ref)
@@ -441,7 +441,7 @@ test.describe("a payload minted after a catalogue change", () => {
     configure,
     page,
   }) => {
-    const posted = await captureCreateConfig(page)
+    const posted = captureCreateConfig(page)
 
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(BIGCO.ref)
@@ -469,8 +469,8 @@ test.describe("a shared address", () => {
   // The shape of the slot is what this row changes, so a spec that seeds it
   // would be asserting against its own copy of the answer.
   test.beforeEach(async ({ configure, page }) => {
-    await stubMarketplaceEstate(page)
-    await stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+    stubMarketplaceEstate(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
 
     await loadPrivateMarketplace(configure)
     await expect(configure.skill(ACME.skill).root).toBeVisible()
@@ -524,7 +524,7 @@ test.describe("a shared address", () => {
     // Registered after the marketplaces above were loaded, so what it records
     // is this navigation and nothing before it. Playwright matches the most
     // recently added route first.
-    const authorizations = await stubMarketplaceEstate(page)
+    const authorizations = stubMarketplaceEstate(page)
 
     await page.goto(`/?fromId=${MARKETPLACE_IMPORT_ID}`)
     await expect(configure.skill(ACME.skill).root).toBeVisible()
@@ -541,7 +541,7 @@ test.describe("a browser upgrading from the single slot", () => {
     configure,
     page,
   }) => {
-    await stubMarketplaceEstate(page)
+    stubMarketplaceEstate(page)
     await configure.seedLegacySlot(PRIVATE_MARKETPLACE_REF, MARKETPLACE_TOKEN)
 
     await page.reload()
@@ -566,7 +566,7 @@ test.describe("a browser upgrading from the single slot", () => {
     configure,
     page,
   }) => {
-    await stubMarketplaceEstate(page)
+    stubMarketplaceEstate(page)
     await configure.seedUnnormalisedSlot(
       PRIVATE_MARKETPLACE_REF,
       MARKETPLACE_TOKEN

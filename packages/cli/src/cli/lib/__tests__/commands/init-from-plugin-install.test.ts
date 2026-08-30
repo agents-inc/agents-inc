@@ -1,8 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { buildGateReport, buildSourceResult } from "../factories/config-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
@@ -11,6 +14,7 @@ import { initializeMatrix } from "../../matrix/matrix-provider";
 import { EXIT_CODES } from "../../exit-codes";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { buildMarketplacePluginRef } from "../../plugins/plugin-ref.js";
+import type { SeedPayload } from "@workspace/matrix/seed";
 import type { SkillId } from "../../../types";
 
 /**
@@ -113,23 +117,15 @@ function buildTwoScopePluginPayload() {
 }
 
 /**
- * Serves one shared configuration to `fetchSeedConfig`.
+ * Serves one shared configuration to `fetchSeedConfig`, under the id these runs ask for.
  *
- * Stubbing `fetch` rather than the module keeps the schema decode and the
- * seed -> wizard-result mapping real: a payload shape the CLI would reject on
- * the wire must reject here too. The URL is not asserted on — the store's own
- * specs cover that, and this one is about what happens after the payload lands.
+ * Answering the network rather than mocking the module keeps the schema decode and the
+ * seed -> wizard-result mapping real: a payload shape the CLI would reject on the wire must
+ * reject here too. The URL is not asserted on — the store's own specs cover that, and this one is
+ * about what happens after the payload lands.
  */
-function stubSeedFetch(payload: unknown): void {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    ),
-  );
+function serveSeed(payload: SeedPayload): void {
+  configMockServer.use(storedConfigHandlerFor(SEED_ID, payload));
 }
 
 /** `claudePluginInstall` arguments as `[ref, scope]`, dropping the project dir. */
@@ -138,6 +134,9 @@ function installedRefsAndScopes(): Array<[string, string]> {
 }
 
 describe("init --from: plugin install spine", () => {
+  // The lifecycle only: these specs assert on what the command DID with the payload, not
+  // on the request that fetched it.
+  useMockWorker();
   let tempDir: string;
   let projectDir: string;
   let originalCwd: string;
@@ -203,13 +202,12 @@ describe("init --from: plugin install spine", () => {
 
   afterEach(async () => {
     process.chdir(originalCwd);
-    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await cleanupTempDir(tempDir);
   });
 
   it("hands every plugin skill to the Claude CLI once, at the scope its entry names", async () => {
-    stubSeedFetch(buildTwoScopePluginPayload());
+    serveSeed(buildTwoScopePluginPayload());
 
     await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
@@ -228,7 +226,7 @@ describe("init --from: plugin install spine", () => {
   });
 
   it("writes the config only after every plugin install has succeeded", async () => {
-    stubSeedFetch(buildTwoScopePluginPayload());
+    serveSeed(buildTwoScopePluginPayload());
 
     await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
@@ -246,7 +244,7 @@ describe("init --from: plugin install spine", () => {
     // directory, so a project-scoped entry would be registered against `$HOME` as a project and
     // recorded in the global config — and no layer below this one re-reads the scope to notice.
     // The refusal has to land before BOTH seams, which is what the two negatives below say.
-    stubSeedFetch(buildTwoScopePluginPayload());
+    serveSeed(buildTwoScopePluginPayload());
     process.chdir(tempDir);
 
     const error = await Init.run(["--from", SEED_ID, "--marketplace", tempDir], {
@@ -266,7 +264,7 @@ describe("init --from: plugin install spine", () => {
   });
 
   it("never reaches the config write when a plugin install fails, and exits non-zero", async () => {
-    stubSeedFetch(buildTwoScopePluginPayload());
+    serveSeed(buildTwoScopePluginPayload());
     // The first skill installs, the second does not — the partial-failure shape.
     // A config written here would claim BOTH skills are installed.
     mockClaudePluginInstall

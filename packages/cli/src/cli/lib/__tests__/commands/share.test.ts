@@ -1,10 +1,14 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { STORED_ID, storeRefusedHandler } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
 import { MATRIX_VERSION } from "@workspace/matrix";
 import { SEED_VERSION } from "@workspace/matrix/seed";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { firstElement } from "../helpers/element-at.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
@@ -18,34 +22,18 @@ import type { ProjectConfig } from "../../../types";
  * `share` mints an id for the installation in this directory, so the CLI can create shared
  * configurations rather than only consume them.
  *
- * The seam is `fetch`, stubbed globally: everything above it — reading the config, mapping it onto
- * the wire contract and refusing what the contract cannot carry — runs for real, which is the
- * whole point. Mocking the publish module instead would leave the mapping untested and would let
- * a payload the store must refuse pass here.
+ * The seam is the network, answered by `@workspace/api-mocks`: everything above it — reading the
+ * config, mapping it onto the wire contract and refusing what the contract cannot carry — runs for
+ * real, which is the whole point. Mocking the publish module instead would leave the mapping
+ * untested and would let a payload the store must refuse pass here.
  */
 
 const { default: Share } = await import("../../../commands/share.js");
 
-const MINTED_ID = "Ab3xY9_Q";
 const WEB_DEV = "web-developer";
 const REACT_ID = "web-framework-react";
 const REACT_CATEGORY = "web-framework";
 const PRIVATE_MARKETPLACE = "acme-internal";
-
-/** Every `fetch` the run made, as `[url, init]` pairs. */
-let fetchStub: ReturnType<typeof vi.fn>;
-
-function stubStore(response: Response): void {
-  fetchStub = vi.fn().mockResolvedValue(response);
-  vi.stubGlobal("fetch", fetchStub);
-}
-
-function mintedResponse(id: string): Response {
-  return new Response(JSON.stringify({ id }), {
-    status: 201,
-    headers: { "content-type": "application/json" },
-  });
-}
 
 /** Runs the command, returning the oclif error it threw (or `undefined` on success). */
 function runShare(): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
@@ -56,6 +44,7 @@ function runShare(): Promise<(Error & { oclif?: { exit?: number } }) | undefined
 }
 
 describe("share command", () => {
+  const worker = useMockWorker();
   let tempDir: string;
   let projectDir: string;
   let originalCwd: string;
@@ -81,14 +70,11 @@ describe("share command", () => {
       stdoutChunks.push(String(str));
       return true;
     };
-
-    stubStore(mintedResponse(MINTED_ID));
   });
 
   afterEach(async () => {
     process.stdout.write = origWrite;
     process.chdir(originalCwd);
-    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await cleanupTempDir(tempDir);
   });
@@ -121,10 +107,10 @@ describe("share command", () => {
       const output = stdoutChunks.join("");
 
       expect(error).toBeUndefined();
-      expect(output).toContain(MINTED_ID);
+      expect(output).toContain(STORED_ID);
       // An id nobody can act on is not a share. Both destinations are named because the CLI and
       // the editor are the two things that read one.
-      expect(output).toContain(`init --from ${MINTED_ID}`);
+      expect(output).toContain(`init --from ${STORED_ID}`);
       expect(output).toContain(EDITOR_URL);
     });
 
@@ -133,10 +119,7 @@ describe("share command", () => {
 
       await runShare();
 
-      // Boundary cast: a `vi.fn()` stub records its arguments as `unknown[]`, and the command
-      // only ever posts serialized JSON, which `RequestInit["body"]` is too wide to say.
-      const [, init] = fetchStub.mock.calls[0] as [string, { body: string }];
-      const posted: unknown = JSON.parse(init.body);
+      const posted: unknown = JSON.parse(await firstElement(worker.requests).text());
       // The whole envelope, structurally: `toContain` on the body text cannot say which scope a
       // skill carries or which sub-agent holds it, and a subset match would pass on a body
       // carrying a second skill this project never installed.
@@ -158,9 +141,9 @@ describe("share command", () => {
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(
-        fetchStub,
+        worker.requests,
         "nothing may be posted for a directory with no installation",
-      ).not.toHaveBeenCalled();
+      ).toStrictEqual([]);
     });
 
     it("refuses a configuration whose every entry is a tombstone", async () => {
@@ -176,7 +159,7 @@ describe("share command", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       // The store's writes are the scarce half of its free tier; minting an id for a
       // configuration that installs nothing spends one to produce a dead link.
-      expect(fetchStub).not.toHaveBeenCalled();
+      expect(worker.requests).toStrictEqual([]);
     });
 
     it("refuses an installation the contract cannot carry, naming what it cannot say", async () => {
@@ -190,12 +173,12 @@ describe("share command", () => {
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(error?.message).toContain(PRIVATE_MARKETPLACE);
-      expect(fetchStub, "a refusal must precede the write, not follow it").not.toHaveBeenCalled();
+      expect(worker.requests, "a refusal must precede the write, not follow it").toStrictEqual([]);
     });
 
     it("exits non-zero when the store refuses the write", async () => {
       await installConfig(installedOverrides());
-      stubStore(new Response("Could not store this config", { status: 503 }));
+      configMockServer.use(storeRefusedHandler);
 
       const error = await runShare();
 
@@ -204,7 +187,7 @@ describe("share command", () => {
       expect(
         stdoutChunks.join(""),
         "an id line printed beside a failure is a message about work that never happened",
-      ).not.toContain(MINTED_ID);
+      ).not.toContain(STORED_ID);
     });
   });
 });

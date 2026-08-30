@@ -143,6 +143,45 @@ test.describe("persistence", () => {
     )
   })
 
+  // How the panel is banded and whether the stack grid is folded are
+  // ARRANGEMENT, in the same sense a collapsed roster band is: they describe
+  // how the screen is laid out rather than something the visitor is in the
+  // middle of. So they survive, and the slot is read back rather than inferred
+  // from the screen — the two claims come apart the moment a write is dropped.
+  test("the roster's grouping mode survives a reload", async ({
+    configure,
+    page,
+  }) => {
+    await configure.roster.groupBy("scope")
+    await expect(configure.roster.scopeBand("global")).toBeVisible()
+
+    expect(await configure.storedUi()).toMatchObject({
+      rosterGroupBy: "scope",
+    })
+
+    await page.reload()
+    await configure.stacks.waitFor()
+
+    await expect(configure.roster.scopeBand("global")).toBeVisible()
+    await expect(configure.roster.domainBand("web")).toHaveCount(0)
+  })
+
+  test("a folded stack grid is still folded after a reload", async ({
+    configure,
+    page,
+  }) => {
+    await configure.stackToggle.click()
+    await expect(configure.stacks).toHaveCount(0)
+
+    expect(await configure.storedUi()).toMatchObject({ stackCollapsed: true })
+
+    await page.reload()
+    await configure.stackToggle.waitFor()
+
+    await expect(configure.stacks).toHaveCount(0)
+    await expect(configure.stackToggle).toHaveAccessibleName("Show stacks")
+  })
+
   // Corrupt storage must reset to empty rather than take the app down.
   test("unreadable storage falls back to an empty configuration", async ({
     configure,
@@ -173,8 +212,8 @@ test.describe("persistence", () => {
 // a payload carries the content.
 test.describe("added skills do not survive a reload on their own", () => {
   test.beforeEach(async ({ configure, page }) => {
-    await stubSkillIndex(page)
-    await stubSkillContents(page)
+    stubSkillIndex(page)
+    stubSkillContents(page)
 
     await configure.addSkillButton.click()
     await configure.addSkillDialog.stage(ADDED_SKILL)

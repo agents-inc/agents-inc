@@ -1,9 +1,17 @@
 import { createHash } from "node:crypto";
 import http from "node:http";
 
+import { CONFIGS_URL, answerFor, configHandlers, workerRequestFrom } from "@workspace/api-mocks";
+import { HttpResponse, http as route } from "msw";
+
 import { CLI, type CLIResult } from "./cli.js";
 
 import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { MockedAnswer } from "@workspace/api-mocks";
+import type { RequestHandler } from "msw";
+
+/** What a handler said, as opposed to why it said nothing. */
+type ServedAnswer = Extract<MockedAnswer, { served: true }>;
 
 /** One request the CLI made to the stub, in arrival order. */
 export type SeedConfigRequest = {
@@ -31,11 +39,18 @@ export type SeedConfigStore = {
   close(): Promise<void>;
 };
 
-const CONFIGS_PATH = "/configs/";
 const LOOPBACK = "127.0.0.1";
 const ANY_PORT = 0;
 /** The worker truncates its content address to this many base64url characters. */
 const ID_LENGTH = 8;
+const CREATED = 201;
+/**
+ * A route these handlers do not describe. Loud on purpose: answering 404 would make a request this
+ * store has nothing to say about indistinguishable from an id it really does not hold.
+ */
+const NOT_MODELLED = 501;
+/** The resolver itself failed — this store's own bug, reported as one rather than as a hang. */
+const RESOLVER_FAILED = 500;
 
 /**
  * The id a posted body gets, derived exactly as the worker derives it: the SHA-256 of the body,
@@ -60,50 +75,129 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 /**
+ * One id this store holds, answering with the bytes it was given.
+ *
+ * `storedConfigHandlerFor` in `@workspace/api-mocks` is the same idea and is deliberately not used
+ * here: it is handed a VALUE and JSON-encodes it, where a store holds BYTES — which is what KV
+ * holds, what a POST arrives as, and what lets `publish` serve a string verbatim so a spec can pin
+ * a body the schema must refuse.
+ */
+const heldBytesHandler = (id: string, bytes: string): RequestHandler =>
+  route.get(
+    `${CONFIGS_URL}/${id}`,
+    () => new HttpResponse(bytes, { headers: { "content-type": "application/json" } }),
+  );
+
+/** The mint — the one request that changes what this store holds. */
+const isMint = (req: http.IncomingMessage): boolean => req.method === "POST";
+
+/** Hands the caller what a handler said, headers and all. */
+function sendAnswer(res: http.ServerResponse, answer: ServedAnswer): void {
+  res.writeHead(answer.status, answer.headers);
+  res.end(Buffer.from(answer.body));
+}
+
+/**
+ * Hands the caller a refusal naming the request no handler claimed, and why.
+ *
+ * Loud rather than a 404, because the two are not the same thing: a 404 says this store does not
+ * hold that id, and this says nobody has described the route at all.
+ */
+function sendNotModelled(
+  res: http.ServerResponse,
+  req: http.IncomingMessage,
+  reason: string,
+): void {
+  res.writeHead(NOT_MODELLED, { "content-type": "text/plain" });
+  res.end(`No mocked answer for ${req.method ?? "GET"} ${req.url ?? "/"} (${reason})`);
+}
+
+/**
+ * The mint, which is the one route `@workspace/api-mocks` cannot answer for this store.
+ *
+ * `configHandlers` answers `POST /configs` with one fixed id, because that package describes what
+ * the worker SAYS and deliberately stores nothing. A store has to hand back the id it filed the
+ * body under, and this one files it where the worker does — under the body's own hash.
+ */
+const mintedHandler = (id: string): RequestHandler =>
+  route.post(CONFIGS_URL, () => HttpResponse.json({ id }, { status: CREATED }));
+
+/**
  * A local stand-in for the agentsinc.sh config store: `GET /configs/<id>` returns the payload
  * published under that id and 404s an id that was never published, exactly as the worker does.
  *
  * A real server rather than a module mock, because the specs that use it exist to cover the whole
  * path — argument parsing, network, decode, mapping, and the same write/install/compile pipeline
  * the wizard uses. A mocked fetch would skip the two seams most likely to break: the flag reaching
- * the command, and the payload surviving the wire.
+ * the command, and the payload surviving the wire. It also could not be one: the e2e suite spawns
+ * `bin/run.js`, and nothing in this process can intercept a child's network.
+ *
+ * What it ANSWERS with comes from `@workspace/api-mocks` all the same, resolved through `answerFor`
+ * — so the worker's words are stated once for this suite and the editor's alike. They had already
+ * diverged where they were written twice: the 404 body here read `"No config under this id"` and
+ * the CLI's own unit fixture for the same response read `"no config"`.
  */
 export async function startSeedConfigStore(): Promise<SeedConfigStore> {
-  const stored = new Map<string, unknown>();
+  const held = new Map<string, string>();
   const requests: SeedConfigRequest[] = [];
   const minted: string[] = [];
 
+  /**
+   * What this store answers with right now. Rebuilt per request because its contents move, and
+   * ordered as `use()` orders handlers: the ids it holds claim their own routes first, then the
+   * mint for the id this request is filing, and `configHandlers` answers everything else — which
+   * is where an id nobody published gets the worker's own 404.
+   */
+  const handlersNow = (mintedId: string | undefined): RequestHandler[] => [
+    ...[...held].map(([id, bytes]) => heldBytesHandler(id, bytes)),
+    ...(mintedId === undefined ? [] : [mintedHandler(mintedId)]),
+    ...configHandlers,
+  ];
+
+  /** Files a posted body under its content address, and reports the id it was filed under. */
+  const file = (body: string): string => {
+    const id = contentAddress(body);
+    held.set(id, body);
+    minted.push(id);
+    return id;
+  };
+
+  /** Notes one request in the terms a spec reads them back in. */
+  const record = (req: http.IncomingMessage, body: string): void => {
+    requests.push({
+      url: req.url ?? "",
+      userAgent: req.headers["user-agent"],
+      method: req.method,
+      body,
+    });
+  };
+
+  async function serve(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await readBody(req);
+    record(req, body);
+
+    const mintedId = isMint(req) ? file(body) : undefined;
+    const answer = await answerFor(handlersNow(mintedId), workerRequestFrom(req, body));
+
+    if (!answer.served) {
+      sendNotModelled(res, req, answer.reason);
+      return;
+    }
+
+    sendAnswer(res, answer);
+  }
+
   const server = http.createServer((req, res) => {
-    const isPost = req.method === "POST";
-
-    void readBody(req).then((body) => {
-      requests.push({
-        url: req.url ?? "",
-        userAgent: req.headers["user-agent"],
-        method: req.method,
-        body,
-      });
-
-      if (isPost) {
-        const id = contentAddress(body);
-        stored.set(id, body);
-        minted.push(id);
-        res.writeHead(201, { "content-type": "application/json" });
-        res.end(JSON.stringify({ id }));
+    // Answered rather than left to an unhandled rejection: a throw in here would leave the socket
+    // open and the spawned CLI waiting on it, which reaches a spec as a 45-second timeout naming
+    // nothing at all.
+    void serve(req, res).catch((error: unknown) => {
+      if (res.headersSent) {
+        res.end();
         return;
       }
-
-      const id = decodeURIComponent((req.url ?? "").replace(CONFIGS_PATH, ""));
-      const payload = stored.get(id);
-
-      if (payload === undefined) {
-        res.writeHead(404, { "content-type": "text/plain" });
-        res.end("No config under this id");
-        return;
-      }
-
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(typeof payload === "string" ? payload : JSON.stringify(payload));
+      res.writeHead(RESOLVER_FAILED, { "content-type": "text/plain" });
+      res.end(String(error));
     });
   });
 
@@ -119,10 +213,10 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     requests,
     minted,
     publish: (id, payload) => {
-      stored.set(id, payload);
+      held.set(id, typeof payload === "string" ? payload : JSON.stringify(payload));
     },
     reset: () => {
-      stored.clear();
+      held.clear();
       requests.length = 0;
       minted.length = 0;
     },

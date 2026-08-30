@@ -36,13 +36,13 @@ const FILE_PATHS = Object.keys(EXTERNAL_SKILL.files)
 
 test.describe("reading an added skill's contents", () => {
   test.beforeEach(async ({ page, configure }) => {
-    await stubSkillIndex(page)
-    await stubSkillContents(page)
+    stubSkillIndex(page)
+    stubSkillContents(page)
     // Two of these open the install dialog, which mints an id for the command
     // on the way up. There is no preview fetch to stub — the bytes are seated
     // before the first paint — but that mint is a real call and is this file's
     // only one.
-    await stubCreateConfig(page)
+    stubCreateConfig(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()

@@ -1,8 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { buildGateReport, buildSourceResult } from "../factories/config-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
@@ -11,6 +14,7 @@ import { CUSTOM_HOUSE_TOOLING_ID } from "../mock-data/mock-skills";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { EXIT_CODES } from "../../exit-codes";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import type { SeedPayload } from "@workspace/matrix/seed";
 
 /**
  * A skill that exists only in this project cannot be pulled from a marketplace, so an
@@ -66,19 +70,15 @@ vi.mock("../../operations/index.js", async (importOriginal) => {
 
 const { default: Init } = await import("../../../commands/init.js");
 
-function stubSeedFetch(payload: unknown): void {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    ),
-  );
+/** Serves one shared configuration to `fetchSeedConfig`, under the id these runs ask for. */
+function serveSeed(payload: SeedPayload): void {
+  configMockServer.use(storedConfigHandlerFor(SEED_ID, payload));
 }
 
 describe("init --from: a plugin install nothing backs", () => {
+  // The lifecycle only: these specs assert on what the command DID with the payload, not
+  // on the request that fetched it.
+  useMockWorker();
   let tempDir: string;
   let projectDir: string;
   let originalCwd: string;
@@ -137,13 +137,12 @@ describe("init --from: a plugin install nothing backs", () => {
 
   afterEach(async () => {
     process.chdir(originalCwd);
-    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await cleanupTempDir(tempDir);
   });
 
   it("refuses by name, never shells out, and writes no config", async () => {
-    stubSeedFetch(
+    serveSeed(
       buildSeedPayload({
         skills: {
           [CUSTOM_HOUSE_TOOLING_ID]: buildSeedSkill({
@@ -181,7 +180,7 @@ describe("init --from: a plugin install nothing backs", () => {
   });
 
   it("still installs a skill the marketplace carries", async () => {
-    stubSeedFetch(
+    serveSeed(
       buildSeedPayload({
         skills: {
           "web-framework-react": buildSeedSkill({

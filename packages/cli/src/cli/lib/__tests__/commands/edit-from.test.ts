@@ -1,9 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 
+import { CONFIGS_URL, DEAD_LINK_ID } from "@workspace/api-mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
@@ -26,16 +28,18 @@ import type { ProjectConfig } from "../../../types";
  *
  * The confirm itself is an Ink prompt driven by a real keystroke, so it lives in the PTY suite;
  * what is provable here is every refusal that fires without one.
+ *
+ * The store is `@workspace/api-mocks`, which answers an id it has never seen with the worker's own
+ * 404 and the worker's own body. This file wrote that body as `"no config"` while the worker
+ * answers `"No config under this id"` — invisible for as long as the answer was hand-built here,
+ * because a stub is never held against the thing it stands in for.
  */
 
-const MISSING_ID = "NoSuchId";
 const WEB_DEV = "web-developer";
 const REACT_ID = "web-framework-react";
 const REACT_CATEGORY = "web-framework";
 
 const { default: Edit } = await import("../../../commands/edit.js");
-
-let fetchStub: ReturnType<typeof vi.fn>;
 
 /** Runs the command, returning the oclif error it threw (or `undefined` on success). */
 function runEdit(argv: string[]): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
@@ -52,6 +56,8 @@ describe("edit --from", () => {
   let stdoutChunks: string[] = [];
   let origWrite: typeof process.stdout.write;
   let origIsTTY: boolean;
+
+  const worker = useMockWorker();
 
   beforeEach(async () => {
     originalCwd = process.cwd();
@@ -77,16 +83,12 @@ describe("edit --from", () => {
     // Whether there is anybody to confirm a removal is the whole subject of this file, so every
     // spec states it rather than inheriting whatever the runner happened to be started from.
     process.stdin.isTTY = false;
-
-    fetchStub = vi.fn().mockResolvedValue(new Response("no config", { status: 404 }));
-    vi.stubGlobal("fetch", fetchStub);
   });
 
   afterEach(async () => {
     process.stdout.write = origWrite;
     process.stdin.isTTY = origIsTTY;
     process.chdir(originalCwd);
-    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await cleanupTempDir(tempDir);
   });
@@ -114,29 +116,29 @@ describe("edit --from", () => {
     it("refuses without a terminal, naming the id and both ways forward", async () => {
       await installConfig(installed());
 
-      const error = await runEdit(["--from", MISSING_ID]);
+      const error = await runEdit(["--from", DEAD_LINK_ID]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(error?.message).toContain(MISSING_ID);
+      expect(error?.message).toContain(DEAD_LINK_ID);
       // The refusal has to name the greenfield command, because that is the whole of what a
       // pipeline can do with an id — refusing without it reads as "this id is unusable here".
-      expect(error?.message).toContain(`init --from ${MISSING_ID}`);
+      expect(error?.message).toContain(`init --from ${DEAD_LINK_ID}`);
     });
 
     it("refuses before it fetches anything", async () => {
       await installConfig(installed());
 
-      await runEdit(["--from", MISSING_ID]);
+      await runEdit(["--from", DEAD_LINK_ID]);
 
       // Nothing about the payload can change the answer, so asking for it is a round trip spent
       // on a run that was already over.
-      expect(fetchStub).not.toHaveBeenCalled();
+      expect(worker.requests).toStrictEqual([]);
     });
 
     it("refuses before it loads the catalogue", async () => {
       await installConfig(installed());
 
-      await runEdit(["--from", MISSING_ID]);
+      await runEdit(["--from", DEAD_LINK_ID]);
 
       expect(
         stdoutChunks.join(""),
@@ -145,12 +147,12 @@ describe("edit --from", () => {
     });
 
     it("refuses a directory with nothing installed the same way", async () => {
-      const error = await runEdit(["--from", MISSING_ID]);
+      const error = await runEdit(["--from", DEAD_LINK_ID]);
 
       // The terminal question is answered before the installation one, so the two refusals
       // cannot race: what a user is told is what they can act on first.
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(error?.message).toContain(MISSING_ID);
+      expect(error?.message).toContain(DEAD_LINK_ID);
     });
   });
 
@@ -166,7 +168,7 @@ describe("edit --from", () => {
     it("succeeds, where it used to refuse", async () => {
       await installConfig(installed());
 
-      const error = await runEdit(["--ui", "--from", MISSING_ID]);
+      const error = await runEdit(["--ui", "--from", DEAD_LINK_ID]);
 
       expect(error).toBeUndefined();
     });
@@ -174,15 +176,15 @@ describe("edit --from", () => {
     /**
      * The whole economy of the path. `--ui` ALONE posts this installation to mint an id; `--from`
      * alone fetches the named one. Given both, an id already exists and this directory is not the
-     * subject — so neither call has anything to do, and `MISSING_ID` proves it: the store does not
+     * subject — so neither call has anything to do, and `DEAD_LINK_ID` proves it: the store does not
      * hold that id, and a run that fetched it would have failed.
      */
     it("neither mints nor fetches, because the id it opens already exists", async () => {
       await installConfig(installed());
 
-      await runEdit(["--ui", "--from", MISSING_ID]);
+      await runEdit(["--ui", "--from", DEAD_LINK_ID]);
 
-      expect(fetchStub).not.toHaveBeenCalled();
+      expect(worker.requests).toStrictEqual([]);
     });
   });
 
@@ -194,18 +196,20 @@ describe("edit --from", () => {
     it("reports an id the store does not have, in the store's own words", async () => {
       await installConfig(installed());
 
-      const error = await runEdit(["--from", MISSING_ID]);
+      const error = await runEdit(["--from", DEAD_LINK_ID]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(error?.message).toContain(MISSING_ID);
+      expect(error?.message).toContain(DEAD_LINK_ID);
     });
 
     it("fetches before it loads the catalogue, so an unknown id costs nothing else", async () => {
       await installConfig(installed());
 
-      await runEdit(["--from", MISSING_ID]);
+      await runEdit(["--from", DEAD_LINK_ID]);
 
-      expect(fetchStub).toHaveBeenCalled();
+      expect(worker.requests.map((request) => request.url)).toStrictEqual([
+        `${CONFIGS_URL}/${DEAD_LINK_ID}`,
+      ]);
       expect(stdoutChunks.join("")).not.toContain(STATUS_MESSAGES.LOADING_SKILLS);
     });
   });

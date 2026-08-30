@@ -2,6 +2,7 @@ import os from "os";
 import path from "path";
 import { mkdtemp, rm } from "fs/promises";
 import { fileURLToPath } from "url";
+import { WORKER_ORIGIN } from "@workspace/api-mocks/fixtures";
 import chalk from "chalk";
 import { beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
 import { initializeMatrix } from "./src/cli/lib/matrix/matrix-provider";
@@ -63,6 +64,20 @@ chalk.level = COLOR_DISABLED_CHALK_LEVEL;
 // trusts a real terminal over the CI guess.
 delete process.env.CI;
 delete process.env.GITHUB_ACTIONS;
+
+// The config store this suite is allowed to talk to, pinned for every file rather than for the
+// five that mock it. `SEED_API_URL` in src/cli/lib/seed/fetch-seed.ts is
+// `process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh"`, READ ONCE AT MODULE LOAD — so a
+// spec that sets the variable in a `beforeEach` has already imported the production URL, and any
+// request it fails to intercept leaves the machine. Setup files run before a test file's imports,
+// which is what makes this the one place the substitution can be made at all.
+//
+// The value is `@workspace/api-mocks`'s own origin, because that is what every handler in it is
+// anchored on: a mock server listening here and a client addressing anywhere else match nothing
+// and answer `unhandled` for every route, which reads as a mock with nothing to say rather than
+// as a mistake. A file that installs no mock now gets a refused connection instead of a real
+// request to the store, which is the safer half of the same pin.
+process.env.AGENTS_INC_API_URL = WORKER_ORIGIN;
 
 // Prevent tests from finding the real ~/.claude-src/config.yaml via global fallback.
 // loadProjectConfig() falls back to os.homedir() when no project-level config exists,

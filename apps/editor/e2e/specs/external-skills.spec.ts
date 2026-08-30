@@ -6,7 +6,11 @@ import {
   stubSkillContents,
   stubSkillContentsUnreachable,
 } from "../support/skill-contents"
-import { captureCreateConfig, STORED_ID } from "../support/sharing"
+import {
+  captureCreateConfig,
+  stubGetConfig,
+  STORED_ID,
+} from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
 // An added skill is a REAL CATALOG ENTRY (owner ruling, 2026-08-16), and its
@@ -41,9 +45,9 @@ const SIBLING = EXCLUSIVE_CATEGORY.first
 const CATEGORY_OPTION = `${DOMAINS.web.toLowerCase()} · ${CATEGORY.toLowerCase()}`
 
 test.describe("adding an external skill", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubSkillIndex(page)
-    await stubSkillContents(page)
+  test.beforeEach(({ page }) => {
+    stubSkillIndex(page)
+    stubSkillContents(page)
   })
 
   // CLI-412's editor half. The category is the user's decision, so nothing is
@@ -103,7 +107,9 @@ test.describe("adding an external skill", () => {
     await dialog.confirm()
 
     const cell = configure.skillIn(DOMAINS.web, CATEGORY, SKILL_NAME)
-    await expect(cell.root).toContainText("added")
+    // The cell rather than the pressable: since EDITOR-58 the selection target
+    // is a transparent overlay and carries no text.
+    await expect(cell.cell).toContainText("added")
   })
 
   // EDITOR-19: the chip filters by domain, and the skill has one now. It used
@@ -251,8 +257,8 @@ test.describe("adding an external skill", () => {
 })
 
 test.describe("resolving an external skill's content", () => {
-  test.beforeEach(async ({ page }) => {
-    await stubSkillIndex(page)
+  test.beforeEach(({ page }) => {
+    stubSkillIndex(page)
   })
 
   // The bytes are fetched at add time, not at install time. That is the whole
@@ -262,8 +268,8 @@ test.describe("resolving an external skill's content", () => {
     configure,
     page,
   }) => {
-    await stubSkillContents(page)
-    const posted = await captureCreateConfig(page)
+    stubSkillContents(page)
+    const posted = captureCreateConfig(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -294,8 +300,8 @@ test.describe("resolving an external skill's content", () => {
     configure,
     page,
   }) => {
-    await stubSkillContents(page)
-    await captureCreateConfig(page)
+    stubSkillContents(page)
+    captureCreateConfig(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -322,7 +328,7 @@ test.describe("resolving an external skill's content", () => {
     configure,
     page,
   }) => {
-    await stubSkillContents(page)
+    stubSkillContents(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -339,7 +345,7 @@ test.describe("resolving an external skill's content", () => {
     configure,
     page,
   }) => {
-    await stubSkillContentsUnreachable(page)
+    stubSkillContentsUnreachable(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -360,9 +366,9 @@ test.describe("importing a link carrying external skills", () => {
     configure,
     page,
   }) => {
-    await stubSkillIndex(page)
-    await stubSkillContents(page)
-    const posted = await captureCreateConfig(page)
+    stubSkillIndex(page)
+    stubSkillContents(page)
+    const posted = captureCreateConfig(page)
 
     const dialog = configure.addSkillDialog
     await configure.addSkillButton.click()
@@ -373,10 +379,10 @@ test.describe("importing a link carrying external skills", () => {
     await configure.roster.installButton.click()
     await expect.poll(() => posted.length).toBeGreaterThan(0)
 
+    // Served back exactly as it was captured — unparsed, since surviving the
+    // round trip is the whole claim.
     const shared = posted.at(-1)!
-    await page.route(`**/configs/${STORED_ID}`, (route) =>
-      route.fulfill({ status: 200, json: shared })
-    )
+    stubGetConfig(page, STORED_ID, shared)
 
     // A different browser: nothing added, nothing selected, only the link.
     await page.context().clearCookies()

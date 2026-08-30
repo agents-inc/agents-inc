@@ -1,11 +1,17 @@
+import { CATALOG } from "@workspace/matrix"
 import { matrixSchema } from "@workspace/matrix/matrix-schema"
-import { seedPayloadSchema } from "@workspace/matrix/seed"
+import { SEED_VERSION, seedPayloadSchema } from "@workspace/matrix/seed"
 import { skillIndexSchema } from "@workspace/matrix/skill-index"
 
+import type { SeedPayload } from "@workspace/matrix/seed"
+
 // What the worker (apps/server) answers with, and nothing about how a caller
-// intercepts it. This module names no mocking library on purpose: the
-// Playwright suite keeps its own `page.route` interception and wants only these
-// values, so importing them must not drag msw into its runner.
+// intercepts it. This module names no mocking library on purpose — first
+// because the Playwright suite kept its own `page.route` interception and
+// wanted only these values, and now because a fixture is a VALUE: anything that
+// is not testing can read one, and a module that drags msw in cannot be read
+// that way. The Playwright suite answers from the handlers beside this file
+// since 2026-08-29; the rule about this file survived that change.
 //
 // GitHub is the exception to "the worker": a marketplace's `catalog.json` is
 // fetched browser-direct so org content never transits our worker, which makes
@@ -60,22 +66,35 @@ export const STORE_REFUSED_BODY = "Could not store this config"
 // (`seedToWizardResult` -> `unwritableAssignmentsError`), which is not what the
 // canonical "a configuration the worker holds" fixture should be — it is the
 // EDITOR-08 defect, frozen into the one payload both suites read.
-export const STORED_PAYLOAD = seedPayloadSchema.parse({
-  v: 5,
-  matrixVersion: "1.0.0",
-  stackId: null,
-  skills: {
-    "web-framework-react": {
-      install: "plugin",
-      scope: "project",
-      assignments: { "web-developer": "preloaded" },
+//
+// A builder rather than a constant, because the same payload was being re-typed
+// wherever one field of it had to differ: apps/server's own suite wants a stack
+// id on it, and each packages/cli e2e spec that publishes one wants its own
+// skills. Every copy restated the five fields it was not changing, and every
+// copy was free to drift from this one and from the contract.
+export const seedPayload = (
+  overrides: Partial<SeedPayload> = {}
+): SeedPayload =>
+  seedPayloadSchema.parse({
+    v: SEED_VERSION,
+    matrixVersion: "1.0.0",
+    stackId: null,
+    skills: {
+      "web-framework-react": {
+        install: "plugin",
+        scope: "project",
+        assignments: { "web-developer": "preloaded" },
+      },
     },
-  },
-  agents: {
-    "web-developer": { model: "haiku", effort: "max", scope: "project" },
-    "api-developer": { on: true },
-  },
-})
+    agents: {
+      "web-developer": { model: "haiku", effort: "max", scope: "project" },
+      "api-developer": { on: true },
+    },
+    ...overrides,
+  })
+
+/** The one the config mock serves under {@link STORED_ID}. */
+export const STORED_PAYLOAD = seedPayload()
 
 // The federated skill index — `GET /skills`, the add-skills dialog's search
 // surface. Every entry names a real skill in a real allowlisted repository,
@@ -155,6 +174,133 @@ export const STALE_SKILL_INDEX = skillIndexSchema.parse({
 // AND an upstream that will not answer.
 export const SKILL_INDEX_UNAVAILABLE_BODY =
   "The skill index is not available yet"
+
+// Who is signed in, when somebody is. GitHub is the only provider the worker
+// offers, and a name and an id are the whole of what the editor draws —
+// `sessionSchema` in apps/editor/src/lib/api/auth.ts reads those two and
+// deliberately names nothing else.
+export const SIGNED_IN_USER = {
+  id: "u_1",
+  name: "Vincent",
+  email: "v@example.com",
+} as const
+
+// `GET /api/auth/get-session` when somebody is. Only `user`, because Better
+// Auth returns a great deal more and a fixture naming the rest would be a
+// second copy of somebody else's contract to keep in step — the same reason
+// the editor's own schema stops at two fields.
+export const SIGNED_IN_SESSION = { user: SIGNED_IN_USER }
+
+// And when nobody is. A 200 carrying `null` rather than a 401: signed-out is
+// the state this app is fully usable in, so the session read is a question
+// with two ordinary answers rather than a gate.
+export const NO_SESSION = null
+
+// The body behind every 401 the worker sends. `authenticated` in
+// apps/server/src/auth.ts writes it, and the four stack routes and `/compose`
+// all go through that wrapper — so the bytes are the same on all five, even
+// though their OpenAPI declarations disagree about the shape (a
+// `z.literal("unauthorized")` against a bare `z.string()`; SERVER-05).
+export const UNAUTHORIZED_BODY = { error: "unauthorized" } as const
+
+// Where `POST /api/auth/sign-in/social` sends the browser.
+//
+// GitHub's own authorize URL, and it is asked for rather than built on either
+// side: Better Auth mints the `state` per attempt, which is exactly the half
+// of OAuth that stops one person's request being replayed as another's. This
+// side only checks the field is a URL and navigates, so the query is a shape
+// rather than a value anything reads.
+export const GITHUB_AUTHORIZE_URL =
+  "https://github.com/login/oauth/authorize?client_id=Iv1.0123456789abcdef&state=t9Yb2Qw4&scope=user%3Aemail"
+
+// When a saved stack was saved, and when a rename moved it. Two instants
+// rather than one, because `updatedAt` is what the worker sorts on and what a
+// rename changes — a fixture whose timestamps all match cannot show either.
+export const STACK_SAVED_AT = "2026-08-28T00:00:00.000Z"
+export const STACK_RENAMED_AT = "2026-08-29T00:00:00.000Z"
+
+/**
+ * A saved stack: A NAME AND A POINTER.
+ *
+ * The configuration itself lives in KV under the id `POST /configs` minted,
+ * and is read back with the same `GET /configs/:id` a share link uses — so
+ * nothing here serializes a configuration and nothing here can drift from the
+ * payload contract, because none of it knows the contract. See
+ * apps/server/src/stacks.ts.
+ *
+ * A function rather than a constant because the worker mints the row from what
+ * the caller sent, so a POST's answer depends on its request. The id is
+ * derived from the name where the worker uses `crypto.randomUUID()`: nothing
+ * on either side reads its form — both schemas say `z.string()` — and a
+ * derived one is the same claim carrying a value an assertion can name.
+ */
+export const savedStack = (
+  name: string,
+  configId: string = STORED_ID,
+  at: string = STACK_SAVED_AT
+) => ({
+  id: `s_${name.toLowerCase().replace(/\s+/g, "-")}`,
+  name,
+  configId,
+  createdAt: at,
+  updatedAt: at,
+})
+
+export type SavedStack = ReturnType<typeof savedStack>
+
+// Two, because a list of one proves nothing about order, and they are in the
+// order `GET /stacks` really returns them: the worker sorts newest-first on
+// `updatedAt`, so the timestamps are what puts them in it.
+//
+// Both point at `STORED_ID`, the one configuration the config mock actually
+// serves — a stack whose pointer 404s is a stack nobody can open.
+export const SAVED_STACK = savedStack("Weekend project")
+export const OTHER_SAVED_STACK = savedStack(
+  "Client work",
+  STORED_ID,
+  "2026-08-27T00:00:00.000Z"
+)
+export const SAVED_STACKS = [SAVED_STACK, OTHER_SAVED_STACK]
+
+// An id this person's account does not carry. Indistinguishable from somebody
+// else's id, which is the whole point: the worker scopes the mutation itself
+// and answers 404 to both, because telling a stranger that a stack exists but
+// is not theirs is telling them it exists.
+export const MISSING_STACK_ID = "s_not-yours"
+
+// The worker's own body for that 404.
+export const NO_STACK_BODY = { error: "not found" } as const
+
+// What `POST /compose` answers with: skill ids, and one sentence saying why.
+// Nothing about scope, install mode or which sub-agent carries what — those
+// are the tool's to decide, and the route discards any opinion the model
+// offers about them.
+//
+// The ids are checked against the catalogue AT IMPORT, because the worker
+// filters the model's answer through `CATALOG.skillsById` before replying: an
+// id the catalogue does not hold is one this route cannot return, so a fixture
+// carrying one would mock a response the worker cannot produce.
+const catalogueSkillId = (id: string) => {
+  if (id in CATALOG.skillsById) return id
+  throw new Error(`Not a catalogue skill id: ${id}`)
+}
+
+export const COMPOSED_PROPOSAL = {
+  skillIds: [
+    catalogueSkillId("web-framework-react"),
+    catalogueSkillId("web-testing-vitest"),
+  ],
+  reason: "React for the app, and Vitest to test it.",
+}
+
+// The worker's own bodies for the two compose refusals a caller can tell
+// apart from each other. Its 400s are absent for the reason `GET /configs/:id`
+// has no 503 here: the client maps every status it does not name to one
+// `refused`, so a handler for those would assert the same branch twice.
+export const COMPOSE_TOO_MANY_BODY = { error: "too many requests" } as const
+export const COMPOSE_FAILED_BODY = {
+  error: "the model did not answer",
+} as const
 
 // Where GitHub's REST API answers. Named once because it is the origin the
 // editor reaches DIRECTLY — the whole point of fetching a catalogue this way is
@@ -272,6 +418,120 @@ export const MARKETPLACE_CATALOG = matrixSchema.parse({
     },
   ],
 })
+
+// What `edit --ui` hands over: ids from a marketplace's catalogue, and the
+// marketplace named at the top so a receiver knows which catalogue can resolve
+// them. Every id carries the marketplace's own name as a prefix (CLI-498), so
+// none of them exists in the public catalogue — which is what makes "the
+// catalogue was loaded before the ids were read" observable rather than a
+// coincidence of counting.
+const [ACME_SKILL_ID] = Object.keys(MARKETPLACE_CATALOG.skills) as [string]
+
+export { ACME_SKILL_ID }
+
+/** An id no catalogue carries — the drift a payload has to survive out loud. */
+export const RETIRED_SKILL_ID = "acme-web-retired"
+
+// The ids these payloads are stored under, beside `STORED_ID` for the reason
+// it is here: an id is what a link carries, and a suite that made one up per
+// spec would have no way of holding two of them apart.
+export const MARKETPLACE_IMPORT_ID = "AcmeMk_1"
+export const PRIVATE_IMPORT_ID = "AcmePv_2"
+export const DRIFTED_IMPORT_ID = "AcmeDr_3"
+
+// Parsed rather than asserted, for the reason every fixture beside it is: a
+// payload that drifts from the shared contract fails here rather than in
+// whichever assertion happens to read the changed field.
+const marketplacePayload = (marketplace: string, skillIds: string[]) =>
+  seedPayloadSchema.parse({
+    v: SEED_VERSION,
+    matrixVersion: MARKETPLACE_CATALOG.version,
+    stackId: null,
+    marketplace,
+    skills: Object.fromEntries(
+      skillIds.map((skillId) => [
+        skillId,
+        {
+          install: "plugin",
+          scope: "project",
+          assignments: { "web-developer": "preloaded" },
+        },
+      ])
+    ),
+    agents: {},
+  })
+
+/** A marketplace anyone may read. */
+export const MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
+  ACME_SKILL_ID,
+])
+
+/** One that needs a token, which is where the recovery flow starts. */
+export const PRIVATE_MARKETPLACE_PAYLOAD = marketplacePayload(
+  PRIVATE_MARKETPLACE_REF,
+  [ACME_SKILL_ID]
+)
+
+/** One naming a skill its own marketplace has since retired. */
+export const DRIFTED_MARKETPLACE_PAYLOAD = marketplacePayload(MARKETPLACE_REF, [
+  ACME_SKILL_ID,
+  RETIRED_SKILL_ID,
+])
+
+/** The id a link carrying a pair the two scopes rule out is addressed by. */
+export const OUT_OF_SCOPE_IMPORT_ID = "AcmeSc_4"
+
+/**
+ * A configuration minted before the scope rule existed.
+ *
+ * A project-scoped skill assigned to a sub-agent the payload says nothing about
+ * — so that agent rests at global, where a project skill can never reach it.
+ * Every payload the editor minted up to now could carry one, and the CLI's own
+ * `--from` decode throws on it rather than installing quietly around it, so
+ * these links are out in the world and cannot be installed.
+ *
+ * On the public catalogue deliberately: what this exercises is the arrival, and
+ * a marketplace to seat first would only add a second thing that could fail.
+ */
+export const OUT_OF_SCOPE_PAYLOAD = seedPayloadSchema.parse({
+  v: SEED_VERSION,
+  matrixVersion: "1.0.0",
+  stackId: null,
+  skills: {
+    "web-framework-react": {
+      install: "plugin",
+      scope: "project",
+      assignments: { "web-developer": "preloaded" },
+    },
+  },
+  agents: {},
+})
+
+// A SECOND marketplace, for the browser that has saved more than one.
+//
+// Derived from the first by renaming rather than written out again: every id,
+// category and display name carries `bigco` where the fixture carries `acme`.
+// CLI-498's prefix rule is what makes a rename enough — a marketplace's ids
+// carry its own name, so two catalogues share no id at all, which is both
+// realistic and what makes "which one is on the grid" observable rather than a
+// matter of counting.
+export const BIGCO_REF = "bigco/skills"
+
+// The same repository as `--marketplace` takes it, which is the form the slot
+// holds and the switcher lists. Written out for the reason its siblings above
+// are: a fixture states the wire value rather than asking the app what it would
+// produce.
+export const BIGCO_CANONICAL_REF = "github:bigco/skills"
+
+// Parsed rather than cast, for the reason every fixture beside it is — a rename
+// that broke the shape would otherwise be a cast's problem to hide.
+export const BIGCO_CATALOG = matrixSchema.parse(
+  JSON.parse(
+    JSON.stringify(MARKETPLACE_CATALOG)
+      .replaceAll("acme", "bigco")
+      .replaceAll("Acme", "Bigco")
+  )
+)
 
 // Where GitHub serves a file's own bytes. A second origin rather than a path on
 // the first, and that is the point: it is a CDN with `access-control-allow-

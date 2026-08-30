@@ -9,6 +9,8 @@
     // environment-agnostic package to one of the three for no gain.
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src"],
+  // vitest.config.ts is here so ESLint's project service can find it: a file in
+  // no tsconfig is a parse error under type-aware linting, not a skipped file.
+  "include": ["src", "vitest.config.ts"],
   "exclude": ["node_modules"]
 }
