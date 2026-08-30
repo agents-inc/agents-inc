@@ -3,7 +3,6 @@ type: anti-pattern
 severity: medium
 affected_files:
   - e2e/pages/steps/build-step.ts
-  - e2e/helpers/handrun.gen.mjs
   - e2e/interactive/init-wizard-category-header.e2e.test.ts
   - src/cli/components/wizard/category-grid.tsx
   - .ai-docs/reference/testing/e2e-infrastructure.md

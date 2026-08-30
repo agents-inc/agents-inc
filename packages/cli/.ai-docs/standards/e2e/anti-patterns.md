@@ -376,7 +376,7 @@ grep -rn 'UNPARSEABLE_YAML\|SYNTAX_ERROR' e2e --include='*.ts'
 
 **What:** Reaching for `ProjectBuilder.editable({ skills, globalSkills })` — the obvious "installed at both scopes" fixture — for a spec that presses `s` to collapse `[P][G]` to `[G]`.
 
-**Why:** That fixture hardcodes `source: "eject"` for BOTH halves, and `toggleSkillScope` refuses a project->global press in exactly that shape. `wouldOverwriteGlobalEject` fires when the live entry is `scope: "project"` + `source: "eject"`, the snapshot holds an ACTIVE global entry with `source: "eject"`, and the live config carries no tombstone. The press emits a toast and changes nothing — **so the spec fails on a swallowed keystroke rather than on the render it claims to test.** That is a false RED that looks exactly like the bug under test.
+**Why:** That fixture hardcodes `origin: "eject"` for BOTH halves, and `toggleSkillScope` refuses a project->global press in exactly that shape. `wouldOverwriteGlobalEject` fires when the live entry is `scope: "project"` + `origin: "eject"`, the snapshot holds an ACTIVE global entry with `origin: "eject"`, and the live config carries no tombstone. The press emits a toast and changes nothing — **so the spec fails on a swallowed keystroke rather than on the render it claims to test.** That is a false RED that looks exactly like the bug under test.
 
 **Instead:** give at least the global half a non-eject source (e.g. a marketplace name). Build the config directly rather than through `ProjectBuilder.editable` when the pairing matters, and say why in the file-level JSDoc. **Every `s`-collapse spec needs a proof-of-execution assertion on the scope badges (`["P"]` -> `["G"]`)** so a refused press cannot masquerade as a rendering bug. The unit-level fixture for the same scenario already dodges this by using a marketplace source on both entries.
 
@@ -539,7 +539,9 @@ expect(honoProjectLines, "the collapsed pair must leave no project-scope entry")
 
 **Why:** it is a claim about the config writer's line breaking, not about the config. The scan only finds an entry while the writer keeps that entry's `id` and its `scope` on one emitted line, so a pure formatting change reads as a product regression in the positive direction — and in the negative direction above it is worse: the filter finds nothing, the `toStrictEqual([])` passes, and the spec reports that a project-scope entry is absent when all that happened is that the writer wrapped.
 
-**Instead:** load structurally. `readSkillEntries(dir, skillId)` (`e2e/fixtures/dual-scope-helpers.ts`) returns that skill's entries and is filtered on `scope`; `loadConfigOrFail(dir)` and `readAgentEntriesFor(dir, name)` (`e2e/helpers/test-utils.ts`) cover the rest. Reading raw config text with a single `toContain` for one token — `'"excluded":true'` — stays acceptable; the ban is on split/loop/filter extraction, matching CLAUDE.md's wording.
+**That hazard is not hypothetical, and the retired block above shows the whole of it.** On 2026-08-26 an owner ruling made both emitted halves a prettier fixed point, and every byte moved: `"scope":"project"` became `scope: 'project'`, so the filter's needle stopped existing. Nothing about the config changed. In the negative form that spec used, the scan would have gone on passing.
+
+**Instead:** load structurally. `readSkillEntries(dir, skillId)` (`e2e/fixtures/dual-scope-helpers.ts`) returns that skill's entries and is filtered on `scope`; `loadConfigOrFail(dir)` and `readAgentEntriesFor(dir, name)` (`e2e/helpers/test-utils.ts`) cover the rest. Reading raw config text with a single `toContain` for one token — `"excluded: true"` — stays acceptable; the ban is on split/loop/filter extraction, matching CLAUDE.md's wording. **Re-derive that token before writing one**, rather than copying it from here or from a neighbouring spec: it is a claim about the writer's exact bytes, which the ruling above has already moved once. `packages/compile/src/contract/emission-scenarios.ts` is where those bytes are written down.
 
 All three sites named above now take that form, and they are worth reading as the three shapes the replacement comes in. `scope-toggle-combined` and `scope-toggle-config-snapshot` assert `readSkillEntries(projectDir, E2E_SKILL.hono.id)` against `toStrictEqual([{ id, scope: "global", origin: "eject" }])` — which says more than the retired scan did, because it pins what the collapse LEFT as well as what it removed, where `toStrictEqual([])` could only ever say "nothing matched my filter". `dual-scope-edit-scope-changes` carries the agent-side equivalent through `readAgentEntriesFor`, and `scope-change-deselect-integrity` compares `(await loadConfigOrFail(fakeHome)).skills` against a structurally-loaded before-snapshot rather than two line scans of the same text. The suite currently holds no split/loop/filter over raw `config.ts` text, and since the normalizers moved out it holds no `split` over config text at all: every remaining `split("\n")` under `e2e/` is over rendered TERMINAL output — the step page objects and `base-step.ts`, plus the hand-run harness, where `handrun-journeys.ts` reads the binary's stdout and one line of `handrun-driver.ts` takes the first line of an error to report it. The two whole-file normalizers, `normalizeConfigPreservingOrder` and `normalizeGlobalConfig`, live in `src/cli/lib/__tests__/helpers/config-comparison.ts` with their own spec and reach specs through `e2e/helpers/test-utils.ts`; both drop the machine-specific `"projects"` line before an equality and extract nothing, which is what keeps them outside this ban.
 
@@ -881,7 +883,7 @@ See the `src/`-side sibling of this rule, `.ai-docs/agent-findings/2026-08-01-un
 
 **Why:** Only checks the file exists, not its content. A corrupted or wrong config passes.
 
-**Instead:** Always pass parameters: `toHaveConfig({ skillIds: [...], agents: [...], source: "..." })`.
+**Instead:** Always pass parameters. `ConfigExpectations` is four fields — `skillIds`, `agents`, `marketplace` and `origin` — so `toHaveConfig({ skillIds: [...], agents: [...], origin: "..." })`. There is no `source` option; the field it used to name is `origin`, and `marketplace` beside it is a different question that only `origin` is ever `"eject"` for.
 
 ### Never omit negative assertions after removals
 
@@ -893,7 +895,7 @@ See the `src/`-side sibling of this rule, `.ai-docs/agent-findings/2026-08-01-un
 
 ### Never accept config state as proof that an external operation happened
 
-**What:** Asserting `config.ts` records `source: "<marketplace>"` after a plugin install or a mode migration, and stopping there.
+**What:** Asserting `config.ts` records `origin: "<marketplace>"` after a plugin install or a mode migration, and stopping there.
 
 **Why:** the config entry and the install are written by different code, and the whole orphan-entry class is exactly the case where the first happened and the second did not. `edit-wizard-plugin-migration.e2e.test.ts` → "mode migration local -> plugin" was green while `claude plugin install` failed on **every** run: the migration deleted each ejected working copy first, downgraded install failures to warnings, and persisted a config claiming a marketplace source for skills that were never installed. The spec asserted the exit code and the config, so it certified precisely the state the rule forbids — and the underlying cause (the migration path never registered the marketplace, unlike every other install path) stayed invisible until the warning was promoted to a hard error and the spec finally went red.
 
@@ -938,16 +940,13 @@ See the `src/`-side sibling of this rule, `.ai-docs/agent-findings/2026-08-01-un
 
 ### Never use broad negative assertions on merged configs
 
-**What:** `expect(projectConfig).not.toContain('"source":"eject"')` on a config that contains both project-scoped and global-scoped entries.
+**What:** `expect(projectConfig).not.toContain("origin: 'eject'")` on a config that contains both project-scoped and global-scoped entries.
 
-**Why:** The merged config contains entries from BOTH scopes. An excluded global entry legitimately retains `"source":"eject"` as a tombstone. A broad `not.toContain` catches entries from the wrong scope.
+**Why:** The merged config contains entries from BOTH scopes. An excluded global entry legitimately retains `origin: 'eject'` as a tombstone. A broad `not.toContain` catches entries from the wrong scope, so the assertion fails on state the product is right to have written.
 
-**Instead:** Target the specific scope's entry with a regex or use `toHaveConfig` which checks config content at a higher level:
+**Instead:** `readSkillEntries(dir, skillId)` (`e2e/fixtures/dual-scope-helpers.ts`), which returns that id's entries as loaded structures and lets a `toStrictEqual` say which scope carries which `origin`; or `toHaveConfig({ skillIds, origin })`, which judges `origin` over the named ids rather than over the file's text.
 
-```typescript
-const projectHonoSource = config.match(/"api-framework-hono","scope":"project","source":"([^"]+)"/);
-expect(projectHonoSource![1]).not.toBe("eject");
-```
+**Not a regex over the raw file.** This section used to recommend exactly that, and it was wrong twice over: it is the extraction the split/loop/filter ban above forbids, and its needle was a claim about the writer's bytes that the 2026-08-26 formatting ruling has since falsified — a `match` that no longer matches returns `null`, and the `!` behind it turns a stale needle into a thrown `TypeError` rather than a failed expectation.
 
 ### Never assume skill ordering is alphabetical
 

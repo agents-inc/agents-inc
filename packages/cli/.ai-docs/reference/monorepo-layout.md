@@ -68,19 +68,21 @@ a change inside `packages/cli` can break or be broken by.
 `package.json` -> `workspaces` is `["apps/*", "packages/*"]`. Bun is the only package manager; there
 is exactly one lockfile, `bun.lock`, at the root.
 
-| Workspace                    | Package name                   | Owns                                                                        |
-| ---------------------------- | ------------------------------ | --------------------------------------------------------------------------- |
-| `packages/cli`               | `agents-inc`                   | The CLI. The only published workspace                                       |
-| `packages/matrix`            | `@workspace/matrix`            | The browser-safe skill catalog the web app reads, plus the seed wire schema |
-| `packages/ui`                | `@workspace/ui`                | The design system: tokens and primitives                                    |
-| `packages/api-mocks`         | `@workspace/api-mocks`         | The msw handlers and fixtures the web side tests against                    |
-| `packages/eslint-config`     | `@workspace/eslint-config`     | Shared flat configs                                                         |
-| `packages/prettier-config`   | `@workspace/prettier-config`   | The single Prettier config, declared once in the root `package.json`        |
-| `packages/typescript-config` | `@workspace/typescript-config` | Shared tsconfigs                                                            |
-| `packages/vitest-config`     | `@workspace/vitest-config`     | Shared Vitest presets                                                       |
-| `apps/editor`                | `editor`                       | The web configurator                                                        |
-| `apps/www`                   | `www`                          | Astro landing page + Starlight docs site                                    |
-| `apps/server`                | `server`                       | The Cloudflare API worker behind `init --from`, and the skills index        |
+| Workspace                    | Package name                   | Owns                                                                                                                                                                 |
+| ---------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cli`               | `agents-inc`                   | The CLI. The only published workspace                                                                                                                                |
+| `packages/matrix`            | `@workspace/matrix`            | The browser-safe skill catalog the web app reads, plus the seed wire schema                                                                                          |
+| `packages/compile`           | `@workspace/compile`           | The pure renderers the CLI writes with and the editor previews with                                                                                                  |
+| `packages/ui`                | `@workspace/ui`                | The design system: tokens and primitives                                                                                                                             |
+| `packages/api`               | `@workspace/api`               | The typed worker client both front doors reach the worker through — `hc<AppType>` configured once, with `credentials: "include"` as a default you opt out of by name |
+| `packages/api-mocks`         | `@workspace/api-mocks`         | The msw handlers and fixtures the web side tests against                                                                                                             |
+| `packages/eslint-config`     | `@workspace/eslint-config`     | Shared flat configs                                                                                                                                                  |
+| `packages/prettier-config`   | `@workspace/prettier-config`   | The single Prettier config, declared once in the root `package.json`                                                                                                 |
+| `packages/typescript-config` | `@workspace/typescript-config` | Shared tsconfigs                                                                                                                                                     |
+| `packages/vitest-config`     | `@workspace/vitest-config`     | Shared Vitest presets                                                                                                                                                |
+| `apps/editor`                | `editor`                       | The web configurator                                                                                                                                                 |
+| `apps/www`                   | `www`                          | Astro landing page + Starlight docs site                                                                                                                             |
+| `apps/server`                | `server`                       | The Cloudflare API worker behind `init --from`, and the skills index                                                                                                 |
 
 **The `apps/server` row names two surfaces and `packages/cli` consumes exactly one of them.** The
 seed route behind `init --from` is a CLI dependency; the **federated skill index** is not — nothing
@@ -94,12 +96,15 @@ cannot break or be broken by. The one place the two halves touch is
 `bytes` exists to be weighed against, and part of the wire contract the CLI _does_ read; that
 belongs to [`features/seed-contract.md`](./features/seed-contract.md).
 
-**`@workspace/api-mocks` ships three entry points on purpose**, each for a consumer that must not
-pay for the others: `.` (`src/index.ts`), `./fixtures` (`src/fixtures.ts`, deliberately free of any
-msw import so the Playwright runner — which keeps its own interception and wants only the payloads —
-never loads an interceptor it will not use) and `./node` (`src/node.ts`, the one place `msw/node` is
-named, which keeps the environment choice out of every other file). Its `package.json` carries that
-argument in its own `//exports` field.
+**`@workspace/api-mocks` ships several entry points on purpose**, each for a consumer that must not
+pay for the others — re-derive them from its `exports` field rather than from a count here. `.`
+(`src/index.ts`); `./fixtures` (`src/fixtures.ts`, deliberately free of any msw import, because a
+fixture is a value and anything that is not testing should be able to read one); and `./node`
+(`src/node.ts`, the one place `msw/node` is named, which keeps the environment choice out of every
+other file). The Playwright suite used to be the reason `./fixtures` stayed msw-free — it kept its
+own `page.route` interception — and since 2026-08-29 it answers from this package's handlers
+instead, so that argument has changed while the rule has not. Its `package.json` carries the
+reasoning in its own `//exports` field.
 
 **The CLI is in `packages/`, not `apps/`, because it is published.** That is the whole of the
 reason; nothing else follows from it.
@@ -150,21 +155,37 @@ Same mechanism, opposite direction. Prettier reads a `.gitignore` only from its 
 `format:check` is the first step of `prepublishOnly`. The three rules are restated locally so
 `prettier --check .` agrees with git from either directory. The file carries the reason inline.
 
-### Three tracked files are named as `.gitignore` negations
+### Every tracked `CLAUDE.md` is named as a `.gitignore` negation, and forgetting one is silent
 
-`.gitignore` matches `CLAUDE.md` and `V2.md` unanchored, and one test fixture path. All three were
-tracked from before those rules existed, which git honours indefinitely — until the file moves. The
-move into `packages/cli` broke that grandfathering, so the commit would have recorded a deletion and
-never added the replacement. The fixture is read from disk by a test, so a fresh clone would have
-failed on CI while passing locally.
+`.gitignore` matches `CLAUDE.md` and `V2.md` unanchored, plus one test fixture path. The negations
+are exact paths, so every **other** `CLAUDE.md` in the repository stays ignored — which is the whole
+hazard. Read the current list rather than trusting one written here:
 
 ```
-!packages/cli/CLAUDE.md
-!packages/cli/V2.md
-!packages/cli/src/cli/lib/__tests__/fixtures/stacks/default/CLAUDE.md
+grep -n '^!' .gitignore
 ```
 
-The negations are exact paths, so every **other** `CLAUDE.md` in the repository stays ignored.
+They arrive by two different routes. The CLI's three were **tracked before those rules existed**,
+which git honours indefinitely — until the file moves. The move into `packages/cli` broke that
+grandfathering, so the commit would have recorded a deletion and never added the replacement; the
+fixture is read from disk by a test, so a fresh clone would have failed on CI while passing locally.
+The root `CLAUDE.md` and `packages/ui/CLAUDE.md` were instead **written new into an ignored path**,
+and that route has no failure at all.
+
+`packages/ui/CLAUDE.md` is the cautionary one (REPO-41, un-ignored 2026-08-29). It held 12KB of
+design-system guidance and lived on a single machine for the whole of its life. Nothing broke: no
+gate reddens, no checker fires, no clone reports a missing file it was never told to expect — the
+guidance is simply absent, and every agent working from a fresh clone silently works without it. It
+surfaced only because a doc-correction pass edited it and an audit asked whether those edits would
+survive a clone. **A new workspace `CLAUDE.md` needs its negation on the day it is written.** The
+census that would have caught it:
+
+```
+for f in $(find . -name CLAUDE.md -not -path './node_modules/*'); do
+  git check-ignore -q "$f" && echo "IGNORED $f"
+done
+```
+
 Removing them re-arms the deletion.
 
 ### `apps/www` has no React integration, deliberately
@@ -351,7 +372,7 @@ per-file ESLint and formatting pass that gates publishing.
 
 ## CI
 
-`.github/workflows/ci.yml` is the only workflow. Three jobs: `check-cli`, `check-web`, `deploy`.
+`.github/workflows/ci.yml` is the CI workflow. Its jobs are listed in the timeout table below.
 
 Two workflows were **deleted rather than moved** during the merge — one in each former repository —
 whose only job was to tell the other repository that the catalog had changed. They are one
@@ -385,7 +406,7 @@ step and `test`, and installs once for both suites. Only chromium is configured,
 installed. Moving that step back down to just above `test:e2e` fails the unit run.
 
 **Node is pinned, not inherited.** `env.NODE_VERSION: 22` and an `actions/setup-node` step in all
-three jobs. Installing bun and nothing else leaves a run on whatever Node `ubuntu-latest` ships that
+every job. Installing bun and nothing else leaves a run on whatever Node `ubuntu-latest` ships that
 week, and that Node is not incidental: the CLI's E2E harness launches
 the CLI with `pty.spawn("node", …)`, so the runner's Node is the runtime that executes the thing
 under test. Pinning it means CI tests the floor `packages/cli/package.json` declares.
@@ -393,11 +414,13 @@ under test. Pinning it means CI tests the floor `packages/cli/package.json` decl
 **Every job carries `timeout-minutes`**, because GitHub's default is six hours and this repository
 has already burned seventy minutes of runner time on one hang.
 
-| Job         | Timeout | Measured (three green runs,) |
-| ----------- | ------- | ---------------------------- |
-| `check-web` | 15      | 4–5 minutes                  |
-| `check-cli` | 40      | 25–26 minutes                |
-| `deploy`    | 10      | ~30 seconds                  |
+| Job             | Timeout | Measured                         |
+| --------------- | ------- | -------------------------------- |
+| `check-web`     | 15      | 4–5 minutes (three green runs)   |
+| `check-cli`     | 40      | 25–26 minutes (three green runs) |
+| `visual-ui`     | 15      | not yet run                      |
+| `visual-editor` | 20      | not yet run                      |
+| `deploy`        | 10      | ~30 seconds                      |
 
 The numbers are measured and then given headroom. **The point is to bound a hang, not to police
 duration** — do not tighten one because a run came in fast.

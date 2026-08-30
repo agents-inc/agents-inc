@@ -79,7 +79,7 @@ Descriptive: how the CLI works and where its pieces live.
 | `reference/features/plugin-system.md`          | Plugin discovery, manifest generation, installation, marketplace                                                      |
 | `reference/features/operations-layer.md`       | Composable operations (source, skills, project) and their typed results, including compiled-agent removal and pruning |
 | `reference/features/seed-contract.md`          | The `init --from` wire contract, imported from `@workspace/matrix/seed`                                               |
-| `reference/features/code-generation.md`        | The three `scripts/` generators, their outputs, and the checks that guard them                                        |
+| `reference/features/code-generation.md`        | The four `scripts/` generators, their outputs, and the checks that guard them                                         |
 
 ### Types
 
@@ -251,17 +251,19 @@ unsanctioned.
 | `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-section-scroll.ts`     | Measure-every-render effect                                                                               |
 | `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-panel-scroll.ts`       | Measure-every-render effect                                                                               |
 
-**Open gap: no generator check runs at pre-commit.** There are three. `generate:schemas:check` runs
-in `ci.yml`'s `check-cli` job and in `prepublishOnly`; `generate:matrix:check` runs in `ci.yml`'s
-`check-web` job, from `packages/cli`; `generate:types:check` runs in `prepublishOnly` only, because
-`generate:types` reads a `skills` checkout and every `ci.yml` job checks out this repository alone —
-do not "complete the pair" in `ci.yml`. (`regenerate-catalog.yml` does check the marketplace out and
-runs all three generators as writers; that is a different job from checking a committed artefact.) A
-stale generated artefact can therefore sit on `main` until the next CI run (schemas, matrix) or the
-next publish (types). The three write scripts compose into one, `bun run generate`, in dependency
-order.
+**Open gap: no generator check runs at pre-commit.** There are four. `generate:schemas:check` runs
+in `ci.yml`'s `check-cli` job and in `prepublishOnly`; `generate:matrix:check` and
+`generate:compile:check` both run in `ci.yml`'s `check-web` job, from `packages/cli`;
+`generate:types:check` runs in `prepublishOnly` only, because `generate:types` reads a `skills`
+checkout and every `ci.yml` job checks out this repository alone — do not "complete the pair" in
+`ci.yml`. (`regenerate-catalog.yml` does check the marketplace out and runs the three marketplace
+generators as writers; that is a different job from checking a committed artefact, and
+`generate:compile` is not on that chain — it vendors this package's own agent partials and
+templates into `packages/compile`.) A stale generated artefact can therefore sit on `main` until the
+next CI run (schemas, matrix, compile) or the next publish (types). The four write scripts compose
+into one, `bun run generate`, in dependency order.
 
-**All three checks are now runnable by a sub-agent.** Each compares emitted bytes against the bytes
+**All four checks are now runnable by a sub-agent.** Each compares emitted bytes against the bytes
 on disk and names every drifted path; none reads git state. Two of them used to be
 `<generator> && git diff --exit-code <path>`, which no agent could run under the no-write-git rule
 and which answered a different question anyway on a curated working tree.

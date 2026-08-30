@@ -500,6 +500,26 @@ both interpolate `STANDARD_FILES.CONFIG_TYPES_TS` rather than hardcoding `config
 
 ## Constants Reference (`src/cli/consts.ts`)
 
+**Fifteen of the names below are declared in `packages/compile/src/paths.ts` and re-exported by
+`consts.ts`, which is still the one address every CLI call site reads them at.** The re-exported
+set is `CLAUDE_DIR`, `CLAUDE_SRC_DIR`, `CLI_INVOKE_COMMAND`, `DEFAULT_PLUGIN_NAME`,
+`DEFAULT_PUBLIC_SOURCE_NAME`, `DIRS`, `EJECT_SOURCE`, `GLOBAL_CONFIG_NAME`, `LOCAL_PSEUDO_CATEGORY`,
+`LOCAL_SKILLS_PATH`, `PLUGIN_MANIFEST_FILE`, `SKILLS_DIR_PATH`, `SOURCE_SRC_DIR`, `STANDARD_DIRS`
+and `STANDARD_FILES` — so the `DIRS`, `STANDARD_FILES` and `STANDARD_DIRS` tables below are the
+package's whole, and the Paths table is split between the two files. What `consts.ts` still
+declares is the half that reads the machine: `PROJECT_ROOT` (derived with
+`fileURLToPath(import.meta.url)` at module load), `globalInstallRoot()`, `cacheRoot()` and the
+plugin/marketplace names. Re-derive the split rather than carrying it:
+
+```
+sed -n '/^export {/,/@workspace\/compile/p' src/cli/consts.ts
+```
+
+**`scripts/check-enumeration-drift.ts` reads the package, not this file.** Its registry points at
+`../compile/src/paths.ts` for these rows, with the reason written above the constant — no call site
+moved, but the declarations these rows enumerate did. A row added to a table below has to be added
+against the package's declaration to be gated.
+
 ### Paths
 
 | Constant                   | Value                        | Purpose                                                                                                                                                                                                         |

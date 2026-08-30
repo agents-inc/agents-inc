@@ -226,9 +226,107 @@ A test belongs in `e2e/` if it:
 1. **Spawns the CLI binary** — via `CLI.run()` for non-interactive or `InitWizard.launch()` / `EditWizard.launch()` for interactive
 2. **Sends input the way a user would** — command-line args or wizard step methods
 3. **Asserts on what the user sees** — terminal output, exit codes, file-system state through matchers
-4. **Never calls production functions directly** — no importing `recompileAgents()`, `writeProjectConfig()`, or `splitConfigByScope()`
+4. **Never calls a production function to PERFORM the work under test** — no `recompileAgents()` standing in for a `compile` run, no `writeProjectConfig()` standing in for an install, no `splitConfigByScope()` standing in for the gate
 
-If a test calls production functions directly, it belongs in `src/cli/lib/__tests__/`, not in `e2e/`.
+If a production function performs the operation, the test belongs in `src/cli/lib/__tests__/`, not in
+`e2e/`. What makes it an e2e test is that the binary did the work; a spec where an import did it is a
+unit test with a temp directory.
+
+### The test rule 4 answers to
+
+**Refactor the whole codebase, leave the behaviour identical: a test worth having still passes.** A
+test that reddens on that refactor was pinning the implementation, not the behaviour, and rule 4 is
+one instance of that principle rather than a rule of its own — a spec that imports a production
+function to perform the work has bound itself to that function's name, signature and location, none
+of which a user can observe.
+
+Owner ruling, 2026-08-26. It is the discriminator for everything below, and it replaces an earlier
+attempt at this section that carved out an exemption for "harness self-tests" — a category invented
+to hold four files rather than derived from anything, which grouped one sound test with three that
+this principle refuses.
+
+#### What this principle governs, and what it does not
+
+**It governs INTEGRATION and END-TO-END tests.** Those are the suites that claim to describe what
+the product does, so a refactor that preserves what the product does must leave them green. Extended
+by owner ruling the same day, because the first draft of this section read as though it governed
+every test in the repository, which would have condemned the unit suite.
+
+**Unit tests of pure functions are wanted and are unaffected.** A pure function's name, signature and
+return value ARE its behaviour — there is no layer beneath it to refactor without changing it — so a
+unit test binding to them is not pinning an implementation. This is where an assertion about a
+specific algorithm, a boundary value or an error shape belongs, and moving such an assertion up into
+an e2e spec to satisfy the principle would be the wrong reading of it: the principle removes
+implementation assertions from the wrong LAYER, it does not delete them.
+
+The practical split:
+
+| Layer               | Binds to                                       | A behaviour-preserving refactor of the internals         |
+| ------------------- | ---------------------------------------------- | -------------------------------------------------------- |
+| unit                | the function under test, by name and signature | may legitimately redden it — the function IS the subject |
+| integration and e2e | what a user does and sees                      | must leave it green                                      |
+
+**And every feature must have end-to-end coverage behind it.** A feature with only unit tests has
+been shown to have working parts and has never been shown to work. This is not satisfied by an
+adjacent spec that happens to touch the surface — the feature needs a spec that drives it the way a
+user drives it and asserts on what a user sees. The unit tests are additional to that, never instead
+of it.
+
+#### The one deliberate implementation test, and why it is allowed
+
+`lifecycle/preview-matches-install` runs a real `init` through a PTY, then re-renders the same
+configuration through `@workspace/compile` and compares against what landed on disk. It imports
+`generateConfigSource`, `generateConfigTypesSource` and `splitConfigByScope` to do it, and **it would
+redden if those were refactored away with behaviour unchanged. That is deliberate.**
+
+It is allowed because the thing it pins is a REQUIREMENT rather than an implementation detail: the
+editor's preview and the CLI's writers must render from one source. The design's constraint is
+explicit — _"generate it from the actual installer, not from a client-side reconstruction. The moment
+someone diffs it against reality and it is off, they stop trusting the configurator"_ — so "both
+front doors reach the same renderer" is a property the product is required to have, and a test may
+pin a required property by name.
+
+**Its circularity is real and does not weaken it.** Both sides of the comparison reach the same
+renderer, so it cannot catch a renderer that is WRONG — `packages/compile`'s own runner pins the
+bytes and does that job. What it catches is the write path silently LEAVING the shared renderer: a
+surviving private copy, an option the writer passes that the preview does not, a canonicalisation
+applied on the way to disk and nowhere else. Each keeps the pinned scenarios green and makes the
+preview a lie.
+
+The bar for adding another: name the requirement the import pins, and say why a user-visible
+assertion cannot reach it. "It was easier" is not that.
+
+#### Four specs in `e2e/` that spawn nothing
+
+Re-judged under the layer split above, and the split moves three of them. They are recorded rather
+than exempted, but only ONE is refused by the principle.
+
+| Spec                                     | What it really is                                                     | Verdict                                                                                                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pages/retry-space`                      | a unit test of the harness's Space retry loop, driven through fakes   | **Sound, misfiled.** `world.pressed === 2` binds to the loop, and the loop IS its subject — legitimate at the unit layer                                 |
+| `pages/list-row-toggle`                  | a unit test of the page object's row reader                           | **Sound, misfiled**, same reasoning                                                                                                                      |
+| `matchers/project-matchers`              | a unit test of an assertion matcher                                   | **Sound, misfiled.** Refactoring the product cannot redden it                                                                                            |
+| `integration/fixture-configs-round-trip` | an integration spec — it sits in `integration/` and claims that layer | **Refused.** The principle governs this layer, and the spec imports `generateConfigSource` and `loadProjectConfigFromDir` by name while spawning nothing |
+
+**The first three are a NAMING defect, not a testing defect**, and the distinction matters because
+the fixes are unrelated: three files claim a layer they do not belong to, and one file belongs to its
+layer and breaks that layer's rule.
+
+`pages/retry-space` is worth reading before touching any of this. It says outright that the race it
+covers is **not reproducible on a real PTY** — Ink registers a remounted `CategoryGrid`'s `useInput`
+handler in an effect, and a keystroke arriving between the commit and the flush is discarded with no
+trace on any surface. A spec that can only exist as a unit test is not a spec that failed to become
+an e2e test.
+
+**Do not start by renaming.** `vitest.config.ts`'s unit project reads `src/**` and `scripts/**`; the
+e2e project reads `e2e/**/*.e2e.test.ts`. A spec renamed off that suffix while still under `e2e/` is
+collected by NOTHING and vanishes silently — a worse failure than the misfiling. Decide the
+destination first.
+
+**Neither rule 4 nor the exception is mechanically checked.** The `no-restricted-imports` group
+banning `generateConfigSource` is scoped to `CLI_SOURCES` (`src/**`) and additionally ignores
+`TEST_FILES`, which lists `**/e2e/**` — so no lint rule, type or gate has ever reached an `e2e/`
+import, in either direction. This is enforced at review and by nothing else.
 
 ---
 

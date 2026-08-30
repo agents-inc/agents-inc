@@ -17,31 +17,31 @@ last_validated: 2026-07-30
 
 **Key Files:**
 
-| File                                               | Purpose                                                                                                                                 |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/cli/base-command.ts`                          | Shared command behaviour (error handling, terminal-geometry startup gate) — no flags: it declares no `baseFlags`                        |
-| `src/cli/commands/init.tsx`                        | `--marketplace` flag definition — the one command that carries it                                                                       |
-| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--marketplace` before oclif parsing (for the `init` command alone)                                              |
-| `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                           |
-| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                              |
-| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                    |
-| `src/cli/lib/config-gate/`                         | The only code permitted to write `~/.claude-src/config.ts` + `config-types.ts` — `index.ts` is its whole public surface (section 3.4a)  |
-| `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it) |
-| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`); `.claude-src/config.ts` SETTINGS load boundary — raises for a corrupt-but-present config    |
-| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                          |
-| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` ROSTER load boundary; `ConfigLoadError` for corrupt-but-present configs                                         |
-| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                  |
-| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                         |
-| `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                           |
-| `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                               |
-| `src/cli/lib/compiler.ts`                          | Liquid template sanitization, agent output, per-skill pluginRef derivation(`pluginRefFor`)                                              |
-| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                                                               |
-| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                                                            |
-| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                                                            |
-| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                                                                                               |
-| `src/cli/lib/source-validator.ts`                  | Source directory validation (`checkDirNameMatchesSkillId` compares dir name to the SKILL.md machine id)                                 |
-| `src/cli/commands/uninstall.tsx`                   | Filesystem DELETE boundary (plugins, skills, agents, config manifest) + registry deregistration                                         |
-| `src/cli/consts.ts`                                | File size limit constants                                                                                                               |
+| File                                               | Purpose                                                                                                                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/base-command.ts`                          | Shared command behaviour (error handling, terminal-geometry startup gate) — no flags: it declares no `baseFlags`                                                            |
+| `src/cli/commands/init.tsx`                        | `--marketplace` flag definition — the one command that carries it                                                                                                           |
+| `src/cli/hooks/init.ts`                            | Raw argv extraction of `--marketplace` before oclif parsing (for the `init` command alone)                                                                                  |
+| `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                                                               |
+| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                                                                  |
+| `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                                                        |
+| `src/cli/lib/config-gate/`                         | The only code permitted to write `~/.claude-src/config.ts` + `config-types.ts` — `index.ts` is its whole public surface (section 3.4a)                                      |
+| `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it)                                     |
+| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`); `.claude-src/config.ts` SETTINGS load boundary — raises for a corrupt-but-present config                                        |
+| `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                                                              |
+| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` ROSTER load boundary; `ConfigLoadError` for corrupt-but-present configs                                                                             |
+| `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                                                      |
+| `src/cli/lib/configuration/config-types-writer.ts` | Writer selection(project=import-from-global, global=standalone)                                                                                                             |
+| `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                                                               |
+| `src/cli/lib/loading/source-loader.ts`             | Source fetch/network boundary; `matrixOnly` + `skipExtraSources` opt-outs                                                                                                   |
+| `src/cli/lib/compiler.ts`                          | Reads agent partials off disk, resolves template roots, re-exports the sanitizers. Sanitization, render and pluginRef derivation are `packages/compile/src/agent-source.ts` |
+| `src/cli/lib/skills/skill-copier.ts`               | Path traversal prevention                                                                                                                                                   |
+| `src/cli/lib/plugins/plugin-settings.ts`           | Claude settings/registry JSON parsing (`installed_plugins.json` v2 registry)                                                                                                |
+| `src/cli/lib/plugins/plugin-finder.ts`             | Plugin manifest JSON parsing                                                                                                                                                |
+| `src/cli/lib/plugins/plugin-validator.ts`          | Plugin/skill/agent frontmatter validation                                                                                                                                   |
+| `src/cli/lib/source-validator.ts`                  | Source directory validation (`checkDirNameMatchesSkillId` compares dir name to the SKILL.md machine id)                                                                     |
+| `src/cli/commands/uninstall.tsx`                   | Filesystem DELETE boundary (plugins, skills, agents, config manifest) + registry deregistration                                                                             |
+| `src/cli/consts.ts`                                | File size limit constants                                                                                                                                                   |
 
 ---
 
@@ -402,7 +402,7 @@ Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks loca
 
 | Function               | File                              | Input                            | Output                                                                                                   |
 | ---------------------- | --------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `pluginRefFor()`       | `compiler.ts` (module-private)    | `Skill.source` (per-skill field) | a spreadable partial: `{ pluginRef }` holding `${id}:${id}` when non-eject/non-undefined, `{}` otherwise |
+| `pluginRefFor()`       | `@workspace/compile/agent-source` | `Skill.source` (per-skill field) | a spreadable partial: `{ pluginRef }` holding `${id}:${id}` when non-eject/non-undefined, `{}` otherwise |
 | `buildCompileAgents()` | `installation/local-installer.ts` | `SkillConfig.origin` per entry   | `SkillReference.source` carrying the same value                                                          |
 
 **Contract:** `SkillConfig.origin` on each skill config entry is authoritative for that skill's install mode; the compile side reads the same value as `Skill.source`, which `buildCompileAgents` puts there. A skill renders a plugin reference (`${id}:${id}`) only when `skill.source` is defined and not `"eject"`. `undefined` (user-authored local skills, which have no `SkillConfig` entry) and `"eject"` both fall through to bare id. There is no agent-level `installMode` override.
@@ -519,9 +519,14 @@ All three validate: non-empty, length limit, no control characters (`[\x00-\x08\
 
 | Property     | Value                                                 |
 | ------------ | ----------------------------------------------------- |
-| **Location** | `src/cli/lib/compiler.ts`                             |
+| **Location** | `packages/compile/src/agent-source.ts`                |
 | **Function** | `sanitizeCompiledAgentData()`                         |
 | **Pattern**  | `LIQUID_SYNTAX_PATTERN`: `\{\{ \| \}\} \| \{% \| %\}` |
+
+**This boundary is no longer inside `packages/cli`.** `src/cli/lib/compiler.ts` re-exports
+`sanitizeCompiledAgentData` and `sanitizeLiquidSyntax` so every CLI caller reads them where it
+always did, but the declaration and the pattern are in the shared package — which is also what puts
+the editor's output preview behind the same sanitizer rather than a second copy of it.
 
 Sanitizes ALL user-controlled fields before Liquid template rendering:
 

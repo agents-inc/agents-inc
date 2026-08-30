@@ -195,7 +195,7 @@ import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 
 const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
 
-await setupDualScope(sourceDir, sourceTempDir, fakeHome, projectDir);
+await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
 
 // Both scopes have correct config and compiled agents
 await expectDualScopeInstallation(fakeHome, projectDir, {

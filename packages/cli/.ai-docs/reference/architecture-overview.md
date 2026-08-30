@@ -40,7 +40,7 @@ last_validated: 2026-07-30
 | Entry Point | `src/cli/index.ts` (runs oclif with `run()`)                                                                                                                                                                                                                                                                                                                             |
 | Build       | tsup -> `dist/` — entry contract, publish surface and the `oclif` block: [build-and-packaging.md](./build-and-packaging.md)                                                                                                                                                                                                                                              |
 | Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands                                                                                                                                                                                                                                                                                                 |
-| Runtime     | Node.js, floor `>=22` in `engines` (Ink 7 requires it — CI pins Node 22 in all three jobs, and the E2E harness spawns the CLI with the runner's Node). Also Bun-compatible based on test helpers                                                                                                                                                                         |
+| Runtime     | Node.js, floor `>=22` in `engines` (Ink 7 requires it — CI pins Node 22 in every job, and the E2E harness spawns the CLI with the runner's Node). Also Bun-compatible based on test helpers                                                                                                                                                                              |
 
 ## Technology Stack
 
@@ -332,16 +332,18 @@ The `src/cli/types/generated/matrix.ts` file contains the full `BUILT_IN_MATRIX`
 - Source validation: `validateSourceFormat()` in `src/cli/lib/configuration/config.ts`
   - Blocks null bytes, UNC paths, private IPs, path traversal
   - Validates remote and local source formats
-- Liquid injection prevention: `sanitizeCompiledAgentData()` in `src/cli/lib/compiler.ts`
+- Liquid injection prevention: `sanitizeCompiledAgentData()`, declared in `packages/compile/src/agent-source.ts` and re-exported by `src/cli/lib/compiler.ts`
   - Strips `{{`, `}}`, `{%`, `%}` from all user-controlled fields
 - File size limits: `MAX_MARKETPLACE_FILE_SIZE`, `MAX_PLUGIN_FILE_SIZE`, `MAX_CONFIG_FILE_SIZE` in `src/cli/consts.ts`
 - Command injection prevention: Input validation in `src/cli/utils/exec.ts`
 
 ### 10. Config Writer
 
-`src/cli/lib/configuration/config-writer.ts` — `generateConfigSource()` generates TypeScript config files from `ProjectConfig` objects. Supports standalone configs and project configs that import/extend global configs.
+`generateConfigSource()` generates TypeScript config files from `ProjectConfig` objects. It is declared in `packages/compile/src/config-source.ts` and re-exported by `src/cli/lib/configuration/config-writer.ts`, which itself declares only `getGlobalConfigImportPath()` — the one thing the shared package cannot hold, being derived from `os.homedir()`.
 
-Key function: `generateConfigSource(config, options?)`. When `options.isProjectConfig` is true, generates config that imports from the global `~/.claude-src/config` and spreads global arrays.
+Key function: `generateConfigSource(config, catalog, options?)`. The catalogue is a parameter rather than a module the renderer reaches, because the emitted bytes depend on which categories are exclusive and on the order the catalogue declares them — a renderer reading a singleton would answer differently in the CLI, which merges the machine's local skills in, and in the editor.
+
+Without `options.isProjectConfig` it emits the standalone form. With it, there are three outcomes and only two of them emit: `options.globalConfig` inlines the global config's entries, `options.globalImportPath` imports from the global `~/.claude-src/config` and spreads its arrays, and **neither throws**. [config/config-writer.md](./config/config-writer.md) owns the reason — the fall-through this replaced answered a project request with a global-shaped file carrying the `projects` tracking array a project root must never hold.
 
 **Config-types writer selection rule:** There are two writers for `config-types.ts`:
 
@@ -409,7 +411,7 @@ When a project needs to override (disable) a globally-installed skill or agent w
 The authoritative plugin-reference format is **per-skill**, not per-agent.
 
 - `SkillConfig.origin: string` in `src/cli/types/config.ts` is the source of truth: `"eject"` means local filesystem; any other value is a marketplace name (e.g., `"agents-inc"`). The compile side spells the same value `SkillReference.source` / `Skill.source` — `buildCompileAgents` threads one onto the other, so a grep for either name misses half the sites.
-- Compiled agent skill refs are derived per-skill by `pluginRefFor()` (a module-private function in `src/cli/lib/compiler.ts`) as `${id}:${id}`, emitted only when the skill's own `Skill.source` is a marketplace name (not `undefined` and not `"eject"`). The per-skill value gates whether a plugin ref is emitted — it is not part of the ref string. There is no whole-agent `installMode`.
+- Compiled agent skill refs are derived per-skill by `pluginRefFor()` (exported from `packages/compile/src/agent-source.ts`; `src/cli/lib/compiler.ts` imports it and does not re-export it) as `${id}:${id}`, emitted only when the skill's own `Skill.source` is a marketplace name (not `undefined` and not `"eject"`). The per-skill value gates whether a plugin ref is emitted — it is not part of the ref string. There is no whole-agent `installMode`.
 - Mixed installs are expressed by different `Skill.source` values across the skills of a single agent.
 - Plugin install shell commands still use the registration form `{skillId}@{marketplace}`; the compiled-agent body uses the `${id}:${id}` pluginRef form.
 - Hard-error contract: if `installPluginSkills` returns non-empty `failed`, the command MUST hard-error before writing config — one guard, `BaseCommand.reportPluginInstalls`, reached from `init.tsx::handleInstallation` and `edit.tsx::applyPluginChanges` — no silent plugin→eject fallback.

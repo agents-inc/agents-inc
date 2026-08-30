@@ -156,7 +156,7 @@ other four producers of the same rule.
 
 ### 10. Stack-Build Ownership Guard (`shouldIncludeTriple`)
 
-**File:** `src/cli/lib/configuration/config-generator.ts` — used by `buildAgentStack`.
+**File:** `packages/compile/src/seed-to-config.ts` — module-private there, used by `buildAgentStack` in the same module. `configuration/config-generator.ts` re-exports neither name, so the CLI-side entry point that drives both is `generateProjectConfigFromSkills`.
 
 **Trigger:** Writing the config `stack` property during compilation — decides whether to include a `(agent, category, skillId)` triple.
 
@@ -310,7 +310,7 @@ call sites are in `stack-selection.tsx`. See [`../store-map.md`](../store-map.md
 | Scope silent (no focused id)       | `HOTKEY_SCOPE` / wizard.tsx                                                       | Silent  | Scenario B race surface — see Silent Guards section                                                                                                             |
 | Install-mode scope authority       | `setInstallMode` / store                                                          | Silent  | Project-context call against an inherited global slot (`isInheritedGlobalSlot`) — see Install-Mode Scope Authority                                              |
 | Tombstone-aware removal            | `applySkillRemoval` / store                                                       | Silent  | Shapes removal output; collapses dual-scope pairs (resolved)                                                                                                    |
-| Stack-build ownership              | `shouldIncludeTriple` / config-generator                                          | Silent  | Per-agent curation delta pipeline predicate                                                                                                                     |
+| Stack-build ownership              | `shouldIncludeTriple` / `@workspace/compile/seed-to-config`                       | Silent  | Per-agent curation delta pipeline predicate                                                                                                                     |
 | Cross-scope conflict mask          | `maskCollidingGlobalSkills` / `maskCollidingGlobalAgents` / config-gate propagate | Silent  | Write-time, not a keypress guard. Project's own skill wins locally — deliberately asymmetric with the exclusive-swap refusal above                              |
 | Warn-and-return                    | `setInstallMode` / `populateFromSkillIds`                                         | Warn    | Programmatic-misuse logs, plus the per-skill unresolvable report                                                                                                |
 
@@ -318,8 +318,8 @@ call sites are in `stack-selection.tsx`. See [`../store-map.md`](../store-map.md
 
 - `toggleTechnology`, `toggleAgent`, `toggleSkillScope`, `toggleAgentScope`, `applySkillRemoval`, `reconcileSkillConfigs`, `restoreDualScopeAgent`, `isDualScopePair`, `isDualScopeAgentPair`, `setInstallMode`, `isInheritedGlobalSlot`, `populateFromSkillIds`, `goBack`, `setCurrentDomainIndex` — `src/cli/stores/wizard-store.ts`.
 - `HOTKEY_SCOPE` handler, `TOAST_DURATION_MS` effect — `src/cli/components/wizard/wizard.tsx`.
-- `shouldIncludeTriple`, `buildAgentStack` — `src/cli/lib/configuration/config-generator.ts`.
+- `shouldIncludeTriple`, `buildAgentStack` — `packages/compile/src/seed-to-config.ts`, both module-private. `src/cli/lib/configuration/config-generator.ts` re-exports neither.
 - `recordGlobalSourceMigrations`, `logChangeSummary` — `src/cli/commands/edit.tsx`.
-- `reconcileProjectSplitAgainstGlobal`, `maskCollidingGlobalSkills`, `maskCollidingGlobalAgents`, `dropOrphanedDerivedMasks`, `dropOrphanedDerivedAgentMasks`, `buildProjectCollisionTest`, `isExclusiveCategory`, `categoryOfSkill` — `src/cli/lib/config-gate/propagate.ts`. Only the first is exported, and only so `config-gate/index.ts` can call it; the other seven are module-private. (`isExclusiveCategory` is also declared, differently, in `configuration/config-writer.ts` and `matrix/matrix-health-check.ts` — the masking rule uses this one, which reads `exclusive` off the merged matrix.)
+- `reconcileProjectSplitAgainstGlobal`, `maskCollidingGlobalSkills`, `maskCollidingGlobalAgents`, `dropOrphanedDerivedMasks`, `dropOrphanedDerivedAgentMasks`, `buildProjectCollisionTest`, `isExclusiveCategory`, `categoryOfSkill` — `src/cli/lib/config-gate/propagate.ts`. Only the first is exported, and only so `config-gate/index.ts` can call it; the other seven are module-private. (`isExclusiveCategory` is also declared, differently, in `matrix/matrix-health-check.ts` and in `packages/compile/src/catalog.ts` — the masking rule uses this one, which reads `exclusive` off the merged matrix.)
 
 > **See also:** [tombstone-pattern.md](./tombstone-pattern.md) for tombstone lifecycle interacting with scope guards; [scope-system.md](./scope-system.md) for the project/global distinction the guards enforce.

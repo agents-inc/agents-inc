@@ -273,22 +273,26 @@ beside their components under `src/cli/components/`. Derive the list with
 `fg "src/cli/**/*.test.{ts,tsx}"` rather than reading one here; a hand-listed inventory of that size
 drifts within a fortnight, and `DOCUMENTATION_MAP.md` § Coverage owns the total.
 
-Script tests run in the `unit` project through its `scripts/**/*.test.ts` include:
+Script tests run in the `unit` project through its `scripts/**/*.test.ts` include. The roster is a
+command rather than a list here, for the reason stated two paragraphs up — this one had drifted to
+ten entries while the directory held nineteen, and a hand-list is what makes that invisible:
 
 ```
-scripts/check-enumeration-drift.test.ts    # The documentation-enumeration registry
-scripts/check-findings-frontmatter.test.ts # agent-findings frontmatter schema
-scripts/check-mirrored-constants.test.ts   # A structural value e2e/pages/constants.ts mirrors vs what the product declares
-scripts/check-screen-sentinels.test.ts     # An E2E constant a page object waits on vs the string the product paints
-scripts/check-shared-eslint-config.test.ts # Every workspace extends the shared eslint base
-scripts/check-shared-tsconfig.test.ts      # Every workspace extends the shared tsconfig
-scripts/check-shared-vitest-config.test.ts # Every workspace extends the shared vitest config, or declares why not
-scripts/generate-json-schemas.test.ts      # The JSON Schema generator
-scripts/generate-matrix-package.test.ts    # The matrix package generator
-scripts/generate-source-types.test.ts      # The union type code generator
+ls scripts/*.test.ts                             # every script suite
+ls scripts/*.ts | grep -v '\.test\.ts$'          # every script, spec'd or not
+ls scripts/run-check-*.ts scripts/run-generate-*.ts  # the ones something other than a spec invokes
+npx vitest run --project unit scripts/           # run them all, and the count they report
 ```
 
-All three generators are covered. The schema generator's spec is the newest: it was impossible while
+Two families are in there and they read differently. `generate-*.test.ts` covers a WRITER — a
+generator that emits checked-in source, one per artefact, and every one of them has a `run-*` entry
+point. For most `check-*.ts` the SPEC IS the checker: the module has no entry point, nothing runs at
+module scope, and `bun scripts/check-<name>.ts` therefore prints nothing and exits 0 while checking
+nothing — the worst possible false green. Never invoke one that way; run its spec. The exceptions
+are the three `check-shared-*`, which walk every workspace in the monorepo and do have runners the
+repository-root `deps:check` calls. `ls scripts/run-check-*.ts` is the line between the two.
+
+All four generators are covered. The schema generator's spec is the newest: it was impossible while
 that file called `generate()` at module scope, since importing it rewrote the repository's schemas
 and shelled out to prettier — [features/code-generation.md](../features/code-generation.md) carries
 what changed. `scripts/handrun.mjs` has no spec and is not meant to: it is a hand-run entry point,

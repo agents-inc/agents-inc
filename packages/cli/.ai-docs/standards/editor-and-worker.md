@@ -94,7 +94,7 @@ in either one stating it: `apps/server` names `hono/cors` and `@hono/zod-openapi
 grep -n 'path: "[^"]*/index"' apps/server/src/index.ts
 ```
 
-Nothing today. Four routes ship — `/configs`, `/configs/{id}`, `/skills` and `/monitoring`.
+Nothing today. The worker's routes — re-derive them with `grep -n 'app.openapi\|app.on(' apps/server/src/index.ts` rather than trusting a count here; they grew on 2026-08-29 and any list here would be the third one to rot. What is worth stating instead is the SHAPE: every route but one is in the single `.openapi()` chain, and the exception is Better Auth's `/api/auth/*`, mounted with `app.on` because describing somebody else's paths in `createRoute` would be transcribing their contract.
 `/skills` is the near miss this rule is for: it was written as `/skills/index` first, and by the
 mechanism above `client.skills.index.$get()` would have requested `/skills` and 404ed while every
 `SELF.fetch` in the suite kept passing.

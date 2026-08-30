@@ -103,7 +103,7 @@ not here.
       - buildAgentTemplateContext() with a per-skill mapSkill that attaches pluginRef
         via pluginRefFor(skill); splits skills into preloaded vs dynamic. The flag
         it splits on was decided at config-write time by toStackAssignment()
-        (src/cli/lib/configuration/config-generator.ts): the prior save's word for the
+        (packages/compile/src/seed-to-config.ts): the prior save's word for the
         triple (priorLoadState()) wins, and a triple new to the save takes the shared
         preload mapping's default (mappedLoadState() -> resolveLoadState from
         @workspace/matrix) — absent from the mapping means lazy
@@ -135,21 +135,21 @@ balance, template artifacts, frontmatter validity, required patterns) and
 
 ## Key Files
 
-| File                                                         | Purpose                                                                                                 |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `src/cli/lib/compiler.ts`                                    | Core compilation: Liquid engine, agent/skill compile                                                    |
-| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                                         |
-| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                                                       |
-| `src/cli/lib/agents/agent-provenance.ts`                     | The provenance marker: `provenanceMarker`, `hasProvenanceMarker`, `stampProvenanceMarker`, `cliVersion` |
-| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `splitAgentsByProvenance` / `pruneStaleCompiledAgents`  |
-| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                                             |
-| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                                                |
-| `src/cli/lib/resolver.ts`                                    | Resolves skill references and agent configs                                                             |
-| `src/cli/lib/output-validator.ts`                            | Compiled-agent validators with no caller — see "Compiled Output Is Not Validated"                       |
-| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                                            |
-| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation                                            |
-| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                                           |
-| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                                         |
+| File                                                         | Purpose                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/cli/lib/compiler.ts`                                    | The disk half of a compile: Liquid engine, template roots, agent partial reads. Re-exports the renderers from `@workspace/compile/agent-source`, which is where the template context, the sanitizer and `renderAgent` are declared                           |
+| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                                                                                                                                                                                              |
+| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                                                                                                                                                                                                            |
+| `src/cli/lib/agents/agent-provenance.ts`                     | `cliVersion` — this CLI's own manifest version, which a browser has no equivalent of. The three marker functions (`provenanceMarker`, `hasProvenanceMarker`, `stampProvenanceMarker`) are declared in `@workspace/compile/agent-source` and re-exported here |
+| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `splitAgentsByProvenance` / `pruneStaleCompiledAgents`                                                                                                                                                       |
+| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                                                                                                                                                                                                  |
+| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                                                                                                                                                                                                     |
+| `src/cli/lib/resolver.ts`                                    | Resolves skill references and agent configs                                                                                                                                                                                                                  |
+| `src/cli/lib/output-validator.ts`                            | Compiled-agent validators with no caller — see "Compiled Output Is Not Validated"                                                                                                                                                                            |
+| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                                                                                                                                                                                                 |
+| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation                                                                                                                                                                                                 |
+| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                                                                                                                                                                                                |
+| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                                                                                                                                                                                              |
 
 ## The Provenance Marker
 
@@ -164,14 +164,18 @@ name: web-developer
 <!-- Generated by agents-inc v<this CLI's package.json version> — do not edit; compile rewrites this file -->
 ```
 
-`src/cli/lib/agents/agent-provenance.ts` owns it in full.
+`src/cli/lib/agents/agent-provenance.ts` is the one address a CLI caller reads it at, and it is a
+facade over two halves. The three marker functions are declared in
+`packages/compile/src/agent-source.ts`, beside `renderAgent`, which stamps the line — so the
+editor's output preview draws the same first body line rather than computing it a second way. What
+`agent-provenance.ts` itself declares is the half a browser has no equivalent of: `cliVersion()`.
 
-| Export                                    | Contract                                                                                                                                            |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provenanceMarker(version)`               | Composes the line. `MARKER_OPEN` / `MARKER_NOTICE` / `MARKER_CLOSE` are module-private                                                              |
-| `hasProvenanceMarker(content)`            | Whether this CLI compiled the file the content came from. **Position is part of the claim** — only the first body line counts                       |
-| `stampProvenanceMarker(content, version)` | The same content carrying exactly ONE marker, by REPLACEMENT rather than insertion                                                                  |
-| `cliVersion()`                            | This CLI's own published version, read once per process from `package.json` beside the code (`PROJECT_ROOT`) and memoised in a module-level promise |
+| Export                                    | Declared in                       | Contract                                                                                                                                            |
+| ----------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provenanceMarker(version)`               | `@workspace/compile/agent-source` | Composes the line. `MARKER_OPEN` / `MARKER_NOTICE` / `MARKER_CLOSE` are module-private                                                              |
+| `hasProvenanceMarker(content)`            | `@workspace/compile/agent-source` | Whether this CLI compiled the file the content came from. **Position is part of the claim** — only the first body line counts                       |
+| `stampProvenanceMarker(content, version)` | `@workspace/compile/agent-source` | The same content carrying exactly ONE marker, by REPLACEMENT rather than insertion                                                                  |
+| `cliVersion()`                            | `lib/agents/agent-provenance.ts`  | This CLI's own published version, read once per process from `package.json` beside the code (`PROJECT_ROOT`) and memoised in a module-level promise |
 
 **A body comment, deliberately NOT a frontmatter field.** Claude Code documents sixteen supported
 frontmatter keys and says nothing about how it treats an unknown one, so a stricter release could
@@ -194,8 +198,10 @@ rather than inserting beside it, so stamping twice at one version is a fixed poi
 MOVES the line instead of stacking a second one under it.
 
 **One render path, so there is no unmarked output.** Both compile entry points render through
-`renderCompiledAgent` in `src/cli/lib/compiler.ts`, whose last statement is the stamp. A template that
-emits the marker itself still produces exactly one.
+`renderAgent` in `packages/compile/src/agent-source.ts`, whose last statement is the stamp. A
+template that emits the marker itself still produces exactly one. The renderer moved out of
+`src/cli/lib/compiler.ts` with the extraction and is not re-exported by it; `compiler.ts` imports
+it, and so does the editor's output preview, which is what puts both behind the same stamp.
 
 **Who reads it back.** `splitAgentsByProvenance(agentsDir)`
 (`src/cli/lib/agents/list-compiled-agents.ts`) partitions a directory's `*.md` into `marked` and
@@ -277,9 +283,10 @@ The Liquid template renders agent prompts with this structure:
 | Preloaded | Content embedded directly in .md file                | Listed in frontmatter `skills:`  |
 | Dynamic   | Metadata only (id, description, usage) in skill list | Loaded via Skill tool at runtime |
 
-Split logic in `buildAgentTemplateContext()` in `src/cli/lib/compiler.ts`. Which side a skill
-lands on is the stack assignment's `preloaded` flag, resolved when the config was written by
-`toStackAssignment()` in `src/cli/lib/configuration/config-generator.ts`: an explicit prior entry
+Split logic in `buildAgentTemplateContext()` in `packages/compile/src/agent-source.ts`, re-exported
+by `src/cli/lib/compiler.ts`. Which side a skill lands on is the stack assignment's `preloaded`
+flag, resolved when the config was written by `toStackAssignment()` in
+`packages/compile/src/seed-to-config.ts` — module-private there: an explicit prior entry
 beats the mapping, the mapping beats lazy. `priorLoadState()` reads the prior stack entry — a bare
 `{ id }` read back off disk is curated lazy, not silence — and a triple with no prior entry takes
 `mappedLoadState()`, which resolves catalog skill ids on roster agents through `resolveLoadState`
@@ -380,7 +387,7 @@ For native Claude Code plugin distribution:
 
 ### Per-Skill `pluginRef` Format
 
-Helper: `pluginRefFor(skill: Skill): { pluginRef?: PluginSkillRef }` in `src/cli/lib/compiler.ts` — module-private, and it returns a **spreadable partial**, not the ref itself, so the caller writes `{ ...skill, ...pluginRefFor(skill) }` and an ejected skill contributes no key at all. There is no `derivePluginRef` — do not look for one.
+Helper: `pluginRefFor(skill: Skill): { pluginRef?: PluginSkillRef }` in `packages/compile/src/agent-source.ts` — exported there, imported by `src/cli/lib/compiler.ts` and by the editor's `output-preview.ts`, and not re-exported by either. It returns a **spreadable partial**, not the ref itself, so the caller writes `{ ...skill, ...pluginRefFor(skill) }` and an ejected skill contributes no key at all. There is no `derivePluginRef` — do not look for one.
 Constant: `EJECT_SOURCE = "eject"` in `src/cli/consts.ts`.
 
 Rule (mirrors the helper body):
@@ -415,7 +422,7 @@ Per-skill `source` (via `sourceById` -> `pluginRefFor`) is the sole authority fo
 The `sourceById` map in `buildCompileAgents` keys by `SkillId` alone, so a dual-scope skill (same id under `"project"` and `"global"` with different `origin` values) is last-write-wins. The collapse is **not reachable through any production command**:
 
 - `recompileAgents()` (`src/cli/lib/agents/agent-recompiler.ts`) is the **only production caller** of `buildCompileAgents`, and it calls `filterExcludedEntries()` first, dropping the excluded (tombstone) entry so `sourceById` never sees two entries for one id. `init`, `edit` and `compile` all route through it.
-- Even unfiltered, `generateProjectConfigWithInlinedGlobal()` (`config-writer.ts`) emits global entries before project entries, so the active project entry (serialized last) wins -- correct in both mixed-source directions.
+- Even unfiltered, `generateProjectConfigWithInlinedGlobal()` (module-private in `packages/compile/src/config-source.ts`) emits global entries before project entries, so the active project entry (serialized last) wins -- correct in both mixed-source directions.
 
 Covered by the regression test `e2e/lifecycle/dual-scope-mixed-source-compiled-ref.e2e.test.ts`. Keying by `(id, scope)` remains a robustness follow-up.
 

@@ -209,19 +209,32 @@ Only create sources inline when the test requires a unique or modified source (e
 
 **Interactive dual-scope lifecycle tests:** Use `dual-scope-helpers.ts`, which builds dual-scope state through actual wizard interactions:
 
-| Helper                                                                    | Purpose                                                                       |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `createTestEnvironment()`                                                 | Creates tempDir/fakeHome/project with permissions files                       |
-| `initGlobal(sourceDir, sourceTempDir, homeDir)`                           | Runs init wizard in HOME dir with defaults                                    |
-| `initGlobalWithEject(sourceDir, sourceTempDir, homeDir)`                  | Like initGlobal but sets all sources to eject mode                            |
-| `initProject(sourceDir, sourceTempDir, homeDir, projectDir)`              | Runs init with scope toggling (API skill + agent to project)                  |
-| `initProjectAllGlobal(sourceDir, sourceTempDir, homeDir, projectDir)`     | Runs init with eject mode, all skills stay global (no scope toggling)         |
-| `setupDualScope(sourceDir, sourceTempDir, fakeHome, projectDir)`          | Runs both phases and asserts success                                          |
-| `setupDualScopeWithEject(sourceDir, sourceTempDir, fakeHome, projectDir)` | Like setupDualScope but Phase A uses eject mode                               |
-| `createDualScopeEnv(sourceDir, sourceTempDir)`                            | Creates env + runs dual-scope setup with eject, returns `DualScopeEnv`        |
-| `createGlobalOnlyEnv(sourceDir, sourceTempDir)`                           | Creates env with all-global skills (no project scope), returns `DualScopeEnv` |
-| `setupProjectOnlyMixedScope(...)`                                         | Builds a project-only install with mixed per-skill scopes                     |
-| `finishWizard(...)`                                                       | Shared tail of the init phases (sources -> agents -> confirm)                 |
+Every one of them takes the source as a single `E2ESource` — reach for `E2E_SOURCE`, the shared
+plain tree, rather than building one. The two-argument `(sourceDir, sourceTempDir)` spelling this
+table carried until 2026-08-26 has not been the signature since c3c189c8.
+
+| Helper                                                    | Purpose                                                                       |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `createTestEnvironment(options?)`                         | Creates tempDir/fakeHome/project with permissions files                       |
+| `initGlobal(source, homeDir)`                             | Runs init wizard in HOME dir with defaults                                    |
+| `initGlobalWithEject(source, homeDir)`                    | Like initGlobal but sets all sources to eject mode                            |
+| `initProject(source, homeDir, projectDir, options?)`      | Runs init with scope toggling (API skill + agent to project)                  |
+| `initProjectAllGlobal(source, homeDir, projectDir)`       | Runs init with eject mode, all skills stay global (no scope toggling)         |
+| `setupDualScopeWithEject(source, fakeHome, projectDir)`   | Runs both phases and asserts success. **The only dual-scope setup helper**    |
+| `createDualScopeEnv(source)`                              | Creates env + runs dual-scope setup with eject, returns `DualScopeEnv`        |
+| `createGlobalOnlyEnv(source)`                             | Creates env with all-global skills (no project scope), returns `DualScopeEnv` |
+| `setupProjectOnlyMixedScope(source, homeDir, projectDir)` | Builds a project-only install with mixed per-skill scopes                     |
+| `finishWizard(result)`                                    | Shared tail of the init phases (sources -> agents -> confirm)                 |
+
+**There is no plugin-mode dual-scope setup helper, and this table used to imply there was.** A
+`setupDualScope` sat beside `setupDualScopeWithEject` described as the non-eject one, with zero
+callers and — after 2026-08-26 — a byte-identical body, so an author choosing between the two was
+choosing between one behaviour and its own name. It was deleted. The reason no such helper exists is
+in the surviving one's docblock: the shared plain source ships no `.claude-plugin/marketplace.json`,
+so plugin install mode has no marketplace to resolve and `init` refuses the run, while Phase B sets
+every source local regardless. A flow that genuinely needs a PLUGIN global drives `initGlobal`
+against a plugin fixture directly — `lifecycle/dual-scope-edit-mixed-sources.e2e.test.ts` is the
+shape.
 
 **Config readers** (load a scope's `config.ts` structurally rather than string-matching it): `readSkillEntries()`, `readAllSkillEntries()`, `readAgentEntries()`, `readSelectedAgents()`, `readConfigSkillIds()`.
 
@@ -229,7 +242,7 @@ Only create sources inline when the test requires a unique or modified source (e
 
 **Convenience wrappers:** `createDualScopeEnv` and `createGlobalOnlyEnv` combine environment creation + wizard setup + cleanup into a single call. They return a `DualScopeEnv` with `{ fakeHome, projectDir, destroy() }` -- call `destroy()` in `afterEach`/`afterAll` for automatic cleanup.
 
-Use `createTestEnvironment` + `setupDualScope` when you need fine-grained control. Use `createDualScopeEnv`/`createGlobalOnlyEnv` for simpler test setup. Use `ProjectBuilder.dualScope()` when you only need the file structure without running the wizard.
+Use `createTestEnvironment` + `setupDualScopeWithEject` when you need fine-grained control. Use `createDualScopeEnv`/`createGlobalOnlyEnv` for simpler test setup. Use `ProjectBuilder.dualScope()` when you only need the file structure without running the wizard.
 
 ---
 
@@ -281,7 +294,7 @@ grep -rnP '^export const [A-Z_]+ = .*os\.homedir\(\)' src/cli
 | Source factories             | `e2e/helpers/create-e2e-source.ts`     | `createE2ESource()`, `createE2EPluginSource()`                               |
 | Utility helpers              | `e2e/helpers/test-utils.ts`            | `createTempDir()`, `writeProjectConfig()`, `createLocalSkill()`              |
 | UI text and paths            | `e2e/pages/constants.ts`               | `STEP_TEXT`, `DIRS`, `FILES`, `TIMEOUTS`                                     |
-| Dual-scope lifecycle helpers | `e2e/fixtures/dual-scope-helpers.ts`   | `setupDualScope()`, `initGlobal()`                                           |
+| Dual-scope lifecycle helpers | `e2e/fixtures/dual-scope-helpers.ts`   | `setupDualScopeWithEject()`, `initGlobal()`                                  |
 | Expected value constants     | `e2e/fixtures/expected-values.ts`      | `E2E_AGENTS`, `E2E_SKILL_IDS`, `E2E_SKILL`, `E2E_AGENT`, `E2E_AGENT_DISPLAY` |
 | Assertion helpers            | `e2e/assertions/`                      | `expectPhaseSuccess()`, `expectCleanUninstall()`                             |
 | Agent matchers               | `e2e/matchers/agent-matchers.ts`       | `toHaveAgentFrontmatter`, `toHaveAgentDynamicSkills`                         |

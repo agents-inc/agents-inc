@@ -24,7 +24,8 @@ keywords:
     buildCompileAgents,
     buildAgentScopeMap,
     config-to-compile-bridge,
-    formatSectionedUnion,
+    formatMaybeSectionedUnion,
+    installed-format,
     buildSkillsByCategory,
     computeRemovedGlobalSkillIds,
     retainReconciledStack,
@@ -59,12 +60,20 @@ last_validated: 2026-07-30
 
 Replaced the former `writeProjectSourceConfig()`. **Renders only — it writes nothing.** Every function below returns a TypeScript source string; the module has held no filesystem call since the config-gate landed, because a rendered pair half that any caller may then write is exactly the ungated write the gate exists to prevent.
 
-| Function                                 | Purpose                                       |
-| ---------------------------------------- | --------------------------------------------- |
-| `generateConfigSource()`                 | Main entry: generates config.ts source string |
-| `generateBlankGlobalConfigSource()`      | Blank global config (empty arrays)            |
-| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)   |
-| `getGlobalConfigImportPath()`            | Returns absolute path to `~/.claude-src/`     |
+**The renderers themselves live in `@workspace/compile/config-source`**, which
+`config-writer.ts` re-exports — the editor's output preview draws the bytes an install writes
+rather than a second implementation of them, and the table below is bound to the package module:
+
+| Function                            | Purpose                                       |
+| ----------------------------------- | --------------------------------------------- |
+| `generateConfigSource()`            | Main entry: generates config.ts source string |
+| `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)            |
+
+`generateBlankGlobalConfigTypesSource()` (blank config-types.ts, all types `never`) moved with the
+types-half renderers and is listed with them below. What still LIVES in `config-writer.ts` is one
+function, `getGlobalConfigImportPath()` — the absolute path to `~/.claude-src/`, which is
+`os.homedir()` and so the one thing the package cannot hold. It is a parameter of
+`generateConfigSource` (`options.globalImportPath`) rather than a read inside it.
 
 `generateConfigSource` is import-restricted: eslint's L2(c) block admits it only inside `config-gate/**` and `configuration/**` (see [The config-gate](#the-config-gate) below).
 
@@ -78,28 +87,80 @@ Replaced the former `writeProjectSourceConfig()`. **Renders only — it writes n
 
 The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` parameter:
 
-- When `isProjectConfig: true` (no `globalConfig`): generates a config that imports from the global config and spreads global arrays into skills, agents, and selectedDomains.
 - When `isProjectConfig: true` with `globalConfig` provided: generates a self-contained config snapshot via `generateProjectConfigWithInlinedGlobal()`. Both global and project entries for the same skill ID are preserved (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`. Excluded global entries (tombstones) replace their active global counterparts in the global section while the active project entry appears separately in the project section. Stack entries are filtered to project-scoped agents only.
+- When `isProjectConfig: true` with `globalImportPath` and no `globalConfig`: generates a config that imports from the global config and spreads global arrays into skills, agents, and selectedDomains.
+- When `isProjectConfig: true` with **neither**: throws. Inlining and importing are the only two project emissions, so naming neither is refused rather than answered. It used to fall through to the standalone writer, which answered a project request with a **global-shaped** file — `dropProjects` is false there, so the emitted config carried the global `projects` tracking array a project root must never hold. Nothing in the CLI reaches this, but `generateConfigSource` is a public export of `@workspace/compile` and the editor is a caller the CLI cannot see. Pinned by "project config with neither half of the global it extends" in `src/cli/lib/configuration/__tests__/config-writer.test.ts`, whose paired permitted case keeps the refusal scoped to the invalid pairing rather than to project emission at large.
 
-**Extracted fields.** Module-level `EXTRACTED_FIELDS` in `config-writer.ts` names the four fields declared as typed named variables above the `export default` (`const skills: SkillConfig[]`, `const agents: AgentScopeConfig[]`, `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>`, `const selectedDomains: Domain[]`); every other field is emitted inline as a scalar property. `skills`, `agents`, and `selectedDomains` fall back to an empty-literal property when their variable was not emitted; `stack` is omitted entirely when absent. `generateBlankGlobalConfigSource()` emits the same shape at its floor: `"skills": []`, `"agents": []`, `"selectedDomains": []` inline, no named variables.
+**Extracted fields.** Module-level `EXTRACTED_FIELDS` in `packages/compile/src/config-source.ts` — module-private there, and no CLI facade re-exports it — names the four fields declared as typed named variables above the `export default` (`const skills: SkillConfig[]`, `const agents: AgentScopeConfig[]`, `const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>`, `const selectedDomains: Domain[]`); every other field is emitted inline as a scalar property. `skills`, `agents`, and `selectedDomains` fall back to an empty-literal property when their variable was not emitted; `stack` is omitted entirely when absent. `generateBlankGlobalConfigSource()` emits the same shape at its floor: `skills: []`, `agents: []`, `selectedDomains: []` inline, no named variables.
+
+### The emitted pair is already formatted
+
+_Owner ruling, 2026-08-26._ Both halves an install writes land as a **fixed point of prettier** under
+`parser: "typescript", semi: false, singleQuote: true, printWidth: 100, trailingComma: "all"` — so
+running prettier over `.claude-src/config.ts` or `.claude-src/config-types.ts` returns them
+unchanged. Single quotes, no semicolons, trailing commas, and object keys unquoted wherever they are
+valid identifiers (`name:`, `origin:`) and quoted where they are not (`'api-developer':`,
+`'web-framework':`).
+
+**Those settings match NEITHER of this repository's configs, deliberately.** The shared config is
+`singleQuote: false` at 80 columns and this package's own is `semi: true`; the bytes land in a
+USER's project, and this repository's own copy is named in `.prettierignore` so nothing here ever
+formats them. Do not describe the emitted pair as following the repo's style, and do not pull it
+toward either config — that would make the bytes agree with a config no reader of them has.
+
+**One printer, in `packages/compile/src/installed-format.ts`.** It replaced three serialisation
+styles that had coexisted in one emitted file: a compact `JSON.stringify` per array entry,
+`JSON.stringify(value, null, 2)` for the stack, and hand-assembled template strings for everything
+else. Both emitters import from it now — `config-source.ts` takes the value printer
+(`renderValueLine`, `renderArrayLine`, `valueEntries`, `commentEntry`, `sourceEntry`) and
+`config-types-source.ts` takes the union layout (`unionLayout`, `brokenUnionLayout`,
+`renderUnionBody`, `flatUnion`), over the `quoteText`, `renderKey`, `renderTypeImportLine` and
+`INDENT_STEP` both share. That shared middle is what makes the two halves one style rather than
+two, and the module is where a question about quoting, key-quoting or line breaking is answered.
+
+**Prettier is deliberately absent from that module.** It is a devDependency, tsup bundles
+devDependencies, and calling it there would inline the TypeScript parser into the published CLI and
+into the editor's lazily-loaded preview chunk. The module reproduces what prettier does to these
+narrow shapes instead, and its rules were **measured against prettier 3.9 rather than reasoned
+about** — its own docblock names the two behaviours that are not derivable from the width rule: a
+`//` line cannot be folded back onto one line, so an array carrying one always breaks; and the set
+of values that move below their key is not the set a reader would predict (a string, a `null`, an
+empty array and an empty record move; a number and a boolean do not).
+
+**What holds it.** `packages/compile/src/contract/emission-scenarios.test.ts` runs prettier over
+every emitter's output under those settings and demands it come back unchanged — one `it` per file
+per scenario, plus both halves of the blank pair, which no scenario reaches. That is the assertion a
+golden cannot make: the exact bytes are pinned separately by `EMISSION_SCENARIOS`, and a golden
+agrees with whatever was captured, formatted or not. **Any change to an emitter is measured there
+rather than by eye**, and `contract/emission-scenarios.ts` is where the emitted bytes are written
+down — read it before restating any of them here.
 
 ### Stack emission — flag-less assignments compact to bare strings
 
-Every emission path runs the shared `cleanForEmission` helper (JSON round-trip, optional `projects`
-removal, stack compaction, stack key ordering, top-level field ordering). Per assignment,
-`compactAssignment` applies the `carriesFlags` test —
+Every emission path runs the shared `cleanForEmission` helper: JSON round-trip, optional `projects`
+removal, stack compaction, and canonical key ordering at **all three levels the emitted bytes
+expose** — the top-level fields (`CANONICAL_FIELD_ORDER`), the stack's own keys
+(`canonicalizeStackOrder`), and each entry inside the `skills`, `agents` and stack-assignment arrays
+(`withEntriesInSchemaOrder` over `CANONICAL_SKILL_ENTRY_ORDER` and `CANONICAL_AGENT_ENTRY_ORDER`,
+and `compactAssignment` over `CANONICAL_ASSIGNMENT_ORDER`). Every level is ordered in the writer
+rather than by its producer, so the bytes are decided by the config's values alone: the loader
+rebuilds every entry through its schema, so a producer that disagrees with the schema is not a fixed
+point — `toggleSkillScope` mints a tombstone as `{ id, scope, excluded, origin }`, and before the
+entry level was ordered here, an `edit` run that changed nothing about that skill still moved its
+line. Per assignment, `compactAssignment` applies the `carriesFlags` test —
 `Boolean(assignment.preloaded || assignment.local || assignment.path)`:
 
 | Assignment in the config object    | Emitted form              |
 | ---------------------------------- | ------------------------- |
-| `{ id }`                           | `"<id>"` (bare string)    |
-| `{ id, preloaded: false }`         | `"<id>"` (bare string)    |
+| `{ id }`                           | `'<id>'` (bare string)    |
+| `{ id, preloaded: false }`         | `'<id>'` (bare string)    |
 | `{ id, preloaded: true }`          | object form, flags intact |
 | anything carrying `local` / `path` | object form, flags intact |
 
 `preloaded: false` never reaches disk — an absent flag already means "not preloaded", and the
-in-memory builders never mint it either: `toStackAssignment` (via `buildAgentStack` in
-`config-generator.ts`) emits `{ id, preloaded: true }` or a bare `{ id }` and nothing else — the
+in-memory builders never mint it either: `toStackAssignment` (via `buildAgentStack`, both
+module-private in `packages/compile/src/seed-to-config.ts`) emits `{ id, preloaded: true }` or a
+bare `{ id }` and nothing else — the
 prior stack's word for the triple wins (`priorLoadState`; a prior bare `{ id }` is curated lazy,
 not silence), and a triple new to the save takes the shared preload mapping's default
 (`mappedLoadState` -> `resolveLoadState` from `@workspace/matrix`). `defaultStacks` in
@@ -111,13 +172,14 @@ passes `{ id }` objects through unchanged.
 ### Stack emission — an exclusive category loses its array wrapper
 
 The emitted shape of one category's assignments is decided by `compactCategoryAssignments`
-(module-private, reached from `compactCategories` -> `compactStackAssignments`). It is asymmetric on
+(module-private in `packages/compile/src/config-source.ts`, reached from `compactCategories` ->
+`compactStackAssignments`). It is asymmetric on
 purpose:
 
 | Category                                         | Emitted for one non-preloaded skill       | Emitted for one preloaded skill                 |
 | ------------------------------------------------ | ----------------------------------------- | ----------------------------------------------- |
-| **Exclusive** (`matrix.categories[c].exclusive`) | `"web-framework": "web-framework-react"`  | `"web-framework": { id: "…", preloaded: true }` |
-| Non-exclusive                                    | `"web-styling": ["web-styling-tailwind"]` | `"web-styling": [{ id: "…", preloaded: true }]` |
+| **Exclusive** (`matrix.categories[c].exclusive`) | `'web-framework': 'web-framework-react'`  | `'web-framework': { id: '…', preloaded: true }` |
+| Non-exclusive                                    | `'web-styling': ['web-styling-tailwind']` | `'web-styling': [{ id: '…', preloaded: true }]` |
 
 **A non-exclusive category keeps its array even at length one**, because there the wrapper is
 load-bearing — a second skill may join it. An exclusive category can only ever hold one, so the
@@ -155,13 +217,15 @@ stack's keys in a fixed order: **sub-agents by name**, and each sub-agent's **ca
 matrix's declaration order**. Sub-agent names use code-unit order (a bare `.sort()`), matching what
 `generateProjectConfigFromSkills` already applies to its agent list; `localeCompare` is deliberately
 not used, because it would make the emitted bytes a property of the machine's locale. Categories go
-through `byCategoryDeclarationOrder` in `matrix-provider.ts`, which is also what
-`inCanonicalCategoryOrder` in `config-generator.ts` calls — one definition, so the builder and the
-writer cannot disagree. A category the matrix does not declare sorts after every declared one and
-keeps the order it arrived in.
+through `byCategoryDeclarationOrder` in `@workspace/compile`'s `catalog.ts`, which is also what
+`inCanonicalCategoryOrder` in that package's `seed-to-config.ts` calls — one definition, so the
+builder and the writer cannot disagree. It takes the catalogue as a parameter rather than reading a
+singleton, because the bytes depend on which categories the catalogue declares and the CLI's
+catalogue has the machine's local skills merged in where the editor's does not. A category the
+catalogue does not declare sorts after every declared one and keeps the order it arrived in.
 
-**Why the writer rather than each builder.** Five modules assemble a stack — `buildAgentStack` and
-`buildStackProperty` in `config-generator.ts`, `seedToWizardResult` in `seed-to-wizard.ts`,
+**Why the writer rather than each builder.** Five modules assemble a stack — `buildAgentStack`,
+`buildStackProperty` and `seedToWizardResult` in `@workspace/compile`'s `seed-to-config.ts`,
 `withKeptStackRows` in `seed-apply.ts`, `additiveMergeStack` in `config-gate/propagate.ts` — and only
 the first ordered anything. `init --from` writes through `seedToWizardResult`, whose `assignedStack`
 **replaces** the ownership-derived stack wholesale, so its keys arrived in the shared payload's own
@@ -185,16 +249,22 @@ The two emitted template halves (`PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_
 
 **Every exported function, exhaustively.** This document owns the list.
 
-| Function                             | Purpose                                                                                       |
-| ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `getGlobalConfigTypesPath()`         | Absolute path to the global config-types.ts when it exists, else `null`                       |
-| `assembleConfigTypesSource()`        | The single emission template all three writers route through — stamp, aliases, interface      |
-| `buildConfigTypesBackgroundData()`   | The one constructor for `ConfigTypesBackgroundData`, beside the type — derives the custom set |
-| `regenerateConfigTypes()`            | Full regeneration, writer selected by scope; throws `GlobalPairWriteViolation` at `$HOME`     |
-| `generateConfigTypesSource()`        | Standalone config-types.ts, narrowed to a config when one is passed, else to the full matrix  |
-| `deriveCategories()`                 | `SkillId[]` → the categories the matrix places them in, minus `LOCAL_PSEUDO_CATEGORY`         |
-| `deriveDomains()`                    | `Category[]` → the domains the matrix gives them                                              |
-| `generateProjectConfigTypesSource()` | Project config-types.ts extending the global one                                              |
+| Function                                 | Purpose                                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `assembleConfigTypesSource()`            | The single emission template all three writers route through — stamp, aliases, interface     |
+| `generateConfigTypesSource()`            | Standalone config-types.ts, narrowed to a config when one is passed, else to the full matrix |
+| `generateProjectConfigTypesSource()`     | Project config-types.ts extending the global one                                             |
+| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)                                                  |
+| `deriveCategories()`                     | `SkillId[]` → the categories the matrix places them in, minus `LOCAL_PSEUDO_CATEGORY`        |
+| `deriveDomains()`                        | `Category[]` → the domains the matrix gives them                                             |
+
+The disk-probing half stayed in the CLI, in `configuration/config-types-io.ts`, which
+`config-types-writer.ts` re-exports: `getGlobalConfigTypesPath()` (absolute path to the global
+config-types.ts when it exists, else `null`), `buildConfigTypesBackgroundData()` (the one
+constructor for `ConfigTypesBackgroundData`) and `regenerateConfigTypes()` (full regeneration,
+writer selected by scope; throws `GlobalPairWriteViolation` at `$HOME`). A browser has no disk to
+probe and `computeGlobalTypesImportPath` is `path.relative` against the running machine's `$HOME`,
+which is why the preview draws a placeholder for that one import line.
 
 `deriveCategories` / `deriveDomains` are exported for `buildProjectTypesExtras` in `config-gate/propagate.ts`, so the extras and the emitted unions derive membership through the same two functions. The module also exports three emission constants — `PROJECT_CONFIG_TYPES_BEFORE`, `PROJECT_CONFIG_INTERFACE_AFTER`, `STACK_AGENT_CONFIG_LOOSE_LINE` — and two types, `ConfigTypesExtras` and `ProjectConfigTypesOptions`.
 
@@ -210,11 +280,26 @@ When a global installation exists, project `config-types.ts` imports from global
 
 Each of the four is split into a **Custom** group and a **Marketplace** group and annotated with `// Custom` / `// Marketplace` section comments so a reader can tell user-authored entities apart from marketplace-installed ones.
 
-| Function                                              | Contract                                                                                                                                                                                                            |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `formatMaybeSectionedUnion(members, isCustom)`        | Entry point per union. Empty → `EMPTY_UNION_TYPE`. No custom members → plain `formatUnion` (keeps single-line form while `quoted.length < MULTI_LINE_THRESHOLD`, = 6). Any custom members → `formatSectionedUnion`. |
-| `formatSectionedUnion(custom, marketplace)`           | Emits section comments. One group present → single header (`// Custom` **or** `// Marketplace`) with that group's members. Both groups present → custom block first, then marketplace block, always multi-line.     |
-| `buildSkillsByCategory(skillIds, categories, matrix)` | Groups eligible skills into `Map<Category, SkillId[]>` for `generateStackAgentConfig`.                                                                                                                              |
+| Function                                              | Contract                                                                                                                                                                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `formatMaybeSectionedUnion(members, isCustom)`        | Entry point per union. Answers an `AliasRhs` — the MEMBERS, never finished text. Empty → `typeReference(EMPTY_UNION_TYPE)`. No custom members → `literalUnion(members)`. Any custom members → `{ kind: "sectioned", custom, marketplace }`. |
+| `renderAlias(name, rhs)`                              | Puts `export type <name> =` in front of an `AliasRhs` and asks `unionLayout` where the members go. Layout is the assembler's because it depends on how wide the alias NAME is, which the producer of the members does not know.             |
+| `renderSectionedUnion(custom, marketplace)`           | Draws the section headings. Both groups present → `// Custom` block then `// Marketplace` block, both stacked. Marketplace empty → a `// Custom` heading alone, laid out by `brokenUnionLayout`.                                            |
+| `buildSkillsByCategory(skillIds, categories, matrix)` | Groups eligible skills into `Map<Category, SkillId[]>` for `generateStackAgentConfig`.                                                                                                                                                      |
+
+**A lone `// Marketplace` heading is unreachable.** `formatMaybeSectionedUnion` is the only producer
+of a sectioned right-hand side and it answers with a plain one whenever `custom` is empty, so
+`renderSectionedUnion`'s single-heading branch is always the custom one. Do not restate the old "one
+group present → `// Custom` **or** `// Marketplace`" reading; the second half of it has no path.
+
+**The break is a WIDTH rule, not a member count.** There is no `MULTI_LINE_THRESHOLD` and no
+`formatUnion`; `unionLayout` in `installed-format.ts` decides, in this order — `inline` while the
+alias name, the joined members and whatever follows fit in `PRINT_WIDTH`; `indented` (its own line
+below the `=`) while THAT fits; `stacked` (one member per line under a leading `|`) only when
+neither does. The contract's `stack-ordering` scenario shows both on four members apiece: `SkillId`
+takes the indented form and `Category`, whose members are shorter, stays inline. A sectioned union
+with both headings is always stacked, because a `//` line between two members is something prettier
+cannot fold away.
 
 **Four PREDICATES, not four precomputed sets.** `generateConfigTypesSource` builds three lookup sets — `declaredAgents` (every agent the source ships), `flaggedCustomAgents` (the ones it marks `custom: true`) and `declaredDomains` (`extractDomains(matrix)`) — and then calls `formatMaybeSectionedUnion` once per union with a predicate closed over them:
 
@@ -231,18 +316,18 @@ Each of the four is split into a **Custom** group and a **Marketplace** group an
 
 ### The two roster aliases
 
-`SelectedAgentName` and `ProjectAgentName` narrow to who is SELECTED rather than to what the catalogue offers, so they take `formatUnion` (no sectioning) and each falls back to the alias above it rather than to `never`:
+`SelectedAgentName` and `ProjectAgentName` narrow to who is SELECTED rather than to what the catalogue offers, so they take `literalUnion` (no sectioning) and each falls back to the alias above it rather than to `never`:
 
 | Alias               | Source                                                                        | Fallback when empty |
 | ------------------- | ----------------------------------------------------------------------------- | ------------------- |
 | `SelectedAgentName` | `activeAgentNames(config.agents)` — every non-excluded agent, at either scope | `AgentName`         |
 | `ProjectAgentName`  | `activeProjectAgentNames(config.agents)` — active project-scoped only         | `SelectedAgentName` |
 
-`ProjectAgentName` is what keys the emitted `stack` (`Partial<Record<ProjectAgentName, StackAgentConfig>>`), which is why the narrowing is by project scope. The blank global pair emits `skillId/agentName/domain/category: "never"` but `projectAgentName: "SelectedAgentName"` — the fallback chain, not `never`, because an alias that narrows a roster has an alias to defer to where a vocabulary union has nothing.
+`ProjectAgentName` is what keys the emitted `stack` (`Partial<Record<ProjectAgentName, StackAgentConfig>>`), which is why the narrowing is by project scope. The blank global pair emits `never` for five of the six aliases — `SkillId`, `AgentName`, `SelectedAgentName`, `Domain`, `Category` — and `export type ProjectAgentName = SelectedAgentName` for the sixth: the fallback chain, not `never`, because an alias that narrows a roster has an alias to defer to where a vocabulary union has nothing. All six go through `typeReference`, so a fallback is emitted as a bare type NAME and never as a quoted literal.
 
 **`buildSkillsByCategory` — eligibility filter.** For each skill id it looks up `matrix.skills[id]?.category` and keeps only entries whose category is defined, is not `LOCAL_PSEUDO_CATEGORY` (`"local"` in `consts.ts`), and is in the passed `categories` set, then groups by category. The result drives `generateStackAgentConfig`, which emits a per-category-constrained `StackAgentConfig` — or the loose `STACK_AGENT_CONFIG_LOOSE_LINE` when the map is empty.
 
-**`EMPTY_UNION_TYPE` handling.** The module-level constant `EMPTY_UNION_TYPE = "never"` is returned by `formatUnion`, `formatMaybeSectionedUnion`, and `formatSectionedUnion` for an empty member list. `never` is the union identity element: an empty install accepts no member, and a project union that extends an empty global union (`never | "web-framework-react"`) still narrows correctly. Emitting `string` instead would absorb every literal and silently disable type-checking of the generated `config.ts`. This matches `generateBlankGlobalConfigTypesSource`, which emits `never` for the same empty state.
+**`EMPTY_UNION_TYPE` handling.** The module-level constant `EMPTY_UNION_TYPE = "never"` is what `literalUnion` and `formatMaybeSectionedUnion` reach for — through `typeReference` — on an empty member list. `never` is the union identity element: an empty install accepts no member, and a project union that extends an empty global union (`never | "web-framework-react"`) still narrows correctly. Emitting `string` instead would absorb every literal and silently disable type-checking of the generated `config.ts`. This matches `generateBlankGlobalConfigTypesSource`, which emits `never` for the same empty state.
 
 ## The config-gate
 
@@ -288,7 +373,7 @@ T2 exists because project configs inline the global **scalars** verbatim — `me
 
 **Every entry that writes or drives a write opens the gate token around its whole flow** — `writeScopedFromWizard`, `writeScopeConfigTypes`, `reconcileTypesFromDisk`, `mutateGlobal`, `propagateGlobalRemoval`, `ensureBlankPair`. `propagateGlobalRemoval` is included even though it reaches only project pairs today: the rule is "a gate entry holds the privilege for its flow", not "the ones whose current implementation needs it". `writeProjectPartial` is the one exception — it refuses `$HOME` as its first act and then writes a project's own config, which the tripwire never guards.
 
-**`writeProjectPartial` normalizes the incoming stack.** Its callers all read with the LENIENT loader (`loadProjectSourceConfig`), which passes the on-disk stack through untouched, and the writer emits an exclusive category in its BARE form (`"web-framework": "web-framework-react"`, no array). On a load / re-emit round trip that bare value reaches `compactCategories`, which keeps only non-empty arrays — so the category was silently dropped and the user lost an assignment they never touched. The entry now runs `normalizeStackRecord` (the same call `loadProjectConfigFromDir` makes) before filling required fields. The static import is cycle-free because `config-gate/index.ts` already pulls `stacks-loader` in transitively through `configuration/project-config`.
+**`writeProjectPartial` normalizes the incoming stack.** Its callers all read with the LENIENT loader (`loadProjectSourceConfig`), which passes the on-disk stack through untouched, and the writer emits an exclusive category in its BARE form (`'web-framework': 'web-framework-react'`, no array). On a load / re-emit round trip that bare value reaches `compactCategories`, which keeps only non-empty arrays — so the category was silently dropped and the user lost an assignment they never touched. The entry now runs `normalizeStackRecord` (the same call `loadProjectConfigFromDir` makes) before filling required fields. The static import is cycle-free because `config-gate/index.ts` already pulls `stacks-loader` in transitively through `configuration/project-config`.
 
 ### Enforcement — four layers
 
@@ -319,7 +404,7 @@ When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types
 
 **Write-if-changed.** Every pair write goes through `pair-writer.ts::writeIfChanged`, which skips the write when the file already holds exactly those bytes. Coherence between the two halves does not depend on it — both are always derived from the same config in the same call — but it keeps a projects-only or scalar-only change from churning the mtime of files other tools watch. The boolean a pair writer returns (`GateReport.globalWritten`) means "at least one half was actually rewritten", not "a write was attempted".
 
-**`ensureBlankPair` writes both halves.** Its predecessor `ensureBlankGlobalConfig` wrote `config.ts` alone, whose first line is `import type { ProjectConfig } from "./config-types"` — so an `eject` at `~` with no prior install left a config that could not resolve its own types. This is a **behaviour change** landed with the gate; see the `eject` section of [commands/index.md](../commands/index.md).
+**`ensureBlankPair` writes both halves.** Its predecessor `ensureBlankGlobalConfig` wrote `config.ts` alone, whose first line is `import type { ProjectConfig } from './config-types'` — so an `eject` at `~` with no prior install left a config that could not resolve its own types. This is a **behaviour change** landed with the gate; see the `eject` section of [commands/index.md](../commands/index.md).
 
 ### Config-types write sites outside the gate
 

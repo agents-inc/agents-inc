@@ -321,8 +321,8 @@ PROJECT_CONFIG_INTERFACE_AFTER
 
 **`PROJECT_CONFIG_TYPES_BEFORE`'s `model?` / `effort?` lines are documented elsewhere and must not
 be restated here.** [features/model-and-effort.md](./features/model-and-effort.md) owns the emission
-of `MODEL_NAMES` / `EFFORT_NAMES` into `AgentScopeConfig`, the `formatLiteralUnion` vs `formatUnion`
-rationale, and the blast radius: the members are _emitted content_, so a project's generated file keeps rejecting a new member until something
+of `MODEL_NAMES` / `EFFORT_NAMES` into `AgentScopeConfig`, why those two lines take `flatUnion`
+unconditionally where an alias takes `unionLayout`, and the blast radius: the members are _emitted content_, so a project's generated file keeps rejecting a new member until something
 rewrites it, and the user sees a type error on a value the CLI already accepts at runtime. That doc
 also owns the `MODEL_NAMES` membership per the count-ownership rule.
 
@@ -333,9 +333,10 @@ emitted `SkillAssignment` is generic; the runtime type of the same name is not.
 ### `ProjectAgentName` is emitted, not exported
 
 `ProjectAgentName` is _not_ a named export of
-`config-types-writer.ts`. It exists only inside the template strings: declared by
-`assembleConfigTypesSource` (`export type ProjectAgentName = ${parts.projectAgentName};`) and
-consumed by `PROJECT_CONFIG_INTERFACE_AFTER`
+`config-types-writer.ts`. It exists only inside the emitted text: declared by
+`assembleConfigTypesSource` through `renderAlias("ProjectAgentName", parts.projectAgentName)` —
+which emits `export type ProjectAgentName = SelectedAgentName`, with no trailing semicolon, since
+the pair is emitted `semi: false` — and consumed by `PROJECT_CONFIG_INTERFACE_AFTER`
 (`stack?: Partial<Record<ProjectAgentName, StackAgentConfig>>`). `SelectedAgentName` is the same
 kind of thing — declared alongside it and consumed only as `ProjectAgentName`'s fallback value
 (the emitted `ProjectConfig` interface has no property typed with it — it carries
@@ -347,10 +348,10 @@ Their values come from the same two-step narrowing in both generators — each d
 config's `agents[]` rows via the `scope-predicates.ts` helpers — and the fallback is a _type
 name_, not a literal union:
 
-| Alias               | Value when the config supplies names                                                                                                                                                                                        | Fallback              |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| `SelectedAgentName` | `formatUnion(activeAgentNames(config.agents))` — `selectedAgentNameLine` in `generateConfigTypesSource`; `selectedAgentNameUnion` in `generateProjectConfigTypesSource` (fed via the `selectedAgentNames` option)           | `"AgentName"`         |
-| `ProjectAgentName`  | `formatUnion(activeProjectAgentNames(config.agents))` — `projectAgentNameLine` in `generateConfigTypesSource`; `projectAgentNameUnion` in `generateProjectConfigTypesSource` (fed via the `projectScopedAgentNames` option) | `"SelectedAgentName"` |
+| Alias               | Value when the config supplies names                                                                                                                                                                                         | Fallback                             |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `SelectedAgentName` | `literalUnion(activeAgentNames(config.agents))` — `selectedAgentNameLine` in `generateConfigTypesSource`; `selectedAgentNameUnion` in `generateProjectConfigTypesSource` (fed via the `selectedAgentNames` option)           | `typeReference("AgentName")`         |
+| `ProjectAgentName`  | `literalUnion(activeProjectAgentNames(config.agents))` — `projectAgentNameLine` in `generateConfigTypesSource`; `projectAgentNameUnion` in `generateProjectConfigTypesSource` (fed via the `projectScopedAgentNames` option) | `typeReference("SelectedAgentName")` |
 
 So the emitted chain widens gracefully: with no project-scoped agents, `ProjectAgentName` **is**
 `SelectedAgentName`, which with no active agent rows **is** `AgentName`.
@@ -393,9 +394,11 @@ consequence, and `regenerateConfigTypes` supplies all four anyway, each defaulte
 `categoryImport` is an **unconditional** string constant. The import is always emitted. Read the
 comment as history, not as a condition.
 
-`formatExtendedUnion` applies its own `MULTI_LINE_THRESHOLD` break. That is safe because these
-unions are emitted at statement level, not inside a property — the exact distinction
-`formatLiteralUnion` exists to preserve for `model?` / `effort?`.
+`formatExtendedUnion` returns MEMBERS rather than finished text, so where they break is
+`renderAlias`'s call to `unionLayout` and not this function's business at all. That is safe because
+these unions are emitted at statement level, where a break has a layout available to it — the exact
+distinction `formatLiteralUnion` exists to preserve for `model?` / `effort?`, which sit inside a
+property and take `flatUnion` unconditionally.
 
 ---
 

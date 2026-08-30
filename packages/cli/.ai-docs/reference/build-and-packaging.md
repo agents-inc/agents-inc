@@ -97,7 +97,8 @@ both suites resolve oclif commands out of this package's own `dist/` (§8, §9).
 
 **`packages/matrix` is in this hash, and nothing in `inputs` names it.** tsup inlines that package
 into the bundle (`noExternal`, §7), so its source is build input — and it has no `build` script, so
-there appears to be nothing for the root task's `^build` to hang on. It is hashed regardless: turbo
+there appears to be nothing for the root task's `^build` to hang on. The same holds for
+`packages/compile`, which is inlined the same way and has no `build` script either. It is hashed regardless: turbo
 puts a task node in the graph for a dependency that does not implement the task.
 `turbo run build --dry=json --filter=agents-inc` shows `@workspace/matrix#build` carrying
 `"command": "<NONEXISTENT>"`, all of its files hashed, listed among `agents-inc#build`'s
@@ -113,8 +114,8 @@ What turbo covers here, the `globalSetup` guard covers for the invocations turbo
 `vitest.global-setup.ts` calls `assertDistIsFresh` in `src/cli/lib/testing/dist-staleness.ts`, which
 scans `packages/matrix/src` as its own build-input tree ([testing/infrastructure.md](./testing/infrastructure.md#the-commands-project-executes-dist-not-src)).
 
-There is **no CI publish workflow.** `.github/workflows/` holds exactly one file, `ci.yml`, and none
-of its three jobs touches npm: `check-cli` runs this package's typecheck, lint, unit and E2E suites,
+There is **no CI publish workflow.** `.github/workflows/` holds `ci.yml` among others, and none
+of its jobs touches npm: `check-cli` runs this package's typecheck, lint, unit and E2E suites,
 `check-web` does the same for the rest of the monorepo (and first runs `generate:matrix:check` **from
 this package** — see [`features/code-generation.md`](./features/code-generation.md)), and `deploy`
 ships the web app to Cloudflare. Publication is a manual `npm publish`, and `prepublishOnly` is the
@@ -180,18 +181,18 @@ match, and the negations do not, becomes its own output file under `dist/`, mirr
 
 ## 3. Build options
 
-| Option       | Value                   | What it buys                                                                                                                                       |
-| ------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format`     | `["esm"]`               | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
-| `platform`   | `node`                  | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
-| `noExternal` | `["@workspace/matrix"]` | Forces the private workspace package into the bundle. Load-bearing — see below                                                                     |
-| `target`     | `node22`                | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
-| `clean`      | `true`                  | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
-| `sourcemap`  | `true`                  | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
-| `shims`      | `true`                  | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
-| `dts`        | `false`                 | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
-| `outDir`     | `dist`                  | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
-| `banner.js`  | `#!/usr/bin/env node`   | See below                                                                                                                                          |
+| Option       | Value                                         | What it buys                                                                                                                                       |
+| ------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `format`     | `["esm"]`                                     | Single format. Matches `"type": "module"`; there is no CJS build and no dual-package hazard                                                        |
+| `platform`   | `node`                                        | Node built-ins stay external; `fs`, `path`, `os` are not polyfilled                                                                                |
+| `noExternal` | `["@workspace/matrix", "@workspace/compile"]` | Forces both private workspace packages into the bundle. Load-bearing — see below                                                                   |
+| `target`     | `node22`                                      | Downlevels syntax newer than Node 22. One of **three separate declarations of the runtime floor**, which agree today — see below                   |
+| `clean`      | `true`                                        | `dist/` is wiped before every build, so a deleted command's artefact disappears on the next build rather than lingering and staying discoverable   |
+| `sourcemap`  | `true`                                        | One `.js.map` per emitted `.js`. These are published (§6) and are the single largest group in the tarball                                          |
+| `shims`      | `true`                                        | Injects tsup's `esm_shims` module so bundled code may reference the CJS globals `__dirname` / `__filename`. Inert in the current build — see below |
+| `dts`        | `false`                                       | **No `.d.ts` is emitted anywhere.** See §7 for why that is tolerable and where it is not                                                           |
+| `outDir`     | `dist`                                        | Hard-coded; `onSuccess` also hard-codes the literal string `"dist"`, so overriding `--out-dir` on the CLI would split the two halves apart         |
+| `banner.js`  | `#!/usr/bin/env node`                         | See below                                                                                                                                          |
 
 ### The runtime floor is declared in three places, and they must be changed together
 
@@ -225,7 +226,7 @@ package runs on. It was left alone on purpose and the owner has not decided on i
 with the floor.
 
 A fourth place carries the same number without being a declaration of the floor: CI pins
-`NODE_VERSION: 22` in `.github/workflows/ci.yml` across all three jobs. That pin is not cosmetic —
+`NODE_VERSION: 22` in `.github/workflows/ci.yml` across every job. That pin is not cosmetic —
 the E2E harness launches the CLI as a real child process with `pty.spawn("node", …)`, so **the
 runner's Node is the runtime executing the thing under test.** Before the pin, every job ran on
 whatever Node the runner image happened to ship that week, which is to say the floor was declared
@@ -237,27 +238,37 @@ and never exercised.
 > v4 predates the behaviour and does only one thing. If this is ever moved forward, `v7` needs
 > `package-manager-cache: false` alongside it.
 
-### `@workspace/matrix` is bundled, and the two settings that do it are a pair
+### Two workspace packages are bundled, and the pair of settings that does it applies to both
 
 The seed wire contract lives in `packages/matrix/src/seed.ts` and is imported as
-`@workspace/matrix/seed` by `src/cli/lib/seed/fetch-seed.ts` and `seed-to-wizard.ts`. That package is
-**private, unpublished and ships TypeScript**, so nothing it exports can be resolved at runtime from
-an installed tarball. Two declarations make that safe:
+`@workspace/matrix/seed` across `src/cli/lib/seed/`. The config-pair and compiled-agent renderers
+live in `packages/compile/src/` and are imported by the CLI's writer facades — `consts.ts`,
+`compiler.ts`, `agent-provenance.ts`, `config-writer.ts`, `config-types-writer.ts`,
+`config-generator.ts`, `seed-to-wizard.ts` among them. **Both packages are private, unpublished and
+ship TypeScript**, so nothing either exports can be resolved at runtime from an installed tarball.
+Two declarations per package make that safe:
 
-| Declaration                                                  | File             | Effect                                           |
-| ------------------------------------------------------------ | ---------------- | ------------------------------------------------ |
-| `"@workspace/matrix": "workspace:*"` under `devDependencies` | `package.json`   | Never installed alongside the published package  |
-| `noExternal: ["@workspace/matrix"]`                          | `tsup.config.ts` | Inlines its source instead of emitting an import |
+| Declaration                                                   | File             | Effect                                                     |
+| ------------------------------------------------------------- | ---------------- | ---------------------------------------------------------- |
+| `"@workspace/matrix": "workspace:*"` under `devDependencies`  | `package.json`   | Never installed alongside the published package            |
+| `"@workspace/compile": "workspace:*"` under `devDependencies` | `package.json`   | Never installed alongside the published package            |
+| `noExternal: ["@workspace/matrix", "@workspace/compile"]`     | `tsup.config.ts` | Inlines both packages' source rather than emitting imports |
 
-Verified against a built tree: the schema's Zod calls appear inline in `dist/chunk-*.js`, that
-chunk's sourcemap names `../../matrix/src/seed.ts` among its `sources`, and **no emitted `.js`
-contains the specifier `@workspace/matrix`**.
+Verify against a built tree: the schema's Zod calls appear inline in `dist/chunk-*.js`, that chunk's
+sourcemap names `../../matrix/src/seed.ts` among its `sources`, and **no emitted `.js` contains
+either specifier** —
+
+```
+grep -rl '@workspace/matrix\|@workspace/compile' dist --include='*.js'
+```
 
 **tsup bundles `devDependencies` by default and leaves `dependencies` external**, so `noExternal` is
-belt-and-braces — but the belt is what matters here: promoting the package to `dependencies` would
-silently externalise it, and `init --from` would fail at import time in the published CLI while every
-local gate stayed green (locally the workspace symlink resolves). `tsup.config.ts` carries the same
-warning inline. Contract detail: [`features/seed-contract.md`](./features/seed-contract.md).
+belt-and-braces — but the belt is what matters here: promoting either package to `dependencies`
+would silently externalise it, and the published CLI would fail at import time while every local
+gate stayed green (locally the workspace symlink resolves). `init --from` is the surface that dies
+for `@workspace/matrix`; for `@workspace/compile` it is every write path, since the config-pair
+renderers are on it. `tsup.config.ts` carries the same warning inline. Contract detail:
+[`features/seed-contract.md`](./features/seed-contract.md).
 
 ### `shims: true` is currently insurance, not load-bearing
 
@@ -648,9 +659,10 @@ patterns are rooted at `src/**` and `scripts/**`, and since the §2 negations `d
    nothing checks that they agree.** They agree today, by hand, and drifted once already. Change all
    three together. `tsconfig`'s `target` is a different question and stays out of it; CI's
    `NODE_VERSION` is a fourth place the same number lives (§3).
-10. **`@workspace/matrix` must stay a `devDependency`.** Promoting it to `dependencies` externalises
-    the import tsup currently inlines, and the published CLI's `init --from` fails at import time
-    with every local gate green (§3).
+10. **`@workspace/matrix` and `@workspace/compile` must both stay `devDependencies`.** Promoting
+    either to `dependencies` externalises the imports tsup currently inlines, and the published CLI
+    fails at import time with every local gate green — `init --from` for matrix, every config write
+    for compile (§3).
 11. **`prepublishOnly` stops at its first failing step, and `format:check` is that first step.** A
     formatting regression alone blocks lint, typecheck, build and test from ever running, so it
     hides every other failure behind it. It covers markdown, so an unformatted `.ai-docs/` file

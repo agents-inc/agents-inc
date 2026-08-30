@@ -37,9 +37,9 @@ last_validated: 2026-08-18
 | `computeNewlyAddedSkillIds`     | `src/cli/lib/installation/local-installer.ts` (private) | Diff: skill ids active in current config but not in prior. Feeds `generateProjectConfigFromSkills.newlyAddedSkillIds`. |
 | `computeScopeEligibilityGained` | `src/cli/lib/installation/local-installer.ts` (private) | Diff: `(agent, skill)` pairs whose scope-compatibility flipped from incompatible to compatible this session.           |
 
-### Everything `config-generator.ts` exports
+### Everything `packages/compile/src/seed-to-config.ts` exports
 
-Five functions, exhaustively — bound to the module by `scripts/check-enumeration-drift.ts`, so a sixth export cannot land without this table naming it:
+Six functions, exhaustively — that module is where all six are declared since the extraction, and `scripts/check-enumeration-drift.ts` reads its export surface, so a seventh export cannot land without this table naming it:
 
 | Function                            | Purpose                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -48,8 +48,9 @@ Five functions, exhaustively — bound to the module by `scripts/check-enumerati
 | `generateProjectConfigFromSkills()` | Builds a `ProjectConfig` from the wizard's selection, rebuilding `stack` from selection plus prior entries |
 | `buildStackProperty()`              | Extracts the `stack` property from a loaded `Stack` definition                                             |
 | `splitConfigByScope()`              | Partitions a merged `ProjectConfig` into `{ global, project }`                                             |
+| `seedToWizardResult()`              | Decodes a shared `SeedPayload` into the shape the install pipeline consumes                                |
 
-Only `generateProjectConfigFromSkills` and `buildStackProperty` are on the `configuration/index.ts` barrel; the other three are import-by-path. `SplitConfigResult` and `ProjectConfigOptions` are the module's two exported types.
+Five of them reach the CLI through `configuration/config-generator.ts`, which re-exports nothing else; `seedToWizardResult` reaches it through `seed/seed-to-wizard.ts` instead, under the name every CLI call site reads it by. Only `generateProjectConfigFromSkills` and `buildStackProperty` are on the `configuration/index.ts` barrel; the other three that `config-generator.ts` carries are import-by-path. `SplitConfigResult` and `ProjectConfigOptions` are the module's two exported types, both re-exported by `config-generator.ts`; `SeedMapping` rides with `seedToWizardResult`.
 
 The delta helpers do not partition the config — they compute the sets that `shouldIncludeTriple` inside the stack builder consults. They live alongside `splitConfigByScope` in this doc because both are project-context pipeline plumbing between merger output and writer input.
 
@@ -91,7 +92,7 @@ Elision happens one layer later and in the writer, not the split. `generateConfi
 
 `globalSkillIds` is derived from the post-partition global `skills` array — it contains ONLY active globals, so a tombstone for a global skill does not count as "global" when filtering stack entries. A global agent that referenced a now-tombstoned global skill will see that reference drop out of the global stack and reappear in the project stack (carrying the reference to the project side where the tombstone lives).
 
-**Invariant — a row in `projectStack` under a GLOBAL agent does not survive the write.** The split is not the last word on `projectStack`. `partitionInlinedConfigEntries` in `src/cli/lib/configuration/config-writer.ts` re-filters it to **project-scoped agents only** (its `filteredStack` step, keyed on the active project agents' names), because a global agent's stack entries belong in the global config. The two filters are keyed differently and the gap between them is silent:
+**Invariant — a row in `projectStack` under a GLOBAL agent does not survive the write.** The split is not the last word on `projectStack`. `partitionInlinedConfigEntries`, module-private in `packages/compile/src/config-source.ts`, re-filters it to **project-scoped agents only** (its `filteredStack` step, keyed on the active project agents' names), because a global agent's stack entries belong in the global config. The two filters are keyed differently and the gap between them is silent:
 
 | Row `splitAgentStack` put in `projectStack` | Agent's partition | Survives `filteredStack`? |
 | ------------------------------------------- | ----------------- | ------------------------- |
@@ -147,12 +148,12 @@ Note: the split result is not re-merged. The global half feeds `mergeGlobalConfi
 
 **Signature:** `scopeEligibilityKey(agent: AgentName, skillId: SkillId): string` → `` `${agent}|${skillId}` ``
 
-**Purpose:** produce a stable string key for set membership lookups against `scopeEligibilityGained: ReadonlySet<string>` in `shouldIncludeTriple` within `config-generator.ts`. Both inputs are string-literal unions so `|` is a safe delimiter.
+**Purpose:** produce a stable string key for set membership lookups against `scopeEligibilityGained: ReadonlySet<string>` in `shouldIncludeTriple`, which is module-private in `packages/compile/src/seed-to-config.ts`. Both inputs are string-literal unions so `|` is a safe delimiter.
 
 **Where it's used:**
 
 - Keys inserted: `computeScopeEligibilityGained` in `local-installer.ts` (one add per newly-compatible `(agent, skill)` pair).
-- Keys queried: `shouldIncludeTriple` in `config-generator.ts` (scope-flip admission branch).
+- Keys queried: `shouldIncludeTriple` in `packages/compile/src/seed-to-config.ts` (scope-flip admission branch).
 
 No caller parses these keys — they are opaque membership tokens. Changing the delimiter would require updating both sites; the shared helper guarantees they agree.
 
@@ -197,7 +198,7 @@ The OMIT branch is the load-bearing curation semantic: a user who previously rem
 
 ## Anchors
 
-- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isPreservedOrRelevant` / `isRelevantPair` (both private), `splitAgentStack` (private), `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — `src/cli/lib/configuration/config-generator.ts`.
+- `splitConfigByScope`, `scopeEligibilityKey`, `SplitConfigResult`, `generateProjectConfigFromSkills`, `buildStackForSelection`, `buildAgentStack`, `shouldIncludeTriple`, `isPreservedOrRelevant` / `isRelevantPair`, `splitAgentStack`, `isScopePairCompatible` (exported) / `isScopeCompatible` (private), `getScopeOrThrow`, `extractCategoryFromPath`, `buildSkillScopeMap` — all declared in `packages/compile/src/seed-to-config.ts`. Only `splitConfigByScope`, `scopeEligibilityKey`, `generateProjectConfigFromSkills`, `isScopePairCompatible`, `buildStackProperty` and the two types are exported and re-exported by `src/cli/lib/configuration/config-generator.ts`; the rest are module-private in the package and have no CLI-side address at all.
 - `computeNewlyAddedSkillIds`, `computeScopeEligibilityGained` — `src/cli/lib/installation/local-installer.ts`.
 - `isActiveAt`, `activeAgentScopeMap`, `activeSkillScopeMap`, `effectivelyExcludedSkillIds` — `src/cli/lib/configuration/scope-predicates.ts` (shared predicates consumed by the generator and the delta helpers).
 - Post-split reconciliation applied to the project half before every write: `reconcileProjectSplitAgainstGlobal` — `src/cli/lib/config-gate/propagate.ts`.

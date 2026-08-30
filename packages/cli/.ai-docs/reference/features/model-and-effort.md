@@ -390,17 +390,25 @@ generated `config-types.ts`**, inside the `PROJECT_CONFIG_TYPES_BEFORE` template
 
 ```ts
 export type AgentScopeConfig = {
-  name: AgentName;
-  scope: "project" | "global";
-  model?: ${formatLiteralUnion(MODEL_NAMES)};
-  effort?: ${formatLiteralUnion(EFFORT_NAMES)};
-  excluded?: boolean;
-};
+  name: AgentName
+  scope: 'project' | 'global'
+  model?: ${formatLiteralUnion(MODEL_NAMES)}
+  effort?: ${formatLiteralUnion(EFFORT_NAMES)}
+  excluded?: boolean
+}
 ```
 
-`formatLiteralUnion` is deliberately **not** the module's `formatUnion`: that one breaks onto several
-lines past a threshold, which would be invalid inside an emitted property. These lists are fixed and
-short, so they stay on one line.
+Single quotes and no semicolons because the emitted pair is a prettier fixed point under a USER's
+settings rather than this repository's — [config/config-writer.md](../config/config-writer.md) →
+"The emitted pair is already formatted" owns that ruling and its settings.
+
+`formatLiteralUnion` is `flatUnion(members.map(quoteText))` — always one line. It is deliberately
+**not** the layout an alias gets: `unionLayout` breaks a union onto its own line, or one member per
+line, once it no longer fits the print width, and either would be invalid inside an emitted
+property. Nothing in `formatLiteralUnion` guards that these lists stay short enough; what does is
+the fixed-point assertion in `packages/compile/src/contract/emission-scenarios.test.ts`, which
+renders both lines in every scenario and reddens the moment either grows past the width, because
+prettier would then break what this does not.
 
 The consequence is the widest blast radius on this axis: **the union members are emitted content**.
 Adding a member changes the generated output of every registered project, and those files only
@@ -410,13 +418,13 @@ the CLI already accepts at runtime.
 
 ## Persistence
 
-| Hop                   | Module                                                   | Behaviour                                                                               |
-| --------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Wizard roster rebuild | `stores/wizard-store.ts` (`buildAgentConfigForName`)     | Both preserved from the saved config, spread in when defined                            |
-| Config merge          | `lib/configuration/config-merger.ts`                     | Not part of the identity key; a changed value lands in place                            |
-| Serialization         | `lib/configuration/config-writer.ts` (`renderEntryLine`) | `JSON.stringify(entry)` — the whole entry, verbatim                                     |
-| Load from disk        | `lib/configuration/project-config.ts`                    | Preserved; `projectConfigLoaderSchema` declares both, so the loader does not strip them |
-| Share link in / out   | `lib/seed/`                                              | See [`seed-contract.md`](./seed-contract.md)                                            |
+| Hop                   | Module                                                       | Behaviour                                                                                                    |
+| --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Wizard roster rebuild | `stores/wizard-store.ts` (`buildAgentConfigForName`)         | Both preserved from the saved config, spread in when defined                                                 |
+| Config merge          | `lib/configuration/config-merger.ts`                         | Not part of the identity key; a changed value lands in place                                                 |
+| Serialization         | `packages/compile/src/config-source.ts` (`cleanForEmission`) | The whole entry, with its keys put in `CANONICAL_AGENT_ENTRY_ORDER` — `name, scope, model, effort, excluded` |
+| Load from disk        | `lib/configuration/project-config.ts`                        | Preserved; `projectConfigLoaderSchema` declares both, so the loader does not strip them                      |
+| Share link in / out   | `lib/seed/`                                                  | See [`seed-contract.md`](./seed-contract.md)                                                                 |
 
 **Wizard rebuild.** `preselectAgentsFromDomains` re-derives every rostered agent's config from
 scratch. `buildAgentConfigForName` carries `model` and `effort` across that rebuild, on the same

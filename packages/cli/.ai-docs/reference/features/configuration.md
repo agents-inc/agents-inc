@@ -33,21 +33,23 @@ last_validated: 2026-07-30
 
 ## Files
 
-| File                     | Path                                               | Purpose                                                                                                    |
-| ------------------------ | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `config.ts`              | `src/cli/lib/configuration/config.ts`              | Source resolution, project source config I/O                                                               |
-| `config-generator.ts`    | `src/cli/lib/configuration/config-generator.ts`    | Generate ProjectConfig from wizard, scope split                                                            |
-| `config-merger.ts`       | `src/cli/lib/configuration/config-merger.ts`       | Merge wizard result with existing                                                                          |
-| `config-writer.ts`       | `src/cli/lib/configuration/config-writer.ts`       | Generate TypeScript config source strings                                                                  |
-| `config-types-writer.ts` | `src/cli/lib/configuration/config-types-writer.ts` | Generate config-types.ts type files                                                                        |
-| `config-loader.ts`       | `src/cli/lib/configuration/config-loader.ts`       | Load TypeScript config via jiti                                                                            |
-| `project-config.ts`      | `src/cli/lib/configuration/project-config.ts`      | Load and validate project config                                                                           |
-| `scope-predicates.ts`    | `src/cli/lib/configuration/scope-predicates.ts`    | Shared scope/tombstone predicates (see below)                                                              |
-| `define-config.ts`       | `src/cli/lib/configuration/define-config.ts`       | Type-safe `defineConfig()` helper                                                                          |
-| `default-categories.ts`  | `src/cli/lib/configuration/default-categories.ts`  | Built-in category definitions — count in [skills-and-matrix.md](./skills-and-matrix.md) ("Current Counts") |
-| `default-rules.ts`       | `src/cli/lib/configuration/default-rules.ts`       | Default skill rule definitions — see [built-in-catalogue.md](./built-in-catalogue.md)                      |
-| `default-stacks.ts`      | `src/cli/lib/configuration/default-stacks.ts`      | Default stack definitions — see [built-in-catalogue.md](./built-in-catalogue.md)                           |
-| `index.ts`               | `src/cli/lib/configuration/index.ts`               | Barrel exports                                                                                             |
+| File                     | Path                                               | Purpose                                                                                                                                                                                                                                                  |
+| ------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.ts`              | `src/cli/lib/configuration/config.ts`              | Source resolution, project source config I/O                                                                                                                                                                                                             |
+| `config-generator.ts`    | `src/cli/lib/configuration/config-generator.ts`    | Re-export facade over `@workspace/compile/seed-to-config` — generate ProjectConfig from wizard, scope split. Declares nothing; the side-effect import of `compile-seat.js` is what hands the package this CLI's console                                  |
+| `config-merger.ts`       | `src/cli/lib/configuration/config-merger.ts`       | Merge wizard result with existing                                                                                                                                                                                                                        |
+| `config-writer.ts`       | `src/cli/lib/configuration/config-writer.ts`       | Re-exports the config-source renderers from `@workspace/compile/config-source`; declares `getGlobalConfigTypesPath`'s sibling `getGlobalConfigImportPath`, the one part derived from `os.homedir()`                                                      |
+| `config-types-writer.ts` | `src/cli/lib/configuration/config-types-writer.ts` | Re-exports the `config-types.ts` renderers from `@workspace/compile/config-types-source` and every name `config-types-io.ts` declares                                                                                                                    |
+| `config-types-io.ts`     | `src/cli/lib/configuration/config-types-io.ts`     | The half of the types writer that reads the machine: `getGlobalConfigTypesPath()`, `buildConfigTypesBackgroundData()`, `regenerateConfigTypes()`. `eslint.config.js` names THIS file for the `fs`-write ban that used to sit on `config-types-writer.ts` |
+| `config-loader.ts`       | `src/cli/lib/configuration/config-loader.ts`       | Load TypeScript config via jiti                                                                                                                                                                                                                          |
+| `project-config.ts`      | `src/cli/lib/configuration/project-config.ts`      | Load and validate project config                                                                                                                                                                                                                         |
+| `scope-predicates.ts`    | `src/cli/lib/configuration/scope-predicates.ts`    | Shared scope/tombstone predicates (see below)                                                                                                                                                                                                            |
+| `define-config.ts`       | `src/cli/lib/configuration/define-config.ts`       | Type-safe `defineConfig()` helper                                                                                                                                                                                                                        |
+| `default-categories.ts`  | `src/cli/lib/configuration/default-categories.ts`  | Built-in category definitions — count in [skills-and-matrix.md](./skills-and-matrix.md) ("Current Counts")                                                                                                                                               |
+| `default-rules.ts`       | `src/cli/lib/configuration/default-rules.ts`       | Default skill rule definitions — see [built-in-catalogue.md](./built-in-catalogue.md)                                                                                                                                                                    |
+| `default-stacks.ts`      | `src/cli/lib/configuration/default-stacks.ts`      | Default stack definitions — see [built-in-catalogue.md](./built-in-catalogue.md)                                                                                                                                                                         |
+| `skill-audit.ts`         | `src/cli/lib/configuration/skill-audit.ts`         | The `skillAudit` worksheet: per-skill `AuditVerdict` / `SkillClass` / `BatchId` provenance. Data only, no logic                                                                                                                                          |
+| `index.ts`               | `src/cli/lib/configuration/index.ts`               | Barrel exports                                                                                                                                                                                                                                           |
 
 **Barrel surface (`index.ts`)** — value exports only, grouped by the module each re-export block names, exhaustively and in source order: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `isPublicCatalogueCheckout`, `offersBuiltInStacks`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty` (`config-generator.ts`); `mergeConfigs`, `mergeWithExistingConfig` (`config-merger.ts`); `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` (`scope-predicates.ts`); **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig` (`project-config.ts`); `defineConfig`; `defaultCategories`; `defaultRules`; `defaultStacks`; **`ConfigDefaultExportError`**, `loadConfig` (`config-loader.ts`); `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath` (`config-types-writer.ts`).
 
@@ -599,9 +601,11 @@ When `newlyAddedSkillIds === undefined`, `shouldIncludeTriple` returns `true` un
 
 ### Which agents a skill lands on — taxonomy, not catalogue membership
 
-`buildAgentStack` in `config-generator.ts` runs three filters over every `(agent, category, skillId)`
-triple, in this order: `isScopeCompatible`, then `shouldIncludeTriple` (per-agent curation, above), then
-`isPreservedOrRelevant`. The third is the one that decides reach for a skill arriving this session,
+`buildAgentStack` in `packages/compile/src/seed-to-config.ts` runs three filters over every
+`(agent, category, skillId)` triple, in this order: `isScopeCompatible`, then `shouldIncludeTriple`
+(per-agent curation, above), then `isPreservedOrRelevant`. All four are module-private there;
+`configuration/config-generator.ts` re-exports none of them, and `generateProjectConfigFromSkills`
+is the CLI-side entry point that drives them. The third is the one that decides reach for a skill arriving this session,
 and it is two-tier:
 
 - **A triple the prior save already carries rides through verbatim**, cross-domain included. That is
@@ -695,12 +699,17 @@ Falls back to `scope: saved?.scope ?? "global"` and `origin: saved?.origin ?? de
 
 Replaced the former `writeProjectSourceConfig()`. **Renders only — writes nothing** since the config-gate landed.
 
-| Function                                 | Purpose                                       |
-| ---------------------------------------- | --------------------------------------------- |
-| `generateConfigSource()`                 | Main entry: generates config.ts source string |
-| `generateBlankGlobalConfigSource()`      | Blank global config (empty arrays)            |
-| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)   |
-| `getGlobalConfigImportPath()`            | Returns absolute path to `~/.claude-src/`     |
+The renderers live in `@workspace/compile/config-source` and `config-writer.ts` re-exports them,
+so the editor's output preview draws the bytes an install writes:
+
+| Function                            | Purpose                                       |
+| ----------------------------------- | --------------------------------------------- |
+| `generateConfigSource()`            | Main entry: generates config.ts source string |
+| `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)            |
+
+`generateBlankGlobalConfigTypesSource()` moved with the types-half renderers. One function still
+lives in `config-writer.ts`: `getGlobalConfigImportPath()`, the absolute path to `~/.claude-src/`,
+which is `os.homedir()` and so the one thing the package cannot hold.
 
 The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` parameter:
 
@@ -715,16 +724,18 @@ Generates `config-types.ts` files with typed union types narrowed to installed i
 exported function, exhaustively — the same list [config-writer.md](../config/config-writer.md)
 carries, and both are bound to the module by `scripts/check-enumeration-drift.ts`:
 
-| Function                             | Purpose                                                                                   |
-| ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `getGlobalConfigTypesPath()`         | Absolute path to the global config-types.ts when it exists, else `null`                   |
-| `assembleConfigTypesSource()`        | The single emission template all three writers route through                              |
-| `buildConfigTypesBackgroundData()`   | The one constructor for `ConfigTypesBackgroundData`, beside the type it builds            |
-| `regenerateConfigTypes()`            | Full regeneration; throws `GlobalPairWriteViolation` at `$HOME`                           |
-| `generateConfigTypesSource()`        | Standalone config-types.ts, narrowed to a config when passed one, else to the full matrix |
-| `deriveCategories()`                 | `SkillId[]` → the categories the matrix places them in, minus `LOCAL_PSEUDO_CATEGORY`     |
-| `deriveDomains()`                    | `Category[]` → the domains the matrix gives them                                          |
-| `generateProjectConfigTypesSource()` | Project config-types.ts extending the global one                                          |
+| Function                                 | Purpose                                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `assembleConfigTypesSource()`            | The single emission template all three writers route through                              |
+| `generateConfigTypesSource()`            | Standalone config-types.ts, narrowed to a config when passed one, else to the full matrix |
+| `generateProjectConfigTypesSource()`     | Project config-types.ts extending the global one                                          |
+| `generateBlankGlobalConfigTypesSource()` | Blank config-types.ts (all types = `never`)                                               |
+| `deriveCategories()`                     | `SkillId[]` → the categories the matrix places them in, minus `LOCAL_PSEUDO_CATEGORY`     |
+| `deriveDomains()`                        | `Category[]` → the domains the matrix gives them                                          |
+
+The disk-probing half is `configuration/config-types-io.ts`, which `config-types-writer.ts`
+re-exports: `getGlobalConfigTypesPath()`, `buildConfigTypesBackgroundData()` and
+`regenerateConfigTypes()`.
 
 When a global installation exists, project `config-types.ts` imports from global and extends with project-only types. Types are narrowed to only installed items (not the full matrix).
 
@@ -816,16 +827,23 @@ Propagation itself rewrites a registered project's `config.ts` / `config-types.t
 
 Supports custom branding via `.claude-src/config.ts`:
 
+<!-- prettier-ignore -->
 ```typescript
+import type { ProjectConfig } from './config-types'
+
 export default {
-  name: "my-project",
-  skills: [],
+  name: 'my-project',
   agents: [],
-  branding: {
-    name: "Acme Dev Tools",
-  },
-} satisfies ProjectConfig;
+  skills: [],
+  branding: { name: 'Acme Dev Tools' },
+} satisfies ProjectConfig
 ```
+
+Those are the emitted bytes, not a style choice made here: the pair lands already formatted under a
+USER's prettier settings, and `branding` is passthrough data, so it round-trips through the writer
+in arrival order after every field `CANONICAL_FIELD_ORDER` names — which is also why `agents`
+precedes `skills` above however the config was assembled. See
+[config/config-writer.md](../config/config-writer.md) → "The emitted pair is already formatted".
 
 Falls back to `DEFAULT_BRANDING` from `src/cli/consts.ts`:
 

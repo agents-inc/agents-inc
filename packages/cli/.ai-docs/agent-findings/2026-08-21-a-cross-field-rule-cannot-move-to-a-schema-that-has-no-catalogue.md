@@ -86,11 +86,16 @@ A base-schema refusal makes `fetchSharedConfig` answer "this share link holds an
 for exactly the links the repair flow exists to rescue. Five tests under
 `test.describe("a shared link holding the pair")` cover that flow.
 
-It is worse still at module scope: `apps/editor/e2e/support/sharing.ts` builds four fixtures through
+It is worse still at module scope: `packages/api-mocks/src/fixtures.ts` builds four fixtures through
 `seedPayloadSchema.parse(...)` — `OUT_OF_SCOPE_PAYLOAD` (deliberately holding the pair) and the three
 `marketplacePayload(...)` products, whose skills are all `scope: "project"` assigned to
 `web-developer` with `agents: {}`. A strict base schema throws at import, taking down
 `catalog-first.spec.ts`, `shared-link.spec.ts` and `marketplace-switch.spec.ts` along with it.
+
+(Path corrected 2026-08-29. Those four were in `apps/editor/e2e/support/sharing.ts` when this was
+measured on 2026-08-21 and moved into the mock package since; that file re-exports them, and the
+argument above is unchanged either way — the throw is at import in whichever module holds the
+`parse` call.)
 
 ### The measurement that settles the CLI side
 
