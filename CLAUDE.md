@@ -6,15 +6,18 @@ interactive grid, and compile subagents that carry exactly the skills you select
 CLI package until 2026-08-04 and is now a monorepo; `packages/cli` is still the only workspace that
 publishes to npm.
 
-| Workspace           | What it is                                             |
-| ------------------- | ------------------------------------------------------ |
-| `packages/cli`      | the published CLI — `agents-inc` on npm                |
-| `apps/editor`       | the editor (Vite + React, deployed to Cloudflare)      |
-| `apps/www`          | the Astro site — landing page at `/`, docs at `/docs`  |
-| `apps/server`       | the API worker (Hono)                                  |
-| `packages/matrix`   | the skill catalog the web app reads                    |
-| `packages/ui`       | the design system shared by the web app                |
-| `packages/*-config` | shared eslint, prettier, typescript and vitest configs |
+| Workspace            | What it is                                                         |
+| -------------------- | ------------------------------------------------------------------ |
+| `packages/cli`       | the published CLI — `agents-inc` on npm                            |
+| `apps/editor`        | the editor (Vite + React, deployed to Cloudflare)                  |
+| `apps/www`           | the Astro site — landing page at `/`, docs at `/docs`              |
+| `apps/server`        | the API worker (Hono)                                              |
+| `packages/matrix`    | the skill catalog the web app reads                                |
+| `packages/compile`   | the pure renderers the CLI writes with and the editor previews     |
+| `packages/api`       | the typed `hc<AppType>` client everything calls the worker through |
+| `packages/api-mocks` | one MSW description of that worker, run by both editor suites      |
+| `packages/ui`        | the design system shared by the web app                            |
+| `packages/*-config`  | shared eslint, prettier, typescript and vitest configs             |
 
 [`README.md`](./README.md) carries the full layout and how to work in the repository.
 

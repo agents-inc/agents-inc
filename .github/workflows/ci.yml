@@ -87,6 +87,26 @@ jobs:
         working-directory: packages/cli
         run: bun run generate:matrix:check
 
+      # The same reasoning for the vendored agent corpus: packages/cli writes it,
+      # the editor's output preview reads it, and every input is in this
+      # repository — so the runner can regenerate and byte-compare. Without this
+      # nothing catches a partial, a template or a version bump that landed
+      # without a regeneration, and the preview then draws bytes no install writes.
+      - name: The vendored agent corpus must match what is committed
+        working-directory: packages/cli
+        run: bun run generate:compile:check
+
+      # And the worker's D1 migrations, for the same reason one step up: a
+      # `notNull`, an index or a foreign key added to src/db/*.schema.ts type
+      # checks, lints and passes the whole suite — the suite applies the
+      # COMMITTED migrations, so the tables it uses are the old ones — and the
+      # first sign of the missing file is the deploy applying schema that does
+      # not match the code it just shipped. This is the step that has to fail
+      # before that, which is why it is here rather than in the deploy job.
+      - name: The migrations must match the schema they are generated from
+        working-directory: apps/server
+        run: bun run db:generate:check
+
       # The CLI is filtered out of every turbo run below: check-cli owns it, and
       # running it in both jobs would pay for it twice.
       - run: bun run typecheck --filter='!agents-inc'
@@ -160,6 +180,123 @@ jobs:
         working-directory: packages/cli
         run: bun run test:smoke
 
+  # Chromatic — the appearance half of the DESIGN SYSTEM's coverage, and the
+  # only check anywhere in this repository that compares a render to the last
+  # one anybody accepted. check-web already renders every story in a real
+  # Chromium and gates on axe, but axe reads structure — names, labels, roles —
+  # and a component whose padding, colour or border moved passes every one of
+  # those checks while looking different. `color-contrast` is held out of axe
+  # permanently by owner ruling (packages/ui/.storybook/preview.ts says why), so
+  # for the palette specifically a baseline diff is the only instrument left.
+  #
+  # Its own job rather than a step in check-web, for two independent reasons:
+  # it needs the full git history that job deliberately does not fetch, and it
+  # talks to a third-party service, so a Chromatic outage should not be able to
+  # hold up the type check.
+  #
+  # It does NOT gate the deploy, on the same reasoning check-cli does not: a
+  # visual change waiting to be accepted in Chromatic's UI is a question for a
+  # human, not a reason to stop shipping the editor. It still turns the commit
+  # red, which is the part that matters.
+  visual-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Chromatic walks git history to find the baseline build this commit
+          # descends from. A shallow clone has one commit and no ancestry, so
+          # every run would look like the project's first and re-baseline the
+          # whole package — which is to say it would never report a change.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      # The CLI, not chromaui/action: the action installs its own Node and its
+      # own dependencies, which is a second install of a workspace this job has
+      # already installed from the lockfile, and the CLI reads the token out of
+      # the environment by itself. It runs `build-storybook` for us —
+      # packages/ui/chromatic.config.json names the script — then uploads the
+      # build and diffs it.
+      #
+      # No `playwright install` here, deliberately: the screenshots are taken in
+      # Chromatic's infrastructure across its browsers, not on this runner. That
+      # is the whole reason this is a hosted service rather than another
+      # `toHaveScreenshot` in the Playwright suite.
+      #
+      # Unguarded on purpose. Without CHROMATIC_PROJECT_TOKEN this job fails
+      # loudly, which is correct — the alternative is a `if: secrets…` guard
+      # that turns a missing token into a green skip, and a gate that passes
+      # over nothing is the failure mode this repository keeps writing comments
+      # about.
+      - name: The design system must still look like its baselines
+        working-directory: packages/ui
+        run: bun run chromatic
+        env:
+          CHROMATIC_PROJECT_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+
+  # Argos — the same question asked of the EDITOR rather than of the design
+  # system, and the two do not overlap. visual-ui above diffs components
+  # standing alone; this diffs the assembled screen, which is where a component
+  # that is correct in isolation goes wrong. Nothing in check-web can see
+  # either: `getByRole` has no opinion about pixels, which is why the
+  # behavioural suite passes through a layout change without noticing it.
+  #
+  # Its own job for the same two reasons as visual-ui — a third-party service
+  # should not be able to hold up the type check, and an appearance diff
+  # waiting on a human is not a reason to stop shipping the editor. It does not
+  # gate the deploy.
+  #
+  # This suite builds the app and serves it statically rather than driving the
+  # dev server the behavioural suite uses. That is measured rather than
+  # preferred; playwright.visual.config.ts carries the measurement.
+  visual-editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      # Only chromium, matching the suite's single project — and unlike
+      # visual-ui, this one really does take its screenshots on this runner.
+      - run: bunx playwright install --with-deps chromium
+
+      # The config's webServer runs `vite build --mode test` and serves it, so
+      # there is no build step here. `--mode test` is what points the bundle at
+      # the stub worker the fixtures route; apps/editor/.env.test says why.
+      #
+      # Unguarded, like visual-ui: without ARGOS_TOKEN this fails loudly rather
+      # than skipping green over an appearance suite that ran nowhere.
+      - name: The editor must still look like its baselines
+        working-directory: apps/editor
+        run: bun run test:visual
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-editor-results
+          path: apps/editor/test-results/
+          retention-days: 7
+
   deploy:
     # check-web only, and check-cli deliberately absent. Nothing the CLI's
     # pseudo-terminal suite covers can change what Cloudflare serves, so gating
@@ -196,6 +333,22 @@ jobs:
       # the behaviour we want but not a reason to keep the second copy.
       # VITE_API_URL stays named in turbo.json's build `env` so that a shell
       # value, if one ever returns, still keys the cache.
+      # D1 migrations, BEFORE the deploy. The worker's auth and /stacks routes
+      # read tables that `wrangler deploy` does not create — it ships code, not
+      # schema — so without this a migration authored in a commit reaches the
+      # edge as code expecting a column that is not there. Applied by hand for
+      # the first two, which is exactly the arrangement that works until the
+      # once somebody forgets.
+      #
+      # Idempotent: `migrations apply` runs only what the `d1_migrations` table
+      # says has not run, so a deploy with no new migration is a no-op.
+      - name: The database must have the schema the code expects
+        working-directory: apps/server
+        run: bunx wrangler d1 migrations apply agents-inc-db --env production --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - run: bun run deploy
         env:
           # Slugs are public identifiers — they appear in every Sentry URL, so

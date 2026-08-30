@@ -61,6 +61,14 @@
     "test": {
       "dependsOn": ["^build"],
       "outputs": []
+    },
+    // apps/server only. It regenerates the D1 migrations against a throwaway
+    // copy and compares, so a schema change without its migration fails here
+    // rather than at the edge — `wrangler deploy` ships code and not schema.
+    // A task rather than a line inside `test` because it spawns drizzle-kit and
+    // takes seconds, and a suite that pays for that on every run gets skipped.
+    "db:generate:check": {
+      "cache": false
     }
   }
 }

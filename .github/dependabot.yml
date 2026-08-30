@@ -1,0 +1,41 @@
+# Dependency updates, opened as pull requests.
+#
+# Two ecosystems and not one: `npm` covers every workspace's dependencies, and
+# `github-actions` covers the pinned action versions in ci.yml, which nothing
+# else in this repository ever looks at — `deps:check` compares workspaces to
+# each other and has no opinion about `actions/checkout@v5`.
+#
+# WEEKLY AND GROUPED, deliberately. Ungrouped daily updates on a monorepo this
+# size open a pull request per package per bump, and a review queue nobody reads
+# is worse than no automation: the security updates get lost among the patch
+# bumps. One grouped PR per ecosystem per week is a thing a person will actually
+# open.
+#
+# `versioning-strategy: increase-if-necessary` matches how this repository pins:
+# ranges like `^10` stay as they are unless the new version falls outside them,
+# so a patch bump does not rewrite package.json for nothing. The exact pins —
+# `playwright: 1.56.1`, `bun@1.2.6` — are exact on purpose and will be raised
+# as real version changes, which is what you want to see in a diff.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 3
+    groups:
+      # Everything non-breaking in one PR. A major lands on its own, because a
+      # major is a thing to read rather than a thing to merge.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]

@@ -21,10 +21,15 @@ Everything the CLI can do — the full command reference, the stack list, the sk
 /
 ├── apps/
 │   ├── editor/           the editor (Vite + React, deployed to Cloudflare)
-│   └── server/           the API worker (Hono)
+│   ├── server/           the API worker (Hono)
+│   └── www/              the Astro site — landing page at /, docs at /docs
 ├── packages/
 │   ├── cli/              the published CLI — this is agents-inc on npm
 │   ├── matrix/           the skill catalog the web app reads
+│   ├── compile/          the pure renderers — one implementation, called by the CLI's
+│   │                     write path and by the editor's output preview
+│   ├── api/              the typed hc<AppType> client everything calls the worker through
+│   ├── api-mocks/        one MSW description of that worker, run by both editor suites
 │   ├── ui/               the design system shared by the web app
 │   ├── eslint-config/    shared configs
 │   ├── prettier-config/
@@ -32,10 +37,17 @@ Everything the CLI can do — the full command reference, the stack list, the sk
 │   └── vitest-config/
 ├── docs/
 │   ├── cli/              the CLI's product documentation
-│   └── web/              the web planning notes
+│   ├── web/              the web planning notes
+│   ├── meta/             what building this taught me, read off the commit history
+│   └── repo/             documents spanning more than one workspace, owned by neither
+├── todo/                 everything outstanding, one file per workspace
 ├── .github/workflows/
 └── .husky/
 ```
+
+`ls -d */ apps/*/ packages/*/ docs/*/` is what that tree is derived from, and re-deriving it is the
+only way to keep it honest — a box-drawing tree with no ellipsis reads as complete whether or not it
+is, and this one silently was not.
 
 `packages/cli` is the only workspace that publishes to npm, as `agents-inc`. Its `README.md` is the one npm shows, which is why the product documentation lives there rather than here.
 
@@ -47,7 +59,7 @@ The repository uses [bun](https://bun.sh) and [Turborepo](https://turborepo.com)
 bun install
 ```
 
-That is the whole of it — nothing else to copy, and in particular **do not create `apps/editor/.env` in order to make the build work.** It used to be necessary and it is not any more, which matters because the step was a footgun: `.env` is loaded in every mode, so the localhost address it carried for `bun dev` was also the address `vite build` froze into the bundle, and a hand-run `bun run deploy` would then publish a live site whose every request went to the developer's own machine. That very nearly happened during the repository merge.
+That is the whole of it for the editor. The worker needs more: three values in `apps/server/.dev.vars` (copy `.dev.vars.example`) and a `wrangler d1 migrations apply agents-inc-db --local` before its suite or `wrangler dev` will run, and in particular **do not create `apps/editor/.env` in order to make the build work.** It used to be necessary and it is not any more, which matters because the step was a footgun: `.env` is loaded in every mode, so the localhost address it carried for `bun dev` was also the address `vite build` froze into the bundle, and a hand-run `bun run deploy` would then publish a live site whose every request went to the developer's own machine. That very nearly happened during the repository merge.
 
 What replaced it is `apps/editor/.env.production`, which is committed. Vite ranks a mode-specific env file above the generic one — shell, then `.env.production`, then `.env.local`, then `.env` — so a production build takes the real API address from that file and a local `.env` cannot reach it. Both halves follow: `bun dev` needs no setup because `env.schema.ts` still supplies the localhost default in development, and `bun run build` needs none because `.env.production` supplies the production one.
 

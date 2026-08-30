@@ -109,3 +109,13 @@ fi
 # tsconfig.scripts.json — which is what puts scripts/ under a commit-time gate
 # for the first time.
 bunx turbo run lint typecheck test --filter='...[HEAD]'
+
+# The D1 migrations, and it is on the SAME filter as the line above rather than
+# unconditional: apps/server is selected only when it or something it depends on
+# moved, which is exactly when a schema edit could have arrived without its
+# migration. `wrangler deploy` ships code and not schema, so the alternative to
+# catching it here is catching it at the edge, where the code expects a column
+# nothing added. It is a separate line because it is a separate task — folding it
+# into `test` would put a drizzle-kit spawn inside the suite that runs most
+# often, which is how a check gets skipped.
+bunx turbo run db:generate:check --filter='...[HEAD]'

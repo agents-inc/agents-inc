@@ -11,6 +11,20 @@
       // copy serves them all. Refutable by reading, so it is not a finding.
       "ignoreBinaries": ["eslint"],
     },
+    "packages/api": {
+      // vitest.config.ts is `export { nodeConfig as default } from "@workspace/vitest-config/node"`
+      // here too, so the include it re-exports (`src/**/*.test.ts`) is one module hop away from the
+      // config file knip reads — the same defect as packages/compile and packages/matrix below, and
+      // the same line fixes it. Without it this workspace's only test file reads as an orphan.
+      "entry": ["src/**/*.test.ts"],
+    },
+    "packages/api-mocks": {
+      // vitest.config.ts is `export { nodeConfig as default } from "@workspace/vitest-config/node"`
+      // here too, so the include it re-exports (`src/**/*.test.ts`) is one module hop away from the
+      // config file knip reads — the same defect as packages/compile and packages/matrix below, and
+      // the same line fixes it. Without it this workspace's only test file reads as an orphan.
+      "entry": ["src/**/*.test.ts"],
+    },
     "packages/cli": {
       "entry": [
         // oclif loads these by convention, never by import: `oclif.commands.target` in
@@ -34,6 +48,15 @@
       "ignore": ["src/cli/types/generated/**"],
       "ignoreUnresolved": ["./e2e/global-setup.ts"],
     },
+    "packages/compile": {
+      // vitest.config.ts is `export { nodeConfig as default } from "@workspace/vitest-config/node"`
+      // here too, so the include it re-exports (`src/**/*.test.ts`) is one module hop away from the
+      // config file knip reads — the same defect as packages/matrix below, and the same line fixes
+      // it. Without it the suite's own files are orphans, and `src/contract/emission-scenarios.ts`
+      // reads as dead alongside them, because the test beside it is its only importer: every other
+      // mention of that module in this package is prose in a comment.
+      "entry": ["src/**/*.test.ts"],
+    },
     "packages/matrix": {
       // vitest.config.ts is `export { nodeConfig as default } from "@workspace/vitest-config/node"`,
       // and the include it re-exports (`src/**/*.test.ts`) is one module hop away from the config
@@ -48,7 +71,12 @@
     "packages/ui": {
       // Storybook derives its test list from `stories` in .storybook/main.ts, which is one hop
       // further than knip's storybook plugin follows into this workspace's vitest projects.
-      "entry": ["src/**/*.stories.tsx"],
+      //
+      // terrazzo.config.js is read by the `tz` binary that `bun run tokens` invokes, and is never
+      // imported by anything — so it is an entry rather than a dead file, and naming it is also
+      // what makes its `@terrazzo/plugin-css` import count. `@terrazzo/cli` was never in question:
+      // the script names that binary directly.
+      "entry": ["src/**/*.stories.tsx", "terrazzo.config.js"],
     },
     "apps/editor": {
       // The vite plugin is off because knip evaluates a function config at mode "production", and
