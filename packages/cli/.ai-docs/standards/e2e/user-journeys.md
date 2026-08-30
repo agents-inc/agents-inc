@@ -1,13 +1,16 @@
 ---
-last_validated: 2026-08-21
+last_validated: 2026-08-30
 ---
 
 # Canonical user journeys
 
-The list of journeys the CLI must prove it can perform end to end, and what a spec has to assert
-before it counts as proving one. Every spec the `e2e` project collects belongs to a journey on this
-page, bar those whose subject is the harness itself and which are named below; a journey with no
-from-scratch spec is a hole in the suite regardless of how many variant specs branch off it.
+The list of journeys the product must prove it can perform end to end — across the CLI and the
+editor, which are one arc rather than two products — and what a spec has to assert before it counts
+as proving one. Every spec the `e2e` project collects belongs to a journey on this page, bar those
+whose subject is the harness itself and which are named below; a CLI journey with no from-scratch
+spec is a hole in the suite regardless of how many variant specs branch off it. A journey with no
+CLI surface at all is a different thing and says so — see
+[Which suites this page governs](#which-suites-this-page-governs).
 
 That opening requirement is now held in BOTH directions.
 `src/cli/lib/__tests__/spec-gates.test.ts` reads row → spec three ways, and spec → row once —
@@ -37,18 +40,34 @@ A **from-scratch** spec starts with nothing on disk at the relevant scope, drive
 that begins from a `ProjectBuilder`-written config is a **variant** — legitimate for covering a
 branch, never sufficient to prove the journey is reachable.
 
-### Which suite this page governs
+### Which suites this page governs
 
-**This page governs `packages/cli/e2e/` and nothing else.** Its unit of proof is a run of the
-compiled binary, so a spec that never spawns it cannot close a row here however completely it
-covers the same user-facing behaviour.
+**This page registers the product's journeys across both front doors** — the CLI at
+`packages/cli/e2e/` and the editor at `apps/editor/e2e/specs/`. They are one arc rather than two
+products, and the arc runs in both directions: a configuration built in the browser is installed by
+the binary, and an installation the binary holds is opened in the browser. A page registering one
+half would report a flow as unproved while the other half proved it, and would never name the
+crossing that neither half proves — which is the only place a defect can sit where both ends are
+individually correct.
 
-`apps/editor/e2e/specs/` is a Playwright suite in another workspace, driving a browser against a
-stubbed HTTP surface. Several journeys below span both — the editor mints a payload and the CLI
-installs it — and for those the row names the editor spec as the **counterpart leg**, so a reader
-can see which half is proved where. A counterpart leg is a cross-reference, never a from-scratch
-proof: the two suites meet only at the payload, and the payload is the one thing each side can hold
-still while asserting on the other.
+**A from-scratch spec is still a run of the compiled binary**, and nothing here relaxes that. That
+is the CLI's unit of proof: a spec that never spawns the binary cannot close a CLI leg however
+completely it covers the same user-facing behaviour. `apps/editor/e2e/specs/` is a Playwright suite
+in another workspace, driving a browser against a stubbed HTTP surface, and a row names its specs as
+**counterpart legs** so a reader can see which half is proved where.
+
+**Some rows have no CLI leg at all, and they carry that rather than being left off the page.**
+Signing in, saving a stack to an account, composing a selection from a sentence and folding the
+grid away are browser-and-worker journeys; the first three end at a payload, which is where the CLI
+picks the arc back up, and the fourth has no CLI subject in any direction. Their From-scratch column
+reads `none` with the reason, because that column asks whether the binary has been run and the
+honest answer is that it has not.
+
+**What the GATE reads is still the CLI suite alone.**
+`src/cli/lib/__tests__/spec-gates.test.ts` resolves the From-scratch column against
+`packages/cli/e2e/` and would fail on an editor spec named there. That is a property of the gate
+rather than of this page, and it is why every counterpart leg is named in the Status cell instead —
+`namedOnJourneyPage` reads the whole page, so a CLI spec is claimed wherever it appears.
 
 **A payload field's FORM is part of the contract, and a counterpart leg proves nothing about it
 unless the two suites carry the same value.** Holding the payload still is what makes the
@@ -136,14 +155,15 @@ re-sharing an unchanged installation returns the id it already had. The wire con
 
 ## Coverage vocabulary
 
-| Marker                 | Meaning                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **COVERED**            | A from-scratch spec exists and is named                                                                                                           |
-| **PARTIAL**            | A from-scratch spec exists but does not assert all four surfaces — the missing surfaces are named                                                 |
-| **TO TEST**            | No from-scratch spec                                                                                                                              |
-| **PARKED**             | Owner ruling: the implementation is changing, so no spec work happens here                                                                        |
-| **(blocked)**          | Qualifier on TO TEST: the spec cannot be written without the real Claude CLI present                                                              |
-| **PARTIAL by subject** | Fewer than four surfaces because the journey has no subject on the others — a read-only browse installs nothing, a refused build writes no config |
+| Marker                    | Meaning                                                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **COVERED**               | A from-scratch spec exists and is named                                                                                                                                  |
+| **PARTIAL**               | A from-scratch spec exists but does not assert all four surfaces — the missing surfaces are named                                                                        |
+| **TO TEST**               | No from-scratch spec                                                                                                                                                     |
+| **PARKED**                | Owner ruling: the implementation is changing, so no spec work happens here                                                                                               |
+| **(blocked)**             | Qualifier on TO TEST: the spec cannot be written without the real Claude CLI present                                                                                     |
+| **PARTIAL by subject**    | Fewer than four surfaces because the journey has no subject on the others — a read-only browse installs nothing, a refused build writes no config                        |
+| **COVERED, browser-side** | The journey has no CLI surface in either direction, so its proof is a Playwright spec and no run of the binary is owed. Distinct from TO TEST, which means a run IS owed |
 
 ### Prefix journeys
 
@@ -400,6 +420,50 @@ the bytes on disk are held against. Journey 47's spec is the other case of the s
 | #   | Journey                                                                                                                                                                | From-scratch spec                   | Surfaces asserted | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 48  | The preview a visitor is shown is the install a user gets — the shared renderers re-render a real installation's own configuration and the bytes match what is on disk | `lifecycle/preview-matches-install` | 1, 3, 4           | **COVERED** — the output preview is worth building only if it draws the bytes an install actually writes, and there is one way to know that: install, then re-render the same configuration through `@workspace/compile` and compare against the file on disk. Both writers are exercised, because they emit materially different bytes — a global root takes the standalone writer and a project root takes the one that inlines the global entries and reorders its own `export default`. The third leg holds the provenance marker: every compiled sub-agent on disk carries `provenanceMarker(CORPUS_CLI_VERSION)`, which is what the preview stamps, because a browser cannot read the CLI's manifest and a guessed version would be wrong on the most visible line of the dialog. **KNOWN GAP, named in the spec rather than left as an absence:** the project `config-types.ts` is not compared, because its import specifier is `path.relative(<project>/.claude-src, $HOME/.claude-src)` — a fact about one machine, which stays in the CLI and which the preview draws a placeholder for. The **counterpart leg** is `apps/editor/e2e/specs/output-preview.spec.ts` — the browser half, which is where a visitor being SHOWN a preview at all is proved: the two-root tree, the file bodies, the Shiki rendering, the version line and the counts. Neither half proves the headline alone, and the two meet at the renderers rather than at a payload, which is why this row names an editor spec without being a share-family journey |
+
+## Journeys 49–51 — the account, the composer, and the surface both are used on
+
+Added 2026-08-30, for the work that has landed since 0.161.0 and is not yet released. The worker grew
+accounts, saved stacks and a compose route (`apps/server/src/auth.ts`, `stacks.ts`, `compose.ts`);
+the editor grew the controls that reach them and a docked composer; and the roster and chrome were
+redrawn around both. None of it changed a byte the CLI writes, which is exactly why it needs rows:
+work that adds no CLI surface adds no CLI spec, so nothing on this page would otherwise record that
+three new flows exist.
+
+**All three rows are browser-and-worker journeys, and the first two end at a payload the CLI already
+installs.** That is what puts them here rather than on a page of the editor's own. An account's
+saved stack is a NAME AND A POINTER — the bytes live in KV under the id `POST /configs` minted,
+which is the id a share link carries and the id `init --from` resolves — so applying one is
+`GET /configs/:id` against the route the share family already uses. Nothing new crosses the wire,
+and the CLI needs no change to consume any of it.
+
+**What is unproved is the crossing, and it is journey 27's unproved crossing arriving at two more
+producers.** No run anywhere carries an id minted by an account's Save, or a selection a model
+proposed, out of the browser and into the compiled binary. Both were driven by hand instead; a
+suite would need the editor's Playwright run and the CLI's PTY run inside one test, which neither
+harness can do today.
+
+| #   | Journey                                                                                                                                                                                                                                                  | From-scratch spec                                                      | Surfaces asserted | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 49  | An account holds a configuration — sign in, save this selection under a name, and apply it from any browser. Signing in is ADDITIVE: everything the product does still works with no account, and a visitor who never signs in sees what they always saw | none; no run of the binary has been handed an account-minted id        | 5                 | **TO TEST** on the CLI leg, and it is the crossing rather than either end. Counterpart legs, all browser-side: `apps/editor/e2e/specs/accounts.spec.ts` (signed out the editor is unchanged and offers a way in, the rail names who is signed in, and a first sign-in carries the local snapshot into the account while leaving an account that already has stacks alone), `save-stack.spec.ts` (Save is offered only for a selection holding a skill — a pinned bare agent does not make one saveable — sits above Share, overwrites the single local slot on a re-save, and mints the payload it was saved from), `saved-stack-apply.spec.ts` and `saved-stack-applied.spec.ts` (below). Worker side: `apps/server/src/stacks.test.ts`, including the 401-rather-than-403 answer, which is how the editor tells an expired session from a refusal and why one button no longer has two meanings |
+| 50  | A sentence becomes a proposal, and nothing changes until it is applied — the docked composer sends a signed-in `POST /compose` and draws what came back as a diff over the current selection, never as an edit already made                              | none; a composed selection reaches the CLI only as an ordinary payload | 5                 | **TO TEST** on the CLI leg. Counterpart legs: `apps/editor/e2e/specs/composer.spec.ts` (the dock, the two openers in the owner's order, and the absence of any mode control in both directions — intent comes from the prompt text and nothing records which opener was clicked) and the composer block of `accounts.spec.ts` (signed in, the request carries the sentence and the proposal draws the ids it was given). The worker's four boundaries are `apps/server/src/compose.test.ts`: signed-in only, ten calls a minute per USER rather than per address, a 600-character ceiling, and a blank sentence refused without reaching the model. **The model's ids are not trusted** — they are filtered against `CATALOG.skillsById` before the editor sees them, so a plausible near-miss is silently absent rather than a broken row                                                        |
+| 51  | The catalogue stays workable while it is read — the filter bar sticks at the top of a long scroll, the stack grid folds away, and neither loses a thing that was chosen or a caret that was placed                                                       | none; nothing here has a CLI surface in either direction               | —                 | **COVERED, browser-side.** `apps/editor/e2e/specs/sticky-bar.spec.ts` (not stuck at rest or mid-column, stuck at the top, released on the way back up, still usable while stuck, and taking no focus as it sticks — a Tab that sticks the bar keeps its focus and a caret survives the page scrolling on), `stack-collapse.spec.ts` (open at rest, folds and comes back, and folding changes nothing that was chosen), `roster.spec.ts` and `design-tokens.spec.ts` (a semantic token resolves to the core colour it points at, and the effort meter's two tokens are gone rather than orphaned). `visual.spec.ts` and `a11y.spec.ts` gate the assembled page over eight states rather than proving this row                                                                                                                                                                                      |
+
+**Journey 49's apply leg is the one worth reading before touching it**, because it is where EDITOR-59
+landed. Applying a saved stack **seats the catalogue the payload names before reading a single id**;
+a catalogue that will not load parks the apply behind the marketplace dialog and resumes it once the
+catalogue is there; and ids the seated catalogue could not place are named rather than dropped. The
+local slot holds the payload outright and the remote one holds a pointer, and
+`saved-stack-apply.spec.ts` asserts the seating for both arms — one code path, two ways in, and the
+local arm is the one that had no spec of any kind before that file.
+
+**What the same commits changed and did NOT add a journey.** Recorded so the next reader does not
+re-derive it: `feat(www)` rewrote the documentation site, `feat(ui)` split the palette into core and
+semantic tiers, and `feat(api)` moved both front doors onto one typed `hc<AppType>` client —
+including `packages/cli/src/cli/lib/seed/fetch-seed.ts`, so the CLI's share family now reaches the
+worker through it. None of the three is a flow a user performs; the last one is a change of
+transport underneath journeys 23, 29 and 30, whose specs drive the same store and were unmodified by
+it. `fix(cli)` dropped a deleted hook from the manifest, which has no journey subject at all.
 
 ## Withdrawn journeys
 
