@@ -4,6 +4,7 @@ import { expect, fn, userEvent } from "storybook/test"
 import {
   Lattice,
   LatticeCell,
+  LatticeCellButton,
   LatticeRow,
   LatticeRows,
 } from "@workspace/ui/components/lattice"
@@ -72,6 +73,82 @@ export const CellStates: Story = {
         incompatible
       </LatticeCell>,
     ],
+  },
+}
+
+const CELL = "react"
+const OPTIONS = "Options for react"
+
+// A cell that holds controls of its own cannot BE a control: `role="button"` on
+// the cell would make everything inside it presentational. So the surface is
+// this button and the cell stays a container. The claim here is that the
+// surface is reachable without a pointer at all.
+export const CellButtonTakesKeyboardFocus: Story = {
+  args: {
+    columns: 1,
+    children: (
+      <LatticeCell className="p-3 font-mono text-11">
+        <LatticeCellButton aria-label={CELL} />
+        <span className="pointer-events-none relative z-1">{CELL}</span>
+      </LatticeCell>
+    ),
+  },
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(canvas.getByRole("button", { name: CELL })).toHaveFocus()
+  },
+}
+
+// And the half that is the whole reason for the division: the cell's own
+// control is reachable too. A cell that was itself the button announced
+// neither — axe calls that `nested-interactive`.
+export const CellButtonLeavesItsNeighbourReachable: Story = {
+  args: {
+    columns: 1,
+    children: (
+      <LatticeCell className="p-3 font-mono text-11">
+        <LatticeCellButton aria-label={CELL} />
+        <span className="pointer-events-none relative z-1">
+          {CELL}
+          <button
+            type="button"
+            aria-label={OPTIONS}
+            className="pointer-events-auto ml-2"
+          >
+            •••
+          </button>
+        </span>
+      </LatticeCell>
+    ),
+  },
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+    await userEvent.tab()
+
+    await expect(canvas.getByRole("button", { name: OPTIONS })).toHaveFocus()
+  },
+}
+
+// The package draws one focus ring on every focusable control it ships, and
+// axe cannot check a focus indicator — it is not machine-decidable — so this is
+// the only thing holding the cell's surface to that ring.
+export const CellButtonFocusDrawsTheRing: Story = {
+  args: {
+    columns: 1,
+    children: (
+      <LatticeCell className="p-3 font-mono text-11">
+        <LatticeCellButton aria-label={CELL} />
+        <span className="pointer-events-none relative z-1">{CELL}</span>
+      </LatticeCell>
+    ),
+  },
+  play: async ({ canvas }) => {
+    const surface = canvas.getByRole("button", { name: CELL })
+
+    surface.focus()
+
+    await expect(getComputedStyle(surface).boxShadow).not.toBe("none")
   },
 }
 

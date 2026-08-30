@@ -6,8 +6,10 @@ import type { StorybookConfig } from "@storybook/react-vite"
 //
 // Two addons, both of which run on every story without being asked: the vitest
 // addon turns each story into a real test in a real browser, and the a11y addon
-// runs axe on the result. Nothing else — a story here is a component in
-// isolation, and the design ships no toolbar states to switch between.
+// runs axe on the result. Nothing else, and in particular the Theme toolbar is
+// not a third: `preview.ts` declares it as a `globalTypes` entry with a
+// `toolbar` on it, which core Storybook draws — a switchable global costs no
+// entry in this array.
 const config: StorybookConfig = {
   stories: ["../src/**/*.stories.tsx"],
   addons: ["@storybook/addon-vitest", "@storybook/addon-a11y"],

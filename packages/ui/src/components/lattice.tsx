@@ -97,6 +97,39 @@ function LatticeCell({
   )
 }
 
+// The primary action of a cell that also holds controls of its own.
+//
+// A cell cannot be a control and a container at once. `role="button"` on the
+// cell makes everything inside it presentational, so a screen reader reaches
+// neither the badges nor the ••• — which is what axe's `nested-interactive`
+// reports, and what `skill-cell.tsx` did until this part existed. A cell with
+// nothing focusable inside it is still free to be the control itself, and
+// `stack-grid.tsx` is that case.
+//
+// So the surface is a real <button> stretched over the cell, and the cell's
+// own controls sit above it: transparent, it paints nothing, and `z-0` is what
+// puts it beneath the controls, which take `relative z-1` to stay reachable by
+// the pointer. The content between them is `pointer-events-none`, or it would
+// swallow the clicks this button exists to catch.
+//
+// `cursor-[inherit]` rather than a cursor of its own: the cell has already
+// chosen between the pointer and the arrow through `interactive`/`disabled`,
+// and `cursor` is an inherited property, so that one decision holds over the
+// whole surface.
+function LatticeCellButton({ className, ...props }: ComponentProps<"button">) {
+  return (
+    <button
+      data-slot="lattice-cell-button"
+      type="button"
+      className={cn(
+        "absolute inset-0 z-0 cursor-[inherit] outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
 // A lattice whose cells are full-width rows rather than grid columns.
 function LatticeRows({ className, ...props }: ComponentProps<"div">) {
   return <div data-slot="lattice-rows" className={cn(className)} {...props} />
@@ -178,6 +211,7 @@ function activateOnEnterOrSpace(event: KeyboardEvent<HTMLDivElement>) {
 export {
   Lattice,
   LatticeCell,
+  LatticeCellButton,
   LatticeRow,
   LatticeRows,
   latticeCellVariants,

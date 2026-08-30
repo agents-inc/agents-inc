@@ -3,12 +3,18 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "//no-shared-vitest-config": "A browser-mode Storybook suite. @workspace/vitest-config exists for pure logic and says so — environment node, an src/**/*.test.ts include and no DOM, on the stated grounds that anything which renders is covered in a real browser instead. This suite is that browser, so all three settings are the opposite of what it needs, and merging them in would leave three dead options on a config that ignores them. The full reasoning is in vitest.config.ts. Read by scripts/check-shared-vitest-config.ts in packages/cli.",
+  "//no-shared-vitest-config": "PARTIAL, and the partiality is the point. Two projects: `storybook` is standalone, because @workspace/vitest-config exists for pure logic and says so \u2014 environment node, an src/**/*.test.ts include and no DOM, on the stated grounds that anything which renders is covered in a real browser instead, and this suite is that browser, so all three settings are the opposite of what it needs. `unit` extends the shared config like every other workspace, and was added on 2026-08-26 because the sentence above covered the browser suite and nothing else: with no project including *.test.ts, a pure-logic test under src/ was never collected and the run still exited 0. The full reasoning is in vitest.config.ts. Read by scripts/check-shared-vitest-config.ts in packages/cli, which short-circuits on this key \u2014 so the import and the devDependency below are not what it is judging, and this note is the only thing that records them.",
+  "//chromatic": "Chromatic is the appearance half of this package's coverage, and it is deliberately a second instrument rather than a replacement for the first. `vitest run` renders every story in a real Chromium and asserts structure \u2014 names, labels, roles, via the a11y addon at `test: \"error\"` \u2014 and structure is exactly what a screenshot cannot see: a button that loses its accessible name looks identical. Chromatic answers the inverse question, which no assertion in this repository can ask at all, because nothing here has ever compared one render to the last one. `color-contrast` being held out of axe permanently (the reasoning is in .storybook/preview.ts) is a second reason: the palette is a taste decision no rule will ever gate, so a diff against an accepted baseline is the only thing that can catch it moving. Three details that are not arbitrary. `build-storybook` is named for Chromatic \u2014 it is the default `buildScriptName` and chromatic.config.json names it explicitly anyway \u2014 and it is NOT named `build`, because turbo.json has a `build` task and `deploy` dependsOn it, so a `build` script here would put a Storybook compile in front of every Cloudflare deploy for nothing. The CI job runs this CLI rather than chromaui/action: the action installs its own Node and dependencies, which is a second install of a bun workspace the job has already done with --frozen-lockfile, and the CLI reads CHROMATIC_PROJECT_TOKEN from the environment on its own. And TurboSnap (`onlyChanged`) is deliberately absent \u2014 it exists to avoid re-snapshotting an unchanged story, which starts paying at a story count this package is nowhere near (`bun run build-storybook` then count `entries` in storybook-static/index.json); enabling it would add `--stats-json` to the build, a `storybookBaseDir` of packages/ui because the git root and the Storybook root differ, and a new way for a run to snapshot nothing and still pass. Revisit it when the quota becomes a question \u2014 the modes below are what will make it one, since every story is now captured once per theme. MODES ARE WHY THIS COVERS BOTH THEMES. The app ships a light and a dark palette; until 2026-08-29 .storybook/preview.ts pinned `data-theme=\"light\"` with a decorator and Chromatic diffed one of them, so a dark-only regression had no baseline anywhere in this repository. The theme is a Storybook global now, light is still the default everyone gets without asking, and the `chromatic.modes` block in preview.ts captures every story under both \u2014 each mode carrying its own baseline and its own approval. The reasoning, and how a story opts out, is in preview.ts. `autoAcceptChanges` is absent for a sharper reason and should not be added without re-reading this: the usual setting is `\"main\"`, which takes every change that reaches the trunk as the new baseline on the grounds that a pull request already reviewed it \u2014 and this repository commits straight to main, so on that setting Chromatic would accept every diff it ever found and report a difference to nobody. Without it a changed render exits non-zero and waits to be accepted in Chromatic's own UI, which means an intentional redesign turns CI red until somebody looks at it. That is the tool working, not a misconfiguration. Adopt pull requests first, then add the setting.",
   "scripts": {
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
-    "test": "vitest run"
+    "build-storybook": "storybook build",
+    "chromatic": "chromatic",
+    "test": "bun scripts/check-token-parity.ts && vitest run",
+    "tokens": "tz build && bun scripts/hexify-tokens.ts",
+    "//tokens": "Emits src/styles/tokens.css from tokens/tokens.json \u2014 the core palette and its dark complement. The output is committed. NOTHING COMPARES IT TO THE JSON — `tokens:check` asserts only that every core colour token declares a dark value, and is blind to every colour VALUE, so editing the JSON and forgetting `bun run tokens` leaves a stale stylesheet and a green gate. That is the shape `generate:matrix:check` in packages/cli guards against by regenerating and byte-comparing, and it is the guard this one does not have yet.",
+    "tokens:check": "bun scripts/check-token-parity.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -20,24 +26,25 @@
     "react-dom": "^19.2.6",
     "shadcn": "^4.15.0",
     "tailwind-merge": "^3.6.0",
-    "tw-animate-css": "^1.4.0",
-    "zod": "^4.4.3"
+    "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "^10",
     "@storybook/addon-vitest": "^10",
     "@storybook/react-vite": "^10",
     "@tailwindcss/vite": "^4",
-    "@turbo/gen": "^2.9.15",
+    "@terrazzo/cli": "^2.7.1",
+    "@terrazzo/plugin-css": "^2.7.1",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6",
     "@vitest/browser": "^4",
     "@vitest/browser-playwright": "^4",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "@workspace/vitest-config": "workspace:*",
+    "chromatic": "^18",
     "eslint": "^10",
     "playwright": "1.56.1",
     "storybook": "^10",
@@ -49,7 +56,6 @@
   "exports": {
     "./globals.css": "./src/styles/globals.css",
     "./lib/*": "./src/lib/*.ts",
-    "./components/*": "./src/components/*.tsx",
-    "./hooks/*": "./src/hooks/*.ts"
+    "./components/*": "./src/components/*.tsx"
   }
 }

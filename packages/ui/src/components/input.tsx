@@ -12,9 +12,7 @@ import { cn } from "@workspace/ui/lib/utils"
 // no passive form to keep it off. It read as the wrapper's job until
 // 2026-08-09 and no wrapper ever took it — nor could the filter bar's, which
 // holds six chips that each draw this ring already, so a `focus-within` there
-// would mark the whole row every time one of them was pressed. The bar also
-// moves focus into this field by itself as it sticks, and what receives focus
-// is what has to show it.
+// would mark the whole row every time one of them was pressed.
 //
 // `onDark` is the 84a stuck filter bar: the surface under this input turns
 // #242320 and the type has to invert with it. Named for the surface rather
@@ -38,7 +36,10 @@ const inputVariants = cva(
       {
         variant: "search",
         onDark: false,
-        class: "text-subtle placeholder:text-subtle",
+        // A typed query is a decision the visitor made and the prompt is not,
+        // so the two are not the same grey. The stuck arm below already draws
+        // them apart; this one rendered both at #6a675c.
+        class: "text-ink placeholder:text-subtle",
       },
       {
         variant: "search",

@@ -136,21 +136,36 @@ function DialogPanes({ className, ...props }: ComponentProps<"div">) {
   )
 }
 
+// Two splits, one component, and a `side` value belongs to one of them.
+//
+//   left  / right    — a flexible body with a fixed 196px sidebar after it,
+//                      divided by the sheet's own hairline. The install and
+//                      contents dialogs.
+//   tree  / content  — the inverse: a fixed 250px column FIRST, divided by the
+//                      quieter `tree-border` hairline, and the body taking
+//                      whatever is left. The output preview.
+//
+// The second pair is here rather than spelled out at its call site because
+// both halves of it are design-system decisions — the column's width, and a
+// divider one hex digit lighter than the sheet's, chosen so a split inside a
+// dialog reads quieter than the dialog's own rules. A className override in a
+// feature file would put both somewhere nobody looking for them would find them.
+const PANE_SIDES = {
+  left: "flex-1 border-r border-hairline",
+  right: "w-[12.25rem] flex-none",
+  tree: "w-[15.625rem] flex-none border-r border-tree-border",
+  content: "flex-1",
+} as const
+
 function DialogPane({
   className,
   side = "left",
   ...props
-}: ComponentProps<"div"> & { side?: "left" | "right" }) {
+}: ComponentProps<"div"> & { side?: keyof typeof PANE_SIDES }) {
   return (
     <div
       data-slot="dialog-pane"
-      className={cn(
-        "min-w-0 px-5 pt-4 pb-5",
-        side === "left"
-          ? "flex-1 border-r border-hairline"
-          : "w-[12.25rem] flex-none",
-        className
-      )}
+      className={cn("min-w-0 px-5 pt-4 pb-5", PANE_SIDES[side], className)}
       {...props}
     />
   )
