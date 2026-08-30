@@ -57,13 +57,31 @@ const CHUNK_GROUPS = [
     priority: 40,
     entriesAware: true,
   },
-  // Last, so the four above have already claimed anything of theirs it depends
-  // on: what is left is the generated catalogue itself, which changes when the
-  // marketplace does rather than when this app does.
+  // Then the generated catalogue itself, which changes when the marketplace
+  // does rather than when this app does.
   {
     name: "catalog",
     test: /packages[\\/]matrix[\\/]/,
     priority: 10,
+  },
+  // LAST, and the ordering is the whole of it. The shared renderers and the
+  // vendored agent corpus are reached only through `import()`, so they belong
+  // nowhere near first paint — but a group claims its matches' DEPENDENCIES as
+  // well as its matches, and `packages/compile` depends on `packages/matrix`,
+  // which the app loads eagerly. Ranked above `catalog` this group swallows the
+  // catalogue, the merged chunk becomes statically reachable from the entry,
+  // and the 226 KB corpus lands on the first-paint path with it — measured, not
+  // argued: that build failed at 533.8 KB against a 330 KB budget. Ranked below,
+  // `catalog` has already claimed the catalogue and what is left here is the
+  // renderers alone.
+  //
+  // A group of its own rather than none at all, because the budget plugin also
+  // refuses ANY chunk — lazy ones included — that mixes first-party source with
+  // `node_modules`, and `vendor` above already claims `liquidjs` and `shiki`.
+  {
+    name: "compile",
+    test: /packages[\\/]compile[\\/]/,
+    priority: 5,
   },
 ]
 

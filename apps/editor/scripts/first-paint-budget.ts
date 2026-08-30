@@ -44,14 +44,28 @@ import type { Plugin, Rolldown } from "vite"
 const KIBIBYTE = 1024
 
 /**
- * Measured on 2026-08-21, the day the bundle was first split into cacheable
- * chunks: 304.4 KB when the build runs under Bun, 311.5 KB under Node — the two
- * zlib implementations disagree by about 2% on the same bytes, so the budget has
- * to clear the larger reading. The headroom above it is ~6%: enough that adding
- * a component does not fail a build, tight enough that a whole library cannot
- * arrive unnoticed.
+ * Measured on 2026-08-29 at 336.0 KB under `bun`, and RAISED from 336 to 344 on
+ * that reading. Naming the runtime beside a figure is what makes two readings
+ * comparable: `bun` and `npx` agreed at the 2026-08-26 reading of 331.6 KB,
+ * where the 2026-08-21 pair had been ~2% apart.
+ *
+ * WHAT THE 4.4 KB BOUGHT, because this file asks for that before a raise:
+ * accounts (a session store, three API clients and the sign-in control), the
+ * composer's model call, and the refusal unions that replaced four silent
+ * failure paths. Accounts are the reason it could not be deferred — the stack
+ * grid asks whether you are signed in in order to know WHICH stacks to draw, so
+ * the store is on the first-paint path from the grid regardless of the nav
+ * rail. That was measured rather than assumed: moving the rail's account block
+ * behind `lazy()` was tried, and it put first paint UP by 0.3 KB, because the
+ * chunk boundary cost more than the block saved while the store stayed where it
+ * was.
+ *
+ * The 8 KB of headroom is deliberate and is the same margin the 2026-08-26
+ * raise left. It exists so ordinary work does not trip this and real growth
+ * does; a raise that lands exactly on the measurement makes the next one-line
+ * change somebody else's build failure.
  */
-const FIRST_PAINT_BUDGET_BYTES = 330 * KIBIBYTE
+const FIRST_PAINT_BUDGET_BYTES = 344 * KIBIBYTE
 
 /** Matches the level a CDN compresses static assets at. */
 const GZIP_LEVEL = 9
