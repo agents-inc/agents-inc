@@ -5382,3 +5382,31 @@ E2E_SKILL_IDS.slice(1) })`, a marketplace shipping exactly one skill, since ever
   What the same commits changed and did NOT earn a row is recorded on the page as well, so nobody re-derives it:
   `feat(www)`, `feat(ui)` and `feat(api)` — the last a change of transport under journeys 23, 29 and 30, whose specs
   were unmodified by it. Gates: 16 spec-gates, 12 journey-page parser tests, prettier clean.
+
+- **The marketplace ref crossing is held, and the hand-run can reach plugin mode** (2026-08-30). Three things, all
+  found by actually running the journeys rather than the suites. **(1) The hand-run could not run journeys 5 / 17 at
+  all.** `createE2EPluginSource()` with no options RETURNS the shared frozen fixture rather than building one — that is
+  the whole point of it, and why 51 call sites stopped paying ~1.65s each — but only `e2e/global-setup.ts` builds that
+  fixture and nothing outside vitest runs a `globalSetup`. So `node scripts/handrun.mjs` reached for a directory nobody
+  had built and died on `Path does not exist: <tmp>/agents-inc-e2e-shared-fixtures/fixture`. **The failure was invisible
+  in the shape that matters**: `attempt` catches it, prints COULD NOT RUN and the run still exits 0, so a hand-run
+  reporting a clean sweep had silently never exercised plugin mode — the one install mode no other journey touches.
+  `handrun-journeys.ts` now builds the two fixtures with the same two calls in the same order as `global-setup.ts` and
+  removes them after. Hand-run before: 25 sections, 153 HOLDS, 1 COULD NOT RUN. After: 25 sections, **163 HOLDS, 0
+  BROKE, 0 COULD NOT RUN**, journeys 5 / 17 registering against the real `claude` binary and holding all four surfaces.
+  **(2) The canonical shared payload had EDITOR-49 in it again.** `MARKETPLACE_PAYLOAD` was built from
+  `MARKETPLACE_REF` — the bare `acme/skills` the DIALOG accepts — rather than `MARKETPLACE_CANONICAL_REF`, the
+  `github:acme/skills` the editor's marketplace store holds and mints. The CLI routes a ref on its protocol, so a bare
+  one is a LOCAL DIRECTORY and a receiver looks for `<cwd>/acme/skills`, failing in the worst way available: by
+  resolving to something rather than to nothing. **Nothing could see it** — `seedPayloadSchema` types `marketplace` as
+  a string because all three spellings are legal, the editor's specs never install, and the CLI's own e2e specs build
+  payloads with an absolute local directory, a legal ref taking the local branch. `marketplace-ref-crossing.test.ts`
+  holds it now by asking the CLI's own router, `isLocalSource`, what the minted ref is — no browser, no PTY, no
+  network, because the two forms differ precisely by which branch a receiver takes. It went red on three of four
+  assertions before the fixture was repointed. **(3) Journeys 49 and 50 were overstating their own gap**, marked
+  `TO TEST` on a CLI leg that is journey 27's single crossing rather than one hole per producer; both are now
+  `COVERED, browser-side` and the marker's definition widened to cover a row whose CLI surface is another row's
+  subject. **A full browser-to-binary run is deliberately still not owed**: one shared schema, one shared description
+  of the worker in `@workspace/api-mocks`, and the router now asserted over the minted value say between them what such
+  a run would say, for none of the harness. Gates: 7 workspaces green, CLI unit 7357, 102 editor Playwright specs over
+  every fixture-reading suite, spec-gates 16.
