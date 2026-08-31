@@ -51,18 +51,73 @@ describe("what the handlers answer", () => {
   // answer every path under `/api/auth/` with the SESSION body, so a sign-in
   // came back as `null` — a body the worker cannot produce, and one the client
   // reads as "no redirect" rather than as the navigation it is.
+  // The header is named rather than left to `Request`, and that is the point of
+  // the two rows below: a string body with no `content-type` is typed
+  // `text/plain` by the fetch spec, which Better Auth refuses. A request built
+  // without it is not one the editor could send.
+  const authPost = (path: string, body: unknown = {}) =>
+    new Request(`${WORKER_ORIGIN}/api/auth/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+
   it("starts a sign-in with the authorize URL, not a session", async () => {
     const answer = await answerFor(
       authHandlers,
-      new Request(`${WORKER_ORIGIN}/api/auth/sign-in/social`, {
-        method: "POST",
-        body: JSON.stringify({ provider: "github" }),
-      })
+      authPost("sign-in/social", { provider: "github" })
     )
 
     expect(answer.served && answer.status).toBe(200)
     expect(jsonOf(answer)).toStrictEqual({ url: GITHUB_AUTHORIZE_URL })
   })
+
+  it("signs out when the request carries a JSON body", async () => {
+    const answer = await answerFor(authHandlers, authPost("sign-out"))
+
+    expect(answer.served && answer.status).toBe(200)
+    expect(jsonOf(answer)).toStrictEqual({ success: true })
+  })
+
+  // The fidelity these two hold is what a whole feature turned on. `signOut` in
+  // the editor sent no `content-type` and no body, the real worker answered 415
+  // to that in every environment from the day it was written, and this mock
+  // answered `{ success: true }` to anything — so the Playwright spec named
+  // "a signed-in page can be signed out again" passed while sign-out had never
+  // once worked. A mock more permissive than the worker cannot fail, and one
+  // that cannot fail is not a test of the client.
+  //
+  // Both statuses were MEASURED against `wrangler dev` rather than assumed, for
+  // both routes and for a `text/plain` header as well as an absent one.
+  it.each(["sign-out", "sign-in/social"])(
+    "refuses %s carrying no JSON content-type, exactly as the worker does",
+    async (path) => {
+      const answer = await answerFor(
+        authHandlers,
+        new Request(`${WORKER_ORIGIN}/api/auth/${path}`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        })
+      )
+
+      expect(answer.served && answer.status).toBe(415)
+    }
+  )
+
+  it.each(["sign-out", "sign-in/social"])(
+    "refuses %s carrying the header but no parseable body",
+    async (path) => {
+      const answer = await answerFor(
+        authHandlers,
+        new Request(`${WORKER_ORIGIN}/api/auth/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        })
+      )
+
+      expect(answer.served && answer.status).toBe(400)
+    }
+  )
 
   // Argument order decides, exactly as `use()` does in the Vitest suite, so one
   // arrangement of the same handlers is what both suites reason about.

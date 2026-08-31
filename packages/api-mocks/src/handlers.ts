@@ -412,7 +412,7 @@ const AUTH_URL = `${WORKER_ORIGIN}/api/auth`
 export const SESSION_URL = `${AUTH_URL}/get-session`
 export const SIGN_IN_URL = `${AUTH_URL}/sign-in/social`
 
-const SIGN_OUT_URL = `${AUTH_URL}/sign-out`
+export const SIGN_OUT_URL = `${AUTH_URL}/sign-out`
 export const STACKS_URL = `${WORKER_ORIGIN}/stacks`
 export const COMPOSE_URL = `${WORKER_ORIGIN}/compose`
 
@@ -425,15 +425,66 @@ const MODEL_SILENT = 502
 
 const readNoSession = http.get(SESSION_URL, () => HttpResponse.json(NO_SESSION))
 
+const UNSUPPORTED_MEDIA_TYPE = 415
+const BAD_REQUEST = 400
+
+/**
+ * Better Auth's two entry conditions on a POST, applied before either route
+ * answers.
+ *
+ * MEASURED against `wrangler dev`, not inferred — both `/sign-in/social` and
+ * `/sign-out` answer 415 with no `content-type: application/json` (a
+ * `text/plain` one included) and 400 with the header but an unparseable body.
+ *
+ * It is here because its absence hid a shipped defect for the whole life of the
+ * feature. `signOut` in the editor sent no header and no body, so the real
+ * worker refused it 415 every time in every environment — and this mock
+ * answered `{ success: true }` to anything at all, so `accounts.spec.ts`'s
+ * "a signed-in page can be signed out again" passed against a fake that would
+ * have accepted an empty request. A mock more permissive than the worker cannot
+ * fail, and one that cannot fail is not a test of the client.
+ *
+ * The body is read from a CLONE so a spec recording the request can still read
+ * it: `Request.json()` consumes the stream, and the specs that assert what
+ * sign-in posted run after this.
+ */
+const requiringJson =
+  (answer: () => Response) =>
+  async ({ request }: { request: Request }): Promise<Response> => {
+    const contentType = request.headers.get("content-type") ?? ""
+    if (!contentType.includes("application/json")) {
+      return HttpResponse.json(
+        {
+          message: "Content-Type is required. Allowed types: application/json",
+          code: "UNSUPPORTED_MEDIA_TYPE",
+        },
+        { status: UNSUPPORTED_MEDIA_TYPE }
+      )
+    }
+
+    try {
+      await request.clone().json()
+    } catch {
+      return HttpResponse.json(
+        { message: "Invalid JSON in request body", code: "BAD_REQUEST" },
+        { status: BAD_REQUEST }
+      )
+    }
+
+    return answer()
+  }
+
 // Answered the same whether or not a session exists, because starting a flow
 // is what a signed-out browser does — this is the one auth route the default
 // set and the signed-in set agree about.
-const startSignIn = http.post(SIGN_IN_URL, () =>
-  HttpResponse.json({ url: GITHUB_AUTHORIZE_URL })
+const startSignIn = http.post(
+  SIGN_IN_URL,
+  requiringJson(() => HttpResponse.json({ url: GITHUB_AUTHORIZE_URL }))
 )
 
-const signOut = http.post(SIGN_OUT_URL, () =>
-  HttpResponse.json({ success: true })
+const signOut = http.post(
+  SIGN_OUT_URL,
+  requiringJson(() => HttpResponse.json({ success: true }))
 )
 
 /** The worker's auth surface answering a browser that holds no session. */
