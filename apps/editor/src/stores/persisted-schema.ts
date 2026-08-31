@@ -58,6 +58,15 @@ export const ROSTER_GROUP_BYS = ["domain", "scope"] as const
 export const rosterGroupBySchema = z.enum(ROSTER_GROUP_BYS)
 export type RosterGroupBy = z.infer<typeof rosterGroupBySchema>
 
+// The three states a theme preference can be in, and the third is the one a
+// two-value flag gets wrong: `system` is not "light" — it is "keep following
+// the machine", which is what the palette does when nothing on the root says
+// otherwise. Storing the RESOLVED theme instead would freeze whatever the
+// machine happened to be set to the first time somebody loaded the page.
+export const THEME_PREFERENCES = ["system", "light", "dark"] as const
+export const themePreferenceSchema = z.enum(THEME_PREFERENCES)
+export type ThemePreference = z.infer<typeof themePreferenceSchema>
+
 // Every decision about one sub-agent, all of it optional. `on` is tri-state on
 // purpose: `true` pins it on, `false` pins it off, and *absent* means "ask the
 // assignments" — so an entry holding only a model must not pin anything.
@@ -230,6 +239,7 @@ export const persistedUiSchema = z.object({
   // `migrate`, so a bump is an unreported discard of everyone's arrangement.
   rosterGroupBy: rosterGroupBySchema.catch("domain"),
   stackCollapsed: z.boolean().catch(false),
+  theme: themePreferenceSchema.catch("system"),
 })
 
 export type PersistedUi = z.infer<typeof persistedUiSchema>

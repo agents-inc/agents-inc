@@ -1,6 +1,5 @@
 import { Button } from "@workspace/ui/components/button"
 import { useId, useRef, useState } from "react"
-import { flushSync } from "react-dom"
 
 import { composeProposal, type ComposeRefusal } from "@/lib/api/compose"
 import { groupsFor } from "../lib/compose-proposal"
@@ -29,76 +28,42 @@ import type { KeyboardEvent } from "react"
  * rule carried the divider this variant deletes.
  *
  * Nothing here is persisted. No effect and no router: every derivation on
- * screen — whether the openers are drawn, whether the button is live, whether a
- * proposal is stale — falls out of the draft, the proposal and whether an
- * answer is still owed.
+ * screen — whether the button is live, whether a proposal is stale — falls out
+ * of the draft, the proposal and whether an answer is still owed.
  */
 
-// ── The copy, and the three modes that are NOT here ────────────────────────
+// ── The copy, and the two things that are NOT here ─────────────────────────
 //
-// The design draws THREE modes — `build`, `adjust`, `ask` — each with its own
+// The design drew THREE MODES — `build`, `adjust`, `ask` — each with its own
 // placeholder, send verb and hint, on a segmented track between the hint and
-// the button, with a screenshot of one of them. All of it was removed by owner
-// ruling on 2026-08-26: `build` and `adjust` "essentially do the same thing",
-// and the settled output schema has no field for the properties `adjust` was
-// meant to edit — structured outputs require `additionalProperties: false`, so
-// a record keyed by skill id cannot be expressed at all. A distinction neither
-// the UI nor the schema could carry was not a distinction.
+// the button. All of it was removed by owner ruling on 2026-08-26: `build` and
+// `adjust` "essentially do the same thing", and the settled output schema has
+// no field for the properties `adjust` was meant to edit — structured outputs
+// require `additionalProperties: false`, so a record keyed by skill id cannot
+// be expressed at all. A distinction neither the UI nor the schema could carry
+// was not a distinction.
 //
-// So there is one of each string below. A reader who finds the design's `DOCK`
-// constant complete and this file impoverished is holding a superseded drawing.
+// Then it drew TWO STARTER CHIPS in their place, which pre-filled the field
+// with a sentence opening. They were built, shipped, and cut by the design's
+// own next revision — "the placeholder does that work" — and the placeholder
+// below is the one it was rewritten to. Both removals are in the design log;
+// a reader who finds either drawn somewhere is holding a superseded sheet.
 
-/** Byte-verified against `Chat Composer Lab.dc.html` option `91j`. The
- *  single-field composer's own placeholder, which names both intents in one
- *  sentence — the union of the two dead mode placeholders. */
-const PLACEHOLDER = "Describe your project, or ask for a change…"
+/** Byte-verified against `Configurator v5.dc.html`'s own `DOCK_PH`. It names
+ *  all three capabilities in one sentence, which is the whole argument for
+ *  having neither modes nor chips: the field says what it takes. */
+const PLACEHOLDER =
+  "Describe a stack, change what is selected, or ask how something works…"
 
-/** Byte-verified: the same lab draws it at `91b`, `91d` and `91j`. Honest, too
- *  — pressing it SENDS a sentence, and the proposal has its own `Apply`. */
+/** Byte-verified: the design draws the dock's one button as `Send ⌘↩`. Honest,
+ *  too — pressing it SENDS a sentence, and the proposal has its own `Apply`. */
 const SEND_LABEL = "Send"
 
-/** NEW copy. The two mode hints each described a mode, so both lost their
- *  subject; what is worth saying instead is the thing the owner's third ruling
- *  settled and nothing else on screen states. Lowercase and unpunctuated, as
- *  the two dead hints were. */
+/** NEW copy, and now UNDRAWN. The control row holds the send button and
+ *  nothing else, so this reaches the accessible description alone: the claim
+ *  is worth making to somebody who cannot see the proposal's own footer, and
+ *  the design is explicit that nothing sits beside the button. */
 const HINT = "nothing changes until you apply"
-
-// ── The openers are a WRITING AID, NOT A MODE ──────────────────────────────
-//
-// Clicking one puts its text in the field for the visitor to finish, and that
-// is its ENTIRE effect. Nothing records which was used, nothing branches on it,
-// and typing the same sentence by hand must reach exactly the same place.
-// Storing which one was clicked — or giving one a pressed state — is how the
-// removed modes come back, wearing a chip instead of a track.
-//
-// Exactly two, in the owner's own words and order. Two openers carry the whole
-// of what the two cut modes carried, and there is no third intent: the axis was
-// add / edit, and it was cut because both ends do the same thing. An `Explain…`
-// opener in particular is the cut `ask` mode.
-const SUGGESTION_LABELS = [
-  "Change my setup to…",
-  "Create a new setup with…",
-] as const
-
-/** U+2026, the affordance a visitor writes past — exactly as on a placeholder,
- *  and not text anyone wants to delete. */
-const ELLIPSIS = "…"
-
-/**
- * What an opener puts in the field: its own label with the ellipsis traded for
- * one space, so the next keystroke lands after it.
- *
- * A DERIVATION of the label rather than a second table of prefill strings —
- * one string is the visible label, the accessible name and the inserted text at
- * once, so there is nothing to keep in step.
- */
-const prefillOf = (label: string) => label.replace(ELLIPSIS, " ")
-
-/** U+2192, `.sugg`'s own glyph and this project's notation for a transition —
- *  `matrix-grid.tsx` writes the preload cycle as `empty → lazy → preloaded`.
- *  Hidden, so two repetitions of "rightwards arrow" do not precede two
- *  openers. */
-const OPENER_MARK = "→"
 
 // ── The keyboard ───────────────────────────────────────────────────────────
 
@@ -151,55 +116,6 @@ const REFUSAL_COPY: Record<ComposeRefusal, string> = {
 
 const THINKING_REASON = "Choosing skills…"
 
-// `91a`'s suggestion block sits 14px from the composer; here the block is above
-// rather than below, so the same figure becomes the row's bottom padding and
-// the gap between the two openers. `91a` stacks its suggestions in a column, so
-// there is no drawn horizontal gap to copy.
-function SuggestionOpeners({ onPick }: { onPick: (label: string) => void }) {
-  return (
-    // `group` with a label, not `toolbar` and not `radiogroup`: a toolbar
-    // promises a roving tabindex this row does not have, and a radiogroup
-    // claims the options are exclusive and that one of them is current —
-    // neither of which is true of a sentence starter. Each opener is its own
-    // tab stop, exactly as the filter bar's six chips are.
-    <div
-      role="group"
-      aria-label="Prompt suggestions"
-      className="flex gap-[0.875rem] px-gutter pb-[0.875rem]"
-    >
-      {SUGGESTION_LABELS.map((label) => (
-        <button
-          key={label}
-          type="button"
-          onClick={() => onPick(label)}
-          // Not `Chip`, which hardcodes `aria-pressed` and would announce an
-          // opener as an unpressed toggle — and is uppercase mono besides, so
-          // `CHANGE MY SETUP TO…` is not how the sentence reads. The hover
-          // colour is on the button so the label inherits it, as `.sug:hover
-          // .sugt` does.
-          className="flex cursor-pointer items-baseline gap-[0.5625rem] px-[0.125rem] py-[0.4375rem] text-matrix-ink outline-none hover:text-ink-primary focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <span
-            aria-hidden="true"
-            className="font-mono text-9 font-normal text-brand"
-          >
-            {OPENER_MARK}
-          </span>
-          {/* The one hook a spec can read the opener SET through: the mark is
-              in the button's text content and not in its accessible name, so
-              the two differ and neither alone is the row's contract. */}
-          <span
-            data-slot="suggestion-label"
-            className="text-11 leading-[1.4] font-normal whitespace-nowrap"
-          >
-            {label}
-          </span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 export function Composer() {
   const [draft, setDraft] = useState("")
   const [proposal, setProposal] = useState<Proposal | null>(null)
@@ -217,9 +133,9 @@ export function Composer() {
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const hintId = useId()
 
-  // ONE predicate, TWO readers: the openers are the empty state of the field
-  // and `disabled` is the empty state of the action. Two predicates that agree
-  // today and can drift tomorrow would be two bugs, so it is written once.
+  // `trim` rather than `=== ""`, so a field holding three spaces is the empty
+  // state it looks like: the button stays out of reach and the chord's own
+  // first line refuses.
   const blank = draft.trim() === ""
 
   // Whether the field still holds the sentence an answer was asked for. Read
@@ -310,38 +226,6 @@ export function Composer() {
     setProposal(null)
   }
 
-  // Four effects and no fifth: set the draft, focus the field, put the caret
-  // after the inserted space, and record nothing.
-  //
-  // It REPLACES rather than appends, which is never destructive — the openers
-  // are absent whenever the draft holds anything but whitespace, so the only
-  // thing a replace can discard is stray whitespace. Appending would produce
-  // `"   Change my setup to "` from a field holding three spaces.
-  //
-  // `flushSync` because the caret is placed EXPLICITLY rather than by assuming
-  // an ordering. Without it, `setSelectionRange` runs while the field still
-  // holds the OLD value and is clamped to its length — and the caret still ends
-  // up in the right place, because React then assigns `.value` and a textarea's
-  // value setter moves the caret to the end on its own. That agreement is an
-  // accident of this one case: the placement below would be doing nothing.
-  //
-  // Measured rather than argued, both directions, 2026-08-26. Replacing the
-  // line below with `setSelectionRange(0, 0)` — a deliberate caret-to-START —
-  // leaves the suite's caret spec GREEN without this `flushSync` and turns it
-  // RED with it. So this is what makes the component's own placement the thing
-  // under test rather than the browser's.
-  const startFrom = (label: string) => {
-    const prefill = prefillOf(label)
-    flushSync(() => {
-      setDraft(prefill)
-    })
-
-    const field = fieldRef.current
-    if (!field) return
-    field.focus()
-    field.setSelectionRange(prefill.length, prefill.length)
-  }
-
   // Three effects: the block leaves, the sentence survives — the visitor is
   // rephrasing rather than starting again, which is also why the openers stay
   // away — and focus returns to the field, because what the visitor was in has
@@ -364,21 +248,15 @@ export function Composer() {
       // itself gets it wrong in two rules while right in five.
       className="pointer-events-auto -mx-gutter mt-[1.625rem] bg-column"
     >
-      {/* The dock's two conditional children, and they are mutually exclusive
-          by construction rather than by a rule anyone has to remember: the
-          openers need a blank draft, a proposal needs a non-blank one, and
-          neither submit nor `Discard` clears the draft. So the dock never draws
-          more than two things. */}
-      {blank && <SuggestionOpeners onPick={startFrom} />}
-
+      {/* The dock's ONE conditional child. It is full-bleed on its own — the
+          `.res` treatment, the composer's own idiom repeated above it — so
+          there is no inset wrapper here for it to sit in. */}
       {proposal && (
-        <div className="px-gutter pb-[0.875rem]">
-          <ProposalBlock
-            proposal={proposal}
-            onDiscard={discard}
-            onApply={apply}
-          />
-        </div>
+        <ProposalBlock
+          proposal={proposal}
+          onDiscard={discard}
+          onApply={apply}
+        />
       )}
 
       <section
@@ -414,21 +292,20 @@ export function Composer() {
           className={`field-sizing-content ${FIELD_HEIGHT_CAP} min-h-[1.1875rem] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 pt-[0.9375rem] text-12_5 leading-[1.5] text-ink outline-none placeholder:text-field-faint focus-visible:ring-1 focus-visible:ring-ring`}
         />
 
-        {/* The control row, and the whole of it: the hint on the column's left
-            content edge and the button on its right. The mode track used to sit
-            between them, which is why the row looks like it has room it does
-            not have — a third control there would be a catalogue switcher
-            inside the composer's own action row. */}
+        {/* The control row, and the whole of it: ONE BUTTON, on the column's
+            right content edge. The mode track used to sit on its left and the
+            hint after that, which is why the row looks like it has room it does
+            not have — anything put there is a second control in an action row
+            that has one action. */}
         <div className="flex items-center gap-2 pt-[0.5625rem] pb-[0.8125rem]">
-          {/* The hint carries the one claim ruling 3 settled, so it has to
-              reach assistive technology as well as the eye — both the field and
-              the button point at it with `aria-describedby`, because a reason
-              goes in the accessible description and never in the name. */}
-          <span
-            id={hintId}
-            data-slot="composer-hint"
-            className="font-mono text-9 font-normal whitespace-nowrap text-roster-off"
-          >
+          {/* The claim ruling 3 settled, published and not drawn. Both the
+              field and the button point at it with `aria-describedby`, because
+              a reason goes in the accessible description and never in the name
+              — and `sr-only` rather than deleted, because the design removing
+              it from the DRAWING is not the design removing it from the
+              accessibility tree, where the proposal's own footer is several
+              interactions away. */}
+          <span id={hintId} data-slot="composer-hint" className="sr-only">
             {HINT}
           </span>
 

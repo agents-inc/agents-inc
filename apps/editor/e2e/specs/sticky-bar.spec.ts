@@ -34,9 +34,9 @@ const PLACEHOLDER_TEXT = "rgb(106, 103, 92)"
 const placeholderColorOf = (locator: Locator) =>
   locator.evaluate((node) => getComputedStyle(node, "::placeholder").color)
 
-// The bar changes shape at the moment CSS pins it, and the domain headers
-// follow. Both states are published as attributes rather than React state, so
-// these read the attributes — which is also what the styling reads.
+// The bar changes shape at the moment CSS pins it. That state is published as
+// a root attribute rather than as React state, so these read the attribute —
+// which is also what the styling reads.
 test.describe("sticky filter bar", () => {
   test("is not stuck at rest", async ({ configure }) => {
     await expect.poll(() => configure.isBarStuck()).toBe(false)
@@ -72,7 +72,7 @@ test.describe("sticky filter bar", () => {
   // container keeps its gutters, so the dark/white edge is what separates the
   // bar from the domain header pinning beneath it.
   test("becomes a dark band once stuck", async ({ configure }) => {
-    await expect(configure.filterBar).not.toHaveCSS(
+    await expect(configure.filterBand).not.toHaveCSS(
       "background-color",
       DARK_BAND
     )
@@ -80,7 +80,42 @@ test.describe("sticky filter bar", () => {
     await configure.scrollTo(PAST_THE_BAR)
     await expect.poll(() => configure.isBarStuck()).toBe(true)
 
-    await expect(configure.filterBar).toHaveCSS("background-color", DARK_BAND)
+    await expect(configure.filterBand).toHaveCSS("background-color", DARK_BAND)
+  })
+
+  // ONLY THE BAND GOES DARK. The domain strip below it stays on the column
+  // colour — the dark/light edge is what separates the two rows, and there is
+  // no divider under the search field to do it instead. Asserted against the
+  // band in the same test, because "is not dark" is satisfied by an element
+  // that is not drawn at all.
+  test("leaves the domain strip on the column colour", async ({
+    configure,
+  }) => {
+    await configure.scrollTo(PAST_THE_BAR)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    await expect(configure.filterBand).toHaveCSS("background-color", DARK_BAND)
+    await expect(configure.domainTabs).not.toHaveCSS(
+      "background-color",
+      DARK_BAND
+    )
+  })
+
+  // The selection filters live in the strip, so they keep their RESTING
+  // treatment while the bar is stuck. Copying the band's chip rules onto them
+  // was a real bug: #8f8b7d on #fdfdfc is 3.35:1 and the borders vanished.
+  test("keeps the selection filters in their resting treatment", async ({
+    configure,
+  }) => {
+    const selected = configure.chip("Selected")
+    const resting = await selected.evaluate(
+      (node) => getComputedStyle(node).borderTopColor
+    )
+
+    await configure.scrollTo(PAST_THE_BAR)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    await expect(selected).toHaveCSS("border-top-color", resting)
   })
 
   // Sticking is a scroll position, not an instruction. The bar used to put the
@@ -176,15 +211,21 @@ test.describe("sticky filter bar", () => {
   })
 })
 
-test.describe("sticky domain header", () => {
-  test("takes an edge only while it holds the top of the column", async ({
-    configure,
-  }) => {
-    const header = configure.domainHeader(DOMAINS.web)
-
-    await expect(header).not.toHaveAttribute("data-pinned", "")
-
+// THE DOMAIN TITLE IS A TAB NOW, and the in-column header that used to pin
+// under this bar is gone with it — a title that is always on screen cannot also
+// be a thing that arrives. What replaced it is asserted in `domain-tabs.spec.ts`;
+// what is asserted here is the absence, because a header left behind would sit
+// under the strip repeating a name the strip already carries.
+test.describe("the domain sections", () => {
+  test("carry no heading of their own", async ({ configure }) => {
     await configure.scrollTo(PAST_THE_BAR)
-    await expect(header).toHaveAttribute("data-pinned", "")
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    // The channel: the section is really there, so the count below is a claim
+    // about its contents rather than about a locator that matched nothing.
+    await expect(configure.domain(DOMAINS.web)).toBeVisible()
+    await expect(
+      configure.domain(DOMAINS.web).getByRole("heading", { name: DOMAINS.web })
+    ).toHaveCount(0)
   })
 })

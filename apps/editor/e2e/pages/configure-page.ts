@@ -84,7 +84,23 @@ export class ConfigurePage {
   // through either and assert on the other, the same shape `shareButton` uses.
   readonly stackToggle: Locator
   readonly searchInput: Locator
+  // The bordered box the search input sits in. Named because the selection
+  // filters are asserted to be OUTSIDE it — the field holds search and nothing
+  // else — and "not in the field" is a claim no locator on the chips can make.
+  readonly searchField: Locator
   readonly addSkillButton: Locator
+  // The sticky wrapper — the element that pins — and the band inside it that
+  // takes the dark treatment once it does. Two locators rather than one,
+  // because only the band goes dark: the domain strip below it stays on the
+  // column colour, and that edge is what separates them.
+  readonly filterBar: Locator
+  readonly filterBand: Locator
+  // The domain strip under the band: one tab per domain in the catalogue,
+  // scoped as a group so a tab can never be confused with a filter chip
+  // sharing the row.
+  readonly domainTabs: Locator
+  // `N skills selected ✕`, drawn only while something is selected.
+  readonly clearSelectionButton: Locator
   readonly emptyState: Locator
   // The floating button that opens the marketplace dialog. Floating because it
   // belongs to the whole page rather than to any section of it — which
@@ -114,7 +130,19 @@ export class ConfigurePage {
   // The account, at the foot of the nav rail. Located by role and by a
   // `data-slot` rather than by the person's name, which is data.
   readonly signInButton: Locator
+  readonly signOutButton: Locator
   readonly accountName: Locator
+  // The rail's account row, which the two buttons above are the two faces of.
+  // Located by slot rather than by role so the ROW can be measured against the
+  // rest of the rail whichever face it is wearing.
+  readonly accountRow: Locator
+  // The single glyph in the rail's footer. Only the active theme's icon is
+  // drawn, so its accessible name is the action rather than the state.
+  readonly themeToggle: Locator
+  // The rail's own refusal line, scoped to the `nav` so it cannot pick up
+  // `importNotice` — both are `role="alert"`, and an unscoped locator would
+  // match whichever the page happened to be drawing.
+  readonly accountNotice: Locator
 
   constructor(readonly page: Page) {
     this.stacks = page.getByRole("group", { name: "Stacks" })
@@ -122,7 +150,14 @@ export class ConfigurePage {
       name: /^(Show|Hide) stacks$/,
     })
     this.searchInput = page.getByLabel("Search skills")
+    this.searchField = page.locator('[data-slot="search-field"]')
     this.addSkillButton = page.getByRole("button", { name: "＋ Add skill" })
+    this.filterBar = page.locator('[data-slot="filter-bar"]')
+    this.filterBand = page.locator('[data-slot="filter-band"]')
+    this.domainTabs = page.getByRole("group", { name: "Domains" })
+    this.clearSelectionButton = page.getByRole("button", {
+      name: "Clear all selected skills",
+    })
     this.emptyState = page.getByText("No skills match this filter.")
     this.marketplaceButton = page.getByRole("button", { name: "Marketplace" })
     this.importNotice = page.locator("main").getByRole("alert")
@@ -140,7 +175,11 @@ export class ConfigurePage {
       name: "Saved marketplaces",
     })
     this.signInButton = page.getByRole("button", { name: "Sign in" })
+    this.signOutButton = page.getByRole("button", { name: "Sign out" })
     this.accountName = page.locator('[data-slot="account-name"]')
+    this.accountRow = page.locator('[data-slot="account-row"]')
+    this.themeToggle = page.locator('[data-slot="theme-toggle"]')
+    this.accountNotice = page.locator("nav").getByRole("alert")
   }
 
   // What the browser kept, read back rather than inferred from the screen: the
@@ -309,13 +348,6 @@ export class ConfigurePage {
     return this.page.getByRole("button", { name, exact: true })
   }
 
-  // The bar's own full-bleed wrapper — the element that sticks, and the one
-  // that takes the dark band once it does. Reached up from the search input
-  // rather than by class, the same way `domainHeader` reaches its row.
-  get filterBar(): Locator {
-    return this.searchInput.locator("../../..")
-  }
-
   async search(term: string) {
     await this.searchInput.fill(term)
   }
@@ -330,11 +362,42 @@ export class ConfigurePage {
     return this.page.getByRole("region", { name: `${label} skills` })
   }
 
-  // The sticky header row; carries `data-pinned` while it holds the top.
-  domainHeader(label: string): Locator {
-    return this.domain(label)
-      .getByRole("heading", { name: label })
-      .locator("..")
+  // One tab in the domain strip, by the domain's own label — the whole of its
+  // accessible name. The index and the count beside it are `aria-hidden`, so a
+  // tab announces the domain and nothing else.
+  domainTab(label: string): Locator {
+    return this.domainTabs.getByRole("button", { name: label, exact: true })
+  }
+
+  // Whichever tab the strip is drawing as current. `data-active` rather than
+  // `aria-pressed`, and the two are deliberately different claims: pressed is
+  // "this domain is FILTERED to", active is "this is the domain you are looking
+  // at", and with no filter the strip is a scroll indicator carrying only the
+  // second.
+  get activeDomainTab(): Locator {
+    return this.domainTabs.locator("[data-active]")
+  }
+
+  // Puts a domain's own top edge at the top of the window, which is what the
+  // strip reads to decide who is current. Scrolls by MEASUREMENT rather than to
+  // a coordinate: the grid's height is the generated catalogue's, so any figure
+  // written here would name a different section every time it is regenerated.
+  async scrollToDomain(domainId: string) {
+    await this.page.evaluate((id) => {
+      const anchor = document.querySelector(`[data-domain-anchor="${id}"]`)
+      if (!anchor) throw new Error(`no anchor for the ${id} domain`)
+
+      window.scrollTo(0, window.scrollY + anchor.getBoundingClientRect().top)
+    }, domainId)
+  }
+
+  // Which theme the document is painted in, read off the root the palette
+  // switches on rather than off a colour — `null` is "whatever the OS asked
+  // for", which is the state a browser that has never been told arrives in.
+  async theme() {
+    return this.page.evaluate(
+      () => document.documentElement.dataset.theme ?? null
+    )
   }
 
   category(domainLabel: string, categoryName: string): Locator {

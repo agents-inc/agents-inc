@@ -11,7 +11,11 @@ const isPinned = (element: HTMLElement) => {
   return top <= offset + 0.5 && bottom > offset
 }
 
-const observe = (update: () => void) => {
+// Every viewport change that can move a sticky element, in one subscription.
+// Exported because the domain strip watches the same two events for the same
+// reason: what is under the bar is a function of scroll and of layout, and
+// there is no third input.
+export const observe = (update: () => void) => {
   update()
   window.addEventListener("scroll", update, { passive: true })
   window.addEventListener("resize", update)

@@ -6,12 +6,10 @@ import {
   COMPOSER_HINT,
   COMPOSER_PLACEHOLDER,
   COMPOSER_SEND_LABEL,
-  ELLIPSIS,
   OPEN_QUOTE,
   PROPOSAL_NO_CHANGES,
   PROPOSAL_NO_MODEL_REASON,
   SEND_KEY_SHORTCUTS,
-  SUGGESTION_LABELS,
 } from "../pages/composer"
 import {
   holdCompose,
@@ -29,11 +27,13 @@ import type { Page } from "@playwright/test"
 // send answers with a PROPOSAL — a reviewable block that changes nothing until
 // it is applied.
 //
-// THE COMPOSER HAS NO MODES, and that is the claim this file exists to defend.
-// The design source draws three of them on a segmented track, with a screenshot
-// and a complete copy table, and the redirection away from them has now
-// happened three times. So the absence is asserted directly, and so is the
-// thing a mode would come back as: a chip that remembers it was clicked.
+// THE COMPOSER HAS NO MODES AND NO STARTER CHIPS, and that is the claim this
+// file exists to defend. The design source drew three modes on a segmented
+// track, with a screenshot and a complete copy table; they were cut, replaced
+// for one revision by two starter chips, and those were cut in turn — "the
+// placeholder does that work". Both absences are asserted directly, and so is
+// the thing either would come back as: a control in the dock that remembers it
+// was clicked.
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
@@ -42,10 +42,6 @@ const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
 // irrelevant to every assertion except the echo, which is the point: nothing in
 // this phase reads what was written.
 const SENTENCE = "A Next.js app with tRPC and Postgres."
-
-// The two words the visitor types on after clicking an opener. Short enough
-// that the equivalence test's two routes are legible side by side.
-const CONTINUATION = "use Drizzle"
 
 // The three dead mode verbs. A button named any of them inside the composer is
 // the segmented track restored, whatever it is drawn as.
@@ -141,15 +137,6 @@ const STALE_VERSION_BLOB = JSON.stringify({
   version: 1,
 })
 
-// What an opener puts in the field: its own label with the trailing ellipsis
-// replaced by one space, so the visitor writes on from there.
-//
-// A DERIVATION rather than a second table of prefill strings. A parallel
-// `{ label, prefill }` map is two strings that will drift, and the whole reason
-// the accessible name, the visible label and the inserted text are one string
-// is that there is then nothing to keep in step.
-const prefillOf = (label: string) => label.replace(ELLIPSIS, " ")
-
 // How much air there is between the marketplace button's bottom edge and the
 // composer's top one. Negative is the overlap, in pixels, which is what a
 // failure has to print: "expected true to be false" says nothing a reader can
@@ -160,8 +147,8 @@ const prefillOf = (label: string) => label.replace(ELLIPSIS, " ")
 // Both boxes are read live, so there is not a single coordinate in here. What
 // is asserted is a RELATIONSHIP between two elements on screen now — and it is
 // taken against the DOCK rather than the band, because the dock grows a
-// conditional child above the band (the openers at rest, a proposal after a
-// submit) and the thing that has to be cleared is the taller one.
+// conditional child above the band (a proposal, after a submit) and the thing
+// that has to be cleared is the taller one.
 const dockGap = async (configure: ConfigurePage) => {
   const dock = await configure.composer.dock.boundingBox()
   const button = await configure.marketplaceButton.boundingBox()
@@ -170,19 +157,19 @@ const dockGap = async (configure: ConfigurePage) => {
   return dock.y - (button.y + button.height)
 }
 
-// How much air there is between the opener row's bottom edge and the band's top
-// one. The one geometric claim the "chips above the field" decision makes, and
+// How much air there is between the proposal's bottom edge and the band's top
+// one. The one geometric claim the "answer above the field" decision makes, and
 // the only thing that catches it being built the other way round — below the
 // band a full-bleed strip of column colour sits between the band's bottom
 // hairline and the viewport edge, which reads as a second band and is a tenth
 // rejected float treatment by accident.
-const openersToBandGap = async (configure: ConfigurePage) => {
-  const openers = await configure.composer.suggestions.boundingBox()
+const proposalToBandGap = async (configure: ConfigurePage) => {
+  const proposal = await configure.composer.proposal.boundingBox()
   const band = await configure.composer.band.boundingBox()
-  if (!openers || !band)
-    throw new Error("the openers and the band must be drawn")
+  if (!proposal || !band)
+    throw new Error("the proposal and the band must be drawn")
 
-  return band.y - (openers.y + openers.height)
+  return band.y - (proposal.y + proposal.height)
 }
 
 const scrollToBottom = (configure: ConfigurePage) =>
@@ -199,11 +186,9 @@ test.describe("the docked composer", () => {
     await expect(configure.composer.band).toBeVisible()
   })
 
-  // One placeholder, one send label, one hint, because there is one of each
-  // control. The design's `DOCK` constant carries three of all three.
-  test("carries one placeholder, one send label and one hint", async ({
-    configure,
-  }) => {
+  // One placeholder and one send label, because there is one of each control.
+  // The design's `DOCK` constant carried three of both.
+  test("carries one placeholder and one send label", async ({ configure }) => {
     const { composer } = configure
 
     await expect(composer.field).toHaveAttribute(
@@ -211,16 +196,25 @@ test.describe("the docked composer", () => {
       COMPOSER_PLACEHOLDER
     )
     await expect(composer.sendButton).toHaveAccessibleName(COMPOSER_SEND_LABEL)
-    await expect(composer.hint).toHaveText(COMPOSER_HINT)
   })
 
-  // The hint carries the one claim the whole surface rests on — that pressing
-  // send changes nothing — so it has to reach assistive technology as well as
-  // the eye. A reason goes in the accessible DESCRIPTION, never in the name.
-  test("points both the field and the send button at the hint", async ({
+  // THE CONTROL ROW HOLDS THE SEND BUTTON AND NOTHING ELSE. The hint that used
+  // to sit on its left edge is gone from the drawing, and the claim it carried
+  // — that pressing send changes nothing — reaches assistive technology alone
+  // now. A reason goes in the accessible DESCRIPTION, never in the name.
+  test("keeps its one claim out of the drawing and in the description", async ({
     configure,
   }) => {
     const { composer } = configure
+
+    // MEASURED rather than asserted as hidden. A screen-reader-only element is
+    // clipped to a pixel rather than removed, so it is `visible` to every
+    // visibility check there is — what the design settled is that it takes no
+    // room in the control row, and only its box can say so.
+    const box = await composer.hint.boundingBox()
+    if (!box) throw new Error("the hint must be in the accessibility tree")
+    expect(box.width).toBeLessThanOrEqual(1)
+    expect(box.height).toBeLessThanOrEqual(1)
 
     await expect(composer.field).toHaveAccessibleDescription(COMPOSER_HINT)
     await expect(composer.sendButton).toHaveAccessibleDescription(COMPOSER_HINT)
@@ -258,179 +252,34 @@ test.describe("the docked composer", () => {
       composer.dock.getByRole("button", { name: DEAD_MODE_LABEL })
     ).toHaveCount(0)
   })
+
+  // AND NO STARTER CHIPS. They were built, shipped and cut, so the empty state
+  // of the dock is the band alone — the placeholder is what names the
+  // capability now. `Send` is the dock's only button in every state, which is
+  // the assertion rather than a count of a group that no longer exists.
+  test("offers nothing but Send with the field empty", async ({
+    configure,
+  }) => {
+    const { composer } = configure
+
+    expect(await composer.draft()).toBe("")
+    await expect(composer.dock.getByRole("button")).toHaveCount(1)
+    await expect(composer.dock.getByRole("button")).toHaveAccessibleName(
+      COMPOSER_SEND_LABEL
+    )
+  })
 })
 
-test.describe("the suggestion openers", () => {
-  // The MEMBERS, not the count: a count cannot see a swap, and a third opener
-  // is the specific way this comes back — an `Explain…` chip is the cut `ask`
-  // mode wearing one.
-  test("offers exactly the two openers, in the owner's order", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-
-    // `allTextContents` does not retry — Playwright's auto-waiting is a
-    // property of actions and of `expect`, never of a locator — so a row that
-    // has not mounted yet answers `[]` rather than waiting for it to. The
-    // sentinel is what makes the read below a claim about the openers rather
-    // than about how fast this test got there.
-    await expect(composer.suggestions).toBeVisible()
-
-    expect(await composer.suggestionLabels.allTextContents()).toStrictEqual([
-      ...SUGGESTION_LABELS,
-    ])
-  })
-
-  // Walked over the named constant rather than written out twice, which is what
-  // stops a second table of prefill strings appearing beside the labels.
-  test("fills the field with each opener's own text, ellipsis traded for a space", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-
-    for (const label of SUGGESTION_LABELS) {
-      await composer.type("")
-      await composer.suggestion(label).click()
-
-      expect(await composer.draft()).toBe(prefillOf(label))
-    }
-  })
-
-  test("focuses the field and leaves the caret after the inserted text", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-    const [first] = SUGGESTION_LABELS
-
-    await composer.suggestion(first).click()
-
-    await expect(composer.field).toBeFocused()
-    const { start, end, length } = await composer.caret()
-    expect({ start, end }).toStrictEqual({ start: length, end: length })
-  })
-
-  // Both directions in one test. The absence half alone is green against a
-  // composer that renders nothing, and the return half is what says the
-  // predicate is live rather than a one-shot dismissal.
-  test("leaves once the field has text and comes back when it is emptied", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-
-    await expect(composer.suggestions).toBeVisible()
-
-    await composer.type("a")
-    await expect(composer.suggestionButtons).toHaveCount(0)
-
-    await composer.type("")
-    await expect(composer.suggestions).toBeVisible()
-  })
-
-  // One predicate, two readers: the openers are the empty state of the field
-  // and `disabled` is the empty state of the action. Two predicates that agree
-  // today and can drift tomorrow would be two bugs, so both are asserted here
-  // against the one draft that tells them apart from a naive `=== ""`.
-  test("treats a whitespace-only draft as empty, in both of the predicate's readers", async ({
-    configure,
-  }) => {
+// One predicate, two readers: an empty draft is the state the send button is
+// disabled in, and `trim` is what tells a whitespace-only draft from a written
+// one. The naive `=== ""` passes every assertion in this file except this.
+test.describe("an empty draft", () => {
+  test("treats a whitespace-only draft as empty", async ({ configure }) => {
     const { composer } = configure
 
     await composer.type("   ")
 
-    await expect(composer.suggestions).toBeVisible()
     await expect(composer.sendButton).toBeDisabled()
-  })
-
-  // Replace rather than append, which is never destructive: the openers are
-  // absent whenever the draft holds anything but whitespace, so the only thing
-  // a replace can discard is stray whitespace. Append would leave
-  // `"   Change my setup to "`.
-  test("replaces a whitespace draft rather than appending to it", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-    const [first] = SUGGESTION_LABELS
-
-    await composer.type("   ")
-    await composer.suggestion(first).click()
-
-    expect(await composer.draft()).toBe(prefillOf(first))
-  })
-
-  // AN OPENER IS A WRITING AID, NOT A MODE. This is the assertion that would go
-  // red the day someone stores which chip was clicked, gives a chip a pressed
-  // state, or branches the submit on the draft's prefix — none of which any
-  // grep for the word "mode" would find.
-  //
-  // The two routes reach the same sentence by different doors and their
-  // proposals are compared whole. Nothing downstream may be able to tell them
-  // apart — and both are read once `settled`, or the comparison is between a
-  // pending frame and a finished one.
-  test("reaches the same place whether an opener is clicked or typed by hand", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-    const [first] = SUGGESTION_LABELS
-
-    await composer.type(`${prefillOf(first)}${CONTINUATION}`)
-    await composer.send()
-    await settled(composer)
-    const typed = await composer.proposal.innerText()
-
-    // Emptying the draft clears the proposal and brings the openers back, so
-    // the second route starts from the same opening state as the first.
-    await composer.type("")
-    await expect(composer.proposal).toHaveCount(0)
-
-    await composer.suggestion(first).click()
-    await composer.continueTyping(CONTINUATION)
-    await composer.send()
-    await settled(composer)
-    const clicked = await composer.proposal.innerText()
-
-    expect(clicked).toBe(typed)
-  })
-
-  // Two independent tab stops, not a roving one: a roving tabindex is the
-  // `Segmented` mechanism, and it comes with the radiogroup semantics an opener
-  // must not claim — a radiogroup says the options are exclusive and that one
-  // of them is current, and neither is true of a sentence starter. Tab moving
-  // BETWEEN the two openers is what tells them apart, because in a roving row
-  // it would leave the row instead.
-  test("gives each opener its own tab stop, and activates on Enter", async ({
-    configure,
-    page,
-  }) => {
-    const { composer } = configure
-    const [first, second] = SUGGESTION_LABELS
-
-    await composer.suggestion(first).focus()
-    await expect(composer.suggestion(first)).toBeFocused()
-
-    await page.keyboard.press("Tab")
-    await expect(composer.suggestion(second)).toBeFocused()
-
-    await page.keyboard.press("Enter")
-
-    expect(await composer.draft()).toBe(prefillOf(second))
-  })
-
-  // The dock never draws three things, and it does not need a rule anyone has
-  // to remember: the openers need a blank draft and a proposal needs a
-  // non-blank one. Both directions, each the other's control.
-  test("is never on screen at the same time as a proposal", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-
-    await expect(composer.suggestions).toBeVisible()
-    await expect(composer.proposal).toHaveCount(0)
-
-    await composer.type(SENTENCE)
-    await composer.send()
-
-    await expect(composer.proposal).toBeVisible()
-    await expect(composer.suggestionButtons).toHaveCount(0)
   })
 })
 
@@ -807,6 +656,31 @@ test.describe("applying a proposal", () => {
     expect(await selectedSkillIds(configure)).toStrictEqual([skillId])
   })
 
+  // The block NAMES what it is offering, and the heading carries the count so
+  // the rows do not have to: `Skills · 1 added` generalises to a changed group
+  // with no new mechanism. One row per thing, and the count is the row count.
+  test("heads the list with what it adds, and draws a row for each", async ({
+    configure,
+    page,
+  }) => {
+    const { composer } = configure
+    const skillId = await skillIdOf(
+      configure,
+      configure.skillIn(web, CATEGORY, SKILL)
+    )
+    stubCompose(page, [skillId])
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await settled(composer)
+
+    await expect(composer.proposal.getByRole("group")).toHaveAccessibleName(
+      "Skills · 1 added"
+    )
+    await expect(composer.proposalRows).toHaveCount(1)
+    await expect(composer.proposalRows).toContainText(SKILL)
+  })
+
   // Applying is the one verb that clears the sentence: it is the only door out
   // of the composer where what the visitor asked for has actually happened.
   test("clears the proposal", async ({ configure, page }) => {
@@ -845,49 +719,28 @@ test.describe("discarding a proposal", () => {
     expect(await composer.draft()).toBe(SENTENCE)
     await expect(composer.field).toBeFocused()
   })
-
-  // The other door out of a proposal, and the openers must NOT come back
-  // through it: the visitor is rephrasing a sentence, not starting one. The
-  // sibling of the openers' own both-directions test.
-  test("does not bring the openers back, because the draft survives", async ({
-    configure,
-  }) => {
-    const { composer } = configure
-
-    await composer.type(SENTENCE)
-    await composer.send()
-    await expect(composer.proposal).toBeVisible()
-
-    await composer.discardButton.click()
-    await expect(composer.proposal).toHaveCount(0)
-
-    await expect(composer.suggestionButtons).toHaveCount(0)
-  })
 })
 
 // A floating control needs a geometry assertion, not a visibility one, and this
 // column now floats two of them: the marketplace button and the composer. Every
 // assertion below is a relationship between two live boxes.
 test.describe("the composer's geometry", () => {
-  // The dock at its shortest — a draft in the field, so neither conditional
-  // child is drawn. The opening state is measured separately below, because the
-  // dock's two conditional children are never on screen together and no single
-  // measurement can see both.
+  // The dock at its shortest — a draft in the field and no answer yet, so its
+  // one conditional child is not drawn.
   test("leaves the marketplace button clear at its shortest", async ({
     configure,
   }) => {
     await configure.composer.type(SENTENCE)
-    await expect(configure.composer.suggestionButtons).toHaveCount(0)
 
     expect(await dockGap(configure)).toBeGreaterThanOrEqual(0)
   })
 
-  // The opening state: a blank draft, so the openers are on screen. This is the
-  // one every visitor sees first.
-  test("leaves the marketplace button clear with the openers showing", async ({
+  // The opening state: a blank draft, so the dock is the band alone. This is
+  // the one every visitor sees first.
+  test("leaves the marketplace button clear with an empty field", async ({
     configure,
   }) => {
-    await expect(configure.composer.suggestions).toBeVisible()
+    expect(await configure.composer.draft()).toBe("")
 
     expect(await dockGap(configure)).toBeGreaterThanOrEqual(0)
   })
@@ -924,16 +777,42 @@ test.describe("the composer's geometry", () => {
     expect(await dockGap(configure)).toBeGreaterThanOrEqual(0)
   })
 
-  // The openers are ABOVE the band. Below it, a full-bleed strip of column
+  // The proposal is ABOVE the band. Below it, a full-bleed strip of column
   // colour would sit between the band's bottom hairline and the viewport edge,
   // which reads as a second band — a tenth rejected float treatment by
   // accident. Nothing else catches it being built the other way round.
-  test("draws the openers above the band, not below it", async ({
+  test("draws the proposal above the band, not below it", async ({
     configure,
   }) => {
-    await expect(configure.composer.suggestions).toBeVisible()
+    const { composer } = configure
 
-    expect(await openersToBandGap(configure)).toBeGreaterThanOrEqual(0)
+    await composer.type(SENTENCE)
+    await composer.send()
+    await expect(composer.proposal).toBeVisible()
+
+    expect(await proposalToBandGap(configure)).toBeGreaterThanOrEqual(0)
+  })
+
+  // AND FULL-BLEED, exactly as the band under it is. The proposal is notched
+  // into the grid rather than a card floated in the column — a bordered box
+  // inset to the content edge is what it used to be, and the two treatments are
+  // told apart by one measurement and by nothing else on screen.
+  test("bleeds as far as the band it answers into", async ({ configure }) => {
+    const { composer } = configure
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await expect(composer.proposal).toBeVisible()
+
+    const proposal = await composer.proposal.boundingBox()
+    const band = await composer.band.boundingBox()
+    if (!proposal || !band)
+      throw new Error("the proposal and the band must be drawn")
+
+    expect({ x: proposal.x, width: proposal.width }).toStrictEqual({
+      x: band.x,
+      width: band.width,
+    })
   })
 
   // "Notched into the grid": the band is a row of the column rather than a card

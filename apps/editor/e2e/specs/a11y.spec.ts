@@ -161,12 +161,12 @@ test.describe("the dialogs", () => {
 
 // The composer, and the one surface here neither suite reached. Two states
 // rather than one, because they publish through different channels: the field
-// and its openers are ordinary controls, and the proposal announces itself
+// and its button are ordinary controls, and the proposal announces itself
 // through a live region and offers two verbs that act on the selection.
 test.describe("the composer", () => {
   test("with a sentence drafted", async ({ configure }) => {
     await configure.composer.type("a react app with tailwind and vitest")
-    await expect(configure.composer.suggestions).toBeHidden()
+    await expect(configure.composer.sendButton).toBeEnabled()
 
     expect(await audit(configure)).toStrictEqual([])
   })

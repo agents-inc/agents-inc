@@ -10,11 +10,17 @@ import { useId } from "react"
  * the model's — nothing is applied until `Apply` is pressed, and neither
  * the submit nor the `Discard` is that press.
  *
- * `Chat Composer Lab.dc.html` option `91g` is the only drawing of a proposal
- * that exists anywhere, so it is the source for every figure here. Two things
- * it does not draw are designed on top of it: a CHANGED row, whose mark track
- * is empty and whose state track holds `<before> → <after>`, and the ZERO-CHANGE
- * form below, which is what a refusal and an empty answer both render as.
+ * NOTCHED INTO THE GRID, exactly as the composer under it is: full-bleed
+ * across the column, hairlines top and bottom only, no side borders and no drop
+ * shadow. It was a bordered card inset to the content edge for one revision,
+ * and a card floated over the column is the treatment nine other float
+ * explorations were rejected in favour of not being.
+ *
+ * `Configurator v5.dc.html`'s `.res` block is the source for every figure here.
+ * Two things it does not draw are designed on top of it: a CHANGED row, whose
+ * mark track is empty and whose state track holds `<before> → <after>`, and the
+ * ZERO-CHANGE form below, which is what a refusal and an empty answer both
+ * render as.
  *
  * The shape below is a RENDERING contract and not a wire one. The model returns
  * skill ids and a sentence; `lib/compose-proposal.ts` maps those onto this, and
@@ -22,7 +28,8 @@ import { useId } from "react"
  * propose an assignment.
  */
 
-/** One changed or added thing. Rows are text: `91g` draws no per-row control. */
+/** One changed or added thing. Rows are text: the design draws no per-row
+ *  control — the block's two verbs act on all of it or on none. */
 export type ProposalRow = {
   name: string
   /** `preloaded`, `sonnet · med`, or a transition — `lazy → preloaded`. */
@@ -54,8 +61,8 @@ export type Proposal = {
   reason: string | null
 }
 
-// U+201C and U+201D, and they are CONTENT rather than a `::before` rule —
-// `91g`'s own markup carries them around the sentence.
+// U+201C and U+201D, and they are CONTENT rather than a `::before` rule — the
+// design's own markup carries them around the sentence.
 const OPEN_QUOTE = "“"
 const CLOSE_QUOTE = "”"
 
@@ -75,45 +82,54 @@ const ADDED_MARK = "＋"
 const NO_CHANGES = "no changes"
 
 // The dock is sticky at the viewport's foot, so an uncapped proposal would
-// eventually cover the page it is docked to. `91g`'s own ten-change block is
-// around 15rem, so this is headroom rather than a crop of the drawn case.
+// eventually cover the page it is docked to. The design's own eleven-row block
+// is four columns of three, so this is headroom rather than a crop of it.
 //
 // The whole constant is the utility, not its number: Tailwind reads class
 // strings out of the source, so a figure interpolated into one compiles to
 // nothing at all — no build error, no lint error, just an uncapped block.
 const PROPOSAL_HEIGHT_CAP = "max-h-[21rem]"
 
-// `91g` writes the verb into the heading rather than onto the rows, which
-// generalises to a changed group with no new mechanism: `Skills · 4 changed`.
+// The design writes the verb into the heading rather than onto the rows —
+// `Skills · 11 added` — which generalises to a changed group with no new
+// mechanism: `Skills · 4 changed`.
 const headingOf = ({ subject, verb, rows }: ProposalGroup) =>
   `${subject}${SEPARATOR}${rows.length} ${verb}`
 
-// The row count, exactly as `91g`'s fixture computes it (`propSk.length +
+// The row count, exactly as the design's fixture computes it (`propSk.length +
 // propAg.length`). That arithmetic is what makes one row per changed FIELD the
 // right shape: `4 changes` then means four things moved.
 const totalOf = (groups: ProposalGroup[]) =>
   groups.reduce((count, group) => count + group.rows.length, 0)
 
 // The design's template is `<n> + ' changes'` for every count — so the singular
-// is deliberately not invented here, and the plural is `91g`'s own.
+// is deliberately not invented here, and the plural is the design's own.
 const totalLabel = (total: number) =>
   total === 0 ? NO_CHANGES : `${total} changes`
 
+// One row, and the load word is pushed to the right edge of ITS OWN COLUMN
+// rather than the block's. At 1352px a two-column layout put names at x=190 and
+// load words at x=1400 — nothing pairs them across 1200px of paper.
 function Row({ row }: { row: ProposalRow }) {
   return (
-    <div className="grid h-[1.1875rem] grid-cols-[0.875rem_1fr_auto] items-baseline">
+    <div
+      data-slot="proposal-row"
+      className="flex h-[1.375rem] items-baseline gap-2"
+    >
       <span
         aria-hidden="true"
-        className="font-mono text-10 font-normal text-brand"
+        className="flex-none font-mono text-10 font-normal text-brand"
       >
         {row.added ? ADDED_MARK : ""}
       </span>
-      <span className="text-11 font-normal text-ink">{row.name}</span>
+      {/* Truncated rather than wrapped: a name that wraps takes the row off its
+          22px rhythm and the four columns stop lining up across the block. */}
+      <span className="truncate text-12 font-normal text-ink">{row.name}</span>
       {/* Amber marks what the visitor is CHOOSING and never decorates: the
           load word is amber for `preloaded` and grey for `lazy`, and on a
           transition it is the `after` half that carries it. */}
       <span
-        className={`font-mono text-8_5 font-normal ${row.amber ? "text-brand-ink" : "text-faint"}`}
+        className={`ml-auto flex-none font-mono text-9 font-normal whitespace-nowrap ${row.amber ? "text-brand-ink" : "text-faint"}`}
       >
         {row.state}
       </span>
@@ -136,12 +152,21 @@ export function ProposalBlock({
   return (
     <section
       aria-label="Proposal"
-      // No radius and no drop shadow: the only drop shadow in this design is on
-      // a modal dialog, and this is a block in the column rather than one over
-      // it. `.prf{flex:none}` is why the column is a flex one — the footer holds
-      // the only two actions, so capping the block has to scroll the body past
-      // them rather than scroll them away.
-      className={`flex ${PROPOSAL_HEIGHT_CAP} flex-col bg-cell shadow-[inset_0_0_0_1px_var(--color-hairline)]`}
+      // FULL-BLEED, hairlines top and bottom only, no radius and no drop
+      // shadow: the only drop shadow in this design is on a modal dialog, and
+      // this is a ROW OF THE COLUMN rather than a card over it.
+      //
+      // NO NEGATIVE MARGIN OF ITS OWN. The dock this sits in is already bled
+      // out to the column's edges, so a second `-mx-gutter` here bleeds twice
+      // — measured at 1234px against the band's 1102px, one gutter past the
+      // column on each side. The bleed belongs to the dock; what belongs here
+      // is re-insetting the content to the same edge the band's does.
+      //
+      // `mb` rather than `mt` because the dock's own top margin is already
+      // above this. The column is a flex one so the footer can hold: it
+      // carries the only two actions, so capping the block has to scroll the
+      // body past them rather than scroll them away.
+      className={`mb-[1.625rem] flex ${PROPOSAL_HEIGHT_CAP} flex-col bg-cell shadow-[inset_0_1px_0_var(--color-hairline),inset_0_-1px_0_var(--color-hairline)]`}
     >
       {/* `status` rather than `alert`: nothing went wrong, so it should wait
           for a pause rather than interrupt. And it is on the HEADER rather than
@@ -152,9 +177,14 @@ export function ProposalBlock({
           that locator ambiguous under Playwright's strict mode. */}
       <div
         role="status"
-        className="flex shrink-0 items-baseline px-[0.9375rem] pt-[0.8125rem] pb-[0.6875rem]"
+        className="flex shrink-0 items-baseline px-gutter py-[1.125rem]"
       >
-        <span className="text-11_5 font-normal text-matrix-ink italic">
+        {/* PROSE, in Inter — it is the line that explains the whole proposal,
+            and mono at 11.5px read as a log entry. The quotes stay: this is a
+            quotation of what the visitor asked for, not the model's own
+            summary, and `max-w-[86ch]` is what keeps it a paragraph rather
+            than one line across a 1200px column. */}
+        <span className="max-w-[86ch] text-12_5 leading-[1.5] font-normal text-pretty text-ink-2">
           {OPEN_QUOTE}
           {proposal.sentence}
           {CLOSE_QUOTE}
@@ -165,7 +195,7 @@ export function ProposalBlock({
             reader before the request had even returned, then announced a second
             time when it did. */}
         {!proposal.pending && (
-          <span className="ml-auto font-mono text-8_5 font-normal text-roster-off">
+          <span className="ml-auto pl-8 font-mono text-8_5 font-normal whitespace-nowrap text-roster-off">
             {totalLabel(total)}
           </span>
         )}
@@ -175,7 +205,7 @@ export function ProposalBlock({
           empty bordered box is furniture. `tree-border` is the preview dialog's
           pane rule doing a second duty here, splitting header from body. */}
       {proposal.groups.length > 0 && (
-        <div className="min-h-0 overflow-y-auto border-t border-tree-border px-[0.9375rem] pt-[0.75rem] pb-[0.875rem]">
+        <div className="min-h-0 overflow-y-auto px-gutter pt-[0.875rem] pb-[1.125rem] shadow-[inset_0_1px_0_var(--color-tree-border)]">
           {proposal.groups.map((group, index) => (
             <div
               key={headingOf(group)}
@@ -187,23 +217,31 @@ export function ProposalBlock({
                   `role` and there is no adjacency left for the selector. */}
               <p
                 id={`${groupIds}-${index}`}
-                className={`mb-[0.375rem] font-mono text-8_5 font-semibold tracking-[.1em] text-faint uppercase ${index > 0 ? "mt-[0.875rem]" : ""}`}
+                className={`mb-[0.5625rem] font-mono text-8_5 font-semibold tracking-[.12em] text-muted-foreground uppercase ${index > 0 ? "mt-[0.875rem]" : ""}`}
               >
                 {headingOf(group)}
               </p>
-              {group.rows.map((row) => (
-                <Row key={`${row.name} ${row.state}`} row={row} />
-              ))}
+              {/* FOUR COLUMNS. Two put names at x=190 and their load words at
+                  x=1400 on a 1352px column — nothing pairs across 1200px of
+                  paper — and the column gap is what makes each row's own right
+                  edge close enough to its name to read as one thing. */}
+              <div className="grid grid-cols-4 gap-x-[2.125rem]">
+                {group.rows.map((row) => (
+                  <Row key={`${row.name} ${row.state}`} row={row} />
+                ))}
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex shrink-0 items-center gap-[0.5625rem] border-t border-hairline px-[1.25rem] py-[0.8125rem]">
+      <div className="flex shrink-0 items-center gap-2.5 px-gutter pt-3 pb-[0.875rem] shadow-[inset_0_1px_0_var(--color-tree-border)]">
         {proposal.reason !== null && (
+          // It must not be the faintest thing in the block: it is the argument
+          // for having a proposal at all.
           <span
             data-slot="proposal-reason"
-            className="min-w-0 font-mono text-10 font-normal text-muted-foreground"
+            className="min-w-0 font-mono text-10 leading-[1.5] font-normal text-muted-foreground"
           >
             {proposal.reason}
           </span>

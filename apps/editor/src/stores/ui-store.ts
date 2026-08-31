@@ -1,7 +1,11 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-import { persistedUiSchema, type RosterGroupBy } from "./persisted-schema"
+import {
+  persistedUiSchema,
+  type RosterGroupBy,
+  type ThemePreference,
+} from "./persisted-schema"
 
 import type { MarketplaceRecovery } from "@/features/configure/lib/seat-catalog"
 
@@ -59,6 +63,10 @@ type UiState = {
   rosterGroupBy: RosterGroupBy
   // Whether the stack grid under the first hinge is folded away.
   stackCollapsed: boolean
+  // Which palette to paint in, and `system` is the default rather than a
+  // fallback: a visitor who has never touched the glyph follows their machine,
+  // in both directions, for as long as they never touch it.
+  theme: ThemePreference
   // What the last act that seated a catalogue had to say for itself, in one
   // line above the grid, and whatever is parked behind the marketplace dialog
   // waiting on a catalogue that would not load.
@@ -87,6 +95,7 @@ type UiState = {
   toggleRosterDomain: (groupKey: string) => void
   setRosterGroupBy: (groupBy: RosterGroupBy) => void
   toggleStackCollapsed: () => void
+  setTheme: (theme: ThemePreference) => void
   sayCatalogue: (notice: string | null) => void
   parkCatalogue: (recovery: MarketplaceRecovery, waiting: string) => void
   flashAgents: (agentIds: string[]) => void
@@ -109,6 +118,7 @@ export const useUiStore = create<UiState>()(
       rosterCollapsed: {},
       rosterGroupBy: "domain",
       stackCollapsed: false,
+      theme: "system",
       catalogueNotice: null,
       marketplaceRecovery: null,
       flashedAgentIds: [],
@@ -142,6 +152,12 @@ export const useUiStore = create<UiState>()(
       setRosterGroupBy: (rosterGroupBy) => set({ rosterGroupBy }),
       toggleStackCollapsed: () =>
         set((state) => ({ stackCollapsed: !state.stackCollapsed })),
+
+      // Set rather than toggled, because the toggle is not a property of the
+      // stored value: the glyph flips whatever is ON SCREEN, and what is on
+      // screen while the preference is `system` is the machine's answer. Only
+      // the rail can see that, so only the rail can name the other one.
+      setTheme: (theme) => set({ theme }),
 
       // An outcome ENDS whatever was parked, which is why the two fields move
       // together. A line saying what the seated catalogue cost is the answer
@@ -191,13 +207,20 @@ export const useUiStore = create<UiState>()(
       // is not a migration — it is an unreported discard of every visitor's
       // arrangement at once. New persisted keys are `.catch()`-ed instead.
       version: 3,
-      // All three are ARRANGEMENT — how the screen is laid out. Everything else
-      // is transient: reloading into an open panel, an open dialog, a pending
-      // confirmation or a decaying flash is never right.
-      partialize: ({ rosterCollapsed, rosterGroupBy, stackCollapsed }) => ({
+      // All four are ARRANGEMENT — how the screen is laid out and what it is
+      // painted in. Everything else is transient: reloading into an open panel,
+      // an open dialog, a pending confirmation or a decaying flash is never
+      // right.
+      partialize: ({
         rosterCollapsed,
         rosterGroupBy,
         stackCollapsed,
+        theme,
+      }) => ({
+        rosterCollapsed,
+        rosterGroupBy,
+        stackCollapsed,
+        theme,
       }),
       merge: (persisted, current) => {
         const parsed = persistedUiSchema.safeParse(persisted)

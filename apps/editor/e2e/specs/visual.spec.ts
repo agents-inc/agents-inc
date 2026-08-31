@@ -40,9 +40,13 @@ import { stubSkillIndex } from "../support/skill-index"
 // around it. Flip `fullPage` per capture if a specific screen disagrees.
 
 // EVERY STATE IS CAPTURED IN BOTH THEMES, and the doubling was argued rather
-// than assumed. The app has no theme switch: the palette follows
-// `prefers-color-scheme` alone, which is why the second pass is an emulation
-// rather than a click.
+// than assumed. The second pass is an EMULATION rather than a click on the
+// rail's theme glyph, and that is deliberate now that the glyph exists: it
+// writes `data-theme` on the root, so a capture taken through it would leave
+// the attribute set for every state after it and there would be no way to tell
+// a light capture from one the toggle happened to land on. Emulating the media
+// query exercises the same palette through the branch every visitor gets
+// without ever touching the control, and leaves the document as it found it.
 //
 // A DARK SUBSET WAS THE ALTERNATIVE, AND IT WAS COSTED BEFORE IT WAS DROPPED.
 // A theme here is a palette substitution and nothing else — the DOM and the box

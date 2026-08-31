@@ -4,6 +4,7 @@ import { useMemo } from "react"
 
 import {
   blockedNotice,
+  selectDomainTabs,
   selectDomainViews,
   summarize,
 } from "@/features/configure/lib/derive"
@@ -70,6 +71,25 @@ export function ConfigureScreen() {
     [config, search, catalog]
   )
 
+  // Every domain in the catalogue, filtered or not — the strip is the page's
+  // map, so it is derived from the catalogue rather than from the view.
+  //
+  // NOT memoised, and that is the honest shape rather than an omission: the
+  // derivation takes no arguments because it reads the seated catalogue
+  // itself, so there is nothing for a dependency array to watch. It maps nine
+  // domains; what a `useMemo` would buy here is a stale strip after a
+  // marketplace swap, which is the one thing the subscription above exists to
+  // prevent.
+  const domainTabs = selectDomainTabs()
+  // What the column is actually drawing, which is what the strip follows. It
+  // changes whenever a filter does, and the strip has to re-derive with it
+  // rather than on the next scroll event.
+  const renderedDomains = useMemo(
+    () => domainViews.map((view) => view.id),
+    [domainViews]
+  )
+
+  const summary = summarize(config)
   const stack = stacks.find((candidate) => candidate.id === stackId)
 
   // Composed rather than assigned, and the halves are deliberately different
@@ -79,7 +99,7 @@ export function ConfigureScreen() {
   // on saying "Install is blocked" after the user had unblocked it, which is
   // the same stale-vouching problem EDITOR-43 was about, wearing the other
   // coat.
-  const blockedLine = blockedNotice(summarize(config).unscopedAgentCount)
+  const blockedLine = blockedNotice(summary.unscopedAgentCount)
   const line = [notice, blockedLine].filter((part) => part !== null).join(" ")
 
   return (
@@ -123,7 +143,12 @@ export function ConfigureScreen() {
           <Hinge label="then" emphasis="pick your skills" />
         )}
 
-        <FilterBar search={search} />
+        <FilterBar
+          search={search}
+          tabs={domainTabs}
+          renderedDomains={renderedDomains}
+          selectedCount={summary.skillCount}
+        />
 
         {domainViews.length === 0 ? (
           <p className="pt-[1.875rem] font-mono text-11 text-muted-foreground">

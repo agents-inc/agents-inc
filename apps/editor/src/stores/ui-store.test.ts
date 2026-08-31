@@ -24,6 +24,7 @@ const PERSISTED_UI_KEYS = [
   "rosterCollapsed",
   "rosterGroupBy",
   "stackCollapsed",
+  "theme",
 ] as const
 
 // What a visitor who last used the app before the two new keys existed has in
@@ -88,7 +89,7 @@ describe("the ui slot's persist options", () => {
     expect(store.persist.getOptions().version).toBe(3)
   })
 
-  it("writes exactly the three arrangement fields", async () => {
+  it("writes exactly the four arrangement fields", async () => {
     const store = await uiStoreOnAStandingBrowser()
     const written = store.persist.getOptions().partialize!(
       store.getInitialState()
@@ -187,13 +188,16 @@ describe("the ui slot's arrangement actions", () => {
 // as an invalid one and the `{ ...current, ...parsed.data }` spread never
 // depends on whether Zod omitted an absent optional.
 describe("persistedUiSchema", () => {
-  it("fills both new keys in from a blob that carries neither", () => {
+  it("fills every new key in from a blob that carries none of them", () => {
     const parsed = persistedUiSchema.parse(BLOB_FROM_THE_PREVIOUS_SCHEMA)
 
     expect(parsed).toStrictEqual({
       rosterCollapsed: { web: true },
       rosterGroupBy: "domain",
       stackCollapsed: false,
+      // `system` and NOT `light`: a browser that has never been told which
+      // palette to paint in follows the machine, in both directions.
+      theme: "system",
     } satisfies PersistedUi)
   })
 
@@ -202,6 +206,7 @@ describe("persistedUiSchema", () => {
       rosterCollapsed: {},
       rosterGroupBy: "nonsense",
       stackCollapsed: "yes",
+      theme: "sepia",
     })
 
     expect(parsed.success).toBe(true)
@@ -209,6 +214,7 @@ describe("persistedUiSchema", () => {
       rosterCollapsed: {},
       rosterGroupBy: "domain",
       stackCollapsed: false,
+      theme: "system",
     } satisfies PersistedUi)
   })
 

@@ -7,6 +7,7 @@ import {
   type CatalogCategory,
   type CatalogDomain,
   type CatalogSkill,
+  type Domain,
   type IncompatibilityCause,
   type SelectionJudgement,
   type SubAgent,
@@ -83,6 +84,20 @@ export type DomainView = {
   id: string
   label: string
   categories: CategoryView[]
+}
+
+/** One tab in the strip under the search band. */
+export type DomainTab = {
+  // The catalogue's own id rather than a bare string, because picking a tab
+  // WRITES it to the URL — `ConfigureSearch.domain` is this enum, so a widened
+  // id here would make the strip the one filter that could set a domain the
+  // address bar cannot hold.
+  id: Domain
+  label: string
+  /** `01`, `02`, … — a fixed slot, so picking one never shifts the strip. */
+  index: string
+  /** Every skill the domain holds, filtered or not. */
+  skillCount: number
 }
 
 // Two letters: first letter of each of the first two words, else the first two.
@@ -403,6 +418,27 @@ export const selectDomainViews = (
     .map((domain) => toDomainView(domain, context))
     .filter(hasCategories)
 }
+/**
+ * THE STRIP IS THE PAGE'S MAP, so it is derived from the catalogue alone.
+ *
+ * Every domain, always, in catalogue order — deliberately blind to the search,
+ * the domain pick and the `selected` filter, all three of which `selectDomainViews`
+ * above answers. A strip that shrank with the filter would be a map that
+ * redraws itself the moment you use it: picking `api` would leave one tab, and
+ * the way back to everything else would be gone.
+ *
+ * The count is the domain's WHOLE size for the same reason the category counts
+ * read `x of y` against the whole category — a count against a filtered list
+ * says nothing.
+ */
+export const selectDomainTabs = (): DomainTab[] =>
+  activeCatalog().domains.map((domain, position) => ({
+    id: domain.id,
+    label: domain.label,
+    index: String(position + 1).padStart(2, "0"),
+    skillCount: domain.skillCount,
+  }))
+
 // ── Roster ───────────────────────────────────────────────────────────────
 
 export type RosterSkillRow = {
