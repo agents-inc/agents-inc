@@ -46,7 +46,7 @@
     "@workspace/vitest-config": "workspace:*",
     "chromatic": "^18",
     "eslint": "^10",
-    "playwright": "1.56.1",
+    "playwright": "1.62.1",
     "storybook": "^10",
     "tailwindcss": "^4",
     "typescript": "~6",
