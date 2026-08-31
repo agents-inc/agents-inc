@@ -7,6 +7,8 @@ sidebar:
 
 The editor is the browser front door onto the same catalogue the CLI reads. Pick a stack, click the skills you want, decide which sub-agents carry them, and it hands you a command to run. [CLI or web](/docs/cli-or-web) has the full comparison — the short of it is that the editor is the one that shows you the whole catalogue at once, and the one you can hand to somebody else.
 
+**You do not have to build the selection yourself.** [The composer](/docs/editor/composer) at the foot of the roster takes a sentence describing your project and proposes the skills for it; for a project that already exists, the [stack-detection skill](/docs/guides/adding-to-an-existing-project) reads the repository and proposes one from the code. Both leave you here, in the grid, with something to correct rather than something to assemble.
+
 ## Quick start
 
 1. Open [agentsinc.sh](https://agentsinc.sh).
@@ -89,7 +91,7 @@ The configuration slot is versioned and has no migrations. A blob written agains
 
 **It doesn't read an installation you already have.** Everything on screen starts from nothing, from a stack, or from an id. To bring an existing installation into the grid, mint it first with `npx agents-inc share` or `npx agents-inc edit --ui` — see [CLI or web](/docs/cli-or-web).
 
-**You can use all of this without an account**, and the CLI resolves a shared link without one too. Signing in with GitHub is what makes saved stacks outlive the browser and what unlocks the composer, which calls a model and so needs somebody to attribute the cost to. Your configuration lives in this browser, and so does any marketplace token — a private catalogue is fetched straight from GitHub, so a token never leaves the browser at all. The one thing stored elsewhere is the payload behind an id, and that's written only when you open the install dialog or press Share.
+**You can use all of this without an account**, and the CLI resolves a shared link without one too. Signing in with GitHub is what makes saved stacks outlive the browser and what unlocks [the composer](/docs/editor/composer), which calls a model and so needs somebody to attribute the cost to. Your configuration lives in this browser, and so does any marketplace token — a private catalogue is fetched straight from GitHub, so a token never leaves the browser at all. The one thing stored elsewhere is the payload behind an id, and that's written only when you open the install dialog or press Share.
 
 ## Related
 

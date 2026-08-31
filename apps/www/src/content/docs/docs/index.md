@@ -35,6 +35,10 @@ same output.
 
 ## Start here
 
+- [Four ways in](/docs/ways-in) — the four routes to a selection, and which one
+  suits where you are starting from. **Adding this to a codebase that already
+  exists** and **starting from nothing** have a different answer each, and
+  neither of them is the grid.
 - [The editor](/docs/editor) — the browser front door, what each of its three
   columns holds, and the things it deliberately cannot do.
 - [Quickstart](/docs/quickstart) — the whole run, from the grid to the files on
@@ -54,6 +58,7 @@ constantly: [skills](/docs/concepts/skills),
 
 The **Guides** are task-shaped:
 [global-first setup](/docs/guides/global-first-setup),
+[adding to an existing project](/docs/guides/adding-to-an-existing-project),
 [editing your config](/docs/guides/editing-config),
 [customising sub-agents](/docs/guides/customizing-subagents),
 [writing custom skills](/docs/guides/writing-custom-skills),
@@ -67,6 +72,7 @@ the [field reference](/docs/configuration/config-reference),
 
 **[The editor](/docs/editor)** is the browser front door:
 [selecting skills](/docs/editor/selecting-skills),
+[the composer](/docs/editor/composer),
 [install and share](/docs/editor/install-and-share), and
 [marketplaces](/docs/editor/marketplaces).
 

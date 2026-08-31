@@ -2,7 +2,7 @@
 title: Installing and sharing
 description: The install dialog and the command it hands you, what an id guarantees, the output preview that shows every file before one is written, and the round trip back from an installation.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 The editor can't write to your disk, so the end of every session is a short id and a command that carries it. This page covers the install dialog, the preview that shows you exactly what the command will write, and the two ways a configuration travels — to a machine, and to another person.

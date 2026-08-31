@@ -2,7 +2,7 @@
 title: Marketplaces in the editor
 description: Pointing the grid at a catalogue other than the default, what a switch costs your current selection, and where a private marketplace's access token lives.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 By default the editor's grid is the public catalogue at `agents-inc/skills`. Point it at another repository and the whole grid becomes that catalogue's skills — its domains, its categories, its relationships. This page covers loading one, switching between them, and what the editor can and can't tell you about a private one. To author a marketplace of your own, see [Creating a marketplace](/docs/guides/creating-a-marketplace).

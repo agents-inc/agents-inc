@@ -3,11 +3,21 @@ title: CLI or web
 description: The terminal wizard and the web editor are the same catalogue and the same output. How a configuration moves from either one to the other.
 ---
 
-There are two ways to select skills, and one way to install what you selected.
-They are two front doors onto one thing — **same catalogue, same output** — and
-the confusion worth clearing up before anything else is that they are not two
-complete paths. Selecting is the part that differs. Installing is the CLI,
-every time.
+There are two surfaces you can select skills in, and one way to install what
+you selected. They are two front doors onto one thing — **same catalogue, same
+output** — and the confusion worth clearing up before anything else is that they
+are not two complete paths. Selecting is the part that differs. Installing is
+the CLI, every time.
+
+:::note[Two more routes arrive at a selection without you making one]
+This page compares the two surfaces you _select_ in. It is not the whole set of
+ways to _reach_ a selection: [the composer](/docs/editor/composer) takes a
+sentence describing the project, and the [stack-detection
+skill](/docs/guides/adding-to-an-existing-project) reads a repository you
+already have. Both write into one of the two surfaces below and then leave
+through the same install command, so everything on this page holds for them
+too. [Four ways in](/docs/ways-in) sets all four side by side.
+:::
 
 |                     | Web editor                           | Terminal wizard                 |
 | ------------------- | ------------------------------------ | ------------------------------- |
@@ -137,6 +147,13 @@ preloaded, and a skill from outside the catalogue.
 **Reach for the terminal wizard** when a browser is not available or not
 wanted — CI, a remote machine, a container — or when you are already in the
 project and want this over with.
+
+**Reach for neither first if the project already exists.** A repository has
+already made these decisions, and transcribing them into a grid is the slowest
+route to a selection you could have had read off the code — see [Adding to an
+existing project](/docs/guides/adding-to-an-existing-project). If it does not
+exist yet, describe it to [the composer](/docs/editor/composer) instead. Both
+land you in the editor with a selection to correct rather than one to build.
 
 The choice does not change the install. Both end at `npx agents-inc init`, and
 the next page you want either way is [Quickstart](/docs/quickstart), which
