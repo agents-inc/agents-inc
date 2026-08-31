@@ -4,8 +4,6 @@ severity: medium
 affected_files:
   - packages/ui/src/styles/globals.css
   - apps/editor/src/features/configure/components/roster-panel.tsx
-standards_docs:
-  - .claude-design/README.md
 date: 2026-08-26
 reporting_agent: pm-architect
 category: architecture
