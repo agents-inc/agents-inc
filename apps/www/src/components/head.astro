@@ -1,0 +1,29 @@
+---
+/**
+ * Starlight's own `<head>`, with this site's font preloads in front of it.
+ *
+ * The override exists for ordering rather than for content. Starlight takes
+ * extra head tags through its `head:` config array, which would have been the
+ * smaller change — but the preloaded URLs are content-hashed by Vite, and
+ * astro.config.ts runs before Vite has hashed anything, so a config entry can
+ * only ever name a file that is not what gets served. Importing the URL is the
+ * only form that resolves, and only a component can import.
+ *
+ * Being first in `<head>` is the whole point: a preload discovered after the
+ * stylesheet link is a preload that saved nothing, because the stylesheet is
+ * what would have found the font anyway. Starlight renders this component
+ * before Astro injects the page's `<link rel="stylesheet">` tags, so the tags
+ * below land ahead of them.
+ *
+ * The landing page and the 404 are hand-built and do not pass through here;
+ * they import `font-preloads.astro` directly. `scripts/check-webfont-delivery.ts`
+ * measures one page from each half for exactly that reason — the two have
+ * separate heads, and a preload added to one is not added to the other.
+ */
+import Default from "@astrojs/starlight/components/Head.astro"
+
+import FontPreloads from "./font-preloads.astro"
+---
+
+<FontPreloads />
+<Default {...Astro.props}><slot /></Default>

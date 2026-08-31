@@ -1,0 +1,48 @@
+---
+/**
+ * The four webfont files this site paints its first screen with, declared in
+ * the HTML so a browser can start fetching them immediately.
+ *
+ * WHY: they are otherwise reachable only from inside a 65 KB stylesheet, and a
+ * browser cannot know a font exists until that stylesheet has downloaded and
+ * parsed. That gap is what `font-display: swap` fills with the fallback face —
+ * and this design's fallback is 25% narrower than IBM Plex Mono, which sits on
+ * the header nav, the buttons, the labels and every code block, so the gap was
+ * not a subtle recolour but a reflow of the whole page.
+ *
+ * `public/_headers` is the other half and the one that fixes the SECOND visit;
+ * this is the half that fixes the first, where there is no cache to hit.
+ *
+ * THE URLS ARE IMPORTED RATHER THAN WRITTEN. Vite content-hashes every emitted
+ * asset, so `inter-latin-wght-normal.woff2` is served as
+ * `inter-latin-wght-normal.Dx4kXJAl.woff2` and the hash changes with the file.
+ * A hand-written path would preload a URL that does not exist, which fails
+ * silently — the page still renders, just as slowly as before. Importing it
+ * resolves through the same pipeline the `@font-face` rules resolve through, so
+ * the two cannot name different files.
+ *
+ * WHICH FOUR, and why not all twenty-two: fontsource ships each family split by
+ * `unicode-range`, and only the `latin` subsets match anything on this site.
+ * Preloading a Cyrillic subset nobody's browser will select spends the reader's
+ * bandwidth to warm a file that is never used.
+ * scripts/check-webfont-delivery.ts derives the list from what the pages
+ * actually request rather than trusting this comment, so a fifth face added to
+ * the design is a failure here rather than a silent regression.
+ *
+ * `crossorigin` is REQUIRED and is not about the origin. Fonts are always
+ * fetched in CORS-anonymous mode, so a preload without it is a second, separate
+ * cache entry — the file comes down twice and neither request helps the other.
+ */
+import interLatin from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url"
+import plexLatin400 from "@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2?url"
+import plexLatin500 from "@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2?url"
+import plexLatin600 from "@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2?url"
+
+const PRELOADED = [interLatin, plexLatin400, plexLatin500, plexLatin600]
+---
+
+{
+  PRELOADED.map((href) => (
+    <link rel="preload" as="font" type="font/woff2" href={href} crossorigin />
+  ))
+}

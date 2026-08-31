@@ -202,6 +202,15 @@ export default defineConfig({
       components: {
         ThemeProvider: "./src/components/theme-provider.astro",
         ThemeSelect: "./src/components/theme-select.astro",
+
+        /**
+         * Starlight's `<head>`, with the webfont preloads in front of it. The
+         * `head:` array below would be the smaller change and cannot work: its
+         * URLs are written before Vite has content-hashed anything, and a
+         * preload naming a file that is not served fails silently. See
+         * src/components/head.astro.
+         */
+        Head: "./src/components/head.astro",
       },
 
       /**
@@ -228,6 +237,13 @@ export default defineConfig({
           label: "Start here",
           items: [
             { slug: "docs/why" },
+            // Between the two on purpose: "should I" is answered above it and
+            // "walk me through one" below it, and the question in the middle —
+            // which of the four intakes suits what I am holding — had no page
+            // at all until 2026-08-31. Two of the four were undocumented
+            // entirely; the composer had one subordinate clause on the editor
+            // page and stack detection was not named anywhere on this site.
+            { slug: "docs/ways-in" },
             { slug: "docs/quickstart" },
             { slug: "docs/cli-or-web" },
           ],

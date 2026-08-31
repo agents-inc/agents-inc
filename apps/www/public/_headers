@@ -1,0 +1,30 @@
+# Response headers for the deployed Worker. Cloudflare parses this file out of
+# the assets directory and never serves it; `wrangler.jsonc` points that
+# directory at `dist/`, and Astro copies everything in `public/` into it.
+#
+# WHY IT EXISTS. Cloudflare's static-asset server sends
+# `cache-control: public, max-age=0, must-revalidate` on everything it has not
+# been told otherwise about — content-hashed `/_astro/*` files included. Every
+# navigation on this site is a full document load, because `prefetch: false` in
+# astro.config.ts is deliberate and there is no client router, so that default
+# made a browser revalidate all four webfonts on every single click before it
+# was allowed to paint a word in them. Until the answer came back
+# `font-display: swap` painted the fallback, which is 25% narrower than IBM
+# Plex Mono — so the header, the buttons, the labels and every code block
+# reflowed once per link.
+#
+# scripts/check-webfont-delivery.ts holds this: it serves `dist/` through
+# Cloudflare's default and then applies the rules below, so a deleted line here
+# fails as the reader's experience of it rather than as a missing file.
+
+# Everything Vite emits under this path carries a content hash in its filename,
+# so the bytes behind a given URL can never change. That is the precondition
+# `immutable` asks for, and it is a property of the build rather than a promise
+# made here: a changed file is a changed hash is a different URL.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# NOT the HTML. A page's URL is stable while its content is not, so `dist/`'s
+# documents keep Cloudflare's revalidating default and a deploy is visible on
+# the next click. Nothing below overrides them; this comment exists so that the
+# absence reads as a decision rather than an omission.

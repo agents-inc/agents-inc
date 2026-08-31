@@ -20,6 +20,7 @@
  * PLACEHOLDER copy, like index.astro.
  */
 import "../styles/site.css"
+import FontPreloads from "../components/font-preloads.astro"
 import SiteHeader from "../components/site-header.astro"
 
 import { DOCS_PATH, HOME_PATH } from "../lib/links"
@@ -34,6 +35,7 @@ const PAGE_TITLE = "Page not found | Agents Inc"
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{PAGE_TITLE}</title>
     <meta name="robots" content="noindex" />
+    <FontPreloads />
   </head>
   <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
   <body class="framed">
