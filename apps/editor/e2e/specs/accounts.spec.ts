@@ -103,6 +103,31 @@ test.describe("signed out", () => {
     await expect(configure.signInButton).toBeVisible()
   })
 
+  // The row above never CLICKS anything — it stubs a signed-out session and
+  // watches the rail draw itself from that, which is a test of the session
+  // read. Its name said sign-out and for the whole life of the feature nothing
+  // anywhere pressed the button, so a sign-out request the worker refused 415
+  // in every environment was invisible to a green suite.
+  //
+  // The load-bearing assertion is the ABSENCE of the rail's refusal line. The
+  // button flip cannot carry this on its own: the rail calls `refresh()` after
+  // the attempt whatever its result, and the session read is stubbed
+  // signed-out, so the page returns to "Sign in" even when the sign-out was
+  // refused. What only a real sign-out produces is a rail with no alert in it.
+  test("pressing Sign out signs the browser out and says nothing went wrong", async ({
+    page,
+  }) => {
+    stubSignedIn(page)
+    const configure = await arrive(page)
+    await expect(configure.signOutButton).toBeVisible()
+
+    stubSignedOut(page)
+    await configure.signOutButton.click()
+
+    await expect(configure.signInButton).toBeVisible()
+    await expect(configure.accountNotice).toHaveCount(0)
+  })
+
   // Signed out, the store never gets past the session read, so a stack list is
   // not refused — it is never asked for. This suite used to stub a 401 for it,
   // which never fired once; the request not happening is the real claim.
@@ -123,6 +148,59 @@ test.describe("signed out", () => {
     await configure.roster.saveButton.click()
 
     await expect(configure.savedStack).toBeVisible()
+  })
+})
+
+// WHERE THE ACCOUNT SITS IN THE RAIL, which is a claim about the rail's whole
+// order rather than about the row. It used to be pinned to the bottom, under a
+// flexible spacer, which put "sign in" and "GitHub" on the same footing; it
+// belongs with the navigation it qualifies, and the footer belongs to the two
+// glyphs that are not navigation at all.
+test.describe("the rail's order", () => {
+  test("puts the account under the nav words and above the footer", async ({
+    page,
+  }) => {
+    stubSignedOut(page)
+    const configure = await arrive(page)
+
+    const configureLink = await page
+      .getByRole("link", { name: "Configure" })
+      .boundingBox()
+    const account = await configure.accountRow.boundingBox()
+    const theme = await configure.themeToggle.boundingBox()
+    if (!configureLink || !account || !theme)
+      throw new Error("the rail's three landmarks must be drawn")
+
+    expect(configureLink.y).toBeLessThan(account.y)
+    expect(account.y).toBeLessThan(theme.y)
+  })
+
+  // The rule above the account row, and the one horizontal rule in the rail. It
+  // is what separates identity from navigation now that neither is in a box —
+  // a bordered pill and a recessed field were both built and rejected, because
+  // a container in a rail of bare words is the only container in it.
+  //
+  // Read off the pseudo-element the same way `sticky-bar.spec.ts` reads a
+  // `::placeholder`: it carries no role and no text, so there is nothing else
+  // to locate it by. Its WIDTH is the assertion — the rule stops short of the
+  // rail's left edge and ends flush on the vertical divider, so a full-width
+  // one is the failure this catches.
+  test("draws a partial rule above the account row", async ({ page }) => {
+    stubSignedOut(page)
+    const configure = await arrive(page)
+
+    const rule = await configure.accountRow.evaluate((node) => {
+      const style = getComputedStyle(node, "::before")
+      return {
+        height: style.height,
+        width: parseFloat(style.width),
+        row: node.getBoundingClientRect().width,
+      }
+    })
+
+    expect(rule.height).toBe("1px")
+    expect(rule.width).toBeGreaterThan(0)
+    expect(rule.width).toBeLessThan(rule.row)
   })
 })
 

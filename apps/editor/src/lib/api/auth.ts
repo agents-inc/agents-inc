@@ -118,7 +118,23 @@ export const signIn = async (): Promise<AuthResult> => {
 
 export const signOut = async (): Promise<AuthResult> => {
   try {
-    const response = await authFetch("sign-out", { method: "POST" })
+    // The header AND the body are both required, and this sent neither, so
+    // sign-out answered 415 in every environment from the day it was written.
+    // Better Auth refuses a POST carrying no `content-type` with
+    // UNSUPPORTED_MEDIA_TYPE and one carrying the header but no body with
+    // BAD_REQUEST — measured against `wrangler dev`, not inferred. 415 is not
+    // 429, so `refusalOf` read it as `refused` and the rail said so in
+    // SIGN-IN's words, which is why this looked like a sign-in problem and
+    // then like a stale build.
+    //
+    // `signIn` above has always sent both. That asymmetry is the whole defect:
+    // there is no rule here about auth routes, just one call site that was
+    // written without the two things the other one has.
+    const response = await authFetch("sign-out", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
     if (!response.ok) {
       reportIssue("Sign-out refused", { status: response.status })
       return { ok: false, refusal: refusalOf(response.status) }

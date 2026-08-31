@@ -3,6 +3,7 @@ import {
   SESSION_URL,
   SIGNED_IN_USER,
   SIGN_IN_URL,
+  SIGN_OUT_URL,
   sessionUnreachableHandler,
   signInRateLimitedHandler,
   signInRefusedHandler,
@@ -195,10 +196,44 @@ describe("signIn", () => {
 })
 
 describe("signOut", () => {
+  // Now a real assertion rather than a formality. It passed for the whole life
+  // of the feature while sign-out had never once worked, because the mock
+  // answered `{ success: true }` to any request at all; it holds the client to
+  // Better Auth's entry conditions since `requiringJson` landed in
+  // `@workspace/api-mocks`. Drop either half of the request below and this
+  // reddens.
   it("returns to signed out", async () => {
     configMockServer.use(...signedInHandlers)
 
     await expect(signOut()).resolves.toStrictEqual({ ok: true })
+  })
+
+  // The shape itself, asserted directly, because the row above proves only that
+  // SOMETHING acceptable was sent. Better Auth refuses a POST with no
+  // `content-type: application/json` at 415 and one with the header but no body
+  // at 400 — measured against `wrangler dev` — and this call site sent neither
+  // while `signIn` sent both. That asymmetry was the defect: it answered 415 in
+  // every environment, `refusalOf` read that as `refused`, and the rail
+  // reported it in sign-in's words.
+  it("sends the JSON content-type and a body the worker can parse", async () => {
+    const sent: { contentType: string | null; body: string }[] = []
+    configMockServer.use(
+      ...signedInHandlers,
+      http.post(SIGN_OUT_URL, async ({ request }) => {
+        sent.push({
+          contentType: request.headers.get("content-type"),
+          body: await request.text(),
+        })
+        return HttpResponse.json({ success: true })
+      })
+    )
+
+    await signOut()
+
+    expect(sent).toStrictEqual([
+      { contentType: "application/json", body: "{}" },
+    ])
+    expect(JSON.parse(sent[0]?.body ?? "")).toStrictEqual({})
   })
 
   it("reads a worker that would not sign out as a refusal", async () => {
