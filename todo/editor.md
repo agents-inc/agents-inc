@@ -52,14 +52,20 @@ single piece of work:
 - Empty, loading and error states. **Responsive was the fifth bullet and is no longer here** — the 2026-08-25 design specifies it, so it left as EDITOR-55.
 - Dark mode.
 
-**On dark mode specifically:** the plumbing landed 2026-08-29 and the palette did not. All 42 core
-tokens now carry a dark value under both `prefers-color-scheme` and `[data-theme]`, generated from
-`packages/ui/tokens/tokens.json` — but that dark ramp is **the light one read backwards** with four
-steps pinned to the filter bar's `band-*` values, which is a first cut to iterate on rather than a
-designed palette. What is still owed is the design: the ramp tuned by eye, the `color-contrast`
-ruling re-derived (it was measured against the LIGHT palette and does not transfer), Storybook
-unpinned from light, and dark added as a mode to the Chromatic and Argos baselines, which today
-cover one theme. Settles [`www.md`](./www.md) WWW-01's toggle at the same time.
+**On dark mode specifically:** the plumbing landed 2026-08-29, the CONTROL landed 2026-08-30, and
+the palette still has not. Every core token carries a dark value under both `prefers-color-scheme`
+and `[data-theme]`, generated from `packages/ui/tokens/tokens.json`, and the nav rail's footer now
+carries the single glyph that writes `[data-theme]` — three states, `system` by default, so a
+browser that has never been told still follows the machine. But that dark ramp is **the light one
+read backwards** with four steps pinned to the filter bar's `band-*` values, which is a first cut to
+iterate on rather than a designed palette. **The toggle landing is what makes the rest of this
+urgent rather than theoretical**: until 2026-08-30 a visitor reached the underived palette only by
+setting their OS to dark, and now one click does it.
+
+What is still owed is the design: the ramp tuned by eye, the `color-contrast` ruling re-derived (it
+was measured against the LIGHT palette and does not transfer), Storybook unpinned from light, and
+dark added as a mode to the Chromatic and Argos baselines, which today cover one theme. Settles
+[`www.md`](./www.md) WWW-01's toggle at the same time.
 
 ---
 
@@ -73,9 +79,12 @@ onto them.
 dispatch log are in [`plans/editor-v6/`](./plans/editor-v6/). Read
 [`plans/editor-v6/README.md`](./plans/editor-v6/README.md) before touching any of this.
 
-**"Latest" is settled: there is no v6.** The whole of `.claude-design/` was refreshed in place on
-2026-08-25 — `Configurator v5.dc.html` kept its name and gained ten lab files beside it. So both
-stylesheet citations stay honest by filename and neither needed redirecting. `globals.css` did cite a
+**"Latest" is settled: there is no v6.** `.claude-design/` is refreshed IN PLACE — on 2026-08-25 and
+again on 2026-08-30 — and `Configurator v5.dc.html` kept its name both times. So both stylesheet
+citations stay honest by filename and neither needed redirecting. **The flip side is that a citation
+by filename never rots and a claim about the file's CONTENTS always can**: the 2026-08-30 refresh
+added a "Turns 99–107" section to `DECISIONS.md` that reversed two things the programme had recorded
+as settled, and its five changes landed the same day as Phase F. `globals.css` did cite a
 section that does not exist; A0 landed the correction and it now reads `§ Visual language`. The
 sibling in `apps/www/src/styles/site.css` never needed one — it names no section at all.
 

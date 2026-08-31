@@ -5410,3 +5410,62 @@ E2E_SKILL_IDS.slice(1) })`, a marketplace shipping exactly one skill, since ever
   of the worker in `@workspace/api-mocks`, and the router now asserted over the minted value say between them what such
   a run would say, for none of the harness. Gates: 7 workspaces green, CLI unit 7357, 102 editor Playwright specs over
   every fixture-reading suite, spec-gates 16.
+- **2026-08-30 — EDITOR-09, Phase F** (editor.md; detail in
+  [`plans/editor-v6/README.md`](./plans/editor-v6/README.md)) — the 2026-08-30 refresh of
+  `.claude-design/`, all five owner-named changes, in one session with no dispatch. **Sign-in moved
+  up the rail** out of the footer to under the nav words, borderless with a 70%-width rule above it
+  and a hover-and-focus swap to `SIGN OUT`; **the theme toggle exists** as one glyph beside the
+  GitHub mark, storing three states so `system` keeps following the machine, and it really repaints —
+  the design says it "tracks state only" because ITS dark palette does not exist and this
+  repository's does; **the domain titles are tabs**, every one on a strip under the search band with
+  the current one in 25px Inter, clicking to filter and clicking again to release, and following the
+  page when nothing is picked — which deleted the in-column sticky header outright, because a title
+  cannot both arrive under the bar and always be on screen; **the filters left the search field**,
+  domain chips gone entirely and `selected` plus a new `N skills selected ✕` at the strip's far end,
+  keeping their resting treatment while the band above them goes dark; and **the composer was
+  redrawn** — starter chips removed (a REVERSAL of Phase C, which had shipped them four days
+  earlier), the hint out of the control row and into the accessible description alone, a rewritten
+  placeholder, and the proposal notched into the grid as a full-bleed row with an Inter summary,
+  `Skills · N added` and four columns. One core colour added, `green-01`, which the design's palette
+  table introduces for the signed-in dot and nothing else. **Two corrections, both worth the space:**
+  the plan file's own ruling 2 had been reversed by the refresh it was meant to describe, and the
+  proposal's full-bleed margin bled twice because the dock it sits in already bleeds — 1234px against
+  the band's 1102px, caught by a geometry assertion rather than by eye. Gates: 489 editor Playwright
+  specs including every a11y audit, editor unit 495, repo-wide lint, typecheck and tests green, and
+  a hand-run in a browser in both themes.
+
+- **2026-08-31 — WWW-14** (www.md, new, found by the owner) — **clicking any link reflowed the whole
+  page, and every gate was green.** Root cause is one header: Cloudflare's static-asset server sends
+  `cache-control: public, max-age=0, must-revalidate` on EVERYTHING it has not been told otherwise
+  about, content-hashed `/_astro/*` included. `prefetch: false` and no client router mean every
+  navigation here is a full document load, so a browser revalidated all four webfonts on every click
+  — measured as four 304s of 300 B each — and `font-display: swap` painted the fallback until they
+  came back. The fallback is **25% narrower than IBM Plex Mono** (520px vs 416px on one probe
+  string), which this design puts on the header nav, the buttons, the labels and every code block,
+  so what the owner saw as a font flash was the page reflowing. Fixed with `public/_headers`
+  (`/_astro/*` immutable for a year — safe because a changed file is a changed hash is a different
+  URL; HTML deliberately keeps the revalidating default) plus preloads for the four latin subsets
+  actually used, whose URLs are **imported rather than written** because Vite content-hashes them and
+  a preload naming a file that is not served fails silently. Starlight's `Head` is overridden to
+  place them first; `head:` in astro.config.ts could not be used, since that file runs before Vite has
+  hashed anything. **The check was written first and was wrong first**: it counted Playwright
+  `request` events, which fire for cache hits too, so it failed a fixed site — it now reads
+  `transferSize` from the Resource Timing API, which is the only thing here that can tell a cache hit
+  from a 304. `scripts/check-webfont-delivery.ts` is the fourth entry in this workspace's `test`
+  script, proven in both directions: green with `public/_headers`, and back to naming all four files
+  with it moved away.
+- **2026-08-31 — WWW-15** (www.md, new, found by the owner) — **two of the four ways into this
+  product were undocumented and the site told neither.** `meta-config-stack-detect` appeared nowhere
+  in `apps/www/src` at all, and the composer had exactly one mention across the whole site — a
+  subordinate clause in a paragraph about accounts on `editor/index.md`. What existed was the
+  greenfield story only: open the editor, click a stack. Three pages added — `docs/ways-in.md`
+  ("Four ways in", the router, placed between `why` and `quickstart` because "which door" is the
+  question between "should I" and "walk me through one"), `guides/adding-to-an-existing-project.md`
+  (the detection route end to end, including that the skill is a **Claude Code plugin** and so
+  installs on a machine with no Agents Inc on it, which is the chicken-and-egg the owner asked
+  about), and `editor/composer.md`. The owner's two rulings are the spine of all three: **stack
+  detection is the easiest route into an existing codebase, the composer the easiest from scratch.**
+  Six existing pages point at them — the docs hub, quickstart, `cli-or-web`, `editor/index`,
+  `capabilities` (two new rows plus the `share --stdin` row now naming the producer it exists for),
+  and the editor group's sidebar orders shifted to seat the composer at 3. 39 pages → 42, no build
+  warnings, all 42 internal `/docs` links resolve.

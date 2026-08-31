@@ -88,11 +88,13 @@ These supersede the Phase C spec wherever they differ. The spec was written befo
    other end — the settled output schema has no field for the properties `adjust` was supposed to
    edit, and structured outputs cannot express one. A distinction neither the UI nor the schema
    could carry was not a distinction.
-2. **Intent comes from the prompt text, and suggestion chips prefill it.** Chips sit above or below
-   the field carrying openers like `Change my setup to…` and `Create a new setup with…`; clicking one
-   puts that text in the field for the user to finish. They are a writing aid, not a mode — nothing
-   downstream branches on which chip was used, and typing the sentence by hand must reach exactly
-   the same place.
+2. **Intent comes from the prompt text.** ~~and suggestion chips prefill it~~ — **the chips were
+   REVERSED by the 2026-08-30 design refresh** and are gone. They shipped in Phase C exactly as this
+   ruling described (a writing aid, not a mode, with nothing downstream branching on which was
+   clicked); the refreshed `DECISIONS.md` cut them with a one-line reason — "the placeholder does
+   that work" — and rewrote the placeholder to name all three capabilities in one sentence. Removed
+   in Phase F. **The half that survives is the half that mattered**: intent still comes from the
+   prompt text alone, and typing a sentence by hand still reaches the only place there is.
    2b. **What the feature actually does, settled 2026-08-26 and narrower than Phase D was specced
    against:** it has a back-and-forth with the user, proposes a set of skills, and on go-ahead
    selects them. It may also choose **preload vs lazy** per skill, and it may **save the stack**.
@@ -213,6 +215,46 @@ undrawn is no longer the design but the code — `MatrixGrid` has no `removed` s
 mode, and `ProposalGroup.verb` is the closed union `"added" | "changed"`, so `tsc` refuses a removal
 rather than mis-rendering one. That is EDITOR-56, not a Phase C defect.
 
+### Phase F — the 2026-08-30 design refresh — **LANDED 2026-08-30**
+
+`.claude-design/` was refreshed in place again and `DECISIONS.md` grew a "Turns 99–107" section. The
+owner named five changes; all five landed in one session, implemented directly with no sub-agents.
+
+| Item | What                                                                                                                                                                                                                                                               | Touches                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| F1   | **Sign-in moves up the rail.** Out of the footer, under the nav words it qualifies, borderless with a 70%-width rule above it. Signed in, hover — and focus, which the design has no path for — swaps the green dot and the name for `SIGN OUT` in amber           | `nav-rail.tsx`, `globals.css`, `tokens.json`                                 |
+| F2   | **The theme toggle exists.** One glyph in the rail's footer beside the GitHub mark: only the active theme's icon is drawn, and pressing it flips. Three states stored, not two — `system` is the default and keeps following the machine                           | `nav-rail.tsx`, `lib/theme.ts`, `ui-store.ts`, `persisted-schema.ts`         |
+| F3   | **Domain titles become tabs.** Every title on one strip under the search band; the one you are looking at is the one set in 25px Inter. Clicking filters, clicking again releases, and with nothing picked the strip follows the page                              | `domain-tabs.tsx`, `use-active-domain.ts`, `derive.ts`, `domain-section.tsx` |
+| F4   | **The filters leave the search field.** Domain chips gone entirely; `selected` and a new `N skills selected ✕` sit at the strip's far end and keep their resting treatment when the bar sticks                                                                     | `filter-bar.tsx`, `domain-tabs.tsx`                                          |
+| F5   | **The composer's new drawing.** Starter chips removed, the hint out of the control row, the placeholder rewritten, and the proposal notched into the grid — full-bleed, Inter summary, `Skills · N added`, four columns, a footer with the reason and both actions | `composer.tsx`, `proposal.tsx`                                               |
+
+**The in-column domain header is GONE**, header, sticky offset, `data-pinned` and all. That is not a
+side effect of F3, it is F3: a title cannot be a thing that arrives under the bar and a thing that is
+always on screen. `usePinnedAttribute` now has one caller fewer and the bar's own pin is the only
+sticky state left.
+
+**Three decisions this phase made that the design does not state**, each recorded where it was made:
+
+- **The theme toggle actually repaints.** The design says it "tracks state only" because its dark
+  palette does not exist; this repository's does — every core token carries a dark value — so the
+  glyph is wired to `data-theme`. What EDITOR-07 still owes is the dark palette DESIGNED rather than
+  derived, which is unchanged by this.
+- **The strip is the half that gives.** Nine domains plus a wide clear control is wider than the
+  main column at 1600px, and letting the filters move put a `z-60` sticky row over the roster panel —
+  observed, not hypothesised. So the tabs scroll inside their own group and the filters hold the
+  content edge; the current tab is kept in view by setting one `scrollLeft`, never `scrollIntoView`,
+  which would walk to the page whose scroll position decides which tab is current.
+- **The composer's hint is published, not deleted.** The design's control row holds only Send; the
+  claim it carried ("nothing changes until you apply") is the one thing on that surface a
+  screen-reader user cannot infer from the proposal's own footer, so it stays as the field's and the
+  button's accessible description and takes no room in the row.
+
+**One core colour was added** — `green-01` (`#4a8a52`, dark `#79bc85`), the signed-in dot, which the
+design's own palette table introduces "for this one purpose". Three semantic names came with the
+strip (`tab-label`, `tab-count`, `tab-field`) and one spacing token with the rail
+(`--spacing-rail-pad`, its right padding, which the account rule's negative margin reads rather than
+restating — the design's `--npad` by another name).
+
 ### Phase D — the AI backend
 
 Proposed in [`decisions.md`](./decisions.md), **not built.** It is parked on three things only the
@@ -255,4 +297,5 @@ error rate visible.
 | 2026-08-26 | `web-developer`, the researcher column (EDITOR-10)                                                                   | **Closed and the row retired.** The panel placed 14 of 18 sub-agents; it now places 18. Label `res` derived from the design's own abbreviation rule, not chosen; width measured and rules nothing out                                                                                                                                                                                                                                                                                                                                          | **5.** EDITOR-10's stated blocker had EXPIRED — it was gated on "a fifth column diverges from a design file that draws four", but the code drew TWO after CLI-398/399 consolidated the reviewer and PM, so this moved the panel toward the design. The design's own `AGENTS` array already listed researchers; only its `MX_ROLES` omitted the column                                                                                                                                                                                                                                                                                                                                                                           |
 | 2026-08-26 | Completeness audit, 5 read-only lanes (tests, docs, journeys, trackers, expressive-TS)                               | **10 blocking, 20 should-fix.** The docs lane carried 8 of the 10, all one cause: the `packages/compile` extraction moved symbols and the reference documentation still describes the old addresses — including `renderCompiledAgent`, cited by two docs as the single render path, which no longer exists anywhere                                                                                                                                                                                                                            | Recorded per lane in the audit JSON. The tests lane found the new pins unusually strong and could not find one that cannot fail — the gaps were claims WIDER than their assertions, not absent assertions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 2026-08-26 | Remediation of the audit's 10 blocking / 20 should-fix (`web-developer`, `codex-keeper`, `web-tester`, `cli-tester`) | **DIED MID-FLIGHT — four `started` entries, no results, transcripts stop at 14:02.** Reconstructed afterwards from mtimes, since nothing on disk attributes a file to an agent: 37 files written 13:46–14:00. Roughly two thirds of the findings closed. **It also left both publish-gating checks worse than it found them**: `tsc` red in a file it wrote at 13:53, and a prettier failure in a file it wrote at 13:57 that passes at `HEAD`                                                                                                 | **Unreported — that is the finding.** An interrupted run writes its changes and none of its corrections, so the trackers it edited at 13:46 assert phase states no dispatch row records. It also rewrote `test-structure.md`'s rule 4 and gave it a carve-out naming the new spec — a standard relaxed by an agent that never reported, flagged to the owner rather than accepted                                                                                                                                                                                                                                                                                                                                               |
+| 2026-08-30 | Phase F, NO DISPATCH — implemented directly in one session                                                           | **All five items landed.** e2e **489 passed / 0 failed**, a11y audits included; editor unit 495; repo lint, typecheck and tests green. Hand-run in a browser in both themes, which is where two of the three decisions above came from                                                                                                                                                                                                                                                                                                         | **Two.** (1) The design's own `DECISIONS.md` REVERSES this file's ruling 2 — a brief citing this file would have rebuilt the starter chips the refresh had just cut. (2) The proposal block's `-mx-gutter` bled TWICE, because the dock it sits in already bleeds; caught by a geometry assertion measuring 1234px against the band's 1102px, not by eye                                                                                                                                                                                                                                                                                                                                                                        |
 | 2026-08-26 | Verification pass, 4 read-only lanes (Phase A, Phase B, Phase C, remediation-closure)                                | **All three built phases HOLD against their specs.** A0–A6, B1–B4 and all five Phase C rulings verified by measurement rather than reading — the CLI genuinely calls `@workspace/compile` (proved at runtime by byte-comparison against a real install), Shiki is genuinely lazy (static graph derived twice independently), and the effort scale is still five members in contract spelling in all four copies. Closure lane: 16 findings CLOSED, 4 PARTIAL, 4 OPEN, 1 NEVER-TRUE. **The one blocking defect was the typecheck**, since fixed | **26 across the four lanes, and two matter.** The journey-number collision **never existed** — the new row is 48, and 42 occurs once repo-wide. `packages/compile` was already in every package enumeration when the audit reported it missing: those files were written at 13:28, inside the audit's own window, so that lane was racing its own subject. Also: the Phase C spec is superseded by a **third** ruling absent from this file (now ruling 7, filed as EDITOR-56), and the `MenuTrigger` parked row was refuted by its own reproduction command                                                                                                                                                                    |
