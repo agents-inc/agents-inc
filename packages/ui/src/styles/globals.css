@@ -136,6 +136,11 @@
   --color-brand-glow: var(--brand-glow); /* badge hover ring */
   --color-brand-dim: var(--brand-dim); /* staged-pill dismiss glyph */
 
+  /* Signed in, and NOTHING ELSE. The one binary state in the app that is not
+     amber's "non-default" job — an account is not a choice about a skill — so
+     it cannot borrow the accent, and grey would say nothing at all. */
+  --color-signed-in: var(--signed-in);
+
   /* Roster — the right panel's own greys and tints (README turns 73–84).
        The panel reads one step quieter than the main column, so its off-state
        sits outside the shared ramp. Its ink does not: an enabled agent's name
@@ -167,6 +172,16 @@
   ); /* add-skill's hairline, the band's only one */
   --color-band-edge-hover: var(--band-edge-hover);
 
+  /* Domain strip — the tabs under the search band. The active tab is 25px
+     Inter and every other one is a 10.5px mono label, so the strip needs two
+     greys of its own: one quiet enough that eight inactive labels do not
+     compete with the one you are reading, and one quieter still for the
+     counts. `tab-field` is the wash the active tab takes once the bar sticks
+     and the strip regains its rule. */
+  --color-tab-label: var(--tab-label);
+  --color-tab-count: var(--tab-count);
+  --color-tab-field: var(--tab-field);
+
   /* Lines */
   --color-hairline: var(--hairline); /* the cell lattice, dialog rules */
   --color-rule: var(--rule); /* section dividers, panel border */
@@ -183,6 +198,12 @@
   /* 60px is the page's structural constant: main-column padding, the air
        above and below every divider, and the roster's top padding. */
   --spacing-gutter: 3.75rem;
+
+  /* The nav rail's right padding, and THE ONLY PLACE THAT NUMBER APPEARS.
+       The account rule's negative margin has to follow it, and three separate
+       bugs in this design came from writing the value out in one of the two —
+       so both read this. */
+  --spacing-rail-pad: 1rem;
 
   /* Shadows stay in px: they are decorative, a 10% blur difference is
        imperceptible, and the app has only these two. */
@@ -281,6 +302,7 @@
   --logo-slot: var(--warm-05);
   --muted: var(--warm-05);
   --flash: var(--amber-01);
+  --tab-field: var(--amber-01);
   --matrix: var(--warm-06);
   --wash: var(--amber-02);
   --band-ink: var(--warm-07);
@@ -289,6 +311,7 @@
   --roster-band: var(--warm-08);
   --track-hover: var(--warm-09);
   --destructive: var(--red-01);
+  --signed-in: var(--green-01);
   --divider: var(--warm-10);
   --sidebar-border: var(--warm-10);
   --chip-border: var(--warm-10);
@@ -303,6 +326,7 @@
   --dots: var(--warm-13);
   --line-hover: var(--warm-13);
   --roster-empty: var(--warm-13);
+  --tab-count: var(--warm-13);
   --band-brand: var(--amber-05);
   --field-border: var(--warm-14);
   --input: var(--warm-14);
@@ -311,6 +335,7 @@
   --chart-3: var(--amber-06);
   --use-ink: var(--warm-15);
   --dialog-border: var(--warm-15);
+  --tab-label: var(--warm-15);
   --band-faint: var(--warm-16);
   --field-faint: var(--warm-17);
   --brand-dim: var(--amber-07);
