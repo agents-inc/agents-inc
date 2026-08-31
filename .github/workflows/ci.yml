@@ -34,9 +34,23 @@ jobs:
   # check-web at 4-5 minutes, check-cli at 25-26 and deploy at 30 seconds —
   # then given headroom, because the point is to bound a hang, not to police
   # duration.
+  #
+  # check-web's 15 became 25 on 2026-08-31, and the re-measure is the reason
+  # rather than the failure that prompted it. That 4-5 minutes was the whole
+  # job when the editor's Playwright suite was small; the suite is now 489
+  # tests and the runner gives it `workers: 2` against the 10 a developer
+  # machine uses, so run 33449573686 spent 12m17s inside `test:e2e` alone and
+  # was killed with the suite still going — 471 tests had fitted in 10.2m one
+  # run earlier, which is 1.8 minutes of headroom against a suite that grew by
+  # 18 tests. Nothing hung. Raising the ceiling is what the paragraph above
+  # asks for: this bound exists to stop a hang running for six hours, and a
+  # bound that instead fails a suite for finishing honestly is measuring the
+  # wrong thing. Re-measure here rather than trimming the suite, and if this
+  # is hit again the next move is `workers` in apps/editor/playwright.config.ts
+  # — the runner has four cores and the suite is using two of them.
   check-web:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
 
