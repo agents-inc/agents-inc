@@ -105,12 +105,18 @@ export function cacheRoot(): string {
 
 /**
  * The editor — the web half of the product, where a configuration is built without the wizard
- * and handed to `init --from <id>`. `agentsinc.sh` is the editor Worker's custom domain
- * (`apps/editor/wrangler.jsonc`); the config store it posts to is the sibling
- * `api.agentsinc.sh`, spelled once in `lib/seed/fetch-seed.ts` because that one is
- * overridable for tests and this one is not.
+ * and handed to `init --from <id>`.
+ *
+ * THE PATH IS PART OF THE ADDRESS. `agentsinc.sh` is the apex, which serves the landing page,
+ * and `/docs` beside it is the documentation — both on the `agents-inc-www` Worker. The editor
+ * is a Route beneath them, `agentsinc.sh/editor*` on `agents-inc-editor`
+ * (`apps/editor/wrangler.jsonc`). Dropping the segment does not fail: it opens the marketing
+ * page, which knows nothing about `?fromId=`, so a shared configuration is silently lost.
+ *
+ * The config store it posts to is the sibling `api.agentsinc.sh`, spelled once in
+ * `lib/seed/fetch-seed.ts` because that one is overridable for tests and this one is not.
  */
-export const EDITOR_URL = "https://agentsinc.sh";
+export const EDITOR_URL = "https://agentsinc.sh/editor";
 
 /**
  * Where a shared configuration opens in the editor — the form the editor's own Share button

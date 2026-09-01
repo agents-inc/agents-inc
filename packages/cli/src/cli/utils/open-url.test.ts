@@ -5,9 +5,18 @@ const { mockExecCommand } = vi.hoisted(() => ({ mockExecCommand: vi.fn() }));
 vi.mock("./exec.js", () => ({ execCommand: mockExecCommand }));
 
 const { browserOpenerCommand, openUrl } = await import("./open-url.js");
+const { editorConfigUrl } = await import("../consts.js");
 
-/** A link of the shape the CLI actually hands a browser — the editor's, with an id on it. */
-const EDITOR_LINK = "https://agentsinc.sh/?fromId=Ab3xY9_Q";
+/**
+ * A link of the shape the CLI actually hands a browser — the editor's, with an id on it.
+ *
+ * BUILT RATHER THAN TYPED, and the apex split is why. This was the literal
+ * `https://agentsinc.sh/?fromId=Ab3xY9_Q`, which stayed green when the editor moved to
+ * `agentsinc.sh/editor` — the comment above claimed it was the shape the CLI produces while it
+ * had quietly stopped being one. Deriving it from the same function the commands call means the
+ * claim cannot come apart from the code again.
+ */
+const EDITOR_LINK = editorConfigUrl("Ab3xY9_Q");
 const OPENER_REFUSED_EXIT = 3;
 const MISSING_OPENER_MESSAGE = "spawn xdg-open ENOENT";
 

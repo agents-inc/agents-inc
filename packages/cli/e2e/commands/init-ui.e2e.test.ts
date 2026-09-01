@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
 import { cleanupTempDir, createTempDir, directoryExists } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
  * `init --ui`: the browser is reachable from a directory with nothing installed.
@@ -29,7 +29,10 @@ describe("init --ui", () => {
     const { exitCode, output } = await CLI.run(["init", "--ui"], { dir: tempDir });
 
     expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("agentsinc.sh");
+    // STEP_TEXT.EDITOR_URL rather than a bare "agentsinc.sh". The host alone is a substring of
+    // both the right address and the wrong one, so this assertion passed while the CLI pointed
+    // at the landing page.
+    expect(output).toContain(STEP_TEXT.EDITOR_URL);
   });
 
   /**

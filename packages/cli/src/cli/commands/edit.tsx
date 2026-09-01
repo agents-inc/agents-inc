@@ -467,7 +467,7 @@ export default class Edit extends BaseCommand {
   static flags = {
     ui: Flags.boolean({
       description:
-        "Open agentsinc.sh instead of the wizard — the id --from names, or this installation",
+        "Open agentsinc.sh/editor instead of the wizard — the id --from names, or this installation",
       default: false,
     }),
     from: Flags.string({

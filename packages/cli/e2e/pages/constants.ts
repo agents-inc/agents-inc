@@ -87,7 +87,10 @@ export const STEP_TEXT = {
   // Both sentinels are single unbroken tokens because oclif word-wraps error text at the
   // terminal width, so any multi-word fragment can straddle a line break.
   CONFIG_UNREADABLE_RECREATE: "recreate",
-  EDITOR_URL: "https://agentsinc.sh", // The editor named as the other way to build a configuration
+  // The editor named as the other way to build a configuration. THE `/editor` SEGMENT IS THE
+  // POINT: the apex is the landing page, so an address missing it opens marketing copy that
+  // knows nothing about `?fromId=` — a substring assertion on the bare host passes for both.
+  EDITOR_URL: "https://agentsinc.sh/editor",
   // `doctor` named as the place the same fault is reported in context. Only correct since doctor
   // stopped calling an unreadable config "not found" — before that it contradicted the line above.
   CONFIG_UNREADABLE_DOCTOR: "doctor",

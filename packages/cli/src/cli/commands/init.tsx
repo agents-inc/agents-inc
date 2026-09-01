@@ -340,7 +340,7 @@ export default class Init extends BaseCommand {
     }),
     ui: Flags.boolean({
       description:
-        "Open agentsinc.sh instead of the terminal — the id --from names, or the catalogue",
+        "Open agentsinc.sh/editor instead of the terminal — the id --from names, or the catalogue",
       default: false,
     }),
   };
