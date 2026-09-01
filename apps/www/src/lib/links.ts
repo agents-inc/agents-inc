@@ -24,17 +24,19 @@ export const DOCS_PATH = "/docs"
 export const HOME_PATH = "/"
 
 /**
- * Where the editor lives TODAY: the apex, on its own. The one-hostname split
- * decided on 2026-08-03 — `/` the landing page, `/docs` Starlight, `/editor`
- * today's apps/editor — is a separate piece of work that is not live, and it
- * is WWW-03 ("Domains and the app split") in todo/www.md, which carries the
- * old identifier: item 10 of docs/web/editor-todo.md.
+ * Where the editor lives: `/editor` on this same hostname, served by the
+ * `agents-inc-editor` Worker behind the Cloudflare Route `agentsinc.sh/editor*`
+ * while this build holds the apex as a Custom Domain. That is the one-hostname
+ * split decided on 2026-08-03 and landed under WWW-03 ("Domains and the app
+ * split") in todo/www.md, which carries the old identifier: item 10 of
+ * docs/web/editor-todo.md.
  *
- * WHEN THAT SPLIT LANDS: change this to "/editor". Until then it has to be
- * the absolute URL, because a shipped page cannot carry a link that 404s and
- * `/editor` is exactly that — this build serves nothing there.
+ * RELATIVE, AND SO NOT VERIFIABLE LOCALLY. It crosses a Worker boundary that
+ * only production has: `astro dev` and `astro preview` serve this build alone,
+ * so these links 404 in every local modality of this workspace and are correct
+ * only at the edge. Check them against the real hostname, not a preview.
  */
-export const EDITOR_URL = "https://agentsinc.sh"
+export const EDITOR_URL = "/editor"
 
 /**
  * The attributes every off-site link on this site carries. Named because the

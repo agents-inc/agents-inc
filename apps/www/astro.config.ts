@@ -97,13 +97,12 @@ export default defineConfig({
    * Starlight's canonical and Open Graph URLs are absolute, so they are simply
    * not emitted until this is set.
    *
-   * THIS IS NOT YET WHERE THIS BUILD IS SERVED FROM. `agentsinc.sh` today
-   * serves the editor, and this site is not deployed anywhere. The value
-   * is the settled destination rather than the current state: WWW-03 in
-   * todo/www.md records the decision, and carries the old identifier this
-   * comment used to cite (item 10 of docs/web/editor-todo.md) — one hostname,
-   * split by path, with `agentsinc.sh/` the landing page here, `/docs` these
-   * docs, and the editor moving to `agentsinc.sh/editor`. Both paths this
+   * THE APEX IS SPLIT BY PATH, which is why this is a bare hostname and not a
+   * subpath: `agentsinc.sh/` is the landing page in this build, `/docs` these
+   * docs, and `agentsinc.sh/editor*` is a Cloudflare Route on the editor's own
+   * Worker. WWW-03 in todo/www.md records the decision, and carries the old
+   * identifier this comment used to cite (item 10 of
+   * docs/web/editor-todo.md). Both paths this
    * build owns sit at the root of that hostname, so no `base` is needed and the
    * URLs generated from this are already the ones that will be correct.
    */

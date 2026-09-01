@@ -25,6 +25,7 @@
  */
 import {
   DOCS_PATH,
+  EDITOR_URL,
   EXTERNAL_LINK_ATTRS,
   GITHUB_REPO_URL,
   HOME_PATH,
@@ -62,6 +63,15 @@ const NAV_LINK_CLASS =
   </a>
 
   <nav class="ml-auto flex items-center gap-[1.125rem]" aria-label="Main">
+    {/* Editor first, and that is the 2026-08-27 editor-first ruling expressed as
+        position: the editor is the main way in and the CLI follows it. It was
+        absent from this header entirely until the apex split — the landing page
+        named the editor three times in its body and never in its navigation, so
+        the product's own front door was not reachable from the top of the page.
+
+        `EDITOR_URL` crosses a Worker boundary and resolves only in production;
+        see the note on it in ../lib/links.ts. */}
+    <a href={EDITOR_URL} class={NAV_LINK_CLASS}>Editor</a>
     <a href={DOCS_PATH} class={NAV_LINK_CLASS}>Docs</a>
     <a href={SKILLS_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={NAV_LINK_CLASS}>Skills</a>
     <a href={GITHUB_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={NAV_LINK_CLASS}>GitHub</a>
