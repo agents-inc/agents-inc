@@ -42,7 +42,9 @@ export function RootLayout() {
   )
 }
 
-// Docs and Settings are deliberately undesigned — routes exist, content does not.
+// Settings is deliberately undesigned — the route exists, the content does not.
+// Docs was its twin until the apex split moved the documentation to
+// `agentsinc.sh/docs` on the site's Worker; the nav rail links out to it now.
 function Placeholder({ title }: { title: string }) {
   return (
     <main className="col-span-2 grid h-svh place-items-center bg-column">
@@ -51,10 +53,6 @@ function Placeholder({ title }: { title: string }) {
       </p>
     </main>
   )
-}
-
-export function DocsScreen() {
-  return <Placeholder title="Docs" />
 }
 
 export function SettingsScreen() {

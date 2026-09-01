@@ -62,7 +62,7 @@ test.describe("a shared link keeps its own address", () => {
       "aria-pressed",
       "true"
     )
-    await expect(page).toHaveURL(`/?fromId=${STORED_ID}`)
+    await expect(page).toHaveURL(`/editor/?fromId=${STORED_ID}`)
   })
 
   // The owner's sentence, and the acceptance test for the whole row.
@@ -195,7 +195,7 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
 
     await page.getByRole("link", { name: "Configure" }).click()
 
-    await expect(page).toHaveURL("/")
+    await expect(page).toHaveURL("/editor/")
     await expect(configure.skill(ACME_SKILL).root).toHaveAttribute(
       "aria-pressed",
       "true"
@@ -231,7 +231,7 @@ test.describe("a visitor who has saved nothing", () => {
     // The way the notice itself names, rather than a fresh page load — which
     // is what makes this a return to their own address instead of a boot.
     await configure.page.getByRole("link", { name: "Configure" }).click()
-    await expect(configure.page).toHaveURL("/")
+    await expect(configure.page).toHaveURL("/editor/")
   }
 
   // Their own editor is empty, because they have never configured anything.

@@ -47,8 +47,12 @@ const VIEWPORT = { width: 1600, height: 1000 }
 //
 // A separate `dist-test/` so a visual run never overwrites the directory
 // `bun run deploy` uploads.
-const BUILD = "bunx vite build --mode test --outDir dist-test"
-const SERVE = `bunx vite preview --outDir dist-test --port ${PORT} --strictPort`
+// `dist-test/editor`, mirroring production's `dist/editor`, so the captures are
+// taken against the same directory layout the Worker serves rather than a
+// flattened one — and so scripts/spa-fallback-shell.ts writes its copy to
+// `dist-test/index.html` instead of the workspace root.
+const BUILD = "bunx vite build --mode test --outDir dist-test/editor"
+const SERVE = `bunx vite preview --outDir dist-test/editor --port ${PORT} --strictPort`
 
 export default defineConfig({
   testDir: "./e2e/specs",

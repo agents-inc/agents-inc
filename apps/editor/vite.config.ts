@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv } from "vite"
 
 import { firstPaintBudget } from "./scripts/first-paint-budget"
+import { spaFallbackShell } from "./scripts/spa-fallback-shell"
 import { parseEnv } from "./src/env.schema"
 
 // One chunk per rate of change, so a deploy invalidates only what changed. The
@@ -106,6 +107,7 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       firstPaintBudget(),
+      spaFallbackShell(),
       ...(uploadSourceMaps
         ? [
             sentryVitePlugin({
@@ -136,7 +138,19 @@ export default defineConfig(({ mode }) => {
           ]
         : []),
     ],
+    // THE EDITOR LIVES UNDER A PATH PREFIX, and Cloudflare does not strip it:
+    // "Assets defined for a Worker must be nested in a directory structure that
+    // mirrors the desired path." So the prefix has to be true in three places
+    // that must agree, and this is two of them — `base` rewrites every URL the
+    // build emits, `outDir` puts the files where the Route will look for them,
+    // and `basepath` in src/routes/router.tsx is the third. `assets.directory`
+    // in wrangler.jsonc stays `./dist`, one level ABOVE `outDir`, which is what
+    // makes scripts/spa-fallback-shell.ts's copy land somewhere the Worker's
+    // single-page-application fallback can find it.
+    base: "/editor/",
+
     build: {
+      outDir: "dist/editor",
       sourcemap: uploadSourceMaps ? "hidden" : false,
       rolldownOptions: {
         output: { codeSplitting: { groups: CHUNK_GROUPS } },

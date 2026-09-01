@@ -42,7 +42,12 @@ test.describe("sharing a configuration", () => {
     ).toBeVisible()
 
     const copied = await page.evaluate(() => navigator.clipboard.readText())
-    expect(copied).toContain(`?fromId=${STORED_ID}`)
+    // THE PATH IS HALF THE ASSERTION. This read `toContain("?fromId=…")`
+    // until the apex was split, which passed whether or not the link carried
+    // the app's own base path — so a Share button minting
+    // `agentsinc.sh/?fromId=…`, which lands a recipient on the landing
+    // page with the configuration silently dropped, was green here.
+    expect(copied).toContain(`/editor/?fromId=${STORED_ID}`)
   })
 
   test("share offers nothing to an empty selection", async ({ configure }) => {
@@ -172,7 +177,7 @@ test.describe("opening a share link", () => {
     // The address of a shared configuration rather than a one-shot command
     // (EDITOR-37): stripping it is what left a reload with no idea it had ever
     // been a shared link. `shared-link.spec.ts` covers what the address buys.
-    await expect(page).toHaveURL(`/?fromId=${STORED_ID}`)
+    await expect(page).toHaveURL(`/editor/?fromId=${STORED_ID}`)
   })
 
   test("carries the shared load states through to the roster", async ({
@@ -250,6 +255,6 @@ test.describe("opening a share link", () => {
     await expect(vue.root).toHaveAttribute("aria-pressed", "true")
     // Kept, like every other id: retrying a worker that was briefly down is
     // then a reload rather than a lost link.
-    await expect(page).toHaveURL(`/?fromId=${DEAD_LINK_ID}`)
+    await expect(page).toHaveURL(`/editor/?fromId=${DEAD_LINK_ID}`)
   })
 })

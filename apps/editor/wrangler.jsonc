@@ -23,9 +23,24 @@
     // on anything but `/` fails.
     "not_found_handling": "single-page-application",
   },
-  // Apex only. `location.origin` is baked into every share link
-  // (`use-share-link.ts`), so a second live hostname would mint links under
-  // whichever one the author happened to be on; www is a redirect rule in the
-  // dashboard instead, which resolves before the Worker is reached.
-  "routes": [{ "pattern": "agentsinc.sh", "custom_domain": true }],
+  // A ROUTE ON A PATH, not the apex. The apex is a Custom Domain on
+  // `agents-inc-www` (the landing page and `/docs`); this Worker owns
+  // `/editor*` beneath it. Cloudflare documents the combination: a Route and a
+  // Custom Domain coexist on one hostname and the Route takes precedence, with
+  // the more specific pattern winning between two Routes.
+  //
+  // WRITTEN `/editor*` AND NOT `/editor/*`. Cloudflare's own Known Issues page
+  // records that `/editor/*` does not match `/editor` itself, so the bare path
+  // would fall through to the apex Worker and 404 on the site's own 404 page.
+  //
+  // THE STRING FORM IS NOT A STYLE CHOICE. `wrangler/config-schema.json` gives
+  // `Route` as `anyOf[string, ZoneIdRoute, ZoneNameRoute, CustomDomainRoute]`,
+  // and all three object forms are `additionalProperties: false` with a
+  // required discriminator — so a bare `{ "pattern": "…" }` matches none of
+  // them and fails config validation at deploy time.
+  //
+  // A route-mounted assets Worker TERMINATES the request: it does not fall
+  // through to the apex Worker when an asset is missing, so this Worker owns
+  // every 404 beneath `/editor`.
+  "routes": ["agentsinc.sh/editor*"],
 }

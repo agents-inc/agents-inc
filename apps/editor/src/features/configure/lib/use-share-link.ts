@@ -84,8 +84,21 @@ const IN_FLIGHT = {
 
 // The URL form is what the browser round trip wants; presenting the id as a
 // CLI command is the Share destination's job.
+//
+// THE ONE URL IN THIS APP THE ROUTER CANNOT REACH. `basepath` in
+// routes/router.tsx rewrites everything navigated to; this is BUILT, so it was
+// the one link that kept pointing at the origin root when the editor moved to
+// `agentsinc.sh/editor` — minting `agentsinc.sh/?fromId=…`, which lands the
+// recipient on the landing page with the shared configuration silently
+// dropped. Nothing would have reported that: the recipient sees a working
+// page, just the wrong one.
+//
+// `import.meta.env.BASE_URL` rather than a second `/editor/` literal. It IS
+// `base` from vite.config.ts, so the prefix is stated once for the whole app
+// and this link cannot drift from where the app is actually served. It carries
+// its own trailing slash.
 const shareUrl = (id: string) =>
-  `${location.origin}/?fromId=${encodeURIComponent(id)}`
+  `${location.origin}${import.meta.env.BASE_URL}?fromId=${encodeURIComponent(id)}`
 
 // Runs only once a link exists, which is what makes a refusal here its own
 // ending rather than an error to fold in with the ones above.

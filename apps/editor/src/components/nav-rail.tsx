@@ -22,9 +22,29 @@ const ACCOUNT_TEXT_CLASS =
 const SWAP_OUT = "group-hover:hidden group-focus-visible:hidden"
 const SWAP_IN = "hidden group-hover:inline group-focus-visible:inline"
 
-const NAV_ITEMS = [
-  { to: "/docs", label: "Docs" },
-  { to: "/settings", label: "Settings" },
+// Router links, and only router links. `/settings` is the sole nav word left
+// that this Worker actually serves — `/docs` moved out of the app entirely when
+// the apex was split, and is an ordinary anchor below.
+const NAV_ITEMS = [{ to: "/settings", label: "Settings" }] as const
+
+/**
+ * THE TWO DESTINATIONS THAT ARE NOT THIS APP, and the reason they are `<a>` and
+ * never `<Link>`.
+ *
+ * Since the split, `agentsinc.sh/` is the landing page and `agentsinc.sh/docs`
+ * is Starlight — both on the `agents-inc-www` Worker, while this app is on
+ * `agents-inc-editor` behind the Route `agentsinc.sh/editor*`. Crossing that
+ * boundary is a document load, not a client-side navigation.
+ *
+ * A `<Link to="/docs">` here would NOT fail loudly. The router's basepath would
+ * rewrite it to `/editor/docs`, which this app no longer has a route for — so
+ * the visitor gets a blank match instead of the documentation, silently. Plain
+ * anchors are the only spelling that leaves the prefix alone, because `<Link>`
+ * routes even a raw `href` through the same rewrite.
+ */
+const SITE_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/docs", label: "Docs" },
 ] as const
 
 // The official Octocat mark — and, since 107h, the whole of the link: no
@@ -332,6 +352,11 @@ export function NavRail() {
           <Link key={item.to} to={item.to} className={NAV_ITEM_CLASS}>
             {item.label}
           </Link>
+        ))}
+        {SITE_LINKS.map((item) => (
+          <a key={item.href} href={item.href} className={NAV_ITEM_CLASS}>
+            {item.label}
+          </a>
         ))}
       </div>
 

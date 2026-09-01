@@ -326,8 +326,14 @@ test.describe("a saved configuration its seated catalogue has outgrown", () => {
 // storage would replace what is in memory with what `partialize` chose to write
 // — which is deliberately less.
 test.describe("returning to the screen", () => {
+  // SETTINGS, and it has to be an in-app destination. This used to go via Docs,
+  // which stopped being one when the apex was split: `/docs` is Starlight on the
+  // `agents-inc-www` Worker now, so clicking it leaves the app entirely and
+  // there is no "Configure" link on the far side to come back with. Settings is
+  // the only nav word left that this Worker actually serves, which is exactly
+  // what makes it the right one for a round trip that must stay inside the SPA.
   const leaveAndReturn = async (page: Page) => {
-    await page.getByRole("link", { name: "Docs" }).click()
+    await page.getByRole("link", { name: "Settings" }).click()
     await page.getByRole("link", { name: "Configure" }).click()
   }
 
