@@ -7,7 +7,7 @@ A **stack** is a named selection: which [skills](/docs/concepts/skills) each [su
 
 ## Quick start
 
-Open the [editor](https://agentsinc.sh) and click a stack in the grid at the top. Every pre-built stack is a cell there, alongside "Start from scratch". Picking one selects every skill that stack names and staffs the sub-agents it names, so the skills grid below it arrives with those choices already made, for you to keep or change.
+Open the [editor](/editor) and click a stack in the grid at the top. Every pre-built stack is a cell there, alongside "Start from scratch". Picking one selects every skill that stack names and staffs the sub-agents it names, so the skills grid below it arrives with those choices already made, for you to keep or change.
 
 :::note[From the terminal]
 `npx agents-inc init` opens the wizard on the same stacks, as a list rather than a grid. Picking one pre-fills the wizard, so the Skills grid two steps later arrives already filled in. Press `A` there to take it exactly as it stands and go straight to the confirm screen.

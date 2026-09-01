@@ -1,6 +1,6 @@
 ---
 title: The editor
-description: The web editor at agentsinc.sh — the loop from stack to installed, what each of the three columns holds, what survives a reload, and the things it deliberately cannot do.
+description: The web editor at agentsinc.sh/editor — the loop from stack to installed, what each of the three columns holds, what survives a reload, and the things it deliberately cannot do.
 sidebar:
   order: 1
 ---
@@ -11,7 +11,7 @@ The editor is the browser front door onto the same catalogue the CLI reads. Pick
 
 ## Quick start
 
-1. Open [agentsinc.sh](https://agentsinc.sh).
+1. Open [agentsinc.sh/editor](/editor).
 2. Click a stack in the grid at the top. Its skills are selected and handed to the sub-agents that want them.
 3. Press **Install** at the foot of the right-hand column.
 4. Copy the command out of the dialog and run it from your project root.

@@ -42,7 +42,7 @@ Error: Config at '/home/me/project/.claude-src/config.ts' could not be loaded:
 Failed to load config from '/home/me/project/.claude-src/config.ts': ParseError: Unexpected token, expected ","
 There is no automatic repair for this — recreate the configuration:
 'npx agents-inc uninstall' still works on a config it cannot read, then 'npx agents-inc init'.
-Or build one at https://agentsinc.sh and install it with 'npx agents-inc init --from <id>'.
+Or build one at https://agentsinc.sh/editor and install it with 'npx agents-inc init --from <id>'.
 'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.
 ```
 

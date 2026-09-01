@@ -8,7 +8,7 @@ sidebar:
 The config file at `.claude-src/config.ts` is where an installation's skills, agents and the connections between them are written down. A global config at `~/.claude-src/config.ts` works the same way but applies across all projects.
 
 :::note[Most of this file is a click in the editor]
-Install mode, scope, which sub-agents carry a skill, whether each carries it preloaded or dynamically, every sub-agent's model and effort, and the marketplace the whole thing reads from all have controls in the [editor](https://agentsinc.sh) — and **Preview generated code** draws the `config.ts` they produce, from the same renderers the installer writes with, before anything is written. This page is for the hand edit: something the editor has no control for, or an installation already on disk that you'd rather change in place than round-trip.
+Install mode, scope, which sub-agents carry a skill, whether each carries it preloaded or dynamically, every sub-agent's model and effort, and the marketplace the whole thing reads from all have controls in the [editor](/editor) — and **Preview generated code** draws the `config.ts` they produce, from the same renderers the installer writes with, before anything is written. This page is for the hand edit: something the editor has no control for, or an installation already on disk that you'd rather change in place than round-trip.
 :::
 
 ## Quick start

@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-Agents Inc has two front doors: the `agents-inc` CLI and the editor at [agentsinc.sh](https://agentsinc.sh). They are not the same tool and are not meant to be. This page lists what each one can do, area by area, so you can tell at a glance where to go — and the last section says why a few things live in only one of them.
+Agents Inc has two front doors: the `agents-inc` CLI and the editor at [agentsinc.sh/editor](/editor). They are not the same tool and are not meant to be. This page lists what each one can do, area by area, so you can tell at a glance where to go — and the last section says why a few things live in only one of them.
 
 ## Quick start
 

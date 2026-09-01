@@ -8,7 +8,7 @@ sidebar:
 Create your own skills and subagents to extend the framework with project-specific knowledge.
 
 **If somebody has already written it, import it rather than writing it again.** The
-[editor](https://agentsinc.sh)'s **Add skill** dialog searches GitHub for skills that already
+[editor](/editor)'s **Add skill** dialog searches GitHub for skills that already
 exist, carries the chosen one's contents inline in the configuration it hands you, and
 `init --from <id>` installs it alongside the catalogue's own. A skill from outside the catalogue
 always installs by ejecting, so it arrives as a copy you own rather than a pointer at somebody

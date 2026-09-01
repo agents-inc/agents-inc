@@ -9,7 +9,7 @@ A setup travels as a short id the agentsinc.sh store holds. Mint one from the ed
 
 ## Quick start
 
-If the setup is on screen in the editor, **Share** in the roster footer copies a link to it — `https://agentsinc.sh/?fromId=<id>`. The button says which ending happened rather than resting on one word: `Link copied`, `Link made, copy refused`, `Out of date — reload`, `Offline — try again`. It's disabled with nothing selected, and disabled while a sub-agent is still blocked on scope, because a link that fails on the recipient is worse than no link at all.
+If the setup is on screen in the editor, **Share** in the roster footer copies a link to it — `https://agentsinc.sh/editor/?fromId=<id>`. The button says which ending happened rather than resting on one word: `Link copied`, `Link made, copy refused`, `Out of date — reload`, `Offline — try again`. It's disabled with nothing selected, and disabled while a sub-agent is still blocked on scope, because a link that fails on the recipient is worse than no link at all.
 
 For a setup that's already installed on a machine, `share` mints an id from that directory:
 
@@ -21,7 +21,7 @@ npx agents-inc share
 Sharing 12 skill(s) across 4 sub-agent(s)...
 ✓ Shared as <id>
   Install it:  npx agents-inc init --from <id>
-  Open it:     https://agentsinc.sh/?fromId=<id>
+  Open it:     https://agentsinc.sh/editor/?fromId=<id>
 ```
 
 Hand over the id. Your teammate runs `npx agents-inc init --from <id>` in a clean directory — no wizard, no terminal needed, so it works over a pipe and in CI.
@@ -80,7 +80,7 @@ Skills or sub-agents the current catalogue no longer knows are named and skipped
 
 `edit --from <id>` applies a configuration to an installation you already have, and it removes whatever the configuration leaves out. It needs a terminal, because that has to be confirmed.
 
-Opening `https://agentsinc.sh/?fromId=<id>` writes nothing anywhere. The id stays in the address, so a reload reopens the same configuration, and the nav rail's **Configure** link clears it and hands you back your own.
+Opening `https://agentsinc.sh/editor/?fromId=<id>` writes nothing anywhere. The id stays in the address, so a reload reopens the same configuration, and the nav rail's **Configure** link clears it and hands you back your own.
 
 ## Sharing something you hold rather than something installed
 

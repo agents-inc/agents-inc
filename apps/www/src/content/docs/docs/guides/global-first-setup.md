@@ -5,11 +5,11 @@ sidebar:
   order: 1
 ---
 
-Everything defaults to global scope. Your first setup — picked in the [editor](https://agentsinc.sh) or in the terminal wizard — is your personal default stack: skills, agents, and sources that apply across all projects. Most of the time, that's all you need.
+Everything defaults to global scope. Your first setup — picked in the [editor](/editor) or in the terminal wizard — is your personal default stack: skills, agents, and sources that apply across all projects. Most of the time, that's all you need.
 
 ## Quick start
 
-Open [agentsinc.sh](https://agentsinc.sh), click the stack you want, and press **Install**. There's no scope decision to make — every skill and every sub-agent rests at global until you move it. Copy the command out of the dialog and run it:
+Open [agentsinc.sh/editor](/editor), click the stack you want, and press **Install**. There's no scope decision to make — every skill and every sub-agent rests at global until you move it. Copy the command out of the dialog and run it:
 
 ```bash
 npx agents-inc init --from Ab3xY9_Q
@@ -71,7 +71,7 @@ Both front doors enforce that from the same rule. Hand a project skill to a sub-
 **Once a global install exists, `init --from` won't touch it.** A payload carrying global-scoped content writes into your own `~/.claude`, so an installation already there is in its way even when the project you're standing in is spotless — the refusal names it and points at `uninstall`. `edit` is the command that accepts a setup already in place, in either direction:
 
 ```bash
-npx agents-inc edit --ui              # publishes what's installed and opens it at agentsinc.sh
+npx agents-inc edit --ui              # publishes what's installed and opens it at agentsinc.sh/editor
 npx agents-inc edit --from Ab3xY9_Q   # applies what you changed there
 ```
 

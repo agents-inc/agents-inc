@@ -14,7 +14,7 @@ Every skill's cell in the editor carries a `plugin` / `eject` badge. Click it to
 For a skill that's already installed, the editor is a round trip, and the two commands aren't the same one:
 
 ```bash
-npx agents-inc edit --ui         # publishes this installation and opens it at agentsinc.sh
+npx agents-inc edit --ui         # publishes this installation and opens it at agentsinc.sh/editor
 npx agents-inc edit --from <id>  # applies what you changed there
 ```
 

@@ -9,7 +9,7 @@ sidebar:
 
 ## Quick start
 
-`codex-keeper` is a [sub-agent](/docs/concepts/sub-agents), so you run it from Claude Code rather than from either front door. It sits in the `meta` domain and belongs at global scope, where one install serves every repository you point it at — see [Global-first setup](/docs/guides/global-first-setup). Click its row in the [editor](https://agentsinc.sh)'s roster to pin it on, and the install command writes it to `.claude/agents/codex-keeper.md`. From the terminal, `npx agents-inc edit` adds it and recompiles in the same run. Then ask it to start:
+`codex-keeper` is a [sub-agent](/docs/concepts/sub-agents), so you run it from Claude Code rather than from either front door. It sits in the `meta` domain and belongs at global scope, where one install serves every repository you point it at — see [Global-first setup](/docs/guides/global-first-setup). Click its row in the [editor](/editor)'s roster to pin it on, and the install command writes it to `.claude/agents/codex-keeper.md`. From the terminal, `npx agents-inc edit` adds it and recompiles in the same run. Then ask it to start:
 
 ```
 @codex-keeper initialize documentation for this codebase

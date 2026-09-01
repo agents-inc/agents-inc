@@ -7,7 +7,7 @@ sidebar:
 
 Build a personal or org-level marketplace with skills curated for your conventions. Authoring one is
 a terminal job start to finish — a marketplace is a Git repository the CLI scaffolds, packages and
-indexes, and the [editor](https://agentsinc.sh) reads catalogues rather than building them.
+indexes, and the [editor](/editor) reads catalogues rather than building them.
 Distributing one is the other way round, and that section is at the foot of this page.
 
 ## Quick start
@@ -125,7 +125,7 @@ come from. `edit` changes what you have installed, not where it comes from.
 ## Distribution
 
 Marketplaces are Git repositories. Share them by giving your team access to the repo, and the route
-in from there is the [editor](https://agentsinc.sh)'s **Marketplace** button: `owner/repo`, plus a
+in from there is the [editor](/editor)'s **Marketplace** button: `owner/repo`, plus a
 token for a private one. That fetch goes straight to GitHub from the browser, so the token stays
 there and reaches nothing else. The id the editor hands out afterwards carries the marketplace it
 read, so a teammate running `init --from <id>` resolves your skills against your repository without

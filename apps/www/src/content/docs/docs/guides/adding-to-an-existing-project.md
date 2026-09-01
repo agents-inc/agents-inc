@@ -34,7 +34,7 @@ That prints an id and the two things you can do with it:
 ```
 ✓ Shared as Ab3xY9_Q
   Install it:  npx agents-inc init --from Ab3xY9_Q
-  Open it:     https://agentsinc.sh/?fromId=Ab3xY9_Q
+  Open it:     https://agentsinc.sh/editor/?fromId=Ab3xY9_Q
 ```
 
 Install it if the proposal is right. Open it if you would rather look first.

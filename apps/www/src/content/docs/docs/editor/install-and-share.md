@@ -76,7 +76,7 @@ The button is disabled until something is selected, and a configuration the CLI 
 
 ## Sharing a link
 
-**Share** copies a link rather than a command: the same id, in the form `agentsinc.sh/?fromId=<id>`. Opening it loads that configuration into the editor. Use it to hand a selection to somebody to look at or adjust; the install dialog is what you use to actually install.
+**Share** copies a link rather than a command: the same id, in the form `agentsinc.sh/editor/?fromId=<id>`. Opening it loads that configuration into the editor. Use it to hand a selection to somebody to look at or adjust; the install dialog is what you use to actually install.
 
 The button is the only feedback the panel has, so it says which ending happened:
 

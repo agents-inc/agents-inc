@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-Subagents are composed from three layers: partials, templates, and skills. Each layer can be ejected and modified independently, and all of it happens in the terminal — the three layers are files on disk, and the [editor](https://agentsinc.sh) is a browser page that writes none.
+Subagents are composed from three layers: partials, templates, and skills. Each layer can be ejected and modified independently, and all of it happens in the terminal — the three layers are files on disk, and the [editor](/editor) is a browser page that writes none.
 
 **Want to see what you're changing first?** [Anatomy of a sub-agent](/docs/reference/sub-agent-anatomy) reads a compiled file top to bottom, so you can tell which of the three layers produced which part of it.
 
@@ -50,7 +50,7 @@ Each subagent has five partials that can be customized:
 Skill-to-subagent mappings and load behavior (preloaded vs dynamic) are configured in `.claude-src/config.ts`. Use `npx agents-inc edit` to modify selections interactively, or edit the config file directly.
 
 :::note[The parts of a sub-agent the editor does own]
-Which skills a sub-agent carries, whether it carries each one preloaded or dynamically, and its model, effort and scope are all clicks in the [editor](https://agentsinc.sh) — that's what the roster's rows are. Model and effort in particular have no wizard control at all, so this file and the roster are the only two places they're set. Bring an installation over with `npx agents-inc edit --ui` and take it back with `edit --from <id>`.
+Which skills a sub-agent carries, whether it carries each one preloaded or dynamically, and its model, effort and scope are all clicks in the [editor](/editor) — that's what the roster's rows are. Model and effort in particular have no wizard control at all, so this file and the roster are the only two places they're set. Bring an installation over with `npx agents-inc edit --ui` and take it back with `edit --from <id>`.
 :::
 
 **Keeping a globally installed skill out of a project is a stack decision, not a selection one.** A global install cannot be deselected from inside a project — the wizard locks those rows. Instead, leave the skill out of the relevant agent's `stack` entry: the skill stays installed and available, but no subagent in this project receives it. See [Editing Your Config](/docs/guides/editing-config) for the stack shape.

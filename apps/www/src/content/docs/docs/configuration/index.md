@@ -72,7 +72,7 @@ Key order is the writer's, not the order you selected things in — top-level fi
 
 ## Editing by hand, the wizard, or the editor
 
-**Go back to the editor** when you're reconsidering the selection rather than adjusting a line of it — the whole catalog is on screen there, and a hand-edit only shows you what you already have. It's a round trip, because the browser can't read your disk: `npx agents-inc edit --ui` publishes this installation and opens it at agentsinc.sh, and `npx agents-inc edit --from <id>` applies what you changed back. Reach for `edit --from` and not `init --from` — the second refuses a directory that's already installed, since installing a shared configuration is a fresh setup rather than a merge.
+**Go back to the editor** when you're reconsidering the selection rather than adjusting a line of it — the whole catalog is on screen there, and a hand-edit only shows you what you already have. It's a round trip, because the browser can't read your disk: `npx agents-inc edit --ui` publishes this installation and opens it at agentsinc.sh/editor, and `npx agents-inc edit --from <id>` applies what you changed back. Reach for `edit --from` and not `init --from` — the second refuses a directory that's already installed, since installing a shared configuration is a fresh setup rather than a merge.
 
 **Run `npx agents-inc edit`** when the change involves files landing on or leaving disk and you'd rather stay in the terminal: adding a skill, removing one, switching a skill between plugin and eject, or moving something between project and global scope. The wizard runs the install pipeline; hand-editing `skills` only edits the manifest, and a config naming a skill nothing installed compiles to an agent referencing something that isn't there.
 

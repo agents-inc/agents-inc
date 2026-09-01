@@ -9,14 +9,14 @@ into sub-agent files. Change a skill, recompile, and every sub-agent that uses
 it is updated.
 
 **The editor is the front door and the CLI is the engine.** You pick your
-skills in the browser at [agentsinc.sh](https://agentsinc.sh); the CLI is what
+skills in the browser at [agentsinc.sh/editor](/editor); the CLI is what
 writes them to disk. A browser page cannot touch your filesystem, so every
 setup ends in one terminal command — the CLI is the step after the editor
 rather than an alternative to it.
 
 ## Quick start
 
-1. Open [agentsinc.sh](https://agentsinc.sh) and click a stack.
+1. Open [agentsinc.sh/editor](/editor) and click a stack.
 2. Press **Install**, and copy the command out of the dialog.
 3. Run it from your project root.
 

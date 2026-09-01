@@ -19,12 +19,12 @@ through the same install command, so everything on this page holds for them
 too. [Four ways in](/docs/ways-in) sets all four side by side.
 :::
 
-|                     | Web editor                           | Terminal wizard                 |
-| ------------------- | ------------------------------------ | ------------------------------- |
-| How you start it    | [agentsinc.sh](https://agentsinc.sh) | `npx agents-inc init`           |
-| Where you select    | Visual grid in the browser           | Ink UI in your terminal         |
-| What it hands you   | An id                                | Its own confirm step            |
-| What writes to disk | `npx agents-inc init --from <id>`    | The same `init` run, on confirm |
+|                     | Web editor                        | Terminal wizard                 |
+| ------------------- | --------------------------------- | ------------------------------- |
+| How you start it    | [agentsinc.sh/editor](/editor)    | `npx agents-inc init`           |
+| Where you select    | Visual grid in the browser        | Ink UI in your terminal         |
+| What it hands you   | An id                             | Its own confirm step            |
+| What writes to disk | `npx agents-inc init --from <id>` | The same `init` run, on confirm |
 
 The editor is the front door and the CLI is the engine. Your browser cannot
 write to `.claude/`, so the editor installs nothing: it hands you a short id,
@@ -46,7 +46,7 @@ which the grid can offer a skill the CLI does not have.
 
 ## Web to CLI
 
-1. Configure your selection at [agentsinc.sh](https://agentsinc.sh) and open
+1. Configure your selection at [agentsinc.sh/editor](/editor) and open
    the install dialog.
 2. The dialog mints an id as it opens and shows you the command with the id in
    it, click-to-copy:
@@ -85,7 +85,7 @@ Some details that matter if you are relying on this:
 ## Web to web
 
 The roster's **Share** button copies a link rather than a command — the same
-id, in the form `agentsinc.sh/?fromId=<id>`. Opening it loads that
+id, in the form `agentsinc.sh/editor/?fromId=<id>`. Opening it loads that
 configuration into the editor. That is for handing a selection to another
 person to look at or adjust; the install dialog is what you use to actually
 install it.
@@ -105,7 +105,7 @@ npx agents-inc share
 That reads the skills, sub-agents and per-agent curation installed in the
 current directory, publishes them as one configuration, and prints the id with
 both things you can do with it — `init --from <id>` on another machine, or
-`agentsinc.sh/?fromId=<id>` in a browser.
+`agentsinc.sh/editor/?fromId=<id>` in a browser.
 
 If you want the browser rather than the id, `edit --ui` is the same mint with a
 different ending — instead of printing the id it opens it, so the installation
