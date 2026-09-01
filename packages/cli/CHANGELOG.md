@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.161.1] - 2026-09-01
+
+**The editor's address gains the path that reaches it, and the two assertions that were green on its absence now derive it**
+
+- `EDITOR_URL` becomes `https://agentsinc.sh/editor`. The apex is the marketing site now, so `share`, `edit --ui` and `init --ui` were all about to hand a browser the landing page — a working page, the wrong one, with the shared configuration silently dropped and nothing to report it. The `--ui` flag descriptions on both commands were re-derived from source rather than edited to look right (WWW-03)
+- Two assertions covering that exact value were green on its absence, for the same reason: each restated the expected string instead of deriving it. `toContain("agentsinc.sh")` is a substring of both the right address and the wrong one; `open-url.test.ts` hardcoded the old link beneath a docblock claiming it was what the CLI produces. Both now derive, and both were verified by reinstating the defect rather than by observing a pass
+- `check-mirrored-constants.ts` gains a fourth row binding `STEP_TEXT.EDITOR_URL` to `EDITOR_URL`. The registry already existed for this class; nothing had put this pair in it, which is how the mirror held the old value through the whole migration
+
+See [changelogs/0.161.1.md](./changelogs/0.161.1.md) for full details.
+
 ## [0.161.0] - 2026-08-30
 
 **The renderers leave the CLI for a package both front doors call, an install's config arrives already formatted, and the worker gets one typed client**
