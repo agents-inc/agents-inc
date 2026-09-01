@@ -3,7 +3,7 @@
 This folder holds material for people working **on** the CLI. Documentation for people **using** it
 lives on the documentation site — source of truth at
 [`apps/www/src/content/docs/docs/`](../../apps/www/src/content/docs/docs/), published at
-`agentsinc.sh/docs` once the site deploys (repo tracker REPO-04). The user guides and command
+`agentsinc.sh/docs` once the apex cutover lands (WWW-03 in `todo/www.md`). The user guides and command
 reference that used to be duplicated here were retired on 2026-08-06; the site's copies are the only
 copies.
 
