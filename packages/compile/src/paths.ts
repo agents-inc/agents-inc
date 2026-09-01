@@ -44,8 +44,8 @@ export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME
  * install therefore answers to either spelling.
  *
  * `agents-inc` rather than `agentsinc` because it is the published package name, so `npx
- * agents-inc` resolves with nothing installed, and it is what agentsinc.sh hands people when they
- * copy an install command.
+ * agents-inc` resolves with nothing installed, and it is what the editor at `agentsinc.sh/editor`
+ * hands people when they copy an install command.
  *
  * CONVENTION: every user-facing instruction in this repo — messages, docs, code comments, agent
  * playbooks — writes commands in this `npx agents-inc <cmd>` form. Prose that merely names a
