@@ -98,6 +98,22 @@ export const MIRRORS: Mirror[] = [
     e2e: { file: E2E_CONSTANTS, symbol: "SOURCE_PATHS", path: ["PLUGINS_DIST"] },
     product: { file: CONSTS, symbol: "PLUGINS_DIST_PATH", path: [] },
   },
+  /**
+   * Added 2026-09-01, after this exact pair drifted through a whole apex migration unnoticed.
+   *
+   * The editor moved from `agentsinc.sh` to `agentsinc.sh/editor` and the mirror kept the old
+   * value. Nothing failed, because the spec that reads it asserted `toContain("agentsinc.sh")` —
+   * a substring of BOTH the right address and the wrong one — so `init --ui` printing a link to
+   * the marketing page was green. That spec now reads `STEP_TEXT.EDITOR_URL`, which is what makes
+   * this row worth having: the assertion is only as true as the mirror, and nothing else checks
+   * the mirror.
+   */
+  {
+    name: "STEP_TEXT.EDITOR_URL",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["EDITOR_URL"] },
+    product: { file: CONSTS, symbol: "EDITOR_URL", path: [] },
+  },
 ];
 
 export function check({
