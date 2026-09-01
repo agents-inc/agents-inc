@@ -5469,3 +5469,25 @@ E2E_SKILL_IDS.slice(1) })`, a marketplace shipping exactly one skill, since ever
   `capabilities` (two new rows plus the `share --stdin` row now naming the producer it exists for),
   and the editor group's sidebar orders shifted to seat the composer at 3. 39 pages → 42, no build
   warnings, all 42 internal `/docs` links resolve.
+
+- **2026-09-01 — REPO-41, the token half** (repo.md, new same day, narrowed rather than deleted) —
+  **CI had deployed nothing for a week and said nothing about it.** `b97e3be4` (2026-08-30) added
+  `wrangler d1 migrations apply` to the deploy job; the Actions `CLOUDFLARE_API_TOKEN` predated the
+  D1 database entirely (created 2026-08-04, database added 2026-08-28) and returned
+  `[code: 7403] The given account is not valid or is not authorized to access this service`. The
+  step runs under `shell: bash -e` and sits BEFORE `bun run deploy`, so editor, site and worker all
+  stopped shipping while `check-web`, `check-cli`, `visual-editor` and `visual-ui` stayed green on
+  every run. **Diagnosed by elimination rather than by guessing at scopes**: the same token was
+  proven to hold Workers KV Edit (build-skill-index.yml ran `kv key put` successfully that same
+  morning) and Workers Scripts Edit (deploys worked through 2026-08-25), which left D1 alone, and
+  ruled out account mis-scoping. `wrangler d1 migrations list --remote` reported **no migrations to
+  apply**, so the step that blocked three pushes was a no-op failing on a permission check. Owner
+  added D1 Write and, in the same visit, Workers Routes Write across all zones — the latter needed
+  by WWW-03 and never once exercised, since the editor had only ever had a Custom Domain. Rerun of
+  the failed job alone: **49 seconds, green**, and all three Workers deployed at 14:24 — 60 commits
+  and two releases (0.160.0, 0.161.0) that had been sitting undeployed since 2026-08-25. Smoke-
+  tested rather than assumed: apex still the editor, www Worker serving the new landing build, and
+  `api.agentsinc.sh` answering a miss with a clean 404, which is the evidence the D1-backed worker
+  booted with its bindings. **The row survives, narrowed**, because the fix was a token scope
+  outside this repository and the thing that let it run for a week — no signal when a deploy fails
+  under green checks — is untouched.

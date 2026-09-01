@@ -322,8 +322,10 @@ runtime so even a computed-style check has to open the modal first). Neither blo
 are the kind of row that only gets written while the memory of the defect is fresh.
 
 Then the build-out: **WWW-02** (5 of 12 landing blocks, and the catalogue teaser — the centrepiece —
-is not one of them) · **WWW-03** (apex path split, and the one that actually gates an audience:
-until it lands this build serves a `workers.dev` URL while `agentsinc.sh` serves the editor) ·
+is not one of them) · **WWW-03** (apex path split — **the repository half landed 2026-09-01**; what
+remains is a Cloudflare dashboard move, a token scope, and an acceptance pass against the real
+hostname, so it is now blocked on the owner rather than on work. **It is also blocked on REPO-41**,
+because CI has deployed nothing since 2026-08-30) ·
 **WWW-01** (what is left of it — the reference is per-group rather than per-command, and there is no
 Releases section) · **WWW-06** (empty video slots — needs your recordings).
 

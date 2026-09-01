@@ -36,8 +36,9 @@ Each was researched against the live tree on 2026-08-26. The full option tables 
 look would be a design reversal rather than a library choice.
 
 **"Run a compile in a folder" has no subject.** `--ui` on `init` and `edit` shells out to the OS
-browser opener against the deployed `https://agentsinc.sh`; there is no local-serve path, so the
-local and deployed cases do not diverge and one renderer serves both.
+browser opener against the deployed `https://agentsinc.sh/editor` (the apex is the landing page
+since WWW-03); there is no local-serve path, so the local and deployed cases do not diverge and one
+renderer serves both.
 
 ---
 

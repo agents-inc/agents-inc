@@ -21,15 +21,16 @@ pieces of the docs-site item** that are distinct enough to be picked up on their
 **The site builds cleanly with no warnings and every navigation link resolves.** Nothing below
 blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 
-| ID                               | Task                                                                                      | Status           | Type    | Complexity |
-| -------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
-| WWW-01 (was editor-todo item 8)  | Docs site: reference is per-group not per-command, and there is no Releases section       | Ready for Dev    | feature | medium     |
-| WWW-11 (new, 2026-08-27)         | The CLI README links a guide that was deliberately deleted — `guides/importing-skills.md` | Ready for Dev    | docs    | trivial    |
-| WWW-12 (new, 2026-08-27)         | `check-cli-claims.ts` reads one page, and CLI claims now live on several                  | Ready for Dev    | test    | medium     |
-| WWW-13 (new, 2026-08-27)         | Nothing gates the search modal's styling, and it is the one surface a browser must open   | Ready for Dev    | test    | medium     |
-| WWW-02 (was editor-todo item 9)  | Landing page: the free-and-open-source block does not do its job, and two a11y defects    | Ready for Dev    | feature | easy       |
-| WWW-03 (was editor-todo item 10) | Apex path split — vite `base`, router `basepath`, SPA fallback, dead routes               | Ready for Dev    | feature | complex    |
-| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings               | Needs Assistance | feature | easy       |
+| ID                                                      | Task                                                                                                                          | Status           | Type    | Complexity |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
+| WWW-01 (was editor-todo item 8)                         | Docs site: reference is per-group not per-command, and there is no Releases section                                           | Ready for Dev    | feature | medium     |
+| WWW-11 (new, 2026-08-27)                                | The CLI README links a guide that was deliberately deleted — `guides/importing-skills.md`                                     | Ready for Dev    | docs    | trivial    |
+| WWW-12 (new, 2026-08-27)                                | `check-cli-claims.ts` reads one page, and CLI claims now live on several                                                      | Ready for Dev    | test    | medium     |
+| WWW-13 (new, 2026-08-27)                                | Nothing gates the search modal's styling, and it is the one surface a browser must open                                       | Ready for Dev    | test    | medium     |
+| WWW-02 (was editor-todo item 9)                         | Landing page: the free-and-open-source block does not do its job, and two a11y defects                                        | Ready for Dev    | feature | easy       |
+| WWW-03 (was editor-todo item 10)                        | Apex path split — **the repository half has landed; what is left is the dashboard cutover**                                   | Needs Assistance | feature | complex    |
+| WWW-16 (new, 2026-09-01, found by the WWW-03 docs pass) | Nothing binds a documented editor URL to `EDITOR_URL` — 30 stale references survived the apex split with all four gates green | Ready for Dev    | fix     | easy       |
+| WWW-06 (was editor-todo item 14)                        | Two video slots are empty and a third is missing; you supply the recordings                                                   | Needs Assistance | feature | easy       |
 
 ---
 
@@ -429,9 +430,10 @@ them without the thing that would fill it.
   paint. And the decorative `$` in the command block sits at 3.64:1 with the hairlines at
   1.44–1.64:1 — reported and not fixed, because that fix belongs in `packages/ui` and the WCAG AA
   ruling (below) is deliberate.
-- **"Build a stack →" points at the absolute `https://agentsinc.sh`**, where the editor lives today,
-  rather than at `/editor` — which this build serves nothing at. It becomes `/editor` when WWW-03
-  lands, and there are now **three** of these anchors on the page rather than one.
+- ~~**"Build a stack →" points at the absolute `https://agentsinc.sh`**~~ **Done 2026-09-01 with
+  WWW-03's repository half.** All three anchors read `EDITOR_URL`, which is now `/editor`. Note the
+  consequence for anyone working on this page: the link crosses a Worker boundary that only
+  production has, so it 404s under `astro dev` and `astro preview` and is correct anyway.
 
 **THE MEASURE IS THE OWNER'S CALL AND IS DELIBERATELY LONG.** The page is 64rem wide (1024px, the
 common step in this range and Tailwind's `5xl`), and prose runs the full content width rather than
@@ -527,12 +529,35 @@ requests stay free.
 **Write the pattern as `agentsinc.sh/editor*`, not `/editor/*`.** Cloudflare's own Known Issues page
 documents that `/editor/*` does not match `/editor` itself. Cheap to get wrong, expensive to find.
 
-### Status: nothing started. The repository is untouched.
+### Status 2026-09-01: the repository half is done. The cutover is not.
 
-Confirmed 2026-08-06 — `apps/editor/wrangler.jsonc` still holds `agentsinc.sh` as a Custom Domain,
-`vite.config.ts` has no `base`, the router has no `basepath`, and the site is reachable only at
-`agents-inc-www.<account>.workers.dev`, which nothing links to. A partial landing is worse than
-none: **CI deploys on every push to main**, so a half-applied cutover ships itself.
+Everything in "the build tasks" below is applied and green in the working tree — `base`,
+`outDir`, `basepath`, the SPA fallback shell, the deleted docs route, the share-link prefix, both
+wrangler configs, the nav on both sides, and the documentation. Gates: editor 476 e2e + 494 unit,
+CLI 7357 unit, site build 42 pages with all four checks, lint and typecheck clean across all three
+workspaces. The `/editor` resolution was verified against Cloudflare's own asset resolver through
+`wrangler dev` rather than against the docs — bare `/editor` 307s to `/editor/`, and
+`/editor/settings` serves the shell with its assets at `/editor/assets/…`.
+
+**Three things are still owed, and none of them is a repository change.**
+
+1. **The Custom Domain move**, `agents-inc-editor` → `agents-inc-www`, in the Cloudflare dashboard.
+2. **The token.** `CLOUDFLARE_API_TOKEN` needs `Zone → Workers Routes → Edit` for the new Route.
+   Do not assume it has it — REPO-41 records the same token already failing on D1, which means
+   **CI has deployed nothing since 2026-08-30 and this cutover cannot ship until that is fixed.**
+3. **An acceptance pass against the real hostname.** Not optional and not replaceable by a suite:
+   no local modality serves the apex as it will exist, so the landing page's three editor CTAs and
+   the nav rail's two site links are unverifiable until they are live. See the progress file.
+
+**The ordering was reconsidered and the tracker's own sequence is not the cheapest one.** As
+written — commit, then move the domain, then push — the editor is DOWN from the dashboard move
+until the deploy finishes, which is a full CI run (`deploy` is `needs: check-web`, bounded at 25
+minutes) and is indefinite if `check-web` goes red. One Worker can hold a Custom Domain and a Route
+on the same hostname simultaneously, so shipping the editor's Route first collapses the outage to
+the length of a dashboard flip. Decide this before starting, not during.
+
+The dispatch log, the full correction list and the hazards this introduced are in
+[`plans/WWW-03-apex-split-progress.md`](./plans/WWW-03-apex-split-progress.md).
 
 **The order that works, and why.** The dashboard move and the repository change are not independent.
 Deploying the editor with a Route but no Custom Domain, while the site has not claimed the apex,
@@ -618,6 +643,42 @@ opposite.
 **Related work in other trackers.** Creating the Worker and the route at all is
 [`repo.md`](./repo.md) REPO-04; the editor Worker's rename is REPO-05. All three touch the same two
 Workers and the same Custom Domain, so taken together the apex moves once instead of three times.
+
+---
+
+#### WWW-16: nothing gates a documented editor address
+
+`scripts/check-cli-claims.ts` binds the command roster and every flag to
+`packages/cli/src/cli/commands/**` through the TypeScript AST, in both directions. It says nothing
+about URLs. So when the apex split moved the editor to `/editor`, **30 references across 21 pages
+went stale and every gate stayed green** — build, all four checks, `astro check`, lint. They were
+found by a hand sweep, which is the failure mode `check-cli-claims.ts` exists to end for commands
+and does not cover for addresses.
+
+**Three separate claims are unguarded**, and they are not the same shape:
+
+1. **Prose links pointing at the editor**, which must be `/editor` rather than the bare apex. The
+   trap is that a wrong one still renders a working page — the landing page — so it fails as a
+   reader's confusion rather than as a 404.
+2. **Quoted CLI output** — `recipes/share-with-a-teammate.md`, `guides/adding-to-an-existing-project.md`,
+   `troubleshooting/common-problems.md` all reproduce blocks the CLI prints, and those must match
+   `sharedConfigDestinations` and `configUnreadableError` in
+   `packages/cli/src/cli/utils/messages.ts` exactly.
+3. **The share-link shape**, `agentsinc.sh/editor/?fromId=<id>`, which is built by `editorConfigUrl`
+   and written by hand in six places. Note the slash before `?` is real — `editorConfigUrl`
+   interpolates `${EDITOR_URL}/?fromId=`, and a reader trimming it as redundant writes a wrong URL.
+
+**The same class already bit the CLI's own suite**, which is the argument that this is worth a
+guard rather than a careful reviewer: `packages/cli/e2e/commands/init-ui.e2e.test.ts` asserted
+`toContain("agentsinc.sh")` and `src/cli/utils/open-url.test.ts` hardcoded
+`https://agentsinc.sh/?fromId=Ab3xY9_Q` under a comment claiming it was the shape the CLI produces.
+Both stayed green across the split. Both were fixed with WWW-03 — the first now reads
+`STEP_TEXT.EDITOR_URL`, the second calls `editorConfigUrl` — and **the fix in both cases was to
+derive rather than to type**, which is the shape the guard should push the docs towards too.
+
+Census before starting:
+
+    grep -rn 'agentsinc\.sh' apps/www/src/content/docs/ | grep -v 'api\.agentsinc\.sh'
 
 ---
 
