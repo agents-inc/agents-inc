@@ -53,7 +53,7 @@ last_validated: 2026-08-17
 
 | Flag            | Type    | Hidden | Description                                                                                                                                                                                      |
 | --------------- | ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| --ui            | boolean | no     | `default: false`. Opens agentsinc.sh instead of the wizard — the id `--from` names, or this installation when `--from` names nothing.                                                            |
+| --ui            | boolean | no     | `default: false`. Opens agentsinc.sh/editor instead of the wizard — the id `--from` names, or this installation when `--from` names nothing.                                                     |
 | --from          | string  | no     | `helpValue: "<id>"`. Apply a configuration shared from agentsinc.sh by its id, **removing whatever it leaves out**. Interactive and destructive — see below.                                     |
 | --project-setup | boolean | yes    | Internal: this run continues an `init` project setup (materialise + register even on no-change). Key = `EDIT_PROJECT_SETUP_FLAG` (`"project-setup"`); set only by `init`'s dashboard delegation. |
 
