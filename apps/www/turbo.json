@@ -11,20 +11,33 @@
     // for it to look at and it exits 1 on a clean checkout saying so.
     "test": {
       "dependsOn": ["build"],
-      // The second half of `test` reads another workspace's source —
-      // check-cli-claims.ts binds the command reference to
-      // packages/cli/src/cli/commands/** — and turbo cannot know that. The
+      // The second half of `test` reads another workspace's source — two of
+      // its checks do — and turbo cannot know that. check-cli-claims.ts binds
+      // the command reference to packages/cli/src/cli/commands/**, and
+      // check-editor-address.ts binds the editor's documented address to
+      // EDITOR_URL and editorConfigUrl in packages/cli/src/cli/consts.ts. The
       // usual mechanism does not apply: a workspace DEPENDENCY gets a task
       // node in the graph whose hash feeds this one (see the measurement in
       // packages/cli/turbo.json), but this site does not depend on the CLI and
-      // is not going to. Without this line a CLI-only commit leaves every file
-      // turbo hashes for this task byte-identical, so the run replays from
-      // cache and reports clean about a roster that has just changed — which
-      // is precisely the drift the check exists to catch, arriving from
-      // precisely the direction it cannot see. `../` inputs are accepted and
-      // really are hashed on turbo 2.10.8; `$TURBO_DEFAULT$` stays because
-      // naming an input replaces the default set rather than adding to it.
-      "inputs": ["$TURBO_DEFAULT$", "../../packages/cli/src/cli/commands/**"]
+      // is not going to. Without these lines a CLI-only commit leaves every
+      // file turbo hashes for this task byte-identical, so the run replays
+      // from cache and reports clean about a roster — or an address — that has
+      // just changed, which is precisely the drift the checks exist to catch
+      // arriving from precisely the direction they cannot see. Measured on
+      // 2026-09-01: naming consts.ts took the task from 81 hashed inputs to
+      // 82 and changed the hash, and it was absent from all 81 before, so a
+      // commit that moved the editor could not have reddened this. `../`
+      // inputs are accepted and really are hashed on turbo 2.10.8;
+      // `$TURBO_DEFAULT$` stays because naming an input replaces the default
+      // set rather than adding to it. Each path is named at the narrowest
+      // thing its check reads: a whole-package input would rehash this site's
+      // suite on every unrelated CLI edit, which buys nothing and costs a
+      // cache hit every time.
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../packages/cli/src/cli/commands/**",
+        "../../packages/cli/src/cli/consts.ts"
+      ]
     }
   }
 }
