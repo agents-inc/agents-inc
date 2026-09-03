@@ -4,6 +4,8 @@ severity: medium
 affected_files:
   - src/cli/lib/loading/source-loader.test.ts
   - src/cli/lib/configuration/config.ts
+  - src/cli/lib/__tests__/helpers/isolated-home.test.ts
+  - vitest.setup.ts
 standards_docs:
   - .ai-docs/standards/e2e/test-data.md
 date: 2026-08-18
@@ -57,3 +59,34 @@ strand.
 The general shape is broader than env vars: any test-side statement whose whole purpose is to name
 the same string the product names is a duplication that only shows up as a defect once the two
 disagree, and nothing looks red on the day they do.
+
+### A second mechanism on the same construct, found 2026-09-02
+
+`delete process.env.<X>` in a spec has a failure mode this finding did not anticipate, and **one
+rule would catch both**. CLI-870 pinned `AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1"` process-wide in
+`vitest.setup.ts`. Two `delete` statements in `isolated-home.test.ts` had been deleting a variable
+that was naturally ABSENT; overnight they became statements that **withdraw a process-wide pin and
+never restore it**, leaving oclif's update-check door open for every spec after them in that file.
+Latent rather than live — the tests that follow re-set it per test — and closed the same day by
+moving both sites to `vi.stubEnv` with an `afterEach` calling `vi.unstubAllEnvs()`, so the restore is
+structural rather than a discipline re-derived at each site.
+
+**The rule this suggests: a spec may take an environment variable away only through `vi.stubEnv`,
+never through `delete`.** The restore then runs on the throw path by construction, and adding a
+fourth pin to `vitest.setup.ts` cannot silently convert an existing `delete` into an unrestored
+withdrawal.
+
+Re-derive the population, and the pins it has to be checked against:
+
+```
+grep -rn 'delete process\.env\.' src e2e --include='*.ts' --include='*.tsx'
+grep -n 'process\.env' vitest.setup.ts
+```
+
+A site is in the class only when the deleted variable is one `vitest.setup.ts` pins **to a value** —
+`delete` against a variable that file also deletes is a no-op, and a variable it never touches is
+this finding's original subject rather than this one.
+
+**The mechanism proposed for both halves is the same**: an ESLint `no-restricted-syntax` on a
+`delete` whose argument is a `process.env` member expression, scoped to `*.test.ts`. Nothing
+mechanical catches either half today, which is why both have stayed open.
