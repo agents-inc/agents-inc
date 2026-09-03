@@ -119,11 +119,6 @@ export const composeRoute = createRoute({
 // human was present once and says nothing about their hundredth request.
 export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
   authenticated(async (c, session) => {
-    const { success } = await c.env.COMPOSE_CALLS.limit({
-      key: session.user.id,
-    })
-    if (!success) return c.json({ error: "too many requests" }, 429)
-
     const sentence = c.req.valid("json").sentence.trim()
     // Refused BEFORE the model is reached, both of them. A blank prompt costing
     // a token is the cheapest bug to have and the easiest never to notice.
@@ -131,6 +126,26 @@ export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
     if (sentence.length > MAX_SENTENCE) {
       return c.json({ error: "too long" }, 400)
     }
+
+    // ABOVE THE MODEL AND BELOW THE GUARDS, and both halves are load-bearing.
+    //
+    // Above, because this limiter exists to bound what one signed-in caller can
+    // SPEND, and everything past this line spends. Below, because the two
+    // guards above reach no model and cost no money, so counting them charged
+    // for something that never happened: a visitor who pasted a long paragraph
+    // a few times was then told "too many requests", which is a second wrong
+    // message caused by the first and describes neither.
+    //
+    // This weakens nothing. Every path to Anthropic still passes here, so the
+    // spend is bounded exactly as before, and the work an over-long request can
+    // now reach without being counted is one JSON parse and one comparison —
+    // both of which already ran ahead of this line, since `authenticated` has
+    // spent a D1 session read and the route's validator has parsed the body
+    // before the handler body starts.
+    const { success } = await c.env.COMPOSE_CALLS.limit({
+      key: session.user.id,
+    })
+    if (!success) return c.json({ error: "too many requests" }, 429)
 
     const client = new Anthropic({
       apiKey: c.env.ANTHROPIC_API_KEY,
