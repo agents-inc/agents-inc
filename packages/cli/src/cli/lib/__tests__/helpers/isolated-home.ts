@@ -2,6 +2,7 @@ import path from "path";
 import { mkdir } from "fs/promises";
 import { afterEach, beforeEach } from "vitest";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
+import { linkSharedCache } from "./shared-marketplace-checkout.js";
 
 export type IsolatedHome = {
   tempDir: string;
@@ -58,6 +59,13 @@ function overrideEnv(name: string, value: string): RestoreEnv {
  *
  * Call in `beforeEach` and invoke `cleanup` in `afterEach`.
  *
+ * ONE thing in the fake home is not private to the test: `.cache` is a symlink to the shared
+ * marketplace checkout, so a command falling through to the default source finds it already
+ * downloaded instead of fetching it from GitHub again. That is deliberate and it is what stopped
+ * this project failing on machine speed — `helpers/shared-marketplace-checkout.ts` carries why
+ * sharing it costs no isolation, and `cleanup` leaves it standing because `fs.rm` unlinks a
+ * symlink rather than following it.
+ *
  * Isolation mechanism. `vitest.setup.ts` installs a process-wide `vi.spyOn(os, "homedir")`
  * that answers with `process.env.HOME` whenever that differs from the real home, so setting
  * the variable does reach `os.homedir()` — under bun, which resolves it once at startup, as
@@ -78,6 +86,7 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   const fakeHome = path.join(tempDir, "fakehome");
   await mkdir(projectDir, { recursive: true });
   await mkdir(fakeHome, { recursive: true });
+  await linkSharedCache(fakeHome);
 
   const originalCwd = process.cwd();
   process.chdir(projectDir);
@@ -104,7 +113,8 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
  *
  * `setHome: false` withholds the HOME override and nothing else: the update-check door
  * is closed either way, because a detached writer is a hazard to the temp tree whatever
- * HOME says at the moment the command runs.
+ * HOME says at the moment the command runs. The shared-checkout link is made either way too,
+ * for the same reason — see {@link setupIsolatedHome}, which carries it in full.
  *
  * Isolation mechanism, and its two gaps: see {@link setupIsolatedHome}, which carries
  * both in full.
@@ -119,6 +129,7 @@ export function useFakeHome(
   beforeEach(async () => {
     fakeHome = path.join(getTempDir(), "fake-home");
     await mkdir(fakeHome, { recursive: true });
+    await linkSharedCache(fakeHome);
     restoreEnv = [
       options?.setHome === false ? captureEnv("HOME") : overrideEnv("HOME", fakeHome),
       overrideEnv(OCLIF_SKIP_VERSION_CHECK.name, OCLIF_SKIP_VERSION_CHECK.value),

@@ -79,6 +79,37 @@ delete process.env.GITHUB_ACTIONS;
 // request to the store, which is the safer half of the same pin.
 process.env.AGENTS_INC_API_URL = WORKER_ORIGIN;
 
+// oclif's update-check door, closed for the whole process rather than for one home at a time.
+//
+// `@oclif/plugin-warn-if-update-available`'s init hook runs whenever a spec starts a command
+// through oclif's own `run()` — `runCliCommand` in `helpers/cli-runner.ts` is that door, and
+// `Command.run` is not, since it never reaches `runHook("init")`. Unless this is set, the hook
+// ends by spawning a DETACHED, `unref`ed child, which `mkdir -p`s and writes
+// `<home>/.cache/agents-inc/version` and then GETs `registry.npmjs.org`. Both halves outlive the
+// test that started them. The GET is the one thing that leaves the machine; the `mkdir` lands in
+// a home already being torn down — `testHomeDir` below is one of them, so this file's own
+// `afterAll` removal is what the child races. The runs measured below left one empty
+// `/tmp/vitest-home-*` standing without this set, and none with it.
+//
+// Here rather than in `helpers/isolated-home.ts`, which has set the same variable per fake home
+// for a while and whose comments carry the directory-resurrection measurement. That placement was
+// never enough on its own: the variable is process-wide and names no home, so setting it per home
+// covers the specs that ASKED for one and leaves every spec that runs a command without one wide
+// open.
+//
+// Measured 2026-09-02 with `http.request`, `https.request` and `fetch` instrumented through
+// `NODE_OPTIONS` — inherited by the spawned child, which is the only vantage point that can see
+// this at all. Across 222 spec files and 7432 tests, EXACTLY ONE request left the machine, from
+// `commands/edit.test.ts`, deterministically at 3 of 3 runs; zero with this set. No in-process
+// mock substitutes for the pin, because a different PROCESS makes the request: neither a
+// `globalThis.fetch` stub nor the MSW worker is anywhere on its path.
+//
+// `src/cli/lib/__tests__/update-check-door-closed-process-wide.test.ts` holds it, against oclif's
+// own `scopedEnvVarTrue` predicate rather than against this spelling — the name is composed from
+// `oclif.bin`, so a rename would leave the line below reading green over a variable nothing
+// consults.
+process.env.AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1";
+
 // Prevent tests from finding the real ~/.claude-src/config.yaml via global fallback.
 // loadProjectConfig() falls back to os.homedir() when no project-level config exists,
 // which pollutes test results when a real global install is present.
