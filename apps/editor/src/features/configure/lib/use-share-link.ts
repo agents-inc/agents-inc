@@ -67,6 +67,15 @@ export const SHARE_NARRATIONS = {
   },
   refused: { state: "failed", label: "Sharing failed", decays: true },
   unreachable: { state: "failed", label: "Offline — try again", decays: true },
+  // The second ending that names an action, and the second that must not decay.
+  // It reaches this button only when `blocked` did not see the pair coming, so
+  // the marked rows the label points at are on screen already — and the click
+  // will be refused identically until one of them changes.
+  unwritable: {
+    state: "failed",
+    label: "Scope conflict — fix marked rows",
+    decays: false,
+  },
 } as const satisfies Record<ShareOutcome, ShareNarration>
 
 // Not outcomes, so not in the table above: nothing ENDED at either of them.
@@ -122,6 +131,19 @@ export const useShareLink = (config: ConfigSelection) => {
   // `seedToWizardResult` THROWS on a project skill assigned to a sub-agent
   // resting at global — so a link minted from one of those fails on the
   // RECIPIENT, which is worse than no link at all (EDITOR-08).
+  //
+  // An AFFORDANCE, and no longer the protection. It answers a different
+  // question from the write contract and answers it earlier: how many
+  // SUB-AGENTS are one scope word from resolving, which is the number the
+  // marked rows, the notice above the grid and the Install button all state.
+  // The contract counts PAIRS and cannot see the catalogue, so it could never
+  // produce that sentence — and being the only guard is what made it a second
+  // implementation of a rule instead of a reading of it (CLI-851).
+  //
+  // What it derives is genuinely shared: `summarize` reaches the contract's own
+  // `isSeedScopePairWritable` through `reachesAgent`. What it does NOT share is
+  // which pairs the rule is asked about, so `createSharedConfig` refuses
+  // anything this misses rather than letting it cost a write.
   //
   // Owned here rather than by the button, so the disabled state and the refusal
   // below are one value instead of two expressions that could drift.

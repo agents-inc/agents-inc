@@ -1,6 +1,7 @@
 import {
   CONFIGS_URL,
   DEAD_LINK_ID,
+  OUT_OF_SCOPE_PAYLOAD,
   STORED_ID,
   STORED_PAYLOAD,
   UNREADABLE_CONFIG_ID,
@@ -40,9 +41,31 @@ const sink = {
 const staleBundleHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.text(
     "Reload the page: this configuration names another version of the sharing contract",
-    { status: 409 }
+    // The worker answers this with hono's `c.text`, which sends the charset; msw's bare
+    // `text/plain` would be a double differing from production in a dimension the seed
+    // layer discriminates on. Nothing here reads the body today — this keeps it faithful
+    // for the spec that eventually does.
+    { status: 409, headers: { "content-type": "text/plain; charset=UTF-8" } }
   )
 )
+
+// The sub-agent `OUT_OF_SCOPE_PAYLOAD` leaves resting at global — its agents
+// map is empty, and that absence is half of what makes the pair unwritable. The
+// contract's refusal names it, so it is what says the report below carried the
+// contract's own words rather than a sentence composed here.
+const RESTING_AGENT = "web-developer"
+// The skill half of the pair, which lives in the issue PATH rather than its message.
+const UNWRITABLE_SKILL = "web-framework-react"
+
+// What the worker answers a payload it would have taken. Installed only where a
+// test needs to prove the request was never made — a refusal that happens
+// before the network cannot be told from one that happens after it unless
+// something on the far side is watching.
+const witnessedMint = (witness: () => void) =>
+  http.post(CONFIGS_URL, () => {
+    witness()
+    return HttpResponse.json({ id: STORED_ID }, { status: 201 })
+  })
 
 beforeEach(() => {
   setReportingSink(sink)
@@ -93,6 +116,65 @@ describe("createSharedConfig", () => {
     expect(sink.issue).toHaveBeenCalledWith("Share POST refused a stale page", {
       status: 409,
     })
+  })
+
+  // The only refusal this module MINTS rather than reads off a response, and
+  // the reason it exists is the asymmetry in the contract: `POST /configs` is
+  // gated by `installableSeedPayloadSchema` while every payload reaching this
+  // function was minted with the lenient base schema. A configuration nobody
+  // could install therefore cost a round trip and came back as a 400 the app
+  // narrated as "Sharing failed" — a sentence naming neither the problem nor
+  // the fix (CLI-851).
+  it("refuses a configuration nobody could install", async () => {
+    const result = await createSharedConfig(OUT_OF_SCOPE_PAYLOAD)
+
+    expect(result).toStrictEqual({ ok: false, refusal: "unwritable" })
+  })
+
+  // Refused HERE, which is the half that matters. Every other refusal in this
+  // suite is a status the worker chose; this one has to happen before the
+  // request leaves, or it is only a nicer word for the same wasted write.
+  it("refuses it without spending a write", async () => {
+    const reachedTheWorker = vi.fn()
+    configMockServer.use(witnessedMint(reachedTheWorker))
+
+    await createSharedConfig(OUT_OF_SCOPE_PAYLOAD)
+
+    expect(reachedTheWorker).not.toHaveBeenCalled()
+  })
+
+  // BOTH HALVES OF THE PAIR, and asserting only one is how this spec passed
+  // while the report named no skill. The contract raises its message against
+  // the path `skills.<id>.assignments.<agent>`: the SUB-AGENT is in the
+  // sentence, the SKILL is only in the path. So an assertion naming the agent
+  // alone is satisfied by the bare message, and three unwritable skills on one
+  // sub-agent read as three identical strings.
+  it("reports both the skill and the sub-agent the write contract objected to", async () => {
+    await createSharedConfig(OUT_OF_SCOPE_PAYLOAD)
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Share POST refused a configuration nobody could install",
+      {
+        problems: [expect.stringContaining(UNWRITABLE_SKILL) as unknown],
+      }
+    )
+    const [, context] = sink.issue.mock.calls[0]!
+    const { problems } = context as { problems: string[] }
+    expect(problems[0]).toContain(RESTING_AGENT)
+  })
+
+  // The gate is the WRITE schema and not a hand-written scope check, so a
+  // payload the worker would take has to pass untouched. This is the assertion
+  // that would catch a gate written too tightly — the failure mode that turns a
+  // fix for an unshareable configuration into an unshareable app.
+  it("lets a payload the write contract accepts through to the worker", async () => {
+    const reachedTheWorker = vi.fn()
+    configMockServer.use(witnessedMint(reachedTheWorker))
+
+    const result = await createSharedConfig(STORED_PAYLOAD)
+
+    expect(result).toStrictEqual({ ok: true, id: STORED_ID })
+    expect(reachedTheWorker).toHaveBeenCalledOnce()
   })
 
   // Offline, DNS, a proxy that dropped it. The fetch throws rather than

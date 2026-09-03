@@ -1,8 +1,11 @@
 import { expect, test } from "../fixtures"
+import { ConfigurePage } from "../pages/configure-page"
+import { stubSignedIn } from "../support/auth"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
   OUT_OF_SCOPE_IMPORT_ID,
   OUT_OF_SCOPE_PAYLOAD,
+  STORED_ID,
   captureCreateConfig,
   stubCreateConfig,
   stubGetConfig,
@@ -15,9 +18,18 @@ const DEVELOPER = "web-developer"
 const MATRIX_DOMAIN = "API"
 const MATRIX_ROLE = "dev"
 
+// The id the skill named `REACT` above travels under. The grid is located by
+// display name and the wire carries the id, so the two are named separately.
+const REACT_ID = "web-framework-react"
+
 // The marker's own words, written out rather than imported from the app — a
 // spec that agrees with a rewording has to be rewritten to say so.
 const SCOPE_ERROR = "This sub-agent must be set to project scope too"
+
+// What the Save button says when the write is refused for this reason, written
+// out for the reason above. It is the one ending of a save that is decided in
+// the browser, so it is also the one that names something already on screen.
+const SAVE_SCOPE_CONFLICT = "Scope conflict — fix marked rows"
 
 // EDITOR-08. A global sub-agent's front-matter is written to `~/.claude`, where
 // every project on the machine sees it; a project-scoped skill is installed
@@ -116,9 +128,32 @@ test.describe("a project skill on a global sub-agent", () => {
     expect(posted).toStrictEqual([])
   })
 
-  // Save is the local snapshot, not an export — it never reaches the worker and
-  // never reaches the CLI, so parking a half-finished configuration stays
-  // possible. Blocking it would leave nowhere to put work in progress.
+  // The control the assertion above is worth nothing without, and it has to be
+  // in THIS file: an empty request log is equally satisfied by a stub that
+  // records nothing at all, and a mint asserted in some other spec is not held
+  // against this one by anything. The README states the rule — a negative is
+  // only as good as the channel that would carry it — and CLI-861 is what it
+  // reads like when the channel is left unchecked: the stub behind both of
+  // these answered 201 to every body for as long as it existed.
+  test("mints once nothing is blocking it", async ({ configure, page }) => {
+    const posted = captureCreateConfig(page)
+    const skill = configure.skillIn(web, CATEGORY, REACT)
+
+    await skill.toggle()
+    await configure.roster.shareButton.click()
+
+    // The request log rather than the button, and deliberately the same surface
+    // its sibling above reads: what the button ends up SAYING is the
+    // clipboard's business — a context holding no clipboard permission stops at
+    // "Link made, copy refused" with the id already minted — and the claim here
+    // is only that this channel carries a value at all.
+    await expect.poll(() => posted.length).toBe(1)
+    const [body] = posted
+    expect(body).toBeDefined()
+    expect(body!.skills).toHaveProperty(REACT_ID)
+  })
+
+  // Blocking it would leave nowhere to put work in progress.
   test("leaves Save alone", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, REACT)
     await skill.toggle()
@@ -248,5 +283,104 @@ test.describe("a shared link holding the pair", () => {
     await expect(configure.roster.scopeError(REACT, DEVELOPER)).toBeHidden()
     await expect(configure.roster.installButton).toBeEnabled()
     await expect(configure.importNotice).not.toContainText("project scope")
+  })
+})
+
+// The third door, and the only one left open. Signed in, Save is a WRITE: the
+// same payload a share link carries is minted through `POST /configs` and what
+// is stored against the account is a pointer to it (SERVER-04). So the pair
+// reaches the store from a button EDITOR-08 deliberately does not disable, and
+// `createSharedConfig` refuses it before the request rather than after
+// (CLI-851) — which is the part a round trip would otherwise pay for.
+//
+// SAVE RATHER THAN SHARE, and that is the subject rather than a convenience:
+// Share is disabled in front of the guard, so reaching the refusal through it
+// means forcing a click on a dead button, while Save takes an ordinary one.
+//
+// These build their own `ConfigurePage` rather than taking the `configure`
+// fixture, the ordering constraint `e2e/README.md` states: the fixture
+// navigates during setup, so first paint — and the session read with it — would
+// happen before `stubSignedIn` installed anything.
+test.describe("a signed-in save of the pair", () => {
+  test("refuses it before the POST, and says so on the button", async ({
+    page,
+  }) => {
+    const posted = captureCreateConfig(page)
+    const { created } = stubSignedIn(page)
+    const configure = new ConfigurePage(page)
+    await configure.goto()
+
+    const skill = configure.skillIn(web, CATEGORY, REACT)
+    await skill.toggle()
+    await skill.flipScope()
+    await configure.roster.saveButton.click()
+
+    // The words first, because they are what says the DECISION was reached:
+    // this button is silent on a save that worked, so an empty request log with
+    // nothing on the button is equally a click that never landed.
+    await expect(
+      configure.roster.saveNarrating(SAVE_SCOPE_CONFLICT)
+    ).toBeVisible()
+
+    // And the request log, because the words alone cannot say WHERE the refusal
+    // happened. A `createSharedConfig` that posted first and mapped the worker's
+    // 400 back to this same ending would put exactly these words on this button
+    // — and a refusal costing a round trip is the defect the pre-POST guard was
+    // built to remove, not a friendlier spelling of it. Only the log tells the
+    // two apart.
+    expect(posted).toStrictEqual([])
+
+    // EDITOR-66, AND THE SECOND ROUND TRIP IS A SEPARATE CLAIM. A signed-in save
+    // is TWO writes — mint the payload, then store the pointer — and the log
+    // above only holds the first. `roster-panel.tsx` promises beside its
+    // `saving` state that a refused mint leaves the account untouched rather
+    // than saving a name pointing at nothing, and until this line nothing in the
+    // repository held it: an early return dropped from that handler files a row
+    // whose `configId` is the empty string, which restores to a dead pointer the
+    // next time anyone opens it, and every spec in this project stayed green.
+    //
+    // The stack log rather than the screen, for the reason its sibling above is
+    // the request log: this button is silent on a save that worked, so a stored
+    // row and no stored row look identical here. And `stubSignedIn` is what
+    // makes the negative worth anything — the same stub answers 201 to the POST
+    // it records, so an empty log is a channel that carried nothing rather than
+    // one that was never open, which the permitted case below proves by filling
+    // it through this very stub.
+    expect(created).toStrictEqual([])
+  })
+
+  // THE PERMITTED CASE, and the refusal above is worth nothing without it: a
+  // `createSharedConfig` that refused every payload leaves the same empty log
+  // and the same disabled-nothing on screen, so the negative cannot tell a
+  // guard scoped to this pair from one that has swallowed the whole route.
+  // It has to be in THIS file — a mint asserted in some other spec is not held
+  // against this one by anything.
+  //
+  // One action apart from its sibling, deliberately: the same skill, the same
+  // button, and no `flipScope`.
+  test("mints and stores an ordinary configuration", async ({ page }) => {
+    const posted = captureCreateConfig(page)
+    const { created } = stubSignedIn(page)
+    const configure = new ConfigurePage(page)
+    await configure.goto()
+
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.roster.saveButton.click()
+
+    // Both halves of the round trip, and the pointer is polled rather than the
+    // payload because it is the second of the two: a stack row exists only once
+    // the mint it names came back, so waiting on it settles both.
+    await expect.poll(() => created).toHaveLength(1)
+    expect(posted).toHaveLength(1)
+
+    const [body] = posted
+    expect(body).toBeDefined()
+    expect(body!.skills).toHaveProperty(REACT_ID)
+
+    // What is stored is the id the POST answered with rather than anything the
+    // page derived, which is the whole design of a saved configuration.
+    const [stored] = created
+    expect(stored).toBeDefined()
+    expect(stored!.configId).toBe(STORED_ID)
   })
 })

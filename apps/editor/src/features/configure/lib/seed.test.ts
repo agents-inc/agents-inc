@@ -8,6 +8,7 @@ import {
   SEED_VERSION,
   STACKS,
   SUB_AGENTS_BY_ID,
+  installableSeedPayloadSchema,
   seedPayloadSchema,
 } from "@workspace/matrix"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -198,6 +199,27 @@ describe("toSeedPayload", () => {
     expect(toSeedPayload(projectSkill).skills[SKILL]!.assignments).toEqual({
       [AGENT]: "preloaded",
     })
+  })
+
+  // Which makes the mint deliberately LENIENT, and this says so out loud rather
+  // than leaving it as a property nobody asserts. The obvious repair for
+  // CLI-851 — mint with `installableSeedPayloadSchema` — throws exactly here,
+  // and would take local Save and the preview dialog's memo with it: the two
+  // doors EDITOR-08 needs this payload to leave by unharmed. The write contract
+  // is therefore enforced where a payload becomes a WRITE, in
+  // `createSharedConfig`, and this is the test that reddens if it moves back.
+  it("mints a payload the write contract would refuse", () => {
+    const projectSkill = {
+      ...config(),
+      skills: {
+        [SKILL]: { ...config().skills[SKILL]!, scope: "project" as const },
+      },
+    }
+
+    const payload = toSeedPayload(projectSkill)
+
+    expect(seedPayloadSchema.safeParse(payload).success).toBe(true)
+    expect(installableSeedPayloadSchema.safeParse(payload).success).toBe(false)
   })
 
   it("carries it once the sub-agent is pinned to the project too", () => {

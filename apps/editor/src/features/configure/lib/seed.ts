@@ -34,8 +34,16 @@ import type { ConfigSelection } from "./derive"
 // like any other row, so stripping it here would mint a payload describing a
 // different configuration from the one on screen — the same silent degradation
 // one door along. Share and Install are blocked while one stands instead
-// (`summarize().unscopedAgentCount`), which leaves Save as the only door this
-// payload takes: a local snapshot, which has to round-trip exactly.
+// (`summarize().unscopedAgentCount`), which leaves Save as the door this
+// payload takes: signed out that is a local snapshot, and it has to round-trip
+// exactly.
+//
+// Which is why the mint parses with the LENIENT schema and not the installable
+// one. The stricter contract applies where a payload becomes a WRITE — in
+// `createSharedConfig`, which every POST crosses, including the signed-in Save
+// that mints an id and the local slot a first sign-in adopts. Tightening the
+// parse here instead would throw on exactly the configuration EDITOR-08 needs
+// to survive being saved (CLI-851).
 const travelling = (entry: SkillEntry, isOn: (agentId: string) => boolean) =>
   Object.entries(entry.assignments).filter(
     ([agentId, assignment]) => assignment.enabled && isOn(agentId)

@@ -65,6 +65,18 @@ export class RosterPanel {
     return this.page.getByRole("menuitemradio", { name: value, exact: true })
   }
 
+  // The Save button wearing the words a refusal gave it. `saveButton` locates
+  // by the resting word, so it stops matching the instant the button narrates
+  // — and narrating is the only feedback a save has, since a refused one puts
+  // no cell in the grid to read.
+  //
+  // Parameterised rather than one locator per ending, the shape `skillRow` and
+  // `agentNamed` already take: the endings are the roster panel's own table and
+  // a copy of it here would be a second statement of what the button says.
+  saveNarrating(label: string): Locator {
+    return this.root.getByRole("button", { name: label, exact: true })
+  }
+
   // The sticky band, named by its whole text: "web 4 of 7".
   domainBand(domainId: string): Locator {
     return this.root.getByRole("button", {

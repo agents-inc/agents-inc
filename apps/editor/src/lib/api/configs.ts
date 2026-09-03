@@ -1,4 +1,8 @@
-import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix"
+import {
+  installableSeedPayloadSchema,
+  seedPayloadSchema,
+  type SeedPayload,
+} from "@workspace/matrix"
 import { z } from "zod"
 
 import { reportIssue } from "@/lib/observability/report"
@@ -13,8 +17,8 @@ const createdSchema = z.object({ id: z.string().min(1) })
 /**
  * Why a share did not produce a link, and nothing about how to say so.
  *
- * Three members rather than a message, because these are three different
- * situations for the person at the keyboard and only one of them names an
+ * Four members rather than a message, because these are four different
+ * situations for the person at the keyboard and only two of them name an
  * action. The words belong to whatever is doing the telling — a button has
  * room for three of them and a dialog has room for a sentence — so composing
  * one here would only be a string nothing renders, which is what was here
@@ -26,8 +30,12 @@ const createdSchema = z.object({ id: z.string().min(1) })
  * - `refused` — the worker answered and would not take it: an outage, a quota,
  *   or a bug here. Nothing to do but try later.
  * - `unreachable` — the request never got an answer at all.
+ * - `unwritable` — the configuration itself cannot be installed by anyone, so
+ *   there is no point giving it an address. The one refusal decided HERE rather
+ *   than read off a response, and the only one whose fix is on screen already.
  */
-export type ShareRefusal = "out-of-date" | "refused" | "unreachable"
+export type ShareRefusal =
+  "out-of-date" | "refused" | "unreachable" | "unwritable"
 
 export type ShareResult =
   { ok: true; id: string } | { ok: false; refusal: ShareRefusal }
@@ -40,9 +48,66 @@ const OUT_OF_DATE = 409
 export type SharedConfigResult =
   { ok: true; payload: SeedPayload } | { ok: false; error: string }
 
+/**
+ * What the WRITE contract objects to in this payload, in its own words.
+ *
+ * The asymmetry it reads is deliberate and documented on the contract itself:
+ * `POST /configs` is gated by `installableSeedPayloadSchema`, while everything
+ * that mints a payload here uses the lenient base schema on purpose — a
+ * configuration carrying a pair nobody can install has to survive local Save
+ * and the preview dialog untouched, because opening one and repairing it in a
+ * click is the whole of EDITOR-08.
+ *
+ * So the stricter half applies at the one moment a payload becomes a WRITE,
+ * which is this module and not the mint. Every POST the editor makes crosses
+ * this function — Share, the install dialog, a signed-in Save, and the local
+ * slot a first sign-in adopts — and gating here is what stops a fifth one
+ * arriving unprotected the way the last three did (CLI-851).
+ *
+ * Asked of the SCHEMA rather than of `unwritableSeedAssignments`, and that is
+ * the point rather than a shortcut: this is the same object the worker gates
+ * on, so a rule added to the write contract tomorrow is enforced here without
+ * anyone remembering to come back. Re-implementing today's one rule is how the
+ * editor came to be a write client that could not see what the edge refuses.
+ *
+ * PATH FIRST, because the message alone names half the pair. The refinement in
+ * `@workspace/matrix`'s seed contract raises "a project-scoped skill has nowhere
+ * to be written on '<agent>', which rests at global scope" at the path
+ * `skills.<id>.assignments.<agent>` — so the SUB-AGENT is in the sentence and the
+ * SKILL is only in the path. Mapping the messages alone turns three unwritable
+ * skills on one sub-agent into three byte-identical strings naming no skill, and
+ * a report nobody can act on is the thing this gate exists to replace. The CLI
+ * renders the same issues the same way, in `sentenceOf` in `publish-seed.ts`.
+ */
+const writeContractProblems = (payload: SeedPayload): string[] => {
+  const checked = installableSeedPayloadSchema.safeParse(payload)
+  if (checked.success) return []
+
+  return checked.error.issues.map(sentenceOf)
+}
+
+/** One issue, path first — see the note above on which half of the pair each carries. */
+const sentenceOf = ({ path, message }: z.core.$ZodIssue): string => {
+  const named = path.join(".")
+  return named === "" ? message : `${named}: ${message}`
+}
+
 export const createSharedConfig = async (
   payload: SeedPayload
 ): Promise<ShareResult> => {
+  // Before the request rather than after it. A refusal that costs a round trip
+  // is the defect this closes, not a friendlier spelling of it: the worker
+  // answers 400, which this client cannot tell from any other bad body, and the
+  // app narrates that as "Sharing failed" — a sentence naming neither the
+  // problem nor the sub-agent one click would fix it on.
+  const problems = writeContractProblems(payload)
+  if (problems.length > 0) {
+    reportIssue("Share POST refused a configuration nobody could install", {
+      problems,
+    })
+    return { ok: false, refusal: "unwritable" }
+  }
+
   try {
     const response = await api.configs.$post({ json: payload })
 
@@ -56,9 +121,12 @@ export const createSharedConfig = async (
     }
 
     if (!response.ok) {
-      // Every one of these is a bug or an outage — the payload was built from
-      // the contract's own schema, so the worker should never refuse it. 413
-      // in particular means a real config outgrew the size cap.
+      // Every one of these is a bug or an outage — the payload passed the same
+      // schema the worker gates this route with, so the worker should never
+      // refuse it. That sentence used to name the BASE schema and was the
+      // reason nobody looked: a 400 was read as impossible while it was the
+      // ordinary answer to an unwritable pair. 413 in particular means a real
+      // config outgrew the size cap.
       reportIssue("Share POST rejected", { status: response.status })
       return { ok: false, refusal: "refused" }
     }

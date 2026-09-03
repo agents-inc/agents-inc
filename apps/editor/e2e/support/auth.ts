@@ -4,6 +4,7 @@ import {
   STACKS_URL,
   authHandlers,
   composeRefusedHandlerFor,
+  composeTooLongHandler,
   composeUnreachableHandler,
   savedStack,
   signInUnreachableHandler,
@@ -198,6 +199,16 @@ export const stubStackRefusal = (page: Page, status: number) =>
 /** The composer's route refusing, named by the status it refuses with. */
 export const stubComposeRefusal = (page: Page, status: number) =>
   stubWith(page, [composeRefusedHandlerFor(status)])
+
+/**
+ * The one refusal on this route named by its BODY rather than by its status.
+ *
+ * `/compose` spends one 400 on two guards — an empty sentence, and one past its
+ * cap — so `stubComposeRefusal(page, 400)` cannot say which of them refused.
+ * This one can, and it is the only stub here that has to.
+ */
+export const stubComposeTooLong = (page: Page) =>
+  stubWith(page, [composeTooLongHandler])
 
 /**
  * The request never getting an answer at all, which is a different ending from

@@ -18,11 +18,10 @@ import {
   configHandlers,
   configRefusedHandlerFor,
   configUnreachableHandler,
-  mintedConfig,
   missingConfigHandlerFor,
   storedConfigHandlerFor,
 } from "@workspace/api-mocks"
-import { http } from "msw"
+import { getResponse, http } from "msw"
 
 import { stubWith } from "./stub"
 
@@ -69,6 +68,17 @@ export const stubCreateConfig = (page: Page) => stubWith(page, configHandlers)
 // id the worker answers with. Appended in order: minting happens once per
 // install-dialog open, so a spec comparing two configurations reads the
 // entries it added around each one.
+//
+// A SPY AND NOTHING ELSE, which is what it was not for as long as it existed
+// (CLI-861). It answered `mintedConfig()` unconditionally while sitting AHEAD
+// of the validating handlers it re-passes, so the third `POST /configs` double
+// in this repository was still minting 201 for a body the route refuses — and
+// since it is the resting answer every spec that captures a POST stands in
+// front of (`grep -rn captureCreateConfig e2e/specs`), its permissiveness was
+// the one that counted. A double looser than the route it stands in for cannot
+// fail, and one that cannot fail is not a test of whatever posts to it: the
+// editor's pre-POST guard (CLI-851) could have been deleted in full with every
+// spec built on this stub still green.
 export const captureCreateConfig = (page: Page) => {
   const posted: Record<string, unknown>[] = []
 
@@ -76,15 +86,32 @@ export const captureCreateConfig = (page: Page) => {
     http.post<PathParams, Record<string, unknown>>(
       CONFIGS_URL,
       async ({ request }) => {
+        // A body can be consumed once, and both steps below want it — so one
+        // of them reads a clone. It is the CLONE that gets forwarded rather
+        // than recorded, because `request.json()` is the half msw has typed:
+        // reading the clone instead would hand `posted` an `any`.
+        const forwarded = request.clone()
+
         // Kept as it arrived rather than parsed with `seedPayloadSchema`: the
         // schema strips keys it does not know, and what these specs check is
         // precisely that `model` and `effort` are *absent* from a skill.
         // Parsing would make that assertion pass for free.
+        //
+        // Recorded whatever the answer turns out to be. This log says what was
+        // SENT, so a body the store refuses still lands in it — which is the
+        // whole of what `expect(posted).toStrictEqual([])` claims in
+        // scope-reach.spec.ts. Recording only what was accepted would leave
+        // that assertion satisfied by an app posting the very payload the guard
+        // in front of it exists to stop.
         posted.push(await request.json())
 
         // The worker's own answer rather than one written out here, so a spy
-        // over the request says nothing about the response.
-        return mintedConfig()
+        // over the request says nothing about the response — and now that means
+        // the VALIDATION too, not just the status. `configHandlers`' own POST
+        // asks `installableSeedPayloadSchema` exactly as the route does, so
+        // resolving through it leaves this file restating no rule of its own,
+        // which is what the note at the top of it promises.
+        return getResponse(configHandlers, forwarded)
       }
     ),
     ...configHandlers,
@@ -92,6 +119,34 @@ export const captureCreateConfig = (page: Page) => {
 
   return posted
 }
+
+/**
+ * What the store answers a body handed straight to it, with no app in between.
+ *
+ * There is no route through the EDITOR to a body the write contract refuses:
+ * `createSharedConfig` asks `installableSeedPayloadSchema` before the POST
+ * (CLI-851), so nothing the app can be driven into sends one, and Share and
+ * Install are disabled in front of it besides. A spec whose subject is what the
+ * DOUBLE says therefore has to be the sender.
+ *
+ * Sent from the PAGE rather than from Node, because the page is where the
+ * interception is: `@msw/playwright` routes the browser's requests back through
+ * the handlers, and a `fetch` issued in Node would reach nothing at all.
+ */
+export const postToConfigStore = (page: Page, seed: unknown) =>
+  page.evaluate(
+    async ({ url, body }) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      const answered: unknown = await response.json()
+      return { status: response.status, body: answered }
+    },
+    { url: CONFIGS_URL, body: seed }
+  )
 
 /**
  * The store holding one named id.

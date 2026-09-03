@@ -58,6 +58,10 @@ export const COMMAND_NOTES = {
   "out-of-date": "out of date — reload the page for an id",
   refused: "id unavailable — this command starts a fresh wizard",
   unreachable: "offline — this command starts a fresh wizard",
+  // The other ending with a remedy, and the only one whose remedy is behind
+  // this dialog rather than in front of it. Re-opening mints again and is
+  // refused again, so the sentence has to send the reader back to the rows.
+  unwritable: "a sub-agent needs project scope — close and fix the marked rows",
 } as const satisfies Record<InstallNote, string>
 
 // What was minted, and for which configuration. Storing the key alongside the

@@ -135,6 +135,17 @@ as a check that the page is navigable. Building these tests is what surfaced
 the missing accessible names now on the cells, badges and options panel: the
 skill cell's name used to be its entire text content run together.
 
+**`main` draws two possible `role="alert"` nodes, so one of them is located by
+slot.** `configure-screen.tsx` renders the catalogue notice and `stack-grid.tsx`
+renders the adoption notice, both inside `main` and both alerts — so
+`page.locator("main").getByRole("alert")` claims whichever is there and is
+ambiguous once both are. `ConfigurePage.importNotice` keeps the role locator and
+`ConfigurePage.adoptionNotice` uses `[data-slot="adoption-notice"]` instead. This
+is the second exception to the rule above, and it is the same shape as the
+stacked-dialog one below: the role is right and no longer UNIQUE, which is a
+different problem from the role being wrong. Neither element loses its `alert` —
+the locator changes, the accessible semantics do not.
+
 **Assert on the accessibility tree.** Selection is `aria-pressed`, a badge's
 value is in its accessible name, a collapsed roster section is
 `aria-expanded`. None of these assertions can pass while the component is
@@ -153,8 +164,10 @@ behaviour is known, the spec is written for the behaviour and marked
 then fails the run if it ever PASSES, so the marker cannot outlive the defect.
 An unconditional `.skip` runs nowhere and reads exactly like coverage; the
 ruling behind that is `packages/cli/.ai-docs/agent-findings/`'s
-`2026-08-21-a-skipped-spec-is-indistinguishable-from-a-passing-one.md`. The live
-example is the marketplace test in `specs/saved-stack-apply.spec.ts`.
+`2026-08-21-a-skipped-spec-is-indistinguishable-from-a-passing-one.md`. No spec
+in this suite carries the marker today — `grep -rn 'test.fail(' specs/` from
+`apps/editor/e2e` is the check, and it is empty — so the rule is written from
+the ruling rather than from an example on the page.
 
 **Only the topmost modal is in the accessibility tree.** When one dialog opens
 over another, the dialog library marks the one underneath `aria-hidden`, so

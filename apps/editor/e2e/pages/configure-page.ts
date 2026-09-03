@@ -110,6 +110,11 @@ export class ConfigurePage {
   // to `main` because a dialog's own status line is an alert too, and a parked
   // import shows both at once.
   readonly importNotice: Locator
+  // What the grid says when a first sign-in could not carry the local snapshot
+  // into the account. Located by SLOT rather than by role, unlike everything
+  // else here: it is an alert inside `main` and so is `importNotice`, so a
+  // role-based locator would match whichever the page happened to be drawing.
+  readonly adoptionNotice: Locator
 
   readonly roster: RosterPanel
   // The docked natural-language composer at the foot of the same column the
@@ -161,6 +166,7 @@ export class ConfigurePage {
     this.emptyState = page.getByText("No skills match this filter.")
     this.marketplaceButton = page.getByRole("button", { name: "Marketplace" })
     this.importNotice = page.locator("main").getByRole("alert")
+    this.adoptionNotice = page.locator('[data-slot="adoption-notice"]')
 
     this.roster = new RosterPanel(page)
     this.composer = new Composer(page)
