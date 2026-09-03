@@ -1,6 +1,9 @@
-# Lint and the cross-workspace checks, scoped by side — the whole CLI side if
-# anything in the CLI changed, the whole web side if anything in the web
-# changed.
+# What a push is gated on, scoped by side — the whole CLI side if anything in
+# the CLI changed, the whole web side if anything in the web changed. Cheapest
+# gate first: deps:check, then lint for each side that moved, then that side's
+# suites. A web lint error should surface in seconds rather than behind six
+# minutes of CLI specs, which is why the two lint lines sit above both suite
+# blocks instead of each side being one contiguous block.
 #
 # This tier is coarse on purpose. It must not be able to miss a dependent, and
 # scoping by side cannot miss one: it never tries to work out what the
@@ -8,23 +11,74 @@
 # changed-package filter instead — the note there records why, and which miss
 # taught it.
 #
-# THE SUITES LEFT THIS HOOK on 2026-08-23, on the owner's call that they are run
-# before a push rather than by it. What made the change necessary rather than
-# merely convenient is that this hook could not run them correctly: it asked for
-# `lint test test:e2e` in ONE turbo invocation, turbo runs those concurrently
-# because they do not depend on each other, and `test` and `test:e2e` each carry
-# an npm pre-hook that runs `bun run build`. Two tsup builds with `clean: true`
-# then raced on one dist/ — one enumerated the directory, the other unlinked a
-# chunk, and the first died with `ENOENT ... unlink dist/chunk-*.js` before a
-# single spec ran. The push aborted with `run failed: command exited (1)` and
-# the cause four hundred lines up in interleaved output, which is why it read as
-# no error message at all.
+# THE SUITES RUN ONE TURBO INVOCATION AT A TIME, and that is the whole of what
+# this hook had to get right. They left it on 2026-08-23 because it asked for
+# `lint test test:e2e` in ONE invocation: turbo runs those concurrently since
+# they do not depend on each other, and `test` and `test:e2e` each carried an
+# npm pre-hook running `bun run build`, so two tsup builds with `clean: true`
+# raced on one dist/ and the push died on `ENOENT ... unlink dist/chunk-*.js`
+# before a spec ran. Concurrency also put two writers on each suite's FIXED
+# os.tmpdir() fixture path, and `test` deleted `test:e2e`'s source tree mid-run
+# with every spec on both sides green.
 #
-# So a push is now gated on lint and deps:check only. Running the suites is the
-# pusher's job, and `bun run test` / `bun run test:e2e` from the root do it —
-# separately, which is the whole point. Note that running those two together in
-# one turbo invocation reproduces the same race; the double-build is a property
-# of the two pre-hooks, not of this hook.
+# Both of those causes are dead, and neither is why the invocations are still
+# separate. The pre-hooks are gone — packages/cli/package.json's `//test` note
+# records the removal, and 10 runs of the concurrent form on 2026-09-02 gave
+# exactly 1 tsup invocation each and zero unlink errors. The fixture rule is
+# now held against a walk of the tree by
+# packages/cli/src/cli/lib/__tests__/shared-fixture-writers.test.ts, and
+# helpers/shared-source.ts beside it states the rule in full.
+#
+# What is still live is a THIRD cause the same measurement found:
+# src/cli/components/wizard/summary-panel.test.tsx fails about 1 run in 10
+# under CPU contention. Concurrent went 9/10 green where the unit suite alone
+# went 6/6. The CAUSE IS OPEN — CLI-865 — and the shared-singleton diagnosis
+# this header used to assert was falsified on 2026-09-02: the fixture builder
+# it rested on never reads the matrix, so the frame it called diagnostic is
+# the frame the green runs render too.
+# And concurrency buys 4%: 376s against 392s, because the e2e suite is roughly
+# ten times the unit suite and dominates either way. So the concurrent form
+# trades 16 seconds for a 1-in-10 spurious red, which is the outcome that
+# emptied this hook in the first place. Sequential is a deliberate choice
+# against that measurement, not an accident of how the lines are written — do
+# not "tidy" the pairs below back into one turbo run.
+#
+# SEPARATE INVOCATIONS is the mechanism, chosen because the two alternatives
+# both reach further than this file. `--concurrency=1` would serialise the web
+# side's eight workspaces as well, which CI deliberately runs concurrently in
+# one turbo run. A `dependsOn: ["test"]` edge on test:e2e would change what
+# `bun run test:e2e` MEANS everywhere — in CI, and for anyone running the e2e
+# suite on its own — to make one hook behave. Two shell statements change
+# nothing outside this hook, and turbo replays the shared `build` from cache on
+# the second of each pair rather than rebuilding it.
+#
+# WHAT IT COSTS, so that anyone reaching for --no-verify can see the bill.
+# Measured by running this file on 2026-09-02, 20 cores, all four green:
+#
+#   docs-only      0s   no flag set, nothing runs at all
+#   CLI-only    6m31s   lint 21s cold / 0.04s warm, test 32s, test:e2e 5m59s
+#   web-only    2m58s   lint 0.04s warm, test 9s, test:e2e 2m49s
+#   both        9m42s   the two above, one after the other
+#
+# The e2e tasks are `cache: false` in turbo.json, so they are paid in full by
+# every push that wakes their side; only lint and `test` replay, and `test`
+# rarely does — the same change that wakes a side is usually inside the hash
+# that its `test` task reads.
+#
+# 9m42s is where a both-sides push lands on a developer machine, and CI's
+# 12m17s for the editor's Playwright suite alone is not a second opinion about
+# the same number. The runner pins `workers: 2` in
+# apps/editor/playwright.config.ts while a local run takes half the cores, so
+# that suite finishes in 2.8 minutes here. Neither figure predicts the other;
+# re-measure on the machine you are asking about.
+#
+# The web side needs a browser for BOTH of its halves, not just the Playwright
+# one: packages/ui renders its Storybook stories under vitest browser mode,
+# which is why CI installs chromium before `test` and not only before
+# `test:e2e`. This hook does not install it — a push hook that reaches the
+# network or asks for sudo is worse than one that fails — so on a machine that
+# has never run the web suites both web lines die inside vitest or playwright
+# asking for it. Run `bunx playwright install --with-deps chromium` once.
 
 # What is about to be pushed rather than what is staged. @{push} is where this
 # branch's commits are going, so @{push}..HEAD is everything the remote does not
@@ -96,8 +150,7 @@ fi
 # Every grep above sits inside an `if` on purpose: husky runs this with `sh -e`,
 # so a bare grep that matched nothing would fail the push on its own.
 #
-# A push touching only docs or other root files sets neither flag and lints
-# neither side.
+# A push touching only docs or other root files sets no flag and runs nothing.
 if [ "$run_deps" = yes ]; then
 	bun run deps:check
 fi
@@ -108,4 +161,27 @@ fi
 
 if [ "$run_web" = yes ]; then
 	bunx turbo run lint --filter='!agents-inc'
+fi
+
+# One invocation each, in this order, for the reasons in the header. `sh -e`
+# means the unit suite failing stops the e2e run, which is the fast half
+# reporting first.
+if [ "$run_cli" = yes ]; then
+	bunx turbo run test --filter=agents-inc
+	bunx turbo run test:e2e --filter=agents-inc
+fi
+
+# `--filter='!agents-inc'` reaches everything CI's check-web job reaches:
+# `test` in api, api-mocks, compile, matrix, ui, editor, server and www, and
+# `test:e2e` in the editor alone, which is its Playwright suite. Re-derive
+# rather than trusting this sentence:
+#
+#   bunx turbo run test test:e2e --filter='!agents-inc' --dry=json
+#
+# apps/editor's `test:visual` is NOT here and is not a turbo task at all: CI
+# runs it in its own visual-editor job against a production build, and it
+# compares to accepted baselines rather than answering pass or fail on its own.
+if [ "$run_web" = yes ]; then
+	bunx turbo run test --filter='!agents-inc'
+	bunx turbo run test:e2e --filter='!agents-inc'
 fi
