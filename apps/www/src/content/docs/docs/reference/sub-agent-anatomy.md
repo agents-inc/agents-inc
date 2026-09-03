@@ -16,7 +16,7 @@ This is the top of `~/.claude/agents/web-developer.md`, verbatim, compiled at v0
 ---
 name: web-developer
 description: Implements frontend features from detailed specs - UI components, TypeScript, styling, client state - surgical execution following existing patterns - invoke AFTER the pm creates the spec
-tools: Read, Write, Edit, Grep, Glob, Bash
+tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: opus
 permissionMode: default
 skills:
@@ -61,7 +61,7 @@ The frontmatter is the entire contract with Claude Code: what the sub-agent is c
 | ----------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | `name`            | the agent's key at compile time — it matches the filename stem                            | the address the `Task` tool dispatches to                        |
 | `description`     | `description:` in the agent's `metadata.yaml`, copied verbatim                            | shown to the dispatching model; it's how an agent gets picked    |
-| `tools`           | the `tools:` list in `metadata.yaml`, joined with commas                                  | the allowlist the sub-agent spawns with                          |
+| `tools`           | the `tools:` list in `metadata.yaml`, plus `Skill`, which the compile step always appends | the allowlist the sub-agent spawns with                          |
 | `disallowedTools` | nothing supplies it — `metadata.yaml` accepts the key and the compile step drops it       | never reaches a compiled file                                    |
 | `model`           | `model:` for the agent in `config.ts`, falling back to `metadata.yaml`, then to `inherit` | which model runs the sub-agent                                   |
 | `effort`          | `effort:` in `config.ts`, falling back to `metadata.yaml` — omitted when neither sets it  | reasoning effort for the run                                     |
@@ -144,7 +144,7 @@ The two load modes look nothing alike once emitted.
 
 An agent with a long dynamic list therefore carries hundreds of lines it wouldn't carry if the same skills were preloaded. Which mode a skill uses is a `preloaded` flag on the skill's own entry in the `stack` map in `config.ts`, not on the agent's entry in `agents` — see [Config reference](/docs/configuration/config-reference).
 
-**Dynamic skills don't currently load.** The body instructs the model to invoke the `Skill` tool, and the `tools:` line is a plain join over `metadata.yaml` with no branch that adds `Skill` when dynamic skills are present — so no compiled agent grants the tool its own prompt tells it to use. Preloaded skills are unaffected, because `skills:` is Claude Code's own mechanism and needs no tool. Until this is fixed, preloading is the load mode that works, and a skill you want an agent to actually have should be marked preloaded.
+**`tools:` is an allowlist, and `Skill` is always on it.** A sub-agent that names `tools:` at all gets only what it names — omitting the key inherits everything instead — so enumerating is what would otherwise strip the `Skill` tool the body's own instructions depend on. The compile step appends it unconditionally, including for the read-only researchers, since loading a skill grants no write access. Declaring `skills:` does not grant the tool: that key preloads content, and the tool is what invokes a skill at runtime.
 
 ## What a recompile does to your edits
 

@@ -122,6 +122,42 @@ export function sanitizeCompiledAgentData(
   }
 }
 
+/**
+ * The tool that loads a skill.
+ *
+ * A sub-agent's `tools:` frontmatter is an ALLOWLIST: an agent that declares one
+ * gets exactly what it names, where an agent that omits the key inherits every
+ * tool the session has. Every agent compiled here declares one, and no
+ * `metadata.yaml` names this — so every agent this product had ever written was
+ * unable to invoke a skill, while being instructed in the strongest terms the
+ * template can manage to do exactly that.
+ *
+ * The `skills:` key does not close that gap, which is the non-obvious half and
+ * the reason the defect survived: it preloads skill content into the agent's
+ * startup context and grants no tool, so a compiled agent can list skills, carry
+ * the activation protocol, and still have no way to load one.
+ *
+ * Granted to every agent rather than only to those with dynamic skills. Skills
+ * are this product's atom: an agent has to be able to reach one a user adds
+ * after it was compiled, and one its own playbook names in prose. It is a
+ * read-only capability — it loads instructions and grants no write access — so
+ * the deliberately read-only researchers take it on the same terms.
+ */
+const SKILL_TOOL = "Skill"
+
+/**
+ * The same definition with {@link SKILL_TOOL} among its tools exactly once.
+ *
+ * Idempotent and order-stable: a definition already naming it is returned
+ * unchanged, by identity, and everything else keeps its declared order with the
+ * grant appended. Both halves are about the next compile — a second entry, or a
+ * reordered list, would diff the frontmatter of every agent on disk.
+ */
+function withSkillTool(agent: AgentConfig): AgentConfig {
+  if (agent.tools.includes(SKILL_TOOL)) return agent
+  return { ...agent, tools: [...agent.tools, SKILL_TOOL] }
+}
+
 /** The five markdown partials a sub-agent is assembled from, however they were fetched. */
 export type AgentFiles = Pick<
   CompiledAgentData,
@@ -134,6 +170,11 @@ export type AgentFiles = Pick<
 
 /**
  * The template context for one sub-agent.
+ *
+ * The single assembly point for both front doors — the CLI's write path and the
+ * editor's output preview — which is why {@link withSkillTool} is applied here
+ * rather than in the eighteen `metadata.yaml` files: a user-authored agent gets
+ * the grant on the same terms as a shipped one.
  *
  * The preloaded/dynamic split PRESERVES the order `agent.skills` arrives in, and
  * that order is `config.ts`'s stack key order — so the emitted rows of the
@@ -156,7 +197,7 @@ export function buildAgentTemplateContext(
   )
 
   return {
-    agent,
+    agent: withSkillTool(agent),
     ...files,
     skills,
     preloadedSkills,

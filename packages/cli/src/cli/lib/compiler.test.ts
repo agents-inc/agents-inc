@@ -660,7 +660,10 @@ describe("compiler", () => {
 
       const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
-      expect(result.agent).toBe(agent);
+      // Not `toBe`: the context's definition is DERIVED from the agent's now,
+      // because every compiled sub-agent is granted the Skill tool its
+      // frontmatter allowlist would otherwise withhold.
+      expect(result.agent).toStrictEqual({ ...agent, tools: ["Read", "Write", "Skill"] });
       expect(result.identity).toBe("Test identity content");
       expect(result.playbook).toBe("Test playbook content");
       expect(result.output).toBe("Test output content");
