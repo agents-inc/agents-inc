@@ -9,27 +9,30 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 
 ## Quick start
 
-| Message or symptom                                                         | Likely cause                                            | Fix                                                                        |
-| -------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                               | [Recreate it](#a-config-that-will-not-parse) — there's no repair           |
-| `ConfigLoadError: Config at '…' could not be loaded`                       | the same fault, from `list`, which prints no remedy     | [Recreate it](#a-config-that-will-not-parse)                               |
-| `Repository not found:` / `Network error fetching:`                        | the marketplace can't be reached                        | [Check the ref, the token, the proxy](#a-marketplace-that-will-not-load)   |
-| `Could not reach … — using the cached copy, which may be out of date.`     | offline, and a cached copy was used                     | Nothing — the run succeeded                                                |
-| `0/1 skills found` / `- <id> (not found)`                                  | the catalogue doesn't carry that id                     | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
-| `Skill '<id>' is configured but was not found`                             | the same, at compile time — and `compile` still exits 0 | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
-| `No configuration found for id '…'`                                        | a shared id the store doesn't have                      | [Check the id](#a-shared-id-that-will-not-install)                         |
-| `Configuration '…' is not in a format this version of the CLI can install` | the id predates or postdates this CLI                   | [Re-share it](#a-shared-id-that-will-not-install)                          |
-| `An installation already exists at …`                                      | `init --from` is greenfield-only                        | [Uninstall first](#a-shared-id-that-will-not-install)                      |
-| A sub-agent doesn't show up in Claude Code                                 | it was never compiled, or compiled at the other scope   | [Compile it](#sub-agents-that-never-appeared-in-claude-code)               |
-| Your edits to `.claude/agents/*.md` keep vanishing                         | compiled agents are build outputs                       | [Edit the partials](#hand-edits-to-a-compiled-sub-agent-keep-disappearing) |
-| `Global skills cannot be changed from project scope`                       | a global install is read-only from inside a project     | [Three ways out](#a-global-skill-you-cannot-remove-from-inside-a-project)  |
-| `Failed to install N plugin skill(s).`                                     | the plugin install didn't happen                        | [Refresh or switch to eject](#a-plugin-install-that-failed)                |
-| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                           | [Set it to Local](#a-plugin-install-that-failed)                           |
-| `No skills found. Run 'npx agents-inc init' …`                             | `compile` found nothing installed under the config      | [Reinstall the skills](#compile-says-there-are-no-skills)                  |
-| `Raw mode is not supported on the current process.stdin`                   | a wizard command with no terminal                       | [Use the headless flags](#a-wizard-command-in-a-pipeline)                  |
-| `✓ Eject complete!` and nothing was copied                                 | the destination already existed                         | [Pass `--force`](#an-eject-that-reports-success-and-copies-nothing)        |
-| The command prints one line and hangs                                      | the terminal is under 80×20                             | [Resize it](#a-command-that-hangs-instead-of-starting)                     |
-| `Completed with N failure(s) — the changes above landed, these did not:`   | the run finished and part of it didn't happen           | [Do what the indented line says](#a-command-that-finished-with-failures)   |
+| Message or symptom                                                         | Likely cause                                                  | Fix                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                                     | [Recreate it](#a-config-that-will-not-parse) — there's no repair           |
+| `ConfigLoadError: Config at '…' could not be loaded`                       | the same fault, from `list`, which prints no remedy           | [Recreate it](#a-config-that-will-not-parse)                               |
+| `Repository not found:` / `Network error fetching:`                        | the marketplace can't be reached                              | [Check the ref, the token, the proxy](#a-marketplace-that-will-not-load)   |
+| `Could not reach … — using the cached copy, which may be out of date.`     | offline, and a cached copy was used                           | Nothing — the run succeeded                                                |
+| `0/1 skills found` / `- <id> (not found)`                                  | the catalogue doesn't carry that id                           | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
+| `Skill '<id>' is configured but was not found`                             | the same, at compile time — and `compile` still exits 0       | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
+| `No configuration found for id '…'`                                        | a shared id the store doesn't have                            | [Check the id](#a-shared-id-that-will-not-install)                         |
+| `Configuration '…' is not in a format this version of the CLI can install` | the id predates or postdates this CLI                         |
+| `The configuration on standard input is not one this store accepts`        | a piped configuration the store would refuse                  |
+| `Sharing this configuration failed (HTTP 400). The store said: …`          | the store named what is wrong with it                         |
+| `This CLI is out of date against the configuration store`                  | this CLI writes a contract version the store no longer serves | [Re-share it](#a-shared-id-that-will-not-install)                          |
+| `An installation already exists at …`                                      | `init --from` is greenfield-only                              | [Uninstall first](#a-shared-id-that-will-not-install)                      |
+| A sub-agent doesn't show up in Claude Code                                 | it was never compiled, or compiled at the other scope         | [Compile it](#sub-agents-that-never-appeared-in-claude-code)               |
+| Your edits to `.claude/agents/*.md` keep vanishing                         | compiled agents are build outputs                             | [Edit the partials](#hand-edits-to-a-compiled-sub-agent-keep-disappearing) |
+| `Global skills cannot be changed from project scope`                       | a global install is read-only from inside a project           | [Three ways out](#a-global-skill-you-cannot-remove-from-inside-a-project)  |
+| `Failed to install N plugin skill(s).`                                     | the plugin install didn't happen                              | [Refresh or switch to eject](#a-plugin-install-that-failed)                |
+| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                                 | [Set it to Local](#a-plugin-install-that-failed)                           |
+| `No skills found. Run 'npx agents-inc init' …`                             | `compile` found nothing installed under the config            | [Reinstall the skills](#compile-says-there-are-no-skills)                  |
+| `Raw mode is not supported on the current process.stdin`                   | a wizard command with no terminal                             | [Use the headless flags](#a-wizard-command-in-a-pipeline)                  |
+| `✓ Eject complete!` and nothing was copied                                 | the destination already existed                               | [Pass `--force`](#an-eject-that-reports-success-and-copies-nothing)        |
+| The command prints one line and hangs                                      | the terminal is under 80×20                                   | [Resize it](#a-command-that-hangs-instead-of-starting)                     |
+| `Completed with N failure(s) — the changes above landed, these did not:`   | the run finished and part of it didn't happen                 | [Do what the indented line says](#a-command-that-finished-with-failures)   |
 
 ## A config that will not parse
 
@@ -140,6 +143,31 @@ in a clean directory, which installs without removing anything.
 ```
 
 More on how an id moves between the two front doors is in [CLI or web](/docs/cli-or-web) and [Install and share](/docs/editor/install-and-share).
+
+## A configuration that will not share
+
+`share` refuses in two places, and which one it was tells you where to look.
+
+**Refused locally, before anything is sent.** `share --stdin` holds a piped configuration to the same contract the store writes with, so a payload the store would reject costs no write and names every offending pair:
+
+```
+The configuration on standard input is not one this store accepts:
+skills.<id>.assignments.<agent>: a project-scoped skill has nowhere to be
+written on '<agent>', which rests at global scope
+```
+
+A project-scoped skill assigned to a sub-agent resting at global has nowhere to go — the skill installs under one project's `.claude`, the sub-agent's front matter is written to `~/.claude`, and from anywhere else it names something that does not exist. **An `agents` entry is optional and an absent one rests at global**, so "assign a skill and say nothing else" is already the unwritable pair. Fix it by giving the skill global scope, or by pinning the sub-agent to project. Only the first few pairs are named; the rest are counted.
+
+**Refused by the store.** The status separates the causes, and the store's own sentence is quoted after it where there is one:
+
+- `Sharing this configuration failed (HTTP 400). The store said: …` — the body reached the store and it named the problem. The sentence after the colon is the store's, not the CLI's.
+- `This CLI is out of date against the configuration store: it writes a version of the sharing contract the store does not serve …` — a 409, and the version travels inside the CLI rather than with the configuration, so no change to what you are sharing can fix it. Re-run through `npx agents-inc@latest`.
+- `Sharing this configuration failed (HTTP 503). The store said: Could not store this config` — the store was reached and would not write. Nothing was minted, so re-running is safe.
+- `Sharing this configuration failed (HTTP 413).` / `(HTTP 429).` — too large, or too many writes in a minute. **These two render bare on purpose.** The store answers them in prose too, but its words only re-say the status — `Payload too large` for the 413, `Too many requests` for the 429 — so the CLI drops a body that adds nothing to the number printed beside it. A quote appears only where the store named a cause the status could not.
+
+The same quoting happens on the way in: `Fetching configuration failed (HTTP <status>). The store said: …` when a refusal arrives as readable text.
+
+In the editor the equivalent is the Share button's own word — `Scope conflict — fix marked rows`, which stays on screen because the marked rows are the fix. See [Install and share](/docs/editor/install-and-share).
 
 ## Sub-agents that never appeared in Claude Code
 

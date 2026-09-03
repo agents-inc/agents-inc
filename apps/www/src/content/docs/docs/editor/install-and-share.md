@@ -80,13 +80,14 @@ The button is disabled until something is selected, and a configuration the CLI 
 
 The button is the only feedback the panel has, so it says which ending happened:
 
-| Label                     | Means                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `Link copied`             | Stored and on your clipboard.                                                                                 |
-| `Link made, copy refused` | The id is real and the configuration is stored — only the write to your clipboard was turned down.            |
-| `Out of date — reload`    | This tab is running an older build. The only one of these that stays on screen, because reloading is the fix. |
-| `Sharing failed`          | The service refused it.                                                                                       |
-| `Offline — try again`     | Nothing reached the service.                                                                                  |
+| Label                              | Means                                                                                                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Link copied`                      | Stored and on your clipboard.                                                                                                                                     |
+| `Link made, copy refused`          | The id is real and the configuration is stored — only the write to your clipboard was turned down.                                                                |
+| `Out of date — reload`             | This tab is running an older build. Stays on screen, because reloading is the fix.                                                                                |
+| `Scope conflict — fix marked rows` | A project-scoped skill is assigned to a sub-agent that rests at global, where it has nowhere to be written. Stays on screen, because the marked rows are the fix. |
+| `Sharing failed`                   | The service refused it.                                                                                                                                           |
+| `Offline — try again`              | Nothing reached the service.                                                                                                                                      |
 
 **`fromId` is an address, not a one-shot command.** It's read on every load, so reloading a shared link reopens it rather than reverting to your own configuration. Clicking **Configure** in the nav rail clears it and gets you back to your own. A dead or unreadable link says so and leaves whatever you had configured alone.
 

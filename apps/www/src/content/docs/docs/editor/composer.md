@@ -78,19 +78,23 @@ configuration until you apply them.
 
 ## When it refuses
 
-Four endings, and only the first names something you can do about it.
+Five endings. Signing in and shortening the sentence are the two you can act
+on.
 
-| What it says                                        | What happened                                 |
-| --------------------------------------------------- | --------------------------------------------- |
-| `Sign in to use the composer — nothing was sent.`   | You are signed out. Nothing left the browser. |
-| `Too many requests in a minute. Try again shortly.` | Ten calls a minute, per person. Wait.         |
-| `The model did not answer. Nothing changed.`        | The call failed upstream.                     |
-| `Could not reach the composer. Nothing changed.`    | The network did.                              |
+| What it says                                          | What happened                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------- |
+| `Sign in to use the composer — nothing was sent.`     | You are signed out. Nothing left the browser.                 |
+| `Too many requests in a minute. Try again shortly.`   | Ten calls a minute, per person. Wait.                         |
+| `That is too long to send. Shorten it and try again.` | Over **600 characters**. Refused before the model was called. |
+| `The model did not answer. Nothing changed.`          | The call failed upstream.                                     |
+| `Could not reach the composer. Nothing changed.`      | The network did.                                              |
 
-Two more refusals never reach the model at all: a blank sentence, and one over
-**600 characters**. The cap is a real limit rather than a nicety — input tokens
-are billed, so an unbounded prompt is an unbounded bill, and a blank prompt
-costing a token is the cheapest bug to have and the easiest never to notice.
+The 600-character cap is a real limit rather than a nicety — input tokens are
+billed, so an unbounded prompt is an unbounded bill.
+
+One refusal never leaves the browser at all: a blank sentence. **Send** is out
+of reach while the field is empty or holds only spaces, and
+<kbd>⌘</kbd><kbd>↩</kbd> refuses on the same check.
 
 ## What it is not
 
