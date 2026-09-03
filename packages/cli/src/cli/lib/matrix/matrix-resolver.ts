@@ -1,4 +1,4 @@
-import { truncateText } from "../../utils/string";
+import { stripTerminalControls, truncateText } from "../../utils/string";
 import {
   createSelectionSemantics,
   type IncompatibilityCause,
@@ -21,8 +21,18 @@ import type {
 import { typedEntries, typedValues } from "../../utils/typed-object";
 import { matrix, getSkillById, allSkills } from "./matrix-provider";
 
+/**
+ * A skill's name as a message may carry it, which is every route a display name takes out of this
+ * module — the validation errors below, the grid cell's incompatibility text, and the names in an
+ * unmet-requirements sentence.
+ *
+ * `displayName` is written in a marketplace's own `metadata.yaml`, so it is a stranger's string
+ * arriving by the product's advertised route rather than by an attack. Sanitised HERE rather than
+ * at each of the five messages that render it, because a sixth message is the likely next thing
+ * anyone writes and it should be safe without being told to be.
+ */
 function getLabel(skill: Pick<ResolvedSkill, "displayName">): string {
-  return skill.displayName;
+  return stripTerminalControls(skill.displayName);
 }
 
 function joinWithConjunction(items: string[], conjunction: "or" | "and"): string {
@@ -57,7 +67,11 @@ function toSelectionFacts(source: MergedSkillsMatrix): SelectionCatalogFacts {
       conflictsWith: skill.conflictsWith.map((relation) => relation.skillId),
       discourages: skill.discourages.map((relation) => ({
         skillId: relation.skillId,
-        reason: relation.reason,
+        // The one author string that leaves this module without being re-rendered: the shared
+        // semantics carry it through and `getCellState` hands the verdict back whole, so a
+        // discouraged cell prints exactly what was put in here. Made inert on the way in, which
+        // is the only point on that route this package owns.
+        reason: stripTerminalControls(relation.reason),
       })),
       requires: skill.requires.map((requirement) => ({
         skillIds: requirement.skillIds,
@@ -149,11 +163,11 @@ export function getUnmetRequiredBy(
       if (req.needsAny) {
         // OR: unmet only if NONE of the options are selected
         if (!req.skillIds.some((id) => selectedSet.has(id))) {
-          return selectedSkill.displayName;
+          return getLabel(selectedSkill);
         }
       } else {
         // AND: unmet if this specific skill isn't selected
-        return selectedSkill.displayName;
+        return getLabel(selectedSkill);
       }
     }
   }
@@ -203,7 +217,7 @@ export function getUnmetRequirementsReason(
     if (missing.length === 0) continue;
     const names = missing.map((id) => {
       const s = matrix.skills[id];
-      return s ? getLabel(s) : id;
+      return s ? getLabel(s) : stripTerminalControls(id);
     });
     return withAuthorsReason(namesTheMissing(names, requirement.needsAny), requirement.reason);
   }
@@ -276,7 +290,10 @@ export function validateConflicts(resolvedSelections: SkillId[]): ValidationErro
       if (conflict) {
         errors.push({
           type: "conflict",
-          message: `${getLabel(skillA)} conflicts with ${getLabel(getSkillById(skillBId))}: ${conflict.reason}`,
+          // The author's own sentence, made inert but not shortened: this message is reported on
+          // its own line rather than into a fixed-height cell, so it needs no budget the way
+          // `withAuthorsReason` does — only the guarantee that a terminal will print it.
+          message: `${getLabel(skillA)} conflicts with ${getLabel(getSkillById(skillBId))}: ${stripTerminalControls(conflict.reason)}`,
           skills: [skillA.id, skillBId],
         });
       }
@@ -339,7 +356,7 @@ export function validateExclusivity(resolvedSelections: SkillId[]): ValidationEr
       if (category?.exclusive) {
         errors.push({
           type: "categoryExclusive",
-          message: `Category "${category.displayName}" only allows one selection, but multiple selected: ${skillIds.map((id) => getLabel(getSkillById(id))).join(", ")}`,
+          message: `Category "${stripTerminalControls(category.displayName)}" only allows one selection, but multiple selected: ${skillIds.map((id) => getLabel(getSkillById(id))).join(", ")}`,
           skills: skillIds,
         });
       }

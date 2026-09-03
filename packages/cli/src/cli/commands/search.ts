@@ -6,18 +6,25 @@ import { BaseCommand } from "../base-command.js";
 import { loadSource } from "../lib/operations/index.js";
 import type { ResolvedSkill } from "../types/index.js";
 import { STATUS_MESSAGES } from "../utils/messages.js";
-import { truncateText } from "../utils/string.js";
+import { stripTerminalControls, truncateText } from "../utils/string.js";
 import { typedValues } from "../utils/typed-object.js";
 
 const MAX_DESCRIPTION_WIDTH = 50;
 
 /**
- * One row of the results table. `id` and `category` are the skill's own values; `name`, `source`
- * and `description` are rendered for the cell, so they are plain strings.
+ * One row of the results table. Every column is rendered for its cell, so all five are plain
+ * strings — including the two that used to be carried through as the skill's own `SkillId` and
+ * `CategoryPath`.
+ *
+ * They stopped being the skill's own values when they started being sanitised, and the type says
+ * so rather than casting the sanitised string back into a union it is no longer known to be in.
+ * Nothing downstream of this looks a row up by id: it is five strings and a table.
  */
-type ResultRow = Pick<ResolvedSkill, "id" | "category"> & {
+type ResultRow = {
+  id: string;
   name: string;
   source: string;
+  category: string;
   description: string;
 };
 
@@ -108,13 +115,20 @@ async function loadSearchableSkills(): Promise<ResolvedSkill[]> {
 /**
  * The machine id and the display name are different answers and get a column each — `edit`
  * takes the id, a human reads the name.
+ *
+ * Every one of the five is a string a catalogue author wrote, and this is where they stop being
+ * that and become cells. `--marketplace` is a supported input, so a stranger's repository reaches
+ * this table by the product's advertised route: an unsanitised `displayName` carrying an
+ * erase-line and a carriage return repaints the row, and `@oclif/table` sizes the column on the
+ * escape bytes as well, so the border moves too. Only `description` carries a budget, because
+ * only `description` is prose; the other four are identifiers and are shown whole.
  */
 function toResultRow(skill: ResolvedSkill): ResultRow {
   return {
-    id: skill.id,
-    name: skill.displayName,
-    source: activeSourceName(skill),
-    category: skill.category,
+    id: stripTerminalControls(skill.id),
+    name: stripTerminalControls(skill.displayName),
+    source: stripTerminalControls(activeSourceName(skill)),
+    category: stripTerminalControls(skill.category),
     description: truncateText(skill.description, MAX_DESCRIPTION_WIDTH),
   };
 }

@@ -293,6 +293,125 @@ describe("validateSelection", () => {
   });
 });
 
+/**
+ * The escape and the carriage return a rule author reaches these messages with — the pair the
+ * CLI-855 lane watched a real terminal obey. `reason` is required by `requireRuleSchema`, so it
+ * is a sentence every marketplace author is already made to write, and `--marketplace` is a
+ * supported input rather than an attack.
+ */
+const ESCAPE = "\u001B";
+const CARRIAGE_RETURN = "\r";
+const ERASE_LINE = `${ESCAPE}[2K`;
+
+/** A rule author's `reason`, and a skill's `displayName`, as a stranger's repository has them. */
+const HOSTILE_REASON = `These clash${ERASE_LINE}${CARRIAGE_RETURN} ›   INSTALL BOTH ANYWAY`;
+const HOSTILE_DISPLAY_NAME = `React${ERASE_LINE}${CARRIAGE_RETURN} ›   VERIFIED`;
+
+/** An ordinary reason and display name, so a strip can be told from a blank message. */
+const HONEST_REASON = "These cannot work together";
+const HONEST_DISPLAY_NAME = "React";
+
+describe("text a catalogue author wrote, rendered into a message", () => {
+  it("renders a conflict reason without the escapes the author put in it", () => {
+    const skillA = createMockSkill(REACT_ID, {
+      conflictsWith: [{ skillId: VUE_ID, reason: HOSTILE_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(VUE_ID)));
+
+    const message = firstElement(validateConflicts([REACT_ID, VUE_ID])).message;
+
+    // The words survive and the terminal's ability to act on them does not: a reason is the one
+    // thing in this message the author is supposed to be able to say.
+    expect(message).not.toContain(ESCAPE);
+    expect(message).not.toContain(CARRIAGE_RETURN);
+    expect(message).toContain("These clash ›   INSTALL BOTH ANYWAY");
+  });
+
+  it("still carries an honest conflict reason through whole", () => {
+    // The permitted case. Without it the spec above is satisfied by a resolver that drops every
+    // reason, which is the failure that made `reason` unread until 2026-08-23.
+    const skillA = createMockSkill(REACT_ID, {
+      conflictsWith: [{ skillId: VUE_ID, reason: HONEST_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(VUE_ID)));
+
+    expect(firstElement(validateConflicts([REACT_ID, VUE_ID])).message).toContain(HONEST_REASON);
+  });
+
+  it("renders a display name without the escapes its metadata put in it", () => {
+    const skillA = createMockSkill(REACT_ID, {
+      displayName: HOSTILE_DISPLAY_NAME,
+      conflictsWith: [{ skillId: VUE_ID, reason: HONEST_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(VUE_ID)));
+
+    const message = firstElement(validateConflicts([REACT_ID, VUE_ID])).message;
+
+    expect(message).not.toContain(ESCAPE);
+    expect(message).not.toContain(CARRIAGE_RETURN);
+    expect(message).toContain("React ›   VERIFIED");
+  });
+
+  it("still names a skill by its honest display name", () => {
+    const skillA = createMockSkill(REACT_ID, {
+      displayName: HONEST_DISPLAY_NAME,
+      conflictsWith: [{ skillId: VUE_ID, reason: HONEST_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(VUE_ID)));
+
+    expect(firstElement(validateConflicts([REACT_ID, VUE_ID])).message).toContain(
+      HONEST_DISPLAY_NAME,
+    );
+  });
+
+  it("renders an unmet requirement's author reason without its escapes", () => {
+    const skillA = createMockSkill(REACT_ID, {
+      requires: [{ skillIds: [VUE_ID], needsAny: false, reason: HOSTILE_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(VUE_ID)));
+
+    const reason = getUnmetRequirementsReason(REACT_ID, [REACT_ID]);
+
+    expect(reason).toBeDefined();
+    expect(reason).not.toContain(ESCAPE);
+    expect(reason).not.toContain(CARRIAGE_RETURN);
+  });
+
+  it("renders a discouraged cell's reason without the escapes the author put in it", () => {
+    const skillA = createMockSkill(VUE_ID, {
+      discourages: [{ skillId: REACT_ID, reason: HOSTILE_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(REACT_ID)));
+
+    const state = getCellState(REACT_ID, [VUE_ID]);
+    const reason = state.status === "normal" ? "" : state.reason;
+
+    expect(state.status).toBe("discouraged");
+    expect(reason).not.toContain(ESCAPE);
+    expect(reason).not.toContain(CARRIAGE_RETURN);
+  });
+
+  it("still carries an honest discourage reason to the cell", () => {
+    const skillA = createMockSkill(VUE_ID, {
+      discourages: [{ skillId: REACT_ID, reason: HONEST_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(REACT_ID)));
+
+    const state = getCellState(REACT_ID, [VUE_ID]);
+
+    expect(state.status === "normal" ? "" : state.reason).toBe(HONEST_REASON);
+  });
+
+  it("still appends an honest requirement reason to the synthesised half", () => {
+    const skillA = createMockSkill(REACT_ID, {
+      requires: [{ skillIds: [VUE_ID], needsAny: false, reason: HONEST_REASON }],
+    });
+    initializeMatrix(createMockMatrix(skillA, createMockSkill(VUE_ID)));
+
+    expect(getUnmetRequirementsReason(REACT_ID, [REACT_ID])).toContain(HONEST_REASON);
+  });
+});
+
 describe("getSkillsByCategory", () => {
   it("should return skills in the specified category", () => {
     const matrix = createMockMatrix(

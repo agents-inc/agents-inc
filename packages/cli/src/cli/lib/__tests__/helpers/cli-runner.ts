@@ -119,6 +119,13 @@ export async function runCliCommand(args: string[]) {
   return {
     stdout: stdoutBuf.map((s) => ansis.strip(s)).join(""),
     stderr: stderrBuf.map((s) => ansis.strip(s)).join(""),
+    // The same bytes the command really wrote, and the only reading an assertion about ESCAPES
+    // can be made against. `stdout` above has been through `ansis.strip`, so
+    // `expect(stdout).not.toContain(ESCAPE)` cannot fail whatever the command wrote — the
+    // harness removed the escape before the assertion saw it. Every spec asserting on WORDS
+    // should keep using `stdout`, which is why the strip is the default rather than the
+    // exception: a spec about output text should not have to know whether the run had colour.
+    rawStdout: stdoutBuf.join(""),
     error,
   };
 }
