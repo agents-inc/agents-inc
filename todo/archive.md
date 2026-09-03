@@ -5491,3 +5491,908 @@ E2E_SKILL_IDS.slice(1) })`, a marketplace shipping exactly one skill, since ever
   booted with its bindings. **The row survives, narrowed**, because the fix was a token scope
   outside this repository and the thing that let it run for a week — no signal when a deploy fails
   under green checks — is untouched.
+
+- **2026-09-01 — EDITOR-64** (editor.md, new and closed the same day, found by the owner) — **the
+  grid's search and its domain tabs intersected, so a query silently hid every match outside the
+  picked domain.** Reported as "i dont see the stack detect skill":
+  `meta-config-stack-detect` sits in `shared` because domain comes from the CATEGORY
+  (`shared-tooling`) and never from the id prefix, so a reader hunting a `meta-` skill was on the
+  wrong tab and the search agreed with them. `selectDomainViews` filtered domains by the pick first
+  and only then matched skills inside whatever survived. **The failure mode is the point**: an empty
+  result reads as "no such skill", never as "not on this tab", so the catalogue looked like it was
+  missing something it has. Fixed by having a non-empty query outrank the pick rather than compound
+  with it — `searchesWholeCatalog` in `derive.ts`. **Nothing is lost by the override**: the pick is
+  not cleared, so emptying the query returns the reader to their tab, and the strip's highlight
+  needed no work because `filter-bar.tsx` already falls through to the scrolled domain when no pick
+  is in force. Two specs, both watched failing first — one stating the property over any two
+  domains, one naming the reported skill, which failed with `expected [] to include
+'meta-config-stack-detect'`. Hand-run in a browser at `?domain=web&q=stack+detect` (visible) and
+  `?domain=web` (correctly gone). `concepts/skills.mdx` moved with it: it had documented the
+  intersecting behaviour accurately, which made it a true sentence that predicted the wrong
+  experience. Gates: editor 496 unit + 476 e2e, typecheck and lint clean.
+
+- **2026-09-01 — the `share --stdin` 400** (found by the owner on a second machine, root-caused and
+  closed the same day; no tracker row ever existed, so this line is the only record) — **the CLI and
+  the store validated a share against DIFFERENT schemas, and the CLI held the lenient one.** The
+  worker validates `POST /configs` with `installableSeedPayloadSchema` and `GET /configs/:id` with
+  the base `seedPayloadSchema` — write strict, read lenient, deliberately, so links already in the
+  wild stay repairable in the editor. `read-piped-payload.ts` gated with the BASE schema, so the one
+  rule the two differ by — a project-scoped skill assigned to a sub-agent resting at global has
+  nowhere to be written — was the single payload that passed locally and failed at the edge, as a
+  bare `HTTP 400`. **`--stdin` was the odd one out rather than the lenient-by-design one**:
+  `config-to-seed.ts` had always minted with the strict schema, so a bare `share` and `edit --ui`
+  were already strict. **The producer made it certain rather than occasional.**
+  `meta-config-stack-detect`'s `SKILL.md` documented the agent-scope default INVERTED — "Absent
+  means project" where `seedAgentScope` falls back to `DEFAULT_SELECTION_OPTIONS.scope`, which is
+  `global` — and, on the strength of that, instructed emitting `scope: "project"` for every skill
+  while keeping `agents` sparse. The two errors are SELF-CONSISTENT, which is why they survived
+  review: if agents did default to project, project skills on project agents would be perfectly
+  writable. Both worked examples the skill ships were verified to 400 as written and to 201 with the
+  one field changed. **The `npx` in the report was a red herring**, chased first and eliminated by
+  reproducing the exact command with a cold cache and no `--yes`: npx warns rather than prompts when
+  stdin is a pipe. Fixed in four places — the skill emits `global` and its comment names the real
+  default (`agents-inc/skills`); the local gate reads `installableSeedPayloadSchema`, which makes
+  `read-piped-payload.ts`'s own promise that everything failing locally fails before a write true
+  rather than nearly true; `publish-seed.ts` now quotes the store's own sentence beside the status,
+  where it had rendered `HTTP ${status}` and binned a body that named the skill and the sub-agent;
+  and the refusal is bounded — 2742 characters over 41 lines for 15 pairs became 781 over 11, by
+  COUNT rather than by character, because a character cut over a joined list leaves a half-named
+  sub-agent that reads as a real name and cannot say how many were elided. **Three assertions in
+  this area were green on the defect and are now mutation-verified**: an e2e refusal with no
+  same-file control (a gate that swallowed its whole domain left all six specs passing),
+  `toContain("web-developer")` satisfied by the Zod PATH rather than the message, and a comment
+  claiming three siblings where one exists. **Reviewer's verdict on the load-bearing question** —
+  the strict gate over-refuses nothing: one production caller, write-only, and every read/repair
+  path still on the base schema. **Two rows survived it at the time, and both have since landed — see their own entries below**: CLI-848 (`fetch-seed.ts`, the only sibling
+  of the discarded-body class) and CLI-849 (the test doubles answer every POST 201, which is what
+  let the divergence ship). Findings: two, both indexed. Gates: 219 files / 7366 tests, three `tsc`
+  projects, lint, prettier, the `.ai-docs` guards 424 tests.
+
+- **2026-09-01 — `meta-config-stack-detect`'s scope default** (skills.md, never filed; diffs land in
+  `agents-inc/skills`) — the skill's `SKILL.md` said `// Absent means "project"` for a sub-agent's
+  scope where the wire default is `global`, and instructed emitting `"plugin"` and `"project"`
+  "consistently … as defaults the user can flip". `"plugin"` IS the product default;
+  `"project"` is not, and it is precisely the value that makes every assignment to an unlisted
+  sub-agent unwritable. Now emits `"global"`, the comment names the real default, and a new rule
+  spells out what a run must do if it genuinely wants project-scoped installs — pin every assigned
+  sub-agent with `{ "scope": "project" }`, the one case worth spending an `agents` entry on. Both
+  worked examples corrected (19 occurrences) and verified 400 → 201 against the real worker; `dist/`
+  regenerated through the local CLI, since it is tracked and carried a stale copy. Gates: 238 skills
+  validate, prettier clean.
+
+- **2026-09-01 — every compiled sub-agent was ordered to use a tool it had never been granted**
+  (cli.md, CLI-837 — filed before this session and found again by the owner asking why the Skill tool was disabled; the row named the defect AND its fix, and neither the dispatch nor I looked for it) —
+  `agent.liquid` emits a Skill Activation Protocol whenever an agent carries dynamic skills,
+  telling it that it **"MUST invoke the Skill tool IMMEDIATELY"** and listing an `Invoke:` line per
+  skill, while the same template wrote `tools:` straight from `metadata.yaml` — and **not one of
+  the 18 definitions named `Skill`**. Four sub-agents hit this in a single session and each
+  reported it as an environment quirk; it was shipped behaviour, and one process step
+  (`meta-design-expressive-typescript`, step 3) went unperformed across several tasks because of
+  it. **The non-obvious fact that let it survive**: a `tools:` key is an ALLOWLIST — omitting it
+  inherits everything including `Skill`, so ENUMERATING is what opts an agent out — and declaring
+  `skills:` preloads content without granting the tool, so all 18 definitions read as skill-aware
+  while none could invoke a skill. Both confirmed against the official Claude Code docs and by
+  experiment: a sub-agent with `Tools: *` invoked `Skill` successfully in the same session the
+  compiled ones were refused. **Fixed in the RENDERER, not the 18 metadata files** — `SKILL_TOOL`
+  and `withSkillTool` in `packages/compile/src/agent-source.ts`, applied in
+  `buildAgentTemplateContext`, the single assembly point every render passes through, so a
+  user-authored agent gets the grant on the same terms as a shipped one. Unconditional (an earlier
+  conditional-on-dynamic-skills rule was withdrawn: skills are the product's atom and an agent that
+  cannot invoke one cannot use what a user adds later), idempotent, and order-stable —
+  `codex-keeper` keeps its unusual `Glob, Grep` order. The four read-only researchers receive it
+  too; `Skill` loads instructions and grants no write access. Verified by a real compile against an
+  ISOLATED staged installation rather than the live tree — the implementing agent refused to run
+  `compile` against `$HOME` with unverified output, which would have rewritten 13 global agents
+  mid-session — then run for real: 13 rewritten, second pass `0 rewritten, 13 unchanged` with an
+  empty `diff -r`. The preloaded-only case was forced separately and holds. **Confirmed end to end, after one
+  false alarm worth recording.** The first live check reported `v0.160.0` against `v0.161.1` on
+  disk and was refused the tool, which looked like definitions being snapshotted at session start —
+  a conclusion stated confidently and wrongly. A later agent of a different type, dispatched from
+  the same session after the same recompile, HAD the tool and used it; re-running the identical
+  check then returned `v0.161.1`, `tools: Read, Write, Edit, Bash, Skill`, and a skill loaded
+  successfully. Definitions refresh within a session; the first failure was a stale dispatch, not a
+  structural limit. **The lesson is the shape of the evidence rather than the answer**: one negative
+  result was generalised into a mechanism, and it took a contradicting positive from an unrelated
+  lane to catch it. `Grep` and `Glob` remain absent from every sub-agent whatever the frontmatter
+  says — this harness does not provide them, so the compiled `tools:` line names them optimistically
+  and they are dropped in silence. Gates: `packages/compile` 55 tests, CLI 219
+  files / 7366 tests, root `turbo lint typecheck test --force` 25/25, `generate:compile:check`
+  clean. One finding, indexed.
+
+- **2026-09-01 — WWW-16** (www.md, filed and closed the same day) — **thirty references across
+  twenty-one documentation pages went stale when the editor moved off the apex, and every gate
+  stayed green.** `check-cli-claims.ts` binds the command roster and every flag to the CLI's source
+  in both directions and says nothing about URLs, so nothing could see it — and the defect does not
+  404: a reference that drops the `/editor` path serves the LANDING PAGE, so it fails as a reader's
+  confusion, and confusion has no exit code. Closed by `apps/www/scripts/check-editor-address.ts`,
+  fourth in the workspace's `test` script by measured cost (0.13s against check-cli-claims' 0.17s).
+  **Everything is derived through the TypeScript AST, nothing transcribed**: `EDITOR_URL` and the
+  literal span of `editorConfigUrl` are read out of `packages/cli/src/cli/consts.ts`, so the
+  expected share-link shape — including the real slash before `?` — comes from the function that
+  builds it. Four claims: the two constants agree; every address on this site's own host is the
+  editor's; every share link is the shape `editorConfigUrl` builds; every link whose TEXT names the
+  host writes the full address and targets it. **Made to fail before it was trusted**: 49 offences
+  against the pre-split tree reconstructed from `afc4a26d^`, plus the trimmed-slash case (invisible
+  to the address claim, caught by the share-link claim), plus a constant moved in the CLI only, plus
+  every refusal path. Re-proved after the expressive-TypeScript pass so the refactor could not have
+  disarmed it. **The turbo cache would otherwise have defeated it entirely** — `www#test` hashed 81
+  inputs and `consts.ts` was not one, so a CLI-only commit moving the address would have replayed
+  from cache and reported clean; declaring the input took it to 82 and moved the hash, and turbo
+  hashes the file's CONTENT, verified byte-identical to `git hash-object`. **What it cannot see is
+  written at the head of the script rather than left to be discovered**: a host used as a NAME
+  rather than an address (`the agentsinc.sh store` is right, `opens it at agentsinc.sh` is wrong —
+  same bytes, only English separates them), measured at 5 of the pre-split references. One false
+  positive was found and removed before wiring in. **Correction to the row itself**: it said the
+  share-link shape was hand-written in "six places"; measured, it is 9 address-shaped spots across
+  5 files.
+
+- **2026-09-01 — EDITOR-65** (editor.md, filed and closed the same day; **withdrawn by owner ruling
+  rather than implemented**) — while a query outranks the domain pick, the picked chip still renders
+  as active because `filter-bar.tsx` reads `search.domain ?? scrolledDomain ?? tabs[0]` and the pick
+  survives, so the `??` short-circuits: the strip and the grid disagree on screen. **Owner ruled
+  2026-09-01: leave it as-is.** The alternatives were dimming the chip while outranked (a new visual
+  state) or clearing the pick on a query (which loses the tab the current behaviour deliberately
+  preserves). **A future pass must not "fix" this** — the inconsistency is known, weighed and
+  accepted, and EDITOR-64's docblock in `derive.ts` records it beside the code rather than leaving a
+  reader to rediscover it. Recorded here because the archive is the only record the question was
+  ever asked.
+
+- **2026-09-01 — CLI-851** (cli.md, filed and closed the same day) — **the editor was a write client
+  gating on the READ schema, and the row plus my brief were wrong about almost every particular
+  except that.** What held: a payload the worker refuses reached the worker. What did not: the row
+  said ONE write client, and `toSeedPayload` has five callers of which **four POST** —
+  `use-share-link` (Share), `use-install-command` (install dialog), `roster-panel`'s signed-in Save
+  and `account-store`'s `adoptLocalStack` on first sign-in — **the last two entirely ungated**, and
+  `adoptLocalStack` is fed the local slot, the one payload EDITOR-08 deliberately permits to be
+  unwritable. The row also called the Share button's `unscopedAgentCount` guard "a second,
+  independent implementation of the scope-reach rule"; it is not — `summarize` reaches the shared
+  `isSeedScopePairWritable` through `reachesAgent`/`isScopePairCompatible`, and only the TRAVERSAL
+  is local. **And the fix the brief specified was the wrong one**: swapping the schema at the MINT
+  breaks EDITOR-08's repair round trip, demonstrated rather than argued — the naive change reddened
+  8 specs including the whole external-skills block. The mint is correctly lenient because it also
+  serves the preview dialog and local Save. **Fixed at the write BOUNDARY instead**: a guard clause
+  in `createSharedConfig` running `installableSeedPayloadSchema.safeParse`, returning a new
+  `unwritable` `ShareRefusal` that reports the contract's own issue messages — so all four call
+  sites are closed by one gate, where gating each button would have been three more copies of the
+  mistake. The schema rather than `unwritableSeedAssignments`, deliberately, so a rule added to the
+  write contract later is enforced without anyone remembering to come back. **The disabled button
+  stays and keeps `unscopedAgentCount`**: it counts distinct SUB-AGENTS, which is how many clicks
+  remain, where the contract counts PAIRS — and deriving it would mint a full payload on every
+  roster render and let the button disagree with the notice above the grid. It is now an affordance
+  rather than the protection. Read path untouched; `?fromId=` stays lenient. Hand-driven in a real
+  browser: zero POSTs left the page and the button read `Scope conflict — fix marked rows`; with the
+  gate neutered the same run wrote. Gates: editor 489 Playwright, unit suite green.
+
+- **2026-09-01 — CLI-849** (cli.md, filed and closed the same day; **owner ruling: validate with the
+  real schema**) — **the test doubles minted what the worker refuses, and that permissiveness is
+  what let the CLI/worker schema divergence ship undetected for a week.** `packages/api-mocks`'s
+  `createConfig` and `packages/cli/e2e/fixtures/seed-config-store.ts`'s `mintedHandler` both
+  answered every `POST /configs` with `201 {id}`, while the worker gates that route with
+  `installableSeedPayloadSchema`. No suite could see the divergence; a user found it. Both doubles
+  now run the same schema and answer 400 with the worker's own envelope. **The deliverable was the
+  demonstration rather than the diff**: `OUT_OF_SCOPE_PAYLOAD` — a project-scoped skill on an agent
+  absent from `agents`, so resting at the `global` default — is refused where it previously minted.
+  The owner accepted the stated risk that a validating double is a second implementation of the
+  contract; the surface is minimised by importing the schema and restating no rule, and
+  `seed-config-store.ts` asks the same question rather than answering it separately. All three
+  opt-in handlers preserved. **Three comments encoding the wrong belief were corrected**, including
+  `storeRefusedHandler`'s claim that KV refusal is "the one failure the POST has that no request can
+  provoke, since the body was built from the contract's own schema" — false when written, because
+  nothing enforced it, and true only now. **The lane caught its own regression**: its first spec
+  placement under `e2e/fixtures/` flipped that directory into spec-bearing for `journey-page.ts`'s
+  `classify()` and reddened four unrelated `spec-gates` tests through a symbolic journey reference;
+  root-caused, relocated to `e2e/commands/`, and the placement documented in `user-journeys.md`.
+  Gates: api-mocks 27, CLI 7372 unit and 940 e2e, editor 503 unit and 164 Playwright, server 88.
+  Two findings filed and indexed.
+
+- **2026-09-02 — CLI-853** (cli.md, filed 2026-09-01 as a flaky timeout; **the row, its correction
+  and my brief were all wrong about the cause**) — **the unit suite was downloading
+  `github:agents-inc/skills` from api.github.com once per test: 31 tarball fetches per unfiltered
+  `npm test`.** The 10s timeout was the symptom. Because the dominant cost is gunzip plus ~500 file
+  writes rather than the HTTP round trip, it stretched with machine load — which is exactly the
+  "reddens on machine speed rather than on code" shape that made it read as a budget problem.
+  **Every framing offered to that lane was false and it said so**: `runCliCommand` does NOT spawn a
+  process (it calls oclif's `run()` in-process, so there is no process-start cost at all); the row's
+  "process start plus oclif's load is most of that budget" is contradicted by measurement (warm
+  ~55ms, fresh fake HOME ~2,400ms — the difference is a download); the named reproducer did not
+  reproduce in 1/1 attempts and manufactured 20-way contention was required; and the claim that
+  every `runCliCommand` spec shares the shape is false — 11 of 15 files have no test over 1s. The
+  census is exact: **one download equals one slow test**, and what the four outliers do that their
+  siblings do not is fall through to the DEFAULT REMOTE source instead of building a local one.
+  Fixed by one shared checkout fetched once per machine in `globalSetup` and symlinked into each
+  fake home's cache — `shared-source.ts`'s pattern applied one directory over. **The previous
+  attempt at the obvious fix was deleted as part of it**: the tree already carried
+  `COMMAND_TIMEOUT = 30_000` across 9 specs, which had not stopped the bug but moved it to whichever
+  spec lost the next race. Measured: 130,447ms of test time to 44,519ms, `doctor.test.ts` 57,999ms
+  to 917ms, 31 GitHub requests to 0, `npm test` 90.1s to 31.2s. Reproduction 2/2 red under 20 CPU
+  burners (one run with 9 timeouts across exactly the three named files), 3/3 green after — and the
+  lane stated plainly that three green runs is not proof for a timing fix and that the weight is
+  carried by the removed mechanism rather than the run count. Gates: 220 files / 7,378 tests.
+
+- **2026-09-01 — CLI-848 and CLI-852** (cli.md, both filed and closed the same day; **their rows were
+  retired without an archive entry, and this line is the correction**) — one class, two boundaries,
+  two DIFFERENT fixes, which is the point of them. **CLI-852**: `publish-seed.ts` rendered a
+  contract-version refusal as a bare `HTTP 409`, the one refusal whose whole purpose is telling the
+  user what to do. The worker answers it with `c.text("Reload the page: …")`, which is browser advice
+  a CLI must not repeat — a CLI user has no page. So 409 got its own branch ahead of the envelope
+  read (`CONTRACT_MISMATCH`, `OUT_OF_DATE_AGAINST_STORE`) saying the CLI is out of date against the
+  store, that the version travels inside the binary rather than with the configuration, and to
+  re-run through `npx agents-inc@latest`. No sub-command is named, deliberately: `publishSeedConfig`
+  serves both `share` and `edit --ui`, and `handed-out-invocations.ts` matches the invocation
+  followed by a SPACE, so anything after `@latest` is invisible to the gate that runs every
+  handed-out command. **CLI-848**: `fetch-seed.ts` had the same discarded-body defect and needed a
+  different fix — `getConfig` answers with `c.text` rather than a Zod envelope, so copying the
+  parser would have been wrong. It gained `refusalMessage`/`refusalBody`/`arrivedAsText`/
+  `explanationOf`, gating on the wire's CONTENT TYPE with its own `EXPLANATION_BUDGET` of 120.
+  **The lane refused one row of its brief**: it was told `fetch-seed` needed a 409 branch too, and
+  established that `refuseAnotherSeedVersion` is registered on `createConfigRoute` only — that route
+  can never see a 409 — so it did not invent the work. **Two of its own new specs passed before
+  implementation**, so it built a deliberately unguarded stage, watched them fail, then added the
+  guards. Hand-run verbatim against a stub answering exactly what the worker answers, for every
+  status changed. Residuals filed rather than absorbed: CLI-854 (no control-character stripping on a
+  quoted remote body, at three boundaries) and CLI-855 (the write half still drops plain-text bodies
+  for 413/429/503, so the two halves are now asymmetric). Gates: 219 files / 7372 tests.
+
+- **2026-09-02 — CLI-859, CLI-860 and CLI-862** (cli.md, all three filed and closed the same day;
+  **one subject, which is why they were fixed together**) — a family of test fixtures at fixed
+  machine-wide `os.tmpdir()` paths with no rule about who may write them. **CLI-862 is the rule
+  broken**: `shared-source.test.ts` is collected by the UNIT project and called `buildSharedSource`
+  plus `removeSharedSource()` on the same real path 160 of 254 E2E specs read — reproduced by
+  planting a marker file, running the one unit spec, and finding the fixture root gone.
+  **CLI-859 is the family's second member repeating the first's silence a day after being copied
+  from it**: `ensureSharedMarketplaceCheckout` published by `rename` and only then wrote its record,
+  while its guard was `directoryExists` — so an interruption between two lines left a directory the
+  guard accepted and a classification (`unrecorded`) that sent every run back to the network,
+  silently restoring the defect CLI-853 had just removed. **CLI-860 is the pin the family had for
+  its helper and not for its wiring**: deleting both `linkSharedCache` calls left the whole suite
+  green, so the change that took the suite from 90s to 31s could be removed without a test noticing,
+  and its symptom on return is a timeout that reads as flake. **The proposed one-line fix for
+  CLI-859 was verified CORRECT and deliberately not taken** — moving the write above the rename is
+  observable only by mocking `fs/promises` at the real shared path, which CLI-862 forbids, so a fix
+  whose reversal nothing catches would have been CLI-860's own complaint one module over. The record
+  write is unconditional instead: pinnable, and it repairs a checkout that lost its record for any
+  reason including a `/tmp` reaper, at the cost of one small write and never a fetch. **The rule is
+  now written down** — _a fixture at a machine-wide path is written by the runner that owns it and
+  by nothing else_ — in `shared-source.ts`'s docblock, `package.json`'s `//test` note and
+  `.husky/pre-push`, all three of which previously explained only the `dist/` tsup race. **And it is
+  enforced**: `shared-fixture-writers.test.ts` holds each writer's invokers against a roster through
+  the AST and fails in BOTH directions, a new caller and a renamed writer with no caller, proved by
+  planting a violation. Every fix demonstrated rather than asserted: the interruption closed against
+  an instrumented `fetch`, the pins reddened one per call site on deletion, the marker survived.
+  **A correction that outlived the rows**: `.husky/pre-push` does NOT run `turbo run test test:e2e`
+  — the suites left that hook on 2026-08-23 — so the concurrency hazard is real by other routes
+  (two terminals, a bare `turbo run`) but not by the one named. Gates: 221 files / 7391 tests, e2e
+  940 passed, prettier and deps:check clean.
+
+- **2026-09-02 — CLI-861** (cli.md, filed and closed the same day) — **a third `POST /configs` double
+  minted 201 for any body, so CLI-849's census was two-thirds of the class.**
+  `apps/editor/e2e/support/sharing.ts`'s `captureCreateConfig` installed an unvalidating handler
+  ahead of the now-validating shared ones, and it is the default success path for eight editor
+  Playwright spec files. **The obvious fix was forbidden and the docblock said why**: making the
+  double parse would strip unknown keys, and specs assert `model`/`effort` are ABSENT from the
+  posted body — so a parsing double grants those assertions for free and turns real claims into
+  vacuous ones. The shape taken is validate-then-forward-raw: the helper is now a spy that clones
+  the request, records the raw body unconditionally, and answers through msw's own resolver against
+  the validating handlers, restating no rule of its own. **The record is unconditional on purpose** —
+  `posted` says what was SENT, and recording only accepted bodies would let `expect(posted)
+.toStrictEqual([])` be satisfied by an app posting the very payload the guard exists to stop,
+  which is a worse vacuity than the one being removed. Demonstrated with `OUT_OF_SCOPE_PAYLOAD`
+  (201 before, 400 after) and a byte-identity case carrying `model`/`effort` through intact. **Every
+  new assertion was proved able to fail by mutation**, including one that showed the docblock's own
+  warning rather than restating it: recording a parsed body reddens the byte-identity test while
+  `sharing.spec.ts`'s "posts the v2 shape" stays green. `scope-reach.spec.ts` gained the control its
+  negative assertion lacked. **A correction that outlived the row**: the brief claimed that assertion
+  needed strengthening "now that the double can refuse" — false, since it reads the REQUEST log and
+  was never sensitive to the answer; it was strengthened for the real reason instead. Gates: editor
+  503 unit, 494 e2e, 16/16 turbo tasks.
+
+- **2026-09-02 — CLI-863** (cli.md, filed and closed the same day; **ruled twice, because the first
+  ruling was made on my wrong numbers**) — nothing gated a push on the suites: `pre-push` ran
+  `deps:check` and `lint` only, so a red suite pushed clean. The suites had left on 2026-08-23 for
+  two recorded reasons and **both were dead**: the `dist/` race came from npm pre-hooks since
+  deleted (10 runs gave exactly 1 `tsup` invocation each and zero `unlink dist/chunk-*`), and the
+  shared-fixture collision was CLI-862, fixed hours earlier. **A third cause was found by measuring
+  rather than assuming**: `summary-panel.test.tsx` fails about 1 run in 10 under CPU contention
+  (CLI-865), 9/10 concurrent against 6/6 alone. The isolation cause recorded here was
+  falsified on 2026-09-02 and struck; CLI-865 carries what is actually known.
+  **Concurrency was then ruled out on arithmetic**: 376s against 392s, a 4% saving for a 1-in-10
+  spurious red, because the e2e suite is 10x the unit suite and dominates. So the owner's first
+  ruling ("concurrently") was withdrawn and re-made as **sequential, both sides, everything**.
+  Implemented as separate `bunx turbo run` invocations ordered by `sh -e`, which changes nothing
+  outside the hook — `--concurrency=1` was rejected because it serialises the whole graph including
+  eight web workspaces that never had the problem, and a `dependsOn` edge because it would change
+  what `bun run test:e2e` means in CI and for anyone running it alone. Fail-fast proved end to end
+  rather than reasoned about. **My cost estimate was roughly double the truth**: I quoted ~19
+  minutes for both sides against a measured **9m42s** — the 12m17s web figure is a CI number, since
+  `playwright.config.ts` pins `workers: 2` under CI while a local run takes half the cores. Measured
+  and now recorded in the hook: docs-only 0s, CLI-only 6m31s, web-only 2m58s, both 9m42s. **A
+  browser finding worse than expected**: a fresh machine fails BOTH web lines, because
+  `packages/ui`'s storybook vitest project renders every story in real Chromium — which is why
+  `ci.yml` installs the browser before `test`, not before `test:e2e`. The hook names the one-time
+  install rather than running it, since a push hook wanting `sudo` or the network is worse than one
+  that fails. **The standing note was closed rather than rewritten**: two sections telling the
+  reader to run the suites separately were about to sit above a hook that runs them, and twelve
+  lines restating the fixture story became a pointer to the checker that now holds it.
+  **Nothing mechanically reads `.husky/pre-push`** — collapsing the pairs back into one turbo run
+  would stay green and bring the 1-in-10 red back; a "do not tidy" sentence in the header is the
+  entire enforcement, and that gap is filed. Gates: 221 files / 7391 tests, CLI e2e 254 files twice,
+  editor Playwright 494 twice.
+
+## 2026-09-02 — the thirteen rows filed that day were scrutinised against the repository's own bar, and five were retired
+
+Every row filed on 2026-09-01/02 was held against `packages/cli/.ai-docs/standards/briefing.md`,
+`documentation-bible.md` and this file, on the question the owner asked: is this actually something
+we want to incorporate. **Thirteen rows became eight, and five of the eight changed shape.**
+
+**CLI-858 retired unbuilt — a refusal filed as work.** Its facts were true and truth is not the bar:
+its central sentence is "It was deliberately not taken." The synthetic-checkout half is the option
+CLI-853 refused and the offline half is an unrun experiment whose outcome changes nothing shipped.
+It also carried a bare "463 assertions" with no invocation. The one durable sentence — that
+replacing a real checkout with a synthetic one reads as a tidy-up and is not one — belongs in
+`shared-marketplace-checkout.ts`'s docblock beside the fetch, where the rest of that reasoning
+already lives, not in a 100-row tracker.
+
+**CLI-864 retired: its `/stacks` half is unreachable and its `/compose` half merged into EDITOR-69.**
+Re-derived rather than taken on the row's word: `grep -rn 'createStack' apps/editor/src` gives
+exactly two production call sites, both passing the constant `SAVED_STACK_NAME`, and `renameStack`
+returns nothing — so the one field the worker guards has no user-typed path at all. A validating
+double asserting a constraint no caller can violate cannot be watched go red, which the e2e
+anti-patterns rule against directly. It was also in the wrong tracker: the subject is
+`packages/api-mocks` and `apps/editor/e2e/support`, neither of which is `packages/cli`.
+
+**EDITOR-68 retired: EDITOR-55 already closes it, and three of its claims were false.** The
+2026-08-25 design specifies `.app` at `min-width: 1240px`, and 1240 ≤ 1280 — **shipping EDITOR-55 as
+designed already fits a 13-inch screen**. The row's "the editor has ZERO breakpoints today … which
+is a design property, not an oversight" reads a true grep as a false inference, and it is the
+damaging half: it puts responsive back in the design-gated bucket EDITOR-07 explicitly removed it
+from. Two of its four "what the design must settle" questions are answered in that design file, and
+its claimed desktop-only decision "in `playwright.config.ts` and the E2E standards" has no second
+member — `grep -rni 'desktop' packages/cli/.ai-docs/standards/ apps/editor/e2e/` returns nothing on
+the subject. What survived is genuinely new owner input and it CONTRADICTS the arrived design rather
+than extending it — 3-across against the design's 4, a `Filters` dropdown against the design's
+domain strip, a shrinking rail against the design's `--npad`-only change — so it is a named
+design-revision leg on EDITOR-55, with one sentence owed from the owner: does the 1240px floor ship
+now, or wait on the revision. Two rows for one change at contradicting statuses is the stale-claim
+failure the bible names.
+
+**CLI-866 moved to `todo/repo.md` as REPO-42 and deferred.** `.husky/pre-push` is a repository-root
+file. Its own "no natural home in this repo's vitest projects" sentence is false — the root
+`package.json` already runs three root-subject checkers out of `packages/cli/scripts/` under
+`deps:check` — but the rule a checker would pin is contingent on CLI-865, which is now open.
+
+**CLI-865's root cause was falsified, and it had already been copied into two other artefacts.** The
+row diagnosed a shared-singleton isolation defect from a frame rendering `All skills ejected`.
+`buildSkillConfigs` in `__tests__/helpers/wizard-simulation.ts` sets `origin: overrides?.origin ??
+"eject"` unconditionally and never reads the matrix, so that label renders in the green runs too:
+the frame treated as diagnostic is the normal frame. The claim was struck from the row, from
+`.husky/pre-push`'s header and from the CLI-863 entry above. The candidate the row explicitly denied
+— `use-panel-scroll.ts` converging `contentHeight` against a fixed `RENDER_DELAY_MS = 100` — is the
+live one, and the row moved to `Investigate`.
+
+**Three rows were UNDERSTATED and were raised.** EDITOR-69 is three defects rather than one — a
+message blaming a model that was never called, a rate-limit token spent above the length guard, and
+`reportIssue` firing on the route reserved for money-spending anomalies — and its fix is cheaper
+than filed, since the worker already sends the discriminator. CLI-854's "three boundaries" was a
+false cardinality claim: `commands/search.ts` and `lib/matrix/matrix-resolver.ts` are two more with
+a MORE reachable source, and because `--marketplace` is a supported product input the vector is a
+third-party skills repository rather than a MITM — the same threat class this file already recorded
+a ruling on for the editor's skill-contents dialog, one surface over, and never for the CLI.
+CLI-867 is two documents rather than one, and its live danger is not the self-contradiction it leads
+with: `monorepo-layout.md` and `code-generation.md` both argue the suites do not belong in the hook
+at all — REPO-42's larger feared regression, arriving with documentation telling someone to make it.
+**Corrected 2026-09-02 after verification**: this entry first said the two documents instructed a
+reader to re-collapse the pre-push pairs into one turbo run. They did not; that is a different and
+narrower regression, and the mischaracterisation was propagated from the row into this file.
+
+**Two rows were narrowed and one restated.** CLI-855 cut to the 429 alone, the only one of its three
+statuses that tells a caller something the status code does not. CLI-856 dropped to `low`, its
+exposure bounded to one directory by the gate's own `toStrictEqual`. CLI-857's premise was
+backwards — `onUnhandledRequest: "error"` IS the gate and five `commands/` files install it — so the
+row became "extend that install's reach" rather than "build a second refusal", and it carries the
+warning that a naive `globalThis.fetch` guard would miss CLI-853's class anyway, since the mechanism
+was `giget`.
+
+**The framing the scrutiny began with was itself wrong, and that is worth recording.** The brief
+told the judges to be suspicious of rows filed by a lane that had just been burned by the defect's
+class. The repository's own rules say the opposite: `briefing.md` forbids widening past a row, and
+this file records CLI-854/855 as "residuals filed rather than absorbed". **Filing an adjacent
+finding is the sanctioned behaviour**; the rows that failed here failed on their own merits.
+
+**All thirteen breached the one-liner convention — and the scrutiny's own account of the damage was
+itself wrong, which is the last correction of the pass.** The adjudicator recorded that six long
+rows had widened the Bugs table and dragged CLI-678 and CLI-750 out with them. A markdown table does
+pad every cell to the widest, but the table was ALREADY 2,400 characters wide at `HEAD`, driven by a
+2,346-character CLI-846 row that predates every filing here; today's rows took it to 2,465, a 65-
+character increase rather than the cause. Every surviving row from this batch was still cut to a
+headline with its detail moved below the table, which is where the convention has said it belongs
+all along — but roughly a dozen older rows still breach it, and closing those is not this pass.
+
+## 2026-09-02 — CLI-867: two reference documents stopped telling the next reader to undo CLI-863
+
+`.husky/pre-push` runs the suites again as of CLI-863. `reference/monorepo-layout.md` and
+`reference/features/code-generation.md` both still described the hook as lint-only — but the
+self-contradiction was the harmless half. **Both carried standing arguments that the suites do not
+belong in the hook at all**: "Running the suites is the pusher's job now … **separately**, because
+running the two in one turbo invocation reproduces the same race", and "The suites left this hook on
+2026-08-23". A reader acting on either removes the suites, which is REPO-42's larger feared
+regression — the documentation was arguing for the very thing CLI-863 had just undone.
+
+**This paragraph was corrected on 2026-09-02 by the verification pass, and the error is worth
+keeping.** It first said both documents instructed a reader to _re-collapse the separate `turbo run`
+invocations into one_ — a real but narrower regression, and not what either sentence says. The row
+said it, the brief repeated it, this entry recorded it, and nothing between them could have caught
+it, because every check available reads whether a citation resolves rather than whether a
+characterisation is true. Both were deleted rather than rewritten, per the bible's rule,
+and replaced with a statement of the live invariant that points at the hook's header instead of
+restating its cost table.
+
+**A fifth defect site the row did not name** was found in the `pre-commit` section, and **a sixth
+was found to be a stale absence of exactly the class being repaired**: a paragraph asserting the
+CLI's side-grep names two paths and that "nothing lints the CLI for it" had gone false when the grep
+was widened in `9c2a613e`, independently of the hook change. It was deleted rather than used as the
+corrective source; its claim that tsup bundles four workspaces was also wrong (`noExternal` names
+three — `api-mocks` is bundled by nothing) and went with it.
+
+**The brief was wrong about the file's own path** — `reference/architecture/monorepo-layout.md` does
+not exist — which is the re-derive rule earning its place twice in one dispatch.
+
+Finding:
+`agent-findings/2026-09-02-a-justified-absence-reads-as-an-instruction-and-no-vocabulary-census-finds-it.md`,
+and it carries two things worth more than this task. **The bible's absence-vocabulary census found
+none of the four defect sites**: a passive absence ("there is no X") and a justified absence ("X is
+not here, and here is why") share almost no vocabulary, and only the second reads as an instruction.
+And `grep -nP 'left this hook'` exits 1 on a file that contains the phrase, because at
+`proseWrap: preserve` it straddles a hand-wrapped line — so **no line-oriented phrase census over
+`.ai-docs/` returns a trustworthy zero**, whatever its vocabulary. Gates: `check-findings-frontmatter`
+45/45, and the four citation checkers 136/136.
+
+## 2026-09-02 — EDITOR-69: an over-long sentence stopped being blamed on a model that was never called
+
+Filed as "no warning on the composer". It was three defects meeting at one surface, and the report
+corrected the row on the way through: **two causes, not one.** `apps/editor/src/lib/api/compose.ts`
+read `response.status` where `/compose`'s discriminator is the BODY — the worker spends 400 on two
+different guards and names which in the body — so a length refusal fell through to "The model did
+not answer. Nothing changed." while the source's own comment says the guards run **before** the
+model is reached, and `reportIssue` fired on that branch under a comment reserving it for the route
+that spends money on every call. Independently, `COMPOSE_CALLS.limit()` was the handler's first
+statement, **above** both guards, so eleven over-long pastes exhausted a ten-a-minute allowance on
+requests that reached no model. A fix for either left the other standing, which is why the specs
+landed in two suites.
+
+**The field does nothing at the limit, and that is a ruling rather than an omission.** No
+`maxLength`, no counter, no disabled Send. The brief framed blank-versus-long as an asymmetry to
+resolve; re-derived, the two are not symmetric in the way that decides it — **blankness is a
+predicate the client can evaluate on its own, a cap is a number only the worker owns.**
+`apps/editor` has `server` as a devDependency exporting only its index, so importing `MAX_SENTENCE`
+as a value would drag the Anthropic SDK, better-auth and drizzle into the browser bundle; a
+client-side refusal would therefore be a verdict built on a number that can silently drift, and the
+editor would start refusing sentences the worker accepts with nothing to redden. A disabled Send is
+worse than the pre-refused `maxLength`, not better — 601 characters look exactly like 599 — and a
+counter has nowhere to go, since `composer.tsx` records the design ruling that its control band
+holds exactly two children. **What makes doing nothing correct is the limiter fix**: the round trip
+is now free, reaches no model and returns in milliseconds, so the composer's existing mechanism for
+saying why a submit produced nothing suffices. Two e2e tests pin it so the refused fixes cannot come
+back — the draft keeps every character and Send stays enabled.
+
+**Moving the limiter opens no exposure of consequence, and the censused contrast is the useful
+half.** Every path to Anthropic still passes it, so spend is bounded exactly as before, and a spec
+asserts the eleventh ordinary request still gets a 429 — that is what makes it a reordering rather
+than a removal. The unmetered work ahead of it is unchanged: `authenticated` performs a D1 session
+round trip and the zod validator has already parsed the body, both of which were always above the
+limiter, so an attacker gains one `.length` comparison per request. The residual — no cap on request
+VOLUME independent of spend — was already true and is the same gap `wrangler.jsonc` documents for
+`POST /configs`. Both `.limit(` sites in the worker are now known to be right for **opposite**
+reasons: `CONFIG_WRITES` is deliberately first because it meters request volume from anonymous
+callers, `COMPOSE_CALLS` meters spend from an identified one. Same worker, three weeks apart, and
+the difference is invisible from the binding name.
+
+**The 400 double was built alongside the guard it holds** — the leg merged in from the retired
+CLI-864. It is its own handler rather than an arm of `composeRefusalOf`, because keying a 400 double
+on status alone would mint one answer for two guards and assert that the client read a discriminator
+it never saw; `composeRefusedHandlerFor(400)` keeps its bodiless response and is now the **degrade**
+control. That control was proved to be a real guard rather than a free pass: against a deliberately
+careless `status === 400 ? "too-long"` implementation it goes red. `COMPOSE_TOO_LONG_BODY` was
+reported as an owed cross-lane diff rather than made, and the orchestrator moved it to
+`fixtures.ts` beside its two siblings — where the existing docblock had gone false, since it claimed
+the client maps every unnamed status to one `refused`.
+
+Finding:
+`agent-findings/2026-09-02-a-rate-limiter-above-a-free-guard-charges-for-work-it-refused-to-do.md`.
+Gates: the editor, server and api-mocks suites, the Playwright specs for this route, `tsc` and
+`eslint`, all green at the time of landing. (Figures deleted 2026-09-02 rather than re-measured: a
+full-suite count taken during a concurrent pass is load-dependent, and this repo's own rule is that a
+record carries the command rather than its result.)
+
+## 2026-09-02 — EDITOR-67: signing in stopped deleting the work it exists to preserve
+
+**It reproduced exactly as filed**, which is the part worth recording — the row had been filed as a
+product question and was restated as a bug the day before on the strength of reading alone. The
+reproduction: park a configuration assigning a project-scoped skill to a sub-agent resting at
+global, sign in, and the snapshot vanishes. `adoptLocalStack` mints the local slot to the account on
+first sign-in; CLI-851 gave that mint a refusal; the guard receiving it was
+`if (!minted.ok) return stacks`, and `stacks` is empty precisely because adoption only runs against
+an empty list — so the grid drew neither list. The only trace anywhere was a console line naming the
+scope conflict that no person ever sees, and `adoptLocalStack`'s own docblock says **WITHOUT THIS,
+SIGNING IN LOOKS LIKE LOSING YOUR WORK**.
+
+**The shape: keep the local slot on the grid when adoption was refused, and say why above it.** The
+brief's second option — adopt in a marked state — turned out to be **structurally unavailable**
+rather than merely undesirable: a `RemoteStack` carries a `configId` minted by `POST /configs`, so a
+payload the worker refuses never gets an id and a marked row has nothing to point at. Refusing the
+sign-in loudly was rejected for making a configuration problem block an identity operation while
+still not returning the person their work. Two load-bearing choices inside the chosen shape: the
+store holds the refusal and the grid owns the words, which is the repo's documented split and is why
+the notice can say "apply it, then fix the marked rows" where the roster's own "fix marked rows"
+would be wrong — those rows do not exist until the snapshot is applied; and `unadopted` is non-null
+only while the account holds nothing of this browser's work, maintained in the store rather than as
+a compound condition in the view, which is what structurally prevents the grid drawing two cells
+both labelled `Saved stack`. All five endings get words rather than only `unwritable` — four retry
+on the next load and one never will, and the sentences say which.
+
+**The fix closes the path at sign-in and RE-OPENS it on the next unrelated Save — filed 2026-09-02
+as EDITOR-73 and reproduced by execution.** `save` clears `unadopted` on any save, so the kept slot
+and its notice vanish and a reload does not bring them back; the snapshot survives in `localStorage`,
+unshown, which is word for word the shape this row fixed. Nothing below should be read as saying the
+class is closed — only the sign-in moment is.
+
+**The class was censused and has no siblings.** `grep -rn 'if (!\w*\.ok)' apps/editor/src` returns
+28 consumer guards; every other one narrates onto a surface. Two adjacent cases were named and
+deliberately not fixed: a failed account-stack fetch that does nothing on screen but loses nothing,
+so it is an unresponsive control rather than data loss; and `listStacks` answering `[]` for a 500 as
+well as a 401, which is pre-existing, needs a product decision, and was filed as **EDITOR-70**
+rather than patched. **EDITOR-71** carries the two test-surface residues the lane flagged rather
+than buried — a shared `importNotice` locator now one co-occurring state from a strict-mode
+violation, and a new `role="alert"` state with no a11y audit.
+
+Finding: `agent-findings/2026-09-02-a-replacement-that-fails-leaves-the-user-with-neither.md`, and
+its rule generalises past this bug: **where a surface shows A in place of B, the condition that
+hides B must be "A arrived", never "A was attempted"** — because the hiding and the producing live
+in different modules, only one of them can see a refusal, and returning the prior value type-checks
+perfectly. Gates: the Playwright and unit suites, `tsc -b`, eslint and prettier, all green at the time of
+landing, plus a hand-run screenshot confirming the sentence renders without clipping. (Suite counts
+deleted 2026-09-02 rather than re-measured — see the note in the EDITOR-69 entry.)
+
+## 2026-09-02 — EDITOR-66: the write-boundary refusal CLI-851 added has now been watched failing
+
+CLI-851's `createSharedConfig` guard refuses an unwritable configuration before the POST. It had
+been verified by hand in a transient harness its own lane deleted, so **no spec had ever seen it
+fail.** `scope-reach.spec.ts` gains a `"a signed-in save of the pair"` describe with two tests, and
+`roster-panel.ts` gains one parameterised `saveNarrating(label)` — needed because `saveButton` is
+`name: "Save"` and the button RENAMES itself on refusal, so the page object's own locator stops
+matching the instant there is anything to assert.
+
+**The empty-log assertion earned its place by a different argument than the one that briefed it.**
+The brief claimed a guard that STRIPPED the offending assignment would leave the narration correct;
+it would not — a stripped payload posts successfully, the button reads `Save`, and the narration
+assertion fails on its own. The demonstrated justification is sharper: a `createSharedConfig` that
+posts FIRST and maps the worker's 400 back to `unwritable` produces **identical words on the
+button**, and only `expect(posted).toStrictEqual([])` separates it from a pre-POST refusal. That was
+watched red as its own variant, printing the payload the guard was supposed to have stopped.
+
+**The permitted-case control was measured rather than argued.** Against a deliberately swallowing
+guard (`problems = [...writeContractProblems(payload), "swallowed"]`) the refusal test stays GREEN
+and the control reddens — which is the pairing rule's whole claim, and the two tests differ by
+exactly one action.
+
+**A false sentence was deleted rather than reconciled**, per the standing ruling: _"Save is the local
+snapshot, not an export — it never reaches the worker and never reaches the CLI, so parking a
+half-finished configuration stays possible."_ Nothing was written in its place; the signed-in
+behaviour it misdescribed is now stated by the two tests below it. The adjacent comment explaining
+why the button stays enabled is still true and stayed.
+
+**Share was confirmed as the harder path and deliberately not covered twice** — `blocked` disables
+it, so the existing spec reaches it only with `click({ force: true })` and already asserts its empty
+log; the button is unreachable to a user and the guard behind it is the same function.
+
+Filed from this lane: **EDITOR-72**, a censused breach of the README's own locator rule — 55 sites
+across 15 spec files — caused not by anyone breaking it but by page objects modelling only a
+control's RESTING state, leaving lifecycle assertions nowhere else to go. Finding:
+`agent-findings/2026-09-02-a-page-object-modelling-only-a-controls-resting-state-pushes-every-lifecycle-locator-into-the-specs.md`.
+Gates: 18 passed for the file, 487 for the chromium project, `tsc -b`, eslint and prettier clean,
+and `configs.ts` restored byte-identical after three working-copy mutations (SHA verified).
+
+## 2026-09-02 — CLI-855: the store's one explanatory refusal reaches the terminal, and the row that named the wrong status was corrected on the way
+
+**Two dispatches, and the first one refusing was the point.** The row was filed against the store's
+429 body and narrowed by the 2026-09-02 scrutiny pass to "the 429 alone". Both were wrong.
+`Too many requests` is the HTTP reason phrase for 429 verbatim, re-cased — the exact property the
+narrowing had used to disqualify 413 — so the status the row named must NOT be quoted. And 503 was
+dismissed on a non-sequitur: that `packages/api-mocks` mirrors its body in `STORE_REFUSED_BODY`,
+which is a fact about a test fixture and says nothing about what a user sees. `Could not store this
+config` against a reason phrase of `Service Unavailable` is the one body of the three that names a
+cause. The first lane changed nothing, demonstrated the inversion against `node:http`'s
+`STATUS_CODES`, and stopped — the briefing contract's rule earning its keep. **The error was in the
+scrutiny narrowing, not in the original filing.**
+
+**What landed on re-dispatch.** `refusalBody` returns raw text for every status rather than parsing
+it as JSON; `explanationOf` tries the zod envelope first and falls back to `quotableProseIn`, which
+gates on content type, drops a blank body, and drops one equal to its own status's reason phrase.
+**No status number gates a read** — and the brief's instruction to that effect turned out to be
+already non-absolute by design, since the route writes a fourth `c.text` body the analysis had
+missed: 409's `Reload the page: …`, which `refusalMessage` branches on before any read for its own
+documented reason. The reason-phrase suppression is what makes the rule general rather than a
+hand-list of three statuses: **413 and 429 needed no special case, and neither will a fourth.**
+
+**Both stages of red were watched.** Stage one, tests against the unchanged module: 1 failed / 15
+passed, the 503 rendering bare. Stage two, against a deliberately unguarded implementation quoting
+any non-envelope body: **7 failed / 9 passed**, every control firing — the two restating statuses,
+an empty body, a captive portal's HTML, a foreign JSON document. Hand-run confirms it: a 503 renders
+`The store said: Could not store this config`, a 429 and a 413 render the bare status.
+
+**"The same shape as `fetch-seed.ts`" would have been wrong followed literally.** That file puts
+`arrivedAsText` inside `refusalBody`, gating the READ; copying the placement here kills the envelope
+arm, which arrives as `application/json`. Similar shape, different placement, and the docblock says
+so. No shared helper: only `arrivedAsText` is one rule about the wire, while the budgets and the
+discriminators are per-route measurements with documented reasons.
+
+**A fixture in the lane's own file was faithful in content and false on the wire** — captive-portal
+HTML sent with `HttpResponse.text`, so `content-type: text/plain`. Harmless while only the envelope
+was quoted, and quotable the instant the prose arm existed. The general shape is worth keeping: **a
+fixture only has to be faithful on the dimension the code under test discriminates on, and that
+dimension can move under it.**
+
+Filed from this lane: **CLI-868** — `check-finding-citations.ts` reads any dated name in `todo/` as a
+finding, so a tracker link to a dated PLAN fails as a dangling citation. Reproduced when
+`ROADMAP.md` linked this programme's run sheet; worked around by renaming that file to drop its date
+prefix. Finding
+`2026-09-02-a-refusal-body-that-restates-its-own-status-reason-phrase-explains-nothing.md` moved from
+`open` to `resolved`, since the lane that wrote it was describing a gap its successor then closed.
+Gates: `publish-seed.test.ts`, the `lib/seed/` suite and two e2e specs all green, as was the full
+unit suite. (The full-suite figure was deleted 2026-09-02 rather than re-measured — it is
+load-dependent and was taken during a concurrent pass.)
+
+## 2026-09-02 - CLI-854: one sanitiser behind three chokepoints, and a census that was wrong three times
+
+**The row said three boundaries. The dispatch corrected that to five. Both were wrong**, and the
+correction is the most useful thing here: the right census is keyed on **which renderer foreign text
+funnels through**, not on where it is printed.
+
+```
+grep -rn 'truncateText' packages/cli/src/cli --include='*.ts' --include='*.tsx' | grep -v __tests__
+grep -rn 'formatZodIssue\|formatZodErrors' packages/cli/src/cli --include='*.ts' | grep -v '\.test\.'
+```
+
+`truncateText` turned out to be, de facto, the "bound foreign text" function - **all five of its
+call sites are foreign** - so fixing it closed four of the row's five sites at once. The two that
+mattered most appeared in no version of the row: `formatZodIssue`, whose own docblock calls it "one
+place for the path-prefixed issue rendering shared by every Zod reporter" and whose every sentence
+part comes from the refused document; and `getErrorMessage`, at 74 call sites.
+
+**The sharpest find got past the lane's own first implementation**, and was caught only because a
+spec asserted on the whole rendered message rather than a fragment: the stdin excerpt was sanitised
+and the parse _reason_ was not, because the reason is a V8 `Error` and therefore looks like the
+CLI's own text. `JSON.parse` writes the offending input into its message verbatim. **Provenance
+follows the bytes, not the object** - "produced by trusted code" is not an argument that a string is
+trusted. Eight sites of that class, all closed inside `getErrorMessage`.
+
+**Strip first, then truncate, and the order is owned inside `truncateText`** rather than left to its
+callers, because there is a wrong way round and exporting two functions invites it. A cut taken
+first can land inside a sequence, and the fragment is worse than the whole - a terminal holds it
+open and eats the ellipsis and the next line. That exact hazard was reproduced red: an expected
+`abcde` ellipsis arriving as a dangling escape holding the ellipsis. **Newline and tab survive**;
+everything else in C0, C1, DEL and every escape sequence goes. Newline because a multi-line zod
+message is what the store really writes, and the strict direction of error mangles every honest body
+to stop a rare hostile one. Carriage return is stripped, so a CRLF body keeps its line break and
+loses its cursor move. Words are never removed - a forged sentence survives as visibly ordinary
+text.
+
+**The hand-run showed a third defect nobody had filed.** Rendering a hostile local skill through
+`search` leaked `@oclif/table`'s own SGR reset AND collapsed the Description column with the border
+jammed against it, because the column width had been computed over the escape bytes. Binary census
+before and after: ESC and CR both present, then neither, with no control byte but newline.
+
+Nineteen specs were watched red against a neutered sanitiser, with every permitted-case control
+staying green - which is what shows they are not vacuous. `ResultRow`'s `id` and `category` were
+widened from `SkillId` / `CategoryPath` to `string` rather than casting a sanitised string back into
+a union it is no longer known to be in, which is what the docblock had already said those fields
+were. The one `eslint-disable no-control-regex` was kept **inline rather than promoted to
+`eslint.config.js`**, deliberately inverting the repo's usual rule: a package-wide override would
+license control-character regexes everywhere, which is the opposite of one sanitiser.
+
+Filed from this lane: **CLI-869**, the half it could not close - the wizard's Ink components
+interpolate `displayName` directly, and the choice between sanitising once at `initializeMatrix`
+(which also feeds `seatCatalog`, so compiled agent bodies change) and patching ~499 occurrences
+across 19 files is a ruling rather than a size. Finding:
+`agent-findings/2026-09-02-a-parsers-error-message-carries-the-input-that-broke-it.md`.
+
+## 2026-09-02 - CLI-856: a directory's kind is stated rather than inferred from what happens to sit in it
+
+`classify()` read a directory's KIND off whether it currently held any specs, so `e2e/fixtures/`
+counted as a non-spec directory purely because it never had. The CLI-849 lane put one there and
+broke four gates through `fixtures/dual-scope-helpers.initGlobalWithEject`, a symbolic reference
+that had nothing to do with its change - **the failure named a journey row and a helper, neither of
+which had moved.**
+
+`SPEC_DIRECTORIES` is now a stated `readonly string[]` the reader consults. The old derivation
+became the exported `specDirectoriesIn`, used **only** by a roster gate that holds the two against
+each other with `toStrictEqual` - the reader must not consult it, or the coupling returns, and a
+gate comparing a derivation against itself agrees whatever the tree does. **The module's docblock
+had explicitly argued against a hand-kept list**, on the grounds that a new directory's rows would
+go unjudged and nothing would say so; that objection is answered by the gate rather than ignored,
+and the mutation check proves it - dropping `pages` produces one assertion naming the directory and
+the side it is missing from.
+
+**Both reds were watched, and the second is why the fix is trustworthy.** The pure reproduction
+takes the spec list as a parameter, so the fragility reproduces with no fixture tree: two readings
+of one page differing by a member no assertion mentions. But a pure test alone does not prove the
+row's claim about `spec-gates.test.ts`, so a throwaway spec was written into `e2e/fixtures/` and the
+gates run against the real tree both ways - **five reds with the derivation restored, one after**,
+and that one is the correct self-explanatory "a spec belongs to no journey" a new spec should
+produce.
+
+**The exposure bound was measured rather than assumed**, and measured wider than the row claimed:
+across the whole page rather than the From-scratch column, `fixtures` is the only spec-free
+subdirectory the page uses as a prefix. `assertions` and `helpers` are the other two and the page
+uses neither. A class census found one candidate sibling, `holdsTypeScript()` in
+`check-shared-eslint-config.ts`, and correctly rejected it - **there the kind and the contents are
+the same fact**, since a workspace gaining its first `.ts` genuinely does need an ESLint config,
+where in `classify()` they were different facts that merely coincided.
+
+Two alternatives were rejected with reasons: threading the recognised-names roster into `classify()`
+is the existing finding's own proposal and would make the gate tautological, handing the reader the
+roster it is then measured against; and documenting a pre-flight step was the pre-refused option.
+The 2026-09-01 finding was marked `resolved` and its Residual - "the mechanism is unfixed" - closed.
+`factories.md` reddened `check-enumeration-drift` for two unnamed exports; the lane verified the
+diff, reverted it byte-exactly, and reported it rather than editing `.ai-docs`. Gates: the full unit suite green. (Figure deleted 2026-09-02 rather than re-measured.)
+
+## 2026-09-02 - CLI-870 (was CLI-857): the one request leaving the unit suite is made by a process no mock can reach
+
+**CLI-857's premise was measured false and the row was replaced.** It claimed `linkSharedCache`'s
+reach was a hazard - that a spec pointing HOME itself could download a marketplace again.
+Instrumenting every `fetch` and `http/https.request` across the whole suite found **zero** marketplace
+requests and **zero** giget calls, with the instrument validated against a real `downloadTemplate`
+first so a download could not have hidden from it. All three fixes that row proposed were work
+against a measured payoff of nothing, and one of them would have been actively harmful: linking
+`.cache` into more homes without closing the env door routes the update-check child's
+`<home>/.cache/agents-inc/version` write into the machine-wide fixture at
+`/tmp/agents-inc-unit-shared-cache`, masking the escape behind the plugin's throttle rather than
+fixing it.
+
+**Exactly one request left the process**, from `@oclif/plugin-warn-if-update-available`'s detached
+child to `registry.npmjs.org`. `vitest.setup.ts` now pins `AGENTS_INC_SKIP_NEW_VERSION_CHECK`
+process-wide, which is where a process-wide variable naming no home always belonged -
+`isolated-home.ts` set it per fake home, which is exactly what left every spec building its own home
+exposed.
+
+|        | files | tests | off-machine requests |
+| ------ | ----- | ----- | -------------------- |
+| before | 222   | 7432  | **1**                |
+| after  | 222   | 7432  | **0**                |
+
+`commands/edit.test.ts` alone: 1 escape at 3/3 before, 0 at 3/3 after. `/tmp/vitest-home-*`
+survivors after a run: 1 before, 0 after - the resurrection side of the same child, and the other
+half of this suite's `ENOTEMPTY: rmdir` failures.
+
+**The brief's attribution was wrong and the correction widened the row.** It named a describe block
+that hand-rolls a fake home; a `child_process.spawn` stack trace puts the escape in
+`describe("no installation found")`, **which sets up no fake home at all**. The named block could
+not have been the source: it reaches oclif through `Edit.run(...)`, and `Command.run` never calls
+`runHook("init")`. The door is oclif's top-level `run()`, which only `runCliCommand` reaches - so the
+hole is **any `runCliCommand` outside a fake home**, not a hand-rolled home specifically.
+
+**No in-process interceptor could ever have caught this**, which is a stronger reason than the one
+CLI-857 gave for rejecting a `globalThis.fetch` guard: the request is made by a different process.
+The spec asserts oclif's own `scopedEnvVarTrue("SKIP_NEW_VERSION_CHECK")` predicate rather than the
+variable's spelling, so an `oclif.bin` rename reddens it instead of leaving it green over a dead
+variable, and it pins the open door beside the closed one. Side effects were checked rather than
+assumed: every reference to the update-check path in `src`, `e2e` and `scripts` exists to close it,
+and nothing asserts the check runs.
+
+The lane also reported, rather than made, a latent hazard its own change creates two files over:
+`isolated-home.test.ts` deletes a variable that used to be naturally absent and is now a
+process-wide pin, so those tests withdraw it and never restore it. Latent rather than live, and
+closed separately. Gates: `turbo test`, `turbo lint`, typecheck across three projects and `deps:check`, all green at the
+time of landing. (Task counts deleted 2026-09-02 — the package suite measured differently under
+concurrent load.)
+
+## 2026-09-03 - EDITOR-73: the kept snapshot survives the next save, and both proposed fixes were wrong
+
+EDITOR-67 stopped signing in from deleting a scope-conflicted snapshot. **It closed the sign-in
+moment and re-opened one Save later** - `save` cleared `unadopted` on ANY save, so
+`keepsLocalSlot = !account || unadopted !== null` went false, and `adoptLocalStack` returned early on
+`stacks.length > 0` so the reason was never recomputed. The snapshot stayed in `localStorage`,
+unshown: word for word the shape EDITOR-67 fixed.
+
+**The dispatch offered two candidate edits and the code refused both as written**, which is the
+useful part of this entry.
+
+_Clear `unadopted` only when the save is of the local slot itself_ is **unreachable in scope**. A
+signed-in save never writes the local slot - `roster-panel.tsx` calls `saveStack(payload)` only in
+the signed-out branch - so the snapshot is byte-identical after any signed-in save; and for the
+`unwritable` refusal a local-slot save cannot succeed at all, because the mint is refused before
+`save` is reached. `save(name, configId)` receives no payload and so cannot tell. **The fix is that
+`save` stops writing `unadopted` at all: a writer that cannot know what it is asserting should not
+assert it.**
+
+_Recompute by re-attempting adoption_ would **upload a duplicate on every load** and redden the
+shipped `leaves an account that already has stacks alone` spec. The shape that works is cheaper:
+`unwritable` is decided LOCALLY, before any request, by `writeContractProblems`. So the branch asks
+the write contract for free - `return { stacks, unadopted: writeContractRefusal(local) }`. Every
+write the editor makes crosses that same gate, so a snapshot the contract refuses cannot be in the
+account by any route. **"We did not try" and "it is in there" were being answered identically.**
+
+**The notice is deliberately not dismissible, and the reasoning is now in the JSX.** A dismiss
+control has two honest behaviours and both are worse than none: clear the notice and keep the cell,
+recreating the unexplained-slot confusion EDITOR-67 closed; or clear both, which is this row's own
+data loss with the user's finger on it. It is already dismissible by the route its own copy names -
+repair the snapshot and save it. A "hide this" button could be labelled honestly only as "hide my
+work".
+
+**One pinned assertion changed shape and it was stated rather than quietly rewritten**: two cells
+named "Saved stack" is now the ACCEPTED outcome rather than a case ruled out, because every
+signed-in save carries `SAVED_STACK_NAME` and the old guarantee was never buying what it claimed.
+Both false-invariant comments were corrected - a comment asserting an invariant is the most reliable
+way to stop the next reader checking it.
+
+Mutation-checked rather than assumed: reverting either half of the fix reddens its own spec while the
+permitted twins stay green, which is what makes them controls. The `test.fail()` pin was confirmed as
+an expected failure first, then converted to an ordinary passing test in the same change. A class
+census over refusals held as state found three others, none in the class - the other two are
+component-local with every writer in one file, and one is payload-keyed so it self-invalidates.
+
+Filed from this lane: **EDITOR-74**. Gates: full editor E2E including a11y, the unit suites,
+typecheck, lint and prettier, all green.
+
+## 2026-09-03 - the ready-rows programme closed: ten lanes, a verification pass, and what the corrections measured
+
+Eight rows were dispatched one lane at a time on owner instruction, each through the full SDLC. Two
+were re-dispatched after their own lane refused them. A read-only verification pass then re-checked
+every landing, and a docs lane closed step 5, which had been withheld from all ten lanes by design.
+The run sheet at `plans/ready-rows-programme.md` was deleted when the second pass finished; this
+entry is what survives it.
+
+**Two rows were destroyed by the lanes sent to build them, and both refusals were right.** CLI-855
+was filed against the store's 429 body and narrowed by a scrutiny pass to "the 429 alone"; `Too many
+requests` is the HTTP reason phrase for 429 verbatim, so the status the row named must not be quoted
+and the 503 it dismissed was the only one that qualified. CLI-857 claimed `linkSharedCache`'s reach
+was a hazard; instrumenting every request across the suite found zero marketplace calls and exactly
+one escape - oclif's detached update-check child - which became CLI-870. **In both cases the error
+was in the narrowing, not the original filing.**
+
+**The corrections ledger is the measurement worth keeping.** Ten dispatches produced roughly thirty
+corrections. Two briefs named files that do not exist. One of those created a lane collision, because
+the ownership map was built on a path that had never existed. Three briefs argued for a fix the code
+then refused - a shape that was structurally unavailable, a placement that would have killed the arm
+it was copying, and a recompute that would have posted a duplicate on every load. **The last brief of
+the programme was the first with no corrections at all.**
+
+**Three census claims were wrong in the same direction, and the third correction is the general
+one.** CLI-854's row said three boundaries; the dispatch corrected it to five; the lane found the two
+that mattered were in neither - `formatZodIssue` and `getErrorMessage`, at ninety-odd call sites
+between them. **The right census is keyed on which RENDERER foreign text funnels through, not on
+where it is printed.**
+
+**What the verification pass caught that no gate could.** CLI-867's record named the wrong
+regression - it said two documents instructed a reader to re-collapse the pre-push invocations, when
+both argued the suites do not belong in the hook at all. The claim had propagated to five files,
+including the finding whose own subject is that exact misreading. **Every check this repository owns
+reads whether a citation resolves, never whether a characterisation is true.**
+
+**Two rows shipped correct code that no test defended.** Renaming EDITOR-69's discriminator together
+with its own assertion - the shape a rename actually takes - left every suite green while the editor
+reverted to blaming a model that was never called. Tightening CLI-855's `.startsWith` to `===` left
+the seed suite green while silencing the one refusal it exists to deliver. Both were caught by
+mutants that SURVIVED, and both fixes were one or two test lines. The unifying thesis, now a finding:
+**a double or harness that differs from production in exactly the dimension the code discriminates on
+cannot test that dimension** - MSW's bare `text/plain` against hono's `charset=UTF-8`,
+`runCliCommand` stripping ANSI before an assertion about ANSI.
+
+**A fix that closed a defect at one moment and re-opened it at the next.** EDITOR-67 stopped sign-in
+deleting a scope-conflicted snapshot; EDITOR-73 found the kept slot vanishing on the next unrelated
+save. The repository's twin-pinning rule was obeyed exactly and could not reach it: **the rule
+constrains what a refusal is paired with and says nothing about when either half is observed.**
+
+**Process lessons, recorded because the run sheet carrying them is gone.** The briefing template used
+for all ten dispatches said "do NOT touch `.ai-docs`" and "write a finding to `.ai-docs/agent-findings/`"
+in the same brief; lanes silently resolved it by writing the finding until one refused and surfaced
+the contradiction, which was the better behaviour. Concurrent mutation-verification contaminated three
+lanes - one verifier preserved mtimes so its mutants slipped past the staleness guard, another
+triggered `dist` rebuilds mid-run - so **a mutation pass needs one worktree per lane or a serialised
+schedule**, and no full-suite figure taken during one is evidence. Five unreproducible gate counts
+were deleted from this file rather than re-measured, on the repository's own rule that a record
+carries the command and not its result.
+
+Filed by these lanes and still open: CLI-865, CLI-868, CLI-869, EDITOR-70, EDITOR-71, EDITOR-72,
+EDITOR-74 and REPO-42. EDITOR-55 was unblocked by an owner ruling on 2026-09-03 - the main column is
+just wide enough to wrap three cards instead of four, which puts its floor at roughly 943px and gives
+a card 1.8x the width it has at four across on the design's own 1240px floor.

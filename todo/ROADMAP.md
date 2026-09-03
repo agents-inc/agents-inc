@@ -17,10 +17,11 @@ started. See the root `CLAUDE.md`.
 
 **The Go-Live program is COMPLETE. All three legs are done and every gate is green.**
 
-**The tree is no longer uncommitted — that changed on 2026-08-20.** The whole programme landed in a
-release round ending at `155f0662` (0.156.1, the focus walk looking before it presses), and the
-working tree was clean immediately afterwards. This section said "nothing is committed" for weeks
-before that; if it says so again, it is stale.
+**The tree is uncommitted again as of 2026-09-02**, and the sentence that used to sit here invited a
+reader to disbelieve exactly that. It said the tree had been clean since `155f0662` (0.156.1) and
+that any later claim to the contrary was stale — which was true when written and false the moment a
+session ran long. It is a standing assertion about a value that changes daily, which is the shape of
+claim this file should not carry at all: read `git status`, not this line.
 
 **In flight as of 2026-08-20: the seventeen-ruling round.** The owner settled every open ruling in
 one pass — the twelve in [`plans/open-rulings-2026-08-19.md`](./plans/open-rulings-2026-08-19.md)
@@ -263,11 +264,10 @@ and CLI-425 are not, and stay here.
 
 ## Correctness rows carried out of pass 5
 
-| ID          | What                                                                                                                                                   | Status        |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| **CLI-492** | Align init / edit / compile on CLI-only agent definitions — a source-defined agent name can enter the generated unions from one path and never compile | Ready for Dev |
-| **CLI-496** | The global source-migration propagation defect on the narrower path — nothing tests it today, its only spec is `describe.skip`                         | Ready for Dev |
-| **CLI-477** | Nothing enforces that every `defaultRules` slug exists in the default catalog (invariant 4)                                                            | Ready for Dev |
+**All three landed.** CLI-492, CLI-496 and CLI-477 were listed here as `Ready for Dev` long after
+they were archived and removed from `cli.md` — which is the failure this file's own rule exists to
+prevent, since the trackers are canonical and this document only orders them. Their entries are in
+[`archive.md`](./archive.md); nothing is carried.
 
 ## Docs and test hygiene
 
@@ -298,7 +298,10 @@ divergence. Gate only where no subject can be removed.
   `plugin marketplace update` correction, two CLI-479 drifts (phantom hotkey constants, `STEP_TEXT`
   count 139 → 149).
 - **CLI-497** — `SOURCE_ROW_WALK_LENGTH` is fixture-sized (12); a larger source under-walks and
-  passes vacuously.
+  passes vacuously. **This ID has no record in any tracker and none in `archive.md`**, so whether it
+  landed, was withdrawn or was never started cannot be recovered from this folder. Re-derive it
+  against the tree before acting on it; do not trust this line as a statement of open work.
+  (Noticed 2026-09-02.)
 - **CLI-596** — all ten E2E fixture skill slugs are already claimed by the default catalogue, so a
   fixture skill has no slug identity in the ~14 mixed-configuration specs. Inert today (no product
   reader of `getSkillBySlug` or `idToSlug`); armed for the first one.
@@ -336,6 +339,45 @@ site. One of its bullets was **withdrawn rather than done**: the owner ruled tha
 README-linked guides carry the correct voice, which is the reverse of what the row asserted, so a
 future pass must not "fix" them. WWW-04, WWW-07, WWW-08 and WWW-10 all landed and were removed from
 the tracker; this line named them for a fortnight after they had.
+
+## 2026-09-01/02 — the apex split shipped, and a share defect took eleven rows with it
+
+**WWW-03 landed**: `agentsinc.sh/` is the landing page, `/docs` is Starlight, `/editor*` is a
+Cloudflare Route. Verified against the real hostname rather than a preview, because no local
+modality serves the apex as it exists. The dashboard step turned out to be unnecessary — `wrangler
+deploy` reassigned the Custom Domain itself, non-interactively, which the tracker had recorded as
+unverified and warned against finding out on production.
+
+**REPO-41's token half**: CI had deployed nothing since 2026-08-25 while every check job stayed
+green, because a D1 migration step ran under `bash -e` before `bun run deploy` with a token that
+predated the database. Sixty commits and two releases were sitting unshipped.
+
+**Then a single bug report — "the stack detector failed with a 400" — opened a class.** The CLI
+validated a piped configuration with the READ schema while the worker's POST used the WRITE one, and
+the one rule they differ by is easy to compose by accident. Closing it reached the CLI, the editor,
+both test doubles, the skill that produced the payload, and the documentation on both sides:
+CLI-837, CLI-848, CLI-849, CLI-851, CLI-852, CLI-853, WWW-16, EDITOR-64 and EDITOR-65 all landed,
+and every one is in [`archive.md`](./archive.md).
+
+**Two results worth carrying forward.** The unit suite was downloading a GitHub marketplace once per
+test — 31 tarballs a run — which had been read as a flaky timeout; removing it took the suite from
+90s to 31s. And every compiled sub-agent had been instructed to use a `Skill` tool its own
+frontmatter never granted, because enumerating `tools:` opts out of a default.
+
+**What is open is small and filed**, and was scrutinised against the repository's own bar on
+2026-09-02: thirteen rows became eight, with CLI-858, CLI-864 and EDITOR-68 retired unbuilt, CLI-866
+moved to `repo.md` as REPO-42, and nothing left at `Needs Assistance` — see `archive.md`. What
+remains is CLI-854 through CLI-857, CLI-865, EDITOR-66, EDITOR-67 and EDITOR-69, and the seven
+ready ones are being run one lane at a time — the queue, the file ownership and a per-dispatch
+corrections ledger are in
+`archive.md`, under the 2026-09-03 entry closing the programme. Its run sheet was a temporary file
+and was deleted when the second pass finished.
+**All eight ready rows landed 2026-09-02** — CLI-854, CLI-855, CLI-856, CLI-867, CLI-870 (was
+CLI-857), EDITOR-66, EDITOR-67 and EDITOR-69, each with an `archive.md` entry. A verification pass
+proved seven of them real by mutation and un-landed none. **What remains open** is CLI-865
+(`Investigate` — its filed cause was falsified and the real one is unknown), CLI-868, CLI-869,
+EDITOR-70, EDITOR-71, EDITOR-72 and REPO-42, all filed by those lanes; plus the docs and test-gap
+follow-ups the verification pass named.
 
 ## In flight — the editor v6 design programme (started 2026-08-26)
 
