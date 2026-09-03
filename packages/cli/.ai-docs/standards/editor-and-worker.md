@@ -794,6 +794,118 @@ teardown assertion is what makes an omission legible.
 
 ---
 
+## A refusal body is quoted only where this CLI is its audience, and only where it adds to the status
+
+The worker writes its refusals for whoever asked. A browser and a terminal are not the same reader,
+and a body that helps one can be actively wrong for the other — so **a client quoting a refusal body
+owes two judgements before it prints one word of it.**
+
+**Is this client the body's audience?** `refuseAnotherSeedVersion` in `apps/server/src/index.ts`
+answers a 409 with `Reload the page: …`, which is the whole fix for the caller that refusal was
+designed around — a tab minting from a bundle older than the last deploy. There is no page in a
+terminal, so `publish-seed.ts` branches on the STATUS ahead of any body read and says the fact in the
+CLI's own words instead. Quoting would have been worse than the bare status, which at least does not
+send the reader somewhere that does not exist. Where the client is not the audience, say the fact
+yourself or say nothing; do not paraphrase somebody else's remedy.
+
+**Does the body add anything to the status printed beside it?** Compare against `node:http`'s
+`STATUS_CODES` — the registry of reason phrases a status line already carries — case-insensitively
+and against the trimmed body, since a worker writing sentence case and a registry writing title case
+is not a difference in meaning. `restatesItsOwnStatus` in `src/cli/lib/seed/publish-seed.ts` is the
+implementation. **Compare against the registry rather than listing the statuses you have seen**: the
+list form catches `Too many requests` and `Payload too large` today and lets the next refusal written
+the same way through on the day it ships, where the registry comparison is a rule about the class and
+suppresses it for free. `Could not store this config` is not `Service Unavailable`, which is why the
+one refusal on that route naming a cause is the one that survives — the test being whether the body
+says something the number could not.
+
+Two bounds sit underneath both judgements and are not optional: **a budget** — `EXPLANATION_BUDGET`,
+per route rather than shared, because a budget measures a route — and **attribution**, since what
+survives is printed as `The store said: …` and never in the client's own voice. A content-type header
+is not proof of provenance, so those two are the containment; the type check only decides which arm
+reads the body.
+
+**The pairing this needs in its suite is a permitted case beside every suppressed one.** A spec
+asserting only that a body was dropped cannot tell a rule scoped to restatement from one that has
+swallowed every quote on the route. `publish-seed.test.ts` holds both restating statuses, so the rule
+reads as general rather than as one case, and holds the quoted 503 beside them.
+
+---
+
+## Where a surface shows A in place of B, the condition that hides B is "A arrived" — never "A was attempted"
+
+The two read identically on the happy path and diverge exactly where the work failed, which is the
+one state the surface was drawn to handle.
+
+The editor's stack grid shows an account's stacks in place of the browser's local slot — one list
+rather than two that can disagree. What must hide the slot is the account **holding this browser's
+work**, not adoption having been tried. `adoptLocalStack` in `apps/editor/src/stores/account-store.ts`
+does not re-upload into an account that already has rows, and its early return once answered `null`
+for both readings: NOT ATTEMPTED and ADOPTED came back the same, so a reload after a refused sign-in
+found one unrelated row in the account, never re-tried adoption, and dropped the refused slot off the
+grid in silence. It now recomputes the reason on that branch from `writeContractRefusal` — a
+`safeParse` against `installableSeedPayloadSchema`, needing no request — because a payload the write
+contract refuses could not have reached that account by any route, so the answer is free and it is
+certain.
+
+**The corollary is that the flag is a fact about the SUBJECT, not about the container.** `unadopted`
+says why THIS SNAPSHOT is not in the account; it is not shorthand for "the account's list is empty".
+Read the second way it acquires an invariant somebody then has to maintain, and `save` maintained it
+by clearing the flag on every save — including a save of a different selection, which leaves the
+snapshot exactly where it was and drops its notice one save later. **Only what actually reaches the
+subject may clear the flag**: adoption carrying the snapshot in, or a sign-out handing the grid back
+to it.
+
+Both halves cost a guarantee that was never worth what it bought. Two cells reading "Saved stack" is
+now reachable, and is the accepted outcome rather than a case the store rules out — every signed-in
+save is named that anyway, and the two are told apart by their second line, since the local slot
+lists the skills it holds where an account's row can only say it is in the account. **Sharing a name
+is a smaller harm than losing the work.**
+
+---
+
+## The store holds the refusal; the surface owns the words
+
+**A refusal crosses a boundary as a CODE and is turned into a sentence by whatever is drawing.**
+Three seams in this repository run the same split, and it is one rule rather than three habits:
+
+| Refusal                | Held as                                                        | Worded by                             |
+| ---------------------- | -------------------------------------------------------------- | ------------------------------------- |
+| Share / install POST   | `ShareRefusal` in `apps/editor/src/lib/api/configs.ts`         | the button that was pressed           |
+| Compose                | `ComposeRefusal` in `apps/editor/src/lib/api/compose.ts`       | `REFUSAL_COPY` in `composer.tsx`      |
+| First-sign-in adoption | `AdoptionRefusal` in `apps/editor/src/stores/account-store.ts` | `WHY_NOT_ADOPTED` in `stack-grid.tsx` |
+
+Two reasons, and the second is the one that gets forgotten.
+
+**A code is a SITUATION and a sentence is an audience.** A button has room for three words and a
+dialog has room for a sentence; the same refusal is worded differently in each, so a message composed
+at the seam is a string nothing renders. `ShareRefusal` is four members and `ComposeRefusal` is five
+for exactly this reason — they are different situations for the person at the keyboard, and only some
+of them name an action.
+
+**A sentence read off a response can turn out to be advice written for somebody else's client.** The
+rule above is the same fact from the CLI's end. So a client reads a code and never prose:
+`refusalFor` in `compose.ts` reads the worker's 400 BODY to tell an over-long sentence from a blank
+one — the worker spends one status on two guards and names which fired — and what it reads is the
+code `"too long"`, never a sentence to display. Everything it cannot read degrades to the generic
+member, which is exactly what the status alone produced before any body was read.
+
+**A refusal is also where a surface decides what NOT to report.** `composeProposal` in
+`apps/editor/src/lib/api/compose.ts` keys its
+`reportIssue` on the refusal rather than on the status, because signed-out, rate-limited and
+over-long are ordinary — a lapsed session, the limiter working, a guard turning away something
+somebody typed. Sending them drowns the signal in expected traffic on the one route that spends money
+per call. A length refusal that arrived as the generic member paged the alert channel for a request
+that never cost anything.
+
+**And the worker's own guard ORDER is part of the same contract.** `/compose` runs its length and
+blank guards ahead of the rate limiter, because those two reach no model and cost nothing: counting
+them charged a caller for work that never happened, and told somebody who pasted a long paragraph
+twice that they had made too many requests — a second wrong message caused by the first, describing
+neither. A limiter belongs above everything that SPENDS and below every guard that does not.
+
+---
+
 ## An act reachable through two controls is a module, not a component
 
 **Ask "what else performs this act?" of every state-changing operation, before writing the second

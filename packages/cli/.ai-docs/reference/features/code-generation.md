@@ -205,7 +205,7 @@ Where each one runs:
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `prepublishOnly`    | `format:check && lint && typecheck && generate:schemas:check && generate:types:check && build && test`                                                                                                                                               | **Schemas and types**, via their checks                                              |
 | `.husky/pre-commit` | `bunx lint-staged`, then `bun run deps:check` when a manifest or tool config is staged, then `bunx turbo run lint typecheck test --filter='...[HEAD]'` and `bunx turbo run db:generate:check --filter='...[HEAD]'` (changed packages and dependents) | **No** — `db:generate:check` is drizzle's, in `apps/server`, and none of the four    |
-| `.husky/pre-push`   | `bun run deps:check` when a manifest or tool config moved, then `bunx turbo run lint` once per side touched                                                                                                                                          | **No**                                                                               |
+| `.husky/pre-push`   | `bun run deps:check` when a manifest or tool config moved, then `bunx turbo run lint` once per side touched, then that side's `test` and `test:e2e` as separate invocations                                                                          | **No**                                                                               |
 | GitHub Actions      | `ci.yml`: `check-cli` runs `generate:schemas:check`; `check-web` runs `generate:matrix:check` **and** `generate:compile:check` (both from `packages/cli`, before its own suites)                                                                     | **Schemas, matrix and compile** (`ci.yml` has no marketplace checkout, so not types) |
 | GitHub Actions      | `regenerate-catalog.yml`: checks `agents-inc/skills` out, runs `generate:types` -> `generate:schemas` -> `generate:matrix`, opens a pull request with the outputs                                                                                    | **Three of the four, as writers** — the only workflow that can run `generate:types`  |
 
@@ -214,21 +214,22 @@ from `packages/cli` anyway.** The files they guard belong to the web side; the w
 input belong to the CLI. The job sets `working-directory: packages/cli` for each of those steps.
 
 The two hook rows split on 2026-08-07; before that, everything in the `pre-push` row ran at commit
-time. **Neither row is a full-suite run.** `pre-commit` runs `lint`, `typecheck` and `test` for the
+time. `pre-commit` runs `lint`, `typecheck` and `test` for the
 packages the commit moves and the packages that depend on them — turbo's `...[HEAD]` filter, which
 does see the staged set, because a one-ended range makes turbo ask `git diff --cached` alongside its
 `diff-tree`. `typecheck` joined that line on 2026-08-08; until then no hook had ever run it.
 `pre-push` is the coarse one: it reads the paths in `'@{push}..HEAD'` and decides which **side** of
-the monorepo moved — a path under `packages/cli/` or `packages/matrix/` sets the CLI side; any other
+the monorepo moved — a path under `packages/cli/`, `packages/matrix/`, `packages/compile/`,
+`packages/api/` or `packages/api-mocks/` sets the CLI side; any other
 path under `apps/` or `packages/` sets the web side; a root tooling file (`package.json`,
 `bun.lock`, `turbo.json`, `tsconfig.json`, or anything under `.husky/` or `.github/`) sets **both**,
 because it changes how both sides install, build and run — and then runs that side's `lint` through
-turbo, `--filter=agents-inc` for the CLI and `--filter='!agents-inc'` for the web. A push confined
-to documentation or other root files sets neither flag and lints neither side. **The suites left
-this hook on 2026-08-23** and running them is the pusher's job: the hook asked for
-`lint test test:e2e` in one turbo invocation, turbo ran them concurrently because they do not depend
-on each other, and the `test` and `test:e2e` pre-hooks then raced two `clean: true` tsup builds on
-one `dist/`. A third condition, independent of the two sides, runs `bun run deps:check` whenever the
+turbo, `--filter=agents-inc` for the CLI and `--filter='!agents-inc'` for the web, followed by that
+side's `test` and `test:e2e`. A push confined
+to documentation or other root files sets neither flag and runs nothing at all. **Each side's two
+suites are two turbo invocations rather than one**, which is a rejected trade rather than an
+accident of how the lines are written; the hook's header carries the measurement and what each case
+costs. A third condition, independent of the two sides, runs `bun run deps:check` whenever the
 push touches a `package.json`, a `bun.lock`, a `tsconfig*.json`, a `vitest.config.*` or an
 `eslint.config.*` anywhere in the tree — those checks compare workspaces to each other, so a
 web-only push can still make the CLI's tsconfig the odd one out. The hook file itself carries all of

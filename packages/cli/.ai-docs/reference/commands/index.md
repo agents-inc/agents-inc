@@ -484,7 +484,23 @@ its absence leads.
 
 ### `search` (src/cli/commands/search.ts)
 
-**Purpose:** Read-only catalog browse. Searches the marketplace this installation reads from, plus the local skills already on disk, by id, displayName, slug, description, or category. Prints a table via `@oclif/table` whose five column headings are `ID`, `Name`, `Origin`, `Category`, `Description` — the third column's `key` is `source` and its rendered heading is `Origin`, so grep for one and read the other. `Origin` is the skill's own `activeSource` name (`eject` for a skill on disk, the resolved marketplace otherwise), not a fixed label; `activeSourceName` **throws** rather than guess when the tagging pass left a skill with no `activeSource`. `Description` is `truncateText`-ed to `MAX_DESCRIPTION_WIDTH`. Installing a found skill is the wizard's job (`init` / `edit`).
+**Purpose:** Read-only catalog browse. Searches the marketplace this installation reads from, plus the local skills already on disk, by id, displayName, slug, description, or category. Prints a table via `@oclif/table` whose five column headings are `ID`, `Name`, `Origin`, `Category`, `Description` — the third column's `key` is `source` and its rendered heading is `Origin`, so grep for one and read the other. `Origin` is the skill's own `activeSource` name (`eject` for a skill on disk, the resolved marketplace otherwise), not a fixed label; `activeSourceName` **throws** rather than guess when the tagging pass left a skill with no `activeSource`. Installing a found skill is the wizard's job (`init` / `edit`).
+
+**Every cell is sanitised, because every cell is a string a catalogue author wrote.** `--marketplace`
+is a supported input, so a stranger's repository reaches this table by the product's advertised
+route: an unsanitised `displayName` carrying an erase-line and a carriage return repaints the row,
+and `@oclif/table` sizes the column on the escape bytes as well, so the border moves too.
+`toResultRow` puts `id`, `name`, `source` and `category` through `stripTerminalControls` and
+`description` through `truncateText`, which strips before it measures. **Only `description` carries a
+budget** (`MAX_DESCRIPTION_WIDTH`, 50) because only `description` is prose; the other four are
+identifiers and are shown whole.
+
+**`ResultRow` is five plain strings, and the two that widened say why.** `id` and `category` used to
+be carried through as the skill's own `SkillId` and `CategoryPath`. They stopped being the skill's
+own values the moment they were sanitised, and the type says so rather than casting a sanitised
+string back into a union it is no longer known to be in — the alternative being a cast this
+package's NEVER list forbids. Nothing downstream looks a row up by id: it is five strings and a
+table.
 
 **Args:**
 
@@ -515,7 +531,7 @@ for the per-call-site postures.
 
 **`--stdin` publishes a configuration the CALLER holds**, and reads no installation at all. It exists for a producer that is not this CLI: `meta-config-stack-detect` walks a repository and emits a `SeedPayload` it is forbidden to write or apply, and an id is the only door into the editor, which opens `?fromId=` and nothing else. The distinction from a bare `share` is load-bearing rather than cosmetic — without the branch, sharing a piped payload from an empty directory would publish whatever the machine has installed GLOBALLY, because `share` resolves an installation the way every command does (project, then global). `e2e/commands/share-stdin.e2e.test.ts` asserts the posted body holds only what was piped.
 
-Reading and refusing are `readPipedPayload` in `src/cli/lib/seed/read-piped-payload.ts`; the stream read is `readAllOf` in `src/cli/utils/read-stream.ts`. Four refusals, all before the POST, all `EXIT_CODES.ERROR`: stdin is a terminal (`STDIN_IS_A_TERMINAL`, above the read — without it the command waits on a terminal nobody is typing into, which is a hang rather than an error), an empty pipe (`NOTHING_PIPED`), a body that is not JSON (quoting back its first 80 characters, so a producer that piped its proposal REPORT instead of the payload sees its own words), and JSON `seedPayloadSchema` refuses. Full boundary contract: [boundary-map.md § 1.5](../boundary-map.md).
+Reading and refusing are `readPipedPayload` in `src/cli/lib/seed/read-piped-payload.ts`; the stream read is `readAllOf` in `src/cli/utils/read-stream.ts`. Four refusals, all before the POST, all `EXIT_CODES.ERROR`: stdin is a terminal (`STDIN_IS_A_TERMINAL`, above the read — without it the command waits on a terminal nobody is typing into, which is a hang rather than an error), an empty pipe (`NOTHING_PIPED`), a body that is not JSON (quoting back its first 80 characters, so a producer that piped its proposal REPORT instead of the payload sees its own words), and JSON `installableSeedPayloadSchema` refuses — the WRITE schema the store's POST declares, not the base one `fetch-seed.ts` reads a downloaded payload with, so a payload the edge would reject is refused here rather than as a bare 400. Full boundary contract: [boundary-map.md § 1.5](../boundary-map.md).
 
 **Why publishing happens here rather than in the producer** — four things this keeps in the one place that owns them: `SEED_VERSION` is a `z.literal`, so a producer hardcoding the wire shape emits refused payloads the day it moves; `AGENTS_INC_API_URL` exists so tests never touch the network, and a hardcoded URL ignores it; the caller's user-agent is what separates an install from a look; and a producer that POSTs has published before the user confirmed anything, which `meta-config-stack-detect`'s own top rule forbids.
 

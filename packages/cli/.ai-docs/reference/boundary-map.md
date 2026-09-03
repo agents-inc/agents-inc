@@ -143,13 +143,13 @@ The one input boundary that can **halt a command before it parses anything**. Te
 
 The only boundary where the CLI parses a document a **producer outside this repository** wrote. Everything else in section 1 is a flag, an argv token or an environment reading; this is a whole configuration arriving on a pipe, and the producer it exists for — the `meta-config-stack-detect` skill — ships from a different repository on a different cadence.
 
-| Property       | Value                                                                                                             |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/commands/share.ts` → `src/cli/lib/seed/read-piped-payload.ts`                                            |
-| **Direction**  | IN (pipe)                                                                                                         |
-| **Data**       | A `SeedPayload` as JSON, unbounded length, from an untrusted author                                               |
-| **Validation** | `readPipedPayload` — non-empty, then `JSON.parse` behind a `JsonRead` verdict, then `seedPayloadSchema.safeParse` |
-| **Schema**     | `seedPayloadSchema` (`@workspace/matrix/seed`), the same one `fetch-seed.ts` applies to a downloaded payload      |
+| Property       | Value                                                                                                                                                                                                                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/commands/share.ts` → `src/cli/lib/seed/read-piped-payload.ts`                                                                                                                                                                                                                  |
+| **Direction**  | IN (pipe)                                                                                                                                                                                                                                                                               |
+| **Data**       | A `SeedPayload` as JSON, unbounded length, from an untrusted author                                                                                                                                                                                                                     |
+| **Validation** | `readPipedPayload` — non-empty, then `JSON.parse` behind a `JsonRead` verdict, then `installableSeedPayloadSchema.safeParse`                                                                                                                                                            |
+| **Schema**     | `installableSeedPayloadSchema` (`@workspace/matrix/seed`) — the WRITE schema, the one the store's `POST /configs` declares. Deliberately **not** the base `seedPayloadSchema` that `fetch-seed.ts` applies to a downloaded payload: this is a write gate, and the two are not the same. |
 
 **Boundary contracts:**
 
@@ -157,6 +157,7 @@ The only boundary where the CLI parses a document a **producer outside this repo
 - **Three failures are told apart, because they are three different mistakes**: nothing arrived (`NOTHING_PIPED`), what arrived is not JSON, or it is JSON the contract will not take. A single "invalid input" would leave the caller guessing which.
 - **stdin being a TTY is refused separately** (`STDIN_IS_A_TERMINAL`), above the read. Without it the command waits on a terminal nobody is typing into, which is a hang rather than an error.
 - **The schema travels with the code that POSTs, and that is the whole reason this boundary exists here** rather than in the producer. `SEED_VERSION` is a `z.literal`, so a producer hardcoding the wire shape emits payloads the store refuses the day it moves; `AGENTS_INC_API_URL` exists so tests never touch the network and a hardcoded URL ignores it; and the caller's user-agent is what separates an install from a look.
+- **A local gate reading the READ schema is a local gate that passes what the edge refuses.** The one rule the two schemas differ by is the scope-reach rule — a project-scoped skill assigned to a sub-agent resting at global has nowhere to be written — and it is the whole gap: while this boundary read the base schema, that single payload passed here and came back from the POST as a bare `HTTP 400`. It is not an exotic shape, because `agents` is sparse and an absent entry rests on the shared default of `global`. Reading the same schema the store writes with is what makes this boundary's promise — every local failure failing before a write is spent — true rather than nearly true. See [features/seed-contract.md § Two schemas](./features/seed-contract.md#two-schemas-one-for-reading-and-one-for-writing).
 - **No installation is read on this path.** A bare `share` resolves one the way every command does — project, then global — so without the branch, sharing a piped payload from an empty directory would publish whatever the machine has installed. `e2e/commands/share-stdin.e2e.test.ts` asserts the posted body holds only what was piped.
 
 ---
@@ -247,23 +248,23 @@ four sites and lost two since it was last written:
 grep -rn 'JSON.parse(' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude-dir=__tests__
 ```
 
-| File                            | What Is Parsed                                       | Validation After Parse                                                     |
-| ------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------- |
-| `utils/exec.ts`                 | Claude CLI JSON stdout (`marketplace list --json`)   | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure)     |
-| `plugins/plugin-finder.ts`      | `plugin.json` manifest                               | `pluginManifestSchema.parse()` (throws on failure)                         |
-| `plugins/plugin-validator.ts`   | `plugin.json` for validation                         | `pluginManifestValidationSchema.safeParse()`                               |
-| `plugins/plugin-validator.ts`   | `plugin.json` as raw Record                          | Type assertion only (`loadManifestForValidation()`)                        |
-| `plugins/plugin-settings.ts`    | `<pluginsDir>/installed_plugins.json` (registry)     | `installedPluginsSchema.safeParse()` — throws, see 2.6                     |
-| `plugins/plugin-settings.ts`    | `.claude/settings.json`                              | `pluginSettingsSchema.safeParse()`                                         |
-| `plugins/plugin-settings.ts`    | `~/.claude/plugins/installed_plugins.json`           | `installedPluginsSchema.safeParse()` — degrades to `[]`, see 2.6           |
-| `permission-checker.tsx`        | `.claude/settings.json` permissions block            | `settingsFileSchema.safeParse()`; a malformed file warns and is skipped    |
-| `agents/agent-provenance.ts`    | this CLI's OWN `package.json`, for its version       | `ownPackageJsonSchema.safeParse()`; throws when it cannot be read          |
-| `configuration/config.ts`       | a source repo's `package.json`, for its `name`       | `packageIdentitySchema.safeParse()`; unparseable answers `null`            |
-| `commands/build/marketplace.ts` | the project `package.json`, for marketplace identity | `packageJsonSchema.safeParse()`; a parse failure exits with the cause      |
-| `versioning.ts`                 | `plugin.json` for version check                      | `pluginManifestSchema.parse()`                                             |
-| `loading/source-fetcher.ts`     | `marketplace.json` from fetched source               | `validateNestingDepth()` + `marketplaceSchema.safeParse()`                 |
-| `loading/source-fetcher.ts`     | the cached revalidation record                       | `parseJsonOrUndefined()` — a corrupt record re-fetches rather than failing |
-| `seed/read-piped-payload.ts`    | a `SeedPayload` off stdin                            | `seedPayloadSchema.safeParse()` behind a `JsonRead` verdict (1.5)          |
+| File                            | What Is Parsed                                       | Validation After Parse                                                                                            |
+| ------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `utils/exec.ts`                 | Claude CLI JSON stdout (`marketplace list --json`)   | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure)                                            |
+| `plugins/plugin-finder.ts`      | `plugin.json` manifest                               | `pluginManifestSchema.parse()` (throws on failure)                                                                |
+| `plugins/plugin-validator.ts`   | `plugin.json` for validation                         | `pluginManifestValidationSchema.safeParse()`                                                                      |
+| `plugins/plugin-validator.ts`   | `plugin.json` as raw Record                          | Type assertion only (`loadManifestForValidation()`)                                                               |
+| `plugins/plugin-settings.ts`    | `<pluginsDir>/installed_plugins.json` (registry)     | `installedPluginsSchema.safeParse()` — throws, see 2.6                                                            |
+| `plugins/plugin-settings.ts`    | `.claude/settings.json`                              | `pluginSettingsSchema.safeParse()`                                                                                |
+| `plugins/plugin-settings.ts`    | `~/.claude/plugins/installed_plugins.json`           | `installedPluginsSchema.safeParse()` — degrades to `[]`, see 2.6                                                  |
+| `permission-checker.tsx`        | `.claude/settings.json` permissions block            | `settingsFileSchema.safeParse()`; a malformed file warns and is skipped                                           |
+| `agents/agent-provenance.ts`    | this CLI's OWN `package.json`, for its version       | `ownPackageJsonSchema.safeParse()`; throws when it cannot be read                                                 |
+| `configuration/config.ts`       | a source repo's `package.json`, for its `name`       | `packageIdentitySchema.safeParse()`; unparseable answers `null`                                                   |
+| `commands/build/marketplace.ts` | the project `package.json`, for marketplace identity | `packageJsonSchema.safeParse()`; a parse failure exits with the cause                                             |
+| `versioning.ts`                 | `plugin.json` for version check                      | `pluginManifestSchema.parse()`                                                                                    |
+| `loading/source-fetcher.ts`     | `marketplace.json` from fetched source               | `validateNestingDepth()` + `marketplaceSchema.safeParse()`                                                        |
+| `loading/source-fetcher.ts`     | the cached revalidation record                       | `parseJsonOrUndefined()` — a corrupt record re-fetches rather than failing                                        |
+| `seed/read-piped-payload.ts`    | a `SeedPayload` off stdin                            | `installableSeedPayloadSchema.safeParse()` behind a `JsonRead` verdict — the WRITE schema, not the base one (1.5) |
 
 `marketplace-generator.ts` and `schema-validator.ts` were rows here and are not parse sites: the
 generator reaches `plugin.json` through `readPluginManifest()` in `plugins/plugin-finder.ts`, and
@@ -605,6 +606,54 @@ See Section 2.5 above. All parse boundaries use `readFileSafe()` which enforces 
 
 Recursively checks that parsed JSON/YAML does not exceed max nesting depth. Prevents stack overflow from deeply nested structures.
 
+### 5.7 Terminal Control Characters in Foreign Text OUT
+
+| Property     | Value                                                                    |
+| ------------ | ------------------------------------------------------------------------ |
+| **Location** | `src/cli/utils/string.ts`                                                |
+| **Function** | `stripTerminalControls()`, and `truncateText()` which calls it first     |
+| **Applied to** | Any text this CLI did not author, on its way to a terminal             |
+
+**5.1's `CONTROL_CHAR_PATTERN` is the other direction and does not cover this.** That one refuses a
+control character in a source string on its way INTO `spawn()`; this one strips control characters
+out of foreign text on its way OUT to a screen. A refusal is right for an argument, because the CLI
+chooses whether to run the command at all; it is wrong for a message, because refusing to print an
+honest multi-line zod refusal is worse than printing it inert.
+
+**Three chokepoints, and nothing renders foreign text past them:**
+
+| Chokepoint              | File                       | What it holds                                                            |
+| ----------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| `truncateText`          | `utils/string.ts`          | Foreign text that also needs a bound — strips BEFORE it measures         |
+| `getErrorMessage`       | `utils/errors.ts`          | Every catch block, because a parser writes its input into what it throws |
+| `formatZodIssue`        | `lib/schema-validator.ts`  | Every Zod reporter — the path, the unrecognised keys, and the message    |
+
+`formatZodIssue` earns its place because every part of the sentence it builds comes out of the
+REFUSED DOCUMENT rather than out of the schema: a path segment and an unrecognised key are keys the
+document chose, and the message quotes the value it received. It sanitises at the renderer rather
+than at its callers, of which there are around twenty and a new one is a normal thing to add.
+
+**Stripping before truncating is a correctness requirement.** A cut taken first can land inside an
+escape sequence, and the fragment it leaves is one a terminal holds open — reading the ellipsis and
+whatever the caller prints next as the missing parameters. `truncateText` owns the order precisely
+because there is a wrong way round to do it.
+
+**Newline and tab survive; carriage return does not.** The permitted cases are the point: a
+multi-line zod message is what the store really writes on the share route, and a sanitiser strict
+enough to flatten it mangles every honest refusal to stop a rare hostile one. Carriage return alone
+returns the cursor to column zero and lets what follows overwrite the line the CLI just printed in
+its own voice, which is the reproduction this exists for.
+
+**The reachable route is a supported input rather than an attack**: `--marketplace` takes a
+stranger's repository, and an unsanitised `displayName` carrying an erase-line and a carriage return
+repaints a `search` row — `@oclif/table` sizes the column on the escape bytes as well, so the border
+moves too. `toResultRow` in `src/cli/commands/search.ts` sanitises all five cells, and its `id` and
+`category` fields are typed `string` rather than `SkillId` / `CategoryPath` for that reason: a
+sanitised value is no longer known to be in either union.
+
+This is the CLI half of a threat the editor settles differently, by rendering the same foreign text
+through a React-escaped `<pre>`.
+
 ---
 
 ## 6. Plugin/Marketplace API Boundaries
@@ -648,19 +697,47 @@ This is the most heavily validated parse boundary: size limit (10 MB), nesting d
 
 Fetch and cache mechanics behind this boundary (the local/remote fork, the cache key, giget replication): [features/source-fetch-and-cache.md](./features/source-fetch-and-cache.md).
 
-### 6.5 Shared Seed Config Fetch (`init --from`)
+### 6.5 Shared Seed Config Fetch (`init --from`, `edit --from`)
 
-| Property       | Value                                                                                                       |
-| -------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/lib/seed/fetch-seed.ts`                                                                            |
-| **Direction**  | IN                                                                                                          |
-| **Data**       | JSON seed payload from `AGENTS_INC_API_URL` (default `https://api.agentsinc.sh`), reached via `init --from` |
-| **Validation** | `seedPayloadSchema.safeParse()` — version-pinned (`z.literal(SEED_VERSION)`), unknown keys stripped         |
-| **Mechanism**  | `fetch()`; never throws — every failure is returned as a message (`FetchSeedResult` union)                  |
+| Property       | Value                                                                                                                                                                 |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/lib/seed/fetch-seed.ts`                                                                                                                                      |
+| **Direction**  | IN, and OUT into the terminal on a refusal — see below                                                                                                                |
+| **Data**       | JSON seed payload from `AGENTS_INC_API_URL` (default `https://api.agentsinc.sh`); `fetchSeedConfig` is called from `commands/init.tsx` and `commands/edit.tsx`         |
+| **Validation** | `seedPayloadSchema.safeParse()` — version-pinned (`z.literal(SEED_VERSION)`), unknown keys stripped                                                                   |
+| **Mechanism**  | The typed worker client `createApiClient` from `@workspace/api`, built once at module scope with `credentials: "omit"`; never throws — every failure is returned as a message (`FetchSeedResult` union) |
+
+**A refused read is quoted back into the terminal, which makes this an OUT boundary as well as an
+IN one.** On any non-2xx but 404, `refusalMessage` reads the response body and repeats it after the
+status. Three things bound what a remote body can put on a user's screen, and one status never
+reaches the arm at all:
+
+- **`arrivedAsText`** — the body is read at all only where `content-type` starts with `QUOTABLE_TYPE`
+  (`text/plain`), which is the shape the worker's `getConfig` writes every one of its own refusals
+  in. Anything else came from a proxy, a WAF, a captive portal or a gateway answering in the store's
+  place, and its answer is markup rather than prose.
+- **`EXPLANATION_BUDGET`** — `120` characters, clipped by `truncateText`.
+- **Attribution** — what survives is printed as `The store said: …`, never in the CLI's own voice.
+- **404 never reaches the arm.** It is held out ahead of it under `NO_SUCH_CONFIG`, because the CLI's
+  own sentence names the id the caller typed and the store's (`No config under this id`) does not.
+
+**A content-type header is not proof of provenance** — a hostile or interposed answer may claim any
+type it likes — so the budget and the attribution are the actual containment, not the check.
+
+The outbound half of the same boundary (`publish-seed.ts`, `POST /configs`) reads **two** shapes
+rather than one, because that route answers in two: the validator's envelope as `application/json`,
+matched by `refusalSchema` and read a second level in for the issues Zod rendered into its `message`
+field, and the worker's own sentences as `text/plain`, gated by that module's own `arrivedAsText`. A
+gate on the content type alone would throw the envelope away, and a gate on the shape alone would
+throw the prose away. Its budget is its own — `EXPLANATION_BUDGET` is `300` there — because a budget
+measures a ROUTE and neither number travels between them. It carries one bound the inbound half does
+not: **`restatesItsOwnStatus`**, which drops a `text/plain` body equal to `STATUS_CODES[status]`
+case-insensitively, so a refusal that only re-says its own reason phrase adds nothing to the number
+printed beside it. And 409 answers in the CLI's own words without reading a body at all.
 
 The wire contract, the version-discard policy and the payload -> `WizardResultV2` mapping: [features/seed-contract.md](./features/seed-contract.md).
 
-### 6.5 Marketplace Generation
+### 6.6 Marketplace Generation
 
 | Function                                        | File                       | Direction                                           |
 | ----------------------------------------------- | -------------------------- | --------------------------------------------------- |
@@ -741,7 +818,7 @@ grep -n 'as z.ZodType<\(SkillId\|Domain\|Category\|AgentName\)>' src/cli/lib/sch
 | Function                          | File                  | Purpose                                                                                                                           |
 | --------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `formatZodErrors()`               | `schema-validator.ts` | Format Zod issues to string array                                                                                                 |
-| `formatZodIssue()`                | `schema-validator.ts` | Format a single Zod issue                                                                                                         |
+| `formatZodIssue()`                | `schema-validator.ts` | Render one Zod issue path-first, **with every part of the sentence through `stripTerminalControls`** — see [5.7](#57-terminal-control-characters-in-foreign-text-out) |
 | `formatZodIssues()`               | `schemas.ts`          | Join formatted issues into one `"; "`-separated string                                                                            |
 | `validateSkillMetadata()`         | `schemas.ts`          | Selects `customMetadataValidationSchema` vs `metadataValidationSchema` via `isCustomMetadata()` — the one place that policy lives |
 | `splitMetadataValidationIssues()` | `schemas.ts`          | Splits strict-metadata issues into hard `errors` and advisory `warnings`                                                          |

@@ -33,21 +33,21 @@ last_validated: 2026-08-18
 
 All utilities in `src/cli/utils/`.
 
-| File              | Path                            | Purpose                                     |
-| ----------------- | ------------------------------- | ------------------------------------------- |
-| `errors.ts`       | `src/cli/utils/errors.ts`       | Error message extraction                    |
-| `exec.ts`         | `src/cli/utils/exec.ts`         | Shell command execution + Claude CLI wraps  |
-| `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction                 |
-| `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers + path containment     |
-| `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering      |
-| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders    |
-| `open-url.ts`     | `src/cli/utils/open-url.ts`     | Hand a link to the platform's link opener   |
-| `read-stream.ts`  | `src/cli/utils/read-stream.ts`  | `readAllOf` — a readable's whole text       |
-| `string.ts`       | `src/cli/utils/string.ts`       | `truncateText`, `toTitleCase`, `bytewise`   |
-| `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear screen/scrollback + size-gate helpers |
-| `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types      |
-| `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys/values        |
-| `yaml-schema.ts`  | `src/cli/utils/yaml-schema.ts`  | yaml-language-server schema comment helpers |
+| File              | Path                            | Purpose                                                            |
+| ----------------- | ------------------------------- | ------------------------------------------------------------------ |
+| `errors.ts`       | `src/cli/utils/errors.ts`       | Error message extraction                                           |
+| `exec.ts`         | `src/cli/utils/exec.ts`         | Shell command execution + Claude CLI wraps                         |
+| `frontmatter.ts`  | `src/cli/utils/frontmatter.ts`  | YAML frontmatter extraction                                        |
+| `fs.ts`           | `src/cli/utils/fs.ts`           | File system wrappers + path containment                            |
+| `logger.ts`       | `src/cli/utils/logger.ts`       | Logging: log, warn, verbose, buffering                             |
+| `messages.ts`     | `src/cli/utils/messages.ts`     | User-facing message constants + builders                           |
+| `open-url.ts`     | `src/cli/utils/open-url.ts`     | Hand a link to the platform's link opener                          |
+| `read-stream.ts`  | `src/cli/utils/read-stream.ts`  | `readAllOf` — a readable's whole text                              |
+| `string.ts`       | `src/cli/utils/string.ts`       | `stripTerminalControls`, `truncateText`, `toTitleCase`, `bytewise` |
+| `terminal.ts`     | `src/cli/utils/terminal.ts`     | Clear screen/scrollback + size-gate helpers                        |
+| `type-guards.ts`  | `src/cli/utils/type-guards.ts`  | Runtime type narrowing for union types                             |
+| `typed-object.ts` | `src/cli/utils/typed-object.ts` | Type-safe Object.entries/keys/values                               |
+| `yaml-schema.ts`  | `src/cli/utils/yaml-schema.ts`  | yaml-language-server schema comment helpers                        |
 
 Exit codes live outside `utils/`: `src/cli/lib/exit-codes.ts` (`EXIT_CODES` constant). Base-command and commands import from there, not from `utils/`.
 
@@ -68,7 +68,18 @@ Exit codes live outside `utils/`: `src/cli/lib/exit-codes.ts` (`EXIT_CODES` cons
 function getErrorMessage(error: unknown): string;
 ```
 
-Extracts human-readable message from unknown error value. Returns `error.message` for Error instances, `String(error)` otherwise.
+Extracts a human-readable message from an unknown error value, **through
+`stripTerminalControls`**. It reads `error.message` for `Error` instances and `String(error)`
+otherwise, and the result of either is the sanitiser's output rather than the raw string.
+
+The message is treated as FOREIGN, which is the part that is easy to get backwards. The `Error` was
+constructed by Node or by a library, so it looks like the CLI's own text — but **a parser writes the
+input that broke it into the message it throws**: `JSON.parse` quotes the offending bytes verbatim,
+and those bytes came from a marketplace's `metadata.yaml`, a plugin manifest or a pipe. Provenance
+follows the input, not the object. This is the last point at which the text is still a value rather
+than output, which is why the sanitising is here rather than at the callers.
+
+Newlines and tabs survive — see [`stripTerminalControls()`](#stripterminalcontrols-srccliutilsstringts).
 
 **Used in:** Every catch block across the codebase.
 
@@ -271,17 +282,81 @@ The concatenated array is threaded through `src/cli/components/wizard/wizard.tsx
 
 ## String Utilities
 
+### `stripTerminalControls()` (`src/cli/utils/string.ts`)
+
+```typescript
+function stripTerminalControls(text: string): string;
+```
+
+Text a terminal will PRINT, out of text it would otherwise OBEY. The one sanitiser for anything this
+CLI did not author — a body off the wire, whatever arrived on stdin, and the metadata in a skills
+repository somebody else wrote. That last one is the reachable route rather than a hypothetical:
+`--marketplace` is a supported input, so a stranger's `displayName` carrying an erase-line and a
+carriage return repaints the line the CLI printed above it, forging a sentence in the CLI's own
+voice.
+
+`TERMINAL_CONTROLS` is one global alternation of five patterns, ordered longest-construct-first
+because alternation is tried left to right — `OTHER_ESCAPE` ahead of `CSI` would eat the `[` and
+leave the parameters behind as text.
+
+| Pattern        | Covers                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `OSC`          | Operating-system commands, to BEL, to ST, **or to end of input** when left unterminated |
+| `CSI`          | Control sequences; the final byte is optional, so an incomplete one goes too            |
+| `OTHER_ESCAPE` | Every other escape, and a bare one at the end. `.` does not match a newline             |
+| `C1`           | The same introducers as single 8-bit bytes, and the rest of C1                          |
+| `C0`           | The C0 controls and DEL, **less tab and newline**                                       |
+
+**Tab and newline survive, and that direction of error is deliberate.** A multi-line zod message is
+what the store really writes on the share route, and a sanitiser strict enough to flatten it mangles
+every honest refusal to stop a rare hostile one. Carriage return does NOT survive, which is the half
+worth naming: alone it returns the cursor to column zero and lets what follows overwrite the line
+above, and dropping it also turns a `CRLF` body into an `LF` one — the break survives, the cursor
+move does not.
+
+**The `no-control-regex` disable is INLINE and stays inline.** An `eslint.config.js` override would
+permit control-character regexes anywhere in the package, and what makes this a sanitiser rather
+than a patch per site is that there is one of it; the inline form leaves the rule able to report the
+next one.
+
+**Used by:**
+
+- `src/cli/utils/errors.ts` -- inside `getErrorMessage`
+- `src/cli/lib/schema-validator.ts` -- inside `formatZodIssue`, per path segment, key and message
+- `src/cli/lib/matrix/matrix-resolver.ts` -- skill labels, rule `reason`s, category display names
+- `src/cli/lib/seed/read-piped-payload.ts` -- a parser's own account of what broke
+- `src/cli/commands/search.ts` -- the four identifier columns of `ResultRow`
+
 ### `truncateText()` (`src/cli/utils/string.ts`)
 
 ```typescript
 function truncateText(text: string, maxLength: number): string;
 ```
 
-Truncates text to `maxLength` characters, appending an ellipsis character (U+2026) if truncated. Returns the original text if it fits within `maxLength`.
+Foreign text, **made inert and then bounded, in that order**. It calls
+`stripTerminalControls` first, then returns the result unchanged if it fits within `maxLength`, and
+otherwise cuts to `maxLength - 1` and appends an ellipsis character (U+2026).
+
+**Stripping first is a correctness requirement rather than a preference.** A cut taken first can
+land inside an escape sequence, and what it leaves is a fragment a terminal holds open — reading the
+ellipsis and whatever the caller prints next as the sequence's missing parameters. The order is
+owned here rather than left to callers precisely because there is a wrong way round to do it.
+
+It also decides what the budget buys: escape bytes are invisible, so a budget spent on them buys a
+reader nothing. Measured after the strip, every character the budget allows is one somebody can
+actually read.
+
+Every call site is text this CLI did not write, which is why the strip belongs to the function they
+all already call rather than to each of them separately. Where foreign text needs no bound,
+`stripTerminalControls` is the same guarantee on its own.
 
 **Used by:**
 
-- `src/cli/commands/search.ts` -- truncate skill descriptions in search results
+- `src/cli/commands/search.ts` -- skill descriptions in the results table (`MAX_DESCRIPTION_WIDTH`)
+- `src/cli/lib/seed/publish-seed.ts` -- the store's account of a refused share (`EXPLANATION_BUDGET`)
+- `src/cli/lib/seed/fetch-seed.ts` -- the store's account of a refused fetch, on its own route's budget
+- `src/cli/lib/seed/read-piped-payload.ts` -- the opening of an unreadable stdin body (`EXCERPT`)
+- `src/cli/lib/matrix/matrix-resolver.ts` -- a rule author's stated `reason` (`REASON_BUDGET`)
 
 ### `toTitleCase()` (`src/cli/utils/string.ts`)
 

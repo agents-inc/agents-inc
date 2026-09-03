@@ -616,6 +616,16 @@ function isSpecReference(named: string): boolean {
 }
 ```
 
+**The LOOKUP is not the defect — the FILTER around it is.** `SPEC_DIRECTORIES` is a live constant in
+`src/cli/lib/__tests__/helpers/journey-page.ts`, and `classify()` performs exactly the membership
+test above; it is what tells a name that ought to answer to a spec from one that never claimed to.
+What made the block above an anti-pattern is the return type. A `boolean` fed to `.filter` has
+nowhere to put the reason, so the two things a `false` can mean — "this is a helper, correctly
+excluded" and "this names a spec directory and no file answers to it" — collapse into the same
+dropped element. `classify()` answers a `SpecReference` instead and THROWS on the second, which is
+the same lookup carrying a verdict rather than a silence. Do not read this example as a reason to
+avoid the constant.
+
 **Why:** the elements it dropped are indistinguishable from the elements it passed. The verdict is reported against the survivors and reads as a verdict on the whole, and nothing prints what was skipped or how many. The subject shrinks silently as the document grows.
 
 The filter above ran over `user-journeys.md`'s From-scratch column, whose whole job is to say what has been proved. Six named entries were dropped — five real specs written without the `commands/` directory they live in, and one code symbol — so a quarter of journey 13's named proof was unexamined while the page read as fully checked. The two legitimate non-specs were fine, but the filter decided that once, for every name anyone would ever add: a later entry naming a deleted spec would have gone the same way, on the same silence.

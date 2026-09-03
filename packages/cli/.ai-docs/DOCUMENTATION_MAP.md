@@ -242,14 +242,15 @@ deliberately not enumerated because they repeat verbatim across dozens of sites 
 `eslint-disable` for the live set; absence from this table is not evidence a suppression is
 unsanctioned.
 
-| Rule                                | File                                                 | Why it stays                                                                                              |
-| ----------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `no-control-regex`                  | `src/cli/lib/configuration/config.ts`                | The pattern deliberately matches control characters — that IS the validation                              |
-| `no-control-regex`                  | `src/cli/utils/exec.ts`                              | Same, for plugin-path control-character rejection                                                         |
-| `no-var`                            | `src/cli/lib/__tests__/factories/skill-factories.ts` | `let` would throw — `var` avoids a TDZ error under circular ESM imports                                   |
-| `@typescript-eslint/no-unused-vars` | `e2e/matchers/setup.ts`                              | Vitest `Assertion<T>` declaration merging needs the type parameter's name verbatim; `^_` does not compile |
-| `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-section-scroll.ts`     | Measure-every-render effect                                                                               |
-| `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-panel-scroll.ts`       | Measure-every-render effect                                                                               |
+| Rule                                | File                                                 | Why it stays                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-control-regex`                  | `src/cli/lib/configuration/config.ts`                | The pattern deliberately matches control characters — that IS the validation                                                                                                                                                                                                                                                                                                     |
+| `no-control-regex`                  | `src/cli/utils/exec.ts`                              | Same, for plugin-path control-character rejection                                                                                                                                                                                                                                                                                                                                |
+| `no-control-regex`                  | `src/cli/utils/string.ts`                            | The five patterns of `stripTerminalControls` match exactly the characters the rule bans, which is the sanitising. **Kept inline deliberately, which is the opposite of the usual call** — an `eslint.config.js` override would permit control-character regexes anywhere in the package, and what makes this a sanitiser rather than a patch per site is that there is one of it |
+| `no-var`                            | `src/cli/lib/__tests__/factories/skill-factories.ts` | `let` would throw — `var` avoids a TDZ error under circular ESM imports                                                                                                                                                                                                                                                                                                          |
+| `@typescript-eslint/no-unused-vars` | `e2e/matchers/setup.ts`                              | Vitest `Assertion<T>` declaration merging needs the type parameter's name verbatim; `^_` does not compile                                                                                                                                                                                                                                                                        |
+| `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-section-scroll.ts`     | Measure-every-render effect                                                                                                                                                                                                                                                                                                                                                      |
+| `react-hooks/exhaustive-deps`       | `src/cli/components/hooks/use-panel-scroll.ts`       | Measure-every-render effect                                                                                                                                                                                                                                                                                                                                                      |
 
 **Open gap: none of THIS package's generator checks runs at pre-commit.** There are four. (The
 commit hook does run one generator check — `db:generate:check`, which is `apps/server`'s drizzle
@@ -303,6 +304,23 @@ one is the only way it runs**:
 | `check-spec-name-vocabulary` | That a SCREAMING_SNAKE token in a spec's own NAME still names something this package holds. A test name is the rename surface that can never go red, and only underscored tokens are read, so prose and `CLI` / `YAML` / `JSON` are left alone                                                                                                                                              |
 | `check-symbol-citations`     | Every `@link` citation in this package's TypeScript resolves to a symbol, asked of the type checker over the three tsconfig projects `typecheck` names. A citation in a `//` comment is outside it, and so is every other workspace                                                                                                                                                         |
 | `check-symbol-file-pairs`    | A document's `symbol \| file` table against what the named file DECLARES — not what it mentions, which is why this one needs the compiler too. A helper that moved to a sibling module leaves a row reading as a correct address                                                                                                                                                            |
+
+**oclif's update-check door is shut at TWO levels, and only one of them has a checker.**
+`check-spawn-doors` above judges the E2E half — every site that spawns the built binary hands it
+`NO_BACKGROUND_VERSION_CHECK`. The in-process half is a module-scope pin in `vitest.setup.ts`
+(`process.env.AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1"`), and what holds it is a spec rather than a
+checker: `src/cli/lib/__tests__/update-check-door-closed-process-wide.test.ts`, which builds no
+home, mocks nothing and installs no hook, because "the door is shut without anyone opting in" is a
+claim only a spec that opts into nothing can make. It asks oclif's own `scopedEnvVarTrue` rather
+than spelling the variable — the name is composed from `oclif.bin` — guards its subject by
+asserting the plugin is still loaded, and pairs the closed door with a withdrawn-pin case so the
+closed state cannot hold vacuously. `helpers/isolated-home.ts` sets the same variable per fake home
+and is NOT where the door is shut; a spec that runs a command without asking for a home is every bit
+as much a door, which is why the pin cannot live in a helper anybody has to call. This is the exact
+analogue of `src/cli/lib/__tests__/home-dir-read-at-call-time.test.ts`, and it is named here for the
+same reason that one is named in `reference/utilities.md`, `reference/testing/infrastructure.md`,
+`reference/concepts/scope-system.md` and `standards/e2e/test-data.md`: a spec nobody can find is a
+spec somebody weakens.
 
 **A documentation edit can turn that suite red, and that is the point.** After changing any document
 that states a list, run `npx vitest run --project unit scripts/` from `packages/cli`. Which document

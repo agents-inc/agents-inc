@@ -282,8 +282,7 @@ one used to run in the first.
 | `bunx turbo run …`   | `db:generate:check`                                                   | Same filter — so `apps/server` only, and only when it moved        |
 
 The turbo stage is `bunx turbo run lint typecheck test --filter='...[HEAD]'`. No `test:e2e`: it is
-the slowest thing either side owns, and since 2026-08-23 it is not in the push hook either — see
-`.husky/pre-push` below.
+the slowest thing either side owns, and `.husky/pre-push` below is where it runs.
 
 **`db:generate:check` is a second turbo line rather than a fourth task on the first.**
 `apps/server`'s `scripts/check-migrations.ts` regenerates on top of a throwaway copy and reports what
@@ -355,36 +354,38 @@ hook spelled out by hand is now turbo's, and wider than it was.
 
 ### `.husky/pre-push`
 
-`deps:check` when a manifest or a shared-tool config moved, then **`lint` for a whole side** —
-`--filter=agents-inc` for the CLI, `--filter='!agents-inc'` for the web. That is the whole hook.
-The side is decided by grepping `git diff --name-only --no-renames '@{push}..HEAD'`:
-`packages/cli/` or `packages/matrix/` sets the CLI side, any other path under `apps/` or
-`packages/` sets the web side, root tooling sets both. When `@{push}` does not resolve — the first
-push of a new branch, a detached HEAD — there is no range to narrow by and both sides run.
+`deps:check` when a manifest or a shared-tool config moved, then **`lint` and both suites for a
+whole side** — `--filter=agents-inc` for the CLI, `--filter='!agents-inc'` for the web. The two
+lint lines sit above both suite blocks rather than each side being one contiguous block, so a lint
+error surfaces in seconds instead of behind the other side's specs. The side is decided by grepping
+`git diff --name-only --no-renames '@{push}..HEAD'`: `packages/cli/`, or any of
+`packages/matrix/`, `packages/compile/`, `packages/api/` and `packages/api-mocks/`, sets the CLI
+side — the web line's `--filter='!agents-inc'` excludes the one package that consumes those four,
+so without naming them nothing would lint the CLI for a change confined to one. Any other path
+under `apps/` or `packages/` sets the web side, and root tooling sets both. When `@{push}` does not
+resolve — the first push of a new branch, a detached HEAD — there is no range to narrow by and both
+sides run.
 
-**The suites are not in this hook, and their absence is a decision rather than an omission.** It
-asked for `lint test test:e2e` in ONE turbo invocation; turbo runs those concurrently because they
-do not depend on each other, and `test` and `test:e2e` each carry an npm pre-hook that runs
-`bun run build`. Two tsup builds with `clean: true` then raced on one `dist/` — one enumerated the
-directory while the other unlinked a chunk — and the push died on `ENOENT … unlink dist/chunk-*.js`
-before a single spec ran, with the cause hundreds of lines up in interleaved output. Running the
-suites is the pusher's job now: `bun run test` and `bun run test:e2e` from the root, **separately**,
-because running the two in one turbo invocation reproduces the same race. The hook says all of this
-in its own header.
+**Each side's suites are two turbo invocations, not one.** `test`, then `test:e2e`, run one at a
+time. Collapsing a pair into a single `turbo run test test:e2e` makes turbo run them concurrently,
+which is a deliberately rejected trade rather than a tidy-up: `.husky/pre-push`'s header carries the
+measurement, the open failure it rests on, the two alternatives that were rejected for reaching
+outside the hook, and what a push on each side costs. Nothing mechanically reads the hook, so
+that header is the whole guard — this census is what would falsify that:
+
+```
+grep -rlP 'pre-push|\.husky' --include='*.ts' --include='*.tsx' packages apps
+```
+
+**A machine that has never run the web suites fails BOTH web lines until a browser is installed
+once.** `bunx playwright install --with-deps chromium` is the whole of it, and it is a push-time
+prerequisite rather than a Playwright one: `packages/ui` renders its Storybook stories under vitest
+browser mode, so `test` needs the browser as much as `test:e2e` does. The hook deliberately does not
+install it — a push hook that reaches the network or asks for sudo is worse than one that fails — so
+what a first-time web push produces is vitest or playwright asking for chromium, twice.
 
 **This tier is coarse on purpose, and that is what lets the other one be narrow.** Scoping by side
 cannot miss a dependent, because it never tries to work out what the dependents are.
-
-**The CLI's side-grep names two paths and the CLI now devDepends on four workspaces.**
-`packages/cli` takes `@workspace/matrix`, `@workspace/compile`, `@workspace/api` and
-`@workspace/api-mocks` as devDependencies and tsup bundles them, so a change confined to
-`packages/compile/` moves the CLI while setting only the web side — the web line excludes
-`agents-inc`, so nothing lints the CLI for it. Re-derive the edges rather than trusting this
-sentence:
-
-```
-grep -n '"@workspace/' packages/cli/package.json
-```
 
 **`run_deps` is a third flag, not a third condition on the two above.** The cross-workspace checks
 read every `package.json`, every `tsconfig.json`, every `vitest.config.*` and every

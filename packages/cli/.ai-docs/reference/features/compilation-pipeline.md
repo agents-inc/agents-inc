@@ -102,7 +102,8 @@ not here.
    -> For each resolved agent, calls compileAgentForPlugin() (src/cli/lib/compiler.ts):
       - readAgentFiles(): identity.md, playbook.md, output.md,
         critical-requirements.md, critical-reminders.md (STANDARD_FILES from consts.ts)
-      - buildAgentTemplateContext() with a per-skill mapSkill that attaches pluginRef
+      - buildAgentTemplateContext() appends "Skill" to agent.tools via withSkillTool()
+        (idempotent, order-stable), and takes a per-skill mapSkill that attaches pluginRef
         via pluginRefFor(skill); splits skills into preloaded vs dynamic. The flag
         it splits on was decided at config-write time by toStackAssignment()
         (packages/compile/src/seed-to-config.ts): the prior save's word for the
@@ -259,7 +260,7 @@ src/agents/
 
 The Liquid template renders agent prompts with this structure:
 
-1. YAML frontmatter (name, description, tools, `disallowedTools` when present, model, effort, permissionMode, preloaded skill IDs emitted under the `skills:` key). **`model` and `effort` emit asymmetrically:** `model` is unconditional with a `default: "inherit"` filter, while `effort` is wrapped in an `{% if %}` and emits no key at all when unset — see [model-and-effort.md](./model-and-effort.md).
+1. YAML frontmatter (name, description, tools, `disallowedTools` when present, model, effort, permissionMode, preloaded skill IDs emitted under the `skills:` key). **`tools` is an allowlist and always carries `Skill`:** an agent declaring the key gets only what it names, and `withSkillTool` appends `Skill` to whatever the `metadata.yaml` declared — see [agent-system.md](./agent-system.md#metadatayaml-schema). **`model` and `effort` emit asymmetrically:** `model` is unconditional with a `default: "inherit"` filter, while `effort` is wrapped in an `{% if %}` and emits no key at all when unset — see [model-and-effort.md](./model-and-effort.md).
 2. `<role>` section from `identity.md`
 3. `<core_principles>` (5 hardcoded principles)
 4. `<methodologies>` - renders 5 methodology partials:
@@ -284,6 +285,12 @@ The Liquid template renders agent prompts with this structure:
 | --------- | ---------------------------------------------------- | -------------------------------- |
 | Preloaded | Content embedded directly in .md file                | Listed in frontmatter `skills:`  |
 | Dynamic   | Metadata only (id, description, usage) in skill list | Loaded via Skill tool at runtime |
+
+**The `skills:` key and the `Skill` tool are independent.** `skills:` preloads content into the
+agent's startup context and grants no tool; the `Skill` tool in the `tools:` allowlist is what lets
+the agent load one at runtime, and a dynamic skill has nothing but that route. `withSkillTool`
+(`packages/compile/src/agent-source.ts`) grants it to every compiled agent — see
+[agent-system.md](./agent-system.md#metadatayaml-schema).
 
 Split logic in `buildAgentTemplateContext()` in `packages/compile/src/agent-source.ts`, re-exported
 by `src/cli/lib/compiler.ts`. Which side a skill lands on is the stack assignment's `preloaded`
@@ -343,13 +350,13 @@ This prevents user-controlled metadata (from YAML/TS config files) from executin
 
 ### compiler.ts
 
-| Function                      | Signature                                                                                                      | Purpose                                                                            |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `sanitizeLiquidSyntax()`      | `<T extends string>(value: T, fieldName: string): T`                                                           | Strip Liquid syntax from a string                                                  |
-| `sanitizeCompiledAgentData()` | `(data: CompiledAgentData): CompiledAgentData`                                                                 | Sanitize all fields before template render                                         |
-| `buildAgentTemplateContext()` | `(name: string, agent: AgentConfig, files: AgentFiles, mapSkill?: (skill: Skill) => Skill): CompiledAgentData` | Build template data; `mapSkill` transforms each skill (used to attach `pluginRef`) |
-| `compileAgentForPlugin()`     | `(name: AgentName, agent: AgentConfig, fallbackRoot: string, engine: Liquid): Promise<string>`                 | Per-skill-`pluginRef` agent render used by the live recompile + plugin paths       |
-| `createLiquidEngine()`        | `(projectDir?: string): Promise<Liquid>`                                                                       | Create Liquid engine with layered roots                                            |
+| Function                      | Signature                                                                                                      | Purpose                                                                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `sanitizeLiquidSyntax()`      | `<T extends string>(value: T, fieldName: string): T`                                                           | Strip Liquid syntax from a string                                                                                                        |
+| `sanitizeCompiledAgentData()` | `(data: CompiledAgentData): CompiledAgentData`                                                                 | Sanitize all fields before template render                                                                                               |
+| `buildAgentTemplateContext()` | `(name: string, agent: AgentConfig, files: AgentFiles, mapSkill?: (skill: Skill) => Skill): CompiledAgentData` | Build template data; appends `Skill` to `agent.tools` via `withSkillTool`; `mapSkill` transforms each skill (used to attach `pluginRef`) |
+| `compileAgentForPlugin()`     | `(name: AgentName, agent: AgentConfig, fallbackRoot: string, engine: Liquid): Promise<string>`                 | Per-skill-`pluginRef` agent render used by the live recompile + plugin paths                                                             |
+| `createLiquidEngine()`        | `(projectDir?: string): Promise<Liquid>`                                                                       | Create Liquid engine with layered roots                                                                                                  |
 
 ## Plugin-Mode Compilation
 

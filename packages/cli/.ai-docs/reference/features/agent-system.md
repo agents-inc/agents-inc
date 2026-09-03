@@ -145,9 +145,13 @@ activation protocol. `pm` stands the same way for planning, with the frameworks 
 
 **Model distribution:** 16 agents use `opus`, 2 use `sonnet` (`convention-keeper`, `api-tester`). Every bundled `metadata.yaml` declares a `model`.
 
+The tables above report what each `metadata.yaml` **declares**. Every compiled agent additionally
+carries `Skill`, appended by `withSkillTool` — see the `tools` footnote under
+[metadata.yaml Schema](#metadatayaml-schema).
+
 **Tool patterns:**
 
-- Read-only agents (researchers, some reviewers): Read, Grep, Glob, Bash (no Write/Edit)
+- Read-only agents (researchers): Read, Grep, Glob, Bash (no Write/Edit)
 - Implementation agents (developers, testers, planners): Read, Write, Edit, Grep, Glob, Bash
 - `skill-summoner` is unique: has WebSearch and WebFetch instead of Bash
 
@@ -163,7 +167,7 @@ activation protocol. `pm` stands the same way for planning, with the frameworks 
 | `title`           | `string`              | Yes      | Display title (e.g., "CLI Developer Agent")                                                   |
 | `description`     | `string`              | Yes      | Brief description for Task tool                                                               |
 | `model`           | `ModelName`           | No\*     | `"sonnet"` / `"opus"` / `"haiku"` / `"fable"` / `"inherit"`                                   |
-| `tools`           | `string[]`            | Yes      | Available tools (Read, Write, Edit, Grep, Glob, Bash, WebSearch, WebFetch)                    |
+| `tools`           | `string[]`            | Yes      | Declared tool ALLOWLIST -- see below\*\*                                                      |
 | `disallowedTools` | `string[]`            | No       | Tools this agent cannot use                                                                   |
 | `permissionMode`  | `PermissionMode`      | No       | `"default"` / `"acceptEdits"` / `"dontAsk"` / `"bypassPermissions"` / `"plan"` / `"delegate"` |
 | `hooks`           | `Record<string, ...>` | No       | Lifecycle hooks with matcher and actions                                                      |
@@ -172,6 +176,26 @@ activation protocol. `pm` stands the same way for planning, with the frameworks 
 | `custom`          | `boolean`             | No       | True for agents created outside built-in vocabulary                                           |
 
 \*`model` is optional in both the JSON schema (absent from its `required` list — `["id", "title", "description", "tools"]` — though constrained to the `ModelName` enum when present) and the Zod `agentYamlConfigSchema` (`modelNameSchema.exactOptional()`). `agent.liquid` defaults it to `"inherit"` at render time.
+
+\*\*`tools` is an **allowlist, not a menu**: a sub-agent that declares the key gets only what it
+names, and one that omits the key inherits every tool available to sub-agents. Enumerating tools is
+therefore what opts an agent OUT of the default grant. `Skill` is a listable member of that
+allowlist — Claude Code's sub-agent documentation shows `tools: Read, Grep, Glob, Bash, Edit, Write,
+Skill`.
+
+No bundled `metadata.yaml` names `Skill`. `withSkillTool` (`packages/compile/src/agent-source.ts`,
+module-private) appends it inside `buildAgentTemplateContext`, so **every** compiled agent's
+frontmatter carries `Skill` whatever its metadata declared — including the read-only researchers,
+because loading a skill grants no write access. The append is idempotent (a definition already
+naming `Skill` is returned by identity) and order-stable (declared tools keep their order, the grant
+goes last), so compiling twice is a fixed point and the grant never reorders a declared list — and a
+`metadata.yaml` that does name `Skill` is redundant rather than wrong.
+
+**Declaring `skills:` does not grant the `Skill` tool.** The two keys are complementary and
+independent: `skills:` preloads that skill's content into the agent's startup context, while the
+`Skill` tool is what lets the agent invoke a skill at runtime. An agent can declare `skills:`, carry
+the `<skill_activation_protocol>` instructing it to invoke the Skill tool, and still have no way to
+load one.
 
 **`ModelName`** defined in `src/cli/types/matrix.ts`: `"sonnet" | "opus" | "haiku" | "fable" | "inherit"`
 
@@ -280,7 +304,7 @@ The template assembles a compiled agent prompt in this order:
 | `agent.name`              | `AgentConfig.name`                    | `string`                        |
 | `agent.description`       | `AgentConfig.description`             | `string`                        |
 | `agent.title`             | `AgentConfig.title`                   | `string`                        |
-| `agent.tools`             | `AgentConfig.tools`                   | `string[]`                      |
+| `agent.tools`             | `AgentConfig.tools`, `Skill` appended | `string[]`                      |
 | `agent.disallowedTools`   | `AgentConfig.disallowedTools`         | `string[]`                      |
 | `agent.model`             | `AgentConfig.model`                   | `ModelName`                     |
 | `agent.permissionMode`    | `AgentConfig.permissionMode`          | `PermissionMode`                |
@@ -309,6 +333,7 @@ single driver, `recompileAgents` (`src/cli/lib/agents/agent-recompiler.ts`).
 2. Read identity.md, playbook.md (required), output.md, critical-requirements.md, critical-reminders.md
    - output.md falls back to parent category directory if missing from agent directory
 3. buildAgentTemplateContext(name, agent, files, mapSkill):
+   - withSkillTool(agent) appends "Skill" to agent.tools unless already present
    - mapSkill spreads pluginRefFor(skill) onto each skill, attaching pluginRef (-- see below)
    - split skills into preloaded (s.preloaded) and dynamic
    - preloadedSkillIds = preloadedSkills.map(s => s.pluginRef ?? s.id)

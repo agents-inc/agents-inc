@@ -203,6 +203,40 @@ try {
 
 **5.7 Write through `writeFile()` from `utils/fs.ts`.** ESLint bans importing `writeFile`, `writeFileSync`, `appendFile`, `appendFileSync` or `outputFile` from `fs`, `node:fs`, `fs/promises`, `node:fs/promises` or `fs-extra` anywhere under `src/`. `utils/fs.ts` is the single write choke point: it holds the runtime tripwire for the global config pair (15.8), and it `ensureDir`s the parent, so a preceding `mkdir` is redundant. Tests and `e2e/` are exempt; `utils/fs.ts` itself is the one production exemption, because it IS the wrapper.
 
+**5.8 Render text this CLI did not author through `stripTerminalControls`, never raw.** A body off
+the wire, whatever arrived on stdin, and the metadata in a skills repository somebody else wrote —
+which is the reachable one, because `--marketplace` is a supported input rather than an attack. A
+short body carrying an erase-line and a carriage return repaints the line the CLI printed above it,
+so a store's refusal can forge a sentence in the CLI's own voice, and `@oclif/table` sizes a column
+on the escape bytes as well, so the border moves too. **Three chokepoints carry it and nothing
+renders foreign text past them**: `truncateText` for foreign text that also needs a bound,
+`getErrorMessage` for every catch block, and `formatZodIssue` for every Zod reporter. A new site
+reaches one of those three rather than sanitising for itself; the third exists precisely because it
+has around twenty callers and a new reporter is a normal thing to add.
+
+A catch block is the one that reads backwards. The `Error` was constructed by Node or by a library,
+so it looks like the CLI's own text — but **a parser writes the input that broke it into the message
+it throws**, quoting the offending bytes verbatim. Provenance follows the input, not the object.
+
+**5.8a Strip before truncating. It is a correctness requirement, not a preference.** A cut taken
+first can land inside an escape sequence, and the fragment it leaves is one a terminal holds open,
+reading the ellipsis and whatever the caller prints next as the sequence's missing parameters. The
+order is owned by `truncateText` rather than left to its callers precisely because there is a wrong
+way round to do it. It also decides what the budget buys: escape bytes are invisible, so a budget
+spent on them buys a reader nothing, and measured after the strip every character allowed is one
+somebody can read.
+
+**5.8b Pin a permitted case beside every refused one in a sanitiser's spec.** A sanitiser's tests
+are all about what it removes, so nothing in them can tell a correctly-scoped rule from one that has
+swallowed its whole domain — both leave a mangled-looking string and both pass. Newline and tab
+survive `stripTerminalControls` on purpose: a multi-line zod message is what the store really writes
+on the share route, and a sanitiser strict enough to flatten it mangles every honest refusal to stop
+a rare hostile one. So `read-piped-payload.test.ts` names a refused key without the escapes its
+producer put in it AND names an honest key in full, in the same file. This is `CLAUDE.md`'s
+"never pin an operation as REFUSED without pinning a state where it is ALLOWED" arriving at a
+sanitiser, and it keeps that rule's one structural requirement: the pair goes in ONE file, because a
+permitted case sitting in a different spec is not a control — nothing makes the two move together.
+
 ---
 
 ## 6. Testing
