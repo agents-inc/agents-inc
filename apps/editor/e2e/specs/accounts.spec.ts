@@ -1,7 +1,7 @@
 import { STACKS_URL } from "@workspace/api-mocks"
 
 import { expect, test } from "../fixtures"
-import { ConfigurePage } from "../pages/configure-page"
+import { ConfigurePage, SAVED_STACK } from "../pages/configure-page"
 import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import {
   SIGNED_IN_USER,
@@ -15,6 +15,7 @@ import {
   stubStackRefusal,
 } from "../support/auth"
 import {
+  OUT_OF_SCOPE_PAYLOAD,
   STORE_UNAVAILABLE,
   STORED_PAYLOAD,
   stubCreateConfig,
@@ -244,6 +245,13 @@ test.describe("signing in for the first time", () => {
   // The claim is about what a person sees, not about a request: the grid shows
   // an account's stacks IN PLACE OF the local slot, so without adoption
   // somebody who saved something and then signed in would watch it vanish.
+  //
+  // THE PERMITTED HALF of the pair below, and neither assertion means anything
+  // without the other: a grid that kept every unadopted slot would satisfy the
+  // refusal spec on its own, and a grid that had stopped adopting altogether
+  // would satisfy neither. The two cells are both named "Saved stack", so the
+  // members line is what tells an adopted row from the local slot — the account
+  // holds a POINTER and cannot describe what is behind it without a fetch.
   test("carries the local snapshot into the account", async ({ page }) => {
     stubCreateConfig(page)
     const { created } = stubSignedIn(page)
@@ -255,6 +263,148 @@ test.describe("signing in for the first time", () => {
 
     await expect.poll(() => created).toHaveLength(1)
     await expect(configure.savedStack).toBeVisible()
+    await expect(configure.savedStack).toContainText("saved to your account")
+    // Nothing to explain, so nothing said. This is the channel the refusal spec
+    // below asserts a sentence on, exercised in the direction that proves it
+    // can be empty as well as full.
+    await expect(configure.adoptionNotice).toHaveCount(0)
+  })
+
+  // THE REFUSED HALF. A project-scoped skill assigned to a sub-agent resting at
+  // global scope is refused by the write contract before the POST leaves
+  // (CLI-851), so the mint the row above depends on cannot succeed — and the
+  // grid answered that by drawing neither the account's stacks, of which there
+  // are none, nor the local slot, because somebody is signed in. That is a
+  // person watching their work disappear as they sign in, with nothing said.
+  test("keeps a snapshot the account will not take, and names the conflict", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page)
+
+    const configure = new ConfigurePage(page)
+    await configure.goto()
+    await configure.seedSavedStack(OUT_OF_SCOPE_PAYLOAD)
+    await configure.goto()
+
+    // Still on the grid, and still the LOCAL slot: it lists what it holds,
+    // where an adopted row says only that it is in the account.
+    await expect(configure.savedStack).toBeVisible()
+    await expect(configure.savedStack).not.toContainText(
+      "saved to your account"
+    )
+
+    // The sentence has to name the scope conflict rather than the failure. The
+    // rows carrying the fix are not on screen until the snapshot is applied, so
+    // "saving failed" sends the reader to the wrong half of the system and
+    // "try again" is a lie — this refusal is identical on every load forever.
+    await expect(configure.adoptionNotice).toContainText("scope")
+    // And nothing reached the account, so the notice is not describing a row
+    // the grid is drawing anyway.
+    expect(created).toStrictEqual([])
+  })
+
+  // THE SAME LOSS, ONE SAVE LATER — EDITOR-73, and the pair below is the
+  // EDITOR-67 pair asserted at a second moment rather than a new subject. Both
+  // halves above assert at one instant, the first paint after sign-in, so a
+  // grid correct then and wrong forever after satisfied both.
+  //
+  // What went wrong is worth keeping, because the code read as deliberate:
+  // `save` cleared `unadopted` on ANY save, on the premise that a save is this
+  // browser's work reaching the account. It is not, when what was saved is a
+  // different selection — the refused snapshot is still in neither list, and
+  // clearing the reason dropped it out of the grid exactly as signing in used
+  // to. `adoptLocalStack` then answered `null` for a non-empty account, so a
+  // reload did not bring it back either: "we did not try" was returned as if it
+  // meant "it is in there".
+  //
+  // The reload half is asserted rather than left open now, and it is where the
+  // fix earns its keep: a slot that survives a save but not F5 is the same loss
+  // one keystroke further away. What makes it answerable without re-uploading
+  // anything is that `unwritable` is decided from the payload alone, before any
+  // request — so a snapshot the write contract refuses is PROVABLY in neither
+  // list, on every load, for free.
+  const localSlot = (configure: ConfigurePage) =>
+    configure.stacks
+      .getByRole("button", { name: SAVED_STACK, exact: true })
+      .filter({ hasNotText: "saved to your account" })
+
+  test("keeps the refused snapshot when an unrelated stack is saved", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page)
+
+    const configure = new ConfigurePage(page)
+    await configure.goto()
+    await configure.seedSavedStack(OUT_OF_SCOPE_PAYLOAD)
+    await configure.goto()
+
+    // The refused half above, holding — this spec starts where it ends.
+    await expect(configure.adoptionNotice).toBeVisible()
+    await expect(configure.savedStack).toBeVisible()
+
+    // Something else entirely: a catalogue stack the write contract accepts, so
+    // the account gains a row that is not this browser's snapshot.
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.roster.saveButton.click()
+    await expect.poll(() => created).toHaveLength(1)
+
+    // Both cells are named "Saved stack", so the members line is what tells them
+    // apart — the same reading the adopted spec above relies on, from the other
+    // side. The local slot lists what it HOLDS; the account's row cannot.
+    await expect(localSlot(configure)).toHaveCount(1)
+    await expect(configure.adoptionNotice).toBeVisible()
+
+    // And again after a reload, which is the half the fix had to reach for: the
+    // account is no longer empty, so adoption is not re-attempted — asserted by
+    // `created` still holding only the save above, not by trusting it.
+    await configure.goto()
+
+    await expect(localSlot(configure)).toHaveCount(1)
+    await expect(configure.adoptionNotice).toContainText("scope")
+    expect(created).toHaveLength(1)
+  })
+
+  // THE PERMITTED HALF OF THAT PAIR, at the same second moment, and it is what
+  // says the fix above kept its scope. Nothing here is refused: the snapshot is
+  // adopted at sign-in, so the account holds it and the local slot is REPLACED
+  // rather than kept. Drive the same unrelated save and the same reload, and it
+  // must stay replaced — a store that had simply stopped clearing `unadopted`
+  // too widely, or a grid that kept every local slot once an account had two
+  // rows, would satisfy the refusal spec above on its own and fail here.
+  test("leaves an adopted snapshot replaced when an unrelated stack is saved", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page)
+
+    const configure = new ConfigurePage(page)
+    await configure.goto()
+    await configure.seedSavedStack(STORED_PAYLOAD)
+    await configure.goto()
+
+    // Adopted: the account holds it, so the only "Saved stack" on screen is the
+    // account's row and there is nothing to explain.
+    await expect.poll(() => created).toHaveLength(1)
+    await expect(localSlot(configure)).toHaveCount(0)
+    await expect(configure.adoptionNotice).toHaveCount(0)
+
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.roster.saveButton.click()
+    await expect.poll(() => created).toHaveLength(2)
+
+    await expect(localSlot(configure)).toHaveCount(0)
+    await expect(configure.adoptionNotice).toHaveCount(0)
+
+    await configure.goto()
+
+    // Still replaced, and still silent. The snapshot is in the account, so a
+    // notice here would be a sentence about work that was never at risk.
+    await expect(configure.savedStack.first()).toBeVisible()
+    await expect(localSlot(configure)).toHaveCount(0)
+    await expect(configure.adoptionNotice).toHaveCount(0)
+    expect(created).toHaveLength(2)
   })
 
   test("leaves an account that already has stacks alone", async ({ page }) => {

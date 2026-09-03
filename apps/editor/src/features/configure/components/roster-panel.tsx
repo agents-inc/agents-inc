@@ -72,6 +72,12 @@ const SAVE_NARRATIONS = {
   refused: { label: "Saving failed", decays: true },
   unreachable: { label: "Offline — try again", decays: true },
   "signed-out": { label: "Signed out — sign in", decays: false },
+  // Reachable from this button and from no other, because Save is the one door
+  // `blocked` deliberately does not close: an unwritable configuration has to
+  // be storable while it is being repaired (EDITOR-08). Signed out that is a
+  // local slot and still works; signed in the same payload is minted through
+  // the store, which will not hold a configuration nobody can install.
+  unwritable: { label: "Scope conflict — fix marked rows", decays: false },
 } as const satisfies Record<SaveRefusal, SaveNarration>
 
 const SAVE_RESET_DELAY_MS = 2_000

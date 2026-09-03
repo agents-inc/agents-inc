@@ -15,7 +15,7 @@ import {
   SAVED_STACK_NAME,
   useSavedStackStore,
 } from "@/stores/saved-stack-store"
-import { useAccountStore } from "@/stores/account-store"
+import { useAccountStore, type AdoptionRefusal } from "@/stores/account-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
 
 type StackCell = {
@@ -87,6 +87,37 @@ const accountCells = (
     request: { kind: "remote", configId: saved.configId },
   }))
 
+/**
+ * What the grid says when a first sign-in could not take the local snapshot.
+ *
+ * ONE FRAME AND FIVE TAILS, and the split is the whole design. The frame
+ * answers the only question that matters in the moment — the work is still here
+ * — and the tail says which ending stopped it, because four of these come back
+ * on the next load and one of them never will.
+ *
+ * `unwritable` is that one, and it is the reason this copy exists at all: a
+ * project-scoped skill assigned to a sub-agent resting at global scope is
+ * refused by the write contract before the request leaves (CLI-851), so it
+ * fails identically on every load forever. Its sentence names the PAIR rather
+ * than the failure, and says to apply the snapshot first — the rows carrying
+ * the fix are not on screen until it is, which is what makes the roster's own
+ * "fix marked rows" wrong here.
+ */
+const WHY_NOT_ADOPTED = {
+  unwritable:
+    "a project-scoped skill is assigned to a sub-agent resting at global scope. Apply it, then fix the marked rows under Sub-agents",
+  "out-of-date":
+    "this page is out of date. Reload, and it will be carried over",
+  refused: "your account would not take it. It will be carried over next time",
+  unreachable:
+    "your account could not be reached. It will be carried over next time",
+  "signed-out":
+    "your session lapsed. Sign in again, and it will be carried over",
+} as const satisfies Record<AdoptionRefusal, string>
+
+const unadoptedNotice = (refusal: AdoptionRefusal) =>
+  `Still saved in this browser, not in your account: ${WHY_NOT_ADOPTED[refusal]}.`
+
 // The test is `isStackCustom`, not "is anything selected": a stack's own
 // expansion is not something the user chose, so browsing between stacks has
 // nothing to lose. Prompting every time trains people to dismiss it unread.
@@ -99,6 +130,7 @@ export function StackGrid() {
   const saved = useSavedStackStore((state) => state.saved)
   const account = useAccountStore((state) => state.session)
   const accountStacks = useAccountStore((state) => state.stacks)
+  const unadopted = useAccountStore((state) => state.unadopted)
   const stacks = useCatalogStore((state) => state.stacks)
   const requestStack = useUiStore((state) => state.requestStack)
   const applyStackRequest = useApplyStackRequest()
@@ -127,19 +159,37 @@ export function StackGrid() {
   // and a module-level constant would be the vendored catalogue forever.
   const catalogueCells = useMemo(() => toCatalogueCells(stacks), [stacks])
 
+  // Signed in, the account's stacks. Signed out, the one local slot. Normally
+  // never both: two lists of "your saved stacks" that can disagree is worse
+  // than either, and the local slot survives untouched under the account's.
+  //
+  // A slot the account REFUSED is the exception, and it is the whole of
+  // EDITOR-67. That snapshot is in neither list, so hiding it is not replacing
+  // it — it is losing it, in silence, at the moment somebody signs in.
+  //
+  // BOTH LISTS AT ONCE IS THEREFORE REACHABLE, and it is the accepted outcome
+  // rather than a case the store rules out. This comment used to claim the
+  // second, on the store's word that `unadopted` went null the moment the
+  // account held anything — and `save` kept that word by clearing it on every
+  // save, which is what dropped a refused slot off the grid one Save after
+  // EDITOR-67 drew it (EDITOR-73). Every signed-in save is named "Saved stack"
+  // anyway, so the guarantee was never worth what it cost. The two cells are
+  // told apart by their second line, which is the same reading the E2E pair
+  // relies on: the local slot lists the skills it holds, and an account's row
+  // can only say it is in the account.
+  const keepsLocalSlot = !account || unadopted !== null
+
   // Straight after scratch, and only while a snapshot exists: it is a starting
   // point rather than a stack the catalogue knows about.
-  // Signed in, the account's stacks. Signed out, the one local slot. Never
-  // both: two lists of "your saved stacks" that can disagree is worse than
-  // either, and the local slot survives untouched under the account's.
-  const cells = useMemo(() => {
-    if (account)
-      return [scratchCell, ...accountCells(accountStacks), ...catalogueCells]
-
-    return saved
-      ? [scratchCell, savedCell(saved), ...catalogueCells]
-      : [scratchCell, ...catalogueCells]
-  }, [account, accountStacks, saved, catalogueCells])
+  const cells = useMemo(
+    () => [
+      scratchCell,
+      ...(saved && keepsLocalSlot ? [savedCell(saved)] : []),
+      ...accountCells(accountStacks),
+      ...catalogueCells,
+    ],
+    [keepsLocalSlot, accountStacks, saved, catalogueCells]
+  )
 
   // The saved cell is drawn as the current stack by the selection *being* the
   // snapshot, since that is all it can be recognised by. That reading wins over
@@ -167,35 +217,63 @@ export function StackGrid() {
   }
 
   return (
-    <Lattice columns={4} role="group" aria-label="Stacks">
-      {cells.map((cell) => (
-        <LatticeCell
-          key={cell.key}
-          selected={isApplied(cell.request)}
-          className="px-[0.8125rem] py-[0.6875rem]"
-          role="button"
-          tabIndex={0}
-          // Otherwise the name swallows the member-skill line beneath it.
-          aria-label={cell.name}
-          aria-pressed={isApplied(cell.request)}
-          onClick={() => choose(cell.request)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault()
-              choose(cell.request)
-            }
-          }}
+    <>
+      {/* Above the grid rather than on the cell, because it is a sentence about
+          what did NOT happen to the cell — and the person has to be able to
+          read it without hovering anything. `alert` for the reason the
+          catalogue notice above it is one: it reports what an arrival cost,
+          and this arrival is a sign-in the person just asked for. Located by
+          slot in the E2E suite, since `main` already draws an alert.
+
+          DELIBERATELY NOT DISMISSIBLE, ruled with EDITOR-73 when this stopped
+          being cleared by an unrelated save and so became a sentence that can
+          outlive a reload. A control here has only two honest behaviours and
+          both are worse than none: clear the notice and keep the cell, leaving
+          a slot with nothing to explain it — which is the confusion EDITOR-67
+          closed — or clear both, which is this row's own data loss with the
+          user's finger on it. It is already dismissible by the route its own
+          words name: repair the snapshot and save it, and the next refresh
+          finds nothing to report. A "hide this" button would be labelled
+          honestly only as "hide my work". */}
+      {unadopted && (
+        <p
+          data-slot="adoption-notice"
+          role="alert"
+          className="pt-4 font-mono text-11 text-muted-foreground italic"
         >
-          <span className="text-12 font-semibold text-ink">{cell.name}</span>
-          <span
-            className={`mt-1 font-mono text-9 font-normal ${
-              isApplied(cell.request) ? "text-brand-ink" : "text-subtle"
-            }`}
+          {unadoptedNotice(unadopted)}
+        </p>
+      )}
+      <Lattice columns={4} role="group" aria-label="Stacks">
+        {cells.map((cell) => (
+          <LatticeCell
+            key={cell.key}
+            selected={isApplied(cell.request)}
+            className="px-[0.8125rem] py-[0.6875rem]"
+            role="button"
+            tabIndex={0}
+            // Otherwise the name swallows the member-skill line beneath it.
+            aria-label={cell.name}
+            aria-pressed={isApplied(cell.request)}
+            onClick={() => choose(cell.request)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                choose(cell.request)
+              }
+            }}
           >
-            {cell.members}
-          </span>
-        </LatticeCell>
-      ))}
-    </Lattice>
+            <span className="text-12 font-semibold text-ink">{cell.name}</span>
+            <span
+              className={`mt-1 font-mono text-9 font-normal ${
+                isApplied(cell.request) ? "text-brand-ink" : "text-subtle"
+              }`}
+            >
+              {cell.members}
+            </span>
+          </LatticeCell>
+        ))}
+      </Lattice>
+    </>
   )
 }
