@@ -293,14 +293,16 @@ export const COMPOSED_PROPOSAL = {
   reason: "React for the app, and Vitest to test it.",
 }
 
-// The worker's own bodies for the two compose refusals a caller can tell
-// apart from each other. Its 400s are absent for the reason `GET /configs/:id`
-// has no 503 here: the client maps every status it does not name to one
-// `refused`, so a handler for those would assert the same branch twice.
+// The worker's own bodies for the three compose refusals a caller can tell
+// apart from each other. Its 400 is one of them as of EDITOR-69: `/compose`
+// spends that status on two guards — an empty sentence and one past its cap —
+// and names which in the body, so `composeProposal` reads the body for that
+// status rather than mapping it with the rest.
 export const COMPOSE_TOO_MANY_BODY = { error: "too many requests" } as const
 export const COMPOSE_FAILED_BODY = {
   error: "the model did not answer",
 } as const
+export const COMPOSE_TOO_LONG_BODY = { error: "too long" } as const
 
 // Where GitHub's REST API answers. Named once because it is the origin the
 // editor reaches DIRECTLY — the whole point of fetching a catalogue this way is

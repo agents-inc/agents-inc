@@ -1,4 +1,7 @@
-import { MAX_EXTERNAL_SKILL_BYTES } from "@workspace/matrix/seed"
+import {
+  MAX_EXTERNAL_SKILL_BYTES,
+  installableSeedPayloadSchema,
+} from "@workspace/matrix/seed"
 import { SKILL_INDEX_FRESHNESS_HEADER } from "@workspace/matrix/skill-index"
 import { http, HttpResponse } from "msw"
 
@@ -6,6 +9,7 @@ import {
   BINARY_FILE_BYTES,
   COMPOSED_PROPOSAL,
   COMPOSE_FAILED_BODY,
+  COMPOSE_TOO_LONG_BODY,
   COMPOSE_TOO_MANY_BODY,
   EXTERNAL_SKILL,
   GITHUB_AUTHORIZE_URL,
@@ -58,10 +62,47 @@ const NOT_FOUND = 404
 const INTEGRITY_FAILURE = 500
 
 /**
- * The two statuses `POST /configs` refuses with, and they are two rather than
- * one because only the first names something the person at the keyboard can do
- * (SERVER-04): the tab is running a bundle from before the last deploy, and a
- * reload is the whole fix.
+ * The content type the worker really announces its own sentences under.
+ *
+ * `HttpResponse.text` writes a bare `text/plain`; every refusal below is a `c.text(...)` in
+ * `apps/server/src/index.ts`, and hono writes its `TEXT_PLAIN`, which carries a charset parameter.
+ * The difference is not cosmetic — the CLI's seed layer gates quoting on the type, so a double
+ * announcing the bare form cannot tell a correct `startsWith` from a broken `===`, and the broken
+ * one drops every refusal these routes can explain the moment it meets the real wire.
+ *
+ * Mirrored rather than imported because it belongs to hono and `apps/server`, which is the same
+ * reason the bodies beside it are fixtures rather than imports.
+ */
+const HONO_TEXT_PLAIN = "text/plain; charset=UTF-8"
+
+/**
+ * One of the worker's own plain-text refusals, announced as the worker announces it.
+ *
+ * A function rather than five inline header objects: one fact about `c.text` stated five times
+ * cannot see itself drift, and this file already argues that about a route string. It also marks
+ * which bodies are the WORKER's — the two `HttpResponse.text` calls under `RAW_URL` answer for
+ * GitHub's raw CDN rather than for hono, so they deliberately do not come through here.
+ */
+const workerText = (body: string, status: number) =>
+  HttpResponse.text(body, {
+    status,
+    headers: { "content-type": HONO_TEXT_PLAIN },
+  })
+
+/**
+ * The status `POST /configs` refuses a body its own write schema does not take — one of FOUR
+ * refusals the worker declares for this route (`apps/server/src/index.ts`'s `createConfigRoute`
+ * also answers 409, 413 and 503), and the only one this file used to leave unmodelled: the route
+ * had no way to be refused at all before `createConfig` below started asking
+ * `installableSeedPayloadSchema` (CLI-849). Named apart from the two below because it is what the
+ * validating default answers, where those two are answered only by an opt-in handler.
+ */
+const REFUSED = 400
+
+/**
+ * Two more of `POST /configs`' refusals, and they are two rather than one because only the first
+ * names something the person at the keyboard can do (SERVER-04): the tab is running a bundle from
+ * before the last deploy, and a reload is the whole fix.
  */
 export const OUT_OF_DATE = 409
 export const STORE_UNAVAILABLE = 503
@@ -81,7 +122,28 @@ export const STORE_UNAVAILABLE = 503
 export const mintedConfig = () =>
   HttpResponse.json({ id: STORED_ID }, { status: CREATED })
 
-const createConfig = http.post(CONFIGS_URL, mintedConfig)
+/**
+ * Validates against the WRITE schema before minting, exactly as the worker does — restating no
+ * rule of its own, since `installableSeedPayloadSchema` is imported rather than re-derived
+ * (CLI-849). Before this, every body minted an id: the double was more permissive than the worker
+ * it stands in for, which is how a payload the CLI's own (weaker) local schema accepted once
+ * reached a real HTTP 400 with nothing here able to see it coming.
+ *
+ * A refusal answers the whole `safeParse` result, JSON-serialized exactly as
+ * `@hono/zod-validator`'s default hook sends it — `c.json(result, 400)` — which is what
+ * `publish-seed.ts`'s `refusalSchema` reads on the wire. A `ZodError` has no own enumerable fields
+ * beyond `name` and `message`, so `{ success: false, error: { name, message } }` is what actually
+ * crosses, with the issues rendered into `message` as a JSON document.
+ */
+const createConfig = http.post(CONFIGS_URL, async ({ request }) => {
+  const validated = installableSeedPayloadSchema.safeParse(await request.json())
+  if (validated.success) return mintedConfig()
+
+  return HttpResponse.json(
+    { success: false, error: validated.error },
+    { status: REFUSED }
+  )
+})
 
 // Which answer comes back is decided by the id, exactly as the store decides
 // it: one id holds a payload, one holds bytes that no longer parse, and every
@@ -91,12 +153,10 @@ const readConfig = http.get<{ id: string }>(READ_CONFIG_URL, ({ params }) => {
   if (params.id === STORED_ID) return HttpResponse.json(STORED_PAYLOAD)
 
   if (params.id === UNREADABLE_CONFIG_ID) {
-    return HttpResponse.text(UNREADABLE_CONFIG_BODY, {
-      status: INTEGRITY_FAILURE,
-    })
+    return workerText(UNREADABLE_CONFIG_BODY, INTEGRITY_FAILURE)
   }
 
-  return HttpResponse.text(NO_CONFIG_BODY, { status: NOT_FOUND })
+  return workerText(NO_CONFIG_BODY, NOT_FOUND)
 })
 
 /** The worker answering as it does when nothing has gone wrong. */
@@ -122,29 +182,40 @@ export const storedConfigHandlerFor = (id: string, payload: JsonBodyType) =>
  * aimed at an id it would otherwise answer for.
  */
 export const missingConfigHandlerFor = (id: string) =>
-  http.get(`${CONFIGS_URL}/${id}`, () =>
-    HttpResponse.text(NO_CONFIG_BODY, { status: NOT_FOUND })
-  )
+  http.get(`${CONFIGS_URL}/${id}`, () => workerText(NO_CONFIG_BODY, NOT_FOUND))
 
 /**
- * The mint refusing, named by the status it refuses with.
+ * The mint refusing, named by the status it refuses with — a NULL body for every status but 503,
+ * standing for a refusal that carries no explanation at all.
  *
- * A body only where the route declares one: `createSharedConfig` branches on
- * the status alone and never reads a refusal's body, so a body invented for the
- * others would be a claim about the worker that nothing checks.
+ * That silence used to be justified for every caller: the editor's `createSharedConfig` branches
+ * on the status alone and never reads a refusal's body, so a body invented for the rest would have
+ * been a claim about the worker nothing checked. It is no longer true of every caller — the CLI's
+ * `publishSeedConfig` now reads the body for every status but 409 — which is why a spec exercising
+ * that envelope for 400 builds its own body (`publish-seed.test.ts`'s `contractRefusalHandler`, and
+ * `createConfig` above for a payload that genuinely fails the write schema) rather than reaching
+ * for this function: `configRefusedHandlerFor(400)` still means "refused with nothing said."
  */
 export const configRefusedHandlerFor = (status: number) =>
   http.post(CONFIGS_URL, () =>
     status === STORE_UNAVAILABLE
-      ? HttpResponse.text(STORE_REFUSED_BODY, { status })
+      ? workerText(STORE_REFUSED_BODY, status)
       : new HttpResponse(null, { status })
   )
 
 /**
- * KV refusing the write — the one failure the POST has that no request can
- * provoke, since the body was built from the contract's own schema. Installed
- * per test with `configMockServer.use(...)` rather than living in the default
- * set, because a store that always refuses is not the worker's resting state.
+ * KV refusing the write — now that `createConfig` above validates for real, the one refusal on
+ * this route no BODY can provoke: it names an infrastructure failure rather than a question about
+ * what was posted, so a payload that passes `installableSeedPayloadSchema` cannot reach it either
+ * way. Installed per test with `configMockServer.use(...)` rather than living in the default set,
+ * because a store that always refuses is not the worker's resting state.
+ *
+ * That was stated as fact here while it was merely hoped: this comment used to read "the one
+ * failure the POST has that no request can provoke, since the body was built from the contract's
+ * own schema" — while `createConfig` minted an id for any body at all, so nothing here enforced
+ * the premise. The CLI's own LOCAL copy of that schema was weaker than the write schema for a
+ * week, and a body built from IT — never validated against the schema this file now imports —
+ * reached this exact refusal's sibling (400) repeatedly in production (CLI-849).
  */
 export const storeRefusedHandler = configRefusedHandlerFor(STORE_UNAVAILABLE)
 
@@ -190,7 +261,7 @@ export const staleSkillIndexHandler = http.get(SKILL_INDEX_URL, () =>
  * never again afterwards, because the published index carries no expiry.
  */
 export const skillIndexUnavailableHandler = http.get(SKILL_INDEX_URL, () =>
-  HttpResponse.text(SKILL_INDEX_UNAVAILABLE_BODY, { status: STORE_UNAVAILABLE })
+  workerText(SKILL_INDEX_UNAVAILABLE_BODY, STORE_UNAVAILABLE)
 )
 
 // GitHub's contents API, which is where a marketplace's catalogue really lives.
@@ -623,9 +694,15 @@ export const stackUnreachableHandler = http.post(STACKS_URL, () =>
 /**
  * The composer's route refusing, named by the status it refuses with.
  *
- * The two bodies the route declares, and nothing for every other — `/compose`
- * writes its own 429 and its own 502, and `composeProposal` reads neither, so
- * a body invented for the rest would be a claim nothing checks.
+ * The bodies the route declares, and nothing for every other status — a body
+ * invented for the rest would be a claim nothing checks.
+ *
+ * A 400 is deliberately NOT one of them, because on this route the status is
+ * not the discriminator: `/compose` spends one 400 on two guards, an empty
+ * sentence and one past its cap, and says which in the body. So the bodiless
+ * 400 this answers with is the DEGRADE case — a refusal `composeProposal`
+ * cannot read and must fall back on — and `composeTooLongHandler` below is the
+ * readable one. Both are needed, and neither can be reached by status alone.
  */
 const composeRefusalOf = (status: number) => {
   if (status === TOO_MANY) {
@@ -640,6 +717,18 @@ const composeRefusalOf = (status: number) => {
 
 export const composeRefusedHandlerFor = (status: number) =>
   http.post(COMPOSE_URL, () => composeRefusalOf(status))
+
+/**
+ * The one refusal on this route that names something the person can do.
+ *
+ * Its own handler rather than an arm of `composeRefusalOf`, because what makes
+ * it tellable is the BODY: the worker refuses an empty sentence with the same
+ * 400, so a double keyed on the status would mint one answer for two guards and
+ * assert that `composeProposal` reads a discriminator it never saw.
+ */
+export const composeTooLongHandler = http.post(COMPOSE_URL, () =>
+  HttpResponse.json(COMPOSE_TOO_LONG_BODY, { status: BAD_REQUEST })
+)
 
 /**
  * The limiter doing its job. Keyed on the person rather than the address
