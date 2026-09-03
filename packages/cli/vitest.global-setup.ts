@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ensureSharedMarketplaceCheckout } from "./src/cli/lib/__tests__/helpers/shared-marketplace-checkout.js";
 import { assertDistIsFresh } from "./src/cli/lib/testing/dist-staleness.js";
 
 // The rule this enforces is in src/, not here (CLI-460). At the time that split
@@ -17,4 +18,10 @@ const CLI_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 export async function setup(): Promise<void> {
   await assertDistIsFresh(CLI_ROOT);
+
+  // The one checkout of the default marketplace every isolated home borrows, fetched here
+  // because globalSetup is the only place in the run where nothing is racing it. Ordered after
+  // the freshness refusal so a stale dist/ is still the first thing anyone is told about.
+  // src/cli/lib/__tests__/helpers/shared-marketplace-checkout.ts carries the reasoning.
+  await ensureSharedMarketplaceCheckout();
 }

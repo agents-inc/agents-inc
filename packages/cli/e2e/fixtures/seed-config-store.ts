@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import http from "node:http";
 
 import { CONFIGS_URL, answerFor, configHandlers, workerRequestFrom } from "@workspace/api-mocks";
+import { installableSeedPayloadSchema } from "@workspace/matrix/seed";
 import { HttpResponse, http as route } from "msw";
 
 import { CLI, type CLIResult } from "./cli.js";
@@ -146,13 +147,31 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
    * What this store answers with right now. Rebuilt per request because its contents move, and
    * ordered as `use()` orders handlers: the ids it holds claim their own routes first, then the
    * mint for the id this request is filing, and `configHandlers` answers everything else — which
-   * is where an id nobody published gets the worker's own 404.
+   * is where an id nobody published gets the worker's own 404, and where a POST that was never
+   * filed (an invalid body — see `isInstallable` below) gets the worker's own 400.
    */
   const handlersNow = (mintedId: string | undefined): RequestHandler[] => [
     ...[...held].map(([id, bytes]) => heldBytesHandler(id, bytes)),
     ...(mintedId === undefined ? [] : [mintedHandler(mintedId)]),
     ...configHandlers,
   ];
+
+  /**
+   * Whether a posted body is one the write contract would take — the same question
+   * `configHandlers`'s own `createConfig` asks of it a moment later. Asked here only to decide
+   * whether this store must remember the body under an id: a body that fails is left unfiled, so
+   * `mintedId` below stays `undefined` and the request falls through to `configHandlers`, which
+   * answers it exactly as the worker's 400 does. That is what lets this store restate no rule of
+   * its own (CLI-849) — before this it filed and minted an id for any body at all, which is not
+   * what the worker does for one `installableSeedPayloadSchema` refuses.
+   */
+  const isInstallable = (body: string): boolean => {
+    try {
+      return installableSeedPayloadSchema.safeParse(JSON.parse(body)).success;
+    } catch {
+      return false;
+    }
+  };
 
   /** Files a posted body under its content address, and reports the id it was filed under. */
   const file = (body: string): string => {
@@ -176,7 +195,7 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     const body = await readBody(req);
     record(req, body);
 
-    const mintedId = isMint(req) ? file(body) : undefined;
+    const mintedId = isMint(req) && isInstallable(body) ? file(body) : undefined;
     const answer = await answerFor(handlersNow(mintedId), workerRequestFrom(req, body));
 
     if (!answer.served) {

@@ -27,11 +27,24 @@ import path from "path";
  * `package.json`: `commands/build`, `commands/plugin-build-versioning` and
  * `commands/marketplace-author-arc`.
  *
- * ## Why a fixed path rather than a mktemp one
+ * ## Why a fixed path rather than a mktemp one, and who is allowed to write to it
  *
  * `globalSetup` runs in vitest's own process and the specs run in forked workers, so the location
  * has to be something both can compute without passing it. It is derived, not random, and the
  * teardown removes it — and because the tree is frozen, teardown has to unfreeze before it can.
+ *
+ * **A path in `os.tmpdir()` is shared with every other suite on the machine, so the rule the fixed
+ * path costs is: a machine-wide fixture is written by a global setup and by nothing else.** The
+ * unit and E2E projects are separate vitest runs over one tree and nothing orders them —
+ * `turbo run test test:e2e` is one invocation and two concurrent tasks — so a spec that BUILDS or
+ * REMOVES one of these is deleting another run's fixture while it is being read. This module's own
+ * spec did exactly that for months: it called `buildSharedSource` and `removeSharedSource` on the
+ * real E2E path, in six specs and an `afterEach`, and every one of them passed while removing the
+ * tree that `grep -rln 'createE2ESource\|E2E_SOURCE\|sharedSourcePath' e2e --include='*.e2e.test.ts'`
+ * counts as readers. That is why the mechanism below takes its root as a PARAMETER and the shared
+ * path is supplied at the one call site that owns it: a spec drives
+ * {@link buildFrozenSourceTree} at a root of its own and never names this one.
+ * `shared-fixture-writers.test.ts` is what refuses the next spec that tries.
  *
  * ## Why the name spells neither "source" nor "marketplace"
  *
@@ -55,27 +68,43 @@ export function isSharedSource(dir: string): boolean {
 }
 
 /**
- * Builds the shared source and freezes it. Called once, from `globalSetup`.
+ * Builds a source tree at `root` through the builder it is given and freezes the result.
  *
  * Idempotent by removal rather than by detection: a directory left behind by a killed run holds a
  * half-built source, and reusing it would seat every spec on a fixture nobody can describe.
+ *
+ * The root is a parameter so that this module's own spec can exercise the freeze, the refusals and
+ * the removal somewhere it owns — see the rule above, which is what the parameter is for.
  */
-export async function buildSharedSource(build: (dir: string) => Promise<void>): Promise<string> {
-  await unfreeze();
-  await rm(SHARED_SOURCE_DIR, { recursive: true, force: true });
-  await mkdir(SHARED_SOURCE_DIR, { recursive: true });
+export async function buildFrozenSourceTree(
+  root: string,
+  build: (dir: string) => Promise<void>,
+): Promise<string> {
+  await unfreeze(root);
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
 
-  await build(SHARED_SOURCE_DIR);
+  await build(root);
 
-  await freeze();
+  await freeze(root);
 
-  return SHARED_SOURCE_DIR;
+  return root;
 }
 
-/** Removes the shared source. Unfreezes first, because a frozen tree refuses its own deletion. */
+/** Removes a frozen tree. Unfreezes first, because a frozen tree refuses its own deletion. */
+export async function removeFrozenSourceTree(root: string): Promise<void> {
+  await unfreeze(root);
+  await rm(root, { recursive: true, force: true });
+}
+
+/** Builds the shared source. Called once, from `e2e/global-setup.ts`, and from nowhere else. */
+export async function buildSharedSource(build: (dir: string) => Promise<void>): Promise<string> {
+  return buildFrozenSourceTree(SHARED_SOURCE_DIR, build);
+}
+
+/** Teardown for the shared source. Called once, from `e2e/global-setup.ts`, and nowhere else. */
 export async function removeSharedSource(): Promise<void> {
-  await unfreeze();
-  await rm(SHARED_SOURCE_DIR, { recursive: true, force: true });
+  await removeFrozenSourceTree(SHARED_SOURCE_DIR);
 }
 
 /** Inlined rather than imported: this module is loaded by `globalSetup`, before anything else. */
@@ -87,14 +116,14 @@ async function isDirectory(dir: string): Promise<boolean> {
   }
 }
 
-async function freeze(): Promise<void> {
-  await chmodTree(SHARED_SOURCE_DIR, 0o555, 0o444);
+async function freeze(root: string): Promise<void> {
+  await chmodTree(root, 0o555, 0o444);
 }
 
-async function unfreeze(): Promise<void> {
-  if (!(await isDirectory(SHARED_SOURCE_DIR))) return;
+async function unfreeze(root: string): Promise<void> {
+  if (!(await isDirectory(root))) return;
 
-  await chmodTree(SHARED_SOURCE_DIR, 0o755, 0o644);
+  await chmodTree(root, 0o755, 0o644);
 }
 
 /**

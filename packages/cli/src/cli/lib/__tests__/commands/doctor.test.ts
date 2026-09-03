@@ -62,7 +62,7 @@ describe("doctor command", () => {
   });
 
   describe("basic execution", () => {
-    it("should run without arguments", { timeout: 30_000 }, async () => {
+    it("should run without arguments", async () => {
       const { error } = await runCliCommand(["doctor"]);
 
       const output = error?.message || "";
