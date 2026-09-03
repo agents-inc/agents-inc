@@ -15,6 +15,7 @@ import {
   holdCompose,
   stubCompose,
   stubComposeRefusal,
+  stubComposeTooLong,
   stubComposeUnreachable,
 } from "../support/auth"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
@@ -64,6 +65,13 @@ const THINKING_REASON = "Choosing skills…"
 const REFUSAL_TOO_MANY = "Too many requests in a minute. Try again shortly."
 const REFUSAL_REFUSED = "The model did not answer. Nothing changed."
 const REFUSAL_UNREACHABLE = "Could not reach the composer. Nothing changed."
+const REFUSAL_TOO_LONG = "That is too long to send. Shorten it and try again."
+
+// Comfortably past the cap `/compose` refuses at, and deliberately NOT that cap
+// plus one: what the specs below need is a draft the worker would refuse, and
+// pinning the exact threshold from here would be this suite asserting about a
+// number it has no way to know has moved.
+const PAST_THE_CAP = "x".repeat(900)
 
 // An id no seated catalogue carries. A model answering with one is not a
 // hypothetical: the ids it is given come from whichever marketplace was seated
@@ -280,6 +288,42 @@ test.describe("an empty draft", () => {
     await composer.type("   ")
 
     await expect(composer.sendButton).toBeDisabled()
+  })
+})
+
+/**
+ * EDITOR-69. THE FIELD IS NOT WHERE THE LENGTH RULE LIVES, and the two tests
+ * below are what stops it moving there.
+ *
+ * The obvious fix is a `maxLength` on the textarea, and it is the wrong one: it
+ * eats keystrokes at the caret with no explanation, so a pasted paragraph
+ * arrives short and nothing on screen says why. The next-most-obvious is to
+ * disable `Send` past the cap, which is worse — 601 characters look exactly
+ * like 599, so a dead button is a dead end.
+ *
+ * The rule belongs to the worker, which is the only side that knows the number.
+ * The draft goes as written, the worker refuses it ahead of the model for free,
+ * and the composer says so in the reason line every other refusal uses. That
+ * is not symmetry with the empty draft above and is not meant to be: blankness
+ * is a predicate this side can evaluate on its own, and a length cap is not.
+ */
+test.describe("a draft past the worker's cap", () => {
+  test("keeps every character the visitor wrote", async ({ configure }) => {
+    const { composer } = configure
+
+    await composer.type(PAST_THE_CAP)
+
+    expect(await composer.draft()).toBe(PAST_THE_CAP)
+  })
+
+  test("leaves Send reachable rather than refusing where it cannot explain", async ({
+    configure,
+  }) => {
+    const { composer } = configure
+
+    await composer.type(PAST_THE_CAP)
+
+    await expect(composer.sendButton).toBeEnabled()
   })
 })
 
@@ -582,10 +626,10 @@ test.describe("a submit in flight", () => {
   })
 })
 
-// Four things can go wrong with a submit and the composer says a different
+// Five things can go wrong with a submit and the composer says a different
 // sentence about each, because only some of them name something the person at
 // the keyboard can do. The signed-out one is the suite's default and is
-// asserted above; these are the other three.
+// asserted above; these are the other four.
 test.describe("a refusal", () => {
   const REFUSALS = [
     {
@@ -602,6 +646,15 @@ test.describe("a refusal", () => {
       what: "a composer it cannot reach",
       stub: stubComposeUnreachable,
       copy: REFUSAL_UNREACHABLE,
+    },
+    // EDITOR-69. The refusal that used to arrive wearing the one above it: the
+    // worker turns an over-long sentence away BEFORE it calls the model, so
+    // "The model did not answer" described something that never happened, and
+    // named nothing the person could do about the thing that did.
+    {
+      what: "a sentence past the worker's cap",
+      stub: stubComposeTooLong,
+      copy: REFUSAL_TOO_LONG,
     },
   ] as const
 

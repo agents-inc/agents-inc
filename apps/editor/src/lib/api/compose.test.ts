@@ -1,13 +1,16 @@
 import {
   COMPOSED_PROPOSAL,
+  COMPOSE_TOO_LONG_BODY,
   COMPOSE_URL,
   composeRefusedHandler,
+  composeRefusedHandlerFor,
+  composeTooLongHandler,
   composeTooManyHandler,
   composeUnreachableHandler,
   signedInHandlers,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
-import { http, HttpResponse } from "msw"
+import { getResponse, http, HttpResponse } from "msw"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
@@ -32,6 +35,11 @@ const sink = {
 const SENTENCE = "a react app with tests"
 
 const MODEL_SILENT = 502
+
+// The one status on this route that the status alone cannot explain. `/compose`
+// spends it on two guards — an empty sentence and one past its cap — and names
+// which in the body, so every claim below about a 400 is a claim about a body.
+const BAD_REQUEST = 400
 
 // A 200 whose `skillIds` is a string. The shape a model can produce and the
 // worker's own filter cannot rule out, since what it validates is the ids and
@@ -107,6 +115,67 @@ describe("composeProposal", () => {
     })
     expect(sink.issue).toHaveBeenCalledWith("Compose refused", {
       status: MODEL_SILENT,
+    })
+  })
+
+  // The guard the route runs BEFORE it reaches the model, and the reason this
+  // client has to read a body at all. Refused for length, the worker never
+  // called Claude — so "the model did not answer" was not merely unhelpful, it
+  // was false, and it was the sentence the composer drew.
+  //
+  // Not reported, and it belongs with the two silences above rather than with
+  // the branch below: a sentence somebody typed past the cap is the guard doing
+  // its job, exactly as the limiter above is. Nothing went wrong here.
+  it("names a sentence past the worker's cap, and does not report it", async () => {
+    // EDITOR-69. THE DOUBLE, GUARDED RATHER THAN TRUSTED — the same self-check
+    // `handlers.test.ts` makes on `OUT_OF_SCOPE_PAYLOAD` before standing on it,
+    // and the one thing that makes the outcome below a claim about the WORKER.
+    //
+    // Everything under test here turns on four copies of one string agreeing:
+    // the worker's own literal, the fixture, this double, and `TOO_LONG` in
+    // compose.ts — which is the copy the shipped bug lives in and the only one
+    // no spec can import, `@workspace/api-mocks` being a test dependency. The
+    // assertion below reaches that copy through the double, so a double that
+    // stopped carrying the fixture would leave this test agreeing with the
+    // editor about a string the worker no longer sends, which is precisely the
+    // state EDITOR-69 exists to make impossible. Naming the fixture here pins
+    // the double to the same one definition `compose.test.ts` in apps/server
+    // now pins the route to.
+    const served = await getResponse(
+      [composeTooLongHandler],
+      new Request(COMPOSE_URL, { method: "POST" })
+    )
+    expect(
+      await served?.json(),
+      "the double must still carry the worker's own discriminator"
+    ).toStrictEqual(COMPOSE_TOO_LONG_BODY)
+
+    configMockServer.use(composeTooLongHandler, ...signedInHandlers)
+
+    await expect(composeProposal(SENTENCE)).resolves.toStrictEqual({
+      ok: false,
+      refusal: "too-long",
+    })
+    expect(sink.issue).not.toHaveBeenCalled()
+  })
+
+  // The DEGRADE half of the one above, and the reason it is a separate test
+  // rather than the same test's other branch: reading a body is how this goes
+  // wrong. A 400 that carries nothing to read — the worker's own empty-sentence
+  // guard, a proxy, a gateway — must produce exactly what the status alone
+  // produced before any of this, report included.
+  it("falls back to a plain refusal for a 400 it cannot read, and reports that", async () => {
+    configMockServer.use(
+      composeRefusedHandlerFor(BAD_REQUEST),
+      ...signedInHandlers
+    )
+
+    await expect(composeProposal(SENTENCE)).resolves.toStrictEqual({
+      ok: false,
+      refusal: "refused",
+    })
+    expect(sink.issue).toHaveBeenCalledWith("Compose refused", {
+      status: BAD_REQUEST,
     })
   })
 

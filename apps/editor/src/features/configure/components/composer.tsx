@@ -105,11 +105,23 @@ const FIELD_HEIGHT_CAP = "max-h-[7.125rem]"
 
 // What a refusal says, in the composer's own words. The worker sends a code
 // rather than a sentence for the reason `ShareRefusal` does: these are
-// different situations for the person at the keyboard, and only one of them
-// names something they can do about it.
+// different situations for the person at the keyboard, and only some of them
+// name something they can do about it.
+//
+// `too-long` NAMES THE PROBLEM AND NOT THE NUMBER, deliberately. The cap is the
+// worker's — it is the only side that knows it, and the editor cannot read it
+// at runtime without a second copy that goes stale in silence. A figure is also
+// only actionable beside a character count, and the design is explicit that the
+// control row holds the send button and nothing else. So the sentence says what
+// is wrong and what to do, which is the whole of what a person needs here.
+//
+// It sat under `refused` until EDITOR-69 and was therefore drawn as "The model
+// did not answer" — false as well as unhelpful, since both of the worker's 400
+// guards run before the model is called.
 const REFUSAL_COPY: Record<ComposeRefusal, string> = {
   "signed-out": "Sign in to use the composer — nothing was sent.",
   "too-many": "Too many requests in a minute. Try again shortly.",
+  "too-long": "That is too long to send. Shorten it and try again.",
   refused: "The model did not answer. Nothing changed.",
   unreachable: "Could not reach the composer. Nothing changed.",
 }
