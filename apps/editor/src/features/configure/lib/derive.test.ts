@@ -936,6 +936,43 @@ describe("selectDomainViews", () => {
     expect(views[0]!.id).toBe("web")
   })
 
+  // EDITOR-64. The domain pick and the query used to INTERSECT: domains were
+  // filtered to the picked one and only then were skills matched inside it, so
+  // a query could never reach past the tab you were on. A search that finds
+  // nothing reads as "no such skill" rather than "not on this tab", which is
+  // how the catalogue came to look like it was missing something it has.
+  it("finds a match outside the picked domain, because a query outranks the pick", () => {
+    const [picked, elsewhere] = CATALOG.domains
+    const stranger = allCells(empty, { domain: elsewhere!.id })[0]!.skill
+
+    const ids = allCells(empty, {
+      domain: picked!.id,
+      q: stranger.displayName,
+    }).map((cell) => cell.skill.id)
+
+    expect(ids).toContain(stranger.id)
+  })
+
+  // The instance that was reported, kept by name: its id says `meta-` while its
+  // category is `shared-tooling`, so it sits in `shared` — the one domain a
+  // reader hunting a "meta" skill would not think to open.
+  it("finds stack detection from a domain that is not its own", () => {
+    const id = "meta-config-stack-detect"
+    const home = CATALOG.domains.find((domain) =>
+      allCells(empty, { domain: domain.id }).some(
+        (cell) => cell.skill.id === id
+      )
+    )!
+    const elsewhere = CATALOG.domains.find((domain) => domain.id !== home.id)!
+
+    const ids = allCells(empty, {
+      domain: elsewhere.id,
+      q: "stack detect",
+    }).map((cell) => cell.skill.id)
+
+    expect(ids).toContain(id)
+  })
+
   it("matches a query against name, slug and description", () => {
     const skill = CATALOG.skillsById[FIRST_SKILL]!
     const ids = allCells(empty, { q: skill.displayName }).map(

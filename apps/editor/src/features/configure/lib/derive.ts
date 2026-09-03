@@ -327,8 +327,32 @@ type GridContext = {
   judgement: SelectionJudgement
 }
 
+/**
+ * A QUERY OUTRANKS THE DOMAIN PICK rather than compounding with it (EDITOR-64).
+ *
+ * The two used to intersect, so a query could only ever match inside the tab
+ * you were on. `meta-config-stack-detect` is the instance that reported it: its
+ * id reads `meta-` while its category is `shared-tooling`, so it lives in
+ * `shared` — and searching for it from anywhere else returned nothing. An empty
+ * result reads as "no such skill", never as "not on this tab", so the catalogue
+ * looked like it was missing something it has.
+ *
+ * NOTHING IS LOST BY THE OVERRIDE: the pick is not cleared, so emptying the
+ * query drops the reader back on the tab they were on.
+ *
+ * WHAT THE STRIP DOES WHILE A QUERY IS ACTIVE IS NOT SETTLED. `filter-bar.tsx`
+ * reads `search.domain ?? scrolledDomain ?? tabs[0]`, and because the pick
+ * survives, that `??` short-circuits on it — so the picked chip keeps its
+ * active treatment while the grid below shows every domain. The two disagree
+ * on screen. Whether the chip should dim, clear, or say something while a
+ * query outranks it is a design question rather than a bug in this function,
+ * and it is filed rather than guessed at here.
+ */
 const isVisibleDomain = (domain: CatalogDomain, search: ConfigureSearch) =>
-  !search.domain || domain.id === search.domain
+  searchesWholeCatalog(search) || domain.id === search.domain
+
+const searchesWholeCatalog = (search: ConfigureSearch) =>
+  !search.domain || search.q !== ""
 
 // Applied to the cell, not the skill, so "selected" has one definition.
 const survivesSelectionFilter = (
