@@ -7,6 +7,33 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.162.0] - 2026-09-03
+
+**Every compiled sub-agent gains the Skill tool, text the CLI did not author reaches the terminal inert, and a refused share says what the store said**
+
+- One sanitiser behind three chokepoints — `truncateText`, `getErrorMessage` and `formatZodIssue`. Newline and tab survive; escapes and CR do not, and stripping happens before truncation because a cut taken first leaves a fragment a terminal holds open. The census was wrong three times: the right one is keyed on which renderer foreign text funnels through, not on where it is printed (CLI-854)
+- Exactly one request left the unit suite — a detached oclif child GETting the npm registry, which no in-process mock can see. The pin moves to `vitest.setup.ts`, where a process-wide variable naming no home belongs (CLI-870)
+- A refused share quotes the store's own account, and suppresses a body equal to its own status's reason phrase from `node:http`'s `STATUS_CODES`. That is what makes it a rule rather than a hand-list: 413 and 429 needed no special case (CLI-855)
+- `HTTP ${status}` stopped discarding a body that named the offending skill and sub-agent; the store's `message` is itself a JSON document, so the implementation parses one level further in (CLI-848)
+- A contract mismatch and an out-of-date bundle are different refusals with different remedies, and only one is fixed by reloading. The 409 branch says which (CLI-852)
+- The push hook runs lint and both suites for whichever side moved, in separate turbo invocations — deliberately, against a measurement: the concurrent form buys 4% and costs a 1-in-10 spurious red (CLI-863)
+- Two reference documents stopped arguing for the state that change undid. A fifth defect site was found that the row did not name, and a sixth was a stale absence of exactly the class being repaired (CLI-867)
+- A query outranks the domain tab rather than compounding with it, so a skill is findable by name without knowing which domain holds it (EDITOR-64)
+- The editor refuses an unwritable configuration before the POST and names the rows to fix, rather than spending a write to be told no (CLI-851)
+- The write-route double stopped minting what the worker refuses; making it parse was forbidden, because stripping unknown keys would grant `model`/`effort`-absent assertions for free (CLI-849)
+- That double records what was SENT rather than what was accepted — recording only accepted bodies would let an empty-log assertion be satisfied by an app posting the very payload the guard exists to stop (CLI-861)
+- The unit suite stops downloading a GitHub marketplace once per test — 31 tarballs a run, whose only symptom was a timeout that read as flake. 90s to 31s (CLI-853)
+- A fixture at a fixed `os.tmpdir()` path gets a rule about who may write it, held against a walk of the tree: a fixed path belongs to the machine and not to the run (CLI-862)
+- The family's second member repeated the first's silence; its proposed one-line fix was verified correct and deliberately not taken, because observing it requires mocking at the shared path that rule forbids (CLI-859)
+- A record write made unconditional, so the checkout's bookkeeping cannot disagree with what is on disk (CLI-860)
+- A spec directory's kind is stated rather than read off what currently sits in it. The first spec written under `e2e/fixtures/` had reddened four gates naming a journey row and a helper that had not moved (CLI-856)
+- An over-long composer sentence is named rather than blamed on a model that was never called — three defects with two causes, including a rate limiter above the guard that refuses for free (EDITOR-69)
+- Signing in stopped deleting the work it exists to preserve: a refused adoption keeps the local slot and names the scope conflict (EDITOR-67)
+- And it stopped re-opening one save later. Both proposed remedies were refused by the code; what landed recomputes the reason from the write contract locally, without a request (EDITOR-73)
+- The write-boundary refusal has now been watched failing. The empty request log is the claim — a guard that posted first and mapped the 400 back would produce identical words on the button (EDITOR-66)
+
+See [changelogs/0.162.0.md](./changelogs/0.162.0.md) for full details.
+
 ## [0.161.1] - 2026-09-01
 
 **The editor's address gains the path that reaches it, and the two assertions that were green on its absence now derive it**
