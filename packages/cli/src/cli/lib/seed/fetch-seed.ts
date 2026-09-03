@@ -1,6 +1,8 @@
 import { createApiClient } from "@workspace/api";
 import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix/seed";
 
+import { truncateText } from "../../utils/string.js";
+
 /** The config store behind agentsinc.sh. Overridable so tests never touch the network. */
 export const SEED_API_URL = process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh";
 
@@ -29,6 +31,28 @@ const store = createApiClient({
   credentials: "omit",
 });
 
+/**
+ * How much of the store's account of a refused read to quote back.
+ *
+ * Sized on what this route really says, which is one short line per refusal: `Stored config is
+ * unreadable` and `Could not read this config` are both under thirty characters. This holds the
+ * longer of them four times over — room for that sentence to grow into a real one, and none for
+ * anything that has stopped being a sentence.
+ *
+ * Far short of the 300-character `EXPLANATION_BUDGET` in `publish-seed.ts`, and for the reason
+ * that one gives for its own size rather than in spite of it: a budget is sized on what the store
+ * really writes there, and what it writes there is a list of schema issues naming a skill and a
+ * sub-agent apiece. Neither number is a policy about terminals; each is a measurement of one
+ * route.
+ */
+const EXPLANATION_BUDGET = 120;
+
+/** The content type the store's own refusals arrive as, and the only one worth reading. */
+const QUOTABLE_TYPE = "text/plain";
+
+/** The status the store spends on an id it has never held, which is the one it is asked for. */
+const NO_SUCH_CONFIG = 404;
+
 export type FetchSeedResult = { ok: true; payload: SeedPayload } | { ok: false; error: string };
 
 /**
@@ -47,11 +71,14 @@ export async function fetchSeedConfig(id: string): Promise<FetchSeedResult> {
     return { ok: false, error: `Could not reach ${SEED_API_URL} — check your connection.` };
   }
 
-  if (response.status === 404) {
+  // Ahead of the quoting arm below, and the only status held out of it. The store answers this
+  // one `No config under this id`, which says strictly less than the sentence here does — it does
+  // not name the id the caller typed, and that is the whole of what a person needs to see.
+  if (response.status === NO_SUCH_CONFIG) {
     return { ok: false, error: `No configuration found for id '${id}'.` };
   }
   if (!response.ok) {
-    return { ok: false, error: `Fetching configuration failed (HTTP ${response.status}).` };
+    return { ok: false, error: await refusalMessage(response) };
   }
 
   let body: unknown;
@@ -76,4 +103,72 @@ export async function fetchSeedConfig(id: string): Promise<FetchSeedResult> {
   }
 
   return { ok: true, payload: parsed.data };
+}
+
+/**
+ * A refusal, carrying the store's own account of it wherever there is one to have.
+ *
+ * The same posture `refusalMessage` in `publish-seed.ts` takes on the write side, and deliberately
+ * NOT the same mechanism. That route's 400 arrives as a `@hono/zod-validator` envelope with the
+ * refused issues rendered inside it; `getConfig` writes every one of its refusals with `c.text`,
+ * so there is no envelope here to parse and a copy of that parser would find nothing in any body
+ * this route can produce.
+ *
+ * The status is never given up. It is what separates a store that is present and holding bytes it
+ * can no longer read (500) from one that would not answer at all (503) — and what the body then
+ * adds is the store saying which of its own failures this was, in words the status has no room
+ * for.
+ */
+async function refusalMessage(response: Response): Promise<string> {
+  const refused = `Fetching configuration failed (HTTP ${response.status}).`;
+  const explanation = explanationOf(await refusalBody(response));
+
+  return explanation === undefined ? refused : `${refused} The store said: ${explanation}`;
+}
+
+/**
+ * Whatever the store sent, as far as it can be read — and only where it was the store that sent it.
+ *
+ * Nothing below this line is worth failing over: the message being assembled is already a failure,
+ * and a body that cannot be read is one more thing the status will have to cover on its own.
+ * Draining the stream can throw in its own right — a connection dropped mid-body — which is why
+ * the `try` is around the read.
+ */
+async function refusalBody(response: Response): Promise<string | undefined> {
+  if (!arrivedAsText(response)) return undefined;
+
+  try {
+    return await response.text();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether what arrived is the store speaking, as far as the wire says it is.
+ *
+ * `getConfig` writes every refusal with `c.text(...)`, so `text/plain` is the shape the store's
+ * own words take on this route. What arrives as anything else did not come from it: a proxy, a
+ * WAF, a captive portal or a gateway answering in its place — and their answer is markup rather
+ * than prose, which quoted into a terminal is a screenful of tags that explains nothing and buries
+ * the status that does.
+ *
+ * This is the plain-text half of what `refusalSchema` does for `publish-seed.ts`. That side has a
+ * SHAPE a foreign body fails to be; a sentence has no shape, so the wire's own statement of what
+ * it sent is the only discriminator there is. It is not proof — a hostile answer may claim any
+ * type it likes — which is what {@link EXPLANATION_BUDGET} is for, and why what survives both is
+ * attributed to the store rather than spoken in the CLI's own voice.
+ */
+function arrivedAsText(response: Response): boolean {
+  return (response.headers.get("content-type") ?? "").startsWith(QUOTABLE_TYPE);
+}
+
+/** The store's account of a refusal, where what came back really is one. */
+function explanationOf(body: string | undefined): string | undefined {
+  if (body === undefined) return undefined;
+
+  const said = body.trim();
+  if (said === "") return undefined;
+
+  return truncateText(said, EXPLANATION_BUDGET);
 }

@@ -1,8 +1,10 @@
 import {
   CONFIGS_URL,
   DEAD_LINK_ID,
+  NO_CONFIG_BODY,
   STORED_ID,
   STORED_PAYLOAD,
+  UNREADABLE_CONFIG_BODY,
   UNREADABLE_CONFIG_ID,
   storedConfigHandlerFor,
 } from "@workspace/api-mocks";
@@ -41,6 +43,96 @@ const readUnreachableHandler = http.get(READ_CONFIG_URL, () => HttpResponse.erro
 const gatewayHtmlHandler = http.get(READ_CONFIG_URL, () =>
   HttpResponse.text("<html>gateway</html>"),
 );
+
+/**
+ * The read route's third refusal, and the one `@workspace/api-mocks` has no handler for:
+ * `configRefusedHandlerFor` there answers the MINT, so nothing in that package refuses a READ with
+ * a 503.
+ *
+ * The body is the worker's own — `getConfig` writes `c.text("Could not read this config", 503)`
+ * when the KV read throws — mirrored here because that package holds no constant for it. It is the
+ * store's words either way, so nothing quoted in this file is the CLI's own rendering.
+ */
+const READ_REFUSED = 503;
+const READ_REFUSED_BODY = "Could not read this config";
+
+const readRefusedHandler = http.get(READ_CONFIG_URL, () =>
+  HttpResponse.text(READ_REFUSED_BODY, { status: READ_REFUSED }),
+);
+
+/**
+ * The content type the deployed worker really announces its own sentences under, mirrored rather
+ * than imported for the reason `READ_REFUSED_BODY` above is: it belongs to hono and `apps/server`.
+ *
+ * `c.text(...)` writes hono's `TEXT_PLAIN`, which carries a charset parameter. `HttpResponse.text`
+ * announces a bare `text/plain` and every other handler in this file takes that default, so
+ * without this one fixture nothing here answers in the shape the wire actually carries — and a
+ * content-type gate written as EQUALITY rather than as a prefix passes every spec in the file
+ * while dropping, against the real worker, every refusal this route can explain.
+ *
+ * The write side carries the same fixture for the same reason; see `publish-seed.test.ts`.
+ */
+const HONO_TEXT_PLAIN = "text/plain; charset=UTF-8";
+
+const readRefusedOnTheWireHandler = http.get(READ_CONFIG_URL, () =>
+  HttpResponse.text(READ_REFUSED_BODY, {
+    status: READ_REFUSED,
+    headers: { "content-type": HONO_TEXT_PLAIN },
+  }),
+);
+
+/**
+ * The same refusal with an erase-line and a carriage return inside it — the shape the CLI-855
+ * lane watched a real terminal obey on the write route. This route quotes its bodies by the same
+ * rule, so it is reachable here too, and by the same party: whatever is answering for the store.
+ */
+const FORGED_READ_REFUSAL = "Could not read\u001B[2Kthis\r \u203A   STORE COMPROMISED config";
+
+/** The same words with the terminal's ability to act on them removed, and none of them dropped. */
+const FORGED_READ_REFUSAL_INERT = "Could not readthis \u203A   STORE COMPROMISED config";
+
+const forgedReadRefusalHandler = http.get(READ_CONFIG_URL, () =>
+  HttpResponse.text(FORGED_READ_REFUSAL, { status: READ_REFUSED }),
+);
+
+/**
+ * A refusal that never reached the worker at all — a proxy, a WAF or a gateway answering in its
+ * place, in the content type such a thing answers in.
+ *
+ * Markup is not an explanation, and a store that has been replaced by one must not get to paint a
+ * terminal with it. This is the read side's version of `notJsonRefusalHandler` in
+ * `publish-seed.test.ts`: there the envelope's SHAPE is what a foreign body fails to be, and here
+ * there is no shape to fail, so the wire's own statement of what it sent is the discriminator.
+ */
+const BAD_GATEWAY = 502;
+const BLOCKED_BY_PROXY = "<html><head><title>Request blocked</title></head></html>";
+
+const proxyRefusalHandler = http.get(READ_CONFIG_URL, () =>
+  HttpResponse.html(BLOCKED_BY_PROXY, { status: BAD_GATEWAY }),
+);
+
+/** Where a hostile explanation starts, so a bounded quote can be shown to have kept the front. */
+const HOSTILE_OPENING = "This explanation begins here and then runs on";
+
+/** Where it ends, tens of kilobytes later, and what must never reach the terminal. */
+const HOSTILE_TAIL = "and here is the end of it";
+
+const hostileRefusalHandler = http.get(READ_CONFIG_URL, () =>
+  HttpResponse.text(`${HOSTILE_OPENING} ${"x".repeat(100_000)} ${HOSTILE_TAIL}`, {
+    status: READ_REFUSED,
+  }),
+);
+
+/** A refusal that answers the right content type and then says nothing in it. */
+const silentRefusalHandler = http.get(READ_CONFIG_URL, () =>
+  HttpResponse.text("   ", { status: READ_REFUSED }),
+);
+
+/**
+ * What "not dumped into a terminal" means here, held apart from whatever budget the module picks.
+ * A quote that outgrew a kilobyte would have stopped being a quote.
+ */
+const A_TERMINAL_CAN_TAKE = 1000;
 
 describe("fetchSeedConfig", () => {
   const worker = useMockWorker();
@@ -85,19 +177,92 @@ describe("fetchSeedConfig", () => {
     expect(result).toStrictEqual({ ok: true, payload: STORED_PAYLOAD });
   });
 
-  it("names the id when the store has nothing under it", async () => {
+  it("names the id when the store has nothing under it, rather than quoting a body that cannot", async () => {
     const result = await fetchSeedConfig(DEAD_LINK_ID);
 
-    expect(result.ok ? "" : result.error).toBe(`No configuration found for id '${DEAD_LINK_ID}'.`);
+    const error = result.ok ? "" : result.error;
+    expect(error).toBe(`No configuration found for id '${DEAD_LINK_ID}'.`);
+    // The one refusal on this route whose body is worth LESS than the CLI's own sentence: the
+    // store answers `No config under this id`, which does not name the id the user typed. This
+    // assertion is the control for the two below — without a status whose body is deliberately
+    // dropped, "quotes the store" cannot be told from "quotes whatever arrives".
+    expect(error).not.toContain(NO_CONFIG_BODY);
   });
 
-  it("names the status when the store refuses for any other reason", async () => {
+  it("quotes the store's own account of an integrity failure, beside the status", async () => {
     // The worker's integrity failure: the id is present and its bytes no longer parse, which it
-    // answers 500 to rather than 404 or 503. Any non-404 refusal reaches the same arm, and this
-    // is the one the store really produces.
+    // answers 500 to rather than 404 or 503. It is the refusal the store really produces here,
+    // and its body is the only thing that separates it from a store that is simply down.
     const result = await fetchSeedConfig(UNREADABLE_CONFIG_ID);
 
-    expect(result.ok ? "" : result.error).toBe("Fetching configuration failed (HTTP 500).");
+    expect(result.ok ? "" : result.error).toBe(
+      `Fetching configuration failed (HTTP 500). The store said: ${UNREADABLE_CONFIG_BODY}`,
+    );
+  });
+
+  it("quotes it for a store that refused the read as well", async () => {
+    configMockServer.use(readRefusedHandler);
+
+    const result = await fetchSeedConfig(STORED_ID);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Fetching configuration failed (HTTP ${READ_REFUSED}). The store said: ${READ_REFUSED_BODY}`,
+    );
+  });
+
+  it("quotes it when the type arrives with the charset the worker really sends", async () => {
+    // The spec above answers `text/plain` bare, which is `HttpResponse.text`'s default and NOT
+    // what the deployed worker writes: `c.text` announces `text/plain; charset=UTF-8`. Held
+    // apart from that one rather than folded into it, so the assertion that the store's own
+    // words survive the real wire cannot be lost to a fixture's default.
+    configMockServer.use(readRefusedOnTheWireHandler);
+
+    const result = await fetchSeedConfig(STORED_ID);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Fetching configuration failed (HTTP ${READ_REFUSED}). The store said: ${READ_REFUSED_BODY}`,
+    );
+  });
+
+  it("renders a refusal carrying terminal escapes as text rather than obeying it", async () => {
+    configMockServer.use(forgedReadRefusalHandler);
+
+    const result = await fetchSeedConfig(STORED_ID);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Fetching configuration failed (HTTP ${READ_REFUSED}). The store said: ${FORGED_READ_REFUSAL_INERT}`,
+    );
+  });
+
+  it("keeps a refusal that did not arrive as text to its status", async () => {
+    configMockServer.use(proxyRefusalHandler);
+
+    const result = await fetchSeedConfig(STORED_ID);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Fetching configuration failed (HTTP ${BAD_GATEWAY}).`,
+    );
+  });
+
+  it("keeps a refusal whose body says nothing to its status", async () => {
+    configMockServer.use(silentRefusalHandler);
+
+    const result = await fetchSeedConfig(STORED_ID);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Fetching configuration failed (HTTP ${READ_REFUSED}).`,
+    );
+  });
+
+  it("bounds how much of an explanation it quotes back", async () => {
+    configMockServer.use(hostileRefusalHandler);
+
+    const result = await fetchSeedConfig(STORED_ID);
+
+    const error = result.ok ? "" : result.error;
+    expect(error).toContain(HOSTILE_OPENING);
+    expect(error).not.toContain(HOSTILE_TAIL);
+    expect(error.length).toBeLessThan(A_TERMINAL_CAN_TAKE);
   });
 
   it("names the store when it cannot be reached at all", async () => {
