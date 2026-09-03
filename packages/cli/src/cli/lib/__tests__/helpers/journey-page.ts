@@ -34,6 +34,34 @@ export const SPEC_SUFFIX = ".e2e.test.ts";
 export const TO_TEST_MARKER = "TO TEST";
 
 /**
+ * The `e2e/` subdirectories that hold specs, which is what makes a name an intended spec reference.
+ *
+ * STATED rather than read off the tree, and that distinction is the whole of this constant. Read off
+ * the tree, a directory's kind was a fact about what happened to be sitting in it: `e2e/fixtures/`
+ * counted as helper-land purely because no spec had ever been written there. So the first spec put
+ * there turned journey 1's `fixtures/dual-scope-helpers.initGlobalWithEject` — a module and a symbol
+ * inside it, never a spec — into a spec reference answering to no file, and four gates in
+ * `spec-gates.test.ts` went red naming a journey row and a helper, neither of which had moved.
+ *
+ * The derivation was not arbitrary, and stating this badly reintroduces what it was written to end:
+ * a hand-maintained list is how the reader silently declined to judge six entries once, because a
+ * tree that gained a directory had every row naming it skipped and NOTHING SAID SO. Something says
+ * so now — `journey-page.test.ts` holds this constant against `specDirectoriesIn(readSpecNames(…))`
+ * with `toStrictEqual`, so a tree that gains a spec directory reddens one named assertion in this
+ * module's own spec, saying which directory and in which direction. A count could not: it cannot
+ * tell a directory gained from one swapped for another.
+ */
+export const SPEC_DIRECTORIES: readonly string[] = [
+  "commands",
+  "integration",
+  "interactive",
+  "lifecycle",
+  "matchers",
+  "pages",
+  "smoke",
+];
+
+/**
  * The header every journey table opens with, and what tells one from the other tables on the page.
  *
  * Identified by its heading cells rather than by its width, because width is the thing under test:
@@ -98,15 +126,27 @@ type JourneyRowCells = [string, string, string, string, string];
 /**
  * Every spec under `e2eRoot`, named the way the page names one: directory, basename, no suffix.
  *
- * Derived rather than listed, which is also how the reader learns which directories hold specs. A
- * hand-maintained list of those was the second half of the silent decline — a spec tree that gained
- * a directory would have every row naming it skipped, and nothing would say so.
+ * Derived rather than listed: a hand-maintained list of SPECS was the second half of the silent
+ * decline — a tree that gained a file would have every row naming it skipped, and nothing would say
+ * so. WHICH DIRECTORIES hold them is a different question, answered separately by
+ * `SPEC_DIRECTORIES` for the reason stated there, and deliberately not inferred from this list.
  */
 export function readSpecNames(e2eRoot: string): string[] {
   return fg
     .sync(`**/*${SPEC_SUFFIX}`, { cwd: e2eRoot })
     .map((file) => file.slice(0, -SPEC_SUFFIX.length))
     .sort();
+}
+
+/**
+ * The `e2e/` subdirectories a spec list actually spans — the measurement `SPEC_DIRECTORIES` states.
+ *
+ * Exported for the roster gate rather than used here: the reader must not consult it, because a
+ * reader that measured its own vocabulary off the tree is the coupling `SPEC_DIRECTORIES` exists to
+ * cut, and a gate comparing a derivation against itself agrees whatever the tree does.
+ */
+export function specDirectoriesIn(specNames: readonly string[]): string[] {
+  return [...new Set(specNames.map(firstSegment))].sort();
 }
 
 /**
@@ -119,10 +159,9 @@ export function readSpecNames(e2eRoot: string): string[] {
  * it hold vacuously.
  */
 export function readJourneyRows(page: string, specNames: readonly string[]): JourneyRow[] {
-  const directories = specDirectories(specNames);
   const rows = journeyTableLines(page)
     .filter(isJourneyRow)
-    .map((cells) => toJourneyRow(cells, specNames, directories));
+    .map((cells) => toJourneyRow(cells, specNames));
 
   if (rows.length === 0) {
     throw new Error(
@@ -168,32 +207,22 @@ export function nonSpecNamesIn(rows: readonly JourneyRow[]): string[] {
   );
 }
 
-/** The `e2e/` subdirectories that hold specs, which is what makes a name an intended spec reference. */
-function specDirectories(specNames: readonly string[]): Set<string> {
-  return new Set(specNames.map(firstSegment));
-}
-
 function toJourneyRow(
   [number, journey, fromScratch, , status]: JourneyRowCells,
   specNames: readonly string[],
-  directories: ReadonlySet<string>,
 ): JourneyRow {
   return {
     number,
     journey,
-    references: namesIn(fromScratch).map((name) => classify(name, specNames, directories)),
+    references: namesIn(fromScratch).map((name) => classify(name, specNames)),
     marker: coverageMarker(status),
   };
 }
 
-function classify(
-  name: string,
-  specNames: readonly string[],
-  directories: ReadonlySet<string>,
-): SpecReference {
+function classify(name: string, specNames: readonly string[]): SpecReference {
   if (specNames.includes(name)) return { name, kind: "spec" };
 
-  if (directories.has(firstSegment(name))) {
+  if (SPEC_DIRECTORIES.includes(firstSegment(name))) {
     throw new Error(`the page names '${name}', and no spec file answers to it`);
   }
 

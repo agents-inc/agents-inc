@@ -4,11 +4,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  SPEC_DIRECTORIES,
   TO_TEST_MARKER,
   journeyNumbersIn,
   nonSpecNamesIn,
   readJourneyRows,
   readSpecNames,
+  specDirectoriesIn,
   specsNamedBy,
   unlocatedSpecsIn,
 } from "./journey-page.js";
@@ -22,6 +24,18 @@ const SPEC_NAMES = [
   "commands/init-from-shared-config",
   "lifecycle/install-mode-bulk",
 ];
+
+/**
+ * The same tree once `e2e/fixtures/` holds its first spec. Nothing else about it moves, which is
+ * the whole point: the two lists differ by one member, and no name the page carries is about it.
+ */
+const SPEC_NAMES_WITH_A_FIXTURES_SPEC = [...SPEC_NAMES, "fixtures/init-from-a-seeded-store"];
+
+/**
+ * What journey 1 writes to name the helper driving its install — a module path, then a symbol
+ * inside it. It is not a spec and never was, and it lives in a directory that holds none.
+ */
+const HELPER_AND_SYMBOL = "fixtures/dual-scope-helpers.initGlobalWithEject";
 
 const HEADER = `| #   | Journey | From-scratch spec | Surfaces asserted | Status |
 | --- | ------- | ----------------- | ----------------- | ------ |`;
@@ -151,6 +165,41 @@ describe("every backticked name is classified rather than skipped", () => {
 });
 
 /**
+ * A name's kind is a fact about the name, not about what happens to sit beside it in the tree.
+ *
+ * The reader used to decide whether the page MEANT a spec by asking whether the name's first
+ * segment was a directory that currently holds one — so `e2e/fixtures/` counted as helper-land
+ * purely because no spec had ever been written there. Put the first one there and journey 1's
+ * `fixtures/dual-scope-helpers.initGlobalWithEject` became a spec reference answering to no file,
+ * the reader threw, and every gate in `spec-gates.test.ts` that walks row → spec went red naming a
+ * journey row and a helper that had not moved. It has happened once already, which is the whole
+ * reason the two lists below differ by a single member no assertion here mentions.
+ */
+describe("a name's kind does not move when the tree around it does", () => {
+  const NAMING_A_HELPER = page(
+    `| 1 | Global install from nothing | \`lifecycle/install-mode-bulk\`; \`${HELPER_AND_SYMBOL}\` drives it | 1, 2 | **COVERED** |`,
+  );
+
+  it("reads a helper as a helper whether or not its directory has gained a spec", () => {
+    const before = readJourneyRows(NAMING_A_HELPER, SPEC_NAMES);
+    const after = readJourneyRows(NAMING_A_HELPER, SPEC_NAMES_WITH_A_FIXTURES_SPEC);
+
+    // The subject guard for the claim beside it: a page whose helper went unread would leave both
+    // sides empty and agreeing, which is the vacuous form of this whole comparison.
+    expect(nonSpecNamesIn(before)).toStrictEqual([HELPER_AND_SYMBOL]);
+    expect(nonSpecNamesIn(after)).toStrictEqual([HELPER_AND_SYMBOL]);
+  });
+
+  it("leaves the specs a row names alone when its directory has gained a spec", () => {
+    const [before] = readJourneyRows(NAMING_A_HELPER, SPEC_NAMES);
+    const [after] = readJourneyRows(NAMING_A_HELPER, SPEC_NAMES_WITH_A_FIXTURES_SPEC);
+
+    expect(specsNamedBy(before!)).toStrictEqual(["lifecycle/install-mode-bulk"]);
+    expect(specsNamedBy(after!)).toStrictEqual(["lifecycle/install-mode-bulk"]);
+  });
+});
+
+/**
  * The row-level half of that same totality, which for a while was the half nothing held. A name
  * that fails to resolve is classified; a ROW that failed to parse was passed over, and one
  * unescaped `|` inside a code span is all it takes — markdown makes an extra cell of it, the reader
@@ -201,5 +250,31 @@ describe("readSpecNames", () => {
     ).toBeGreaterThan(0);
     expect(specNames).toContain("commands/init-from-shared-config");
     expect(specNames.filter((name) => name.endsWith(".ts"))).toStrictEqual([]);
+  });
+});
+
+/**
+ * What keeps `SPEC_DIRECTORIES` honest, and the reason stating it is not a return to the
+ * hand-maintained list this reader once declined to judge six entries behind.
+ *
+ * The old list said nothing when the tree moved out from under it. This one reddens here — by
+ * MEMBERS, so the message names the directory and the side it is missing from. A count would say
+ * only that something changed, and could not tell a directory gained from one swapped for another.
+ * Watched red by dropping `pages` from the constant: this assertion, and only this assertion.
+ */
+describe("the stated spec directories are the directories the tree holds", () => {
+  it("names every e2e directory that holds a spec, and none that holds none", () => {
+    expect(
+      specDirectoriesIn(readSpecNames(E2E_ROOT)),
+      "the e2e tree's spec directories have moved — state the new one in SPEC_DIRECTORIES, or drop the one that no longer holds a spec. Until it is stated, a name under it that answers to no file is read as a helper rather than reported as a spec that has gone",
+    ).toStrictEqual(SPEC_DIRECTORIES);
+  });
+
+  it("folds a directory named by many specs into one member, in a stable order", () => {
+    expect(specDirectoriesIn(SPEC_NAMES_WITH_A_FIXTURES_SPEC)).toStrictEqual([
+      "commands",
+      "fixtures",
+      "lifecycle",
+    ]);
   });
 });
