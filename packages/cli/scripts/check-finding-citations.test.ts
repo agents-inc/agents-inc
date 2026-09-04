@@ -332,13 +332,21 @@ describe("a spec citing a finding", () => {
  * behaviour that no longer exists is right to go with it, and manufacturing a replacement to hold
  * the old value would leave this line asserting about prose written to satisfy it. Moving it either
  * way is worth that second look rather than a silent edit.
+ *
+ * It moved a third time on 2026-09-03, this time for good reason rather than a repair that
+ * happened to touch the last citation. `compile` seating the merged matrix (local skills included)
+ * before rendering closed the sibling defect `.ai-docs/agent-findings/2026-09-03-a-fixture-modeling-
+ * a-skill-absent-from-the-matrix-stops-being-absent-once-compile-seats-locals.md` describes, which
+ * left `warn-suppression-stops-at-the-harness.e2e.test.ts`'s fixture modeling a state `compile` no
+ * longer produces. The rebuilt fixture's JSDoc cites that finding by basename to say why the fixture
+ * changed shape, which is itself a citation — the spec scope's first.
  */
 type ScopePopulation = "cites findings" | "cites none today";
 
 const SCOPE_POPULATIONS: Record<string, ScopePopulation> = {
   [TRACKERS]: "cites findings",
   [CHANGELOGS]: "cites findings",
-  [SPECS]: "cites none today",
+  [SPECS]: "cites findings",
 };
 
 /** One scope read on its own, so no scope's silence can be covered by another's population. */

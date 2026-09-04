@@ -1,23 +1,22 @@
 import path from "path";
-import { describe, it, expect, afterEach } from "vitest";
-import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
+  createE2EPluginSource,
+  type E2EPluginSource,
+} from "../helpers/create-e2e-plugin-source.js";
+import { createPluginInstalledProject } from "../fixtures/plugin-install-state.js";
+import {
+  cleanupFixture,
   cleanupTempDir,
   configTsPath,
-  createLocalSkill,
-  createTempDir,
   readTestFile,
-  renderMetadataYaml,
   runCLI,
-  writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
-import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
  * `warn({ suppressInTest: true })` exists to keep the UNIT suite quiet. It must not
@@ -33,15 +32,38 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
  * warning it had been told not to print.
  *
  * The subject is the stack advisory `resolveAgentConfigToSkills`
- * (`src/cli/lib/stacks/stacks-loader.ts`) prints for a stack id no loaded catalogue
- * declares. `compile` reaches it through `getStackSkillIds`, so a hand-written
- * `config.ts` is the whole fixture — and the skill IS installed on disk, which keeps
- * `SKILL_NOT_FOUND_WARNING` (the unsuppressed sibling, for an id with no files) out of
- * the output and leaves the suppressed line as the only thing the assertion can match.
+ * (`src/cli/lib/stacks/stacks-loader.ts`) prints for a stack id `hasSkill()` cannot find
+ * in the seeded matrix. `compile` seats that matrix itself before rendering
+ * (`seatMatrixForPass`), and the seat merges every well-formed LOCAL skill on disk into
+ * it — so a local skill can no longer model "installed but absent from the matrix"; it is
+ * exactly what the seat now always finds. See
+ * `.ai-docs/agent-findings/2026-09-03-a-fixture-modeling-a-skill-absent-from-the-matrix-stops-being-absent-once-compile-seats-locals.md`
+ * for the fixture this file used to carry and why it stopped working.
+ *
+ * A genuinely installed PLUGIN skill still models the state: `loadSkillsMatrixFromSource`
+ * merges local skill directories into the matrix, but never a plugin's install path, so an
+ * enabled plugin skill stays outside the seeded matrix for as long as its own marketplace is
+ * not the one `compile` resolves. `createPluginInstalledProject` writes the plugin's
+ * per-skill `origin` and a cosmetic `marketplaceName`, but never `config.marketplace` — the
+ * field `resolveSource` actually reads — so this project's compile resolves the default
+ * public source, whose matrix does not declare an id namespaced to the E2E plugin
+ * marketplace. `discoverInstalledSkills` still finds the skill directly from the plugin
+ * registry and its install path, which is what keeps `SKILL_NOT_FOUND_WARNING` (the
+ * unsuppressed sibling, for an id with no files at all) out of the output and leaves the
+ * suppressed line as the only thing the assertion can match.
  */
 describe("a warning the unit suite suppresses still reaches the user through the binary", () => {
   const AGENT_NAME = E2E_AGENT["web-developer"].name;
   let tempDir: string | undefined;
+  let pluginSource: E2EPluginSource;
+
+  beforeAll(async () => {
+    pluginSource = await createE2EPluginSource();
+  });
+
+  afterAll(async () => {
+    await cleanupFixture(pluginSource);
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -49,41 +71,44 @@ describe("a warning the unit suite suppresses still reaches the user through the
   });
 
   /**
-   * The fixture skill id is namespaced to the E2E marketplace, so no loaded catalogue
-   * declares it — which is exactly the state the advisory reports. Returns the config's
-   * bytes alongside the directory: `compile` refreshes `config-types.ts` and rewrites
-   * agents but must leave `config.ts` untouched, and every case below asserts that.
+   * The fixture skill id is namespaced to the E2E plugin marketplace, and this project
+   * never records a `config.marketplace` pointing at it — so no catalogue `compile` loads
+   * declares it, which is exactly the state the advisory reports. Returns the config's
+   * bytes and the fake HOME the plugin was installed under alongside the directory:
+   * `compile` refreshes `config-types.ts` and rewrites agents but must leave `config.ts`
+   * untouched, and every case below asserts that.
    */
-  async function projectWithStackSkillAbsentFromMatrix(): Promise<{
+  async function projectWithPluginSkillAbsentFromMatrix(): Promise<{
     projectDir: string;
+    home: string;
     configBefore: string;
   }> {
-    tempDir = await createTempDir();
-    const projectDir = path.join(tempDir, "project");
-
-    await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
-      description: "Installed on disk and unknown to the matrix",
-      metadata: renderMetadataYaml({
-        ...metadataFieldsFor(E2E_SKILL.vitest.id),
-        contentHash: "hash-vitest",
-      }),
-    });
-    await writeProjectConfig(projectDir, {
-      name: "e2e-warn-suppression",
-      skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", origin: "eject" }),
-      agents: buildAgentConfigs([AGENT_NAME], { scope: "project" }),
+    const installed = await createPluginInstalledProject({
+      pluginsDir: pluginSource.pluginsDir,
+      marketplace: pluginSource.marketplaceName,
+      skillIds: [E2E_SKILL.vitest.id],
+      agents: [AGENT_NAME],
       stack: { [AGENT_NAME]: { "web-testing": [{ id: E2E_SKILL.vitest.id }] } },
     });
+    tempDir = path.dirname(installed.home);
 
-    return { projectDir, configBefore: await readTestFile(configTsPath(projectDir)) };
+    return {
+      projectDir: installed.project.dir,
+      home: installed.home,
+      configBefore: await readTestFile(configTsPath(installed.project.dir)),
+    };
   }
 
   /**
    * Config and filesystem after a compile, identical for every case here: the
    * hand-written config is byte-identical and the agent this run recompiled is on disk.
-   * The agent assertion doubles as the proof-of-execution guard — the advisory is
-   * printed on the way to writing that file, so an empty agents directory would mean
-   * the pass short-circuited rather than that the warning was suppressed.
+   *
+   * The compiled agent's own body carries the proof-of-execution guard, not the process
+   * output: `agent.liquid` renders every dynamic skill assignment as `### {{ skill.id }}`
+   * under `<skill_activation_protocol>`, so the id landing there proves this exact run
+   * resolved the fixture's stack entry — which is the one thing every case here shares,
+   * suppressed advisory or not. Reaching for stdout instead would have tied this guard to
+   * the very line the "suppresses" case proves does NOT print.
    */
   async function expectCompileTouchedOnlyWhatItOwns(
     projectDir: string,
@@ -91,28 +116,33 @@ describe("a warning the unit suite suppresses still reaches the user through the
   ): Promise<void> {
     expect(await readTestFile(configTsPath(projectDir))).toBe(configBefore);
     await expect({ dir: projectDir }).toHaveCompiledAgentContent(AGENT_NAME, {
-      contains: [`name: ${AGENT_NAME}`],
+      contains: [`name: ${AGENT_NAME}`, E2E_SKILL.vitest.id],
     });
   }
 
   it("prints it when the command is spawned through CLI.run", async () => {
-    const { projectDir, configBefore } = await projectWithStackSkillAbsentFromMatrix();
+    const { projectDir, home, configBefore } = await projectWithPluginSkillAbsentFromMatrix();
 
-    const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
+    const { exitCode, output } = await CLI.run(
+      ["compile"],
+      { dir: projectDir },
+      { env: { HOME: home } },
+    );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     // Positive subject guard: the pass ran and reported on this very id.
     expect(output).toContain(E2E_SKILL.vitest.id);
     expect(output).toContain(STEP_TEXT.STACK_SKILL_ABSENT_FROM_MATRIX);
-    // The unsuppressed sibling has no subject here — the skill IS on disk — so its
-    // absence proves the line above came from the suppressed site, not from it.
+    // The unsuppressed sibling has no subject here — the skill IS discoverable, from its
+    // plugin install — so its absence proves the line above came from the suppressed
+    // site, not from it.
     expect(output).not.toContain(STEP_TEXT.SKILL_NOT_FOUND_WARNING);
     await expectCompileTouchedOnlyWhatItOwns(projectDir, configBefore);
   });
 
   it("prints it when the command is spawned through a PTY session", async () => {
-    const { projectDir, configBefore } = await projectWithStackSkillAbsentFromMatrix();
-    const prompt = new InteractivePrompt(["compile"], projectDir);
+    const { projectDir, home, configBefore } = await projectWithPluginSkillAbsentFromMatrix();
+    const prompt = new InteractivePrompt(["compile"], projectDir, { env: { HOME: home } });
 
     try {
       const exitCode = await prompt.waitForExit(TIMEOUTS.INSTALL);
@@ -129,9 +159,9 @@ describe("a warning the unit suite suppresses still reaches the user through the
   });
 
   it("prints it when the command is spawned through runCLI", async () => {
-    const { projectDir, configBefore } = await projectWithStackSkillAbsentFromMatrix();
+    const { projectDir, home, configBefore } = await projectWithPluginSkillAbsentFromMatrix();
 
-    const { exitCode, combined } = await runCLI(["compile"], projectDir);
+    const { exitCode, combined } = await runCLI(["compile"], projectDir, { env: { HOME: home } });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(combined).toContain(E2E_SKILL.vitest.id);
@@ -147,16 +177,17 @@ describe("a warning the unit suite suppresses still reaches the user through the
    * the product.
    */
   it("suppresses it again when VITEST is handed to the child explicitly", async () => {
-    const { projectDir, configBefore } = await projectWithStackSkillAbsentFromMatrix();
+    const { projectDir, home, configBefore } = await projectWithPluginSkillAbsentFromMatrix();
 
     const { exitCode, output } = await CLI.run(
       ["compile"],
       { dir: projectDir },
-      { env: { VITEST: "true" } },
+      { env: { HOME: home, VITEST: "true" } },
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain(E2E_SKILL.vitest.id);
+    // Suppressed, so the id has no other line in this output to appear in — proof the pass
+    // still resolved it lives in the compiled agent body, asserted below.
     expect(output).not.toContain(STEP_TEXT.STACK_SKILL_ABSENT_FROM_MATRIX);
     await expectCompileTouchedOnlyWhatItOwns(projectDir, configBefore);
   });

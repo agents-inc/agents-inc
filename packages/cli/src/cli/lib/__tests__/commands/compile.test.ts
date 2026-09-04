@@ -12,8 +12,9 @@ import {
   SKILL_WITHOUT_METADATA,
   SKILL_WITHOUT_METADATA_CUSTOM,
 } from "../mock-data/mock-skills";
-import { CLAUDE_DIR } from "../../../consts";
+import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { expectValidAgentMarkdown } from "../assertions";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 
 describe("compile command", () => {
   let cleanup: () => Promise<void>;
@@ -210,6 +211,81 @@ describe("compile command", () => {
       // First compile of a fresh source, so every agent is a genuine write — the
       // summary's two numbers are what it counts, not the roster it walked.
       expect(output).toMatch(/[1-9]\d* project agents rewritten, 0 unchanged/);
+    });
+  });
+
+  /**
+   * The type unions in `config-types.ts` are derived from the seated catalogue, so a
+   * pass that could not seat one has nothing to derive them from. Writing them anyway
+   * narrows every union to what the built-in catalogue happens to carry — dropping every
+   * marketplace-only and local category — and at global scope propagates that into every
+   * registered project, from a failure that used to be a warning and no write.
+   *
+   * Which assertion carries the red: `config-types.ts` existing at all after the run.
+   */
+  describe("a failed matrix seat", () => {
+    let localDirs: TestDirs;
+
+    afterEach(async () => {
+      await cleanupTestSource(localDirs);
+    });
+
+    /** A marketplace path nothing is at, so the seat's fetch refuses before any matrix exists. */
+    const missingMarketplaceIn = (tempDir: string) =>
+      path.join(tempDir, "marketplace-that-is-gone");
+
+    it("leaves config-types.ts unwritten rather than deriving the unions from the built-in catalogue", async () => {
+      localDirs = await createTestSource({
+        localSkills: [VALID_LOCAL_SKILL],
+        projectConfig: buildTestProjectConfig(["web-developer"], []),
+        asPlugin: true,
+      });
+      await writeTestTsConfig(localDirs.projectDir, {
+        ...buildTestProjectConfig(["web-developer"], []),
+        marketplace: missingMarketplaceIn(localDirs.tempDir),
+      });
+      process.chdir(localDirs.projectDir);
+
+      const { stdout, stderr, error } = await runCliCommand(["compile"]);
+
+      const output = stdout + stderr + (error?.message || "");
+      expect(output, "the run must say why the catalogue could not be loaded").toContain(
+        "Local marketplace not found",
+      );
+      expect(
+        await fileExists(
+          path.join(localDirs.projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS),
+        ),
+        "a pass with no catalogue must write no type unions",
+      ).toBe(false);
+      expect(output, "and must not claim it refreshed them").not.toContain(
+        "Refreshed config-types.ts",
+      );
+      expect(output, "the unions it left alone may now be stale, and it must say so").toContain(
+        "Could not refresh config-types.ts",
+      );
+    });
+
+    it("still compiles the agents — the seat degrades the render, it does not abort the run", async () => {
+      localDirs = await createTestSource({
+        localSkills: [VALID_LOCAL_SKILL],
+        projectConfig: buildTestProjectConfig(["web-developer"], []),
+        asPlugin: true,
+      });
+      await writeTestTsConfig(localDirs.projectDir, {
+        ...buildTestProjectConfig(["web-developer"], []),
+        marketplace: missingMarketplaceIn(localDirs.tempDir),
+      });
+      process.chdir(localDirs.projectDir);
+
+      const { error } = await runCliCommand(["compile"]);
+
+      expect(
+        error,
+        "a catalogue that cannot be loaded is a warning, not a refusal",
+      ).toBeUndefined();
+      const agentPath = path.join(localDirs.projectDir, CLAUDE_DIR, "agents", "web-developer.md");
+      expect(await fileExists(agentPath)).toBe(true);
     });
   });
 

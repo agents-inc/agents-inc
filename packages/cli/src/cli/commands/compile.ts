@@ -43,6 +43,7 @@ import type { SkillScope } from "../types/config";
 import type {
   AgentDefinition,
   AgentName,
+  MergedSkillsMatrix,
   ProjectConfig,
   SkillDefinitionMap,
   SkillId,
@@ -248,25 +249,87 @@ export default class Compile extends BaseCommand {
   }
 
   /**
+   * Loads this pass's skills catalogue and returns it, seating the module-level
+   * singleton (`matrix` in `matrix-provider.ts`) on the way — which is what the
+   * RENDER needs, because `compileAgents` reaches the catalogue through
+   * `stacks-loader.ts`'s `statedUsageFor`/`liveCategoryOf` and those read the
+   * singleton directly rather than any value a caller threads through. Called
+   * first, before anything in the pass renders. Left unseated, the singleton stays
+   * at its process-start default (`BUILT_IN_MATRIX`, which never carries a local
+   * skill), so a locally-installed skill's stated `usageGuidance` silently falls
+   * back to the generic per-category placeholder — different bytes from what
+   * `install` last wrote, so a following `compile` rewrites every agent that
+   * carries one.
+   *
+   * Scoped to `pass.projectDir`, never the invoking `cwd`: a global pass must seat
+   * the global installation's own local skills, not the invoking directory's.
+   *
+   * `skipExtraSources: true` is NOT a divergence from the wizard's full
+   * multi-source load: extra-source loading only annotates each skill's
+   * `availableSources`/`activeSource` for wizard UI tagging — it never adds skills
+   * or categories to the matrix, and neither the render path nor the config-types
+   * writer ever reads those annotations, so the emitted output is byte-identical
+   * either way (pinned by the skipExtraSources parity test in
+   * local-installer.test.ts). Skipping avoids fetching every registered extra
+   * source (network on a cold cache, plus unreachable-remote warnings) on this
+   * offline compile path. `matrixOnly` keeps the default-source path itself
+   * offline too.
+   *
+   * The seated matrix is RETURNED as well as seated, and `null` on a failure, so
+   * the two halves can take the postures they each need. The RENDER degrades: it
+   * reads the singleton whatever happens, and falls back to the same
+   * category-placeholder behavior compile had before this seat existed. The type
+   * refresh ABORTS on `null` — it derives every union from the catalogue, so with
+   * none loaded it would narrow them to whatever the built-in catalogue happens
+   * to carry, dropping every marketplace-only and local category and, at global
+   * scope, propagating that into every registered project.
+   */
+  private async seatMatrixForPass(projectDir: string): Promise<MergedSkillsMatrix | null> {
+    try {
+      const { matrix: seated } = await loadSkillsMatrixFromSource({
+        projectDir,
+        skipExtraSources: true,
+        matrixOnly: true,
+      });
+      return seated;
+    } catch (error) {
+      this.warn(`Failed to load skills matrix for ${projectDir}: ${getErrorMessage(error)}`);
+      return null;
+    }
+  }
+
+  /**
    * The documented hand-edit workflow is "edit config.ts, then run compile", and
    * the type unions in config-types.ts are derived from config.ts — so a compile
    * pass that leaves them untouched strands stale unions after a hand-edit.
    * Regenerates them from the scope's persisted config exactly as the wizard
    * write path would: standalone narrowed unions at global scope, import-and-
-   * extend at project scope. `matrixOnly` keeps the default-source path offline.
-   * A failed refresh downgrades to a warning — the compiled agents are already
-   * written and remain valid; only the type unions may still be stale.
+   * extend at project scope. A failed refresh downgrades to a warning — the
+   * compiled agents are already written and remain valid; only the type unions
+   * may still be stale.
    *
-   * `skipExtraSources: true` is NOT a divergence from the wizard's full
-   * multi-source load: extra-source loading only annotates each skill's
-   * `availableSources`/`activeSource` for wizard UI tagging — it never adds
-   * skills or categories to the matrix, and the config-types writer never reads
-   * those annotations, so the emitted types are byte-identical either way
-   * (pinned by the skipExtraSources parity test in local-installer.test.ts).
-   * Skipping avoids fetching every registered extra source (network on a cold
-   * cache, plus unreachable-remote warnings) on this offline compile path.
+   * Takes the catalogue {@link seatMatrixForPass} returned rather than reading the
+   * singleton it seated, so this refresh cannot run against a seat that is not the
+   * one this pass asked for. `null` means the seat failed, and the refresh is
+   * skipped whole: every union here is DERIVED from the catalogue, so writing them
+   * without one is not a degraded answer but a wrong one — the unions narrow to
+   * the built-in catalogue's own categories, and `config.ts` beside them still
+   * keys its `stack` under the ones that just vanished, so the pair stops
+   * type-checking. Skipping falls under the same warning as any other failed
+   * refresh, for the same reason.
    */
-  private async refreshConfigTypes(pass: CompilePass, cwd: string): Promise<void> {
+  private async refreshConfigTypes(
+    pass: CompilePass,
+    cwd: string,
+    seatedMatrix: MergedSkillsMatrix | null,
+  ): Promise<void> {
+    if (!seatedMatrix) {
+      this.warn(
+        configTypesRefreshFailed(`no skills catalogue could be loaded for ${pass.projectDir}`),
+      );
+      return;
+    }
+
     let report: GateReport;
     try {
       const loaded = await loadProjectConfigFromDir(pass.projectDir);
@@ -277,18 +340,13 @@ export default class Compile extends BaseCommand {
         return;
       }
 
-      const { matrix } = await loadSkillsMatrixFromSource({
-        projectDir: pass.projectDir,
-        skipExtraSources: true,
-        matrixOnly: true,
-      });
       // `cwd` is excluded from the fan-out, which only a global pass can perform:
       // whatever this invocation was run from is this command's own subject, so a
       // fan-out must never reach back into it.
       report = await reconcileTypesFromDisk(
         pass.projectDir,
         loaded.config,
-        { matrix, agents: pass.agents },
+        { matrix: seatedMatrix, agents: pass.agents },
         { currentProjectDir: cwd },
       );
       this.log(INFO_MESSAGES.CONFIG_TYPES_REFRESHED);
@@ -322,6 +380,10 @@ export default class Compile extends BaseCommand {
     verbose(`  Project: ${projectDir}`);
     verbose(`  Agents: ${installation.agentsDir}`);
 
+    // Before anything below reads the matrix — including the early return just
+    // past skill discovery, which still calls refreshConfigTypes.
+    const seatedMatrix = await this.seatMatrixForPass(projectDir);
+
     const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
 
     if (totalSkillCount === 0) {
@@ -329,7 +391,7 @@ export default class Compile extends BaseCommand {
       // The config loads independently of discovered skills: a hand-edited
       // config.ts can list skills while nothing is installed for this scope,
       // and its type unions must follow the config rather than stay stale.
-      await this.refreshConfigTypes(params, cwd);
+      await this.refreshConfigTypes(params, cwd, seatedMatrix);
       return false;
     }
 
@@ -376,7 +438,7 @@ export default class Compile extends BaseCommand {
       this.handleError(error);
     }
 
-    await this.refreshConfigTypes(params, cwd);
+    await this.refreshConfigTypes(params, cwd, seatedMatrix);
 
     this.log("");
     this.logSuccess(`${label} compile complete!`);

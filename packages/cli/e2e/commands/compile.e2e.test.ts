@@ -1,10 +1,12 @@
 import path from "path";
+import { realpathSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import {
   createTempDir,
   cleanupTempDir,
   createLocalSkill,
+  createPermissionsFile,
   directoryExists,
   listFiles,
   readTestFile,
@@ -22,12 +24,28 @@ import {
   metadataFieldsFor,
 } from "../fixtures/project-builder.js";
 import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
-import { cliVersion, provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
+import { provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import "../matchers/setup.js";
+
+/**
+ * The sentence a project-owned fixture skill states for itself, and the whole of what
+ * the compiled agent renders as that skill's cue. It differs from every answer a HOME
+ * seat can give — the fixture ids are outside the public catalogue, so a catalogue that
+ * has not merged this project's local skills answers with the per-category placeholder.
+ */
+const PROJECT_SKILL_USAGE = "Use when testing E2E scenarios";
+
+/** `origin` recorded for skills a fixture installs as local copies. */
+const EJECT_ORIGIN = "eject";
 
 describe("compile command", () => {
   let tempDir: string;
@@ -367,7 +385,7 @@ describe("compile command", () => {
           path.join(agentsPath(project.dir), `${agentName}.md`),
         );
         expect(agentContent.startsWith("---\n")).toBe(true);
-        expect(agentContent).toContain(`\n---\n${provenanceMarker(await cliVersion())}\n\n# `);
+        expect(agentContent).toContain(`\n---\n${provenanceMarker()}\n\n# `);
       }
     });
 
@@ -679,5 +697,147 @@ describe("compile command", () => {
         },
       );
     });
+  });
+
+  /**
+   * A compiled sub-agent's `Use when` line is the catalogue's own words for the skill,
+   * and WHICH catalogue answers is decided by the matrix seated when the agent is
+   * rendered. A registered project's own local skills — and the skills of the
+   * marketplace ITS config names — are in that project's catalogue and in nobody
+   * else's.
+   *
+   * A global compile fans the global config out to every registered project and
+   * recompiles their agents, so that fan-out has to seat each project's own catalogue.
+   * Seated at HOME instead, every project-local skill's stated `usageGuidance` is
+   * replaced by the per-category placeholder, and the project's next `compile` writes
+   * it back — two commands that undo each other for as long as they are both run, each
+   * reporting a real rewrite.
+   *
+   * Which assertion carries the red: the project compile that FOLLOWS the global one
+   * reporting `1 project agents rewritten`. That is the ping-pong stated as an outcome
+   * rather than as a diff.
+   *
+   * Everything is arranged inside the `it` rather than in a `beforeAll`: each run
+   * mutates the tree the next one reads, so a retry against state a previous attempt
+   * already rewrote would compare the wrong pair of runs.
+   */
+  describe("a global fan-out into a registered project", () => {
+    /** The project pass's summary for a run that found its one agent already correct. */
+    const PROJECT_PASS_ALL_UNCHANGED = `0 project ${STEP_TEXT.AGENTS_REWRITTEN}, 1 ${STEP_TEXT.UNCHANGED}`;
+
+    it(
+      "seats that project's own catalogue, so its next compile has nothing to undo",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        tempDir = await createTempDir();
+        const globalHome = path.join(tempDir, "home");
+        const projectDir = path.join(tempDir, "registered-project");
+        for (const dir of [globalHome, projectDir]) {
+          await mkdir(dir, { recursive: true });
+          await createPermissionsFile(dir);
+        }
+
+        const globalSkill = E2E_SKILL.react;
+        const projectSkill = E2E_SKILL.vitest;
+        const globalAgent = E2E_AGENT["web-developer"];
+        const projectAgent = E2E_AGENT["api-developer"];
+
+        await writeProjectConfig(
+          globalHome,
+          buildProjectConfig({
+            name: "fan-out-seat-global",
+            skills: buildSkillConfigs([globalSkill.id], { scope: "global", origin: EJECT_ORIGIN }),
+            agents: buildAgentConfigs([globalAgent.name], { scope: "global" }),
+            stack: { [globalAgent.name]: { "web-framework": [{ id: globalSkill.id }] } },
+            projects: [realpathSync(projectDir)],
+          }),
+        );
+        await createLocalSkill(globalHome, globalSkill.id, {
+          description: "Global skill inherited by the registered project",
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor(globalSkill.id),
+            cliDescription: "E2E test skill",
+            usageGuidance: "Use when working on the global half of this fixture",
+            contentHash: "hash-global",
+          }),
+        });
+
+        await writeProjectConfig(
+          projectDir,
+          buildProjectConfig({
+            name: "fan-out-seat-project",
+            skills: [
+              ...buildSkillConfigs([globalSkill.id], { scope: "global", origin: EJECT_ORIGIN }),
+              ...buildSkillConfigs([projectSkill.id], { scope: "project", origin: EJECT_ORIGIN }),
+            ],
+            agents: buildAgentConfigs([projectAgent.name], { scope: "project" }),
+            stack: { [projectAgent.name]: { "web-testing": [{ id: projectSkill.id }] } },
+          }),
+        );
+        await createLocalSkill(projectDir, projectSkill.id, {
+          description: "Project-owned skill compiled into the project's own agent",
+          metadata: renderMetadataYaml({
+            ...metadataFieldsFor(projectSkill.id),
+            cliDescription: "E2E test skill",
+            usageGuidance: PROJECT_SKILL_USAGE,
+            contentHash: "hash-project",
+          }),
+        });
+
+        const projectAgentMd = path.join(agentsPath(projectDir), `${projectAgent.name}.md`);
+        const inProject = { dir: projectDir };
+        const atHome = { dir: globalHome };
+        const asHome = { env: { HOME: globalHome } };
+
+        const firstProjectRun = await CLI.run(["compile"], inProject, asHome);
+        expect(
+          firstProjectRun.exitCode,
+          `first compile in the project failed: ${firstProjectRun.output}`,
+        ).toBe(EXIT_CODES.SUCCESS);
+
+        const agentAfterProjectCompile = await readTestFile(projectAgentMd);
+        expect(
+          agentAfterProjectCompile,
+          "the project's own compile must render the skill's stated cue",
+        ).toContain(PROJECT_SKILL_USAGE);
+
+        const settledRun = await CLI.run(["compile"], inProject, asHome);
+        expect(
+          settledRun.exitCode,
+          `second compile in the project failed: ${settledRun.output}`,
+        ).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          settledRun.output,
+          "a project compile over its own output must rewrite nothing",
+        ).toContain(PROJECT_PASS_ALL_UNCHANGED);
+
+        const globalRun = await CLI.run(["compile"], atHome, asHome);
+        expect(globalRun.exitCode, `compile at HOME failed: ${globalRun.output}`).toBe(
+          EXIT_CODES.SUCCESS,
+        );
+        expect(globalRun.output, "the fan-out must have reached the registered project").toContain(
+          STEP_TEXT.PROPAGATED_RECOMPILE,
+        );
+
+        expect(
+          await readTestFile(projectAgentMd),
+          "the fan-out must not replace a project-local skill's stated cue",
+        ).toContain(PROJECT_SKILL_USAGE);
+        expect(
+          await readTestFile(projectAgentMd),
+          "a fan-out that changes no value must not move a byte of the project's compiled agent",
+        ).toBe(agentAfterProjectCompile);
+
+        const thirdProjectRun = await CLI.run(["compile"], inProject, asHome);
+        expect(
+          thirdProjectRun.exitCode,
+          `third compile in the project failed: ${thirdProjectRun.output}`,
+        ).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          thirdProjectRun.output,
+          "a project compile following a global one must have nothing to undo",
+        ).toContain(PROJECT_PASS_ALL_UNCHANGED);
+      },
+    );
   });
 });
