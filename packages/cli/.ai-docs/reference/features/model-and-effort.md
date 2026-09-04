@@ -244,11 +244,17 @@ practice Zod narrows both fields to their unions before they reach this line, so
 value exists.
 
 **`resolveAgents` returns an explicit field list, not a spread.** The `AgentConfig` it constructs
-names ten fields: `name`, `title`, `description`, `model`, `effort`, `tools`, `skills`, `path`,
-`sourceRoot`, `agentBaseDir`. `permissionMode`, `disallowedTools`, `hooks` and `outputFormat` are
-declared on `BaseAgentFields` but are **not** carried through. Of the tunable metadata fields, only
-`model` and `effort` survive resolution — which is exactly why they are the only two that a project
-config can override, and why widening the axis to a third field is not a one-line change.
+names `name`, `title`, `description`, `model`, `effort`, `tools`, `disallowedTools`,
+`permissionMode`, `isolation`, `hooks`, `experimental`, `skills`, `path`, `sourceRoot` and
+`agentBaseDir` — every optional frontmatter field `agent.liquid` reads, each spread conditionally so
+that an explicit `undefined` cannot render as an empty key. `outputFormat` is declared on
+`BaseAgentFields` and is the one field **not** carried through.
+
+**Carried is not the same as tunable, and that is the distinction this section exists to draw.**
+Only `model` and `effort` take a `agentConfig.X ?? definition.X` step; every other field arrives
+from the agent's own `metadata.yaml` and from nowhere else, because `CompileAgentConfig`
+(`src/cli/types/config.ts`) declares `skills`, `model` and `effort` and has no key to hold a third
+override. Widening the axis to another field is therefore not a one-line change.
 
 ### Getting a config-level override into `CompileAgentConfig`
 
@@ -356,12 +362,12 @@ export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 
 `effortLevelSchema` has **four** consumers, all `.exactOptional()`:
 
-| Consumer                           | Validates                                       |
-| ---------------------------------- | ----------------------------------------------- |
-| `agentYamlConfigSchema`            | an agent's own `metadata.yaml`                  |
-| `projectConfigLoaderSchema`        | the inline `agents[]` element in `config.ts`    |
-| `agentYamlGenerationSchema`        | strict metadata.yaml output (`.strict()`)       |
-| `agentFrontmatterValidationSchema` | strict compiled-agent frontmatter (`.strict()`) |
+| Consumer                           | Validates                                                |
+| ---------------------------------- | -------------------------------------------------------- |
+| `agentYamlConfigSchema`            | an agent's own `metadata.yaml`                           |
+| `projectConfigLoaderSchema`        | the inline `agents[]` element in `config.ts`             |
+| `agentYamlGenerationSchema`        | a source agent's `metadata.yaml`, strictly (`.strict()`) |
+| `agentFrontmatterValidationSchema` | strict compiled-agent frontmatter (`.strict()`)          |
 
 `modelNameSchema` covers those four **and two more**: `skillFrontmatterLoaderSchema` and
 `skillFrontmatterValidationSchema`, the lenient and strict readers of a `SKILL.md` frontmatter
@@ -494,9 +500,19 @@ model/effort reach both the compiled agent and the written config.
 records the trap: **the word `effort` occurs in agent prose too**, so a `toContain("effort")` on the
 compiled file is not an assertion about frontmatter. `E2E_BUILTIN_AGENT` in
 `e2e/fixtures/expected-values.ts` supplies each bundled agent's real `defaultModel` so a
-"no override, metadata default survives" spec has an authoritative expected value; `api-tester` is
-used for those because its default is `sonnet`, not `opus` — an assertion of `opus` there would pass
-against a hardcoded fallback.
+"no override, metadata default survives" spec has an authoritative expected value.
+
+**No roster member discriminates a preserved default.** Every bundled `metadata.yaml` declares the
+same model, so no `defaultModel` in that fixture can separate "the resolver read THIS agent's
+metadata" from a hardcoded answer — see [`agent-system.md`](./agent-system.md) § Agent Inventory for
+the re-derivation and the rest of what the uniformity costs. Two reaches survive it, and a spec
+asserting a default should say which one it is relying on. A default that is **dropped** is still
+caught, because `agent.liquid` renders `model: {{ agent.model | default: "inherit" }}` and `inherit`
+is not what any expected value says. Proof that an **override arrived** rather than coincided comes
+from the written `config.ts` and not from the frontmatter: an override that never arrived writes no
+key at all, where the frontmatter carries the resolved value either way. Do not delete a config-side
+`toStrictEqual` as redundant with a frontmatter check — the redundancy is only apparent while the
+two values differ.
 
 ## Traps
 
@@ -518,10 +534,12 @@ against a hardcoded fallback.
    `(name, scope)` without `model` drops the saved `model`.
 7. **`{% if agent.effort %}` is not an `undefined` check.** Liquid empty-string truthiness differs
    from JavaScript's.
-8. **`model` and `effort` are the only tunable metadata fields that survive `resolveAgents`.**
-   `permissionMode`, `disallowedTools`, `hooks` and `outputFormat` are dropped from the
-   `AgentConfig` it builds, so "add an override for X the way model does it" is a larger change than
-   it looks.
+8. **`model` and `effort` are the only metadata fields a project config can TUNE**, which is not the
+   same as the only ones `resolveAgents` carries — it also forwards `disallowedTools`,
+   `permissionMode`, `isolation`, `hooks` and `experimental` from the definition. None of those
+   consults the config, and `CompileAgentConfig` has no key that could carry one, so "add an
+   override for X the way model does it" is a larger change than seeing X in the compiled
+   frontmatter suggests.
 
 ## Adding a union member
 

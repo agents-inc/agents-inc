@@ -443,9 +443,7 @@ block by calling it. The pair is a **trust** distinction, not a scope one:
 
 **Authored data is read as written; persisted data is reconciled against the live catalogue.** A
 source's `stacks.ts` ships alongside the catalogue it references, so there is no drift to reconcile
-and nothing to overrule — and the built-in stacks and several fixtures deliberately group
-cross-category skills under one heading, because `resolveAgentConfigToSkills` turns that key into the
-compiled agent's `usage:` line. A user's `.claude-src/config.ts` was written by an older version of
+and nothing to overrule. A user's `.claude-src/config.ts` was written by an older version of
 the catalogue and the user cannot be asked to migrate it, so `rekeyToLiveCategories` — applied inside
 `normalizeStackRecord` and nowhere else — re-keys each entry under the category the catalogue names
 today.
@@ -752,7 +750,7 @@ When a global installation exists, project `config-types.ts` imports from global
 
 ### Writer selection rule
 
-When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), the standalone unions apply — emitted only by `config-gate/pair-writer.ts`. The rule is structural: `regenerateConfigTypes` throws `GlobalPairWriteViolation` at `$HOME`, and the standalone renderer is private to the gate (the former `writeStandaloneConfigTypes` export is gone).
+When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), the standalone unions apply — emitted only by `config-gate/pair-writer.ts`. The rule is structural: `regenerateConfigTypes` throws `GlobalPairWriteViolation` at `$HOME`, and the standalone renderer is private to the gate.
 
 In `config-gate/`:
 
@@ -765,23 +763,29 @@ Helpers `buildConfigTypesBackgroundData(matrix, agents)` (beside the type, in `c
 
 ### `compile` regenerates `config-types.ts`
 
-The documented workflow is "hand-edit `config.ts`, then run `compile`", so a compile pass that leaves the unions untouched strands them. `Compile.refreshConfigTypes` (`src/cli/commands/compile.ts`) runs once per compile pass:
+The documented workflow is "hand-edit `config.ts`, then run `compile`", so a compile pass that leaves the unions untouched strands them. `Compile.refreshConfigTypes(pass, cwd, seatedMatrix)` (`src/cli/commands/compile.ts`) runs once per compile pass:
 
+0. `seatedMatrix === null` (the pass's catalogue load failed) returns immediately with `this.warn(configTypesRefreshFailed("no skills catalogue could be loaded for <projectDir>"))` — no config is loaded, no `config-types.ts` is written, and at home nothing is fanned out.
 1. `loadProjectConfigFromDir(pass.projectDir)` — a `null` (no config) skips the refresh with a `verbose()` line.
-2. `loadSkillsMatrixFromSource({ sourceFlag, projectDir, skipExtraSources: true, matrixOnly: true })` — `matrixOnly` skips the source clone for the default source so compile stays offline on a cold cache.
-3. `reconcileTypesFromDisk(pass.projectDir, loaded.config, { matrix, agents: pass.agents }, { currentProjectDir: cwd })`.
+2. `reconcileTypesFromDisk(pass.projectDir, loaded.config, { matrix: seatedMatrix, agents: pass.agents }, { currentProjectDir: cwd })`.
+
+`seatedMatrix` is the VALUE `Compile.seatMatrixForPass(projectDir)` returned (`MergedSkillsMatrix | null`), threaded down from `runCompilePass` rather than read back off the module-level singleton — so this refresh cannot run against a seat other than the one its own pass asked for. That call is the pass's FIRST act, `loadSkillsMatrixFromSource({ projectDir, skipExtraSources: true, matrixOnly: true })`, and it seats the singleton in `src/cli/lib/matrix/matrix-provider.ts` on the way; `matrixOnly` skips the source clone for the default source so compile stays offline on a cold cache. The order matters beyond avoiding a second load: `compileAgents` renders through `statedUsageFor` and `liveCategoryOf` (`src/cli/lib/stacks/stacks-loader.ts`), which read that singleton directly, so an unseated pass renders every locally-installed skill's usage line off the generic per-category placeholder rather than its stated `usageGuidance`.
+
+**A failed seat degrades the render and aborts the types half**, which is the whole reason the value is threaded rather than read. The render keeps whatever the singleton held and falls back to the placeholder; the refresh writes nothing at all and does NOT fall back to `BUILT_IN_MATRIX`, because every union it emits is derived from the catalogue — writing them without one narrows `Category` and `Domain` to the built-in catalogue's own members while the `config.ts` beside them still keys its `stack` under the ones that vanished, and at home that pair is propagated into every registered project.
 
 The unions follow the **config**, not the discovered skills: `runCompilePass` calls `refreshConfigTypes` in the `totalSkillCount === 0` early-return branch as well, before returning `false`. A failure downgrades to `this.warn(configTypesRefreshFailed(...))` — the compiled agents are already written and remain valid.
 
 **A home-directory pass also propagates.** `config.ts` on disk is the input and is never rewritten (a hand edit must survive the compile), which means there is no prior state to diff against and nothing to classify. The only safe assumption is that every registered project's inlined copy of the global config is stale, so the home pass fans it out unconditionally and recompiles those projects' agents, printing `propagatedRecompileSummary` through `BaseCommand.reportPropagatedRecompile` — `Recompiled agents in N registered projects, M unchanged`. `currentProjectDir: cwd` keeps the home pass out of the project whose own pass is about to compile it. Skipped projects are warned via `registeredProjectUpdateSkipped`; that rendering sits deliberately outside the refresh's `catch`, so an unreachable project is not reported as a failure to refresh the unions.
 
-`skipExtraSources: true` is not a divergence from the wizard's fully tagged load: extra-source loading only annotates `availableSources` / `activeSource` for wizard UI tagging, which the config-types writer never reads. Byte-identity is pinned by the `skipExtraSources` parity test in `local-installer.test.ts`.
+`skipExtraSources: true` is not a divergence from the wizard's fully tagged load: extra-source loading only annotates `availableSources` / `activeSource` for wizard UI tagging, which neither the render path nor the config-types writer reads. Byte-identity is pinned by the `skipExtraSources` parity test in `local-installer.test.ts`.
 
 ### A global uninstall regenerates every registered project's types
 
-`pruneGlobalEntriesFromRegisteredProjects(globalConfig, matrix, agents)` (in `config-gate/propagate.ts`, reached through the `propagateGlobalRemoval` entry point) re-enters `propagateGlobalChangesToProjects` with an emptied global config (`skills: []`, `agents: []`), so every global skill/agent reads as removed: inlined global rows and their tombstones drop out of each project's `config.ts`, and each project's `config-types.ts` is regenerated.
+`pruneGlobalEntriesFromRegisteredProjects(globalConfig, agents)` (in `config-gate/propagate.ts`, reached through the `propagateGlobalRemoval` entry point) re-enters `propagateGlobalChangesToProjects` with an emptied global config (`skills: []`, `agents: []`), so every global skill/agent reads as removed: inlined global rows and their tombstones drop out of each project's `config.ts`, and each project's `config-types.ts` is regenerated.
 
-`uninstall.tsx` calls `propagateGlobalRemoval` from `updateRegisteredProjects`, AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`. The data it needs (`globalConfig.projects`, matrix, agent defs) is captured by `prepareGlobalPropagation` BEFORE the removal, since source resolution reads the config being deleted. Unreachable projects are warned (`registeredProjectUpdateSkipped`) and never abort the uninstall. **The prune now also recompiles the pruned projects' agents** — they were compiled against the global rows this uninstall just removed — and `uninstall.tsx` renders `GateReport.recompile` after the `registeredProjectsUpdated` line. `propagateGlobalRemoval` writes no pair: the pair it would derive from has just been deleted, which is why it is its own entry point rather than a flag on a writing one.
+**Neither function takes a catalogue.** Each project's own is seated per project by `withCatalogueSeatedFor` (`src/cli/lib/loading/catalogue-seat.ts`), and this is the path that needs it most: the standalone form these projects fall back to declares its unions from the catalogue outright rather than extending an imported one, so the project's own skills are the only thing keeping their categories in the file. Derived from the uninstalling command's catalogue, a global uninstall would take each project's own taxonomy with it.
+
+`uninstall.tsx` calls `propagateGlobalRemoval` from `updateRegisteredProjects`, AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`. `prepareGlobalPropagation` captures `GlobalPropagationData { globalConfig, matrix, agents }` BEFORE the removal, since source resolution reads the config being deleted. Only `globalConfig` and `agents` are read downstream: `propagateGlobalRemoval` takes the pair as a `LoadedGateDeps` and hands the prune `deps.agents` alone, the catalogue having become a per-project seat. Unreachable projects are warned (`registeredProjectUpdateSkipped`) and never abort the uninstall. **The prune now also recompiles the pruned projects' agents** — they were compiled against the global rows this uninstall just removed — and `uninstall.tsx` renders `GateReport.recompile` after the `registeredProjectsUpdated` line. `propagateGlobalRemoval` writes no pair: the pair it would derive from has just been deleted, which is why it is its own entry point rather than a flag on a writing one.
 
 ## Scope-Aware Config Splitting
 

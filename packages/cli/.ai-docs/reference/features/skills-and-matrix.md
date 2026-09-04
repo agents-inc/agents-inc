@@ -307,19 +307,24 @@ asserts `sourcePath === ""` and that the returned skill keys equal `BUILT_IN_MAT
 
 ### Call sites
 
-| Caller                                                                                 | `skipExtraSources` | `matrixOnly` | Why                                                                                  |
-| -------------------------------------------------------------------------------------- | ------------------ | ------------ | ------------------------------------------------------------------------------------ |
-| `Compile.refreshConfigTypes` (`src/cli/commands/compile.ts`)                           | yes                | yes          | Regenerates `config-types.ts` per compiled scope; never reads skill files            |
-| `Uninstall.prepareGlobalPropagation` (`src/cli/commands/uninstall.tsx`)                | yes                | yes          | Loads the matrix before the global manifest is deleted; must not hang on remotes     |
-| `loadConfigTypesDataInBackground` (`src/cli/lib/configuration/config-types-writer.ts`) | yes                | no           | Wants the marketplace's MATRIX only; its sub-agent roster comes from `loadAgentDefs` |
-| `validateSource` phase 3 (`src/cli/lib/source-validator.ts`)                           | yes                | no           | Validates a caller-supplied source path, so the default-source branch is moot        |
+Every production caller, re-derivable with
+`grep -rn 'loadSkillsMatrixFromSource(' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts'`:
+
+| Caller                                                                  | `skipExtraSources` | `matrixOnly` | Why                                                                                                                                            |
+| ----------------------------------------------------------------------- | ------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Compile.seatMatrixForPass` (`src/cli/commands/compile.ts`)             | yes                | yes          | Seats the `matrix` singleton once per pass AND returns the catalogue; the render path reads the seat, the types refresh takes the return value |
+| `withCatalogueSeatedFor` (`src/cli/lib/loading/catalogue-seat.ts`)      | yes                | yes          | Seats ONE registered project's own catalogue for a fan-out body, then restores the caller's seat                                               |
+| `Uninstall.prepareGlobalPropagation` (`src/cli/commands/uninstall.tsx`) | yes                | yes          | Captures the pre-removal global data; must not hang on remotes. The catalogue half reaches no reader downstream                                |
+| `lazyGateDeps` (`src/cli/lib/config-gate/index.ts`)                     | yes                | yes          | Loads the matrix a consequence tier needs, behind the lazy `await import`                                                                      |
+| `loadSource` (`src/cli/lib/operations/source/load-source.ts`)           | no                 | no           | The wizard's fully tagged load — the one caller that wants `availableSources` / `activeSource` populated                                       |
+| `validateSource` phase 3 (`src/cli/lib/source-validator.ts`)            | yes                | no           | Validates a caller-supplied source path, so the default-source branch is moot                                                                  |
 
 ### `skipExtraSources` parity
 
 `skipExtraSources: true` is **not** a divergence from the wizard's fully tagged load: the tagging
 pass only annotates each skill's `availableSources` / `activeSource` for the Sources step, never
-adds skills or categories, and the config-types writer never reads those annotations. Both matrices
-therefore emit byte-identical `config-types.ts`. Pinned by the "emits byte-identical config-types
+adds skills or categories, and neither the config-types writer nor the agent render path reads
+those annotations. Both matrices therefore emit byte-identical `config-types.ts`. Pinned by the "emits byte-identical config-types
 from an untagged and a source-tagged matrix" test in
 `src/cli/lib/installation/local-installer.test.ts`. The option's NAME outlived the extras it was
 introduced for — it gates the whole tagging pipeline, not an extras phase. The same JSDoc claim is repeated at both
@@ -482,22 +487,54 @@ An externally-added skill takes `external-`, because a local `web-frontend` agai
 from marketplaces, **not from one another** — two added skills can still resolve to the same id, and
 that is caught at add time with the id in hand rather than by deriving a longer id from the repo
 owner: these are eject-only, per-install files, so the requirement is uniqueness within one machine's
-two scopes, not global uniqueness.
+two scopes, not global uniqueness. **Add time is where external-vs-external stays caught**, because
+the receiver's own guard below exempts a `local` incumbent and an already-installed external skill is
+one; what the receiver adds is the external-vs-CATALOGUE half, which no add-time check outside the
+editor can reach.
 
-### Two guards, and the division between them
+### Three enforcement points, and the division between them
 
-**Build-time catches honest mistakes; load-time catches the rest.** Nothing a source ships is
-unforgeable, so the consumer's own load has to ask the question again.
+**Build-time catches honest mistakes; load-time and receive-time catch the rest.** Nothing a source
+ships is unforgeable, so the consumer's own load has to ask the question again — and a shared
+payload is exactly as forgeable as a marketplace, so the receiver asks it a third time.
 
 | Guard                                                 | Where                                                                                                 | Refuses                                                                                                  |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `validateMarketplaceName(name, packageName)`          | `src/cli/lib/marketplace-generator.ts`, called by `build marketplace`                                 | A marketplace claiming a reserved name                                                                   |
 | `validateSkillIdNamespace(marketplace)`               | same module, called after the plugin scan                                                             | A marketplace shipping an id that does not begin `<name>-`; lists up to 10, each with the id it expected |
 | `refuseCatalogueCollisions(basePath, source, skills)` | `src/cli/lib/loading/source-loader.ts`, called by `loadAndMergeFromBasePath` after `extractAllSkills` | A source whose ids intersect `CATALOGUE_SKILL_IDS` — the keys of `BUILT_IN_MATRIX.skills`                |
+| `claimingACatalogueId(externals, matrix)`             | `src/cli/lib/seed/external-skills.ts`, called by `registerExternalSkills` before anything is seated   | A payload whose carried skills claim ids EITHER the loaded matrix or `BUILT_IN_MATRIX` already holds     |
+| `refuseUncarriedDestinations(installs)`               | same module, called by `writeExternalSkills` before the first byte is written                         | A payload whose destination directory already holds content no shared configuration put there            |
 
-**The SOURCE is refused, not the colliding skills.** Dropping them would hand the user a marketplace
-quietly missing the skills they chose it for, leave the catalogue's own copies standing in under
-those ids, and tell the author nothing.
+**The SOURCE is refused, not the colliding skills**, and the same for a payload. Dropping them would
+hand the user a marketplace quietly missing the skills they chose it for, leave the catalogue's own
+copies standing in under those ids, and tell the author nothing.
+
+**The receiver's guard reads the UNION of the loaded matrix and the shipped one**, and each half
+answers what the other cannot. `heldByEitherCatalogue` is
+`heldByLoadedCatalogue(matrix.skills[id]) || CATALOGUE_SKILL_IDS.has(id)`. The LOADED half sees a
+carried id colliding with a loaded custom marketplace's own ids — the same defect one marketplace
+along, which `CATALOGUE_SKILL_IDS` has never heard of. The SHIPPED half is the one no payload can
+steer: `sharedConfigSourceFlags` in `src/cli/commands/init.tsx` passes `payload.marketplace` to the
+loader, so a payload naming a marketplace that does not ship the id it impersonates meets no incumbent
+in the loaded half at all — which is why `refuseCatalogueCollisions` asks the same question of the
+same shipped set. The carve-out, `heldByLoadedCatalogue`, exempts an incumbent carrying
+`local: true`: the local-skill merge marks a carried skill a previous apply wrote that way, so
+without the exemption a shared configuration would install exactly once and `edit --from` could never
+re-apply one. `src/cli/lib/seed/external-skills.ts` is the module; `catalogueIdCollisionError` writes
+the refusal, naming every id and the remedy — add each skill again, which mints an `external-` id no
+catalogue owns.
+
+**That carve-out is exactly why the disk-side refusal exists beside it.** `local: true` is written on
+everything the merge finds, so exempting it also exempts a skill the user wrote by hand and a
+marketplace skill ejected here — and a directory carrying no readable `metadata.yaml` never reaches
+the matrix to be asked at all. `refuseUncarriedDestinations` therefore judges the DESTINATION
+DIRECTORY rather than the catalogue, reading `forkedFrom.path` off each existing directory:
+`registerSkillOnDisk` is that field's only writer, so a directory naming the repository directory its
+bytes came from is one a shared configuration put there, and everything else is somebody else's.
+Every destination is judged before any is written. See
+[seed-contract.md](./seed-contract.md) for the refusal's message and the `readCarriedSkill` reader on
+the other side of the round trip.
 
 ### The exemption is read off package identity
 
@@ -860,7 +897,8 @@ Stacks are pre-configured bundles of skills mapped to agents. Defined in `config
 
 - `loadStacks()` - Load all stacks from TS config
 - `loadStackById()` - Load specific stack
-- `resolveAgentConfigToSkills()` - Resolve stack agent config to skill assignments
+- `resolveAgentConfigToSkills()` - Resolve stack agent config to skill assignments. Each reference's `usage` comes from the module-private `statedUsageFor`, which reads the seated matrix's `usageGuidance` for the id and falls back to `defaultUsageGuidance(category)` — `Use when working with <category>.` — when the matrix carries no entry, when the entry states none, or when what it states is empty or whitespace only (`stated !== undefined && stated.trim() !== ""` is the test). A blank sentence counts as none: `usageGuidance` is `z.string().exactOptional()`, so `""` is a valid thing for a catalogue to state, and an empty activation-protocol bullet is worse than the placeholder it displaced. `liveCategoryOf` beside it re-reads the category the same way
+- `defaultUsageGuidance(category)` - The placeholder sentence, and the only exported one of this group. `externalSkillMetadata` in `src/cli/lib/seed/external-skills.ts` CALLS it for a carried skill's default rather than spelling the sentence again, so a carried skill's cue reads the same off disk as it does during the run that installed it
 - `getStackSkillIds()` - Extract flat skill ID list from stack
 - `normalizeStackRecord()` - Normalize stack values to `SkillAssignment[]` arrays
 - `normalizeAgentConfig()` - Normalize agent config entries

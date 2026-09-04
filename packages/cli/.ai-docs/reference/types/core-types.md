@@ -24,6 +24,8 @@ keywords:
     SourceRowContext,
     SkillCore,
     BaseAgentFields,
+    AgentIsolation,
+    CacheTtl,
     SkillGroupRule,
     InstallMode,
     ConfigLoadError,
@@ -207,6 +209,46 @@ export const PERMISSION_MODES = [
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 ```
 
+### AgentIsolation (`src/cli/types/matrix.ts`)
+
+Derived from the `AGENT_ISOLATIONS` const array. `agents.ts` re-exports the type; `matrix.ts`
+declares it, beside the rest of the frontmatter vocabulary, because that is the file
+`@workspace/matrix` vendors.
+
+```typescript
+export const AGENT_ISOLATIONS = ["worktree"] as const;
+export type AgentIsolation = (typeof AGENT_ISOLATIONS)[number];
+```
+
+A union of one. The unset case is **not** a member — an agent with no `isolation` shares the
+session's working tree, which is the default the key opts out of. The bridge schema consumes the
+const array exactly as the three unions above do: `agentIsolationSchema` in
+`src/cli/lib/schemas.ts` is `z.enum(AGENT_ISOLATIONS) as z.ZodType<AgentIsolation>`.
+
+**A `satisfies z.ZodType<T>` over a literal would not have held them in step, and that is the point
+of the shape rather than a stylistic preference.** `ZodType`'s output parameter is covariant, so a
+narrower schema satisfies a wider one: `z.literal("worktree") satisfies z.ZodType<AgentIsolation>`
+type-checked, and widening `AGENT_ISOLATIONS` produced zero `tsc` errors while every parse of a
+newly-documented mode failed at runtime. `z.enum()` over the array is the only form that moves with
+the vocabulary.
+
+No shipped agent declares the key — see `packages/cli/CLAUDE.md`, which bans worktrees for this
+project while keeping the CLI's support for consuming projects that want them.
+
+### CacheTtl (`src/cli/types/matrix.ts`)
+
+Derived from the `CACHE_TTLS` const array, consumed by `agentExperimentalSchema` in
+`src/cli/lib/schemas.ts` as `cacheTtl: z.enum(CACHE_TTLS).exactOptional()`:
+
+```typescript
+export const CACHE_TTLS = ["5m", "1h"] as const;
+export type CacheTtl = (typeof CACHE_TTLS)[number];
+```
+
+Reached through `BaseAgentFields.experimental`, a map (`{ cacheTtl?: CacheTtl }`) rather than a flat
+field, because that is the shape Claude Code's frontmatter takes. Emitted only when an agent
+declares it and never defaulted — the source docblock carries the billing reason.
+
 ## Named Aliases (Composite Types)
 
 | Alias                    | Definition                                                                                         | File         |
@@ -248,7 +290,9 @@ Identity/description fields shared by the pre-merge and post-merge skill surface
 ### BaseAgentFields (`src/cli/types/agents.ts`)
 
 - `title: string`, `description: string`
-- `model?: ModelName`, `tools: string[]`, `disallowedTools?: string[]`, `permissionMode?: PermissionMode`
+- `model?: ModelName`, `effort?: EffortLevel`
+- `tools: string[]`, `disallowedTools?: string[]`, `permissionMode?: PermissionMode`
+- `isolation?: AgentIsolation`, `experimental?: { cacheTtl?: CacheTtl }`
 - `hooks?: Record<string, AgentHookDefinition[]>`, `outputFormat?: string`
 
 ### SkillGroupRule (`src/cli/types/matrix.ts`)

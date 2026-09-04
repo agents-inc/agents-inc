@@ -544,12 +544,12 @@ flattening lost it, and nothing left for the generator to write.
 
 **Emission properties, all deliberate:**
 
-| Property                               | Mechanism                                                                                                        |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `AGENT_DEFINITIONS` is sorted          | `.sort((a, b) => a.id.localeCompare(b.id))` in `agentDefinitionsFile` — an unsorted emit would diff on every run |
-| Absent metadata fields are omitted     | `serializeAgentDefinition` filters `value !== undefined`, so no key is written as an explicit `undefined`        |
-| `_templates` is skipped                | `RESERVED_FLAVOR_PREFIX = "_"` filters the flavor directories                                                    |
-| `flavor` and `path` come from the tree | `path` is `${flavor}/${agent}`, derived from the directory, not from `metadata.yaml`                             |
+| Property                               | Mechanism                                                                                                                                                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_DEFINITIONS` is sorted          | `.sort((a, b) => bytewise(a.id, b.id))` in `agentDefinitionsFile` — the output is committed and byte-compared by `check`, so the order has to be the comparator's rather than the running machine's collation |
+| Absent metadata fields are omitted     | `serializeAgentDefinition` filters `value !== undefined`, so no key is written as an explicit `undefined`                                                                                                     |
+| `_templates` is skipped                | `RESERVED_FLAVOR_PREFIX = "_"` filters the flavor directories                                                                                                                                                 |
+| `flavor` and `path` come from the tree | `path` is `${flavor}/${agent}`, derived from the directory, not from `metadata.yaml`                                                                                                                          |
 
 **Two entry points, and the generator is not one of them.** `generate-matrix-package.ts` exports
 `generate({ matrixRoot, cliRoot? })` and `check({ matrixRoot, cliRoot? })` and **runs nothing at

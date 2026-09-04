@@ -170,7 +170,7 @@ because what a total counts is the half that drifts silently. "TypeScript files"
 `.tsx` here, `.d.ts` included; `src/cli/` has both extensions and `e2e/` has none of the second, so
 a reader who guesses wrong is right about one of them and cannot tell which.
 
-- **`src/cli/`:** 447 TypeScript files — 199 specs (`*.test.ts(x)`), the rest production and test
+- **`src/cli/`:** 458 TypeScript files — 208 specs (`*.test.ts(x)`), the rest production and test
   support.
 
   ```

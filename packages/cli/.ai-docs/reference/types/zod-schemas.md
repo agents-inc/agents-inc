@@ -17,7 +17,7 @@ last_validated: 2026-08-09
 
 All schemas in `src/cli/lib/schemas.ts`. Zod major version **4** (`"zod": "^4.4.3"` in `package.json`) — `.passthrough()` and `.strict()` are still the idioms in use; the file does not use `z.looseObject` / `z.strictObject`.
 
-**34 exported schemas** — `grep -cP "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`. The
+**36 exported schemas** — `grep -cP "^export const [a-zA-Z]+Schema" src/cli/lib/schemas.ts`. The
 four tables below partition them exactly; every exported schema appears in one, and none appears in
 two. **Re-derive the four sub-counts and their membership in the same pass as the total** — a total
 corrected alone over stale sub-tables is how this document drifts, because each table then reads as
@@ -37,11 +37,11 @@ disagreeing on every name in it.
 
 | Table                                                                        | Count  |
 | ---------------------------------------------------------------------------- | ------ |
-| [Bridge](#bridge-schemas-union-type-validation)                              | 5      |
+| [Bridge](#bridge-schemas-union-type-validation)                              | 6      |
 | [Loader](#loader-schemas-lenient-passthrough)                                | 7      |
-| [Structural](#structural-schemas-data-shapes)                                | 15     |
+| [Structural](#structural-schemas-data-shapes)                                | 16     |
 | [Strict validation](#strict-validation-schemas-strict-reject-unknown-fields) | 7      |
-| **Total**                                                                    | **34** |
+| **Total**                                                                    | **36** |
 
 > **This doc's scope is `src/cli/lib/schemas.ts` only** (see the first line of this section), so the count above is narrower than "every Zod schema in the CLI". The seed wire contract is a Zod schema **outside** this doc's scope, and outside this package: it lives in `packages/matrix/src/seed.ts`, imported as `@workspace/matrix/seed` — see [features/seed-contract.md](../features/seed-contract.md). Ten of the schemas below are additionally emitted as JSON Schema by `scripts/generate-json-schemas.ts`, and the JSON-Schema-visible shape differs from the Zod shape in specific ways (`superRefine` invisible, `as z.ZodType<T>` casts invisible, plain `z.object` closing to `additionalProperties: false`) — see [features/code-generation.md](../features/code-generation.md).
 
@@ -56,6 +56,7 @@ disagreeing on every name in it.
 | `modelNameSchema`      | ModelName union      | `z.enum(MODEL_NAMES)` bridge                            |
 | `effortLevelSchema`    | EffortLevel union    | `z.enum(EFFORT_NAMES)` bridge                           |
 | `permissionModeSchema` | PermissionMode union | `z.enum(PERMISSION_MODES)` bridge                       |
+| `agentIsolationSchema` | AgentIsolation union | `z.enum(AGENT_ISOLATIONS)` bridge                       |
 
 `effortLevelSchema` has four consumers (`agentYamlConfigSchema`, `projectConfigLoaderSchema.agents`, `agentYamlGenerationSchema`, `agentFrontmatterValidationSchema`) — the full `model` / `effort` chain is in [features/model-and-effort.md](../features/model-and-effort.md).
 
@@ -110,35 +111,70 @@ The one `superRefine` in `schemas.ts` is `renamedFieldGuard`, over `refuseRename
 
 ### Structural Schemas (data shapes)
 
-| Schema                      | Validates                           | Pattern                                     |
-| --------------------------- | ----------------------------------- | ------------------------------------------- |
-| `matrixRawMetadataSchema`   | Raw metadata.yaml (matrix loader)   | `z.object()` (no passthrough / superRefine) |
-| `skillCategoriesFileSchema` | skill-categories.ts                 | `z.object()`                                |
-| `skillRulesFileSchema`      | skill-rules.ts                      | `z.object()`                                |
-| `stacksConfigSchema`        | stacks.ts                           | `z.object()`                                |
-| `marketplaceSchema`         | marketplace.json                    | Bridge pattern                              |
-| `pluginManifestSchema`      | plugin.json                         | Bridge pattern                              |
-| `agentYamlConfigSchema`     | agent metadata.yaml                 | Bridge pattern                              |
-| `skillAssignmentSchema`     | SkillAssignment                     | Bridge pattern                              |
-| `stackAgentConfigSchema`    | Stack agent config record           | `z.record()` + union                        |
-| `pluginAuthorSchema`        | PluginAuthor                        | Bridge pattern                              |
-| `agentHookActionSchema`     | AgentHookAction                     | Bridge pattern                              |
-| `agentHookDefinitionSchema` | AgentHookDefinition                 | Bridge pattern                              |
-| `hooksRecordSchema`         | Hooks record (lenient)              | `z.record()` + array                        |
-| `strictHooksRecordSchema`   | Hooks record (strict)               | `z.record()` + min(1)                       |
-| `sourceRevalidationSchema`  | `<cacheDir>.etag.json` fetch record | `z.object()`                                |
+| Schema                      | Validates                             | Pattern                                     |
+| --------------------------- | ------------------------------------- | ------------------------------------------- |
+| `matrixRawMetadataSchema`   | Raw metadata.yaml (matrix loader)     | `z.object()` (no passthrough / superRefine) |
+| `skillCategoriesFileSchema` | skill-categories.ts                   | `z.object()`                                |
+| `skillRulesFileSchema`      | skill-rules.ts                        | `z.object()`                                |
+| `stacksConfigSchema`        | stacks.ts                             | `z.object()`                                |
+| `marketplaceSchema`         | marketplace.json                      | Bridge pattern                              |
+| `pluginManifestSchema`      | plugin.json                           | Bridge pattern                              |
+| `agentYamlConfigSchema`     | agent metadata.yaml                   | Bridge pattern                              |
+| `skillAssignmentSchema`     | SkillAssignment                       | Bridge pattern                              |
+| `stackAgentConfigSchema`    | Stack agent config record             | `z.record()` + union                        |
+| `pluginAuthorSchema`        | PluginAuthor                          | Bridge pattern                              |
+| `agentHookActionSchema`     | AgentHookAction                       | Bridge pattern                              |
+| `agentHookDefinitionSchema` | `Partial<AgentHookDefinition>`        | Bridge pattern                              |
+| `agentExperimentalSchema`   | Experimental frontmatter (`cacheTtl`) | `z.object()` + `z.enum()` + `.strict()`     |
+| `hooksRecordSchema`         | Hooks record (lenient)                | `z.record()` + array                        |
+| `strictHooksRecordSchema`   | Hooks record (strict)                 | `z.record()` + min(1)                       |
+| `sourceRevalidationSchema`  | `<cacheDir>.etag.json` fetch record   | `z.object()`                                |
+
+**Four notes on the agent-frontmatter cluster, each of which was a defect once.** The first names a
+schema listed in the Bridge table above; it is here because the cluster is what makes it legible.
+
+- **`agentIsolationSchema` is a Bridge schema and is listed with the other five**, because it is
+  `z.enum(AGENT_ISOLATIONS) as z.ZodType<AgentIsolation>` rather than a literal spelling the array's
+  single member out. `AGENT_ISOLATIONS` is `["worktree"]` today, so the two forms accept the same
+  strings and only one MOVES with the vocabulary. A `satisfies z.ZodType<AgentIsolation>` does not
+  compensate: `ZodType`'s output parameter is covariant, so a narrower schema satisfies a wider one —
+  widening the array produced zero `tsc` errors while every parse of a newly-documented mode failed
+  at runtime. Its four `z.enum` siblings are the working form and always were.
+- **`agentExperimentalSchema` carries `.strict()` at its DECLARATION**, not at its use sites, and it
+  stays in this table rather than moving to the strict one below: the partition here is by ROLE — a
+  nested data shape several parents embed, versus a top-level validation boundary — and not by
+  whether a schema happens to call `.strict()`. `strictHooksRecordSchema` sits here for the same
+  reason. The site that most needed the strictness never had it: `agentYamlConfigSchema` reads a
+  hand-authored `metadata.yaml`, and a plain `z.object` there emptied
+  `experimental: { cacheTtlSeconds: "1h" }` to `{}` before either strict reader saw it — the template
+  then emitted `experimental: {}` (Liquid reads an empty hash as truthy) and the reader had nothing
+  left to refuse.
+- **`agentHookDefinitionSchema` validates `Partial<AgentHookDefinition>`**, and `hooksRecordSchema`
+  over it is now the `plugin.json` boundary's alone — `pluginManifestObjectSchema` is its only
+  consumer. Nothing in this CLI reads a manifest's hooks (`pluginManifestSchema`'s two callers take
+  `name` and `version`), and both degrade to skipping the plugin when the parse throws, so refusing a
+  shape nobody reads would drop the whole plugin from discovery.
+- **`agentYamlConfigSchema.hooks` is `strictHooksRecordSchema`.** The lenient record used to sit
+  there and every key its definition declares is optional, so a block written with its actions one
+  level flat was stripped to `{}` with no error, `agent.liquid` emitted the empty definition, and the
+  refusal arrived from the frontmatter reader against a compiled `.md` the user never wrote.
+  `agentYamlConfigSchema` is the last boundary that still knows which `metadata.yaml` the value came
+  from. Its `hooks`, `isolation` and `experimental` are deliberately the same three schemas
+  `agentFrontmatterValidationSchema` reads the compiled agent back through — `agent.liquid` writes
+  all three from what the load returned, so a value one accepts and the other refuses is a compiled
+  agent this CLI cannot read back.
 
 ### Strict Validation Schemas (`.strict()`, reject unknown fields)
 
-| Schema                             | Validates              | Pattern      |
-| ---------------------------------- | ---------------------- | ------------ |
-| `metadataValidationSchema`         | Strict metadata        | `.strict()`  |
-| `customMetadataValidationSchema`   | Custom skill metadata  | `z.object()` |
-| `agentYamlGenerationSchema`        | Compiled agent output  | `.strict()`  |
-| `agentFrontmatterValidationSchema` | AGENT.md frontmatter   | `.strict()`  |
-| `skillFrontmatterValidationSchema` | SKILL.md frontmatter   | `.strict()`  |
-| `pluginManifestValidationSchema`   | plugin.json strict     | `.strict()`  |
-| `stackConfigValidationSchema`      | Published stack config | `.strict()`  |
+| Schema                             | Validates                                                                                          | Pattern      |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- | ------------ |
+| `metadataValidationSchema`         | Strict metadata                                                                                    | `.strict()`  |
+| `customMetadataValidationSchema`   | Custom skill metadata                                                                              | `z.object()` |
+| `agentYamlGenerationSchema`        | Source agent metadata.yaml (compilation's INPUT — compiling an agent writes one `.md` and no YAML) | `.strict()`  |
+| `agentFrontmatterValidationSchema` | Compiled agent `.md` frontmatter                                                                   | `.strict()`  |
+| `skillFrontmatterValidationSchema` | SKILL.md frontmatter                                                                               | `.strict()`  |
+| `pluginManifestValidationSchema`   | plugin.json strict                                                                                 | `.strict()`  |
+| `stackConfigValidationSchema`      | Published stack config                                                                             | `.strict()`  |
 
 > **`customMetadataValidationSchema` is the one member of this table without `.strict()`.** It is `skillMetadataBaseSchema.extend({ category: z.string(), slug: kebab-case string })` with no unknown-key policy, so it **strips** unknown fields rather than rejecting them — deliberately relaxed, because custom skills may define their own categories. Every other row rejects unknown keys.
 

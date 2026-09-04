@@ -206,19 +206,23 @@ compile.run()
   |     -> getAgentDefinitions() + loadMergedAgents()
   |-> buildCompilePasses()  // scopeFilter set only when hasBoth
   |-> per pass:
+  |     seatedMatrix = seatMatrixForPass(passProjectDir)  // seats the singleton AND returns it; first
   |     discoverInstalledSkills(passProjectDir)
-  |       -> zero skills: refreshConfigTypes() then skip the pass
+  |       -> zero skills: refreshConfigTypes(pass, cwd, seatedMatrix) then skip the pass
   |     warnUnresolvedStackSkills()
   |     compileAgents({ ..., outputDir, scopeFilter? })
   |       -> prunes stale compiled agents only when scopeFilter is absent
   |       -> zero agents on the Project pass: hintGlobalScopedAgents()
-  |     refreshConfigTypes()                                 // config-gate::reconcileTypesFromDisk
+  |     refreshConfigTypes(pass, cwd, seatedMatrix)          // config-gate::reconcileTypesFromDisk
+  |       -> seatedMatrix === null: warn and return, writing nothing
   |       -> home pass: fan out to registered projects + recompile their agents
   |       -> reportPropagation(report)                      // skipped warns + recompile line
   |-> zero passes with skills => this.error(...)
 ```
 
-`refreshConfigTypes` loads the matrix with `{ skipExtraSources: true, matrixOnly: true }` so the pass stays offline on a cold cache, then calls `reconcileTypesFromDisk(pass.projectDir, loaded.config, { matrix, agents }, { currentProjectDir: cwd })`. Failure is a warning, never fatal — the agents are already written. `reportPropagation` is deliberately OUTSIDE that catch: a project the fan-out could not reach is reported as that, not as a failure to refresh the unions, which did succeed. `currentProjectDir: cwd` keeps the home pass from reaching a registered project whose own pass is about to compile it. See the "`compile` Regenerates `config-types.ts`" section of [Compilation Pipeline](./compilation-pipeline.md).
+`seatMatrixForPass` loads the matrix with `{ projectDir, skipExtraSources: true, matrixOnly: true }` so the pass stays offline on a cold cache. It does two things with one load: it seats the `matrix` singleton that `compileAgents`' render path reads through `statedUsageFor` and `liveCategoryOf`, and it RETURNS the catalogue as `MergedSkillsMatrix | null`. `runCompilePass` holds that value and hands it to `refreshConfigTypes`, which passes it on as `reconcileTypesFromDisk(pass.projectDir, loaded.config, { matrix: seatedMatrix, agents }, { currentProjectDir: cwd })` — rather than reading the singleton back, which could not say which seat it got.
+
+**The two halves take opposite postures on a failed load.** The render DEGRADES: the singleton keeps whatever it held, and a local skill's usage line falls back to the per-category placeholder. The type refresh ABORTS on `null` — it warns `configTypesRefreshFailed("no skills catalogue could be loaded for <projectDir>")` and writes no `config-types.ts` at all, because every union it emits is derived from the catalogue. Any other failure of the refresh is also a warning and never fatal — the agents are already written. `reportPropagation` is deliberately OUTSIDE that catch: a project the fan-out could not reach is reported as that, not as a failure to refresh the unions, which did succeed. `currentProjectDir: cwd` keeps the home pass from reaching a registered project whose own pass is about to compile it. See the "`compile` Regenerates `config-types.ts`" section of [Compilation Pipeline](./compilation-pipeline.md).
 
 ### Edit Command Flow
 

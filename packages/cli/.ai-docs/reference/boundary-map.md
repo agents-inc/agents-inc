@@ -313,16 +313,21 @@ Both use `readFileSafe(MAX_CONFIG_FILE_SIZE)` -> `JSON.parse()` -> `installedPlu
 
 **Why it matters:** without `matrixOnly` the default-source path performs a git clone on a cold cache. `compile` and `uninstall` both need a matrix but no skill files, and both must work offline.
 
-Three production sites pass it — re-derive with
-`grep -rn 'matrixOnly: true' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts'`:
+Every production site that passes it, and what each one wants a matrix for. Re-derive the membership
+with
+`grep -rn 'matrixOnly: true' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts'`; the
+full caller roster including the sites that pass neither flag is
+[skills-and-matrix.md § Call sites](./features/skills-and-matrix.md), and the two tables move
+together:
 
-| Caller                                     | Options                                    | Purpose                                                                                                  |
-| ------------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `Compile.refreshConfigTypes()`             | `skipExtraSources: true, matrixOnly: true` | Regenerate `config-types.ts` for the compiled scope without touching the network.                        |
-| `Uninstall.prepareGlobalPropagation()`     | `skipExtraSources: true, matrixOnly: true` | Load the matrix needed to prune registered projects before the global manifest is deleted.               |
-| `lazyGateDeps()` in `config-gate/index.ts` | `skipExtraSources: true, matrixOnly: true` | Load the matrix a consequence tier needs, through the lazy `await import` that keeps lib off operations. |
+| Caller                                                    | Options                                    | Purpose                                                                                                                                                              |
+| --------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Compile.seatMatrixForPass()`                             | `skipExtraSources: true, matrixOnly: true` | Seat the `matrix` singleton for the pass AND return the catalogue, which `refreshConfigTypes()` is handed as a parameter while the render path reads the seat.       |
+| `withCatalogueSeatedFor()` in `loading/catalogue-seat.ts` | `skipExtraSources: true, matrixOnly: true` | Seat ONE registered project's own catalogue for the duration of a fan-out body, then restore the caller's. Reached from `propagate.ts` and the propagated recompile. |
+| `Uninstall.prepareGlobalPropagation()`                    | `skipExtraSources: true, matrixOnly: true` | Capture the pre-removal global data. The catalogue half reaches no reader — `propagateGlobalRemoval` passes only `deps.agents` on.                                   |
+| `lazyGateDeps()` in `config-gate/index.ts`                | `skipExtraSources: true, matrixOnly: true` | Load the matrix a consequence tier needs, through the lazy `await import` that keeps lib off operations.                                                             |
 
-Both combinations are byte-identical to the wizard's fully-tagged load for config-types purposes — the config-types writer never reads the extra-source annotations. Pinned by the `skipExtraSources` parity test in `src/cli/lib/installation/local-installer.test.ts`.
+Both combinations are byte-identical to the wizard's fully-tagged load for config-types purposes — neither the config-types writer nor the agent render path reads the extra-source annotations. Pinned by the `skipExtraSources` parity test in `src/cli/lib/installation/local-installer.test.ts`.
 
 ---
 
@@ -364,7 +369,7 @@ move; the module column above it would not change.
 | `getGlobalConfigTypesPath()`         | `configuration/config-types-io.ts`       | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
 | `reconcileTypesFromDisk()`           | `config-gate/index.ts`                   | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
 
-**Writer Selection Rule:** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts` (the former `writeStandaloneConfigTypes()` export is gone).
+**Writer Selection Rule:** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts`.
 
 `reconcileTypesFromDisk(projectDir, config, deps, opts?)` holds the dispatch: `isHomeDirectory(projectDir)` -> standalone half, otherwise import-and-extend. `commands/compile.ts` calls it once per compile pass, including the pass that found no installed skills — the persisted config, not the discovered skills, drives the unions. At `$HOME` it also fans the config out to every registered project and recompiles their agents, unconditionally: a hand-edited `config.ts` leaves no prior state to classify against.
 
@@ -786,7 +791,7 @@ Used for validation commands and build-time checks. Reject unknown fields via `.
 | `agentFrontmatterValidationSchema` | `schemas.ts` | Agent frontmatter strict validation        |
 | `metadataValidationSchema`         | `schemas.ts` | Published skill metadata strict validation |
 | `customMetadataValidationSchema`   | `schemas.ts` | Custom skill metadata validation           |
-| `agentYamlGenerationSchema`        | `schemas.ts` | Compiled agent metadata validation         |
+| `agentYamlGenerationSchema`        | `schemas.ts` | Source agent `metadata.yaml` validation    |
 | `stackConfigValidationSchema`      | `schemas.ts` | Published stack config validation          |
 
 ### Utility Schemas (Shared Building Blocks)
