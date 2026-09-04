@@ -35,7 +35,7 @@
     "@workspace/prettier-config": "workspace:*",
     "husky": "^9.1.7",
     "knip": "^6.32.0",
-    "lint-staged": "^15.2.0",
+    "lint-staged": "^17.4.1",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "syncpack": "^15.3.2",
