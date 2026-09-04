@@ -10,12 +10,15 @@ import { claimSlug } from "../matrix/skill-resolution.js";
 import { validateSkillPath } from "../skills/skill-copier.js";
 import {
   injectForkedFromMetadata,
+  readForkedFromMetadata,
   readLocalSkillMetadata,
   writeMetadataYaml,
 } from "../skills/skill-metadata.js";
+import { defaultUsageGuidance } from "../stacks/stacks-loader.js";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix.js";
 import { computeFileHash } from "../versioning.js";
-import { glob, readFile, writeFile } from "../../utils/fs.js";
-import { typedEntries } from "../../utils/typed-object.js";
+import { directoryExists, glob, readFile, writeFile } from "../../utils/fs.js";
+import { typedEntries, typedKeys } from "../../utils/typed-object.js";
 
 import type { SkillScope } from "../../types/config.js";
 import type { Domain, MergedSkillsMatrix, ResolvedSkill } from "../../types/matrix.js";
@@ -79,6 +82,79 @@ function selectedExternals(payload: SeedPayload): SelectedExternal[] {
 
 function askedForAsPlugin(externals: SelectedExternal[]): SkillId[] {
   return externals.filter(({ entry }) => entry.install !== "eject").map(({ id }) => id);
+}
+
+/**
+ * Names every carried skill claiming an id a catalogue already owns, not just the first.
+ *
+ * A skill id is the directory the skill installs into, so a carried skill taking a catalogue id
+ * writes its own bytes where that catalogue's own copy belongs, and the id every sub-agent
+ * references afterwards resolves to whatever the payload shipped. Nothing later can tell the two
+ * apart either: the local-skill merge inherits an incumbent's `displayName`, `slug` and `category`
+ * on the next load, so the impostor renders under the catalogue's own name and placement.
+ *
+ * **The union of two catalogues, and each half answers what the other cannot.** The LOADED matrix
+ * catches the same defect one marketplace along — an external id colliding with a loaded custom
+ * marketplace's own ids, which the shipped set has never heard of. The SHIPPED catalogue is the
+ * half no payload can move: `sharedConfigSourceFlags` in `commands/init.tsx` passes
+ * `payload.marketplace` to the loader, so a payload naming a marketplace that does not ship the id
+ * it impersonates meets no incumbent in the loaded matrix at all — which is exactly why
+ * `refuseCatalogueCollisions` in `loading/source-loader.ts` reads {@link BUILT_IN_MATRIX} and says
+ * so: nothing a source ships is unforgeable, so the consumer's own load has to ask the question
+ * again of a set the source cannot choose.
+ */
+function claimingACatalogueId(
+  externals: SelectedExternal[],
+  matrix: MergedSkillsMatrix,
+): SkillId[] {
+  return externals.filter(({ id }) => heldByEitherCatalogue(id, matrix)).map(({ id }) => id);
+}
+
+/** Every skill id the shipped catalogue owns — the half of the incumbent set a payload cannot move. */
+const CATALOGUE_SKILL_IDS: ReadonlySet<SkillId> = new Set(typedKeys(BUILT_IN_MATRIX.skills));
+
+function heldByEitherCatalogue(id: SkillId, matrix: MergedSkillsMatrix): boolean {
+  return heldByLoadedCatalogue(matrix.skills[id]) || CATALOGUE_SKILL_IDS.has(id);
+}
+
+/**
+ * Whether the LOADED matrix's entry for an id is one a payload has no right to write over.
+ *
+ * An incumbent this installation merged off its own disk is not a collision on this axis.
+ * `edit --from` applies destructively over an existing install and hands this the source's matrix,
+ * which has already had the local-skill merge run over it — so a carried skill a previous apply
+ * wrote arrives back here seated and `local`, and refusing it would make a shared configuration
+ * installable exactly once. The same carve-out {@link claimSlug} makes for a claim it already
+ * holds, on the axis the merge already treats as override-able.
+ *
+ * `local` is all the matrix can say, and it says less than it looks like: the merge writes that
+ * flag on EVERYTHING it finds, so a skill the user wrote by hand wears it too, and a directory
+ * carrying no `metadata.yaml` at all never reaches the matrix to be asked. Which directories this
+ * installation may actually be written over is therefore settled on disk rather than here — see
+ * {@link refuseUncarriedDestinations}.
+ */
+function heldByLoadedCatalogue(incumbent: ResolvedSkill | undefined): boolean {
+  return incumbent !== undefined && incumbent.local !== true;
+}
+
+/**
+ * Every colliding id at once, and the fix rather than only the fault.
+ *
+ * Not truncated, unlike the marketplace refusal's list in `loading/source-loader.ts`: that one
+ * reports a whole repository's directory scan, where hundreds of ids can collide at once, while
+ * these are the skills one sharer added by hand to one configuration. {@link pluginInstallError}
+ * draws from the same set and names all of it, and two refusals over one set disagreeing about
+ * that would be an inconsistency with nothing behind it.
+ */
+function catalogueIdCollisionError(ids: SkillId[]): string {
+  return [
+    "This configuration cannot be installed: these skills travel inside it under ids a " +
+      "catalogue already owns:",
+    ...ids.map((id) => `  ${id}`),
+    "A skill id is the directory the skill installs into, so each would be written over the " +
+      "catalogue's own copy of that skill. Re-share it with each skill above added again, which " +
+      "mints an id — 'external-<category>-<name>' — that no catalogue owns.",
+  ].join("\n");
 }
 
 /**
@@ -179,8 +255,17 @@ function seatExternalSkill(
  * skills it discovers on disk. That matrix is the object `initializeMatrix` seated, which is what
  * {@link getCategoryDomain} reads — every caller passes the loaded source's own.
  *
+ * Both refusals are decided before anything is seated, because the seat writes into `matrix` in
+ * place: a guard placed after it would stop the run having already replaced entries every later
+ * read in this process resolves, and a guard that threw on the first collision it met would have
+ * overwritten whatever it seated on the way there.
+ *
+ * The third refusal is not here. Whether a DIRECTORY may be written over is a question about the
+ * disk rather than about the catalogue, and {@link writeExternalSkills} is where it is asked.
+ *
  * @throws {Error} If any carried skill asks to be installed as a plugin — see
- *   {@link pluginInstallError}.
+ *   {@link pluginInstallError} — or claims an id either catalogue already owns, see
+ *   {@link catalogueIdCollisionError}.
  */
 export function registerExternalSkills(
   payload: SeedPayload,
@@ -189,8 +274,10 @@ export function registerExternalSkills(
 ): ExternalSkillInstall[] {
   const externals = selectedExternals(payload);
   const asPlugin = askedForAsPlugin(externals);
+  const colliding = claimingACatalogueId(externals, matrix);
 
   if (asPlugin.length > 0) throw new Error(pluginInstallError(asPlugin));
+  if (colliding.length > 0) throw new Error(catalogueIdCollisionError(colliding));
 
   return externals.flatMap((external) => seatExternalSkill(external, matrix, projectDir));
 }
@@ -202,13 +289,78 @@ export function registerExternalSkills(
  * skill answers to the id the configuration recorded, and a metadata.yaml describes it well
  * enough for the next `edit`, `compile` or `list` to find it again. The seat above lasts one run;
  * this is what makes the install survive.
+ *
+ * @throws {Error} If any destination is a directory this installation did not receive inside a
+ *   shared configuration — see {@link refuseUncarriedDestinations}.
  */
 export async function writeExternalSkills(installs: ExternalSkillInstall[]): Promise<void> {
+  await refuseUncarriedDestinations(installs);
+
   for (const install of installs) {
     await writeSkillTree(install);
     await writeSkillManifest(install);
     await registerSkillOnDisk(install);
   }
+}
+
+/** One destination a carried skill's bytes may not be written to, and what stands there. */
+type BlockedDestination = { id: SkillId; skillDir: string };
+
+/**
+ * Refuses the run when any destination already holds content no shared configuration carried.
+ *
+ * **This is the disk half of the collision question, and the matrix cannot answer it.**
+ * {@link heldByLoadedCatalogue} carves out every `local` incumbent so a re-apply works, and the
+ * local-skill merge writes `local` on everything it merges — so that carve-out also exempts a
+ * skill the user wrote by hand and a marketplace skill ejected here, neither of which is the
+ * round trip's to replace. Worse, a directory with no readable `metadata.yaml` never reaches the
+ * matrix at all, so no in-memory guard, with or without a provenance field on `ResolvedSkill`,
+ * could ever see it. The bytes are the subject, so the bytes are what is asked.
+ *
+ * `forkedFrom.path` is the discriminator, not `forkedFrom` itself: {@link registerSkillOnDisk} is
+ * the only writer of that field — `copySkillTo` deliberately omits it, because a marketplace skill
+ * is installed again by its id — and {@link readCarriedSkill} reads it for this exact question one
+ * layer up. So a directory that names the repository directory its bytes came from is one a
+ * shared configuration put here, and everything else is somebody else's.
+ *
+ * Every destination is judged before any is written, for the same reason the two refusals in
+ * {@link registerExternalSkills} are decided before anything is seated: a guard that threw on the
+ * first blocked destination it met would have overwritten whatever it wrote on the way there.
+ */
+async function refuseUncarriedDestinations(installs: ExternalSkillInstall[]): Promise<void> {
+  const judged = await Promise.all(installs.map(judgeDestination));
+  const blocked = judged.filter((destination) => destination !== null);
+
+  if (blocked.length > 0) throw new Error(uncarriedDestinationError(blocked));
+}
+
+/** One destination: the row a refusal would name, or nothing standing there to protect. */
+async function judgeDestination(install: ExternalSkillInstall): Promise<BlockedDestination | null> {
+  const { id, skillDir } = install;
+  if (!(await directoryExists(skillDir))) return null;
+  if ((await readForkedFromMetadata(skillDir))?.path !== undefined) return null;
+  return { id, skillDir };
+}
+
+/**
+ * Every blocked destination at once, with the directory beside the id.
+ *
+ * The path is what makes this actionable and is what the collision message above cannot say: the
+ * fix is the RECEIVER's rather than the sharer's, because the directory is theirs — so the message
+ * has to name a path they can move, and a user must be able to copy any line of it and `cd` into
+ * it. Both ways out are offered, because only the user knows whose skill matters more.
+ */
+function uncarriedDestinationError(blocked: BlockedDestination[]): string {
+  return [
+    "This configuration cannot be installed: these skills travel inside it under ids this " +
+      "installation already keeps a skill directory for, and no shared configuration put those " +
+      "directories there:",
+    ...blocked.map(({ id, skillDir }) => `  ${id}  ->  ${skillDir}`),
+    "A skill id is the directory the skill installs into, so each would be written over a skill " +
+      "written here by hand or ejected from a marketplace. Move or rename the directory above, " +
+      "or re-share the configuration with each skill added again, which mints an id — " +
+      "'external-<category>-<name>' — that nothing here holds.",
+  ].join("\n");
 }
 
 /**
@@ -277,8 +429,12 @@ async function writeSkillManifest(install: ExternalSkillInstall): Promise<void> 
  * The defaults underneath exist because `doctor` validates every installed metadata.yaml, and a
  * file this command writes that that command reports as an error is the CLI disagreeing with
  * itself — in a file the user cannot fix, since the skill is somebody else's repository. Neither
- * is invented: the authorship is the repository's owner, and the usage line is the same words the
- * stack loader already writes for every skill reference it has nothing more specific for.
+ * is invented: the authorship is the repository's owner, and the usage line is
+ * {@link defaultUsageGuidance}, the same call the stack loader makes for every skill reference it
+ * has nothing more specific for. The same CALL rather than the same words — this file spelled the
+ * sentence itself until 2026-09-03, and drifted on both halves, so one carried skill's cue read
+ * `Use when working with Brainstorming` off disk and `Use when working with web-tooling.` during
+ * the run that installed it.
  */
 function externalSkillMetadata(
   install: ExternalSkillInstall,
@@ -286,7 +442,7 @@ function externalSkillMetadata(
 ): LocalSkillMetadata {
   return {
     author: skillAuthor(install.skill.repo),
-    usageGuidance: `Use when working with ${install.skill.displayName}`,
+    usageGuidance: defaultUsageGuidance(install.skill.categoryId),
     ...shipped,
     displayName: install.skill.displayName,
     slug: install.id,

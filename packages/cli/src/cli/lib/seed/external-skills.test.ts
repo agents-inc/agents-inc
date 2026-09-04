@@ -1,5 +1,5 @@
 import path from "path";
-import { readFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import { parse as parseYaml } from "yaml";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,14 +18,15 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../__tests__/factories/seed-factories.js";
-import { sa } from "../__tests__/factories/skill-factories.js";
-import { renderSkillMd } from "../__tests__/content-generators.js";
+import { createMockSkill, sa } from "../__tests__/factories/skill-factories.js";
+import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { FALLBACK_USAGE } from "../__tests__/mock-data/mock-skills.js";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
-import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
+import { cleanupTempDir, createTempDir, fileExists } from "../__tests__/test-fs-utils.js";
 
 import type { LocalSkillMetadata } from "../skills/skill-metadata.js";
-import type { MergedSkillsMatrix, SkillId } from "../../types/index.js";
+import type { MergedSkillsMatrix, SkillId, SkillSlug } from "../../types/index.js";
 import type { SeedExternalSkill } from "@workspace/matrix/seed";
 
 /**
@@ -65,6 +66,23 @@ const WEB_DEV = "web-developer";
  * A two-token literal is the cheaper half of that trade.
  */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
+
+/**
+ * The metadata.yaml a skill EJECTED from a marketplace carries: provenance naming the id that
+ * installs it again, and no directory beside it.
+ *
+ * That absence is the whole point, and it is the generator's own shape rather than an omission
+ * arranged here — `renderMetadataYaml`'s `forkedFrom` has no `path` field, because `copySkillTo`
+ * writes none. Only a skill a shared configuration CARRIED records where inside a repository its
+ * bytes came from, since that pair is the only address it has.
+ */
+const EJECTED_SKILL_METADATA = renderMetadataYaml({
+  author: "@acme",
+  displayName: "Acme House Style",
+  category: "web-framework",
+  contentHash: "abc1234",
+  forkedFrom: { skillId: SECOND_EXTERNAL_ID, contentHash: "abc1234", date: "2026-01-01" },
+});
 
 /**
  * A fresh matrix per spec rather than a shared constant from `mock-matrices.ts`: registration
@@ -205,6 +223,109 @@ describe("registerExternalSkills", () => {
     });
   });
 
+  it("refuses a carried skill claiming an id the catalogue already owns, naming every one", () => {
+    const catalogue = createMockMatrix(SKILLS.react, SKILLS.vue, {
+      categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }),
+    });
+    initializeMatrix(catalogue);
+    const payload = buildSeedPayload({
+      skills: {
+        [SKILLS.react.id]: buildSeedSkill(),
+        [SKILLS.vue.id]: buildSeedSkill(),
+      },
+      external: {
+        [SKILLS.react.id]: buildSeedExternalSkill(),
+        [SKILLS.vue.id]: buildSeedExternalSkill(),
+      },
+    });
+
+    // A skill id is the directory the skill installs into, so a carried skill taking a catalogue
+    // id writes its own bytes where the catalogue's copy belongs — and every consumer downstream
+    // reads the payload's content under the catalogue's name. Both ids are named at once for the
+    // same reason the plugin refusal names both: a sharer who fixes one only to be refused for
+    // the next learns nothing the first message could not have told them.
+    expect(() => registerExternalSkills(payload, catalogue, projectDir)).toThrow(
+      new RegExp(`${SKILLS.react.id}[\\s\\S]*${SKILLS.vue.id}`),
+    );
+    // Both incumbents are still the catalogue's, which is the half a thrown error does not prove:
+    // the seat writes into the matrix in place, so a guard placed after it would refuse the run
+    // having already replaced the entries every later read in this process resolves. Both,
+    // because a guard that throws on the FIRST collision it meets has already overwritten
+    // whatever it seated on the way there, and only the second entry can show that.
+    expect([catalogue.skills[SKILLS.react.id], catalogue.skills[SKILLS.vue.id]]).toStrictEqual([
+      SKILLS.react,
+      SKILLS.vue,
+    ]);
+  });
+
+  it("refuses a carried skill claiming a shipped catalogue id the loaded matrix does not carry", () => {
+    // The payload chooses which catalogue is loaded — `sharedConfigSourceFlags` in
+    // `commands/init.tsx` passes `payload.marketplace` to the loader — so a payload naming a
+    // marketplace that does not ship the id it impersonates meets no incumbent in the matrix
+    // this function is handed. The shipped catalogue is the half no payload can move, which is
+    // why `refuseCatalogueCollisions` in `loading/source-loader.ts` reads it, and this asks the
+    // same question of the same set.
+    const otherMarketplace = createMockMatrix(SKILLS.vue, {
+      categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }),
+    });
+    initializeMatrix(otherMarketplace);
+    const payload = buildSeedPayload({
+      skills: { [SKILLS.react.id]: buildSeedSkill() },
+      external: { [SKILLS.react.id]: buildSeedExternalSkill() },
+    });
+
+    // The subject guard: with the id seated here the refusal would be the loaded-matrix arm's,
+    // and this spec would pass against the build it exists to red.
+    expect(
+      otherMarketplace.skills[SKILLS.react.id],
+      "the matrix the payload steered must not carry the impersonated id",
+    ).toBeUndefined();
+    expect(() => registerExternalSkills(payload, otherMarketplace, projectDir)).toThrow(
+      SKILLS.react.id,
+    );
+    expect(otherMarketplace.skills[SKILLS.react.id]).toBeUndefined();
+  });
+
+  it("seats a carried skill over this installation's own copy, so re-applying is not a collision", () => {
+    // What `edit --from` hands this function on a SECOND apply: the id is in the matrix because
+    // the local-skill merge read the directory a previous apply wrote, not because a marketplace
+    // ships it. Refusing that would make a shared configuration installable exactly once.
+    //
+    // `category` and `slug` are stated because `createMockSkill` throws for an id its canonical
+    // registry does not carry, and a skill outside every catalogue is outside that table by
+    // construction. Neither is read off the id's segments: the category is the one the payload
+    // below confirms and this matrix declares, and slug-equals-id is what `externalSlug` makes
+    // true of every carried skill — a skill answering to no catalogue has no shorter name, and the
+    // cast is that function's own (`return id as SkillSlug`) rather than a second opinion.
+    const carried = buildSeedExternalSkill();
+    const withOwnCopy = createMockMatrix(
+      createMockSkill(EXTERNAL_ID, {
+        category: "web-framework",
+        slug: EXTERNAL_ID as SkillSlug,
+        local: true,
+        custom: true,
+      }),
+      { categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }) },
+    );
+    initializeMatrix(withOwnCopy);
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill() },
+      external: { [EXTERNAL_ID]: carried },
+    });
+
+    expect(registerExternalSkills(payload, withOwnCopy, projectDir).map(({ id }) => id)) //
+      .toStrictEqual([EXTERNAL_ID]);
+    // The mirror of the refusal above, and what makes the pair a control rather than two specs
+    // about different things: there the incumbent had to SURVIVE, here it has to be replaced by
+    // the payload's own entry. Held against the values the payload carries rather than literals,
+    // because the local copy's own displayName and description are what a seat that silently
+    // did nothing would leave behind.
+    expect(withOwnCopy.skills[EXTERNAL_ID]).toMatchObject({
+      displayName: carried.displayName,
+      description: carried.description,
+    });
+  });
+
   it("refuses to install an added skill as a plugin, naming every one", () => {
     const payload = buildSeedPayload({
       skills: {
@@ -258,6 +379,21 @@ describe("writeExternalSkills", () => {
     });
     await writeExternalSkills(registerExternalSkills(payload, matrix, projectDir));
     return path.join(resolveInstallPaths(projectDir, scope).skillsDir, EXTERNAL_ID);
+  }
+
+  /**
+   * A skill directory already standing where a carried skill's bytes would land, described by
+   * `metadata` — or by nothing at all, which is how a skill somebody wrote by hand most often
+   * arrives.
+   */
+  async function standingSkillDir(id: SkillId, metadata: string | null): Promise<string> {
+    const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, id);
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(id));
+    if (metadata !== null) {
+      await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), metadata);
+    }
+    return skillDir;
   }
 
   it("writes the whole directory it was given, nesting and all", async () => {
@@ -377,6 +513,81 @@ describe("writeExternalSkills", () => {
       source: "github:obra/superpowers",
       path: "skills/brainstorming",
     });
+  });
+
+  it("states when to reach for the skill in the same sentence the stack loader falls back to", async () => {
+    const skillDir = await install(
+      buildSeedExternalSkill({ categoryId: "web-framework" }),
+      "project",
+    );
+
+    // One sentence, one definition. A carried skill's trigger line is reachable by two routes —
+    // this file, on every load after the install, and `statedUsageFor` in
+    // `stacks/stacks-loader.ts` during the run that seats it — and the two used to disagree on
+    // both halves: the category against the display name, and a trailing period against none.
+    // Held against `FALLBACK_USAGE`, which MIRRORS the product's wording rather than importing
+    // it, so a change to the template reddens here instead of moving both sides at once.
+    const metadata: LocalSkillMetadata = parseYaml(
+      await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
+    );
+    expect(metadata.usageGuidance).toBe(FALLBACK_USAGE["web-framework"]);
+  });
+
+  it("refuses to write over a skill directory no shared configuration carried, naming every one", async () => {
+    const handAuthored = await standingSkillDir(EXTERNAL_ID, null);
+    const ejected = await standingSkillDir(SECOND_EXTERNAL_ID, EJECTED_SKILL_METADATA);
+    // Stated on both entries: the standing directories above are the project's, and the shared
+    // selection default rests at global — so a payload that said nothing would be judged against
+    // the user's own ~/.claude and meet nothing at all.
+    const payload = buildSeedPayload({
+      skills: {
+        [EXTERNAL_ID]: buildSeedSkill({ scope: "project" }),
+        [SECOND_EXTERNAL_ID]: buildSeedSkill({ scope: "project" }),
+      },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [SECOND_EXTERNAL_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    // `forkedFrom.path` is the one thing that says a directory arrived inside a shared
+    // configuration: {@link registerSkillOnDisk} is the only writer of it and `readCarriedSkill`
+    // reads it for this exact question. `local` cannot stand in for it — the local-skill merge
+    // writes that flag on everything it finds, so the user's own work and a marketplace skill
+    // ejected here both wear it. Both are named at once, for the same reason the two refusals
+    // above name every id: a user who moves one directory only to be refused for the next
+    // learns nothing the first message could not have told them.
+    await expect(writeExternalSkills(registerExternalSkills(payload, matrix, projectDir))) //
+      .rejects.toThrow(new RegExp(`${EXTERNAL_ID}[\\s\\S]*${SECOND_EXTERNAL_ID}`));
+
+    // And neither directory moved. A refusal that had already written the first of two is a
+    // refusal that destroyed what it was raised to protect.
+    expect(await readFile(path.join(handAuthored, STANDARD_FILES.SKILL_MD), "utf8")).toBe(
+      renderSkillMd(EXTERNAL_ID),
+    );
+    expect(await fileExists(path.join(handAuthored, STANDARD_FILES.METADATA_YAML))).toBe(false);
+    expect(await readFile(path.join(ejected, STANDARD_FILES.METADATA_YAML), "utf8")).toBe(
+      EJECTED_SKILL_METADATA,
+    );
+  });
+
+  it("writes over the directory a previous apply carried, so re-applying is not a refusal", async () => {
+    const skillDir = await install(buildSeedExternalSkill(), "project");
+
+    // The control for the refusal above, and the constraint the whole re-apply rests on:
+    // `edit --from` applies a shared configuration destructively over an existing install, so a
+    // carried skill a previous apply wrote is met again on the next one. Refusing it would make
+    // a shared configuration installable exactly once.
+    await install(
+      buildSeedExternalSkill({
+        files: { "SKILL.md": renderSkillMd(UPSTREAM_SKILL_NAME, "Revised upstream") },
+      }),
+      "project",
+    );
+
+    expect(await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf8")).toContain(
+      "Revised upstream",
+    );
   });
 
   it("refuses a file path that escapes the skill's own directory", async () => {

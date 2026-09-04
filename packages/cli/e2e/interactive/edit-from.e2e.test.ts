@@ -7,17 +7,25 @@ import {
   cleanupTempDir,
   listFiles,
   loadConfigOrFail,
+  readTestFile,
   readTreeSnapshot,
   renderMetadataYaml,
+  renderSkillMd,
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, FILES, REMOVED_MARKER, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
+  buildSeedExternalSkill,
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
@@ -284,5 +292,98 @@ describe("edit --from <id> interactive", () => {
       );
       expect(await listFiles(skillsPath(projectDir))).toStrictEqual([E2E_SKILL.react.id]);
     });
+  });
+
+  /**
+   * The re-apply, which is the whole reason the collision guard carves anything out at all.
+   *
+   * `edit --from` applies destructively over an existing install, so a skill a shared
+   * configuration CARRIED is met again on the next apply — seated in the matrix by the local-skill
+   * merge, and standing on disk at the id the payload is about to write. Refusing either would
+   * make a shared configuration installable exactly once, and until this leg landed the carve-out
+   * that prevents it was held by a unit spec alone.
+   *
+   * Installed by `init --from` rather than by a fixture: the provenance the guard reads is
+   * `forkedFrom.path`, which only the real installer writes, and a fixture told to stamp it
+   * agrees with whatever the installer does.
+   */
+  describe("re-applying a configuration that carries its own skill", () => {
+    const CARRIED_ID = "external-web-tooling-brainstorming";
+    const CARRIED_CATEGORY = "web-tooling";
+    const CARRIED_REPO = "obra/superpowers";
+    const CARRIED_ID_FIRST = "CarriedApply1";
+
+    /** The same configuration both times: one catalogue skill, and one it brings with it. */
+    function publishCarrying(id: string, body: string): void {
+      store.publish(
+        id,
+        buildSeedPayload({
+          skills: {
+            [E2E_SKILL.react.id]: buildSeedSkill({
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+            [CARRIED_ID]: buildSeedSkill({
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+          },
+          external: {
+            [CARRIED_ID]: buildSeedExternalSkill({
+              categoryId: CARRIED_CATEGORY,
+              repo: CARRIED_REPO,
+              files: { [FILES.SKILL_MD]: renderSkillMd("brainstorming", body) },
+            }),
+          },
+          agents: { [WEB_DEV]: { scope: "project" } },
+        }),
+      );
+    }
+
+    it(
+      "writes the carried skill again rather than refusing its own previous apply",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        const env = await createTestEnvironment({ permissions: false });
+        tempDirs.push(env.tempDir);
+        const project = { dir: env.projectDir, globalHome: env.fakeHome };
+        publishCarrying(CARRIED_ID_FIRST, "Structured brainstorming");
+        const installed = await runInitFrom(store, CARRIED_ID_FIRST, project, sourceDir);
+        expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+
+        // The same id, re-served with the skill's bytes revised — which is what a sharer who
+        // edited their own skill and re-shared produces, and the only way to tell a second write
+        // from a seat that quietly did nothing.
+        publishCarrying(CARRIED_ID_FIRST, "Revised upstream brainstorming");
+
+        prompt = new InteractivePrompt(["edit", "--from", CARRIED_ID_FIRST], project.dir, {
+          env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
+        });
+        await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+        await prompt.confirm();
+        const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+
+        expect(exitCode, `re-apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
+        // Both surfaces: a config entry for a directory nothing wrote, and a directory nothing
+        // declares, are each half of the same lie.
+        const config = await loadConfigOrFail(project.dir);
+        expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
+          [E2E_SKILL.react.id, CARRIED_ID].sort(),
+        );
+        expect(await listFiles(skillsPath(project.dir))).toStrictEqual(
+          [E2E_SKILL.react.id, CARRIED_ID].sort(),
+        );
+
+        const carriedDir = path.join(skillsPath(project.dir), CARRIED_ID);
+        expect(await readTestFile(path.join(carriedDir, FILES.SKILL_MD))).toContain(
+          "Revised upstream brainstorming",
+        );
+        // And the provenance the guard reads is still there afterwards, or the apply after this
+        // one refuses what this one allowed.
+        expect(await readTestFile(path.join(carriedDir, FILES.METADATA_YAML))).toContain(
+          `path: ${buildSeedExternalSkill().path}`,
+        );
+      },
+    );
   });
 });

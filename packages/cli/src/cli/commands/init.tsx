@@ -618,9 +618,10 @@ export default class Init extends BaseCommand {
   /**
    * Seats the catalogue entries the payload carries with it, or refuses the run.
    *
-   * The refusal is `registerExternalSkills`' own — a carried skill asked for as a plugin, which
-   * no marketplace serves — and is reported with this command's exit code for the same reason the
-   * decode's is.
+   * The refusals are `registerExternalSkills`' own — a carried skill asked for as a plugin, which
+   * no marketplace serves, and a carried skill claiming an id the loaded catalogue already owns,
+   * whose bytes would be written over that catalogue's own copy — and are reported with this
+   * command's exit code for the same reason the decode's is.
    */
   private registerExternalSkillsOrFail(
     payload: SeedPayload,
