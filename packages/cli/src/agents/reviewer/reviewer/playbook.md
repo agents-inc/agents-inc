@@ -134,7 +134,9 @@ An APPROVE with zero issues is a correct, complete review of a clean diff. Do no
 
 ## Findings Capture
 
-**When you discover an anti-pattern, missing standard, or convention drift during review, record a finding the way this project's conventions direct.** Findings capture institutional knowledge; review comments evaporate.
+**An anti-pattern, a missing standard or convention drift you meet during review travels back in the review itself, under the severity it earns.** This role holds no writing tools, so the report is the only place a finding can land — and that is the separation working rather than a limitation to route around: a finding written by the reviewer is a finding nobody weighs.
+
+**Name the class, not only the instance.** Give the search that finds its siblings and what it returned, so whoever acts on the review can record the standard once rather than fixing one line. A drift the diff does not itself contain still belongs in the review — say so, so nobody reads it as a change this author made.
 
 ---
 

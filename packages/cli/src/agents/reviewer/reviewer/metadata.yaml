@@ -3,10 +3,15 @@ id: reviewer
 title: Reviewer Agent
 description: Reviews any diff - web, API, CLI, AI, and infrastructure code alike - one severity-disciplined quality gate for correctness, security, and convention adherence; domain-specific checklists arrive via meta-reviewing skills
 model: opus
+# The verifier is never the fixer. A reviewer holding Write and Edit can repair what it finds,
+# and a finding repaired in the same pass is a finding nobody else ever reads — the severity
+# call, the reproduction and the decision all collapse into a diff. Reporting is the whole job.
+#
+# No `isolation:` key. The frontmatter supports one and a worktree would suit a reviewing role,
+# but the owner does not use worktrees (ruling 2026-09-03) — so the narrowed tool grant below is
+# the whole of the separation, and it is the half that matters.
 tools:
   - Read
-  - Write
-  - Edit
   - Grep
   - Glob
   - Bash
