@@ -60,6 +60,10 @@ function sanitizeStringArray(values: string[], fieldName: string): string[] {
  * can name any command it likes, and that is a property of installing an agent rather than of
  * this function. What this closes is the narrower hole of a hook string carrying template syntax
  * into a render.
+ *
+ * `hooks` is spread unconditionally where `matcher` beside it is guarded, because the two are
+ * not both optional: a definition carrying no actions fires nothing, so `AgentHookDefinition`
+ * requires the array and every schema that reads an agent refuses a definition without it.
  */
 function sanitizeHooks(
   hooks: NonNullable<AgentConfig["hooks"]>
@@ -72,21 +76,19 @@ function sanitizeHooks(
         ...(definition.matcher !== undefined && {
           matcher: sanitizeLiquidSyntax(definition.matcher, "hook.matcher"),
         }),
-        ...(definition.hooks !== undefined && {
-          hooks: definition.hooks.map((action) => ({
-            ...action,
-            type: sanitizeLiquidSyntax(action.type, "hook.type"),
-            ...(action.command !== undefined && {
-              command: sanitizeLiquidSyntax(action.command, "hook.command"),
-            }),
-            ...(action.script !== undefined && {
-              script: sanitizeLiquidSyntax(action.script, "hook.script"),
-            }),
-            ...(action.prompt !== undefined && {
-              prompt: sanitizeLiquidSyntax(action.prompt, "hook.prompt"),
-            }),
-          })),
-        }),
+        hooks: definition.hooks.map((action) => ({
+          ...action,
+          type: sanitizeLiquidSyntax(action.type, "hook.type"),
+          ...(action.command !== undefined && {
+            command: sanitizeLiquidSyntax(action.command, "hook.command"),
+          }),
+          ...(action.script !== undefined && {
+            script: sanitizeLiquidSyntax(action.script, "hook.script"),
+          }),
+          ...(action.prompt !== undefined && {
+            prompt: sanitizeLiquidSyntax(action.prompt, "hook.prompt"),
+          }),
+        })),
       })),
     ])
   )
