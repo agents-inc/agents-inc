@@ -32,11 +32,7 @@ import {
   sanitizeCompiledAgentData,
   buildAgentTemplateContext,
 } from "./compiler";
-import {
-  cliVersion,
-  hasProvenanceMarker,
-  stampProvenanceMarker,
-} from "./agents/agent-provenance.js";
+import { hasProvenanceMarker, stampProvenanceMarker } from "./agents/agent-provenance.js";
 import { warn } from "../utils/logger";
 import { CLAUDE_SRC_DIR, DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
 import type { CompiledAgentData, PluginSkillRef, SkillId } from "../types";
@@ -186,18 +182,27 @@ const EJECTED_DYNAMIC_ENTRIES = [
  * the fixture agent's `identity.md`, `playbook.md` and `output.md` contribute the headings
  * and carry no tags of their own, so this list is the template's own structure.
  */
+/**
+ * The order is a cache decision before it is an editorial one, and the last entry is the whole
+ * of it. A compiled agent IS a sub-agent's system prompt, so the file's leading bytes are the
+ * cacheable prefix of every invocation. The skill list is the one block that moves without the
+ * agent's role moving — it is rewritten whenever a user edits their stack — and while it sat
+ * mid-body, every such edit invalidated the playbook and the output format beneath it.
+ *
+ * `<skill_activation_protocol>` is absent from this roster rather than retired: it renders
+ * NESTED inside the trailing `<system-reminder>`, and `topLevelSectionsIn` reports only the
+ * blocks a body opens at depth zero.
+ */
 const SHIPPED_TEMPLATE_SECTIONS = [
   "# web-developer agent",
   "<role>",
-  "<core_principles>",
-  "<methodologies>",
+  "<operating_principles>",
   "<critical_requirements>",
-  "<skill_activation_protocol>",
   "## Workflow",
-  "## Standards and Conventions",
+  "<critical_reminders>",
   "## Examples",
   "## Output Format",
-  "<critical_reminders>",
+  "<system-reminder>",
 ] as const;
 
 const STUB_OUTPUT = "---\nname: test\n---\n# output";
@@ -481,7 +486,7 @@ describe("compiler", () => {
       );
 
       expect(hasProvenanceMarker(output)).toBe(true);
-      expect(output).toBe(stampProvenanceMarker(STUB_OUTPUT, await cliVersion()));
+      expect(output).toBe(stampProvenanceMarker(STUB_OUTPUT));
     });
 
     /**
@@ -489,7 +494,7 @@ describe("compiler", () => {
      * agent must leave one marker, not two — the same fixed point a re-emit relies on.
      */
     it("does not stack a second marker when the render already carries one", async () => {
-      const alreadyStamped = stampProvenanceMarker(STUB_OUTPUT, await cliVersion());
+      const alreadyStamped = stampProvenanceMarker(STUB_OUTPUT);
       const engine = { renderFile: vi.fn().mockResolvedValue(alreadyStamped) };
 
       const output = await compileAgentForPlugin(

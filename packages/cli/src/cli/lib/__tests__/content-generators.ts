@@ -25,7 +25,19 @@ export function renderConfigTs(config: Record<string, unknown>): string {
 export function renderAgentYaml(
   name: string,
   description?: string,
-  options?: { title?: string; tools?: string[]; model?: string; permissionMode?: string },
+  options?: {
+    title?: string;
+    tools?: string[];
+    model?: string;
+    effort?: string;
+    disallowedTools?: string[];
+    permissionMode?: string;
+    isolation?: string;
+    /** Rendered as JSON-in-YAML, which is the form `agent.liquid` emits. */
+    hooks?: Record<string, unknown>;
+    experimental?: Record<string, unknown>;
+    outputFormat?: string;
+  },
 ): string {
   const desc = description ?? `Test ${name} agent`;
   const title = options?.title ?? `${name} Agent`;
@@ -36,8 +48,16 @@ export function renderAgentYaml(
     `description: ${desc}`,
     "tools:",
     ...tools.map((t) => `  - ${t}`),
+    ...(options?.disallowedTools
+      ? ["disallowedTools:", ...options.disallowedTools.map((t) => `  - ${t}`)]
+      : []),
     ...(options?.model ? [`model: ${options.model}`] : []),
+    ...(options?.effort ? [`effort: ${options.effort}`] : []),
     ...(options?.permissionMode ? [`permissionMode: ${options.permissionMode}`] : []),
+    ...(options?.isolation ? [`isolation: ${options.isolation}`] : []),
+    ...(options?.hooks ? [`hooks: ${JSON.stringify(options.hooks)}`] : []),
+    ...(options?.experimental ? [`experimental: ${JSON.stringify(options.experimental)}`] : []),
+    ...(options?.outputFormat ? [`outputFormat: ${options.outputFormat}`] : []),
   ].join("\n");
 }
 

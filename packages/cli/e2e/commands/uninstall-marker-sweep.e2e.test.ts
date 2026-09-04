@@ -14,7 +14,7 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { cliVersion, provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
+import { provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 
 /**
  * The two halves of one contract, driven through the real binary.
@@ -81,7 +81,7 @@ describe("compiled-agent provenance marker", () => {
 
     const compiled = await readTestFile(agentFile);
 
-    expect(compiled).toContain(`\n---\n${provenanceMarker(await cliVersion())}\n`);
+    expect(compiled).toContain(`\n---\n${provenanceMarker()}\n`);
   });
 
   /**

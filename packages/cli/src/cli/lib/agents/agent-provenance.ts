@@ -23,8 +23,12 @@ let ownVersion: Promise<string> | undefined;
 
 /**
  * This CLI's own published version, read once per process from the package manifest beside
- * the code — the same `PROJECT_ROOT` the bundled agent partials and templates resolve from,
- * so the version in a marker is the version of the compiler that wrote it.
+ * the code — the same `PROJECT_ROOT` the bundled agent partials and templates resolve from.
+ *
+ * It reaches a compiled agent as the `version` argument of `renderAgent`, which hands it to the
+ * template as `generatorVersion`; `agent.liquid` renders it in the trailing `<system-reminder>`
+ * block. Deliberately not the provenance marker above it — that line's bytes are constant across
+ * releases, so a version bump no longer rewrites the first cacheable byte of every compiled agent.
  */
 export function cliVersion(): Promise<string> {
   ownVersion ??= readOwnVersion();

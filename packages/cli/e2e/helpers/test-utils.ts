@@ -10,7 +10,7 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../src/cli/consts.js";
-import { cliVersion, stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
+import { stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
 import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
 import {
@@ -595,9 +595,7 @@ export async function writeAgentFile(
   const body = options?.body ?? `# ${agentName}\n`;
   const frontmatter = `---\nname: ${agentName}\ndescription: Test ${agentName} agent\n---\n`;
   const rendered = options?.frontmatter ? `${frontmatter}${body}` : body;
-  const content = options?.provenance
-    ? stampProvenanceMarker(rendered, await cliVersion())
-    : rendered;
+  const content = options?.provenance ? stampProvenanceMarker(rendered) : rendered;
 
   await writeFile(path.join(agentsDir, `${agentName}.md`), content);
 }

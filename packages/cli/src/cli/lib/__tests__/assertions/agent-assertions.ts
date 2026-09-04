@@ -59,6 +59,6 @@ export function expectValidAgentMarkdown(content: string, agentName: string): vo
   expect(content).toMatch(/^---\n/);
   expect(content).toContain(`name: ${agentName}`);
   expect(content).toContain("description:");
-  expect(content).toContain("<core_principles>");
-  expect(content).toContain("<methodologies>");
+  expect(content).toContain("<operating_principles>");
+  expect(content).toContain("<system-reminder>");
 }

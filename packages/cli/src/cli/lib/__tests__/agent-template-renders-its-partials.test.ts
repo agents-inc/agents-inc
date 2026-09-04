@@ -23,13 +23,7 @@ const LIQUID_SUFFIX = ".liquid";
  * Order is part of the claim: the tags appear in the body in sequence, so this is the order every
  * compiled sub-agent reads its methodologies in.
  */
-const RENDERED_METHODOLOGY_PARTIALS = [
-  "investigation-requirements",
-  "anti-over-engineering",
-  "write-verification",
-  "success-criteria",
-  "context-management",
-] as const;
+const RENDERED_METHODOLOGY_PARTIALS = ["operating-principles"] as const;
 
 /**
  * Partials that sit in the directory and no `{% render %}` tag names.
@@ -37,14 +31,12 @@ const RENDERED_METHODOLOGY_PARTIALS = [
  * A member here is a file the compile ships and never reads — lines that read as part of the
  * product to anyone opening the directory, and are in no sub-agent anywhere.
  *
- * `improvement-protocol` is one because retiring it either way is a product decision rather than
- * a tidy-up. Its subject — what an agent does when asked to edit its own configuration — is in
- * none of the five that render, so it is not a duplicate that can simply be deleted; and wiring
- * it in adds its whole body to EVERY compiled sub-agent, which is a change to shipped output.
- * Naming it here is what makes the state assertable while that decision is outstanding: the file
- * is not a gap the gate is short by, and a SECOND unrendered partial still reddens.
+ * Empty since 2026-09-03, and the roster stays because emptiness is the assertion. The six
+ * partials this directory used to hold were retired together: five were rendered into every
+ * compiled sub-agent and are now one, and `improvement-protocol` was rendered by nothing while
+ * instructing agents to write the prohibitions and the shouted emphasis the same pass removed.
  */
-const UNRENDERED_METHODOLOGY_PARTIALS = ["improvement-protocol"] as const;
+const UNRENDERED_METHODOLOGY_PARTIALS = [] as const;
 
 /**
  * Every methodology partial on disk is one the shipped template renders.

@@ -5,7 +5,7 @@ import { missingArgsRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
-import { cliVersion, stampProvenanceMarker } from "../../agents/agent-provenance.js";
+import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
@@ -310,7 +310,7 @@ describe("doctor command", () => {
       const rendered = renderAgentMd(agentName, "Stranded agent content.");
       await writeFile(
         path.join(agentsDir, `${agentName}.md`),
-        options.compiled ? stampProvenanceMarker(rendered, await cliVersion()) : rendered,
+        options.compiled ? stampProvenanceMarker(rendered) : rendered,
       );
     }
 

@@ -1,12 +1,15 @@
 ---
 name: {{ agent.name }}
-description: {{ agent.description }}
+description: {{ agent.description | json }}
 tools: {{ agent.tools | join: ", " }}
 {% if agent.disallowedTools.size > 0 %}disallowedTools: {{ agent.disallowedTools | join: ", " }}
 {% endif %}model: {{ agent.model | default: "inherit" }}
 {% if agent.effort %}effort: {{ agent.effort }}
 {% endif %}permissionMode: {{ agent.permissionMode | default: "default" }}
-{% if preloadedSkillIds.size > 0 %}skills:
+{% if agent.isolation %}isolation: {{ agent.isolation }}
+{% endif %}{% if agent.experimental %}experimental: {{ agent.experimental | json }}
+{% endif %}{% if agent.hooks %}hooks: {{ agent.hooks | json }}
+{% endif %}{% if preloadedSkillIds.size > 0 %}skills:
 {% for skillId in preloadedSkillIds %}  - {{ skillId }}
 {% endfor %}{% endif %}---
 
@@ -18,144 +21,49 @@ tools: {{ agent.tools | join: ", " }}
 
 ---
 
-<core_principles>
-**1. Investigation First**
-Never speculate. Read the actual code before making claims. Base all work strictly on what you find in the files.
-
-**2. Follow Existing Patterns**
-Use what's already there. Match the style, structure, and conventions of similar code. Don't introduce new patterns.
-
-**3. Minimal Necessary Changes**
-Make surgical edits. Change only what's required to meet the specification. Leave everything else untouched.
-
-**4. Anti-Over-Engineering**
-Simple solutions. Use existing utilities. Avoid abstractions. If it's not explicitly required, don't add it.
-
-**5. Verify Everything**
-Test your work. Run the tests. Check the success criteria. Provide evidence that requirements are met.
-
-**DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE TO MAINTAIN INSTRUCTION CONTINUITY.**
-</core_principles>
+{% render "methodologies/operating-principles" %}
 
 ---
 
-<methodologies>
-
-{% render "methodologies/investigation-requirements" %}
-
----
-
-{% render "methodologies/anti-over-engineering" %}
-
----
-
-{% render "methodologies/write-verification" %}
-
----
-
-{% render "methodologies/success-criteria" %}
-
----
-
-{% render "methodologies/context-management" %}
-
-</methodologies>
-
----
-
-{% if criticalRequirementsTop != "" %}
-<critical_requirements>
+{% if criticalRequirementsTop != "" %}<critical_requirements>
 {{ criticalRequirementsTop }}
 </critical_requirements>
 
 ---
 
-{% endif %}
-{% if dynamicSkills.size > 0 %}
-<skill_activation_protocol>
-## Skill Activation Protocol
-
-**BEFORE implementing ANY task, you MUST follow this three-step protocol for dynamic skills.**
-
-### Step 1 - EVALUATE
-
-For EACH skill listed below, you MUST explicitly state in your response:
-
-| Skill | Relevant? | Reason |
-|-------|-----------|--------|
-| [skill-id] | YES / NO | One sentence explaining why |
-
-Do this for EVERY skill. No exceptions. Skipping evaluation = skipping knowledge.
-
-### Step 2 - ACTIVATE
-
-For EVERY skill you marked **YES**, you MUST invoke the Skill tool **IMMEDIATELY**.
-
-```
-skill: "[skill-id]"
-```
-
-**Do NOT proceed to implementation until ALL relevant skills are loaded into your context.**
-
-### Step 3 - IMPLEMENT
-
-**ONLY after** Step 1 (evaluation) and Step 2 (activation) are complete, begin your implementation.
+{% endif %}{{ playbook }}
 
 ---
 
-**CRITICAL WARNING:**
-
-Your evaluation in Step 1 is **COMPLETELY WORTHLESS** unless you actually **ACTIVATE** the skills in Step 2.
-
-- Saying "YES, this skill is relevant" without invoking `skill: "[skill-id]"` means that knowledge is **NOT AVAILABLE TO YOU**
-- The skill content **DOES NOT EXIST** in your context until you explicitly load it
-- You are **LYING TO YOURSELF** if you claim a skill is relevant but don't load it
-- Proceeding to implementation without loading relevant skills means you will **MISS PATTERNS, VIOLATE CONVENTIONS, AND PRODUCE INFERIOR CODE**
-
-**The Skill tool exists for a reason. USE IT.**
-
----
-
-## Available Skills (Require Loading)
-
-{% for skill in dynamicSkills %}
-### {{ skill.id }}
-- Description: {{ skill.description }}
-- Invoke: `skill: "{{ skill.pluginRef | default: skill.id }}"`
-- Use when: {{ skill.usage }}
-
-{% endfor %}
-</skill_activation_protocol>
-{% else %}
-<skills_note>
-All skills for this agent are preloaded via frontmatter. No additional skill activation required.
-</skills_note>
-{% endif %}
-
----
-
-{{ playbook }}
-
----
-
-## Standards and Conventions
-
-All code must follow established patterns and conventions:
-
----
-
-{{ output }}
-
----
-
-{% if criticalReminders != "" %}
-<critical_reminders>
+{% if criticalReminders != "" %}<critical_reminders>
 {{ criticalReminders }}
 </critical_reminders>
 
 ---
 
-{% endif %}
-**DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE TO MAINTAIN INSTRUCTION CONTINUITY.**
+{% endif %}{% if output != "" %}{{ output }}
 
-**ALWAYS RE-READ FILES AFTER EDITING TO VERIFY CHANGES WERE WRITTEN. NEVER REPORT SUCCESS WITHOUT VERIFICATION.**
+---
+
+{% endif %}<system-reminder>
+Compiled by {{ generatorVersion }}.
+
+{% if dynamicSkills.size > 0 %}<skill_activation_protocol>
+The skills below are available through the Skill tool. Open a task by naming which of them it
+touches and loading those first — a skill carries the conventions this project expects for its
+area, and its content reaches you only once you invoke it.
+
+{% for skill in dynamicSkills %}### {{ skill.id }}
+- Description: {{ skill.description }}
+- Invoke: `skill: "{{ skill.pluginRef | default: skill.id }}"`
+- {{ skill.usage }}
+
+{% endfor %}</skill_activation_protocol>
+{% elsif preloadedSkillIds.size > 0 %}<skills_note>
+This agent's skills are preloaded through its frontmatter, so their content is already in context.
+</skills_note>
+{% else %}<skills_note>
+No skills are configured for this agent. The Skill tool is available, so a skill this project adds
+later can be loaded by name.
+</skills_note>
+{% endif %}</system-reminder>

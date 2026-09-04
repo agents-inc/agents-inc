@@ -29,7 +29,7 @@ import type {
   SkillId,
 } from "../../../types";
 import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
-import { cliVersion, stampProvenanceMarker } from "../../agents/agent-provenance.js";
+import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { renderAgentMd } from "../content-generators.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { firstElement } from "../helpers/element-at.js";
@@ -259,7 +259,7 @@ async function createAgentFile(
   await mkdir(agentsDir, { recursive: true });
 
   const rendered = renderAgentMd(agentName);
-  const content = options.compiled ? stampProvenanceMarker(rendered, await cliVersion()) : rendered;
+  const content = options.compiled ? stampProvenanceMarker(rendered) : rendered;
 
   const agentPath = path.join(agentsDir, `${agentName}.md`);
   await writeFile(agentPath, content);

@@ -3,6 +3,7 @@ import { writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
+  CLI_ROOT,
   createTempDir,
   cleanupTempDir,
   fileExists,
@@ -235,11 +236,22 @@ describe("template ejection + custom compilation", () => {
       // .claude-src/agents/_templates/agent.liquid
       await expect({ dir: projectDir }).toHaveEjectedTemplate();
 
-      // Read the template to verify it's valid Liquid content
+      // `eject` copies this file byte-for-byte (`ejectAgentPartials` -> `copy(sourceDir,
+      // destDir)`) from `PROJECT_ROOT/src/agents/_templates/agent.liquid`. A `toContain` on
+      // one hand-picked interpolation proves that copy weakly — it stayed green across the
+      // description gaining `| json` (an unquoted description containing a colon breaks the
+      // YAML frontmatter), because the old literal was still a substring of the new one.
+      // Comparing the whole ejected file against its source with `toStrictEqual` proves the
+      // copy faithfully and catches any future divergence, not only the ones a substring
+      // happens to name — so the per-interpolation checks this replaced added nothing once
+      // the file comparison covers every byte they were pinning.
+      const sourceTemplatePath = path.join(CLI_ROOT, "src", "agents", "_templates", "agent.liquid");
       const expectedPath = getEjectedTemplatePath(projectDir);
-      const content = await readTestFile(expectedPath);
-      expect(content).toContain("{{ agent.name }}");
-      expect(content).toContain("{{ agent.description }}");
+      const [ejectedContent, sourceContent] = await Promise.all([
+        readTestFile(expectedPath),
+        readTestFile(sourceTemplatePath),
+      ]);
+      expect(ejectedContent).toStrictEqual(sourceContent);
     });
   });
 });

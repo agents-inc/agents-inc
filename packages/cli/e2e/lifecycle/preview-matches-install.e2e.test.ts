@@ -43,6 +43,22 @@ import { provenanceMarker } from "@workspace/compile/agent-source";
  * built-in catalogue. That is the point of it being a parameter: the bytes depend on category
  * declaration order and on which categories are exclusive, and an install against a marketplace
  * sees a merged catalogue the built-in one is only part of.
+ *
+ * KNOWN GAP, of the same shape as the project `config-types.ts` gap documented on the second
+ * `it` below, and it belongs here rather than there because it is not scoped to one root: no
+ * spec in this file builds the `AgentConfig` a compiled agent's BODY is rendered from. `renderAgent`
+ * itself is shared and pinned byte-identical given the same `AgentConfig`
+ * (`scripts/generate-compile-package.test.ts`), but the two front doors construct that
+ * `AgentConfig` independently — `resolveAgents` in `src/cli/lib/resolver.ts` for an install,
+ * `compileAgents` in `apps/editor/.../output-preview.ts` for the preview — and nothing beyond
+ * hand-alignment keeps them agreeing. The five conditional spreads `compileAgents` carries today
+ * (`effort`, `disallowedTools`, `permissionMode`, `isolation`, `experimental`) were added to
+ * mirror `resolveAgents`' one field at a time; a field `resolveAgents` gains next has to be
+ * copied over by the same manual reading, and nothing here — or anywhere else in this suite —
+ * would go red if it were not. The version-stamp `it` below reads a real install's compiled
+ * bodies, but only for the provenance marker and the version line; it never runs the editor's
+ * `compileAgents` at all, so this gap is not an oversight in that test, it is this file's actual
+ * boundary.
  */
 describe("the bytes the shared renderer draws", () => {
   let globalHome: string;
@@ -215,14 +231,27 @@ describe("the bytes the shared renderer draws", () => {
         "the install compiled nothing, so the assertion below has no subject",
       ).toStrictEqual(E2E_STACK_AGENTS.map((name) => `${name}.md`));
 
-      // A browser cannot read the CLI's manifest, so the preview stamps the version the corpus
-      // was vendored at. If that is not the version the CLI writes, the first body line of
-      // every compiled sub-agent in the preview is wrong — which is the most visible line in
-      // the whole dialog.
+      // Subject guard only: `provenanceMarker()` is deliberately version-free — "Its bytes are
+      // constant across releases, and that is the point" (its own docblock in
+      // `agent-source.ts`) — so its presence proves this CLI wrote the file and proves nothing
+      // about which release wrote it. It cannot carry the check this test is named for; a
+      // corpus vendored at the wrong release would still satisfy a check against it, because
+      // no release ever varies it.
+      //
+      // The version instead travels in the trailing `<system-reminder>` block, rendered by
+      // `agent.liquid` as `Compiled by {{ generatorVersion }}.`. A browser cannot read the
+      // CLI's manifest, so the preview stamps `CORPUS_CLI_VERSION` — the release the vendored
+      // corpus was generated from — into that slot. If that value drifts from the version a
+      // real install writes, this is the line that is wrong, and it is the one the second
+      // assertion below checks.
       for (const [file, body] of Object.entries(compiled)) {
-        expect(body, `${file} does not carry the version the preview would stamp`).toContain(
-          provenanceMarker(CORPUS_CLI_VERSION),
+        expect(body, `${file} does not carry this CLI's own provenance marker`).toContain(
+          provenanceMarker(),
         );
+        expect(
+          body,
+          `${file} stamps a version other than CORPUS_CLI_VERSION, so the preview's vendored corpus has drifted from this CLI's own version`,
+        ).toContain(`Compiled by ${CORPUS_CLI_VERSION}.`);
       }
     },
   );

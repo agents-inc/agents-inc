@@ -47,8 +47,8 @@ const PROTOCOL_CLOSES = "</skill_activation_protocol>";
 const SKILL_HEADING = /^### (.+)$/;
 const INVOKE_REF = /^- Invoke: `skill: "(.*)"`$/;
 
-const SECTION_OPENS = /^<[a-z][a-z0-9_]*>$/;
-const SECTION_CLOSES = /^<\/[a-z][a-z0-9_]*>$/;
+const SECTION_OPENS = /^<[a-z][a-z0-9_-]*>$/;
+const SECTION_CLOSES = /^<\/[a-z][a-z0-9_-]*>$/;
 const TOP_LEVEL_HEADING = /^#{1,2} \S/;
 const CODE_FENCE = /^(?:```|~~~)/;
 
@@ -92,10 +92,11 @@ function preloadedRefsIn(frontmatter: Record<string, unknown> | null): string[] 
 /**
  * The protocol's entries, each paired heading-to-`Invoke:` line rather than scanned for.
  *
- * Pairing is what keeps the protocol's own prose out of the answer: the section opens with
- * `### Step 1 - EVALUATE` and friends, none of which is followed by an `Invoke:` line, and
- * it demonstrates the call itself inside a fenced `skill: "[skill-id]"` that a bare scan
- * for that shape reports as a skill.
+ * Pairing is what keeps a protocol's own prose out of the answer — a `### ` heading that names
+ * no skill, or a fenced `skill: "[skill-id]"` demonstrating the call, each of which a bare scan
+ * for that shape reports as a skill. The shipped template's preamble carries neither since it
+ * was slimmed on 2026-09-03; the retired one carried both, and a project overriding
+ * `agent.liquid` from its own `.claude-src/agents/_templates/` may carry them again.
  */
 function dynamicEntriesIn(body: string): CompiledAgentDynamicEntry[] {
   const protocol = activationProtocolIn(body);
@@ -130,11 +131,14 @@ function activationProtocolIn(body: string): string | null {
  * Every section the body opens at the top level, as the raw line that opens it — an XML
  * tag alone on its line, or a level-one or level-two markdown heading.
  *
- * Depth is tracked so the partials nested inside `<methodologies>` are not reported
- * alongside it, and fenced code is skipped because an agent's prose demonstrates both tag
- * and heading syntax inside fences. An UNCLOSED tag in prose leaves the depth raised and
- * hides the sections after it, so this reading is exact only for a body whose tags
- * balance — true of a rendered template, not of every agent's hand-written prose.
+ * Depth is tracked so `<skill_activation_protocol>` is not reported alongside the
+ * `<system-reminder>` it renders inside, and fenced code is skipped because an agent's prose
+ * demonstrates both tag and heading syntax inside fences. An UNCLOSED tag in prose leaves the
+ * depth raised and hides the sections after it, so this reading is exact only for a body whose
+ * tags balance — true of a rendered template, not of every agent's hand-written prose.
+ *
+ * The character classes admit `-` for `<system-reminder>`, the one hyphenated tag a compiled
+ * agent carries and the last section of every one of them.
  */
 function topLevelSectionsIn(body: string): string[] {
   const sections: string[] = [];
