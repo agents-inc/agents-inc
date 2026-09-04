@@ -4,12 +4,15 @@ import {
 } from "@workspace/api-mocks"
 import { generateConfigSource } from "@workspace/compile/config-source"
 import { seatedCatalog } from "@workspace/compile"
-import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus"
 import { provenanceMarker } from "@workspace/compile/agent-source"
 import { SEED_VERSION, type SeedPayload } from "@workspace/matrix"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { activeStacks, useCatalogStore } from "@/stores/catalog-store"
+import {
+  activeMatrix,
+  activeStacks,
+  useCatalogStore,
+} from "@/stores/catalog-store"
 
 import { buildOutputPreview } from "./output-preview"
 
@@ -340,14 +343,28 @@ describe("a compiled sub-agent's markdown", () => {
   })
 
   /**
-   * §B3.5 rule 5. A browser cannot read the CLI's manifest, so the marker
-   * carries the version the corpus was vendored at — and that is the most
-   * visible line in the whole dialog, since it is a compiled agent's first body
-   * line. Bound to the symbol rather than to a version string: the claim is
-   * that the preview stamps THE CORPUS's version, not that it stamps a
-   * particular release.
+   * §B3.5 rule 5, as it reads since the marker stopped carrying a version.
+   *
+   * THIS CHECKS PROVENANCE AND NOTHING ELSE, and this docblock claimed a
+   * version check until 2026-09-03. `provenanceMarker()` takes no argument and
+   * returns a compile-time constant: its bytes are deliberately identical
+   * across releases, because a compiled sub-agent IS a system prompt and this
+   * line is the first cacheable byte of every invocation of it. So what holds
+   * is that the preview stamps the line the CLI writes, byte for byte, and a
+   * body drawn here is recognisable as this CLI's — which is what makes it the
+   * subject guard for every other claim about a compiled body.
+   *
+   * NO VERSION ASSERTION BELONGS HERE. The release travels in the trailing
+   * `<system-reminder>` block, and the editor reaches `renderAgentFromCorpus`
+   * with two arguments, so the version it renders comes from that function's
+   * own default parameter and cannot diverge from the corpus it renders off.
+   * The drift check that CAN fail is the one against bytes on a disk, in
+   * `packages/cli/e2e/lifecycle/preview-matches-install.e2e.test.ts` — and the
+   * gutting of that check is what
+   * `.ai-docs/agent-findings/2026-09-03-a-signature-change-was-patched-to-compile-and-a-tests-version-check-silently-stopped-checking-version.md`
+   * records.
    */
-  it("carries the provenance marker for the version the corpus was vendored at", async () => {
+  it("carries the provenance marker the CLI writes, byte for byte", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") })
     )
@@ -356,7 +373,209 @@ describe("a compiled sub-agent's markdown", () => {
     )
 
     expect(agent?.body, "the preview drew no compiled sub-agent").toBeTruthy()
-    expect(agent?.body).toContain(provenanceMarker(CORPUS_CLI_VERSION))
+    expect(agent?.body).toContain(provenanceMarker())
+  })
+
+  /**
+   * THE FRONTMATTER FIELD THE PREVIEW DROPPED, and the arm no shipped roster
+   * can reach on its own.
+   *
+   * `resolveAgents` in the CLI's `lib/resolver.ts` composes
+   * `agentConfig.effort ?? definition.effort`, and the preview forwarded
+   * `agent.effort` alone — so a `metadata.yaml` declaring `effort: high` with
+   * no config override wrote the line into a real install's frontmatter and
+   * drew nothing here. `effort` is rendered: `agent.liquid` in the vendored
+   * corpus branches on `{% if agent.effort %}`, and `agent-source.test.ts`
+   * names it in `FIELDS_THE_TEMPLATE_RENDERS`.
+   *
+   * THE DEFINITION IS MOCKED BECAUSE NO SHIPPED ONE DECLARES AN EFFORT, so
+   * the arm has no subject otherwise — this is how to check that:
+   *
+   *     grep -c "effort:" packages/matrix/src/generated/agents.ts
+   *
+   * What the mock supplies is the INPUT a `metadata.yaml` supplies; the
+   * composition around it and the real Liquid render off the corpus are
+   * untouched, which is the opposite of mocking away the thing under test.
+   *
+   * Its control is the spec below — the same payload with the roster left
+   * alone. A mock that never took reddens the pair rather than passing it,
+   * because the two specs disagree about one line.
+   */
+  describe("the effort a sub-agent runs at", () => {
+    afterEach(() => {
+      vi.doUnmock("@workspace/matrix")
+      vi.resetModules()
+    })
+
+    const DECLARED_EFFORT = "high"
+
+    it("renders the effort the sub-agent's own metadata declares", async () => {
+      vi.doMock("@workspace/matrix", async () => {
+        const actual =
+          await vi.importActual<typeof import("@workspace/matrix")>(
+            "@workspace/matrix"
+          )
+
+        return {
+          ...actual,
+          AGENT_DEFINITIONS: {
+            ...actual.AGENT_DEFINITIONS,
+            [WEB_DEVELOPER]: {
+              ...actual.AGENT_DEFINITIONS[WEB_DEVELOPER],
+              effort: DECLARED_EFFORT,
+            },
+          },
+        }
+      })
+
+      // `@workspace/matrix` is a STATIC import of the module under test, so
+      // its already-evaluated instance holds the real roster and a bare
+      // `doMock` would leave this measuring nothing. The corpus mock above
+      // needs no such reset because `@workspace/compile/preview` is reached
+      // through `import()` at call time.
+      vi.resetModules()
+
+      const { buildOutputPreview: build } = await import("./output-preview")
+      const preview = await build(
+        payload({ [REACT]: skill("global", "plugin") })
+      )
+      const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
+
+      expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+      expect(body).toContain(`effort: ${DECLARED_EFFORT}`)
+    })
+
+    /**
+     * The control, and an honest negative rather than a pinned gap: with the
+     * roster left alone nothing declares an effort and this payload names no
+     * override, so a real install writes no `effort:` line either — the
+     * template branches on presence. It is what stops the spec above passing
+     * on a mock that never took, and what stops the fix becoming an
+     * unconditional line.
+     */
+    it("writes no effort line when neither the metadata nor the config names one", async () => {
+      const preview = await buildOutputPreview(
+        payload({ [REACT]: skill("global", "plugin") })
+      )
+      const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
+
+      expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+      expect(body).not.toContain("effort:")
+    })
+  })
+
+  /**
+   * THE ONLY SENTENCE IN A COMPILED SUB-AGENT THAT SAYS WHEN TO LOAD A SKILL,
+   * and it had no coverage on either side of the seam while it was wrong.
+   *
+   * `agent.liquid` renders it as a bullet of its own under each dynamic
+   * skill's heading, so the assertions below bind to `\n- <sentence>\n`: the
+   * bullet IS the contract, and a sentence that reached some other line would
+   * satisfy a bare `toContain`.
+   *
+   * The stated sentence is read off the seated catalogue rather than typed
+   * out — it is a skill's own metadata and a marketplace ships its own, the
+   * same reason the stack-description spec reads `activeStacks()`. The
+   * FALLBACK sentence is written out, because it is TEXT the product emits
+   * and must stay byte-identical to `statedUsageFor` in the CLI's
+   * `lib/stacks/stacks-loader.ts`, capital and full stop included; only the
+   * category it interpolates is read off the seat.
+   *
+   * `activeMatrix()` rather than `seatedCatalog()`: the compile package's
+   * `CompileCatalog` names neither `usageGuidance` nor `description`, which is
+   * why `resolveSkill` looks a skill up in the wire catalogue too.
+   */
+  describe("the line telling a sub-agent when to reach for a skill", () => {
+    afterEach(() => {
+      useCatalogStore.getState().reset()
+    })
+
+    it("carries the sentence the catalogue states for the skill", async () => {
+      const preview = await buildOutputPreview(
+        payload({ [REACT]: skill("global", "plugin") })
+      )
+      const stated = activeMatrix().skills[REACT]?.usageGuidance
+      const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
+
+      expect(
+        stated,
+        "the seated catalogue states no guidance for this skill, so the claim below has no subject"
+      ).toBeTruthy()
+      expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+      expect(body).toContain(`\n- ${stated}\n`)
+    })
+
+    /**
+     * The fallback arm, and its subject is the seated marketplace rather than
+     * the public catalogue: `acme-web-widgets` states no guidance, where the
+     * vendored catalogue's skills state their own. Which fixture can carry
+     * the claim is a question these two answer:
+     *
+     *     grep -c usageGuidance packages/api-mocks/src/fixtures.ts
+     *     grep -c usageGuidance packages/matrix/src/vendor/generated/matrix.ts
+     */
+    it("falls back to the category sentence for a skill stating none", async () => {
+      useCatalogStore
+        .getState()
+        .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
+
+      const preview = await buildOutputPreview(
+        payload({ [ACME_SKILL]: skill("global", "plugin") })
+      )
+      const seated = activeMatrix().skills[ACME_SKILL]
+      const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
+
+      expect(
+        seated?.usageGuidance,
+        "the seated skill states its own guidance, so the fallback arm has no subject"
+      ).toBeUndefined()
+      expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+      expect(body).toContain(`\n- Use when working with ${seated?.category}.\n`)
+    })
+
+    /**
+     * The hole the `??` leaves open: it guards a MISSING skill, and
+     * `usageGuidance` is `z.string().exactOptional()` on both
+     * `matrix-schema.ts` and `built-in-matrix.ts`, so a catalogue may state an
+     * empty sentence and be valid. That renders `- ` and nothing after it —
+     * a bullet in the activation protocol saying nothing, which is worse than
+     * the category sentence it displaced.
+     *
+     * The seat is the shared marketplace fixture with one field changed,
+     * because no published catalogue carries an empty one to seat and
+     * `packages/api-mocks` belongs to another lane.
+     */
+    it("falls back for a skill stating an empty sentence, rather than drawing an empty bullet", async () => {
+      const acme = MARKETPLACE_CATALOG.skills[ACME_SKILL]
+
+      expect(
+        acme,
+        "the marketplace fixture no longer carries the skill this seats"
+      ).toBeDefined()
+
+      useCatalogStore.getState().load(
+        {
+          ...MARKETPLACE_CATALOG,
+          skills: {
+            ...MARKETPLACE_CATALOG.skills,
+            [ACME_SKILL]: { ...acme!, usageGuidance: "" },
+          },
+        },
+        MARKETPLACE_CANONICAL_REF
+      )
+
+      const preview = await buildOutputPreview(
+        payload({ [ACME_SKILL]: skill("global", "plugin") })
+      )
+      const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
+
+      expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+      expect(
+        body,
+        "an empty stated sentence rendered as a bullet with nothing after it"
+      ).not.toContain("\n- \n")
+      expect(body).toContain(`\n- Use when working with ${acme?.category}.\n`)
+    })
   })
 })
 

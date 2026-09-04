@@ -234,6 +234,43 @@ export function stackNotOfferedMessage(stackId: string, source: string): string 
   );
 }
 
+/**
+ * The sentence a skill's cue falls back to when the skill states none of its own — the category
+ * key, as a whole sentence, because `agent.liquid` renders it verbatim as a bullet.
+ *
+ * Exported because more than one surface must produce it word for word, which is the carve-out
+ * CLAUDE.md makes for a definition every caller is meant to reach rather than restate.
+ * `externalSkillMetadata` in `seed/external-skills.ts` is the second caller: a carried skill's
+ * cue is reachable by two routes — that file writes it into the installed `metadata.yaml`, and
+ * {@link statedUsageFor} answers for it during the run that seats it, before any metadata exists
+ * — so two spellings meant one sub-agent could read a different sentence for the same skill
+ * depending on which command last touched it. The editor's preview
+ * (`apps/editor/src/features/configure/lib/output-preview.ts`) mirrors this one deliberately
+ * rather than importing it.
+ */
+export function defaultUsageGuidance(category: string): string {
+  return `Use when working with ${category}.`;
+}
+
+/**
+ * The one sentence a compiled sub-agent reads as its cue to load a skill.
+ *
+ * Every skill states that sentence for itself in its `metadata.yaml` `usageGuidance`, so the
+ * catalogue's own words are what a reference carries. {@link defaultUsageGuidance} is what remains
+ * when there is nothing to read — an id the matrix does not carry (local, marketplace, withdrawn),
+ * or one it carries that states no guidance, which is ordinary rather than malformed since the
+ * field is optional on `SkillCore` and on `matrixRawMetadataSchema`.
+ *
+ * A BLANK sentence counts as none, and `??` alone does not say so: `usageGuidance` is
+ * `z.string().exactOptional()`, so a catalogue stating an empty string is valid — and an empty
+ * bullet is a row of the activation protocol saying nothing, which is strictly worse than the
+ * category sentence it displaced.
+ */
+function statedUsageFor(skillId: SkillId, category: Category): string {
+  const stated = matrix.skills[skillId]?.usageGuidance;
+  return stated !== undefined && stated.trim() !== "" ? stated : defaultUsageGuidance(category);
+}
+
 // Converts a StackAgentConfig (category -> SkillAssignment[]) to an array of SkillReferences.
 // Values are already normalized to SkillAssignment[] by loadStacks().
 export function resolveAgentConfigToSkills(agentConfig: StackAgentConfig): SkillReference[] {
@@ -248,7 +285,7 @@ export function resolveAgentConfigToSkills(agentConfig: StackAgentConfig): Skill
       }
       return {
         id: assignment.id,
-        usage: `when working with ${category}`,
+        usage: statedUsageFor(assignment.id, category),
         preloaded: assignment.preloaded ?? false,
       };
     }),

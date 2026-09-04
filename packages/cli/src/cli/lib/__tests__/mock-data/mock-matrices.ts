@@ -16,6 +16,7 @@ import { FRAMEWORK_CATEGORY, MULTI_SOURCE_CATEGORIES } from "./mock-categories.j
 import {
   CATEGORY_GRID_SKILLS,
   CUSTOM_HOUSE_TOOLING_SKILL,
+  GUIDED_SKILL,
   LOCAL_SKILL_SOURCE,
   PUBLIC_MARKETPLACE_SOURCE,
   HEALTH_ALL_REFS_RESOLVED_SKILL,
@@ -109,6 +110,16 @@ export const CATALOGUE_WITH_LOCAL_SKILL_MATRIX: MergedSkillsMatrix = {
   ...BUILT_IN_MATRIX,
   skills: { ...BUILT_IN_MATRIX.skills, [LOCAL_HOUSE_STYLE_SKILL.id]: LOCAL_HOUSE_STYLE_SKILL },
 };
+
+/**
+ * One skill stating its own trigger sentence and one stating none — the two arms a
+ * `SkillReference.usage` has to answer for, since `usageGuidance` is optional on
+ * `SkillCore` and only a marketplace's own skills are held to `z.string().min(10)`.
+ *
+ * Deliberately not `SKILLS.zustand`: the canonical registry states no guidance for any
+ * of its entries, so a matrix built from it exercises the fallback arm alone.
+ */
+export const USAGE_GUIDANCE_MATRIX = createMockMatrix(GUIDED_SKILL, SKILLS.scss);
 
 /**
  * The two install-mode shapes the Sources step must tell apart, with the tagging pass

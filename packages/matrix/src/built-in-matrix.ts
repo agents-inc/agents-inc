@@ -56,6 +56,11 @@ export const resolvedSkillSchema = z.object({
   slug: z.string(),
   displayName: z.string(),
   description: z.string(),
+  // The sentence a compiled sub-agent reads as its cue to load the skill. Optional
+  // on the CLI's `SkillCore`, so a catalogue entry without one falls back to its
+  // category — but a schema that omits the field STRIPS it, which is the same value
+  // arriving by a route nothing can tell apart from the skill stating nothing.
+  usageGuidance: z.string().exactOptional(),
   category: categorySchema,
   conflictsWith: z.array(skillRelationSchema),
   discourages: z.array(skillRelationSchema),

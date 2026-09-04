@@ -11,7 +11,13 @@ import {
   createMockRawStacksConfigWithArrays,
   createMockRawStacksConfigWithObjects,
 } from "../__tests__/factories/stack-factories";
-import { LOCAL_SKILL_MATRIX } from "../__tests__/mock-data/mock-matrices";
+import { LOCAL_SKILL_MATRIX, USAGE_GUIDANCE_MATRIX } from "../__tests__/mock-data/mock-matrices";
+import {
+  CUSTOM_HOUSE_TOOLING_ID,
+  FALLBACK_USAGE,
+  GUIDED_SKILL,
+  STATED_USAGE_GUIDANCE,
+} from "../__tests__/mock-data/mock-skills";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants";
 
@@ -30,12 +36,18 @@ import {
 import { loadConfig } from "../configuration/config-loader";
 import { DEFAULT_SOURCE } from "../configuration/config";
 import { warn } from "../../utils/logger";
-import { initializeMatrix } from "../matrix/matrix-provider";
+import { getSkillById, initializeMatrix } from "../matrix/matrix-provider";
 import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
 
 /** A stack the CLI ships, resolvable by id for the public catalogue alone. */
 const BUILT_IN_STACK_ID = "nextjs-fullstack";
+
+/** A skill the shipped catalogue carries, named as an id so its removal is a compile error. */
+const CATALOGUE_GUIDED_SKILL: SkillId = "meta-design-expressive-typescript";
+
+/** The category key its assignment is filed under in the built-in stacks. */
+const CATALOGUE_GUIDED_CATEGORY = "meta-design";
 
 /**
  * The npm package the public catalogue publishes from. Written out rather than
@@ -423,10 +435,10 @@ describe("stacks-loader", () => {
       const skills = resolveAgentConfigToSkills(agentConfig);
 
       expect(skills).toStrictEqual([
-        { id: "web-framework-react", usage: "when working with web-framework", preloaded: true },
+        { id: "web-framework-react", usage: FALLBACK_USAGE["web-framework"], preloaded: true },
         {
           id: "web-styling-scss-modules",
-          usage: "when working with web-styling",
+          usage: FALLBACK_USAGE["web-styling"],
           preloaded: false,
         },
       ]);
@@ -443,14 +455,14 @@ describe("stacks-loader", () => {
       // preloaded: true set explicitly on framework assignment
       expect(skills[0]).toStrictEqual({
         id: "web-framework-react",
-        usage: "when working with web-framework",
+        usage: FALLBACK_USAGE["web-framework"],
         preloaded: true,
       });
 
       // preloaded defaults to false when not set
       expect(skills[1]).toStrictEqual({
         id: "web-styling-scss-modules",
-        usage: "when working with web-styling",
+        usage: FALLBACK_USAGE["web-styling"],
         preloaded: false,
       });
     });
@@ -495,8 +507,8 @@ describe("stacks-loader", () => {
       const skills = resolveAgentConfigToSkills(agentConfig);
 
       expect(skills).toStrictEqual([
-        { id: "web-framework-react", usage: "when working with web-framework", preloaded: true },
-        { id: "api-database-drizzle", usage: "when working with api-orm", preloaded: true },
+        { id: "web-framework-react", usage: FALLBACK_USAGE["web-framework"], preloaded: true },
+        { id: "api-database-drizzle", usage: FALLBACK_USAGE["api-orm"], preloaded: true },
       ]);
     });
 
@@ -514,17 +526,17 @@ describe("stacks-loader", () => {
       expect(skills).toStrictEqual([
         {
           id: "meta-methodology-research-methodology",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
         {
           id: "meta-reviewing-reviewing",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
         {
           id: "meta-reviewing-cli-reviewing",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
       ]);
@@ -543,20 +555,20 @@ describe("stacks-loader", () => {
       const skills = resolveAgentConfigToSkills(agentConfig);
 
       expect(skills).toStrictEqual([
-        { id: "web-framework-react", usage: "when working with web-framework", preloaded: true },
+        { id: "web-framework-react", usage: FALLBACK_USAGE["web-framework"], preloaded: true },
         {
           id: "meta-methodology-research-methodology",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
         {
           id: "meta-reviewing-reviewing",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
         {
           id: "web-styling-scss-modules",
-          usage: "when working with web-styling",
+          usage: FALLBACK_USAGE["web-styling"],
           preloaded: false,
         },
       ]);
@@ -588,13 +600,13 @@ describe("stacks-loader", () => {
       expect(skills).toStrictEqual([
         {
           id: "meta-methodology-research-methodology",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
-        { id: "Not-A-Valid-Id", usage: "when working with meta-reviewing", preloaded: false },
+        { id: "Not-A-Valid-Id", usage: FALLBACK_USAGE["meta-reviewing"], preloaded: false },
         {
           id: "meta-reviewing-reviewing",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
       ]);
@@ -618,12 +630,12 @@ describe("stacks-loader", () => {
       expect(skills).toStrictEqual([
         {
           id: "meta-methodology-research-methodology",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: true,
         },
         {
           id: "meta-reviewing-reviewing",
-          usage: "when working with meta-reviewing",
+          usage: FALLBACK_USAGE["meta-reviewing"],
           preloaded: false,
         },
       ]);
@@ -642,6 +654,152 @@ describe("stacks-loader", () => {
       expect(firstElement(skills).preloaded).toBe(true);
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("acme-pipeline-deploy"), {
         suppressInTest: true,
+      });
+    });
+
+    /**
+     * `usage` is the sentence the compiled sub-agent reads as its `Use when:` line — the
+     * only thing telling it when to reach for a dynamic skill. Every skill states that
+     * sentence itself, in its `metadata.yaml` `usageGuidance` field, and this is where a
+     * `SkillReference` either picks it up or invents one from the category key instead.
+     *
+     * The specs ABOVE all pin the category-derived form, and they are the fallback arm
+     * rather than the primary one: `stacksTestMatrix` is built from `SKILLS.*`, whose
+     * entries state no `usageGuidance` at all, so there is nothing for any of them to read.
+     */
+    describe("usage", () => {
+      /** The key the guided assignment below is filed under, and the word a derived usage would take. */
+      const GUIDED_CATEGORY = "web-client-state";
+
+      beforeEach(() => {
+        initializeMatrix(USAGE_GUIDANCE_MATRIX);
+      });
+
+      it("carries the guidance the skill states for itself", () => {
+        const agentConfig: StackAgentConfig = {
+          [GUIDED_CATEGORY]: [createMockSkillAssignment(GUIDED_SKILL.id)],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(skills).toStrictEqual([
+          { id: GUIDED_SKILL.id, usage: STATED_USAGE_GUIDANCE, preloaded: false },
+        ]);
+      });
+
+      it("does not describe a skill that states its own guidance by its category", () => {
+        const agentConfig: StackAgentConfig = {
+          [GUIDED_CATEGORY]: [createMockSkillAssignment(GUIDED_SKILL.id, true)],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(
+          firstElement(skills).usage,
+          "a category name states a filing, not when to reach for the skill",
+        ).not.toBe(FALLBACK_USAGE["web-client-state"]);
+      });
+
+      it("keeps each skill's own guidance when a category holds several", () => {
+        const agentConfig: StackAgentConfig = {
+          [GUIDED_CATEGORY]: [
+            createMockSkillAssignment(GUIDED_SKILL.id, true),
+            createMockSkillAssignment(SKILLS.scss.id),
+          ],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(skills).toStrictEqual([
+          { id: GUIDED_SKILL.id, usage: STATED_USAGE_GUIDANCE, preloaded: true },
+          { id: SKILLS.scss.id, usage: FALLBACK_USAGE["web-client-state"], preloaded: false },
+        ]);
+      });
+
+      /**
+       * The three absences, and the answer chosen for all of them.
+       *
+       * There is nothing to read in any case, and `usage` is a required `string` whose sole
+       * consumer renders it into a `- Use when: ` bullet — so an empty value ships a bullet that
+       * says nothing, and a throw would refuse to install any payload naming a skill this
+       * catalogue does not carry, which is consumption failing. The category key is the only word
+       * available, exactly as `liveCategoryOf` one function above already rules for the same
+       * absence. `externalSkillMetadata` in `seed/external-skills.ts` writes the identical
+       * sentence for a carried skill by CALLING `defaultUsageGuidance` rather than spelling it —
+       * it spelled its own until 2026-09-03 and had drifted on both the word and the punctuation.
+       */
+      it("falls back to the category when the matrix carries no such skill", () => {
+        const agentConfig: StackAgentConfig = {
+          "web-tooling": [createMockSkillAssignment(CUSTOM_HOUSE_TOOLING_ID)],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(skills).toStrictEqual([
+          { id: CUSTOM_HOUSE_TOOLING_ID, usage: FALLBACK_USAGE["web-tooling"], preloaded: false },
+        ]);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(CUSTOM_HOUSE_TOOLING_ID), {
+          suppressInTest: true,
+        });
+      });
+
+      it("falls back to the category when the skill it carries states an empty guidance", () => {
+        // A BLANK sentence is none, and `??` alone does not say so: `usageGuidance` is
+        // `z.string().exactOptional()` on the matrix schema, so a catalogue stating "" is valid
+        // — and `agent.liquid` renders whatever this answers as a bullet of its own, so an empty
+        // one is a row of the activation protocol saying nothing, which is strictly worse than
+        // the category sentence it displaced.
+        initializeMatrix(createMockMatrix(createMockSkill(SKILLS.scss.id, { usageGuidance: " " })));
+        const agentConfig: StackAgentConfig = {
+          "web-styling": [createMockSkillAssignment(SKILLS.scss.id)],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(skills).toStrictEqual([
+          { id: SKILLS.scss.id, usage: FALLBACK_USAGE["web-styling"], preloaded: false },
+        ]);
+      });
+
+      it("falls back to the category when the skill it carries states no guidance", () => {
+        const agentConfig: StackAgentConfig = {
+          "web-styling": [createMockSkillAssignment(SKILLS.scss.id, true)],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(skills).toStrictEqual([
+          { id: SKILLS.scss.id, usage: FALLBACK_USAGE["web-styling"], preloaded: true },
+        ]);
+        expect(warn, "a skill the matrix carries is not an unknown skill").not.toHaveBeenCalled();
+      });
+
+      /**
+       * The shipped catalogue's own guidance, rather than a fixture's. `BUILT_IN_MATRIX` is
+       * what every real install resolves against, so its `usageGuidance` entries are the
+       * sentences that actually reach a user's sub-agents.
+       *
+       * The expected value is read from the matrix rather than written out, because the
+       * subject is the WIRING — that `usage` is `usageGuidance` — and a copy of the sentence
+       * here would redden on any edit to the skill's metadata. The paired negative below is
+       * what stops that read from being vacuous.
+       */
+      it("carries a catalogue skill's shipped guidance", () => {
+        initializeMatrix(BUILT_IN_MATRIX);
+        const stated = getSkillById(CATALOGUE_GUIDED_SKILL).usageGuidance;
+        const agentConfig: StackAgentConfig = {
+          [CATALOGUE_GUIDED_CATEGORY]: [createMockSkillAssignment(CATALOGUE_GUIDED_SKILL)],
+        };
+
+        const skills = resolveAgentConfigToSkills(agentConfig);
+
+        expect(stated, "the catalogue entry this spec reads must still state guidance").toEqual(
+          expect.any(String),
+        );
+        expect(skills).toStrictEqual([
+          { id: CATALOGUE_GUIDED_SKILL, usage: stated, preloaded: false },
+        ]);
+        expect(firstElement(skills).usage).not.toBe(FALLBACK_USAGE["meta-design"]);
       });
     });
   });

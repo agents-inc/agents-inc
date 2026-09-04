@@ -643,3 +643,69 @@ export const PUBLIC_MARKETPLACE_SOURCE: SkillSource = {
   installed: false,
   primary: true,
 };
+
+/**
+ * The trigger sentence a skill states for itself in its own `metadata.yaml`.
+ *
+ * Held once so the fixture below and every expectation over it cannot be edited apart.
+ * Written in the shape the shipped catalogue actually uses — a sentence opening with
+ * "Use when", which every `usageGuidance` in `types/generated/matrix.ts` does — so a
+ * fixture cannot make the rendered line read better than the real one does.
+ */
+export const STATED_USAGE_GUIDANCE =
+  "Use when a component owns state that no route and no server reply is responsible for.";
+
+/**
+ * A skill that states when an agent should reach for it.
+ *
+ * Its pair is `SKILLS.scss`, which states nothing: `usageGuidance` is optional on
+ * `SkillCore` and on `matrixRawMetadataSchema`, and is required only of a marketplace's
+ * own skills (`skillMetadataBaseSchema`, `z.string().min(10)`). So a skill reaching the
+ * matrix without one — local, custom, or from a source that predates the field — is the
+ * ordinary case rather than a malformed entry.
+ */
+export const GUIDED_SKILL = createMockSkill("web-state-zustand", {
+  usageGuidance: STATED_USAGE_GUIDANCE,
+});
+
+/**
+ * The sentence a reference carries when there is no stated guidance to read — the category arm of
+ * `statedUsageFor`, MIRRORED from the product rather than imported from it or rebuilt out of its
+ * template.
+ *
+ * Mirrored, because an assertion that imports the very string the product emits moves with it and
+ * can never fail — `e2e/pages/constants.ts` is the same trade, and its header states the reason in
+ * full. Written out per category rather than interpolated, because a helper reproducing
+ * `Use when working with ${category}.` would absorb a change to the template itself — the
+ * punctuation, the word order, the position of the category — in silence, and leave one edit
+ * standing in for a decision nobody re-read.
+ *
+ * The half of that precedent NOT copied is its registration requirement: a mirrored value there
+ * owes a comparator in `scripts/`, because nothing else holds it against the source. This one is
+ * read by every assertion over `SkillReference.usage` in two spec files, so drift from the product
+ * reddens them on the next run and the comparator is the suite itself.
+ *
+ * One entry serves both polarities: it is what a skill stating NO guidance must get, and what a
+ * skill that states guidance must NOT get. Holding the two on one definition is what stops a
+ * negative assertion going vacuous while the positives are updated, which is exactly what happened
+ * when the wording moved. Only the positives reddened, and the two negatives diverged from each
+ * other in a way neither spec could show: the `.not.toBe` in `stacks-loader.test.ts` went wholly
+ * vacuous, naming a string the product can no longer emit, while the `.not.toContain` in the render
+ * spec kept its teeth purely because the new sentence contains the old one as a substring. Both are
+ * now bound here and both were re-checked by removing this fixture's guidance and watching them
+ * fail.
+ *
+ * The trailing period is the product's, and it is NOT universal: `externalSkillMetadata` in
+ * `lib/seed/external-skills.ts` writes `Use when working with ${displayName}` with none, and that
+ * value becomes a skill's stated guidance on the next load — so one protocol list can carry both
+ * spellings. Pinned here so the divergence is visible rather than absorbed.
+ */
+export const FALLBACK_USAGE = {
+  "api-orm": "Use when working with api-orm.",
+  "meta-design": "Use when working with meta-design.",
+  "meta-reviewing": "Use when working with meta-reviewing.",
+  "web-client-state": "Use when working with web-client-state.",
+  "web-framework": "Use when working with web-framework.",
+  "web-styling": "Use when working with web-styling.",
+  "web-tooling": "Use when working with web-tooling.",
+} as const satisfies Partial<Record<Category, string>>;

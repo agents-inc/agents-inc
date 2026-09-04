@@ -53,6 +53,11 @@ const matrixSkillSchema = z.object({
   slug: z.string(),
   displayName: z.string(),
   description: z.string(),
+  // The sentence a compiled sub-agent reads as its cue to load the skill, which
+  // the editor's preview renders verbatim. Optional because a marketplace's own
+  // skills may state none; omitting it here would strip it from every fetched
+  // `catalog.json` and make every marketplace look like it states none.
+  usageGuidance: z.string().exactOptional(),
   category: idSchema,
   conflictsWith: z.array(skillRelationSchema),
   discourages: z.array(skillRelationSchema),

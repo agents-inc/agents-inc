@@ -48,7 +48,12 @@ import type {
   SkillScope,
   StackAgentConfig,
 } from "@workspace/compile"
-import type { Matrix, SeedExternalSkill, SeedPayload } from "@workspace/matrix"
+import type {
+  GeneratedAgentDefinition,
+  Matrix,
+  SeedExternalSkill,
+  SeedPayload,
+} from "@workspace/matrix"
 
 /**
  * NOTHING HERE MAY REACH A BROWSER-ONLY MODULE. `e2e/specs/output-preview.spec.ts`
@@ -297,27 +302,56 @@ function agentSkills(
   const reachable = reachableFrom(config, agent)
   const originById = new Map(config.skills.map((s) => [s.id, s.origin]))
 
-  return stackReferences(agentStack)
+  return stackReferences(agentStack, matrix)
     .filter((reference) => reachable(reference.id))
     .flatMap((reference) =>
       resolveSkill(reference, matrix, originById.get(reference.id))
     )
 }
 
-/** One `(skill, sub-agent)` row of the stack, with the usage line its category names. */
+/** One `(skill, sub-agent)` row of the stack, with the usage line the skill states. */
 type StackReference = { id: SkillId; usage: string; preloaded: boolean }
 
 /**
- * One sub-agent's stack, flattened into references — `resolveAgentConfigToSkills`
- * in the CLI's `stacks-loader.ts`, including the usage line it derives from the
- * category key.
+ * The one sentence in a compiled sub-agent telling it when to reach for a
+ * dynamic skill — `statedUsageFor` in the CLI's `stacks-loader.ts`, sentence
+ * for sentence, which is a contract rather than a resemblance: the two draw
+ * the same bullet for the same skill or the preview is wrong about a line a
+ * reader can diff.
+ *
+ * The skill's own `usageGuidance` wherever it states one, and the category key
+ * where it does not. A BLANK sentence counts as none, and `??` alone does not
+ * say that: `usageGuidance` is `z.string().exactOptional()` on
+ * `matrix-schema.ts`, so a catalogue stating an empty string is valid, and
+ * `agent.liquid` renders whatever this answers as a bullet of its own — an
+ * empty one is a row of the activation protocol saying nothing, which is
+ * strictly worse than the category sentence it displaced.
  */
-const stackReferences = (agentStack: StackAgentConfig): StackReference[] =>
+const statedUsageFor = (
+  stated: string | undefined,
+  category: string
+): string =>
+  stated !== undefined && stated.trim() !== ""
+    ? stated
+    : `Use when working with ${category}.`
+
+/**
+ * One sub-agent's stack, flattened into references — `resolveAgentConfigToSkills`
+ * in the CLI's `stacks-loader.ts`, including the usage line it reads off the
+ * catalogue.
+ */
+const stackReferences = (
+  agentStack: StackAgentConfig,
+  matrix: Matrix
+): StackReference[] =>
   Object.entries(agentStack).flatMap(([category, assignments]) =>
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
     (assignments ?? []).map((assignment: SkillAssignment) => ({
       id: assignment.id,
-      usage: `when working with ${category}`,
+      usage: statedUsageFor(
+        matrix.skills[assignment.id]?.usageGuidance,
+        category
+      ),
       preloaded: assignment.preloaded ?? false,
     }))
   )
@@ -393,10 +427,38 @@ const corpusRenderer = () => import("@workspace/compile/preview")
 /**
  * Every sub-agent the configuration selects, compiled from the vendored corpus.
  *
- * The definition fields are the CLI's own `metadata.yaml`, and only the ones
- * `resolveAgents` carries forward reach the template — `disallowedTools`,
- * `permissionMode` and `outputFormat` are deliberately dropped there, so an
- * agent's frontmatter says `permissionMode: default` however its metadata reads.
+ * The definition fields are the CLI's own `metadata.yaml`, and the template
+ * reads them through the same conditional spreads `resolveAgents` composes
+ * its `AgentConfig` with: `disallowedTools`, `permissionMode`, `isolation`
+ * and `experimental` are forwarded when the metadata sets them, so a preview
+ * agent whose source declares e.g. `permissionMode: plan` renders that rather
+ * than the template's own default.
+ *
+ * `effort` is one of the two fields a CONFIG can override, and it composes the
+ * way `resolveAgents` composes it — `agentConfig.effort ?? definition.effort`,
+ * that expression and no other. This function forwarded `agent.effort` alone,
+ * so a `metadata.yaml` declaring `effort: high` with no override wrote the
+ * line into a real install's frontmatter and drew none here. `model` is the
+ * other, and stays unconditional below because every shipped definition
+ * declares one; `effort` cannot, because none does — which is also why it is
+ * read off `definitionFields` rather than `definition`, a field no literal in
+ * `AGENT_DEFINITIONS` carries being absent from the indexed union's type
+ * rather than present-and-undefined.
+ *
+ * `hooks` is the one field of that set this cannot forward, and it is a
+ * structural gap rather than a choice made here: `GeneratedAgentDefinition`
+ * in `@workspace/matrix`'s generated `agents.ts` does not carry it —
+ * `scripts/generate-matrix-package.ts`'s `Pick<AgentYamlConfig, …>` never
+ * names it, so no shipped `metadata.yaml`'s `hooks` reaches this vendored
+ * roster to be read. No built-in agent declares one today, so the gap is
+ * inert in practice, but a custom agent authored with its own `Stop` or
+ * `PostToolUse` hook would preview without it. The completion gate itself is
+ * unaffected either way — `withCompletionGate` composes it onto every
+ * writing agent's `hooks` inside `renderAgent` itself, keyed on `tools`
+ * rather than on anything this function supplies.
+ *
+ * `outputFormat` stays dropped, matching `resolveAgents`: it reaches no
+ * template field there either, so there is nothing here to forward it into.
  */
 async function compileAgents(
   config: ProjectConfig,
@@ -410,6 +472,23 @@ async function compileAgents(
   return Promise.all(
     selected.map(async (agent) => {
       const definition = AGENT_DEFINITIONS[agent.name]
+      // A second binding to the SAME value, typed as the full interface rather than left on
+      // `definition`'s own inferred literal shape. `AGENT_DEFINITIONS` is `as const satisfies
+      // Record<AgentName, GeneratedAgentDefinition>`, so indexing it with the widened `AgentName`
+      // parameter infers a union of each agent's own literal shape — which is what lets the
+      // `model` line below stay unconditional, since every shipped entry's literal type states
+      // one, and is exactly what breaks for `effort`, `disallowedTools`, `permissionMode`,
+      // `isolation` and `experimental`: a field a given agent's metadata never sets is absent from
+      // that literal entirely, which TypeScript does not read as "present and undefined" the way an
+      // optional property on `GeneratedAgentDefinition` does. A `Pick` of only those five fields cannot
+      // carry the assignment either — every property it would name is optional, and TypeScript's
+      // weak-type check refuses a source object sharing none of them by name (`agent-summoner`'s
+      // own literal has no `disallowedTools` key at all). The full-interface annotation avoids
+      // both: `title`, `tools` and the rest are required, non-optional and genuinely in common,
+      // so the assignment is an ordinary widening rather than a weak-type one — and it is kept on
+      // a name of its own so the `model` line keeps reading `definition`'s narrow literal type.
+      const definitionFields: GeneratedAgentDefinition = definition
+      const effort = agent.effort ?? definitionFields.effort
       const compiled: AgentConfig = {
         name: agent.name,
         title: definition.title,
@@ -419,8 +498,20 @@ async function compileAgents(
         // definition declares a model — a future one that does not turns this
         // line into a type error rather than a branch nothing takes.
         model: agent.model ?? definition.model,
-        ...(agent.effort !== undefined && { effort: agent.effort }),
+        ...(effort !== undefined && { effort }),
         tools: [...definition.tools],
+        ...(definitionFields.disallowedTools !== undefined && {
+          disallowedTools: definitionFields.disallowedTools,
+        }),
+        ...(definitionFields.permissionMode !== undefined && {
+          permissionMode: definitionFields.permissionMode,
+        }),
+        ...(definitionFields.isolation !== undefined && {
+          isolation: definitionFields.isolation,
+        }),
+        ...(definitionFields.experimental !== undefined && {
+          experimental: definitionFields.experimental,
+        }),
         skills: agentSkills(config, matrix, agent),
         path: definition.path,
       }
