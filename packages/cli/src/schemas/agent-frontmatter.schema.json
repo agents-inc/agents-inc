@@ -32,6 +32,20 @@
       "type": "string",
       "enum": ["default", "acceptEdits", "dontAsk", "bypassPermissions", "plan", "delegate"]
     },
+    "isolation": {
+      "type": "string",
+      "enum": ["worktree"]
+    },
+    "experimental": {
+      "type": "object",
+      "properties": {
+        "cacheTtl": {
+          "type": "string",
+          "enum": ["5m", "1h"]
+        }
+      },
+      "additionalProperties": false
+    },
     "skills": {
       "type": "array",
       "items": {

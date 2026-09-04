@@ -2,7 +2,14 @@
 // ANY edit here — a comment-only one included — obliges `bun run generate:matrix` in packages/cli;
 // `generate:matrix:check` is the gate.
 
-import type { Domain, EffortLevel, ModelName, PermissionMode } from "./matrix";
+import type {
+  AgentIsolation,
+  CacheTtl,
+  Domain,
+  EffortLevel,
+  ModelName,
+  PermissionMode,
+} from "./matrix";
 import type { PluginSkillRef, Skill, SkillId } from "./skills";
 import type { AgentName } from "./generated/source-types";
 
@@ -17,16 +24,27 @@ export type AgentHookAction = {
   prompt?: string;
 };
 
-/** Hook definition with optional file matcher and actions */
+/**
+ * Hook definition: the actions one hook event fires, and optionally which tools they fire for.
+ *
+ * `hooks` is REQUIRED. A definition carrying none fires nothing, and every schema that reads a
+ * compiled agent says so — `strictHooksRecordSchema` backs the loader, the source-agent validator
+ * and the compiled-frontmatter reader alike. It was optional here while the loader's schema was
+ * too, which is what let a definition written with its actions one level flat be emptied to `{}`
+ * and emitted rather than refused. `plugin.json` takes `Partial` of this at its own boundary; see
+ * `agentHookDefinitionSchema`.
+ */
 export type AgentHookDefinition = {
   matcher?: string;
-  hooks?: AgentHookAction[];
+  hooks: AgentHookAction[];
 };
+
+/** Declared in `matrix.ts`, beside the other frontmatter vocabulary the matrix package vendors. */
+export type { AgentIsolation, CacheTtl } from "./matrix";
 
 /**
  * Shared fields present on all agent type variants.
- * Extracted to avoid duplicating these 8 fields across AgentDefinition,
- * AgentConfig, and AgentYamlConfig.
+ * Extracted to avoid duplicating them across AgentDefinition, AgentConfig, and AgentYamlConfig.
  */
 export type BaseAgentFields = {
   title: string;
@@ -38,7 +56,23 @@ export type BaseAgentFields = {
   tools: string[];
   disallowedTools?: string[];
   permissionMode?: PermissionMode;
+  /**
+   * How the sub-agent's working tree is separated from the session's.
+   *
+   * `"worktree"` runs it in a fresh git worktree, which is what lets a reviewing agent read a
+   * diff without its own reasoning being coloured by the session that produced it. Emitted into
+   * compiled frontmatter only when set — an unset agent shares the session's tree, which is what
+   * every agent that WRITES needs.
+   */
+  isolation?: AgentIsolation;
   hooks?: Record<string, AgentHookDefinition[]>;
+  /**
+   * Experimental frontmatter options, as Claude Code's own `experimental` map.
+   *
+   * A map rather than a flat `cacheTtl` field because that is the shape the frontmatter takes, and
+   * because the next option to arrive should widen this type rather than add a sibling to it.
+   */
+  experimental?: { cacheTtl?: CacheTtl };
   /** Which output format file to use */
   outputFormat?: string;
 };
@@ -87,9 +121,17 @@ export type AgentFrontmatter = {
   model?: ModelName;
   effort?: EffortLevel;
   permissionMode?: PermissionMode;
+  isolation?: AgentIsolation;
+  /**
+   * Experimental frontmatter options. Derived from {@link BaseAgentFields} rather than restated,
+   * because a structurally-equal copy diverges silently on the first option either side adds —
+   * and `agent.liquid` emits this key from the agent definition that type describes.
+   */
+  experimental?: NonNullable<BaseAgentFields["experimental"]>;
   /** Skill names that are preloaded for this agent */
   skills?: SkillId[];
-  hooks?: Record<string, AgentHookDefinition[]>;
+  /** Derived from {@link BaseAgentFields} for the reason `experimental` above it is. */
+  hooks?: NonNullable<BaseAgentFields["hooks"]>;
 };
 
 /** All data needed to render a compiled agent prompt */

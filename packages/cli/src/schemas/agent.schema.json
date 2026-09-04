@@ -45,6 +45,10 @@
       "type": "string",
       "enum": ["default", "acceptEdits", "dontAsk", "bypassPermissions", "plan", "delegate"]
     },
+    "isolation": {
+      "type": "string",
+      "enum": ["worktree"]
+    },
     "hooks": {
       "type": "object",
       "propertyNames": {
@@ -87,6 +91,16 @@
           "additionalProperties": false
         }
       }
+    },
+    "experimental": {
+      "type": "object",
+      "properties": {
+        "cacheTtl": {
+          "type": "string",
+          "enum": ["5m", "1h"]
+        }
+      },
+      "additionalProperties": false
     },
     "outputFormat": {
       "type": "string"

@@ -3,7 +3,7 @@
 // Fills the AGENT_DEFINITIONS gap the shared matrix package left open.
 
 import type { AgentName } from "../vendor/generated/source-types"
-import type { ModelName, PermissionMode } from "../vendor/matrix"
+import type { AgentIsolation, CacheTtl, EffortLevel, ModelName, PermissionMode } from "../vendor/matrix"
 
 /** Agent metadata as shipped by the CLI's per-agent metadata.yaml files. */
 export type GeneratedAgentDefinition = {
@@ -11,9 +11,13 @@ export type GeneratedAgentDefinition = {
   title: string
   description: string
   model?: ModelName
+  effort?: EffortLevel
   tools: string[]
   disallowedTools?: string[]
   permissionMode?: PermissionMode
+  /** Runs the agent in a git worktree of its own. Carried so a browser render matches the CLI's. */
+  isolation?: AgentIsolation
+  experimental?: { cacheTtl?: CacheTtl }
   outputFormat?: string
   /** Agent role, from the CLI's src/agents/<flavor>/ directory. */
   flavor: string
@@ -25,7 +29,7 @@ export const AGENT_DEFINITIONS = {
   "agent-summoner": {
     "id": "agent-summoner",
     "title": "Agent Summoner Agent",
-    "description": "Expert in creating agents and skills - understands agent architecture deeply - invoke when you need to create, improve, or analyze agents/skills",
+    "description": "Expert in creating and improving Claude Code sub-agents - knows the six-file agent source layout, the compile template and the frontmatter decisions - invoke to author a new agent, analyse an existing one, or decide its model and tools",
     "model": "opus",
     "tools": ["Read","Write","Edit","Grep","Glob","Bash"],
     "flavor": "meta",
@@ -80,7 +84,7 @@ export const AGENT_DEFINITIONS = {
     "id": "api-tester",
     "title": "API Tester Agent",
     "description": "Tests backend features - API endpoint integration tests, database operation tests, auth flow tests, middleware chain tests, error response validation - invoke BEFORE or AFTER api-developer implements features",
-    "model": "sonnet",
+    "model": "opus",
     "tools": ["Read","Write","Edit","Grep","Glob","Bash"],
     "flavor": "tester",
     "path": "tester/api-tester",
@@ -125,7 +129,7 @@ export const AGENT_DEFINITIONS = {
     "id": "convention-keeper",
     "title": "Convention Keeper Agent",
     "description": "Reviews accumulated findings from sub-agent work, cross-references against existing standards docs, and proposes targeted documentation updates to prevent recurrence of anti-patterns",
-    "model": "sonnet",
+    "model": "opus",
     "tools": ["Read","Write","Edit","Grep","Glob","Bash"],
     "flavor": "meta",
     "path": "meta/convention-keeper",
@@ -144,14 +148,14 @@ export const AGENT_DEFINITIONS = {
     "title": "Reviewer Agent",
     "description": "Reviews any diff - web, API, CLI, AI, and infrastructure code alike - one severity-disciplined quality gate for correctness, security, and convention adherence; domain-specific checklists arrive via meta-reviewing skills",
     "model": "opus",
-    "tools": ["Read","Write","Edit","Grep","Glob","Bash"],
+    "tools": ["Read","Grep","Glob","Bash"],
     "flavor": "reviewer",
     "path": "reviewer/reviewer",
   },
   "skill-summoner": {
     "id": "skill-summoner",
     "title": "Skill Summoner Agent",
-    "description": "Creates technology-specific skills by researching best practices and comparing with codebase standards - use for state management, styling, API frameworks, and other technology skills",
+    "description": "Creates and improves every skill this product authors, technology or methodology alike - researches current practice from official documentation and real codebases, compares it against the standards the project already holds, and brings the differences back as a decision - use to author a new skill or improve an existing one",
     "model": "opus",
     "tools": ["Read","Write","Edit","Grep","Glob","WebSearch","WebFetch"],
     "flavor": "meta",

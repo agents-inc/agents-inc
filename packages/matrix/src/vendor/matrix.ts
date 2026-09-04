@@ -31,6 +31,37 @@ export const PERMISSION_MODES = [
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 /**
+ * The one isolation mode Claude Code's sub-agent frontmatter documents.
+ *
+ * Beside the other frontmatter vocabulary rather than in `agents.ts`, because this file is the half
+ * `@workspace/matrix` vendors — and a browser rendering a compiled agent has to spell `isolation`
+ * the same way the CLI does or the two front doors emit different frontmatter for the same agent.
+ *
+ * The absent case is not a member: an agent with no `isolation` shares the session's working tree,
+ * and that is the default the key opts out of.
+ */
+export const AGENT_ISOLATIONS = ["worktree"] as const;
+export type AgentIsolation = (typeof AGENT_ISOLATIONS)[number];
+
+/**
+ * How long a sub-agent's prompt-cache entries live.
+ *
+ * The one setting that makes a stable prompt prefix pay: a compiled agent's body is its system
+ * prompt, and everything above the trailing volatile block is byte-identical between invocations,
+ * so a longer TTL is what lets the second invocation reuse the first one's cache rather than
+ * rebuilding it.
+ *
+ * **Emitted only when an agent declares it, and deliberately never defaulted.** `5m` is Claude
+ * Code's own default; `1h` bills cache WRITES at a higher rate, so a generator that set it for
+ * every agent it wrote would raise the bill of everyone who installed one without being asked —
+ * and it is ignored outright while a subscription runs on usage credits, so the cost would
+ * sometimes buy nothing. Whether the trade is worth it depends on how the agent is used, which is
+ * the installer's knowledge rather than the author's.
+ */
+export const CACHE_TTLS = ["5m", "1h"] as const;
+export type CacheTtl = (typeof CACHE_TTLS)[number];
+
+/**
  * Category definitions indexed by category ID.
  * Partial because not every Category has a category definition (e.g., a marketplace
  * may only define a subset of all possible categories).
