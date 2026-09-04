@@ -118,17 +118,22 @@ grep -rnP '\b(enforces?|refuses?|rejects?|validates?|requires?|will fail)\b' \
 
 ## Core Principles
 
-**1. Investigation First** — never document code you have not read. Base every claim on actual file
-contents.
+**1. Document from files you have opened.** Every claim comes from file contents you read.
 
-**2. AI-Centric Focus** — structure for AI parsing: tables, explicit paths, code blocks. No
-tutorials, no explanations of general concepts.
+**2. Structure for a reader that parses.** Tables, explicit paths, code blocks — the reference a
+model needs, rather than a tutorial or an explanation of a general concept.
 
-**3. Path Verification** — every file path MUST be verified to exist, and every symbol cited MUST
-be verified to exist in it. Cite by symbol, never by line number.
+**3. Verify every path and symbol against source**, and cite by symbol; line numbers move and the
+citation rots with them.
 
-**4. Write Verification** — re-read every file after editing. Never report success without
-verification.
+**4. Re-read a file after editing it** and confirm the change is present before reporting the work
+done.
+
+Principles 1 and 4 are also rendered into every compiled agent by
+`src/agents/_templates/methodologies/operating-principles.liquid` — they are stated here because
+this document is read by people and by lanes that are not compiled agents. An agent's own files
+need not restate them; the census of agents that still do is
+`grep -rlE '\*\*\(You MUST|→ STOP|## CRITICAL' src/agents/*/*/*.md`.
 
 **5. Progressive Loading** — load `DOCUMENTATION_MAP.md` first, then only the documents you need.
 
@@ -1042,34 +1047,20 @@ still exist), and **minimal** (WHERE things are and WHAT they do).
 
 ### Self-Correction Triggers
 
-| Trigger                                           | Correction                                       |
-| ------------------------------------------------- | ------------------------------------------------ |
-| Documenting without reading the code              | Stop. Read the actual source files.              |
-| Generic description instead of a file path        | Stop. Give a specific path plus a symbol name.   |
-| Citing a source line number                       | Stop. Cite the enclosing symbol.                 |
-| Writing what this pass checked or corrected       | Stop. That is the commit message's job.          |
-| Writing a fact as a diff from its previous value  | Stop. State the fact.                            |
-| Citing a task ID                                  | Stop. Name the behaviour.                        |
-| Moving `last_validated` after a partial pass      | Stop. Leave the date.                            |
-| Reporting success without re-reading the file     | Stop. Read the file to confirm the write landed. |
-| Renaming or deleting a symbol or a module         | Stop. Grep `.ai-docs/` for the old name first.   |
-| Writing "all three" / "every one of these"        | Stop. It is a count. Check every member.         |
-| Writing "never called" / "the only N call sites"  | Stop. Put the grep that settles it beside it.    |
-| Quoting a non-`packages/cli` workspace in a fence | Stop. Add `<!-- prettier-ignore -->` above it.   |
-
----
-
-## Critical Reminders
-
-**(You MUST read actual code files before documenting — never document based on assumptions)**
-
-**(You MUST verify every file path and every cited symbol against source — and cite symbols, never line numbers)**
-
-**(You MUST apply the paragraph test to everything you write or keep)**
-
-**(You MUST NOT record what your pass did in the documents it touched)**
-
-**(You MUST re-read files after editing to verify changes were written)**
+| Trigger                                           | Correction                                 |
+| ------------------------------------------------- | ------------------------------------------ |
+| Documenting without reading the code              | Read the actual source files.              |
+| Generic description instead of a file path        | Give a specific path plus a symbol name.   |
+| Citing a source line number                       | Cite the enclosing symbol.                 |
+| Writing what this pass checked or corrected       | That is the commit message's job.          |
+| Writing a fact as a diff from its previous value  | State the fact.                            |
+| Citing a task ID                                  | Name the behaviour.                        |
+| Moving `last_validated` after a partial pass      | Leave the date.                            |
+| Reporting success without re-reading the file     | Read the file to confirm the write landed. |
+| Renaming or deleting a symbol or a module         | Grep `.ai-docs/` for the old name first.   |
+| Writing "all three" / "every one of these"        | It is a count. Check every member.         |
+| Writing "never called" / "the only N call sites"  | Put the grep that settles it beside it.    |
+| Quoting a non-`packages/cli` workspace in a fence | Add `<!-- prettier-ignore -->` above it.   |
 
 ---
 

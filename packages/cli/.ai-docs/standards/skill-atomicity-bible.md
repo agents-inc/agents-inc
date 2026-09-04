@@ -4,25 +4,16 @@ last_validated: 2026-04-21
 
 # The Skill Atomicity Bible
 
-> **Authority order**: When the primer (`skill-atomicity-primer.md`) and this bible disagree, the primer wins.
+> `skill-atomicity-primer.md` outranks this document where the two differ.
 
-> **The Core Principle**: A skill should ONLY discuss its own domain.
+> **The Core Principle**: A skill discusses only its own domain.
 
-A React skill shouldn't mention SCSS, Zustand, or MSW. A styling skill shouldn't mention lucide-react. This creates portable, composable, stack-agnostic skills that can be mixed and matched freely.
+**Paths and commands in this document are relative to `packages/cli`**, except those under
+`src/skills/`, which name the separate `agents-inc/skills` marketplace checkout and are run from its
+root. Run each from the root it names — from the wrong one an audit grep exits non-zero with an
+empty stdout, which reads as a clean skill.
 
----
-
-## Why Atomicity Matters
-
-**Portability**: A React skill that doesn't mention SCSS works for teams using Tailwind, CSS-in-JS, or plain CSS.
-
-**Composability**: Skills can be combined freely without conflicts or redundancy.
-
-**Maintenance**: Updating one skill doesn't require updating others.
-
-**Clarity**: Each skill teaches ONE thing well, without cross-domain noise.
-
-**Flexibility**: Stacks can evolve tool-by-tool without rewriting skills.
+A React skill discusses components, hooks and composition; SCSS, Zustand and MSW are settled by the skills that own them. A styling skill discusses CSS patterns and tokens, and leaves icon libraries to theirs. This creates portable, composable, stack-agnostic skills that can be mixed and matched freely.
 
 ---
 
@@ -36,10 +27,9 @@ A React skill shouldn't mention SCSS, Zustand, or MSW. A styling skill shouldn't
 6. [Quality Gate Checklist](#6-quality-gate-checklist)
 7. [Complexity Tiers](#7-complexity-tiers)
 8. [Skill File Extraction](#8-skill-file-extraction)
-9. [Examples: Before vs After](#9-examples-before-vs-after)
-10. [Pitfalls to Avoid](#10-pitfalls-to-avoid)
-11. [Troubleshooting Common Issues](#11-troubleshooting-common-issues)
-12. [Verification Commands](#12-verification-commands)
+9. [Pitfalls to Avoid](#9-pitfalls-to-avoid)
+10. [Troubleshooting Common Issues](#10-troubleshooting-common-issues)
+11. [Verification Commands](#11-verification-commands)
 
 ---
 
@@ -48,35 +38,29 @@ A React skill shouldn't mention SCSS, Zustand, or MSW. A styling skill shouldn't
 Skills follow a directory-based structure with modular files:
 
 ```
-.claude/skills/{domain}-{category}-{technology}/
+.claude/skills/{domain}-{group}-{technology}/
 ├── SKILL.md              # Main skill file with TOC
 ├── metadata.yaml         # Skill metadata (category, author, slug, displayName, etc.)
-├── reference.md          # Quick reference and decision frameworks
+├── reference.md          # Comparison tables, API lookup and migration notes
 └── examples/             # Technology-specific example files
-    ├── core.md           # Core patterns (ALWAYS required)
+    ├── core.md           # Core patterns (required in every skill)
     └── {topic}.md        # Technology-specific topics (as many as needed)
 ```
 
 ### Key Rules
 
-- **`core.md` is ALWAYS required** — contains first-time setup, primary API, essential types, fundamental patterns, minimum viable usage
+- **`core.md` is required in every skill** — contains first-time setup, primary API, essential types, fundamental patterns, minimum viable usage
 - Additional files are named after the **topic** they cover, not fixed categories
 - The number and names of additional files depend on the **technology's natural domain boundaries**
 - There is no maximum file count — create as many topic files as the technology naturally requires
 
 ### Technology-Driven Examples
 
-Different technologies produce different file structures because they have different domains of complexity:
-
-| Technology          | Example Files                                                      |
-| ------------------- | ------------------------------------------------------------------ |
-| **React**           | `core.md`, `hooks.md`, `performance.md`, `theming.md`              |
-| **API/Hono**        | `core.md`, `validation.md`, `seeding.md`, `middleware.md`          |
-| **Zustand**         | `core.md`, `persistence.md`, `middleware.md`, `devtools.md`        |
-| **Vitest**          | `core.md`, `mocking.md`, `async-patterns.md`                       |
-| **SCSS**            | `core.md`, `responsive.md`, `theming.md`, `animations.md`          |
-| **Redux Toolkit**   | `core.md`, `async-thunks.md`, `entity-adapters.md`, `selectors.md` |
-| **React Hook Form** | `core.md`, `dynamic-fields.md`, `multi-step-forms.md`              |
+Different technologies produce different file structures, because each has its own domain of
+complexity: a router skill splits by route kind, a styling skill by what is being styled, a testing
+skill by what is under test. Read what the shipped skills actually did before deciding a split —
+`ls src/skills/*/examples/` in the marketplace repository is the whole survey, and several skills
+answer with `core.md` alone, which is a correct answer rather than an unfinished one.
 
 ### SKILL.md Table of Contents
 
@@ -97,26 +81,39 @@ description: Component architecture, hooks, patterns
 - [examples/core.md](examples/core.md) - Component patterns, props, composition
 - [examples/hooks.md](examples/hooks.md) - Custom hook implementations
 - [examples/performance.md](examples/performance.md) - Memoization, lazy loading, profiling
-- [reference.md](reference.md) - Decision frameworks, anti-patterns
+- [reference.md](reference.md) - Comparison tables, API lookup and migration notes
 ```
 
 ### SKILL.md Content Standard
 
-SKILL.md is the **decision layer** — it answers _what_, _why_, _when_, and _what not to do_. It never answers _how_ with full code implementations.
+SKILL.md is the **decision layer** — it answers _what_, _why_, _when_, and _what goes wrong_. It never answers _how_ with full code implementations.
 
-| Section                       | Purpose                                                               |
-| ----------------------------- | --------------------------------------------------------------------- |
-| Frontmatter                   | `name` and `description` fields                                       |
-| Quick Guide                   | One paragraph summary of key patterns and gotchas                     |
-| `<critical_requirements>`     | Must-follow rules, placed at the **top**                              |
-| Auto-detection                | Keywords that trigger this skill                                      |
-| When to use / When NOT to use | Decision guidance                                                     |
-| Key patterns                  | Name + brief illustrative snippet (3–10 lines) + link to example file |
-| Table of Contents             | Links to all example files by concept                                 |
-| Red flags                     | Common mistakes, gotchas, and anti-patterns                           |
-| `<critical_reminders>`        | Repeats critical rules at the **bottom**                              |
+| Section                        | Purpose                                                                                                                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Frontmatter                    | `name` and `description` fields                                                                                                                                                                             |
+| Quick Guide                    | One paragraph summary of key patterns and gotchas                                                                                                                                                           |
+| Table of Contents              | Links to all example files by concept                                                                                                                                                                       |
+| Which path applies             | Where the technology is used in more than one way: the branches, and the file each one opens, so the branches not taken stay unread. Left out where the technology has one path                             |
+| `<critical_requirements>`      | The rules this technology's patterns depend on, stated once, at the **top**, each as the action to take                                                                                                     |
+| Auto-detection                 | Keywords that trigger this skill                                                                                                                                                                            |
+| Applies to / Handled elsewhere | Decision guidance — what this skill settles, and which neighbouring concern is settled somewhere else                                                                                                       |
+| `<philosophy>`                 | Optional. Why this technology, and the mental model it asks for; include it where the tool's shape is non-obvious                                                                                           |
+| `<decision_framework>`         | Optional. Comparative "pick X over Y" guidance, where the technology competes with a named alternative inside its own domain                                                                                |
+| Key patterns (`<patterns>`)    | Name + brief illustrative snippet (3–10 lines) + link to example file, numbered Pattern 1, Pattern 2, …                                                                                                     |
+| Red flags                      | Common mistakes, gotchas, and anti-patterns                                                                                                                                                                 |
+| `<critical_reminders>`         | Optional, at the **bottom**. Include it when it adds a standing consideration the requirements block did not state; a verbatim repeat of that block is loaded on every use and says nothing the second time |
 
-**Target: ~500 lines.** If SKILL.md exceeds this, move full code examples to the examples folder — not by deleting content, but by extracting it. All concepts, decisions, and red flags stay in SKILL.md. Only full code blocks move out. Never remove patterns, red flags, or decision guidance just to hit a line count.
+**Trim the wording before moving anything.** A skill loads whole, so every word is paid for by every
+task that touches the technology — and most skills shrink by a third on wording alone: the clause
+restating the one before it, the sentence that only sets up the next, the hedges. Do that first,
+then move code out; a file cut to length by extraction alone stays wordy in what remains.
+
+**`SKILL.md` is the decision layer, and its size follows from that rather than from a number.** When it stops being scannable — when a reader looking for which approach to take has to page past implementations to find the answer — move the full code examples into the examples folder. Extraction rather than deletion: concepts, decisions and red flags stay, the code blocks move out and are reached by a link. There is deliberately no line or token budget here (owner ruling, 2026-09-03); a threshold invites trimming to the number rather than to the job, and the same count means different things in a skill of dense config and a skill of prose.
+
+**The test for where a paragraph belongs:** a reader choosing between two approaches needs it in
+SKILL.md; a reader implementing the one they chose can follow a link. Keep the patterns, the red
+flags and the decision guidance — a line count is the symptom, and what belongs where is the
+question.
 
 ### Examples Folder Structure
 
@@ -124,7 +121,7 @@ Examples are split into focused files based on the technology's natural topics:
 
 | File         | Purpose                               | When to create                                 |
 | ------------ | ------------------------------------- | ---------------------------------------------- |
-| `core.md`    | Essential patterns everyone needs     | ALWAYS — required for every skill              |
+| `core.md`    | Essential patterns everyone needs     | required in every skill                        |
 | `{topic}.md` | Technology-specific extended patterns | When a topic has 100+ lines of focused content |
 
 Each example file should cross-reference related files at the top.
@@ -133,13 +130,13 @@ Each example file should cross-reference related files at the top.
 
 ## 1. The Core Principle
 
-**A skill should ONLY discuss its own domain.**
+**A skill discusses only its own domain.**
 
 This is the single most important rule for skill atomicity. Every other guideline derives from this principle.
 
 ### What This Means
 
-| Domain               | Should Discuss                                   | Should NOT Discuss                        |
+| Domain               | Should Discuss                                   | Settled Elsewhere                         |
 | -------------------- | ------------------------------------------------ | ----------------------------------------- |
 | **React**            | Components, hooks, props, lifecycle, composition | SCSS, Zustand, React Query, MSW           |
 | **Styling**          | CSS patterns, design tokens, selectors, layout   | lucide-react, React Query, form libraries |
@@ -152,12 +149,12 @@ This is the single most important rule for skill atomicity. Every other guidelin
 1. **Portability**: A React skill that doesn't mention SCSS works for teams using Tailwind, CSS-in-JS, or plain CSS
 2. **Composability**: Skills can be mixed freely without conflicts
 3. **Maintenance**: Updating one skill doesn't require updating others
-4. **Clarity**: Each skill teaches ONE thing well
+4. **Clarity**: Each skill teaches one thing well
 5. **Flexibility**: Stacks can evolve tool-by-tool without rewriting skills
 
 ### The Exception: Bridge Patterns
 
-When a skill defines its own bridge/adapter utility (like MobxQuery that bridges MobX and React Query), implementation-specific imports CAN be preserved because they teach "how to bridge" not "what tool to use."
+When a skill defines its own bridge/adapter utility (like MobxQuery that bridges MobX and React Query), implementation-specific imports can be preserved because they teach "how to bridge" not "what tool to use."
 
 ```typescript
 // ALLOWED in MobX skill - defines the bridge pattern itself
@@ -228,10 +225,13 @@ Sections that list specific tools from other skills.
 - MSW: API mocking in tests
 
 // FIXED
-**Integrates with your chosen solutions:**
-Components are styling-agnostic. Apply styles via className prop.
-State management decisions are separate from component architecture.
-Testing approaches integrate through standard patterns.
+**Applies to:** component architecture, props, composition.
+
+**Handled elsewhere:**
+
+- Styling — components accept a `className`; the styling approach is settled by whatever owns it.
+- Client state — components receive data as props, and where it came from is not their concern.
+- Test doubles for the network — components are unaware of the transport.
 ```
 
 **Why High Severity:** Creates expectation of specific stack, reduces portability.
@@ -387,11 +387,16 @@ For each external domain reference found:
 
 ### The Four Phases
 
+The four are one lane: Phase 4 validates the transform Phase 3 made, by the agent that made it.
+Auditing a skill someone else wrote is a separate read-only dispatch that reports with quotes and
+changes nothing — the verifier is never the fixer.
+
 #### Phase 1: Audit
 
 ```bash
 # Find all violations
-grep -rn "SCSS\|scss-modules\|cva\|zustand\|react-query\|MSW\|msw\|Hono\|Drizzle" "src/skills/path/to/skill/"
+# The one command, defined once in §11 "Full Audit Command" — run that, not a shortened copy.
+# A narrower set passes a transformation the full audit would still catch.
 
 # Check specific files
 grep -n "import" skill/examples/*.md          # Import violations
@@ -441,8 +446,7 @@ import styles from "./button.module.scss";
 **Works with:** SCSS Modules, React Query, Zustand
 
 // After
-**Integrates with your chosen solutions:**
-Components accept className for styling flexibility.
+**Handled elsewhere:** styling — components accept a `className` and settle none of it.
 ```
 
 **For icons in examples:**
@@ -459,8 +463,7 @@ import { ChevronUp, ChevronDown } from "lucide-react";
 #### Phase 4: Validate
 
 ```bash
-# 1. Grep verification - should return 0 results
-grep -rn "SCSS\|cva\|zustand\|react-query\|MSW" skill/
+# 1. Run §11's Full Audit Command — it must return nothing
 
 # 2. Read transformed skill front-to-back
 # - Does philosophy still make sense?
@@ -594,8 +597,7 @@ When removing valuable content that belongs in another skill:
 
 ### Step 4: Document the Move
 
-- Add entry to transformation log
-- Note source file, line numbers, destination
+- Note the source file, the section moved, and its destination
 
 ### Step 5: Delete from Source
 
@@ -615,15 +617,15 @@ When removing valuable content that belongs in another skill:
 
 ## 6. Quality Gate Checklist
 
-**A skill transformation is NOT complete until ALL boxes are checked:**
+**A skill transformation is complete when every box below is checked:**
 
 ### Schema Compliance (REQUIRED)
 
 - [ ] `SKILL.md` has frontmatter with `name` and `description`
-- [ ] `metadata.yaml` has all required fields (category, author, slug, displayName, cliDescription, usageGuidance)
+- [ ] `metadata.yaml` has all required fields (category, slug, domain, author, displayName, cliDescription, usageGuidance) — the loader requires `domain` even though `metadata.schema.json` does not list it among its own required keys
 - [ ] Author uses `@` prefix (`@vince`, not `vince`)
-- [ ] Category is from allowed enum (see `src/cli/types/generated/source-types.ts` CATEGORIES)
-- [ ] `npx agents-inc doctor` reports no errors under `Content checks` (its `Sources` and `Skills` rows validate `metadata.yaml` and `SKILL.md`)
+- [ ] Category is from the allowed enum (see `src/cli/types/generated/source-types.ts` CATEGORIES) — or the file declares `custom: true`, which routes it to `customMetadataValidationSchema`, where any string category and any kebab-case slug are accepted
+- [ ] `npx agents-inc doctor` reports no errors under `Content checks` (its `Marketplaces` and `Skills` rows validate `metadata.yaml` and `SKILL.md`)
 
 ### Import Purity
 
@@ -639,31 +641,29 @@ When removing valuable content that belongs in another skill:
 
 ### Structure Purity
 
-- [ ] Integration Guide removed or made completely generic
+- [ ] Integration Guide removed; the neighbouring concern named under **Handled elsewhere** as a capability rather than as the tool that provides it
 - [ ] All decision trees end within this skill's domain
 - [ ] All anti-patterns are domain-specific
 - [ ] Pattern titles don't include external tool names
 
 ### File Structure
 
-- [ ] `examples/core.md` exists (ALWAYS required — rename the most fundamental example file if needed)
+- [ ] `examples/core.md` exists (required in every skill — rename the most fundamental example file if needed)
 - [ ] `<red_flags>` section exists in SKILL.md (not just in reference.md)
 - [ ] No content duplicated between SKILL.md and example files (SKILL.md has brief snippets + links)
-- [ ] No content duplicated between SKILL.md and reference.md (each concept lives in ONE canonical location)
-- [ ] Old technology-named example files deleted once content is moved to `core.md` + topic files — do not leave redirect stubs
+- [ ] No content duplicated between SKILL.md and reference.md (each concept lives in one canonical location)
+- [ ] Old technology-named example files renamed into `core.md` + topic files rather than left beside them as stubs
 - [ ] No `NEXT_PUBLIC_*`, `VITE_*`, or other framework-specific env var prefixes
 
 ### Template Contamination
 
-- [ ] Critical requirements actually relate to THIS technology (not copy-pasted from another skill)
-- [ ] Critical reminders match critical requirements (no stale entries from a different domain)
+- [ ] Critical requirements actually relate to this technology (not copy-pasted from another skill)
 - [ ] No `runInAction()`, `forwardRef()`, `defineStore()` in skills that don't use those technologies
 
 ### Coherence
 
 - [ ] Examples still compile conceptually
 - [ ] Patterns are actionable without other skill knowledge
-- [ ] Critical requirements unchanged and enforceable
 - [ ] Philosophy section coherent after changes
 - [ ] Quick Guide focused on this domain only
 
@@ -676,9 +676,8 @@ When removing valuable content that belongs in another skill:
 
 ### Verification
 
-- [ ] Grep verification shows 0 violation matches
+- [ ] §11's Full Audit Command returns nothing
 - [ ] Full read-through confirms no violations missed
-- [ ] Transformation documented in log
 - [ ] Schema validation passes (`npx agents-inc doctor` — the `Content checks` layer)
 
 ---
@@ -725,9 +724,9 @@ Guidelines for splitting large example files into `core.md` plus technology-spec
 
 ### Core vs Extractable Criteria
 
-#### Core Patterns (KEEP in core.md)
+#### Core Patterns (kept in core.md)
 
-A pattern is **core** if it meets ANY of these criteria:
+A pattern is **core** if it meets any of these criteria:
 
 | Criterion                | Description                                   | Example                                        |
 | ------------------------ | --------------------------------------------- | ---------------------------------------------- |
@@ -739,9 +738,9 @@ A pattern is **core** if it meets ANY of these criteria:
 
 **Rule of thumb**: If a developer cannot use the library at all without this pattern, it is core.
 
-#### Extractable Patterns (MOVE to topic files)
+#### Extractable Patterns (moved to topic files)
 
-A pattern is **extractable** if it meets ALL of these criteria:
+A pattern is **extractable** if it meets all of these criteria:
 
 | Criterion          | Description                            | Example                             |
 | ------------------ | -------------------------------------- | ----------------------------------- |
@@ -763,20 +762,18 @@ Is this pattern required to use the library at all?
 
 ### Size Guidelines
 
-| Metric                  | Guideline                                      |
-| ----------------------- | ---------------------------------------------- |
-| `core.md` target size   | 200-500 lines                                  |
-| Extraction trigger      | Total examples exceed 600 lines                |
-| Topic file minimum      | 100+ lines of focused content                  |
-| No extraction needed if | Total under 500 lines or fewer than 5 patterns |
-
-Do not extract if all patterns are interdependent (cannot understand one without the others) or if the skill is setup/configuration focused and naturally smaller.
+| Metric                  | Guideline                           |
+| ----------------------- | ----------------------------------- |
+| `core.md` target size   | whatever the patterns need, in full |
+| Extraction trigger      | A reader stops finding patterns     |
+| Topic file minimum      | 100+ lines of focused content       |
+| No extraction needed if | Every pattern is still easy to find |
 
 ### File Structure for Extracted Files
 
 #### Header Format
 
-Each topic file MUST start with:
+Each topic file starts with:
 
 ```markdown
 # [Skill Name] - [Topic] Examples
@@ -864,228 +861,24 @@ When extracting patterns from an existing skill:
 - [ ] Categorize each pattern using the core vs extractable criteria above
 - [ ] Group extractable patterns by their natural topic
 - [ ] Name topic files after the concept they cover (not generic categories)
-- [ ] Verify core patterns remain under 500 lines
+- [ ] Verify the core patterns are still the ones a reader reaches for first
 - [ ] Add cross-references between files
 - [ ] Update SKILL.md TOC to reference new files
 - [ ] Verify all code examples still have context
 - [ ] Test that examples can be understood standalone
 
-### Files NOT Requiring Extraction
+### When One `core.md` Is Enough
 
-Do not extract if:
+Keep the skill as a single `examples/core.md` when:
 
-- File is under 500 lines (leave as single `examples/core.md`)
+- The patterns fit one file without a reader losing their place
 - File has fewer than 5 patterns total
 - All patterns are interdependent (cannot understand one without others)
 - Skill is setup/configuration focused (naturally smaller)
 
 ---
 
-## 9. Examples: Before vs After
-
-### Example 1: Import Coupling (React Skill)
-
-**Before (VIOLATION):**
-
-```typescript
-// Pattern 1: Component with Variants
-import { cva, type VariantProps } from 'class-variance-authority'
-import styles from './button.module.scss'
-import clsx from 'clsx'
-
-const buttonVariants = cva(styles.button, {
-  variants: {
-    variant: {
-      primary: styles.primary,
-      secondary: styles.secondary,
-    },
-    size: {
-      sm: styles.sm,
-      md: styles.md,
-      lg: styles.lg,
-    },
-  },
-})
-
-export function Button({ variant, size, className, ...props }: ButtonProps) {
-  return <button className={clsx(buttonVariants({ variant, size }), className)} {...props} />
-}
-```
-
-**After (ATOMIC):**
-
-```typescript
-// Pattern 1: Component with Variants
-// Apply your styling solution - components are style-agnostic
-
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary'
-  size?: 'sm' | 'md' | 'lg'
-}
-
-export function Button({ variant = 'primary', size = 'md', className, ...props }: ButtonProps) {
-  return <button className={className} data-variant={variant} data-size={size} {...props} />
-}
-
-// Styling handled externally via className or data-attribute selectors
-```
-
----
-
-### Example 2: Integration Guide (React Skill)
-
-**Before (VIOLATION):**
-
-```markdown
-## Integration Guide
-
-**Works with:**
-
-- **SCSS Modules**: All components use SCSS Modules with cva for variants
-- **React Query**: Server state management via TanStack Query
-- **Zustand**: Client state management for UI state
-- **MSW**: API mocking in Vitest tests
-
-**Commands:**
-
-- `bun test` - Run Vitest tests with MSW handlers
-- `bun build` - Build with Vite
-```
-
-**After (ATOMIC):**
-
-```markdown
-## Integration Guide
-
-**Styling Integration:**
-Components accept `className` prop for styling flexibility.
-Use `data-*` attributes for state-based styling.
-Variant types are defined - apply styles externally.
-
-**State Integration:**
-Server state and client state are separate concerns.
-Components receive data via props - source is irrelevant.
-
-**Testing Integration:**
-Components can be tested in isolation.
-Mock data at the network boundary, not component level.
-```
-
----
-
-### Example 3: Decision Tree (Zustand Skill)
-
-**Before (VIOLATION):**
-
-```markdown
-## When to Use Zustand
-
-Is it server data (from API)?
-├─ YES → Use React Query, not Zustand
-└─ NO → Is it needed across multiple components?
-├─ YES → Use Zustand
-└─ NO → useState in component
-```
-
-**After (ATOMIC):**
-
-```markdown
-## When to Use Zustand
-
-Is it server data (from API)?
-├─ YES → Use your data fetching solution (not Zustand's scope)
-└─ NO → Is it needed across multiple components?
-├─ YES → Use Zustand
-└─ NO → useState in component (React's built-in state)
-```
-
----
-
-### Example 4: Pattern Title (SCSS Modules Skill)
-
-**Before (VIOLATION):**
-
-````markdown
-## Pattern 11: Icon Styling with lucide-react
-
-### Library
-
-`lucide-react` (installed in `packages/ui`)
-
-### Usage
-
-```tsx
-import { ChevronUp } from "lucide-react";
-<ChevronUp className={styles.icon} size={16} />;
-```
-````
-
-````
-
-**After (ATOMIC):**
-```markdown
-## Pattern 11: Icon Styling
-
-Icons need consistent sizing and color inheritance.
-
-### Pattern
-```scss
-.icon {
-  width: var(--icon-size-md);
-  height: var(--icon-size-md);
-  color: currentColor;  // Inherits from parent
-}
-
-.iconSm { --icon-size: var(--icon-size-sm); }
-.iconMd { --icon-size: var(--icon-size-md); }
-.iconLg { --icon-size: var(--icon-size-lg); }
-````
-
-Apply via className to any icon component or SVG element.
-
-````
-
----
-
-### Example 5: Test Setup (Vitest Skill)
-
-**Before (VIOLATION):**
-```typescript
-// test/setup.ts
-import { server } from "@repo/api-mocks";
-import { beforeAll, afterEach, afterAll } from "vitest";
-
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-````
-
-**After (ATOMIC):**
-
-```typescript
-// test/setup.ts
-// Use your test runner's lifecycle hooks
-// Use your mocking solution's server setup
-
-beforeAll(() => {
-  // Initialize mock server
-  mockServer.listen();
-});
-
-afterEach(() => {
-  // Reset handlers between tests
-  mockServer.resetHandlers();
-});
-
-afterAll(() => {
-  // Cleanup
-  mockServer.close();
-});
-```
-
----
-
-## 10. Pitfalls to Avoid
+## 9. Pitfalls to Avoid
 
 ### Pitfall 1: Over-Genericizing Examples
 
@@ -1173,7 +966,7 @@ Server data should be:
 ✗ examples/*.md - forgot to check
 ```
 
-**Rule:** Always check ALL files: `SKILL.md`, `reference.md`, every file in `examples/`, `metadata.yaml`
+**Rule:** Always check every file: `SKILL.md`, `reference.md`, every file in `examples/`, `metadata.yaml`
 
 Violations are often concentrated in the `examples/` files because that's where imports live.
 
@@ -1222,13 +1015,13 @@ Violations are often concentrated in the `examples/` files because that's where 
 
 ---
 
-## 11. Troubleshooting Common Issues
+## 10. Troubleshooting Common Issues
 
 ### Issue: "But users need to know which tools work together!"
 
 **Symptom:** Resistance to removing Integration Guides
 
-**Solution:** Integration guidance belongs at the STACK level, not skill level. Skills teach how to use ONE tool well. Stacks teach how tools combine.
+**Solution:** Integration guidance belongs at the stack level, not skill level. Skills teach how to use one tool well. Stacks teach how tools combine.
 
 ```markdown
 // Skill level - NO tool combinations
@@ -1297,7 +1090,7 @@ grep -n -B2 -A2 "SCSS"
 grep -n "import.*scss\|Use SCSS\|with SCSS"
 ```
 
-Valid uses to KEEP:
+Valid uses to keep:
 
 - File extensions in sideEffects: `"*.scss"` (pattern, not prescription)
 - Architecture categories: "CSS Modules" (generic term)
@@ -1309,7 +1102,7 @@ Valid uses to KEEP:
 
 **Symptom:** Rules like `runInAction()` appear in a Vue i18n skill, or `forwardRef` in an Angular skill
 
-**Solution:** This is template contamination — the original AI-generated skill copied boilerplate from an unrelated skill. Read every critical requirement and ask: "Does this rule actually apply to THIS technology?" If not, remove it and replace with a domain-specific rule.
+**Solution:** This is template contamination — the original AI-generated skill copied boilerplate from an unrelated skill. Read every critical requirement and ask: "Does this rule apply to this technology?" If not, remove it and replace with a domain-specific rule.
 
 Common contamination sources found in Iteration 1:
 
@@ -1320,13 +1113,13 @@ Common contamination sources found in Iteration 1:
 
 ### Issue: "Content appears in multiple files"
 
-**Symptom:** The same code example or decision tree exists in SKILL.md, reference.md, AND an example file
+**Symptom:** The same code example or decision tree exists in SKILL.md, reference.md, and an example file
 
-**Solution:** Each concept should live in ONE canonical location:
+**Solution:** Each concept should live in one canonical location:
 
 | Content Type                                   | Canonical Owner                           | Other files get...                         |
 | ---------------------------------------------- | ----------------------------------------- | ------------------------------------------ |
-| Decision guidance, philosophy, red flags       | SKILL.md                                  | Nothing (don't duplicate)                  |
+| Decision guidance, philosophy, red flags       | SKILL.md                                  | Nothing                                    |
 | Full code implementations                      | Example files (`examples/*.md`)           | Brief 3-10 line snippet + link in SKILL.md |
 | Quick-lookup tables, checklists, API reference | `reference.md`                            | Cross-reference link                       |
 | Anti-patterns with code                        | Either SKILL.md red flags OR reference.md | Not both                                   |
@@ -1349,27 +1142,30 @@ During Iteration 1, ~30 skills had the same content in 2-3 places. The fix: keep
 | Testing patterns            | Testing skill          |
 | Component patterns          | React/Vue/etc. skill   |
 
-If content involves TWO domains, it probably belongs in neither and should be removed.
+If content involves two domains, it probably belongs in neither and should be removed.
 
 ---
 
-## 12. Verification Commands
+## 11. Verification Commands
 
 ### Full Audit Command
 
 ```bash
 # Comprehensive violation check for a skill
+# Each fragment needs its own -e: grep takes the first non-option operand as the pattern and
+# every operand after it as a path, so the nine-string form silently searched for the styling
+# fragment alone and reported the other eight as missing files.
 grep -rn \
-  "SCSS\|scss-modules\|module\.scss\|module\.css\|cva\|class-variance-authority\|" \
-  "zustand\|Zustand\|react-query\|React Query\|@tanstack\|useQuery\|useMutation\|" \
-  "MSW\|msw\|Mock Service Worker\|" \
-  "Vitest\|vitest\|Jest\|jest\|" \
-  "Hono\|hono\|Drizzle\|drizzle\|" \
-  "lucide-react\|lucide\|@repo/\|@/lib/\|" \
-  "NEXT_PUBLIC_\|VITE_\|NUXT_\|EXPO_PUBLIC_\|" \
-  "runInAction\|" \
-  "Next\.js\|Vite\|Remix" \
-  "src/skills/path/to/skill/"
+  -e "SCSS\|scss-modules\|module\.scss\|module\.css\|cva\|class-variance-authority" \
+  -e "zustand\|Zustand\|react-query\|React Query\|@tanstack\|useQuery\|useMutation" \
+  -e "MSW\|msw\|Mock Service Worker" \
+  -e "Vitest\|vitest\|Jest\|jest" \
+  -e "Hono\|hono\|Drizzle\|drizzle" \
+  -e "lucide-react\|lucide\|@repo/\|@/lib/" \
+  -e "NEXT_PUBLIC_\|VITE_\|NUXT_\|EXPO_PUBLIC_" \
+  -e "runInAction" \
+  -e "Next\.js\|Vite\|Remix" \
+  src/skills/path/to/skill/
 ```
 
 ### Quick Check Commands
@@ -1407,15 +1203,13 @@ cat skill/reference.md | grep -i "integration"  # Check guides
 
 ## Conclusion
 
-Skill atomicity is not optional—it's the foundation of a composable, portable, maintainable skill system.
-
 **Key Principles:**
 
-1. **A skill discusses ONLY its own domain**
+1. **A skill discusses only its own domain**
 2. **Integration guidance belongs at stack level, not skill level**
-3. **Remove, genericize, or relocate—never leave violations**
+3. **Every cross-domain reference is removed, genericised or relocated**
 4. **Examples must compile conceptually after transformation**
-5. **Verify with grep AND manual review**
+5. **Verify with grep and with a read-through** — the grep finds the names, the read finds the framing
 
 **The Payoff:**
 

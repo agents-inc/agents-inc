@@ -4,33 +4,36 @@ last_validated: 2026-04-21
 
 # The Definitive Guide to Optimal Prompt Structure for Claude
 
-**Version:** 2.1
-**Date:** April 2026
-**Target Model:** Claude Sonnet 4.6 / Opus 4.7 (1M)
+**Version:** 3.0
+**Target Model:** the Claude 5 family (Opus 5, Sonnet 5, Fable 5.1)
+**Paths and commands in this document are relative to `packages/cli`**, the workspace it documents
+and the directory it lives under — run them from there. A compiled sub-agent, by contrast, runs from
+whatever project invoked the CLI, so an agent's own prompt spells the same paths from that root.
 
 **Purpose:** This document provides universal prompt engineering techniques that work for any Claude agent system. These techniques are validated by Anthropic research, production systems achieving 72.7%+ on SWE-bench, academic research, and community consensus.
-
-> **Note:** This document covers universal prompt engineering techniques that work for any Claude agent system.
 
 ---
 
 ## Performance Metrics at a Glance
 
-| Technique                   | Impact                                    | Evidence Source                   |
-| --------------------------- | ----------------------------------------- | --------------------------------- |
-| Self-reminder loop          | 60-70% ↓ off-task behavior                | Anthropic (30+ hour sessions)     |
-| Investigation-first         | 80%+ ↓ hallucination                      | Aider, SWE-agent, Community       |
-| Emphatic repetition         | 70%+ ↓ scope creep                        | Aider production data             |
-| XML tags                    | 30%+ ↑ accuracy, 60% ↓ format errors      | Anthropic training data           |
-| Documents first, query last | 30% ↑ performance                         | Anthropic research (75K tokens)   |
-| Expansion modifiers         | Full Sonnet 4.6 capability on broad tasks | Conditional — Claude 4.6 defaults |
-| Self-correction triggers    | 74.4% SWE-bench with mid-run guidance     | Refact.ai production              |
-| Post-action reflection      | Improved long-horizon reasoning           | Anthropic context engineering     |
-| Progress tracking           | 30+ hour session focus                    | Anthropic experiments             |
-| Positive framing            | Better instruction adherence              | Opus 4.5 docs                     |
-| "Think" alternatives        | Prevents Opus 4.5 confusion               | Anthropic Claude 4 docs           |
-| Just-in-time loading        | Preserves context window                  | SWE-agent, Aider                  |
-| Write verification          | Prevents false-success reports            | All agents (production use)       |
+| Practice                       | Impact                                                 | Evidence Source                       |
+| ------------------------------ | ------------------------------------------------------ | ------------------------------------- |
+| Deterministic completion gates | A check that runs, rather than one asked for           | Claude Code hooks contract            |
+| Investigation-first            | 80%+ ↓ hallucination                                   | Aider, SWE-agent, Community           |
+| Critical rules stated once     | Adherence up; emphasis kept for the rule that needs it | Opus 4.5+ system-prompt guidance      |
+| XML tags                       | 30%+ ↑ accuracy, 60% ↓ format errors                   | Anthropic training data               |
+| Documents first, query last    | 30% ↑ performance                                      | Anthropic research (75K tokens)       |
+| Expansion modifiers            | Full capability on genuinely broad tasks               | Conditional — counters a literal read |
+| Self-correction triggers       | 74.4% SWE-bench with mid-run guidance                  | Refact.ai production                  |
+| Post-action reflection         | Improved long-horizon reasoning                        | Anthropic context engineering         |
+| Progress tracking              | 30+ hour session focus                                 | Anthropic experiments                 |
+| Just-in-time loading           | Preserves context window                               | SWE-agent, Aider                      |
+| Cache-stable prompt prefix\*   | The prefix survives releases and edits                 | Prompt caching                        |
+| Write verification             | Prevents false-success reports                         | All agents (production use)           |
+
+\* Every row but this one is a technique in §1. The cache-stable prefix is taught in §2's section
+ordering and §5's Cache checklist instead, because it is a property of the whole prompt rather than
+a block an author writes.
 
 ---
 
@@ -39,9 +42,9 @@ last_validated: 2026-04-21
 1. [The Essential Techniques](#1-the-essential-techniques)
 2. [Optimal Prompt Structure & Ordering](#2-optimal-prompt-structure--ordering)
 3. [XML Tag Standards](#3-xml-tag-standards)
-4. [Sonnet 4.5 Specific Optimizations](#4-sonnet-45-specific-optimizations)
+4. [Choosing the Model and the Effort](#4-choosing-the-model-and-the-effort)
 5. [Production Validation Checklist](#5-production-validation-checklist)
-6. [Examples: Before vs After](#6-examples-before-vs-after)
+6. [Worked Examples](#6-worked-examples)
 7. [Troubleshooting Common Issues](#7-troubleshooting-common-issues)
 8. [Multi-Agent Delegation (Project-Specific)](#8-multi-agent-delegation-project-specific)
 
@@ -49,150 +52,157 @@ last_validated: 2026-04-21
 
 ## 1. The Essential Techniques
 
-These techniques are validated by Anthropic research, production systems (Aider: 72.7% SWE-bench, Augment: 65.4% SWE-bench Verified, Refact.ai: 74.4% SWE-bench Verified, Mini-SWE: 65%+), and community consensus as of November 2025.
-
-### Technique #1: Self-Reminder Loop (60-70% Reduction in Off-Task Behavior)
+### Technique #1: Deterministic Completion Gates
 
 **The Pattern:**
 
-```markdown
-<core_principles>
-Principle 1: Investigation First
-Principle 2: Follow Existing Patterns
-Principle 3: Minimal Changes Only
-Principle 4: Test Before Complete
-Principle 5: Verify Everything
+A `Stop` hook on the agent's own frontmatter, running the checks that decide whether the work is
+done:
 
-**Display all 5 principles at the start of EVERY response**
-</core_principles>
-
-[Rest of prompt]
-
-**DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE TO MAINTAIN INSTRUCTION CONTINUITY.**
-
-**ALWAYS RE-READ FILES AFTER EDITING TO VERIFY CHANGES WERE WRITTEN. NEVER REPORT SUCCESS WITHOUT VERIFICATION.**
+```yaml
+hooks: { "Stop": [{ "hooks": [{ "type": "command", "command": "<the project's gates>" }] }] }
 ```
+
+The command exits 2 when a check fails. Exit 2 blocks the stop, and the command's output is
+returned to the agent, so a failing typecheck comes back as the errors themselves and the agent
+iterates on them.
 
 **Why It Works:**
 
-- Creates self-reinforcing loop: The meta-instruction to display all principles is itself displayed
-- Keeps all 5 core principles in recent context throughout conversation
-- The instruction to display principles appears at start and end of prompt
-- Prevents instruction drift in long sessions
+- A process that runs is a different kind of claim from a sentence asking the model to check its
+  work. The first happens whether or not the model decided to; the second is advice.
+- The feedback is the compiler's or the linter's own output, which is specific in a way a
+  self-review is not.
+- It costs no prompt bytes on any invocation, where a reminder costs its length on all of them.
 
-**Impact & Evidence:**
+**The forms it replaces are still on disk, which is the trap.** Agents not yet migrated carry
+`**(You MUST ...)**` parentheticals, `→ STOP` checkpoints and `## CRITICAL` headings. They are not
+current practice: emphasis spent on every rule is emphasis on none, and an instruction the model is
+asked to restate costs its bytes on every invocation while no downstream step consumes the
+restatement. Copying an agent that carries them reintroduces them, so take the shape and the voice
+from an agent this roster does not name:
 
-- **60-70% reduction in off-task behavior**
-- Anthropic confirms "Sonnet 4.5 maintains focus for 30+ hours" with proper reminders
-- All production long-running agents use variants of this pattern
-- Community reports: "Most reliable method to prevent instruction drift"
+```bash
+grep -rlE '\*\*\(You MUST|→ STOP|## CRITICAL|⚠️' src/agents --include='*.md'
+```
 
 **Application:**
-Create 3-5 core principles for each agent, followed by a meta-instruction: "Display all X principles at the start of EVERY response". Close with a final reminder that reinforces both the principle display AND file verification. This creates unbreakable continuity even in 30+ hour sessions.
+
+**The compile composes the gate in; the author's job is to leave it alone or replace it
+deliberately.** Any agent whose `tools` include `Write` or `Edit` gets a stop hook automatically,
+with the command in `COMPLETION_GATE_COMMAND` (`../compile/src/agent-source.ts`) — already inert
+where there is no npm, no `package.json`, or no such script. **Declaring `hooks:` in `metadata.yaml`
+merges with that gate rather than displacing it: declaring a stop hook of your own replaces the
+gate, and every other event is added beside it.** So an agent that writes and states a `PostToolUse`
+formatter keeps its gate, and an agent that means to own its completion checks says so by declaring
+`Stop` and nothing weaker. Where the project declares its own gates, the hook runs those; where it
+declares none, the hook exits 0 and stays out of the way. Keep the gate's command inert when it
+cannot be correct — an agent installed into a project with no such checks must still be able to
+finish.
+
+The emitted key is `Stop`, which Claude Code rewrites to `SubagentStop` when it registers a
+sub-agent's frontmatter hooks; `Stop` also fires natively for an agent run as the main session
+through `--agent`, where `SubagentStop` never would. Both spellings therefore count as declaring
+your own gate. That contract, and the fact that a project-scope compiled agent's hooks are skipped
+altogether in a project whose trust dialog was never accepted, are owned by
+[`../reference/features/compilation-pipeline.md`](../reference/features/compilation-pipeline.md).
 
 ---
 
-### Technique #2: Investigation-First Protocol (80%+ Reduction in Hallucination)
+### Technique #2: Investigation-First
 
 **The Pattern:**
 
-```markdown
-<investigation_requirement>
-**CRITICAL: Never speculate about code you have not opened.**
+The template renders this discipline into every compiled agent from
+`src/agents/_templates/methodologies/operating-principles.liquid`, whose first two principles carry
+it: **work from what you have read**, and **treat a specification as a claim** — every path, symbol
+and count in it was measured against a tree that has since moved.
 
-Before making any claims or implementing anything:
-
-1. **List the files you need to examine**
-2. **Read each file completely**
-3. **Base analysis strictly on what you find**
-4. **If uncertain, ask**
-
-If you don't have access to necessary files:
-
-- Explicitly state what files you need
-- Ask for them to be added
-- Do not proceed without proper investigation
-
-**This prevents 80%+ of hallucination issues in coding agents.**
-</investigation_requirement>
-```
+Read the partial for the wording rather than a copy of it here; a pasted copy goes stale the moment
+the partial is edited.
 
 **Why It Works:**
 
-- Forces evidence-based responses, prevents hallucinated patterns
-- Requires systematic examination before claims
-- Eliminates speculation about code structure
-- Creates accountability for file reading
+- Grounds every claim in something the agent actually opened, which is what separates a report from
+  a guess about a plausible codebase.
+- The second half is the one people leave out: the instruction an agent is following was also
+  written against a tree, and re-deriving is what stops a stale brief becoming a stale change.
 
 **Impact & Evidence:**
 
 - **80%+ reduction in hallucination issues**
-- Aider, SWE-agent, Cursor: All require file reading before action
+- Aider, SWE-agent, Cursor: all require file reading before action
 - Anthropic guidance: "Always ground responses in provided context"
-- Community: "Single most important anti-hallucination technique"
 
 **Application:**
-Always include investigation requirements BEFORE task-specific instructions. This forces the habit of reading first, implementing second.
+
+The baseline already carries it, so an agent's own files add only the reads particular to the role —
+which two existing agents to open, which reference document governs, which command shows the current
+state. Restating the general discipline in an agent's own prompt duplicates a rendered block, which
+§5's checklist rules out.
 
 ---
 
-### Technique #3: Emphatic Repetition for Critical Rules (70%+ Reduction in Scope Creep)
+### Technique #3: State Critical Rules Once, Plainly
 
 **The Pattern:**
 
 ```markdown
 <critical_requirements>
 
-## CRITICAL: Before Any Work
+**Register the agent in `.claude-src/config.ts`.** One with source files and no config entry
+compiles into nothing.
 
-**(You MUST use existing utilities instead of creating new abstractions)**
-**(You MUST make minimal necessary changes only)**
-**(You MUST NOT change anything not explicitly mentioned in the task)**
+**Read the wizard's own store before changing a step.** `stores/wizard-store.ts` holds the guards,
+and a step edited without them re-enables a transition the guards refuse.
+
 </critical_requirements>
-
-[Body of prompt]
-
-<critical_reminders>
-
-## CRITICAL REMINDERS
-
-**(You MUST use existing utilities)** - never create new ones when they exist
-**(You MUST make minimal changes only)** - surgical implementation
-**(You MUST NOT change anything not explicitly mentioned in the specification)**
-
-**Failure to follow these rules will produce over-engineered, inconsistent code.**
-</critical_reminders>
 ```
 
-**Formatting that Works:**
+Both example rules name something only one role would reach for. **A rule that
+`operating-principles.liquid` already renders belongs in no agent's own files** — check a candidate
+against that partial's principles before writing it, because a rule true of every agent is one the
+template states once for all eighteen.
 
-- **Bold** for emphasis
-- **(Bold + parentheses)** for ultra-critical rules using "You MUST" format
-- ALL CAPS for section headers only
-- `code` for file names, commands, and XML tags (e.g., `identity.md`, `npm run build`, `<role>`)
-- Repeat critical rules at start AND end using `<critical_requirements>` and `<critical_reminders>` tags
+Each rule opens with the action in bold, and gives its reason in the same breath. The rule is
+stated once, in the place it applies.
 
 **Why It Works:**
 
-- Sonnet 4.5 responds strongly to emphasis
-- Creates cognitive anchor at start and reinforcement at end
-- Double emphasis for most critical constraints
-- Final reminder appears right before response generation
+- An instruction that says what to do can be followed directly; one that says what to refrain from
+  has to be inverted first, and the inversion is where the reader supplies their own answer.
+- Emphasis is a budget. A prompt that shouts at every rule has no way left to mark the one rule
+  that genuinely governs, and frontier models read a uniformly emphatic document as uniformly
+  ordinary.
+- A rule repeated verbatim at the top and the bottom doubles its cost on every invocation and adds
+  no information the second time.
 
-**Impact & Evidence:**
+**What It Replaces:**
 
-- **70%+ reduction in scope creep**
-- **40-50% increase in compliance** with repetition
-- Aider uses "ONLY EVER RETURN CODE IN A _SEARCH/REPLACE BLOCK_!" successfully with asterisks
-- SWE-agent: Multiple exclamation marks for critical rules
-- Community reports 80%+ reduction in format violations
+The `**(You MUST ...)**` convention, the `CRITICAL:` prefix, ALL-CAPS runs, and the practice of
+repeating `<critical_requirements>` verbatim as `<critical_reminders>`. Also the closing
+consequence line ("Failure to follow these rules will produce non-compliant agents") — fear framing
+buys nothing from a model that was going to follow the rule anyway, and nothing from one that was
+not.
+
+`<critical_reminders>` stays useful when it adds something: the standing consideration a reader
+should hold while working, rather than a copy of the block above.
+
+**Formatting that Works:**
+
+- **Bold** for the claim that opens a paragraph
+- `code` for file names, commands and XML tags
+- Plain sentences for everything else
 
 **Application:**
-Identify the single most important rule for each agent type (e.g., "Never modify auth files", "Always write tests first", "Follow existing patterns") and apply emphatic repetition at start and end using the `**(You MUST ...)** ` format.
+
+Write each rule as the action to take. Where a prohibition has no positive form — a genuinely
+forbidden operation, such as a git command that rewrites history — state it once, plainly, and say
+what to do instead.
 
 ---
 
-### Technique #4: XML Tags for Semantic Boundaries (30%+ Accuracy Improvement)
+### Technique #4: XML Tags for Semantic Boundaries
 
 **The Pattern:**
 
@@ -210,7 +220,7 @@ Implement user profile editing feature.
 </task>
 
 <constraints>
-- Do not modify authentication system
+- Confine changes to the profile feature; the authentication system stays as it is
 - Use existing form components
 </constraints>
 
@@ -230,8 +240,7 @@ Similar pattern from SettingsForm.tsx:
 **Why It Works:**
 
 - Anthropic trained Claude specifically to recognize XML
-- Creates semantic boundaries preventing instruction mixing
-- Tags act as cognitive separators between sections
+- Creates semantic boundaries between sections, preventing instruction mixing
 - Enables structured parsing by the model
 
 **Impact & Evidence:**
@@ -250,11 +259,11 @@ Similar pattern from SettingsForm.tsx:
 - No canonical "best" set—adapt to your needs
 
 **Application:**
-Wrap all major sections in semantic XML tags. Use nested tags for hierarchical content but avoid deep nesting (>3 levels).
+Wrap all major sections in semantic XML tags, and keep nesting to three levels or fewer.
 
 ---
 
-### Technique #5: Documents First, Query Last (30% Performance Boost)
+### Technique #5: Documents First, Query Last
 
 **The Pattern:**
 
@@ -263,7 +272,7 @@ Wrap all major sections in semantic XML tags. Use nested tags for hierarchical c
 <document index="1">
 <source>filename.py</source>
 <document_content>
-[Full file content - place at TOP]
+[Full file content — place at the top]
 </document_content>
 </document>
 </documents>
@@ -285,8 +294,7 @@ Wrap all major sections in semantic XML tags. Use nested tags for hierarchical c
 
 - Attention mechanisms process information sequentially
 - Early context has stronger retention throughout response generation
-- Allows Claude to fully internalize context before applying instructions
-- Prevents juggling task requirements while processing content
+- Lets Claude internalize the context before applying instructions, rather than juggling both
 
 **When to Use:**
 
@@ -308,7 +316,7 @@ For prompts with substantial context (20K+ tokens), always place documents/files
 
 ---
 
-### Technique #6: Conditional Expansion Modifiers for Sonnet 4.5
+### Technique #6: Conditional Expansion Modifiers
 
 **The Pattern:**
 
@@ -325,19 +333,19 @@ Be thorough on what the task needs and silent on the rest; the work's size follo
 
 - Genuinely broad tasks, where the model demonstrably under-delivers against the brief
 - Tasks whose scope a literal reading would narrow (a "dashboard" returned as a single chart)
-- NOT every task description — on an already-scoped task the modifier is an instruction to exceed the scope
+- Only where the model demonstrably under-delivers — on an already-scoped task the modifier is an instruction to exceed the scope
 
 **Why It Works:**
 
-- Sonnet 4.5 is trained for precise instruction following
+- The current models are trained for precise instruction following
 - On a broad task it otherwise delivers the narrowest reading that technically complies
-- Claude 4.x is **more conservative than 3.5** despite higher capability
+- A narrow reading of a broad brief is the failure this counters
 - Naming the breadth the task actually has grants permission without asking for volume
 
 **The Conditional Rule:**
-Apply an expansion modifier where the model demonstrably under-delivers, and nowhere else. Sonnet 4.5's literal instruction following cuts both ways: a broad task read narrowly is a real failure mode, and a narrow task carrying a volume modifier is an instruction to over-deliver that will be obeyed just as precisely. The modifier calibrates the deliverable to the task — it is not an ingredient every prompt needs.
+Apply an expansion modifier where the model demonstrably under-delivers, and nowhere else. Literal instruction following cuts both ways: a broad task read narrowly is a real failure mode, and a narrow task carrying a volume modifier is an instruction to over-deliver that will be obeyed just as precisely. The modifier calibrates the deliverable to the task — it is not an ingredient every prompt needs.
 
-**Additional Patterns for 4.5:**
+**Additional Patterns:**
 
 **Explicit Permission:**
 
@@ -346,28 +354,22 @@ Feel free to refactor architecture if needed to achieve the goal.
 You have permission to make substantial changes within [scope].
 ```
 
-**Extended Thinking for Complex Tasks:**
-
-```markdown
-Before answering, consider step-by-step inside <thinking> tags about:
-
-1. What assumptions am I making?
-2. What are potential failure modes?
-3. What's the optimal approach?
-
-Then provide your answer in <output> tags.
-```
-
 **Impact & Evidence:**
 
-- Recovers full Sonnet 4.5 capability on broad tasks
-- Counters conservative defaults in Claude 4.x
-- Anthropic: "Claude 4.x requires explicit permission to be thorough"
+- Recovers full capability on genuinely broad tasks
+- Counters a conservative reading of a broad brief
+- Anthropic: a model asked for a narrow thing delivers a narrow thing
 - Community: "Single most important change needed from 3.5 to 4.x"
 - Solves the widespread "Claude 4 is less helpful than 3.5" complaint
 
 **Case Study — What the Unconditional Form Cost:**
-Applied to every prompt regardless of task breadth, these modifiers produce the inverse defect. The reviewer agents carried them as a standing instruction and returned speculative refactors and out-of-spec recommendations — over-engineered reviews the owner stopped using, and the reason the reviewer-restraint repair pass exists. The mandate reached 25 agent prompts because it was prescribed rather than chosen — the summoner's playbook made it a checklist item for every `identity.md` it wrote, and this technique's own worked example supplied the wording. Softening the prompts did not stop it. That sweep retired one phrase and was verified with a zero-hit grep for it, while this technique's own modifier list and application paragraph went on prescribing the same volume in a second vocabulary — three modifiers of the shapes the "Modifiers That Backfire" list below now names, under an instruction to add one to EVERY task description and a statement that doing so was not optional. An author following the technique to the letter was compliant with this bible and reintroduced at the next agent exactly what the sweep had taken out. A phrase-level grep returning zero is evidence about one wording, never about the rule that produced it — verify a mandate's removal by reading the technique it came from.
+Applied to every prompt regardless of task breadth, these modifiers produce the inverse defect: the
+reviewer agents carried them as a standing instruction and returned speculative refactors the owner
+stopped using. They reached 25 agent prompts because this technique prescribed them — and the sweep
+that retired the offending phrase verified itself with a zero-hit grep while the technique went on
+prescribing the same volume in a second vocabulary. A phrase-level grep returning zero is evidence
+about one wording, never about the rule that produced it — verify a mandate's removal by reading the
+technique it came from.
 
 **Key Modifiers That Work:**
 
@@ -382,10 +384,10 @@ Applied to every prompt regardless of task breadth, these modifiers produce the 
 - ❌ Anything asking to go past the task's basics for its own sake
 - ❌ Any standing pairing of "thorough" with "comprehensive"
 
-These ask for volume rather than fit. They were retired from this bible and from the bundled agent prompts in the reviewer-restraint pass; do not reintroduce them.
+These ask for volume rather than fit. They were retired from this bible and from the bundled agent prompts in the reviewer-restraint pass; the modifiers above are the replacements.
 
 **Application:**
-Add an expansion modifier when the task is genuinely broad and a literal reading would under-deliver. Do NOT add one to every task description — on a well-scoped task it is a standing instruction to exceed the scope, and it will be obeyed. When unsure, state the breadth the task has rather than asking for more than it has.
+Add an expansion modifier when the task is genuinely broad and a literal reading would under-deliver. When unsure, state the breadth the task has rather than asking for more than it has.
 
 ---
 
@@ -395,18 +397,18 @@ Add an expansion modifier when the task is genuinely broad and a literal reading
 
 ```markdown
 <self_correction_triggers>
-**Self-Correction Checkpoints:**
 
-If you notice yourself:
+## Self-Correction Checkpoints
 
-- **Generating code without reading files first** → Stop. Read the files.
-- **Creating complex abstractions** → Simplify. Follow existing patterns.
-- **Making assumptions about behavior** → Stop. Verify first.
-- **Producing generic advice** → Replace with specific, actionable guidance.
+- [the observable moment, stated as the thing you notice yourself doing] → [the action that answers it]
 
-These checkpoints prevent drift during long sessions.
 </self_correction_triggers>
 ```
+
+For wording, read the shipped blocks rather than a copy here —
+`src/agents/meta/agent-summoner/critical-requirements.md` and
+`src/agents/meta/skill-summoner/critical-requirements.md` each carry one trigger, which is what the
+Application below leaves after the duplicates are removed.
 
 **Why It Works:**
 
@@ -422,7 +424,18 @@ These checkpoints prevent drift during long sessions.
 - Prevents cascade errors from early mistakes
 
 **Application:**
-Include 4-6 specific self-correction triggers relevant to your agent's domain. Frame them as observable behaviors with immediate corrective actions.
+Include the triggers particular to the agent's domain and no more. There is no floor: an agent whose
+moments are all named elsewhere in its own prompt carries none.
+
+**A trigger is not a duplicate of the workflow step it corresponds to, and the difference is what
+earns it its bytes.** A workflow step says what to do at a point in the process; a trigger names the
+observable moment before a mistake — noticing yourself reaching for a remembered pattern, noticing
+that a file is about to be rewritten uncatalogued — and gives the action that answers it. The
+workflow is read once at the start; the trigger is what the model re-reads mid-task. So a trigger
+whose moment is already named elsewhere earns nothing, while one that compresses a workflow step
+into the instant it applies is the technique working as intended.
+
+The corrective is always the thing to do rather than a halt.
 
 ---
 
@@ -439,7 +452,7 @@ Include 4-6 specific self-correction triggers relevant to your agent's domain. F
 3. What gaps remain in my understanding?
 4. Should I adjust my approach?
 
-Only proceed when you have sufficient confidence in your current state.
+Carry the answers into the next step, and into your report.
 </post_action_reflection>
 ```
 
@@ -457,7 +470,10 @@ Only proceed when you have sufficient confidence in your current state.
 - Reduces error propagation in agentic workflows
 
 **Application:**
-Add reflection prompts after tool use sections or at natural decision points in workflows.
+Add reflection prompts after tool-use sections or at natural decision points. Each question names
+something particular to the role, as `agent-summoner/critical-reminders.md` and
+`skill-summoner/critical-reminders.md` do — the four in the block above are the shape, not the
+content.
 
 ---
 
@@ -494,93 +510,15 @@ This maintains orientation across extended sessions.
 - Community validation for complex multi-file refactors
 
 **Application:**
-Include progress tracking for any agent that handles tasks spanning multiple conversation turns or requiring coordination across many files.
+The template renders the report contract into every compiled agent from
+`src/agents/_templates/methodologies/operating-principles.liquid` — the decisions made
+and why, the gotchas hit, and the work deliberately left with what stopped it. A
+`<progress_tracking>` block earns its bytes only where it adds something that baseline does not,
+such as confidence levels on a role whose findings are graded.
 
 ---
 
-### Technique #10: Positive Framing for Constraints
-
-**The Pattern:**
-
-```markdown
-# Instead of:
-
-❌ "Do NOT use default exports"
-❌ "Never create magic numbers"
-
-# Use:
-
-✅ "Use named exports for all public APIs"
-✅ "Define all numeric values as named constants"
-```
-
-**Why It Works:**
-
-- Positive instructions are easier to follow than prohibitions
-- Reduces cognitive load (don't have to invert the instruction)
-- More actionable (tells what TO do, not just what NOT to do)
-- Better for Opus 4.5 which responds well to clear guidance
-
-**Impact & Evidence:**
-
-- Anthropic: "Instead of 'Do not use markdown,' say 'Your response should be composed of prose'"
-- Opus 4.5 is "more responsive to the system prompt than previous models"
-- Clearer mental model for the agent
-
-**Application:**
-When documenting constraints, lead with the positive approach (✅), then show what to avoid (❌). This applies to both agent prompts and skill documentation.
-
----
-
-### Technique #11: "Think" Alternatives for Opus 4.5
-
-**The Pattern:**
-
-```markdown
-# When extended thinking is disabled, avoid:
-
-❌ "Think about the implications"
-❌ "Think through the problem"
-
-# Use instead:
-
-✅ "Consider the implications"
-✅ "Evaluate the problem"
-✅ "Analyze the requirements"
-```
-
-**Why It Works:**
-
-- Opus 4.5 is "particularly sensitive to the word 'think' and its variants"
-- When extended thinking is disabled, "think" can cause confusion
-- Alternative words provide the same guidance without triggering issues
-
-**Recommended Replacements:**
-
-- think → consider, evaluate, analyze
-- think about → reflect on, assess
-- think through → work through, examine
-- thinking → reasoning, analysis
-
-**Application:**
-Audit prompts for "think" variants when targeting Opus 4.5 without extended thinking enabled. This is less critical for Sonnet 4.5 but still good practice.
-
-**Note on Extended Thinking (January 2026 Update)**
-
-As of January 2026, Claude Code **enables extended thinking by default** with a maximum budget of 31,999 tokens. The trigger keywords (`think`, `megathink`, `ultrathink`) have been **deprecated** and no longer have any effect.
-
-**Current system:**
-
-- Extended thinking is **always on** by default (max 31,999 tokens)
-- Use `MAX_THINKING_TOKENS` environment variable to limit or disable thinking
-- Toggle with `Alt+T` (session-level) or `/config` (global setting)
-- View thinking with `Ctrl+O` (verbose mode)
-
-**In agent prompts:** Still avoid the word "think" → use consider/evaluate/analyze (prevents confusion with Opus 4.5's thinking system).
-
----
-
-### Technique #12: Just-in-Time Context Loading
+### Technique #10: Just-in-Time Context Loading
 
 **The Pattern:**
 
@@ -588,18 +526,15 @@ As of January 2026, Claude Code **enables extended thinking by default** with a 
 <retrieval_strategy>
 **Just-in-Time Loading:**
 
-- Don't pre-load every potentially relevant file
 - Start with file paths and naming patterns
-- Load detailed content only when needed
+- Load detailed content when a step needs it
 - This preserves context window for actual work
   </retrieval_strategy>
 ```
 
 **Why It Works:**
 
-- Preserves precious context window space
-- Avoids overwhelming the model with irrelevant detail
-- Enables deeper exploration of actually-needed content
+- Preserves context window space, so what is loaded can be explored more deeply
 - Matches how production agents (SWE-agent, Aider) operate
 
 **Impact & Evidence:**
@@ -609,47 +544,25 @@ As of January 2026, Claude Code **enables extended thinking by default** with a 
 - Production systems use glob/grep before full file reads
 
 **Application:**
-Include retrieval guidance in agents that explore codebases. Encourage pattern-based discovery before deep reading.
+The baseline's "Work from what you have read" covers grounding, and which search to run is the
+model's to choose. A `<retrieval_strategy>` block earns its bytes only where a role has a retrieval
+rule its own domain imposes — a fixed order of sources, or a tree it must list before reading
+anything in it.
 
 ---
 
-### Technique #13: Write Verification Protocol (Prevents False-Success Reports)
+### Technique #11: Write Verification
 
-**The Pattern:**
+**Superseded by Technique #1.** An instruction to re-read a file after editing it is the explicit
+verification the completion gate now performs mechanically — the gate runs the project's typecheck when the agent stops, and a failing check comes back as the tool's own output. A
+prompt-text copy of that check is charged on every invocation of every agent and asks a frontier
+model to do by hand what a hook does for free, so the baseline no longer carries one. What the
+baseline keeps is the half no hook can settle: name the specific thing that would catch a
+violation, or say plainly that nothing would.
 
-```markdown
-<write_verification_protocol>
-**After completing ANY file edits, you MUST:**
-
-1. **Re-read the file(s) you just edited** using the Read tool
-2. **Verify your changes exist in the file:**
-   - For new content: Confirm the new text/code is present
-   - For edits: Confirm the old content was replaced
-   - For structural changes: Confirm the structure is correct
-3. **If verification fails:**
-   - Report: "❌ VERIFICATION FAILED: [what was expected] not found in [file]"
-   - Do NOT report success
-   - Re-attempt the edit operation
-4. **Only report success AFTER verification passes**
-   </write_verification_protocol>
-```
-
-**Why It Works:**
-
-- Agents can plan and generate correctly but fail to execute the Write/Edit operation
-- Without verification, agents report success based on what they intended to do
-- This causes downstream failures that are hard to debug
-- Explicit re-reading creates an unbreakable verification loop
-
-**Impact & Evidence:**
-
-- **Prevents false-success reports** from file operations
-- Catches tool execution failures immediately
-- Enables accurate progress tracking and debugging
-- Already in use across all agents
-
-**Application:**
-Include write verification for ALL agents. The verification step is mandatory after every Write or Edit tool use.
+The gap the gate leaves is a role whose output is files no build reads — documentation, for one.
+That role's own `critical-requirements.md` is where a read-back belongs, stated once for that role
+rather than for all eighteen.
 
 ---
 
@@ -659,166 +572,135 @@ Based on convergent evidence from Anthropic, production systems, and academic re
 
 ### The Canonical Structure
 
+This is what `src/agents/_templates/agent.liquid` renders. The six source files an agent is authored
+as map onto it: `metadata.yaml` becomes the frontmatter, `identity.md` becomes `<role>`,
+`critical-requirements.md` and `critical-reminders.md` are wrapped by the template, and `playbook.md`
+and `output.md` are inserted as written.
+
 ```markdown
-# Agent Name
-
-[1-2 sentence introduction to agent's purpose]
-
+---
+name: agent-name
+description: What it does, and when to invoke it
+tools: Read, Grep, Glob, Bash, Skill
+model: opus
+permissionMode: default
+hooks: { "Stop": [...] } # the completion gate, emitted for agents that write
+skills:
+  - preloaded-skill-id
 ---
 
+<!-- Generated by agents-inc — do not edit; compile rewrites this file -->
+
+# Agent Title
+
 <role>
-[Role definition with expansion modifiers for Claude 4.x]
+[Who this agent is, what it decides, and the boundary of its domain — including where work that
+is not its own is handed off to]
 </role>
 
 ---
 
-<core_principles>
-[3-5 principles with self-reminder: "Display all X principles at the start of EVERY response"]
-</core_principles>
+<operating_principles>
+[The shared discipline every agent carries. Rendered by the template from one partial; an agent
+does not restate it]
+</operating_principles>
 
 ---
 
 <critical_requirements>
-[Critical rules using **(You MUST ...)** format - placed early for emphasis]
+[The few rules specific to this role, each stated once as the action to take]
 </critical_requirements>
 
 ---
 
-<investigation_requirement>
-[Investigation-first protocol]
-</investigation_requirement>
-
----
-
-## Role-Specific Investigation Process
-
-[Agent-specific investigation steps]
-
----
-
-<self_correction_triggers>
-[If you notice yourself... checkpoints]
-</self_correction_triggers>
-
----
-
-<domain_scope>
-**You handle:**
-
-- [Responsibility 1]
-- [Responsibility 2]
-
-**You DON'T handle:**
-
-- [Other agent's domain 1] → [Agent Name]
-- [Other agent's domain 2] → [Agent Name]
-  </domain_scope>
-
----
-
-## Main Content Sections
-
-### [Section 1]
-
-[Agent-specific patterns, checklists, guidelines]
-
-### [Section 2]
-
-[Code examples, anti-patterns, best practices]
-
----
-
-<anti_over_engineering>
-[Minimal changes guidance - for implementation agents]
-</anti_over_engineering>
-
----
-
-<output_format>
-[Expected response structure]
-</output_format>
+[playbook.md — the process the agent follows]
 
 ---
 
 <critical_reminders>
-[Repeat critical rules from <critical_requirements> - placed late for reinforcement]
+[Standing considerations to hold while working. Something the requirements block did not say]
 </critical_reminders>
 
 ---
 
-**DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE TO MAINTAIN INSTRUCTION CONTINUITY.**
+[output.md — the shape of what it emits, last of the stable blocks so it is read most recently]
 
-**ALWAYS RE-READ FILES AFTER EDITING TO VERIFY CHANGES WERE WRITTEN. NEVER REPORT SUCCESS WITHOUT VERIFICATION.**
+---
+
+<system-reminder>
+[Everything assembled at compile time from the project's configuration: the compile version, and
+the skills available to load. The template writes this block; an agent's source files do not]
+</system-reminder>
 ```
 
 ### Section Ordering Rationale
 
-1. **Title & Introduction** - Sets context
-2. **Role** - Defines identity with expansion modifiers
-3. **Core Principles** - Self-reminder loop (MUST be early for continuous reinforcement)
-4. **Critical Requirements** - First emphatic statement of rules
-5. **Investigation Requirement** - Prevents hallucination (MUST be early to establish habit)
-6. **Role-Specific Investigation** - Customizes investigation for domain
-7. **Self-Correction Triggers** - Mid-run guidance checkpoints
-8. **Domain Scope** - Clear boundaries preventing scope creep
-9. **Main Content** - Agent-specific patterns and guidelines
-10. **Anti-Over-Engineering** - Prevents scope creep and unnecessary complexity
-11. **Output Formats** - Standard response structure
-12. **Critical Reminders** - Second emphatic statement of rules (closes emphatic repetition)
-13. **Final Reminder** - Reinforces self-reminder loop AND write verification (closes both loops)
+The order is a cache decision before it is an editorial one.
 
-**Why This Order:**
+**A compiled agent is its sub-agent's system prompt**, so the file's leading bytes are the cacheable
+prefix of every invocation of it. Two things in a compiled agent change without the agent's role
+changing: the release that compiled it, and the project's skill selection, which moves whenever a
+user edits their stack. Both used to sit above the largest static blocks, so a patch release or a
+stack edit invalidated the playbook and the output format beneath them.
 
-- **Early sections prevent fundamental errors** (hallucination, scope creep, instruction drift)
-- **Middle sections provide domain knowledge** (patterns, standards, examples)
-- **Late sections handle reinforcement** (emphatic repetition, loop closure)
-- **Final reminder closes both the self-reinforcing loop AND write verification**
+So:
 
-This ordering is based on:
+1. **Everything stable first** — identity, principles, requirements, process, reminders, output
+   shape. This is the prefix, and it changes only when the role changes.
+2. **Everything volatile last**, in one `<system-reminder>` block at the end — with one carve-out
+   the format forces: the frontmatter keys Claude Code pins to the top of the file, of which
+   `skills:` is the one assembled from the project's configuration. Everything else assembled at
+   compile time goes in the trailing block.
+3. **Nothing per-run, per-machine or per-user anywhere.** No timestamps, no absolute paths, no user
+   details. The provenance marker carries no version for this reason — the release that compiled an
+   agent is recorded in the trailing block, where a change to it costs nothing.
 
-- Anthropic's "documents first, query last" guidance
-- Production system analysis (Aider, SWE-agent, Cursor)
-- Academic research on prompt structure impact
-- Community validation of what works in practice
+Within the stable half the order is ordinary: identity before rules, rules before process, process
+before output shape. Front-loading matters less than it did — the reason to put the role first is
+that a reader needs to know who they are before they can weigh anything else, not that a model
+forgets what it read.
 
 ---
 
 ## 3. XML Tag Standards
 
-### Required Tags for All Prompts
+### Required Tags in a Compiled Agent
 
 ```xml
 <role>
 [Agent's role definition]
 </role>
 
-<core_principles>
-[The 3-5 principles with self-reminder loop]
-</core_principles>
+<operating_principles>
+[The shared discipline, rendered by the template from one partial — an agent does not write this]
+</operating_principles>
 
 <critical_requirements>
-[Critical rules using **(You MUST ...)** format]
+[The rules specific to this role, each stated once as the action to take]
 </critical_requirements>
 
-<investigation_requirement>
-[Investigation-first protocol]
-</investigation_requirement>
+<output_format>
+[Expected response structure]
+</output_format>
+```
 
+`<critical_reminders>` is optional and belongs with the recommended tags below: it earns its place
+only by adding a standing consideration the requirements block did not state.
+
+### Required Tags in a Delegation Prompt
+
+A delegation prompt is the one message an agent hands a sub-agent — written per invocation, never
+compiled. It opens with the two the compiled prompt has no slot for, and §8.5's template is the
+worked shape.
+
+```xml
 <task>
 [What needs to be accomplished]
 </task>
 
 <constraints>
-[What NOT to do]
+[The boundary of the change — what stays as it is, and where adjacent work hands off]
 </constraints>
-
-<output_format>
-[Expected response structure]
-</output_format>
-
-<critical_reminders>
-[Repeat critical rules from <critical_requirements>]
-</critical_reminders>
 ```
 
 ### Recommended Tags for Complex Tasks
@@ -874,7 +756,7 @@ This ordering is based on:
 <document index="1">
 <source>filename.py</source>
 <document_content>
-[Full file content - place at TOP]
+[Full file content — place at the top]
 </document_content>
 </document>
 </documents>
@@ -900,15 +782,12 @@ This ordering is based on:
 - `<progress_tracking>` (for extended session state)
 - `<retrieval_strategy>` (for just-in-time loading guidance)
 - `<permission_scope>` (for explicit change permissions)
-- `<critical_requirements>` (for rules at TOP)
-- `<critical_reminders>` (for rules at BOTTOM)
+- `<critical_requirements>` (for rules at the top)
+- `<critical_reminders>` (for a standing consideration the requirements block did not state)
 
-**Avoid generic names:**
-
-- `<section1>`, `<section2>`
-- `<part_a>`, `<part_b>`
-- `<info>`, `<data>`
-- `<content>`, `<text>`
+**Name a tag for what it carries.** `<section1>`, `<part_a>`, `<info>` and `<content>` name a
+position or a container rather than a role, so they carry nothing to the reader that the surrounding
+text did not already say.
 
 **Nesting Guidelines:**
 
@@ -916,928 +795,248 @@ This ordering is based on:
 - Use flat structures when possible
 - Semantic hierarchy over deep nesting
 
-> **Skill files use a different tag set** — see [Skill-Content Tags (vs Agent-Prompt Tags)](#skill-content-tags-vs-agent-prompt-tags) below. The Required/Recommended tag lists in this section target agent and task prompts, not skill content files under `src/skills/**/SKILL.md`.
+> **Skill files use a different tag set** — see [Skill-Content Tags (vs Agent-Prompt Tags)](#skill-content-tags-vs-agent-prompt-tags) below. The Required/Recommended tag lists in this section target agent and task prompts, not skill content files, which live at `src/skills/**/SKILL.md` in the `agents-inc/skills` marketplace repository rather than in this one.
 
 ### Skill-Content Tags (vs Agent-Prompt Tags)
 
-Skill files (`src/skills/**/SKILL.md`) are reference content loaded into a calling agent's context, not standalone agents. They use a stable, narrower tag vocabulary focused on teaching a single tool/domain. The 222 skills in this project's marketplace converge on the following set — new skills MUST match, audits MUST flag drift.
+Skill files — `src/skills/**/SKILL.md` in the `agents-inc/skills` marketplace repository, a separate repository from this one — are reference content loaded into a calling agent's context, not standalone agents. They use a stable, narrower tag vocabulary focused on teaching a single tool or domain. The marketplace's skills converge on the set below; a new skill matches it, and an audit flags drift. For the current count, run `find src/skills -name SKILL.md | wc -l` in that repository — a number stated here is correct on the day it is written and wrong within the week.
 
 **Required tags (present in all skills):**
 
-- `<critical_requirements>` — bookend at TOP, rules in `**(You MUST ...)**` format (same semantics as agent prompts)
-- `<philosophy>` — why this tool / when to use it / mental model framing
+- `<critical_requirements>` — at the top, each rule stated once as the action to take (same semantics as agent prompts)
 - `<patterns>` — the core pattern library, numbered (Pattern 1, Pattern 2, ...)
 - `<red_flags>` — anti-patterns, gotchas, common mistakes with consequences
-- `<critical_reminders>` — bookend at BOTTOM, repeats the TOP rules, closes with `**Failure to follow these rules will ...**`
 
 **Common optional tags (include when the domain warrants):**
 
+- `<philosophy>` — why this tool, when to use it, the mental model it asks for
+- `<critical_reminders>` — at the bottom, where it adds a standing consideration the requirements block did not state. A verbatim repeat of that block is loaded on every use of the skill and says nothing the second time, which is why this is optional rather than required
 - `<decision_framework>` — comparative "pick X vs Y" guidance (e.g. Zustand vs Context, SWR vs React Query)
-- `<integration>` — cross-skill integration notes (how this composes with sibling skills)
 - `<performance>` — perf tuning section separate from the main patterns
 - `<migration_notice>` — version-migration callout when a major version shift matters (e.g. Remix v2 → v3)
 
-**Deliberately excluded from skills** (agent-prompt patterns that do NOT apply):
+**Deliberately excluded from skills** (agent-prompt patterns that do not apply):
 
-- `<core_principles>` and the **self-reminder loop** (Technique #1) — skills are context, not agents; the calling agent owns its own principle display
-- The **dual final reminder** block (principles display + write verification) — same reason
+- `<integration>` — naming a sibling skill couples the two, which is the atomicity bible's Category 3. An adjacent concern belongs under **Handled elsewhere**, named as a capability rather than as the tool that provides it
+- `<operating_principles>` — skills are context, not agents; the calling agent carries its own discipline
+- Completion gates (Technique #1) — a gate belongs to the agent that stops, not to the knowledge it loaded
 - `<role>`, `<task>`, `<constraints>`, `<output_format>` — skills describe a tool, not a job to execute
 - `<investigation_requirement>`, `<self_correction_triggers>`, `<post_action_reflection>`, `<progress_tracking>` — agent-execution concerns
 
-Reviewers auditing a skill against this bible should use the list above. A skill MUST have all five required tags; missing any is drift. A skill using tags outside the required + optional set (e.g. inventing `<guidelines>` or `<overview>`) is drift — either the tag should be added to this list (if genuinely reusable across ≥3 skills) or the skill should be refactored into the canonical vocabulary.
+Reviewers auditing a skill against this bible should use the list above. A skill carries all three required tags; missing one is drift. A skill using tags outside the required + optional set (e.g. inventing `<guidelines>` or `<overview>`) is drift — either the tag should be added to this list (if genuinely reusable across ≥3 skills) or the skill should be refactored into the canonical vocabulary.
 
 ---
 
-## 4. Sonnet 4.5 Specific Optimizations
+## 4. Choosing the Model and the Effort
 
-### Sonnet 4.5 vs Opus 4.5 Quick Comparison
+Three keys on an agent's `metadata.yaml` are part of the prompt's design rather than separate from
+it — a prompt written to compensate for an under-powered model is a prompt carrying work the model
+should be doing.
 
-| Characteristic               | Sonnet 4.5                      | Opus 4.5                    |
-| ---------------------------- | ------------------------------- | --------------------------- |
-| Default behavior             | Conservative, minimal           | Over-engineering tendency   |
-| Instruction following        | Very literal                    | More interpretive           |
-| Expansion modifiers          | Useful on genuinely broad tasks | Helpful but less critical   |
-| "Think" sensitivity          | Low                             | **High** (avoid in prompts) |
-| System prompt responsiveness | Standard                        | **More responsive**         |
-| Parallel tool execution      | Standard                        | **Excels** at parallel ops  |
+`ModelName` is `"opus" | "sonnet" | "haiku" | "fable" | "inherit"`, and `EffortLevel` is
+`"low" | "medium" | "high" | "xhigh" | "max"`. The axis is documented end to end in
+[`reference/features/model-and-effort.md`](../reference/features/model-and-effort.md); what follows
+is how to pick.
 
-### Critical Differences from Sonnet 3.5
+**Model.** Match it to the hardest judgement the role makes, not to the volume of work it does. A
+role that decides — planning a change, reviewing a diff, designing an agent — earns the largest
+model. A role whose work is mechanical once the decision is made can take a smaller one and run
+more often for the same cost. `"inherit"` hands the choice to whoever invoked the agent, which is
+right when the same role is sometimes trivial and sometimes not.
 
-1. **More Conservative by Default**
-   - A genuinely broad task needs its breadth stated explicitly
-   - Needs permission for substantial changes
-   - Naming the dimensions the task actually has unlocks full capability
-   - Without expansion modifiers, produces minimal implementations
+**This product's own agents do not vary the axis: all eighteen carry `model: opus`** (owner ruling,
+2026-09-03). The paragraph above is how to choose for a consuming project's agents, where the cost
+of a role is the project's to weigh. Here the answer was settled on simplicity — every shipped role
+makes a judgement a smaller model would do worse, and a fleet with one answer needs no per-agent
+justification to keep current. Do not "optimise" a shipped agent down a tier; that is the ruling,
+not an oversight. Census: `grep -c "^model: opus" src/agents/*/*/metadata.yaml`.
 
-2. **Enhanced Context Awareness**
-   - Tracks token budget internally
-   - Knows when approaching limits
-   - Can maintain focus for 30+ hours with proper structure
-   - Better at managing long conversations
+**Effort.** This is the dial to reach for before reaching for a bigger model. A verification pass
+that has to be adversarial wants `xhigh`; a mechanical sweep over many files wants `low` and more
+of them. Omitting it inherits the session's level, which is usually correct.
 
-3. **Stricter Instruction Following**
-   - Interprets constraints more literally
-   - Needs explicit permission vs implicit understanding
-   - Less "reading between the lines"
-   - More precise instruction adherence
+**Cache lifetime.** `experimental.cacheTtl` decides how long the compiled prompt's cache lives.
+Everything above the trailing `<system-reminder>` is byte-identical between invocations, so the TTL
+is what decides whether a second invocation reuses the first one's cache or rebuilds it. `5m` is
+Claude Code's default; `1h` holds it across longer gaps, bills cache writes at a higher rate, and is
+ignored while a subscription runs on usage credits. Leave it unset unless the person paying has
+asked for it — the trade depends on how often the agent is invoked rather than on what it does.
 
-   **Example - Be Explicit with Sonnet:**
+**Writing for a frontier model.** Three things follow from writing for the current generation, and
+each removes prompt text rather than adding it:
 
-   ```markdown
-   # ❌ Vague (Sonnet may under-deliver)
+- **State the goal and the constraints; leave the method open** where more than one method would
+  do. A prompt that prescribes steps the model would have chosen anyway costs bytes and forecloses
+  a better route.
+- **Skip the reminders about being careful.** Instructions to avoid typos, write clean code, or
+  double-check arithmetic are answered by the model's ordinary behaviour, and they dilute the rules
+  that are genuinely specific to the role.
+- **Say when a task is genuinely broad**, because the default is to answer what was asked. This is
+  Technique #6, and it is worth stating in proportion to the task rather than as blanket
+  encouragement.
 
-   Add a user profile feature
-
-   # ✅ Explicit (Sonnet delivers fully)
-
-   Add a user profile feature with:
-
-   - Avatar upload with preview
-   - Bio field (markdown supported)
-   - Social links section
-   - Form validation with inline errors
-   ```
-
-4. **Improved Multi-Turn Coherence**
-   - Better at maintaining context across conversations
-   - Self-reminder loop essential for long sessions
-   - File-based state management highly effective
-   - Superior memory of earlier conversation parts
-
-### Required Adjustments for 4.5
-
-**Add Expansion Modifiers (broad tasks only — see Technique #6):**
-
-```markdown
-<task>
-[Task description]
-
-**This task is genuinely broad — cover [the dimensions it actually has].
-Be thorough on what the task needs and silent on the rest; the work's size follows the task's size, not the template's.**
-</task>
-```
-
-**Explicit Permission for Changes:**
-
-```markdown
-<constraints>
-Feel free to refactor architecture if needed to achieve the goal.
-You have permission to make substantial changes within [scope].
-</constraints>
-```
-
-**Token Budget Awareness:**
-
-```markdown
-You have approximately [X] tokens remaining in context.
-Prioritize [most important information] if approaching limits.
-Consider summarizing [less critical sections] to preserve space.
-```
-
-**Extended Thinking for Complex Tasks:**
-
-```markdown
-<instructions>
-Before answering, consider step-by-step inside <thinking> tags about:
-1. What assumptions am I making?
-2. What are potential failure modes?
-3. What's the optimal approach?
-
-Then provide your answer in <output> tags.
-</instructions>
-```
-
-**Performance Metrics:**
-
-- Extended thinking: 68.0% → 84.8% on GPQA Diamond
-- Math accuracy: 82.2% → 96.2% on MATH 500 benchmark
-- 30+ hour session focus with proper structure
-
-### Opus 4.5 Specific Considerations
-
-Opus 4.5 has some unique characteristics that differ from Sonnet 4.5:
-
-**1. "Think" Sensitivity**
-When extended thinking is disabled, Opus 4.5 is particularly sensitive to the word "think" and its variants. Use alternatives:
-
-- think → consider, evaluate, analyze
-- think about → reflect on, assess
-- think through → work through, examine
-
-**2. Over-Engineering Tendency**
-Opus 4.5 has a tendency to over-engineer solutions. Add explicit guidance:
-
-```markdown
-Avoid over-engineering. Only make changes that are directly requested or clearly necessary. Keep solutions simple and focused. Don't add features, refactor code, or make "improvements" beyond what was asked.
-```
-
-**3. System Prompt Responsiveness**
-Opus 4.5 is more responsive to the system prompt than previous models. This means:
-
-- Aggressive directives (CRITICAL, MUST, etc.) may cause over-caution
-- Use clear, direct language without excessive emphasis
-- Positive framing works better than prohibitions
-
-**4. Crop/Zoom for Image Tasks**
-For image-related tasks, giving Opus 4.5 a "crop tool" or ability to zoom on regions provides consistent uplift on image evaluations.
-
-**5. Parallel Tool Execution**
-Opus 4.5 excels at parallel tool execution. Structure prompts to allow simultaneous operations when possible:
-
-```markdown
-# ✅ Good - Opus can parallelize
-
-Read these 3 files and compare their patterns: file1.ts, file2.ts, file3.ts
-
-# ❌ Less optimal - forces sequential
-
-Read file1.ts. Then read file2.ts. Then read file3.ts.
-```
+**Extended thinking is enabled by default** in Claude Code. The `think` / `megathink` / `ultrathink`
+trigger keywords are deprecated and have no effect, and the advice that once sat here — to spell
+"think" as "consider" or "evaluate" in prompts — was written for a model generation that is no
+longer the target. Write the word you mean.
 
 ---
 
 ## 5. Production Validation Checklist
 
-Use this checklist to validate any agent or prompt before deployment.
+Check an agent against this before shipping it.
 
-### Core Components
+### Structure
 
-- [ ] Has `<role>` wrapper with expansion modifiers for Claude 4.x
-- [ ] Includes core principles with self-reminder loop
-- [ ] Includes investigation requirement to prevent hallucination
-- [ ] Includes anti-over-engineering section (for implementation agents)
-- [ ] Includes role-appropriate output format
-- [ ] Includes write verification protocol
-- [ ] Has `<critical_requirements>` section at TOP
-- [ ] Has `<critical_reminders>` section at BOTTOM
-- [ ] Ends with dual final reminder (principles display + write verification)
+- [ ] `<role>` states who the agent is, what it decides, and where work outside its domain is handed off
+- [ ] `<critical_requirements>` carries only rules specific to this role — the shared discipline is in the template's `<operating_principles>` and is not restated
+- [ ] Each rule is stated once, as the action to take, with its reason in the same breath
+- [ ] `<critical_reminders>` adds something the requirements block did not say, or is absent
+- [ ] `playbook.md` is the process; `output.md` is the shape emitted. Neither repeats the other
+- [ ] Major sections carry semantic XML tags, nested no more than three deep
 
-### XML Tags
+### Weight
 
-- [ ] All major sections wrapped in semantic XML tags
-- [ ] `<role>`, `<task>`, `<constraints>` present
-- [ ] Long documents use `<documents>` at top, `<query>` at end
-- [ ] Tags are semantic (not `<section1>`, `<section2>`)
-- [ ] Nesting kept to ≤3 levels
+- [ ] The prompt carries what the role needs in order to decide, and no reference material it could look up
+- [ ] Detail that is needed occasionally arrives through a skill the agent invokes, or a file it reads
+- [ ] Inline examples appear only where they fix an exact output shape; anything else names a real file to read
+- [ ] Nothing in the prompt duplicates what the template already renders
 
-### Emphatic Techniques
+### Cache
 
-- [ ] Critical rules use **bold** formatting
-- [ ] Ultra-critical rules use **(bold + parentheses)** with "You MUST" format
-- [ ] Critical rules repeated in both `<critical_requirements>` AND `<critical_reminders>`
-- [ ] ALL CAPS used for section headers
-- [ ] Expansion modifiers, where the task warrants them, are proportional (Technique #6)
+- [ ] Nothing per-run, per-machine or per-user anywhere in the prompt — no timestamps, absolute paths or user details
+- [ ] Everything assembled at compile time is in the trailing `<system-reminder>` block, apart from
+      the `skills:` frontmatter key the file format pins to the top
+
+### Frontmatter
+
+- [ ] `tools` grants what the role uses. A reviewing role reports rather than repairs, so it holds no `Write` or `Edit`
+- [ ] `experimental.cacheTtl` is unset unless the person paying asked for the longer window
+- [ ] `isolation` left unset unless the project has asked for a worktree — this repository does not use them
+- [ ] `model` and `effort` match the work; a mechanical role does not need the largest model
+- [ ] The completion gate is present for any agent that writes, and inert where the project declares no checks
 
 ### Content Quality
 
-- [ ] Examples include file paths with line numbers
-- [ ] References to existing patterns are specific
-- [ ] Anti-patterns show consequences, not just "bad"
-- [ ] Success criteria are measurable and verifiable
-- [ ] Investigation steps are explicit and actionable
-
-### Sonnet 4.5 Specific
-
-- [ ] Expansion modifiers only where the task is genuinely broad, and phrased proportionally
-- [ ] Explicit permission for substantial changes (if applicable)
-- [ ] Token budget awareness (for long-context tasks)
-- [ ] Extended thinking enabled (for complex reasoning)
-
-### Opus 4.5 Specific
-
-- [ ] "Think" variants replaced with alternatives (consider, evaluate, analyze)
-- [ ] Anti-over-engineering guidance explicitly included
-- [ ] Aggressive directives softened (avoid excessive CRITICAL/MUST)
-- [ ] Positive framing used for constraints (✅ first, then ❌)
-
-### Extended Session Support
-
-- [ ] Self-correction triggers included for long-running agents
-- [ ] Post-action reflection points at key decision moments
-- [ ] Progress tracking pattern for multi-turn tasks
-- [ ] Just-in-time retrieval guidance for codebase exploration
-- [ ] Permission scope defined for acceptable changes
+- [ ] Every sentence earns its place — no clause restating the one before it, no sentence that only sets up the next, no hedges
+- [ ] Where two sentences carry one idea, the shorter one survives
+- [ ] References to existing patterns name a file and a symbol
+- [ ] Anti-patterns state the consequence, not just that they are bad
+- [ ] Success criteria are measurable, and each names what would catch a later violation
 
 ---
 
-## 6. Examples: Before vs After
-
-### Example 1: Developer Agent (Before)
-
-❌ **Common mistakes:**
-
-```markdown
-# Developer Agent
-
-You are a developer. Write good code and follow best practices.
-
-## Instructions
-
-1. Read the specification
-2. Write the code
-3. Test it
-
-Make sure your code is clean and follows conventions.
-```
-
-**Problems:**
-
-- No self-reminder loop (will forget instructions mid-task)
-- No investigation requirement (will hallucinate patterns)
-- Vague "best practices" and "conventions" (no actionable guidance)
-- No output format (inconsistent responses)
-- No anti-over-engineering guards (scope creep guaranteed)
-- No expansion modifiers (Sonnet 4.5 will be conservative)
-- No XML tags (lower accuracy)
-- No emphatic repetition (rules will be ignored)
-
----
-
-### Example 1: Developer Agent (After)
-
-✅ **Optimal structure:**
-
-```markdown
-# Developer Agent
-
-You are an expert TypeScript/React developer. Your mission: surgical implementation—read spec, examine patterns, implement exactly what's requested, test, verify. Nothing more, nothing less.
-
----
-
-<role>
-Expert TypeScript/React developer focused on surgical implementation.
-
-**When implementing features, be thorough on what the task needs and silent on the rest. Include the edge cases and error handling the task actually calls for — the work's size follows the task's size, not the template's.**
-</role>
-
----
-
-<core_principles>
-Principle 1: **Investigate before acting** - Never speculate about code you haven't examined.
-Principle 2: **Follow existing patterns strictly** - Consistency with the codebase trumps external best practices.
-Principle 3: **Make minimal necessary changes only** - Use existing utilities, avoid scope creep.
-Principle 4: **Test before considering complete** - Implementation isn't done until tests pass.
-Principle 5: **Verify Everything** - Re-read files after editing. Provide evidence.
-
-**Display all 5 principles at the start of EVERY response**
-</core_principles>
-
----
-
-<critical_requirements>
-
-## CRITICAL: Before Any Work
-
-**(You MUST read pattern files before implementing)**
-**(You MUST use existing utilities - never create new ones when they exist)**
-**(You MUST re-read files after editing to verify changes)**
-</critical_requirements>
-
----
-
-<investigation_requirement>
-**CRITICAL: Never speculate about code you have not opened.**
-
-Before making any claims or implementing anything:
-
-1. List the files you need to examine
-2. Read each file completely
-3. Base analysis strictly on what you find
-4. If uncertain, ask
-   </investigation_requirement>
-
----
-
-## Your Investigation Process
-
-**BEFORE writing any code:**
-
-1. **Read the specification completely**
-   - Identify all requirements
-   - Note referenced pattern files
-   - Understand success criteria
-
-2. **Examine pattern files**
-   - Read each referenced file completely
-   - Understand the established approach
-   - Note utilities available
-
-3. **Identify existing utilities**
-   - Search for relevant helpers
-   - Never reinvent what exists
-   - Reuse over recreate
-
-**Only after investigation do you plan and implement.**
-
----
-
-<self_correction_triggers>
-**If you notice yourself:**
-
-- **Generating code without reading files first** → Stop. Read the files.
-- **Creating new abstractions** → Stop. Check for existing utilities.
-- **Making assumptions about patterns** → Stop. Verify in the codebase.
-- **Skipping tests** → Stop. Tests are required for completion.
-  </self_correction_triggers>
-
----
-
-<workflow>
-ALWAYS follow this sequence:
-
-1. **Investigation:** Read referenced files and patterns
-2. **Planning:** Brief plan matching existing patterns
-3. **Implementation:** Code following plan and conventions
-4. **Testing:** Write and run tests
-5. **Verification:** Re-read files to confirm changes, verify success criteria
-
-Never skip investigation—ALWAYS examine referenced files before implementing.
-</workflow>
-
----
-
-<anti_over_engineering>
-**CRITICAL: Make minimal necessary changes only.**
-
-Before implementing:
-
-1. Does existing code do this? → Use it
-2. Is this requested? → If no, don't add it
-3. Can this be simpler? → Make it simpler
-
-**(Do not change anything not explicitly mentioned in the specification)**
-</anti_over_engineering>
-
----
-
-<output_format>
-<investigation_notes>
-[Files examined and patterns found]
-</investigation_notes>
-
-<implementation_plan>
-[Brief plan matching existing patterns]
-</implementation_plan>
-
-<implementation>
-[Code changes]
-</implementation>
-
-<verification>
-[Re-read files, confirm changes, verify success criteria]
-</verification>
-</output_format>
-
----
-
-<critical_reminders>
-
-## CRITICAL REMINDERS
-
-**(You MUST read pattern files before implementing)**
-**(You MUST use existing utilities - never create new ones when they exist)**
-**(You MUST re-read files after editing to verify changes)**
-
-**Failure to follow these rules will produce over-engineered, inconsistent code.**
-</critical_reminders>
-
----
-
-**DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE TO MAINTAIN INSTRUCTION CONTINUITY.**
-
-**ALWAYS RE-READ FILES AFTER EDITING TO VERIFY CHANGES WERE WRITTEN. NEVER REPORT SUCCESS WITHOUT VERIFICATION.**
-```
-
-**Improvements:**
-
-- ✅ Self-reminder loop prevents drift (60-70% reduction)
-- ✅ Investigation requirement prevents hallucination (80%+ reduction)
-- ✅ Emphatic repetition with `<critical_requirements>` and `<critical_reminders>` (40-50% better compliance)
-- ✅ Specific workflow with verification
-- ✅ Anti-over-engineering guards (70%+ reduction in scope creep)
-- ✅ Standard output format (consistency)
-- ✅ XML tags for structure (30%+ accuracy improvement)
-- ✅ Dual final reminder closes both loops
-
----
-
-### Example 2: Complex Task Prompt (Before)
-
-❌ **Common mistakes:**
+## 6. Worked Examples
+
+The agents under `src/agents/` are the worked examples — this section used to carry two
+long before/after pairs, and both drifted into demonstrating a template that no longer exists.
+
+**Two of the eighteen are written in the voice this document now defines**, and they are the ones to
+copy the phrasing from:
+
+| To see                       | Read                              |
+| ---------------------------- | --------------------------------- |
+| An agent that authors agents | `src/agents/meta/agent-summoner/` |
+| An agent that authors skills | `src/agents/meta/skill-summoner/` |
+
+The other sixteen still carry the retired forms — `**(You MUST ...)**`, `→ STOP` checkpoints and
+`## CRITICAL` headings — mostly in their `critical-requirements.md` and `critical-reminders.md`.
+They are current about the product: their tools, their domain and their process are accurate, and
+they are still the place to read what a role is. It is the voice that is stale. The census, which
+shrinks as they are migrated:
 
 ```
-Create a user authentication system with login, signup, and password reset.
+grep -rlE '\*\*\(You MUST|→ STOP|## CRITICAL|⚠️' src/agents \
+  --include='*.md' --exclude-dir=agent-summoner --exclude-dir=skill-summoner
 ```
 
-**Problems:**
+Read by role from any of them — `developer/web-developer/` for an implementation agent,
+`researcher/cli-researcher/` for a read-only one, `reviewer/reviewer/` for a reviewing agent whose
+tools are narrowed — and take the phrasing from the two above.
 
-- No structure (plain text, no XML)
-- No examples (no guidance on format/patterns)
-- No constraints (over-engineering likely)
-- No success criteria (how to verify?)
-- Missing expansion modifiers for Sonnet 4.5 (minimal implementation)
-- No investigation guidance (will hallucinate patterns)
-- No document placement strategy (poor context usage)
+Each agent is six files. Read `metadata.yaml` and `identity.md` first, since between them they carry
+the whole of what the role is, then `playbook.md` for how the process is written down.
 
----
-
-### Example 2: Complex Task Prompt (After)
-
-✅ **Optimal structure:**
-
-````xml
-<documents>
-<document index="1">
-<source>auth-service.ts</source>
-<document_content>
-[Existing authentication patterns - PLACE AT TOP]
-</document_content>
-</document>
-
-<document index="2">
-<source>user-store.ts</source>
-<document_content>
-[Current user state management]
-</document_content>
-</document>
-</documents>
-
-<role>
-You are an expert TypeScript/React developer specializing in authentication systems.
-
-**When implementing this system, be thorough on what the task needs and silent on the rest. Include the flows, edge cases and error handling the task actually calls for — the work's size follows the task's size, not the template's.**
-</role>
-
-<context>
-This application uses:
-- JWT tokens for authentication
-- MobX for state management
-- React Query for API calls
-- Tailwind CSS for styling
-
-Existing auth system handles basic login but needs expansion.
-</context>
-
-<critical_requirements>
-## CRITICAL: Before Any Work
-
-**(You MUST read auth-service.ts and signup-form.tsx before implementing)**
-**(You MUST use existing validation utilities - validateEmail, validatePassword)**
-**(You MUST NOT modify existing auth endpoints)**
-</critical_requirements>
-
-<task>
-Implement comprehensive authentication system with:
-1. Login with email/password
-2. Signup with validation
-3. Password reset flow
-4. Session management
-
-Consider: remember me, email verification, rate limiting, error handling.
-</task>
-
-<existing_patterns>
-**Authentication pattern from auth-service.ts (lines 45-89):**
-- Uses JWT with refresh tokens
-- Stores tokens in httpOnly cookies
-- Validates on every API call
-- Handles 401 with automatic refresh
-
-**Form validation from signup-form.tsx (lines 23-67):**
-- Inline validation on blur
-- Comprehensive error messages
-- Disabled submit during validation
-- Accessible error announcements
-
-**YOU MUST follow these exact patterns.**
-</existing_patterns>
-
-<examples>
-<example>
-**Similar implementation from profile-edit-modal.tsx:**
-```typescript
-const handleSubmit = async (data: FormData) => {
-  try {
-    setLoading(true);
-    await apiClient.put('/users/profile', data);
-    showSuccess('Profile updated successfully');
-    onClose();
-  } catch (error) {
-    showError(error.message || 'Failed to update profile');
-  } finally {
-    setLoading(false);
-  }
-};
-````
-
-This shows the established error handling and loading state pattern.
-</example>
-</examples>
-
-<constraints>
-**CRITICAL - DO NOT:**
-- Modify existing authentication endpoints (use as-is)
-- Create new validation utilities (use existing validateEmail, validatePassword)
-- Change token storage mechanism (must remain httpOnly cookies)
-- Modify user-store structure (extend only)
-
-**YOU MUST:**
-
-- Use existing apiClient for all requests
-- Follow form patterns from signup-form.tsx exactly
-- Use Tailwind utility classes (no custom CSS)
-- Include comprehensive error handling
-
-**(Do not change anything not explicitly mentioned in this specification)**
-</constraints>
-
-<success_criteria>
-**User-Facing:**
-
-1. User can log in with email/password
-2. User can create account with validation
-3. User can reset password via email
-4. Session persists across page reloads
-5. Clear error messages for all failure cases
-
-**Technical:**
-
-1. All tests in auth/ directory pass
-2. No modifications to auth-service.ts core logic
-3. Follows existing form patterns exactly
-4. Uses existing validation utilities
-5. Loading and error states handled properly
-
-**Verification:**
-
-- Manual test: Complete signup → login → password reset flow
-- Automated: Run auth tests
-- Check: No changes to existing auth endpoints
-  </success_criteria>
-
-<workflow>
-BEFORE implementing:
-1. Read auth-service.ts (lines 1-150) completely
-2. Read signup-form.tsx (lines 1-120) completely
-3. Read validateEmail and validatePassword utilities
-4. Understand the existing JWT flow
-
-THEN:
-
-1. Plan implementation matching these patterns
-2. Implement following the plan exactly
-3. Write comprehensive tests
-4. Re-read files to verify changes
-5. Verify all success criteria met
-   </workflow>
-
-<output_format>
-<investigation_notes>
-[Files examined and patterns found]
-</investigation_notes>
-
-<implementation_plan>
-[Brief plan matching existing patterns]
-</implementation_plan>
-
-<implementation>
-[Code changes]
-</implementation>
-
-<tests>
-[Test code covering all scenarios]
-</tests>
-
-<verification>
-[Re-read files, confirm changes, verify success criteria]
-</verification>
-</output_format>
-
-<critical_reminders>
-
-## CRITICAL REMINDERS
-
-**(You MUST read auth-service.ts and signup-form.tsx before implementing)**
-**(You MUST use existing validation utilities - validateEmail, validatePassword)**
-**(You MUST NOT modify existing auth endpoints)**
-
-**Failure to follow these rules will produce incompatible, over-engineered code.**
-</critical_reminders>
-
-<query>
-Implement the complete authentication system following all patterns and constraints above.
-</query>
-```
-
-**Improvements:**
-
-- ✅ Documents first, query last (30% boost on long-context)
-- ✅ XML structure for semantic boundaries (30%+ accuracy improvement)
-- ✅ Specific examples with line numbers (reduces misinterpretation)
-- ✅ Emphatic repetition with `<critical_requirements>` and `<critical_reminders>` (40-50% better compliance)
-- ✅ Measurable success criteria (45% fewer regressions)
-- ✅ Investigation workflow enforced (80%+ reduction in hallucination)
-- ✅ Proportional expansion modifier, warranted by a genuinely broad task (Technique #6)
-- ✅ Standard output format (consistency)
+To see what any of them compiles into, run `npx agents-inc compile` and open the file it writes
+under `.claude/agents/`.
 
 ---
 
 ## 7. Troubleshooting Common Issues
 
-### Issue: Agent Forgets Instructions Mid-Task
-
-**Symptom:** Agent starts well but drifts off-task after 10-20 messages
-
-**Root Cause:** No self-reminder loop
-
-**Solution:**
-
-```markdown
-<core_principles>
-Principle 1: [Rule 1]
-Principle 2: [Rule 2]
-Principle 3: [Rule 3]
-Principle 4: [Rule 4]
-Principle 5: [Rule 5]
-
-**Display all 5 principles at the start of EVERY response**
-</core_principles>
-
-[Rest of prompt]
-
-**DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE TO MAINTAIN INSTRUCTION CONTINUITY.**
-
-**ALWAYS RE-READ FILES AFTER EDITING TO VERIFY CHANGES WERE WRITTEN. NEVER REPORT SUCCESS WITHOUT VERIFICATION.**
-```
-
-**Evidence:** 60-70% reduction in off-task behavior with self-reminder loop
-
----
-
-### Issue: Agent Hallucinates Patterns
-
-**Symptom:** Agent claims patterns exist that don't, invents utilities
-
-**Root Cause:** No investigation requirement
-
-**Solution:**
-
-```markdown
-<investigation_requirement>
-**CRITICAL: Never speculate about code you have not opened.**
-
-Before making any claims or implementing anything:
-
-1. List the files you need to examine
-2. Read each file completely
-3. Base analysis strictly on what you find
-4. If uncertain, ask
-   </investigation_requirement>
-```
-
-**Evidence:** 80%+ reduction in hallucination issues
-
----
-
-### Issue: Agent Over-Engineers Solutions
-
-**Symptom:** Creates complex abstractions, adds unrequested features
-
-**Root Cause:** No anti-over-engineering guards
-
-**Solution:**
-
-```markdown
-<anti_over_engineering>
-**CRITICAL: Make minimal necessary changes only.**
-
-Before implementing:
-
-1. Does existing code do this? → Use it
-2. Is this requested? → If no, don't add it
-3. Can this be simpler? → Make it simpler
-
-**(Do not change anything not explicitly mentioned in the specification)**
-</anti_over_engineering>
-```
-
-**Evidence:** 70%+ reduction in scope creep
-
----
-
-### Issue: Sonnet 4.5 Produces Minimal Implementations
-
-**Symptom:** Implementation technically meets requirements but is bare-bones
-
-**Root Cause:** Conservative Sonnet 4.5 defaults on a task whose breadth was never stated
-
-**Solution:**
-
-```markdown
-<task>
-[Task description]
-
-**This task is genuinely broad — cover [the dimensions it actually has].
-Be thorough on what the task needs and silent on the rest; the work's size follows the task's size, not the template's.**
-</task>
-```
-
-**Check the diagnosis first:** this fix applies when the task really is broader than the output. If the deliverable matches a well-scoped task, the implementation is not bare-bones — it is proportional, and adding a modifier here produces the inverse defect (see Technique #6).
-
-**Evidence:** Anthropic documentation, community consensus for Claude 4.x
-
----
-
-### Issue: Agent Doesn't Follow Constraints
-
-**Symptom:** Violates explicit constraints, modifies off-limits files
-
-**Root Cause:** Missing emphatic repetition
-
-**Solution:**
-
-```markdown
-<critical_requirements>
-
-## CRITICAL: Before Any Work
-
-**(You MUST [rule 1])**
-**(You MUST [rule 2])**
-**(You MUST NOT [rule 3])**
-</critical_requirements>
-
-[Body of prompt]
-
-<critical_reminders>
-
-## CRITICAL REMINDERS
-
-**(You MUST [rule 1])** - [reinforcement]
-**(You MUST [rule 2])** - [reinforcement]
-**(You MUST NOT [rule 3])** - [reinforcement]
-
-**Failure to follow these rules will [consequence].**
-</critical_reminders>
-```
-
-**Evidence:** 40-50% increase in compliance with emphatic repetition
-
----
-
-### Issue: Inconsistent Response Format
-
-**Symptom:** Agent responds differently each time, hard to parse
-
-**Root Cause:** No output format specification
-
-**Solution:**
-
-```markdown
-<output_format>
-<investigation_notes>
-[What you examined]
-</investigation_notes>
-
-<implementation>
-[Your changes]
-</implementation>
-
-<verification>
-[Proof of success]
-</verification>
-</output_format>
-```
-
-**Evidence:** 60% reduction in format errors with XML structure
-
----
-
-### Issue: Agent Reports Success Without Verification
-
-**Symptom:** Agent says "Done!" but changes weren't actually saved
-
-**Root Cause:** No write verification protocol
-
-**Solution:**
-
-```markdown
-<write_verification_protocol>
-**After completing ANY file edits, you MUST:**
-
-1. Re-read the file(s) you just edited
-2. Verify your changes exist in the file
-3. If verification fails, report failure and re-attempt
-4. Only report success AFTER verification passes
-   </write_verification_protocol>
-
----
-
-**ALWAYS RE-READ FILES AFTER EDITING TO VERIFY CHANGES WERE WRITTEN. NEVER REPORT SUCCESS WITHOUT VERIFICATION.**
-```
-
-**Evidence:** Prevents false-success reports from file operations
+| Symptom                                       | Usually                                                        | Try                                                                                                                               |
+| --------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Claims about code the agent never opened      | The prompt asks for analysis without asking for the read first | Technique #2 — name the files to read, and say that claims come from what was read                                                |
+| Scope grows past what was asked               | The prompt states the goal and not the boundary                | Give the role a `<domain_scope>` with an explicit hand-off list, and say that the task's own scope is the deliverable             |
+| New abstractions where existing ones would do | Nothing tells the agent the codebase already has the utility   | Name the directories to search before writing anything new                                                                        |
+| Reports success on an edit that did not land  | No read-back                                                   | Technique #1 — the gate returns the failing check; where no gate reaches the file, the role's own requirements name the read-back |
+| Output shape varies between runs              | The output format is described in prose                        | Put a filled-in skeleton in `output.md` — this is the one place an inline example earns its bytes                                 |
+| A rule in the prompt is ignored               | It is one emphatic line among fifty                            | Technique #3 — if everything is critical, nothing is. Cut the others, or move the rule into a gate that runs                      |
+| An agent's answers are thinner than expected  | The task is genuinely broad and the prompt does not say so     | Technique #6, phrased proportionally to the task rather than as blanket encouragement                                             |
+
+Where a symptom keeps returning after a prompt change, prefer a mechanism over another sentence:
+a completion gate, a narrower tool grant, or a skill that carries the knowledge the agent kept
+missing.
 
 ---
 
 ## 8. Multi-Agent Delegation (Project-Specific)
 
-This section covers patterns specific to this repo's sub-agent roster and Ralph-style iterative workflows. For the agents listed below, every delegation prompt MUST include the boilerplate in [Section 8.2](#82-required-boilerplate-for-every-delegation) — no exceptions.
+This section covers patterns specific to this repo's sub-agent roster and Ralph-style iterative workflows. For the agents listed below, every delegation prompt opens with the boilerplate in [Section 8.2](#82-required-boilerplate-for-every-delegation).
 
 ### 8.1 Agent Selection
 
-| Agent             | Use for                                                                                                                                     | Do NOT use for                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `cli-developer`   | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                   | Test code (use `cli-tester`), standards docs (use `codex-keeper`)               |
-| `cli-tester`      | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                          | Production code in `src/cli/**` (use `cli-developer`)                           |
-| `codex-keeper`    | Standards/docs curation under `.ai-docs/standards/**` only. Bible audits, standards drift, convention docs, agent-findings triage           | Production or test code. Scope is strictly `.ai-docs/standards/` unless widened |
-| `general-purpose` | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks that do NOT need specialist conventions | Writing code or tests (delegate to specialist instead)                          |
+| Agent             | Use for                                                                                                                                         | Leave to                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `cli-developer`   | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                       | Test code (use `cli-tester`), standards docs (use `codex-keeper`)               |
+| `cli-tester`      | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                              | Production code in `src/cli/**` (use `cli-developer`)                           |
+| `codex-keeper`    | Standards/docs curation under `.ai-docs/standards/**` only. Bible audits, standards drift, convention docs, agent-findings triage               | Production or test code. Scope is strictly `.ai-docs/standards/` unless widened |
+| `general-purpose` | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks a specialist's conventions would not change | Writing code or tests (delegate to specialist instead)                          |
 
 **Tie-breakers:**
 
 - Mixed code + tests → two sequential delegations (developer first, tester second), not one merged prompt.
-- "Check and fix if drift" on standards → `codex-keeper`, not `general-purpose`.
+- Auditing a standard for drift → a read-only lane that reports with quotes and the command it ran.
+  Repairing what the audit returned → `codex-keeper`, which owns `.ai-docs/**`, in a second
+  dispatch. The verifier is never the fixer, so the two are never one lane.
 - Pure read-and-report → `general-purpose` is cheapest.
 
 ### 8.2 Required Boilerplate for Every Delegation
 
-Every sub-agent prompt MUST open with these lines verbatim (or equivalent):
+Every sub-agent prompt opens with these lines, verbatim or in equivalent words:
 
 ```markdown
 Read the repository root `CLAUDE.md` before starting.
-Do NOT run ANY git commands (no add/reset/stash/checkout/restore/clean/commit).
+Use git read-only — `status`, `log`, `show`, `diff`, `blame`, `stash list` — and leave every writing command to the user (`add`, `commit`, `reset`, `stash` push/pop/drop, `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend).
 Scope: <explicit path fence — e.g. ".ai-docs/standards/** only" or "src/cli/lib/configuration/**">.
 If you fix an anti-pattern, discover a missing standard, or notice convention drift,
 write a finding to `.ai-docs/agent-findings/` using `.ai-docs/agent-findings/TEMPLATE.md`.
-Self-review your output against CLAUDE.md before reporting.
+Run <the gate this lane can run — the project's gates for a writing lane, the §8.6 grep for an
+agent-partials lane, §6's census for a voice migration> and report what it returned. Where the lane
+has no runnable check, self-review your output against CLAUDE.md before reporting.
 Report format: <terse sections the parent expects — e.g. "(a) coverage (b) additions (c) findings (d) next-iter suggestion, under N words">.
 ```
 
 **Why each line exists:**
 
 - `Read CLAUDE.md` — sub-agents default to generic Claude behavior without it; project conventions are invisible.
-- `Do NOT run git commands` — the user curates staging intentionally; sub-agents otherwise run `git add .` reflexively.
+- The git rule, both halves — the user curates staging intentionally and sub-agents otherwise run `git add .` reflexively, while a reviewing agent still needs `git diff` to have anything to review.
 - `Scope` — prevents the iter-54 class of bug where `cli-tester` reinterpreted "tighten these tests" as "tighten any adjacent tests it noticed" and the iter-55 class where `codex-keeper` wandered outside `.ai-docs/standards/`.
 - `Finding instruction` — without this, drift discoveries die in the sub-agent turn and don't accrete.
-- `Self-review` — sub-agents will confidently violate CLAUDE.md rules they read 10k tokens ago; re-checking before reporting catches it.
+- The gate first, self-review second — a check that runs happens whether or not the lane decided to, where re-checking is advice. Self-review stays for the lane that has no gate to run, because a sub-agent will confidently violate a rule it read 10k tokens ago.
 - `Report format` — free-form reports waste parent context; structured reports let Ralph iterations compose.
 
 ### 8.3 Ralph-Loop / Batched Iteration Patterns
 
 Ralph-style audits (fixed N iterations, one focus area per iter) have distinct ergonomics:
 
-**DO:**
-
-- Give each iter a **single focus file or standard** (one path, not a theme).
+- Give each iter a **single focus file or standard** (one path, not a theme) — a chained iter ("audit prompt-bible AND e2e-standards AND commit-protocol") bloats its report and muddles its findings.
 - Require a **numbered report** with fixed sections (e.g. `(a) coverage (b) additions (c) findings (d) next-iter suggestion`) so the parent can chain iters without re-prompting.
 - Cap report length explicitly (`250-300 words`) — otherwise iteration N+1's context is half-consumed by iter-N's prose. See [`loop-prompts-bible.md` §8.4](./loop-prompts-bible.md#84-report-length-caps) for the authoritative table of report-length caps and iteration cadence.
 - Cross-reference recent iter outcomes when relevant (`"the cli-tester scope-boundary misinterpretation from iter 54"`) — this catches recurrence.
 - End each iter with a concrete next-iter suggestion, so the loop has momentum even when the parent is autonomous.
-
-**DO NOT:**
-
-- Chain multiple standards into one iter ("audit prompt-bible AND e2e-standards AND commit-protocol") — reports bloat, findings get muddled.
-- Let iters skip the finding-write step when drift is detected — the whole point of the loop is accretion.
-- Run the same focus twice without noting it in the second iter's report — silent re-audit == wasted turn.
+- Write the finding whenever drift is detected; accretion is the point of the loop.
+- Name the previous iter's focus in this iter's report, so a silent re-audit is visible rather than a wasted turn.
 
 ### 8.4 Anti-Patterns (Observed in This Repo)
 
@@ -1849,7 +1048,7 @@ Ralph-style audits (fixed N iterations, one focus area per iter) have distinct e
 **Vague scope → collateral edits.**
 
 - ❌ `"Tighten assertions in the wizard tests"` — `cli-tester` will "tighten" 12 adjacent files (iter 54).
-- ✅ `"Scope: src/cli/components/wizard/step-confirm.test.tsx ONLY. Do not touch any other file."`
+- ✅ `"Scope: src/cli/components/wizard/step-confirm.test.tsx — every other file stays as it is."`
 
 **Missing context → hallucinated patterns.**
 
@@ -1874,7 +1073,7 @@ Delegating to <agent-name> for <one-line task>.
 
 <preamble>
 Read the repository root `CLAUDE.md` before starting.
-Do NOT run ANY git commands.
+Use git read-only — `status`, `log`, `show`, `diff`, `blame`, `stash list` — and leave every writing command to the user (`add`, `commit`, `reset`, `stash` push/pop/drop, `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend).
 Scope: <path fence>.
 If you fix an anti-pattern or discover drift, write a finding to `.ai-docs/agent-findings/` via TEMPLATE.md.
 Self-review against CLAUDE.md before reporting.
@@ -1883,7 +1082,7 @@ Self-review against CLAUDE.md before reporting.
 <task>
 <concrete task with expected deliverables>
 
-<expansion modifier — ONLY if the task is genuinely broad; see Technique #6. Omit it otherwise,
+<expansion modifier — only if the task is genuinely broad; see Technique #6. Omit it otherwise,
 because on a scoped task it is an instruction to exceed the scope and will be obeyed.>
 </task>
 
@@ -1894,7 +1093,7 @@ because on a scoped task it is an instruction to exceed the scope and will be ob
 
 <constraints>
 - <file-level constraints>
-- <what NOT to modify>
+- <what stays as it is>
 </constraints>
 
 <report_format>
@@ -1919,8 +1118,9 @@ prohibition as "per CLAUDE.md" — belongs in the delegating prompt of [Section 
 
 1. The `meta/` agents, whose stated job is curating an `.ai-docs/` tree. A project adopting
    `codex-keeper` plausibly adopts the convention with it.
-2. The same rule restated in project-agnostic terms. "Never run git commands that modify the staging
-   area or working tree" is fine; "(per CLAUDE.md)" is not. "Record a finding the way this project's
+2. The same rule restated in project-agnostic terms. "Use git read-only — `status`, `log`, `show`,
+   `diff`, `blame`, `stash list` — and leave every writing command to the user" is fine;
+   "(per CLAUDE.md)" is not. "Record a finding the way this project's
    conventions direct" is fine; naming our directory and our template file is not — including inside
    a parenthetical that says "for this repository", which reads in the installing project as _their_
    repository.
@@ -1928,17 +1128,22 @@ prohibition as "per CLAUDE.md" — belongs in the delegating prompt of [Section 
 **The check:**
 
 ```bash
-grep -rn "ai-docs\|CLAUDE\.md" src/agents/ --exclude-dir=meta
+grep -rn "ai-docs\|CLAUDE\.md\|todo/" src/agents/ --exclude-dir=meta
 ```
 
-It must return nothing. Two ways to get a false clean from it:
+It must return nothing. Three ways to get a false clean from it:
 
 - **Exclude by `--exclude-dir`, never by a pipe.** `grep -rn` prints `path:line:text`, so
   `| grep -v meta` filters the **text** while looking like it filters the **path** — it drops any
   line whose body happens to say "meta" and keeps `meta/` files whose lines do not.
-- **Do not add `agents-inc` to the pattern.** Every `metadata.yaml` opens with a
+- **Leave `agents-inc` out of the pattern.** Every `metadata.yaml` opens with a
   `# yaml-language-server: $schema=...` comment naming the GitHub org. That is editor tooling, not
-  prompt content, and including the term returns one false hit per agent and buries the real ones.
+  prompt content, so including the term returns one false hit per agent and buries the real ones.
+- **Run it from `packages/cli`.** There is no `src/agents/` at the repository root, so from there
+  grep writes `No such file or directory` to stderr, exits 2, and prints nothing on stdout — which
+  reads as clean to anyone watching stdout, and to any wrapper checking output rather than status.
+  This is the one of the three that a monorepo introduced: the check was written when this package
+  was the repository.
 
 This class is invisible in-repo, because every path resolves correctly here. It fails only after
 publication, in someone else's project, where nobody reports it back — which is why it needs a grep
@@ -1948,36 +1153,10 @@ rather than a reviewer.
 
 ## Conclusion
 
-This structure represents the convergence of:
+**The techniques are the record.** §1's headings are the list, in the body's own words. A second
+copy of them here would be a list nothing holds against the sections it names, and it would go on
+reading as current after a section beneath it changed.
 
-- **Anthropic's official guidance** - XML tags, document placement, system prompts, context engineering
-- **Production systems** - Aider: 72.7% SWE-bench, Augment: 65.4% SWE-bench Verified, Refact.ai: 74.4% SWE-bench Verified, Mini-SWE: 65%+
-- **Academic research** - Prompt structure impact, few-shot examples, chain-of-thought
-- **Community validation** - Thousands of developers confirming patterns
-- **November 2025 Claude 4.5 optimizations** - Expansion modifiers, extended thinking, context engineering
-
-**Key Principles to Remember:**
-
-1. **Self-reminder loop is THE most important technique** - Prevents instruction drift (60-70% reduction)
-2. **Investigation-first prevents 80% of hallucinations** - Never speculate about code
-3. **Emphatic repetition increases compliance by 40-50%** - `<critical_requirements>` at TOP + `<critical_reminders>` at BOTTOM
-4. **XML tags provide 30%+ accuracy improvement** - Semantic boundaries matter
-5. **Documents first, query last gives 30% performance boost** - For 20K+ tokens
-6. **Expansion modifiers are conditional** - Counter conservative defaults on genuinely broad tasks; on well-scoped ones they inflate the deliverable
-7. **Self-correction triggers provide mid-run guidance** - 74.4% SWE-bench with this pattern
-8. **Post-action reflection improves long-horizon reasoning** - Pause and evaluate after tool use
-9. **Progress tracking maintains orientation** - Essential for 30+ hour sessions
-10. **Positive framing improves adherence** - Tell what TO do, not just what NOT to do
-11. **"Think" alternatives prevent Opus 4.5 confusion** - Use consider, evaluate, analyze
-12. **Just-in-time loading preserves context** - Load content when needed, not upfront
-13. **Write verification prevents false-success reports** - Re-read files after edits, close with dual reminder
-
-**Validation Metrics:**
-
-- Aider: 72.7% on SWE-bench (Sonnet 4)
-- Refact.ai: 74.4% on SWE-bench Verified (with mid-run guidance)
-- Augment: 65.4% on SWE-bench Verified
-- Mini-SWE: 65%+ with just 100 lines of Python
-- All use these patterns
-
-**Deploy with confidence.**
+The figures behind these techniques are in the Performance Metrics table at the top, beside the
+technique each one measures — which is the only place they can be checked against the claim they
+support.

@@ -60,7 +60,7 @@ When passing work between agents, always provide:
 1. **Absolute file paths** to all relevant files
 2. **Summary of previous changes** (files, line counts)
 3. **Clear next step** with acceptance criteria
-4. **Constraints** on what must NOT change
+4. **Scope** — the files this lane owns, and the instruction to report the exact change wanted in anything else
 
 ---
 
@@ -83,7 +83,7 @@ When spawning research agents:
 
 - **Ask specific questions** -- not "investigate X" but "determine whether Y supports Z by reading its source"
 - **Define success criteria** -- "Report: (a) whether it works, (b) code example, (c) limitations"
-- **Set scope** -- "Only examine files in src/cli/lib/. Do not modify anything."
+- **Set scope** -- "Read only files in src/cli/lib/, and report rather than change."
 - **Request structured output** -- bullet list with file:line references
 
 ### Handling Ambiguity
@@ -180,7 +180,9 @@ After a sub-agent completes, capture: what changed (files + lines), key decision
 
 ### Verification Before Completion
 
-**Never report `[DONE]` without verification.**
+**Run the gate, then report what it returned.** A check that runs happens whether or not the lane
+decided to; a checklist asking the lane to confirm its own work is advice. `prompt-bible.md`
+Technique #1 carries the `SubagentStop` hook that runs one on every completion attempt.
 
 ```
 |- [ ] All acceptance criteria checked off
@@ -221,13 +223,13 @@ After a sub-agent completes, capture: what changed (files + lines), key decision
 
 ## 6. Boundaries and Constraints
 
-### What Loop Agents Must NOT Do
+### What a Loop Agent Hands Off
 
-- **Do NOT commit.** User handles committing.
-- **Do NOT write production code.** Delegate to specialized agents.
-- **Do NOT write tests.** Delegate to `cli-tester`.
-- **Do NOT make unilateral architecture decisions.** Needs user approval or `pm`.
-- **Do NOT modify code files directly.** Only edit: task files (TODO.md, todo-loop.md), docs, memory files.
+- **Leave committing to the user**, who curates staging deliberately.
+- **Delegate production code to a specialist**, and tests to `cli-tester`.
+- **Take an architecture decision to the user or to `pm`** rather than settling it in the loop.
+- **Edit task files, docs and memory files** — `TODO.md`, `todo-loop.md` and their neighbours. Code
+  files belong to the specialist the work was delegated to.
 
 ### Tool Usage
 
@@ -317,11 +319,13 @@ Update immediately: `### H21: Task Name [IN PROGRESS]` / `[DONE]`
 
 Ralph-loop runs the same prompt back to the agent N times (default up to `--max-iterations`). Each iter sees prior iters' artifacts via git/filesystem but **not** in the conversation. This section codifies the discipline that keeps the loop productive.
 
-### 8.1 CRITICAL RULE -- Completion Promise
+### 8.1 The completion promise
 
 From `/ralph-loop:ralph-loop`:
 
-> If a completion promise is set, you may ONLY output it when the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop, even if you think you're stuck or should exit for other reasons.
+> CRITICAL RULE: If a completion promise is set, you may ONLY output it when the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop, even if you think you're stuck or should exit for other reasons. The loop is designed to continue until genuine completion.
+
+A loop that feels stuck is a loop to change the approach of (§8.5), which is a different move from declaring it finished.
 
 Rules:
 
