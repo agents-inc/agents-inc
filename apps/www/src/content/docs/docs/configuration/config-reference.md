@@ -137,7 +137,7 @@ Write whichever reads best. What comes back out is normalized: an assignment car
 
 **Exclusive categories lose the array wrapper.** A category the catalog marks exclusive can hold only one skill, so it's written as the bare value rather than a one-element array — `'web-framework'` and `'api-api'` are exclusive; `'web-testing'` isn't. Putting two skills in an exclusive category fails the write rather than silently dropping one.
 
-**The category key is user-visible text.** Each assignment becomes a line in the compiled agent's skill-activation table reading `Use when: when working with <category>`. Pick the category that describes when the sub-agent should reach for the skill.
+**The category key doesn't reach the compiled agent.** Each assignment becomes a line in the sub-agent's skill activation protocol, and the sentence on that line is the skill's own `usageGuidance` from its `metadata.yaml` — the words its author wrote about when to reach for it, not the key you filed it under. A locally written skill counts here too — its `metadata.yaml` is merged into the catalog on load, so the sentence you put in that field is the sentence the sub-agent reads. The key is read only where there's nothing to read: a skill that states no `usageGuidance` falls back to `Use when working with <category>.`
 
 **Categories are re-keyed on load, and the id is what survives.** If a release moves a skill into a different category, your saved entry is moved with it rather than being orphaned — the id is identity, the category is storage. Run with `--verbose` and the move is named: `Re-keyed stack entries to their live category`. A skill the catalog doesn't carry keeps whatever key you spelled.
 

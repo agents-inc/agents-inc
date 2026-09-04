@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-Every sub-agent runs on a model, and each shipped one already names its own. Overriding it is a click in the editor, or one field on that sub-agent's entry in `.claude-src/config.ts` where `effort` sits beside it.
+Every sub-agent runs on a model, and every shipped one names `opus`. Choosing differently for one of them — a cheaper model on a routine job, a faster one on a job you run constantly — is a click in the editor, or one field on that sub-agent's entry in `.claude-src/config.ts` where `effort` sits beside it.
 
 ## Quick start
 
@@ -35,7 +35,7 @@ The values are `sonnet`, `opus`, `haiku`, `fable` and `inherit` for the model, a
 
 ## Where the default came from
 
-Each sub-agent ships with a `metadata.yaml` naming the model it was written for. Most of the shipped roster names `opus`; `convention-keeper` and `api-tester` name `sonnet`. That's the value you see in a compiled agent you've never touched.
+Each sub-agent ships with a `metadata.yaml` naming the model it runs on, and every shipped one names `opus`. That's the value you see in a compiled agent you've never touched — so the question this page answers isn't "which of them is on the cheap model", it's "which of them do you want somewhere else".
 
 Your config wins over it, and does so silently — a setting somebody made on purpose doesn't earn a warning on every compile. With neither present, the frontmatter renders `model: inherit`, which hands the choice back to whatever session invokes the sub-agent.
 

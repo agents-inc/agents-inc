@@ -66,7 +66,7 @@ The `pre` / `lazy` word on a roster skill row is this same choice, and it belong
 
 The key a skill sits under is the category the catalogue puts it in. The id is what identifies the assignment, so a config naming a stale category for a catalogue skill is re-keyed to the live one when it loads — a category that moved between releases doesn't orphan your entry. A skill the catalogue doesn't carry keeps whatever key you wrote, because nothing has an opinion about it.
 
-The key is user-visible in the result. It becomes that skill's `Use when: when working with <category>` line in the compiled sub-agent, so it's worth spelling the one the skill actually belongs to.
+**The key isn't what tells the sub-agent when to use the skill.** That comes from the skill's own `usageGuidance` in its `metadata.yaml` — one sentence per dynamic skill in the compiled sub-agent's activation protocol, in the skill author's own words. If the skill is yours, that field is where the effort goes: it's the whole of what a sub-agent reads when deciding whether the work in front of it is this skill's. The key is read only where there's nothing to read — a skill stating no `usageGuidance` falls back to `Use when working with <category>.`
 
 ## One pair that can't be routed
 
