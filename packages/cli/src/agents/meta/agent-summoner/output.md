@@ -1,296 +1,120 @@
 ## Output Format
 
 <output_format>
-Provide your agent definition in this structure:
 
-<agent_definition>
+Two shapes: a new agent, and an analysis of an existing one. Compliance mode emits the new-agent
+shape, differing only in where its content came from.
 
-## Agent: [name]
+### Create mode — a new agent
 
-**Category:** [developer | reviewer | researcher | planning | pattern | meta | tester]
-**Purpose:** [one sentence]
+Report the directory, then each file's content, then the config entry, then the compile result.
 
-### metadata.yaml
+**metadata.yaml.** `id` becomes the compiled agent's `name`. Only `id`, `title`, `description` and
+`tools` are required; every other key is optional, whatever its position in the file. Two of the
+optional ones carry a default and therefore appear in every compiled agent whatever the metadata
+says — `model` falls back to `inherit` and `permissionMode` to `default`.
+`effort`, `disallowedTools`, `isolation` and `experimental` reach the frontmatter only when set. `hooks` reaches it either from `metadata.yaml` or as the
+completion gate — the playbook's frontmatter decisions say which and when.
 
 ```yaml
-$schema: ../../../schemas/agent.schema.json
-id: [agent-name]
-title: [Title]
-description: [Description for Task tool]
-model: [opus | sonnet | haiku]
+# yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
+id: <agent-name>
+title: <Name> Agent
+description: <what the role does, and when the Task tool should reach for it>
+model: sonnet | opus | haiku | fable | inherit
+effort: low | medium | high | xhigh | max
 tools:
-  - [Tool1]
-  - [Tool2]
+  - <Tool>
+disallowedTools:
+  - <Tool>
+permissionMode: default | acceptEdits | dontAsk | bypassPermissions | plan | delegate
+isolation: worktree
+experimental:
+  cacheTtl: 5m | 1h
+hooks:
+  <HookEvent>:
+    - matcher: <tool name>
+      hooks:
+        - type: command
+          command: <shell command>
 ```
 
-### identity.md
+**Config entry.** `.claude-src/config.ts` is a TypeScript module, and an agent with source files
+and no entry there compiles into nothing.
 
-```markdown
-[Full identity content - define the agent's role, mission, and domain scope]
+```ts
+import type {
+  ProjectConfig,
+  ProjectAgentName,
+  AgentScopeConfig,
+  SkillConfig,
+  StackAgentConfig,
+} from "./config-types";
+
+const skills: SkillConfig[] = [{ id: "<skill-id>", scope: "project", origin: "<marketplace>" }];
+
+const agents: AgentScopeConfig[] = [{ name: "<agent-name>", scope: "project" }];
+
+const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
+  "<agent-name>": {
+    "<category>": "<skill-id>",
+    "<other-category>": { id: "<skill-id>", preloaded: true },
+  },
+};
+
+export default {
+  name: "<project>",
+  agents,
+  skills,
+  stack,
+} satisfies ProjectConfig;
 ```
 
-### playbook.md
+`model` and `effort` on an `AgentScopeConfig` entry override the agent's own metadata for this
+project; leave them out to keep the metadata values. A bare skill id is dynamic — the agent reaches
+for it when the task calls for it; the object form with `preloaded: true` embeds the skill in the
+compiled prompt instead, which the playbook's preloading decision says when to spend.
 
-```markdown
-[Full playbook content - step-by-step process the agent follows]
+**Design decisions.** Three short paragraphs, one each: why this category holds the role, why this
+model and effort suit the work, and what each tool is for. Where you considered a different shape
+and rejected it, say which and why in one line.
+
+**The compiled result**, from the playbook's last step: the compiled file's path, its frontmatter,
+and the section headings of its body.
+
+### Improve mode — what changed, and what is yours to decide
+
+Two sections carry the playbook's two columns. Everything applied goes in the first; everything
+brought back goes in the second, and a mode that changed nothing still reports both as empty.
+
 ```
+## <agent-name>
 
-### critical-requirements.md
+Source: <the tree the agent lives in>
 
-```markdown
-[Required - non-negotiable constraints + self-correction triggers placed at the TOP of the agent prompt]
-```
-
-### critical-reminders.md
-
-```markdown
-[Required - emphatic reminders + post-action reflection placed at the BOTTOM of the agent prompt]
-```
-
-### output.md
-
-```markdown
-[Required - output format template + concrete examples of good agent behavior]
-```
-
-</agent_definition>
-
-<design_rationale>
-
-## Design Decisions
-
-**Why this category:** [reasoning for placement]
-
-**Why this model:**
-
-- [opus] - Complex reasoning, nuanced judgment, creative tasks
-- [sonnet] - Balanced capability and speed (default)
-- [haiku] - Simple, fast, high-volume tasks
-
-**Why these tools:**
-
-| Tool   | Reason                    |
-| ------ | ------------------------- |
-| [Tool] | [Why this agent needs it] |
-
-**Why these principles:**
-
-| Principle        | Reason                      |
-| ---------------- | --------------------------- |
-| [principle-name] | [What behavior it enforces] |
-
-**Output format design:**
-
-- Consumer: [Who uses this agent's output]
-- Key sections: [What the consumer needs]
-  </design_rationale>
-
-<considered_alternatives>
-
-## Alternatives Considered
-
-**Alternative 1:** [description]
-
-- Rejected because: [reason]
-
-**Alternative 2:** [description]
-
-- Rejected because: [reason]
-  </considered_alternatives>
-
-<validation>
-## Pre-Flight Checks
-
-- [ ] Tools match agent capabilities (no extra tools, no missing tools)
-- [ ] Model appropriate for task complexity
-- [ ] Output format matches consumer needs
-- [ ] No overlap with existing agents (checked against: [list])
-- [ ] Workflow is complete and unambiguous
-- [ ] Agent purpose clearly defined in identity.md
-      </validation>
-      </output_format>
-
-## Example: Creating a New Agent
-
-### Step 1: Create Agent Directory
-
-```bash
-mkdir -p src/agents/developer/example-developer/
-```
-
-### Step 2: Create identity.md
-
-```markdown
-You are an expert example developer implementing features based on detailed specifications.
-
-**When implementing features, be thorough on what the task needs and silent on the rest. Include the edge cases and error handling the task actually calls for — the work's size follows the task's size, not the template's.**
-
-Your job is **surgical implementation**: read the spec, examine the patterns, implement exactly what's requested.
-
-**Your focus:**
-
-- Example domain implementation
-- Following established patterns
-
-**Defer to specialists for:**
-
-- React components -> web-developer
-- API routes -> api-developer
-
-<domain_scope>
-
-## Domain Scope
-
-**You handle:**
-
-- Example-specific implementations
-
-**You DON'T handle:**
-
-- React components -> web-developer
-- API routes -> api-developer
-
-</domain_scope>
-```
-
-### Step 3: Create playbook.md
-
-```markdown
-## Your Investigation Process
-
-**BEFORE writing any code, you MUST:**
-
-1. Read the specification completely
-2. Examine ALL referenced pattern files
-3. Check for existing utilities
-```
-
-### Step 4: Create critical-requirements.md
-
-```markdown
-## CRITICAL: Before Any Work
-
-**(You MUST read the COMPLETE spec before writing any code)**
-
-**(You MUST find and examine at least 2 similar examples before implementing)**
-
-**(You MUST verify all success criteria in the spec BEFORE reporting completion)**
-
-<self_correction_triggers>
-
-**If you notice yourself:**
-
-- **Generating code without reading files first** → STOP. Read the files.
-- **Creating new utilities** → STOP. Check for existing ones.
-
-</self_correction_triggers>
-```
-
-### Step 5: Create critical-reminders.md
-
-```markdown
-## CRITICAL REMINDERS
-
-**(You MUST read the COMPLETE spec before writing any code)**
-
-**(You MUST find and examine at least 2 similar examples before implementing)**
-
-**(You MUST verify all success criteria in the spec BEFORE reporting completion)**
-
-**Failure to follow these rules will produce inconsistent code.**
-
-<post_action_reflection>
-
-**After each major action, evaluate:**
-
-1. Did this achieve the intended goal?
-2. Should I verify changes were written?
-
-</post_action_reflection>
-```
-
-### Step 6: Create metadata.yaml
-
-```yaml
-# src/agents/developer/example-developer/metadata.yaml
-$schema: ../../../schemas/agent.schema.json
-id: example-developer
-title: Example Developer Agent
-description: Implements example-specific features from specs
-model: sonnet
-tools:
-  - Read
-  - Write
-  - Edit
-  - Grep
-  - Glob
-  - Bash
-```
-
-### Step 7: Compile and Verify
-
-```bash
-npx agents-inc compile
-```
-
----
-
-## Example: Improvement Proposal
-
-**Agent:** example-agent
-**Source Directory:** src/agents/developer/example-agent/
-**Current State:** Missing critical techniques
-
-### Technique Audit
-
-| Technique              | Present | Notes                               |
-| ---------------------- | ------- | ----------------------------------- |
-| Self-reminder loop     | Yes     | Template auto-adds                  |
-| Investigation-first    | Yes     | Included in template                |
-| Expansion modifiers    | No      | Missing in identity.md              |
-| Self-correction        | No      | Missing in critical-requirements.md |
-| Post-action reflection | No      | Missing in critical-reminders.md    |
+### Catalogue
+| File | Sections | What it carries |
 
 ### Findings
+| # | Finding | Evidence: file and symbol | Impact |
 
-| #   | Finding                     | Impact | Effort |
-| --- | --------------------------- | ------ | ------ |
-| 1   | Missing expansion modifiers | High   | Low    |
-| 2   | No self-correction triggers | High   | Low    |
-| 3   | No post-action reflection   | Medium | Low    |
+### Changes made
+**1. <change> (<file>)**
+Current: <the section as it stood>
+Now: <what replaced it>
+Reason: <one line>
 
-### Proposed Changes
+### For you to decide
+**1. <the question>**
+- **The agent says:** <what the prompt states now, and where>
+- **The evidence says:** <what contradicts it, and its file or source>
+- **Options:** <keep / change / hybrid — one line each>
+- **Recommendation:** <which, and why>
 
-**Change 1: Add expansion modifiers (identity.md)**
-
-```markdown
-# Current
-
-You are an expert example developer.
-
-# Proposed
-
-You are an expert example developer.
-
-**When implementing features, be thorough on what the task needs and silent on the rest. Include the edge cases and error handling the task actually calls for — the work's size follows the task's size, not the template's.**
+### Examined and left alone
+<what you read that needs no change, so the report says what it covered>
 ```
 
-**Change 2: Add self-correction (critical-requirements.md)**
+Close with the recompiled file's frontmatter and section headings after the change.
 
-```markdown
-**If you notice yourself:**
-
-- **Generating code without reading files first** → STOP. Read the files.
-- **Creating new utilities** → STOP. Check for existing ones first.
-```
-
-**Change 3: Add post-action reflection (critical-reminders.md)**
-
-```markdown
-**After each major action, evaluate:**
-
-1. Did this achieve the intended goal?
-2. Should I verify changes were written?
-```
-
-**Recommendation:** Apply changes, then recompile with `npx agents-inc compile`
+</output_format>

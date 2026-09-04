@@ -1,241 +1,245 @@
 ## Output Format
 
 <output_format>
-Provide your skill definition in this structure:
 
-<skill_definition>
+Write the skill to disk as a directory, then report each file you wrote.
 
-## Skill: {domain}-{category}-{technology}
+### Directory
 
-### Directory Location
+**The directory name is the skill id** — the string the config, the matrix and every agent's skill
+list refer to. It takes the shape `{domain}-{group}-{technology}` and lands at
+`<project>/.claude/skills/<id>/` for a project skill, `~/.claude/skills/<id>/` for a global-scope
+one, or `src/skills/<id>/` in a marketplace source repository.
 
-`.claude/skills/{domain}-{category}-{technology}/`
+```
+<id>/
+├── SKILL.md          the decision layer — loaded whole when the skill is invoked
+├── metadata.yaml     the catalogue entry
+├── reference.md      comparison tables, API lookup and migration notes
+└── examples/
+    ├── core.md       the essential patterns, in full
+    └── {topic}.md    one per topic the technology splits into naturally
+```
+
+**The directory is levels of disclosure, and each costs differently.** `metadata.yaml` and
+`SKILL.md`'s frontmatter are read to decide whether the skill applies at all. `SKILL.md`'s body is
+loaded whole once it does. `reference.md` and `examples/` stay dormant on disk until something
+reaches for them by name.
 
 ### metadata.yaml
 
+**Every field is stated rather than derived from the directory name.** `desktop-backend-tauri`
+carries slug `tauri-backend` and `api-database-drizzle` carries category `api-orm`, so reading a
+field off the id gives the wrong answer for a real share of the catalogue. `category`, `slug`,
+`author`, `displayName`, `cliDescription` and `usageGuidance` are required by
+`packages/cli/src/schemas/metadata.schema.json`, and `domain` is required by the loader. The schema refuses any
+key it does not declare, which is why there is no `version` and no `tags` — and why `custom`,
+which it does declare, is available below.
+
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/metadata.schema.json
-category: [domain]-[category]
-slug: [technology]
-domain: [domain]
-author: "@[author]"
-displayName: [Display Name]
-cliDescription: [5-6 words max]
+category: [one of the values enumerated in metadata.schema.json]
+slug: [a catalogue slug, or any kebab-case name when custom: true is set]
+domain: [ai | api | cli | desktop | infra | meta | mobile | shared | web]
+author: "@[handle]"
+displayName: [30 characters or fewer]
+cliDescription: [60 characters or fewer]
 usageGuidance: >-
-  [When AI agent should invoke this skill - be specific about triggers]
+  [The conditions under which an agent should load this skill, named specifically]
 ```
+
+**Which schema validates the file depends on one field.** For a technology the public catalogue
+already carries, `category` and `slug` are closed enums generated from that catalogue by
+`packages/cli/scripts/generate-json-schemas.ts`, and the values have to be the catalogue's own. For a technology
+it does not carry, add `custom: true`: `validateSkillMetadata` then judges the file by
+`customMetadataValidationSchema`, where `category` is any string and `slug` any kebab-case name up
+to 50 characters. Writing a new slug without that field is what gets rejected — the field is the
+declaration that this skill is not a catalogue entry.
+
+The `$schema` line is `SCHEMA_PATHS.metadata` in `packages/cli/src/cli/consts.ts` for a catalogue
+skill, and the custom-metadata path beside it for one declaring `custom: true`; copy the value from
+there rather than typing it, in case the address has moved.
 
 ### SKILL.md
 
 ````markdown
 ---
-name: [Name]
-description: [One-line description]
+name: [the skill id, matching the directory name]
+description: [One line — what the skill covers, then the conditions that should load it]
 ---
 
-# [Name] Patterns
+# [Technology] Patterns
 
-> **Quick Guide:** [1-2 sentence summary of when/why to use this technology]
+> **Quick Guide:** [One paragraph. The decisions this skill settles, and the version-specific facts
+> that change the answer.]
+
+**Detailed Resources:**
+
+- [examples/core.md](examples/core.md) — [the patterns it carries]
+- [examples/{topic}.md](examples/{topic}.md) — [the patterns it carries]
+- [reference.md](reference.md) — comparison tables, API lookup and migration notes
+
+---
+
+## Which path applies
+
+[Include this section only where the technology is used in more than one way. Branch on what the
+workspace shows and name the file each branch opens, so the branches not taken stay unread.]
+
+- **[The condition the first branch is for]** — [what changes], then follow
+  [examples/{topic}.md](examples/{topic}.md).
+- **[The second condition]** — [what changes], then follow
+  [examples/{other}.md](examples/{other}.md).
 
 ---
 
 <critical_requirements>
 
-## ⚠️ CRITICAL: Before Using This Skill
+## Before writing [Technology] code
 
-> **All code must follow project conventions in CLAUDE.md** (kebab-case, named exports, import ordering, `import type`, named constants)
+[The action to take, and what it buys, in one sentence.]
 
-**(You MUST [domain-specific critical rule 1 - most important thing to remember])**
+[The second action, and what it buys.]
 
-**(You MUST [domain-specific critical rule 2 - second most important])**
-
-**(You MUST [domain-specific critical rule 3 - third most important])**
+[The third.]
 
 </critical_requirements>
 
 ---
 
-**Auto-detection:** [comma-separated keywords that trigger this skill]
+**Auto-detection:** [comma-separated symbols, import paths and phrases that should load this skill]
 
-**When to use:**
+**Applies to:**
 
-- [Specific scenario 1]
-- [Specific scenario 2]
-- [Specific scenario 3]
+- [A task this skill answers]
+- [Another]
 
-**Key patterns covered:**
+**Handled elsewhere:**
 
-- [Core pattern 1]
-- [Core pattern 2]
-- [Core pattern 3]
+- [Adjacent concern, named as a capability rather than as the skill or package that provides it]
 
 ---
 
 <philosophy>
 
-## Philosophy
-
-[Why this technology exists, what problems it solves]
-
-**When to use [Technology]:**
-
-- [Use case 1]
-- [Use case 2]
-
-**When NOT to use:**
-
-- [Anti-pattern scenario 1]
-- [Anti-pattern scenario 2]
+[Optional. Why this technology, and the mental model it asks for — include it where the shape of the
+tool is non-obvious, and leave it out where the patterns speak for themselves.]
 
 </philosophy>
 
 ---
 
-<patterns>
-
-## Core Patterns
-
-### Pattern 1: [Name]
-
-[Detailed explanation]
-
-[Use `#### SubsectionName` markdown headers to organize content within patterns as needed. Common subsections include: Constants, Implementation, Usage, Hooks, Configuration - but only include what's relevant for this pattern.]
-
-```[language]
-// ✅ Good Example
-// Complete, runnable code with explanatory comments
-```
-
-**Why good:** [Concise reasoning as comma-separated list - explain the consequence/benefit, not just facts]
-
-```[language]
-// ❌ Bad Example - Anti-pattern
-// Code showing what NOT to do
-```
-
-**Why bad:** [Concise reasoning as comma-separated list - explain what breaks/fails, not just "missing X"]
-
-[OPTIONAL - only include if not obvious from context:]
-**When to use:** [Concise scenario - only when the choice isn't self-evident]
-
-**When not to use:** [Concise anti-pattern - only when helpful to clarify boundaries]
-
----
-
-### Pattern 2: [Name]
-
-[Continue for all major patterns with embedded good/bad examples...]
-
-</patterns>
-
----
-
-<performance>
-
-## Performance Optimization (OPTIONAL)
-
-[Include only if performance is a significant concern. Cover: optimization patterns, caching strategies, etc.]
-
-</performance>
-
----
-
 <decision_framework>
 
-## Decision Framework
-
-[Decision tree or flow chart for choosing between approaches]
+[Optional. Comparative "pick X over Y" guidance, where the technology competes with a named
+alternative inside its own domain. Every branch ends inside this skill.]
 
 </decision_framework>
 
 ---
 
-<integration>
+<patterns>
 
-## Integration Guide (OPTIONAL)
+## Core patterns
 
-[How this technology integrates with the rest of the stack. Include only when the technology has meaningful interactions with other tools/libraries in your stack.]
+### Pattern 1: [Name]
 
-**Works with:**
+[One or two sentences: what the pattern is, and when it is the right choice.]
 
-- [Technology X]: [How they integrate]
-- [Technology Y]: [How they integrate]
+```[language]
+[3–10 lines showing the shape — the call, the signature, the arrangement. Not a runnable file.]
+```
 
-**Replaces / Conflicts with:**
+Full code: [examples/core.md](examples/core.md)
 
-- [Technology Z]: [Why you wouldn't use both]
+### Pattern 2: [Name]
 
-</integration>
+[Same shape, one entry per pattern the technology turns on.]
+
+</patterns>
 
 ---
 
 <red_flags>
 
-## RED FLAGS
+## Red flags
 
-**High Priority Issues:**
+**Breaks at runtime:**
 
-- ❌ [Anti-pattern 1 with explanation]
-- ❌ [Anti-pattern 2 with explanation]
+- [What gets written] — [what it costs] — [what to write instead]
 
-**Medium Priority Issues:**
+**Surprising behaviour:**
 
-- ⚠️ [Warning 1]
-- ⚠️ [Warning 2]
-
-**Common Mistakes:**
-
-- [Mistake 1 and how to avoid]
-- [Mistake 2 and how to avoid]
-
-**Gotchas & Edge Cases:**
-
-- [Quirk or surprising behavior 1 - not necessarily wrong, just tricky]
-- [Edge case 2 that might trip people up]
+- [The quirk, and the condition that triggers it]
 
 </red_flags>
-
----
-
-<critical_reminders>
-
-## ⚠️ CRITICAL REMINDERS
-
-> **All code must follow project conventions in CLAUDE.md** (kebab-case, named exports, import ordering, `import type`, named constants)
-
-**(You MUST [domain-specific critical rule 1 - repeat from top])**
-
-**(You MUST [domain-specific critical rule 2 - repeat from top])**
-
-**(You MUST [domain-specific critical rule 3 - repeat from top])**
-
-**Failure to follow these rules will [consequence - e.g., break functionality].**
-
-</critical_reminders>
 ````
 
-### reference.md (optional)
+Name the concern rather than the neighbour in "Handled elsewhere" — a skill that points at a
+sibling by name couples the two, so a reader who has a different tool for that concern is sent to
+the wrong place and the pair have to be updated together.
+
+The requirements appear once, at the top. A closing block repeating them is paid for on every load
+and carries nothing the top block does not.
+
+### examples/core.md
+
+**Every skill has this file.** It carries the full runnable code for the patterns `SKILL.md` names,
+each under a heading matching the pattern's name there so a link lands on it, with a line at the
+top cross-referencing the sibling example files.
+
+### examples/{topic}.md
+
+Split by the technology's own topics rather than by an imposed scheme, and give a topic its own
+file once it has enough focused content to stand alone. Read the `examples/` directory of a
+published skill with a comparable surface before choosing the split — `api-framework-hono` in the
+skills marketplace repository is one worked example.
+
+### reference.md
+
+What a reader consults once the approach is settled and they need a value, a signature or a
+migration step.
+
+### Improve mode — differences for the user to decide
+
+Improve mode's deliverable is the differences — one entry for each item the playbook puts in the
+user's column:
 
 ```markdown
-# [Name] Quick Reference
+### [Pattern name]
 
-[Condensed reference for quick lookups]
+- **Skill says:** [quote or snippet] — in [file], [section]
+- **Research says:** [finding] — [source url]
+- **Impact:** [what changes, whether it breaks callers, how hard the migration is]
+- **Options:** [keep / adopt / hybrid — one line each]
+- **Recommendation:** [which, and why]
 ```
 
-### examples/ (optional)
+Where the comparison was against the project's own standards rather than an existing skill, the
+same entry reads:
 
-[List any example files needed]
-</skill_definition>
+```markdown
+### [Pattern name]
+
+- **External practice:** [what the research says] — [source url]
+- **This project:** [what the standard says] — [file and section]
+- **Trade-off:** [what each buys, and what it costs]
+- **Recommendation:** [which, and why]
+```
+
+Close with the counts: changes made, decisions asked for, patterns added, patterns removed.
+
+---
 
 <research_sources>
 
 ## Sources Used
 
-| Source              | URL/Location  | What Was Used             |
-| ------------------- | ------------- | ------------------------- |
-| Official docs       | [url]         | [specific section]        |
-| Codebase pattern    | [/path:lines] | [what pattern]            |
-| Best practice guide | [url]         | [specific recommendation] |
+| Source              | URL/Location | What Was Used             |
+| ------------------- | ------------ | ------------------------- |
+| Official docs       | [url]        | [specific section]        |
+| Codebase pattern    | [file path]  | [what pattern]            |
+| Best practice guide | [url]        | [specific recommendation] |
 
 </research_sources>
 
@@ -243,148 +247,38 @@ description: [One-line description]
 
 ## Relationship Analysis
 
-**Requires (hard dependencies):**
+Relationships are declared centrally rather than in a skill's own metadata. The shipped set lives
+in the CLI's `packages/cli/src/cli/lib/configuration/default-rules.ts`; a marketplace source repository can add
+its own `config/skill-rules.ts` to extend or override it, and `agents-inc/skills` carries no such
+file today. Report the relationships for whichever of the two the skill belongs to:
 
-- [skill-id] - [why required]
+The four kinds `RelationshipDefinitions` carries, and no others:
 
-**Compatible with (works well together):**
+**Requires:** [skill-id] — [why this skill needs that one selected first]
 
-- [skill-id] - [why compatible]
+**Conflicts with:** [skill-id] — [why selecting one disables the other]
 
-**Conflicts with (mutually exclusive):**
+**Discourages:** [skill-id] — [why the pair warns rather than disables]
 
-- [skill-id] - [why conflicts]
+**Alternatives:** [skill-id, skill-id] — [the purpose they are interchangeable for]
 
-**Category:** [category]
 </skill_relationships>
 
-<validation>
-## Skill Quality Checks
+<completion_gate>
 
-- [ ] Skill directory follows 3-part naming: `{domain}-{category}-{technology}`
-- [ ] SKILL.md exists with complete structure
-- [ ] metadata.yaml exists with required fields
-- [ ] All code examples are syntactically correct
-- [ ] Examples follow the patterns described (no contradictions)
-- [ ] Usage guidance is specific (not vague "use when needed")
-- [ ] SKILL.md has TOC if > 100 lines
-- [ ] No overlap with existing skills (checked against: [list])
-- [ ] slug field matches the technology portion of the directory name
-- [ ] domain field matches the domain portion of the directory name
-      </validation>
-      </output_format>
+## Completion
 
-## Example: Complete Skill Package
+Report the three completion checks from the playbook and what each returned — the file roster, the
+`<red_flags>` grep and the cross-domain scan. State the result even where it was clean, since a
+check reported as nothing is indistinguishable from a check not run.
 
-### Directory Structure
+Then name `npx agents-inc doctor` as the command that validates the written skill against the
+schema. It is the user's to run rather than this agent's, and it is what turns "the files look
+right" into a checked claim.
 
-```
-.claude/skills/web-state-mobx/
-├── SKILL.md
-├── metadata.yaml
-└── examples/async-actions.md (optional)
-```
+Close by naming what makes the skill reachable: a written skill is selectable but carried by no
+agent until an agent's `stack` entry in the config names it, which `npx agents-inc edit` does, or
+`agent-summoner` when the assignment is part of authoring that agent.
 
-### metadata.yaml
-
-```yaml
-category: web-client-state
-slug: mobx
-domain: web
-author: "@skill-summoner"
-displayName: MobX State
-cliDescription: Observable state management patterns
-usageGuidance: >-
-  Use when implementing client-side state with MobX observables,
-  computed values, or reactions. Not for server state (use React Query).
-```
-
-### SKILL.md (condensed)
-
-```markdown
-# MobX State Management Patterns
-
-> **Quick Guide:** Use MobX for complex client state needing computed values and automatic dependency tracking.
-
-<critical_requirements>
-
-## ⚠️ CRITICAL: Before Using This Skill
-
-> **All code must follow project conventions in CLAUDE.md**
-
-**(You MUST call `makeAutoObservable(this)` in EVERY store constructor)**
-**(You MUST wrap ALL async state updates in `runInAction()`)**
-**(You MUST use React Query for server state - NOT MobX)**
-</critical_requirements>
-
-<philosophy>
-## Philosophy
-MobX: "anything that can be derived, should be derived automatically."
-**When to use:** Complex client state, computed values, class-based architecture
-**When NOT to use:** Server state (React Query), simple UI state (useState/Zustand)
-</philosophy>
-
-<patterns>
-## Core Patterns
-
-### Pattern 1: Store with makeAutoObservable
-
-​`typescript
-// ✅ Good Example
-const ACTIVE_STATUS = "active";
-class UserStore {
-  users: User[] = [];
-  constructor() { makeAutoObservable(this); }
-  get activeUsers() { return this.users.filter((u) => u.status === ACTIVE_STATUS); }
-}
-export { UserStore };
-​`
-**Why good:** makeAutoObservable enables tracking, named constants, named exports
-
-​`typescript
-// ❌ Bad Example
-class UserStore {
-  users = [];
-  async fetchUsers() {
-    const response = await apiClient.getUsers();
-    this.users = response.data; // BAD: Outside action after await
-  }
-}
-export default UserStore; // BAD: Default export
-​`
-**Why bad:** State mutation after await breaks reactivity, default export violates conventions
-</patterns>
-
-<red_flags>
-
-## RED FLAGS
-
-- ❌ Mutating observables outside actions (breaks reactivity)
-- ❌ Using MobX for server state (use React Query)
-- ⚠️ Not using `observer()` HOC on React components
-  **Gotchas:** Code after `await` is NOT part of the action - wrap in `runInAction()`
-  </red_flags>
-
-<critical_reminders>
-
-## ⚠️ CRITICAL REMINDERS
-
-**(You MUST call `makeAutoObservable(this)` in EVERY store constructor)**
-**(You MUST wrap ALL async state updates in `runInAction()`)**
-**(You MUST use React Query for server state - NOT MobX)**
-**Failure to follow these rules will break MobX reactivity.**
-</critical_reminders>
-```
-
----
-
-## Common Mistakes
-
-| Mistake            | Wrong                         | Correct                               |
-| ------------------ | ----------------------------- | ------------------------------------- |
-| Directory location | `src/skills/mobx.md`          | `.claude/skills/web-state-mobx/`      |
-| Naming pattern     | `mobx`, `state-mobx`          | `web-client-state-mobx`               |
-| Metadata fields    | `cli_name`, `version`, `tags` | `displayName`, `slug`, `domain`       |
-| File structure     | Single file                   | Directory + SKILL.md + metadata.yaml  |
-| Auto-detection     | "state management"            | "MobX observable, makeAutoObservable" |
-| Examples           | Separate section              | Embedded in each pattern              |
+</completion_gate>
+</output_format>

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: agent-summoner
 title: Agent Summoner Agent
-description: Expert in creating agents and skills - understands agent architecture deeply - invoke when you need to create, improve, or analyze agents/skills
+description: Expert in creating and improving Claude Code sub-agents - knows the six-file agent source layout, the compile template and the frontmatter decisions - invoke to author a new agent, analyse an existing one, or decide its model and tools
 model: opus
 tools:
   - Read

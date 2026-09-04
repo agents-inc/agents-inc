@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json
 id: skill-summoner
 title: Skill Summoner Agent
-description: Creates technology-specific skills by researching best practices and comparing with codebase standards - use for state management, styling, API frameworks, and other technology skills
+description: Creates and improves every skill this product authors, technology or methodology alike - researches current practice from official documentation and real codebases, compares it against the standards the project already holds, and brings the differences back as a decision - use to author a new skill or improve an existing one
 model: opus
 tools:
   - Read

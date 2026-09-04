@@ -1,78 +1,15 @@
-## CRITICAL REMINDERS
-
-### Create/Improve Mode Reminders
-
-**(You MUST use WebSearch to find current 2025/2026 best practices BEFORE creating any skill)**
-
-**(You MUST use WebFetch to deeply analyze official documentation - never rely on training data alone)**
-
-**(You MUST compare web findings against codebase standards and present differences to user for decision)**
-
-### Compliance Mode Reminders
-
-**(You MUST use .ai-docs/ as your SOLE source of truth - NO WebSearch, NO WebFetch)**
-
-**(You MUST faithfully reproduce documented patterns - NO improvements, NO critiques, NO alternatives)**
-
-### All Modes Reminders
-
-**(You MUST create skills as directories at `.claude/skills/{domain}-{category}-{technology}/` with SKILL.md + metadata.yaml)**
-
-**(You MUST follow prompt-bible structure: `<critical_requirements>` at TOP, `<critical_reminders>` at BOTTOM)**
-
-**(You MUST include practical code examples for every pattern - skills without examples are unusable)**
-
-**(You MUST re-read files after editing to verify changes were written - never report success without verification)**
-
-**Failure to follow these rules will produce non-compliant skills that other agents cannot use effectively.**
-
----
-
-## Write Verification Protocol
-
-1. After completing ANY skill edits, re-read the files using the Read tool
-2. Verify SKILL.md exists with `<critical_requirements>` near the top
-3. Verify SKILL.md has `<critical_reminders>` near the bottom
-4. Verify metadata.yaml exists with required fields (category, slug, author, displayName, cliDescription, usageGuidance)
-5. Verify directory follows 3-part naming pattern
-6. If verification fails, report failure and re-attempt the edit
-7. Only report success AFTER verification passes
-
 <post_action_reflection>
 
-## Post-Action Reflection
+**After research, take stock:**
 
-**After each major action, evaluate:**
+1. Do the sources agree, and where they differ, which is more current?
+2. What is still unresolved, and is it resolvable or a genuine open question?
+3. Is this enough to write from — or is one more source what is missing?
 
-1. Did this achieve the intended goal?
-2. What new information did I learn?
-3. What gaps remain in my understanding?
-4. Should I adjust my approach?
+**After writing or improving a skill, take stock:**
 
-Only proceed when you have sufficient confidence in your current state.
-
-**After each WebSearch/WebFetch, evaluate:**
-
-1. Does this source align with other findings?
-2. What gaps remain in your understanding?
-3. What conflicting information needs resolution?
-4. Is this source authoritative enough to trust?
-
-Only proceed to synthesis when you have sufficient high-quality sources (minimum 3 reputable sources).
-
-**After completing skill generation/improvement, evaluate:**
-
-1. Did this achieve the intended goal?
-2. Does the skill follow prompt-bible structure completely?
-3. Are all critical requirements met?
-4. Should I re-read the file to verify changes were written?
-
-**After presenting differences to user, evaluate:**
-
-1. Did I provide clear pros/cons for each option?
-2. Is my recommendation well-reasoned?
-3. Are there hybrid approaches I haven't considered?
-
-Only report completion when you have verified all success criteria.
+1. Does `SKILL.md` let a reader decide, without reading `examples/`?
+2. Did anything get lost in a restructure, rather than moved?
+3. Which differences still need the user's decision?
 
 </post_action_reflection>

@@ -174,7 +174,7 @@ This documentation helps both you (for future specs) and the agents (for impleme
 
 ## Success Criteria Ownership
 
-The success-criteria template above is yours to fill, and the loop it runs through is:
+The Success Criteria section of your output format is yours to fill, and the loop it runs through is:
 
 1. **Defined by you** in the specification, before implementation starts
 2. **Understood by the developer** before writing code
