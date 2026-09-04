@@ -2,6 +2,7 @@ import { compileAgents, type CompilationResult } from "./compile-agents.js";
 import { loadAgentDefs } from "./load-agent-defs.js";
 import { discoverInstalledSkills } from "../skills/index.js";
 import { resolveInstallPaths } from "../../installation/index.js";
+import { withCatalogueSeatedFor } from "../../loading/catalogue-seat.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 
 /**
@@ -18,9 +19,13 @@ import { getErrorMessage } from "../../../utils/errors.js";
  * triggering operation's own pass; repeating a global pass per project would
  * rewrite `~/.claude/agents` once per registered project for no gain.
  *
- * `skills` is passed explicitly: without it `recompileAgents` falls back to
- * `discoverAllPluginSkills`, which sees plugin skills only and would silently
- * strip every global-local and project-local skill from the compiled agents.
+ * Both inputs a compiled agent's bytes depend on are resolved from THIS
+ * project's directory, and neither is inherited from the command that triggered
+ * the fan-out: `skills` is passed explicitly, because without it
+ * `recompileAgents` falls back to `discoverAllPluginSkills`, which sees plugin
+ * skills only and would silently strip every global-local and project-local
+ * skill; and the catalogue is seated by {@link withCatalogueSeatedFor}, because
+ * the render reads it from a module-level singleton no argument reaches.
  *
  * Agent partials always come from the CLI itself (`getLocalAgentDefinitions`
  * returns `sourcePath: PROJECT_ROOT`), so no per-project marketplace source
@@ -29,15 +34,17 @@ import { getErrorMessage } from "../../../utils/errors.js";
 export async function recompileRegisteredProjectAgents(
   projectDir: string,
 ): Promise<CompilationResult> {
-  const { allSkills } = await discoverInstalledSkills(projectDir);
-  const { sourcePath } = await loadAgentDefs();
+  return withCatalogueSeatedFor(projectDir, async () => {
+    const { allSkills } = await discoverInstalledSkills(projectDir);
+    const { sourcePath } = await loadAgentDefs();
 
-  return compileAgents({
-    projectDir,
-    sourcePath,
-    skills: allSkills,
-    scopeFilter: "project",
-    outputDir: resolveInstallPaths(projectDir, "project").agentsDir,
+    return compileAgents({
+      projectDir,
+      sourcePath,
+      skills: allSkills,
+      scopeFilter: "project",
+      outputDir: resolveInstallPaths(projectDir, "project").agentsDir,
+    });
   });
 }
 

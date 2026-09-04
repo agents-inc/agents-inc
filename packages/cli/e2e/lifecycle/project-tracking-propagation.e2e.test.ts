@@ -1,7 +1,7 @@
 import { realpathSync } from "fs";
 import { mkdir, rm } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -10,18 +10,29 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_CUSTOM_SKILL, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
+  createLocalSkill,
   createPermissionsFile,
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
+  renderMetadataYaml,
+  writeProjectConfig,
 } from "../helpers/test-utils.js";
+import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
+import type { AgentName, Category, SkillId } from "../../src/cli/types/index.js";
 
 /**
  * Project tracking and propagation E2E tests.
@@ -461,4 +472,248 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
       );
     },
   );
+});
+
+/**
+ * The catalogue a fan-out reads when it rewrites a registered project's pair.
+ *
+ * A global-scope run rewrites every registered project's `config-types.ts`, and it derived
+ * that project's type unions from the TRIGGERING command's catalogue. A skill the project
+ * holds ITSELF — one written into its own `.claude/skills/`, or one belonging to the
+ * marketplace its own config names — is in nobody else's catalogue, so its category
+ * resolved to nothing and left the project's `Category` and `Domain` unions. The project's
+ * own next `compile` derived them from its own catalogue and put them straight back, so the
+ * two commands undid each other for as long as both were run.
+ *
+ * The two members of the union are chosen so exactly one of them can go missing.
+ * `web-framework` reaches the project two ways the global seat can always resolve — the
+ * global skill row the project inlines, and the project's own stack key. `web-tooling`
+ * reaches it only through {@link E2E_CUSTOM_SKILL}, a skill this project wrote for itself
+ * that is in no marketplace and therefore in no other installation's catalogue, and that is
+ * deliberately assigned to no sub-agent: a stack key is read off the config record rather
+ * than looked up, so a skill in a stack keeps its category whichever catalogue is seated.
+ *
+ * **The assertion no per-installation check can make is the byte comparison of the SAME
+ * file across the three runs.** Each write is internally consistent — its `config.ts` and
+ * its `config-types.ts` agree with each other, the skill row is present throughout, and the
+ * pair type-checks — so a difference that is consistent WITHIN each installation is
+ * invisible to every check made at one end. That is the shape `CLAUDE.md` records for the
+ * key-order defect, and its testing corollary is what this reads: compare the two ends'
+ * generated artefacts, not each end against its own config. It is also what carries the
+ * `Domain` half here, which the membership assertion below cannot — this fixture's own
+ * skill and the global one share the `web` domain.
+ *
+ * The permitted case sits beside it, on the same union and the same fan-out: a global-scope
+ * addition in a category the project does not yet name MUST widen these unions. A refusal
+ * pinned on its own cannot tell a correctly-scoped rule from one that has stopped writing
+ * the project's types at all — both leave the file identical across the round trip.
+ */
+
+/** The one skill the global installation holds. A public-catalogue id, so every seat resolves it. */
+const GLOBAL_SKILL_ID = "web-framework-react" satisfies SkillId;
+
+/** The skill a later global-scope run ADDS, in a category nothing else in this fixture supplies. */
+const ADDED_GLOBAL_SKILL_ID = "api-framework-hono" satisfies SkillId;
+
+/** The sub-agent the global installation compiles, and whose stack carries the global skill. */
+const GLOBAL_AGENT_NAME = "web-developer" satisfies AgentName;
+
+/** The sub-agent the project owns, so its own `compile` pass has something to write. */
+const PROJECT_AGENT_NAME = "api-developer" satisfies AgentName;
+
+/**
+ * The project's `Category` union, in the sorted order the writer emits.
+ *
+ * Members rather than a count: a count cannot see a swap, and the whole subject here is
+ * which member is present.
+ */
+const PROJECT_CATEGORIES = ["web-framework", "web-tooling"] as const satisfies readonly Category[];
+
+/** The same union after a global-scope addition legitimately widens it. */
+const PROJECT_CATEGORIES_AFTER_GLOBAL_ADDITION = [
+  "api-api",
+  "web-framework",
+  "web-tooling",
+] as const satisfies readonly Category[];
+
+const globalSkillMetadata = renderMetadataYaml({
+  displayName: "React",
+  category: "web-framework",
+  domain: "web",
+  slug: "react",
+  cliDescription: "The global installation's skill",
+  contentHash: "a1b2c3d",
+});
+
+const addedGlobalSkillMetadata = renderMetadataYaml({
+  displayName: "Hono",
+  category: "api-api",
+  domain: "api",
+  slug: "hono",
+  cliDescription: "The skill a later global run adds",
+  contentHash: "d4e5f6a",
+});
+
+/** The project's own stack: its sub-agent takes the global skill, and never the local one. */
+const projectStack = {
+  [PROJECT_AGENT_NAME]: {
+    "web-framework": [{ id: GLOBAL_SKILL_ID, preloaded: false }],
+  },
+} satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
+
+/** The global config, at whichever point in the round trip it is written. */
+function buildGlobalConfig(skillIds: readonly string[], projectDir: string): FixtureProjectConfig {
+  return buildProjectConfig({
+    name: "propagation-project-catalogue-global",
+    skills: buildSkillConfigs(skillIds, { scope: "global", origin: "eject" }),
+    agents: buildAgentConfigs([GLOBAL_AGENT_NAME], { scope: "global" }),
+    selectedDomains: ["web"],
+    stack: {
+      [GLOBAL_AGENT_NAME]: { "web-framework": [{ id: GLOBAL_SKILL_ID, preloaded: true }] },
+    },
+    projects: [realpathSync(projectDir)],
+  });
+}
+
+describe("project tracking -- a fan-out reads each registered project's own catalogue", () => {
+  let tempDir: string;
+  let globalHome: string;
+  let projectDir: string;
+
+  /** Every compile of the round trip, in order, so a failing exit code names its own run. */
+  const runs: { label: string; exitCode: number; output: string }[] = [];
+
+  let typesAfterFirstGlobal: string;
+  let typesAfterProject: string;
+  let typesAfterSecondGlobal: string;
+  let typesAfterGlobalAddition: string;
+
+  async function compileIn(label: string, dir: string): Promise<void> {
+    const result = await CLI.run(["compile"], { dir }, { env: { HOME: globalHome } });
+    runs.push({ label, exitCode: result.exitCode, output: result.output });
+  }
+
+  beforeAll(async () => {
+    const environment = await createTestEnvironment();
+    tempDir = environment.tempDir;
+    globalHome = environment.fakeHome;
+    projectDir = environment.projectDir;
+
+    await writeProjectConfig(globalHome, buildGlobalConfig([GLOBAL_SKILL_ID], projectDir));
+    await createLocalSkill(globalHome, GLOBAL_SKILL_ID, {
+      description: "The global installation's own copy",
+      metadata: globalSkillMetadata,
+    });
+
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "propagation-project-catalogue-project",
+        skills: [
+          ...buildSkillConfigs([GLOBAL_SKILL_ID], { scope: "global", origin: "eject" }),
+          ...buildSkillConfigs([E2E_CUSTOM_SKILL.id], { scope: "project", origin: "eject" }),
+        ],
+        agents: [
+          ...buildAgentConfigs([GLOBAL_AGENT_NAME], { scope: "global" }),
+          ...buildAgentConfigs([PROJECT_AGENT_NAME], { scope: "project" }),
+        ],
+        selectedDomains: ["web"],
+        stack: projectStack,
+      }),
+    );
+    await createLocalSkill(projectDir, E2E_CUSTOM_SKILL.id, {
+      description: "A skill this project wrote for itself",
+      metadata: renderMetadataYaml({
+        custom: true,
+        displayName: E2E_CUSTOM_SKILL.display,
+        category: E2E_CUSTOM_SKILL.category,
+        domain: E2E_CUSTOM_SKILL.domain,
+        slug: E2E_CUSTOM_SKILL.slug,
+        cliDescription: "House tooling conventions",
+        contentHash: "c0ffee1",
+      }),
+    });
+
+    await compileIn("first global compile", globalHome);
+    typesAfterFirstGlobal = await readTestFile(configTypesTsPath(projectDir));
+
+    await compileIn("project compile", projectDir);
+    typesAfterProject = await readTestFile(configTypesTsPath(projectDir));
+
+    await compileIn("second global compile", globalHome);
+    typesAfterSecondGlobal = await readTestFile(configTypesTsPath(projectDir));
+
+    // The permitted case: a genuine global-scope addition, in a category the project's
+    // types do not yet name. Written through the same helper the opening state used, so
+    // the only difference between the two global configs is the added skill row.
+    await writeProjectConfig(
+      globalHome,
+      buildGlobalConfig([GLOBAL_SKILL_ID, ADDED_GLOBAL_SKILL_ID], projectDir),
+    );
+    await createLocalSkill(globalHome, ADDED_GLOBAL_SKILL_ID, {
+      description: "Added to the global installation after the round trip",
+      metadata: addedGlobalSkillMetadata,
+    });
+
+    await compileIn("global compile after the addition", globalHome);
+    typesAfterGlobalAddition = await readTestFile(configTypesTsPath(projectDir));
+  }, TIMEOUTS.EXTENDED_LIFECYCLE);
+
+  afterAll(async () => {
+    if (tempDir) await cleanupTempDir(tempDir);
+  });
+
+  // Proof of execution. Every assertion below reads a file one of these runs wrote, so a
+  // run that failed would leave them reading whatever the previous one left behind.
+  it("completes every compile of the round trip", () => {
+    expect(
+      runs.map(({ label, exitCode }) => ({ label, exitCode })),
+      `each compile must succeed:\n${runs.map((r) => `--- ${r.label}\n${r.output}`).join("\n")}`,
+    ).toStrictEqual([
+      { label: "first global compile", exitCode: EXIT_CODES.SUCCESS },
+      { label: "project compile", exitCode: EXIT_CODES.SUCCESS },
+      { label: "second global compile", exitCode: EXIT_CODES.SUCCESS },
+      { label: "global compile after the addition", exitCode: EXIT_CODES.SUCCESS },
+    ]);
+  });
+
+  // The membership, at every point of the round trip at once. Read off the alias rather
+  // than the whole file: `web-tooling` is also a prefix of the project's own skill id,
+  // which the file names in `SkillId` throughout, so a whole-file assertion could not fail.
+  it("keeps the project's own skill's category in its Category union at every step", () => {
+    expect(
+      [typesAfterFirstGlobal, typesAfterProject, typesAfterSecondGlobal].map((types) =>
+        readGeneratedUnionMembers(types, "Category"),
+      ),
+      "a global fan-out must not drop the category of a skill only the project's catalogue carries",
+    ).toStrictEqual([PROJECT_CATEGORIES, PROJECT_CATEGORIES, PROJECT_CATEGORIES]);
+  });
+
+  // The assertion no per-installation check can make. Each write is internally consistent,
+  // so only the SAME file compared across the three runs can see the disagreement.
+  it("leaves the project's config-types.ts byte-identical across global, project and global", () => {
+    expect(
+      typesAfterProject,
+      "the project's own compile must not have to repair what the global fan-out wrote",
+    ).toStrictEqual(typesAfterFirstGlobal);
+
+    expect(
+      typesAfterSecondGlobal,
+      "a second global fan-out must not undo what the project's own compile wrote",
+    ).toStrictEqual(typesAfterProject);
+  });
+
+  // The permitted case, on the same union and through the same fan-out. Without it the
+  // assertions above hold just as well for a fan-out that stopped writing the file at all.
+  it("still widens the project's Category union when a global addition legitimately does", () => {
+    expect(
+      readGeneratedUnionMembers(typesAfterGlobalAddition, "Category"),
+      "the added global skill's category must arrive, and the project's own must survive it",
+    ).toStrictEqual(PROJECT_CATEGORIES_AFTER_GLOBAL_ADDITION);
+
+    expect(
+      typesAfterGlobalAddition,
+      "a global change with consequences for the project's types must rewrite them",
+    ).not.toStrictEqual(typesAfterSecondGlobal);
+  });
 });

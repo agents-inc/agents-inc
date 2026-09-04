@@ -133,7 +133,6 @@ async function applyConsequences(
 
   const propagated = await propagateGlobalChangesToProjects(
     globalConfig,
-    deps.matrix,
     deps.agents,
     currentProjectDir,
     { regenerateTypes: tierRegeneratesTypes(tier) },
@@ -363,7 +362,6 @@ export async function reconcileTypesFromDisk(
 
     const propagated = await propagateGlobalChangesToProjects(
       config,
-      deps.matrix,
       deps.agents,
       options?.currentProjectDir,
     );
@@ -526,7 +524,6 @@ export async function propagateGlobalRemoval(
 
     const propagated = await pruneGlobalEntriesFromRegisteredProjects(
       preRemovalGlobalConfig,
-      deps.matrix,
       deps.agents,
     );
     const recompile = await recompilePropagated(propagated.updated);

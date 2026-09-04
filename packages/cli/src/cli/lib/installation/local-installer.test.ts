@@ -2577,6 +2577,12 @@ describe("local-installer", () => {
 
   describe("propagateGlobalChangesToProjects", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+    // HOME is read by the code under test, not only by the fixtures: the fan-out loads
+    // each registered project's OWN catalogue, and that load merges the global local
+    // skills under `os.homedir()`. Left pointing at the developer's real home, these
+    // specs would derive their type unions from whatever skills that machine happens to
+    // carry in `~/.claude/skills`.
+    useFakeHome(() => tempDir);
 
     it("should return empty arrays when no projects registered", async () => {
       const globalConfig = buildProjectConfig({
@@ -2585,11 +2591,7 @@ describe("local-installer", () => {
         agents: [],
       });
 
-      const result = await propagateGlobalChangesToProjects(
-        globalConfig,
-        EMPTY_MATRIX,
-        emptyAgents,
-      );
+      const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
     });
@@ -2604,11 +2606,7 @@ describe("local-installer", () => {
         projects: [stalePath],
       });
 
-      const result = await propagateGlobalChangesToProjects(
-        globalConfig,
-        EMPTY_MATRIX,
-        emptyAgents,
-      );
+      const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       expect(result).toStrictEqual({ updated: [], skipped: [stalePath] });
     });
@@ -2640,12 +2638,7 @@ describe("local-installer", () => {
       });
 
       // Pass projectA as currentProjectDir — only projectB should be updated
-      const result = await propagateGlobalChangesToProjects(
-        globalConfig,
-        EMPTY_MATRIX,
-        emptyAgents,
-        projectA,
-      );
+      const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents, projectA);
 
       expect(result.updated).toStrictEqual([projectB]);
       expect(result.skipped).toStrictEqual([]);
@@ -2673,7 +2666,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const typesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
       expect(await fileExists(typesPath)).toBe(true);
@@ -2704,7 +2697,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       // Verify the config file was updated with global data
@@ -2727,11 +2720,7 @@ describe("local-installer", () => {
         projects: [],
       });
 
-      const result = await propagateGlobalChangesToProjects(
-        globalConfig,
-        EMPTY_MATRIX,
-        emptyAgents,
-      );
+      const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       expect(result).toStrictEqual({ updated: [], skipped: [] });
     });
@@ -2763,7 +2752,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2805,7 +2794,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2842,7 +2831,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, EMPTY_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2876,7 +2865,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, EMPTY_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
@@ -2931,7 +2920,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await propagateGlobalChangesToProjects(globalConfig, SINGLE_REACT_MATRIX, emptyAgents);
+      await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
       const projectTypesPath = path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS);
       const typesContent = await readFile(projectTypesPath, "utf-8");
@@ -2962,6 +2951,9 @@ describe("local-installer", () => {
   // is already gone — regenerated project types must be the standalone form.
   describe("pruneGlobalEntriesFromRegisteredProjects", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+    // Same reason as the propagation describe above: the prune loads each registered
+    // project's own catalogue, and that load reads `os.homedir()`.
+    useFakeHome(() => tempDir);
 
     it("prunes inlined global skills, agents, and stack refs while keeping project-scoped entries", async () => {
       const projectDir = path.join(tempDir, "registered-project");
@@ -3001,11 +2993,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      const result = await pruneGlobalEntriesFromRegisteredProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents,
-      );
+      const result = await pruneGlobalEntriesFromRegisteredProjects(globalConfig, emptyAgents);
 
       expect(result).toStrictEqual({ updated: [projectDir], skipped: [] });
 
@@ -3063,11 +3051,7 @@ describe("local-installer", () => {
         projects: [projectDir],
       });
 
-      await pruneGlobalEntriesFromRegisteredProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents,
-      );
+      await pruneGlobalEntriesFromRegisteredProjects(globalConfig, emptyAgents);
 
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(parsedConfig.skills).toStrictEqual([
@@ -3088,11 +3072,7 @@ describe("local-installer", () => {
         projects: [ghostDir],
       });
 
-      const result = await pruneGlobalEntriesFromRegisteredProjects(
-        globalConfig,
-        SINGLE_REACT_MATRIX,
-        emptyAgents,
-      );
+      const result = await pruneGlobalEntriesFromRegisteredProjects(globalConfig, emptyAgents);
 
       expect(result).toStrictEqual({ updated: [], skipped: [ghostDir] });
     });
@@ -3121,6 +3101,10 @@ describe("local-installer", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
     describe("propagateGlobalChangesToProjects", () => {
+      // Same reason as the propagation describe above: the fan-out loads each registered
+      // project's own catalogue, and that load reads `os.homedir()`.
+      useFakeHome(() => tempDir);
+
       it("masks the global skill that collides with a project-owned skill in an exclusive category", async () => {
         const projectDir = path.join(tempDir, "registered-project");
         const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
@@ -3148,11 +3132,7 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
         expect(
@@ -3200,11 +3180,7 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
         expect(
@@ -3244,11 +3220,7 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
         expect(parsedConfig.skills, "a mask must not outlive its collision").toStrictEqual([
@@ -3290,11 +3262,7 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
         expect(
@@ -3330,11 +3298,7 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
         const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
         expect(
@@ -3368,18 +3332,10 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
         const afterFirstRun = await readFile(configPath, "utf-8");
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
         const afterSecondRun = await readFile(configPath, "utf-8");
 
         expect(afterSecondRun, "propagation must be idempotent").toBe(afterFirstRun);
@@ -3423,18 +3379,10 @@ describe("local-installer", () => {
           projects: [projectDir],
         });
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
         const afterFirstRun = await readFile(configPath, "utf-8");
 
-        await propagateGlobalChangesToProjects(
-          globalConfig,
-          CATEGORY_EXCLUSIVITY_MATRIX,
-          emptyAgents,
-        );
+        await propagateGlobalChangesToProjects(globalConfig, emptyAgents);
 
         expect(await readFile(configPath, "utf-8")).toBe(afterFirstRun);
 

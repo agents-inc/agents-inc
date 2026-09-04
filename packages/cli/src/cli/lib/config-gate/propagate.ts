@@ -31,7 +31,11 @@ import {
 // The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
 // startup, which is what `generateConfigSource` read directly before the renderers moved into
 // `@workspace/compile` and the editor became a second caller with a catalogue of its own.
+// Inside the fan-out it is the seat `withCatalogueSeatedFor` has put the current project's
+// catalogue in, which is why the config half needs no catalogue argument to follow the types
+// half onto the right one.
 import { matrix as activeMatrix } from "../matrix/matrix-provider";
+import { withCatalogueSeatedFor } from "../loading/catalogue-seat.js";
 import { fileExists, writeFile } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
@@ -653,13 +657,87 @@ function inlinedProjectView(
 }
 
 /**
+ * The project's OWN entries, reconciled against the now-current global config — the
+ * half the inlining writer is about to merge fresh global data into.
+ *
+ * Project-scoped entries, plus tombstones that still correspond to a live global
+ * install. Tombstones whose global entry has been removed are dropped here so the
+ * project stops referencing a global item that no longer exists. The stack is
+ * reconciled against the same now-current global data so a project-scoped agent stops
+ * referencing a global skill that was just removed at global scope.
+ *
+ * `onDisk.skills` (pre-reconciliation) is what detects the removed globals, because a
+ * skill the global scope just lost is still present there as a `scope: "global"`
+ * reference.
+ */
+function reconcileAgainstGlobal(
+  onDisk: ProjectConfig,
+  globalConfig: ProjectConfig,
+  matrix: MergedSkillsMatrix,
+): ProjectConfig {
+  const removedGlobalSkillIds = computeRemovedGlobalSkillIds(onDisk.skills, globalConfig);
+  const reconciledStack = retainReconciledStack(onDisk.stack, removedGlobalSkillIds);
+
+  return reconcileProjectSplitAgainstGlobal(
+    {
+      ...onDisk,
+      skills: retainProjectOwnedSkills(onDisk.skills, globalConfig),
+      agents: retainProjectOwnedAgents(onDisk.agents, globalConfig),
+      ...(reconciledStack !== undefined && { stack: reconciledStack }),
+    },
+    globalConfig,
+    matrix,
+  );
+}
+
+/**
+ * Rewrites ONE registered project's pair against the now-current global config.
+ * Answers false when the project has a config file the loader returns nothing for,
+ * which is the caller's cue to record it as unreached.
+ *
+ * Every catalogue lookup this makes is against the catalogue
+ * {@link withCatalogueSeatedFor} loads for THIS project — its own local skills, and the
+ * skills of the marketplace its own config names — rather than the one belonging to the
+ * command that triggered the fan-out. Three readers depend on it and none of them can be
+ * satisfied by the triggering command's: {@link reconcileAgainstGlobal} decides which of
+ * the project's entries survive by their categories, `buildProjectTypesExtras` derives
+ * the project's `Category` and `Domain` unions from them, and the config half's writer
+ * reads the seated singleton directly. A skill only this project's catalogue carries used
+ * to resolve to nothing in all three.
+ */
+async function propagateToProject(
+  projectPath: string,
+  globalConfig: ProjectConfig,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+  options: PropagationOptions,
+): Promise<boolean> {
+  return withCatalogueSeatedFor(projectPath, async (catalogue) => {
+    const existingProject = await loadProjectConfigFromDir(projectPath);
+    if (!existingProject?.config) return false;
+
+    const projectSplit = reconcileAgainstGlobal(existingProject.config, globalConfig, catalogue);
+
+    await writeProjectConfigPair(projectPath, projectSplit, globalConfig, catalogue, agents, {
+      regenerateTypes: options.regenerateTypes ?? true,
+    });
+    return true;
+  });
+}
+
+/**
  * Propagates global config changes to all registered project configs.
  * Updates each project's config-types.ts (type unions) and config.ts (inlined global data).
  * Skips stale project paths and the current project being installed.
+ *
+ * There is deliberately NO catalogue parameter. Each project's own is loaded per project by
+ * {@link propagateToProject}, and a parameter beside that could only ever be the wrong one —
+ * which is what every caller used to pass. A project whose catalogue cannot be loaded lands
+ * in `skipped` through the same catch as any other failure: leaving it stale is recoverable
+ * by a run from inside it, where rewriting its types from another installation's catalogue
+ * is the fight this exists to end.
  */
 export async function propagateGlobalChangesToProjects(
   globalConfig: ProjectConfig,
-  matrix: MergedSkillsMatrix,
   agents: Partial<Record<AgentName, AgentDefinition>>,
   currentProjectDir?: string,
   options: PropagationOptions = {},
@@ -683,45 +761,12 @@ export async function propagateGlobalChangesToProjects(
     }
 
     try {
-      const existingProject = await loadProjectConfigFromDir(projectPath);
-      if (!existingProject?.config) {
+      if (await propagateToProject(projectPath, globalConfig, agents, options)) {
+        updated.push(projectPath);
+        verbose(`Propagated global changes to ${projectPath}`);
+      } else {
         skipped.push(projectPath);
-        continue;
       }
-
-      const projectConfig = existingProject.config;
-
-      // Derive project split: project-scoped entries plus tombstones that still
-      // correspond to a live global install. Tombstones whose global entry has been
-      // removed are dropped here so the project stops referencing a global item that
-      // no longer exists. The stack is reconciled against the same
-      // now-current global data so a project-scoped agent stops referencing a global
-      // skill that was just removed at global scope. `projectConfig.skills` (pre-
-      // reconciliation) is used to detect removed globals because the removed entry
-      // is still present here as a `scope: "global"` reference.
-      const removedGlobalSkillIds = computeRemovedGlobalSkillIds(
-        projectConfig.skills,
-        globalConfig,
-      );
-      const retained = retainReconciledStack(projectConfig.stack, removedGlobalSkillIds);
-      const reconciledStack = retained === undefined ? {} : { stack: retained };
-      const projectSplit = reconcileProjectSplitAgainstGlobal(
-        {
-          ...projectConfig,
-          skills: retainProjectOwnedSkills(projectConfig.skills, globalConfig),
-          agents: retainProjectOwnedAgents(projectConfig.agents, globalConfig),
-          ...reconciledStack,
-        },
-        globalConfig,
-        matrix,
-      );
-
-      await writeProjectConfigPair(projectPath, projectSplit, globalConfig, matrix, agents, {
-        regenerateTypes: options.regenerateTypes ?? true,
-      });
-
-      updated.push(projectPath);
-      verbose(`Propagated global changes to ${projectPath}`);
     } catch (error) {
       skipped.push(projectPath);
       verbose(`Failed to propagate to ${projectPath}: ${getErrorMessage(error)}`);
@@ -743,10 +788,15 @@ export async function propagateGlobalChangesToProjects(
  * project types fall back to the standalone form instead of importing from the
  * now-deleted global config-types.ts. Unreachable project dirs are reported in
  * `skipped`, never thrown.
+ *
+ * The per-project catalogue seat comes with the reuse, and this is the case that needs it
+ * most: the standalone form these projects fall back to declares its unions from the
+ * catalogue outright rather than extending an imported one, so a project's own skills are
+ * the ONLY thing keeping their categories in the file. Derived from the uninstalling
+ * command's catalogue, a global uninstall would take a project's own taxonomy with it.
  */
 export async function pruneGlobalEntriesFromRegisteredProjects(
   globalConfig: ProjectConfig,
-  matrix: MergedSkillsMatrix,
   agents: Partial<Record<AgentName, AgentDefinition>>,
 ): Promise<{ updated: string[]; skipped: string[] }> {
   const emptiedGlobal: ProjectConfig = {
@@ -754,7 +804,7 @@ export async function pruneGlobalEntriesFromRegisteredProjects(
     skills: [],
     agents: [],
   };
-  return propagateGlobalChangesToProjects(emptiedGlobal, matrix, agents);
+  return propagateGlobalChangesToProjects(emptiedGlobal, agents);
 }
 
 /** What one resolution decided: the config to commit, and the two flags that gate the write. */
