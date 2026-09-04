@@ -6396,3 +6396,88 @@ Filed by these lanes and still open: CLI-865, CLI-868, CLI-869, EDITOR-70, EDITO
 EDITOR-74 and REPO-42. EDITOR-55 was unblocked by an owner ruling on 2026-09-03 - the main column is
 just wide enough to wrap three cards instead of four, which puts its floor at roughly 943px and gives
 a card 1.8x the width it has at four across on the design's own 1240px floor.
+
+**CLI-874 retired by owner ruling, 2026-09-03** - the model-tier question is settled the other way.
+The Claude-5 brief proposed dropping the four researchers and four testers from `opus` to `sonnet`;
+the owner ruled "just make everything opus 5, that's easier". `meta/convention-keeper` and
+`tester/api-tester` were the only two not already there, and both now carry `model: opus`, so the
+shipped fleet is uniformly Opus 5 at 18 of 18. `prompt-bible.md` section 4's rule - match the model
+to the hardest judgement the role makes - stands as authoring guidance for a consuming project's own
+agents, and now records that this product's own fleet does not vary the axis.
+
+**Owner ruling, 2026-09-03: the dynamic-skills block stays.** The brief's Phase 2 asked to delete
+`<skill_activation_protocol>` and the `<skills_note>` branches from `agent.liquid`, on the ground
+that only `skill-summoner` grants the Skill tool. `withSkillTool` in
+`packages/compile/src/agent-source.ts` appends `Skill` to every compiled agent, so the premise was
+false and the deletion would have removed the payload while keeping the tool. The owner settled it -
+"we definitely need the dynamic skills block, it's literally the concept of dynamic skills" - so the
+block is not re-litigated. What the brief was pointing at is real and is CLI-872: the block is fed a
+category-derived placeholder instead of each skill's stated `usageGuidance`.
+
+**CLI-876 retired by owner ruling, 2026-09-03 — "we don't need a skill budget number."** The row
+asked which number the `SKILL.md` budget should take once converted from lines to tokens; the answer
+is neither. The numeric target is gone from all six sites that carried it — `skill-atomicity-bible.md`
+(the Content Standard paragraph, the `core.md` target-size row, the no-extraction-needed row, the
+migration checklist and the single-`core.md` test) and `skill-summoner/playbook.md`. What replaces it
+is the rule the number was a proxy for: `SKILL.md` is the decision layer, and code moves out when a
+reader looking for which approach to take has to page past implementations to find it. The audit that
+preceded the ruling is the argument for it — the brief proposed ~1,500 tokens, which **0 of 238
+skills** could reach (the smallest is 7,141 characters), while the existing ~500 lines flagged 42;
+two numbers three times apart, both defensible, neither measuring the thing that matters. A threshold
+invites trimming to the number rather than to the job.
+
+**Summoner context-engineering programme — landed 2026-09-03.** The owner's five rules (positive
+framing, progressive disclosure, cache-stable prefix, single-writer reviewers, deterministic gates)
+applied to `agent-summoner`, `skill-summoner`, the shared template and the standards. Six methodology
+partials became one; both summoner playbooks fell from ~1,460 lines to a few hundred; the rendered
+baseline dropped ~85% in the no-skills posture. Shipped alongside: `isolation` and
+`experimental.cacheTtl` end to end; a `Stop` completion gate running the project's typecheck alone (lint and tests deliberately excluded by owner ruling — a type error is the one failure a stopping agent must not report as done; lint and tests are the project's own judgement to gate on),
+composed with declared hooks rather than displaced by them; the dynamic-skills block carrying each
+skill's stated `usageGuidance` instead of a category placeholder (which exposed and fixed a
+pre-existing `compile`-renders-against-the-built-in-matrix defect); the frontmatter validation
+schema accepting the keys the template emits; a guard over the sanitiser's field enumeration that
+found a third unsanitised field on its first run; 18/18 agents on Opus 5 by ruling. Thirty review
+passes plus a seven-lane owner review; the record, rulings, corrections ledger and final gates are
+in `plans/summoner-context-engineering-2026-09-03.md`, the review in `plans/summoner-review-2026-09-03.md`.
+Left open and filed: CLI-871 (the sixteen unmigrated agents), CLI-873, CLI-875, CLI-877–883.
+
+**CLI-884 — landed 2026-09-03.** `init --from` installed a carried ("external") skill over an id
+the loaded catalogue already owned, writing the payload's bytes into the catalogue skill's own
+directory; the run exited SUCCESS and `doctor` reported no warnings. Found by driving all 51 rows
+of `standards/e2e/user-journeys.md` by hand against the real binary and the live store. Root cause:
+`seatExternalSkill` was the only writer of `matrix.skills` that took an id unconditionally — one
+line before calling `claimSlug`, which refuses exactly that collision on the slug axis. Fixed by a
+guard in `registerExternalSkills` reading the incumbent out of the LOADED matrix (not
+`BUILT_IN_MATRIX`, which would miss a collision with a loaded custom marketplace), with an
+incumbent carrying `local: true` carved out so `edit --from` can re-apply a shared configuration
+more than once. Both doors inherit it through their own `registerExternalSkillsOrFail`. Shown red
+then green at unit and E2E level, then hand-driven: the repro exits 1 with nothing written, a
+properly namespaced carried skill still installs, and a re-apply reaches its confirm. The finding
+is `2026-09-03-the-external-skill-seat-is-the-one-writer-of-the-catalogue-that-takes-an-id-unconditionally.md`;
+it stays `partial`, and what it left open is CLI-885 (the `external-` namespace ruling) and CLI-886
+(no E2E leg for the re-apply carve-out).
+
+**Correction to the CLI-884 entry above, same day.** An independent re-verification lane defeated
+the guard it describes: `payload.marketplace` steers which catalogue is loaded, so a payload naming
+a marketplace that does not ship the id it impersonates finds no incumbent and installs — the
+original repro with one extra field (reproduced, id `T-KmG-cT`). The entry's claim that the fix
+closes the defect is therefore wrong as written, and is left standing with this correction under it
+rather than rewritten, because the archive records what was believed when an item landed. The
+remaining work is tracked as CLI-887; the finding carries the detail.
+
+**CLI-888 — landed 2026-09-04.** `propagateGlobalChangesToProjects` and
+`pruneGlobalEntriesFromRegisteredProjects` derived each registered project's `config-types.ts`
+unions from the TRIGGERING command's catalogue, so a skill only that project's catalogue carried
+lost its category and domain on every global fan-out and the project's next `compile` put them
+back — two commands fighting forever. Found while fixing the fan-out recompile seat and split out
+because the same value also drives `reconcileProjectSplitAgainstGlobal`, so it changes what `init`,
+`edit` and `uninstall` propagate rather than only `compile`. Fixed by deleting the `matrix`
+parameter outright and seating each project's own catalogue inside the loop, through
+`withCatalogueSeatedFor` lifted from `operations/project/recompile-project-agents.ts` into
+`loading/catalogue-seat.ts` — so the defect is unrepresentable rather than repaired, there being no
+argument left to pass wrongly. The uninstall sibling was the case that needed it most: it runs after
+the global manifest is gone, so the project falls back to the standalone types form and would have
+had its own taxonomy deleted with the global one. Regression is the byte comparison no per-installation
+check can make — the project's `config-types.ts` identical across global → project → global, in
+`e2e/lifecycle/project-tracking-propagation.e2e.test.ts`, paired with a permitted case where a global
+addition legitimately widens the union.

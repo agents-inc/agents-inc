@@ -379,6 +379,25 @@ proved seven of them real by mutation and un-landed none. **What remains open** 
 EDITOR-70, EDITOR-71, EDITOR-72 and REPO-42, all filed by those lanes; plus the docs and test-gap
 follow-ups the verification pass named.
 
+## In flight — the summoner context-engineering programme (started 2026-09-03)
+
+The owner's five context-engineering rules for frontier models, applied to `agent-summoner`,
+`skill-summoner`, the shared template and the standards that govern them. Rules, rulings, baseline,
+per-pass narratives and the corrections ledger are in
+[`plans/summoner-context-engineering-2026-09-03.md`](./plans/summoner-context-engineering-2026-09-03.md)
+— **that file is canonical for this work, not this section**, which only orders it.
+
+The shared render path went from six methodology partials to one, and both summoners' playbooks
+from roughly 1,460 lines each to a few hundred. Review passes run eight independent read-only
+lenses and continue until one turns up nothing; the verifier is never the fixer.
+
+| Phase                                                  | Rows             | State                                                           |
+| ------------------------------------------------------ | ---------------- | --------------------------------------------------------------- |
+| The two summoners, the template and the four standards | —                | **landed 2026-09-03** — see `archive.md`; final gates all green |
+| Migrate the other sixteen agents to the same voice     | CLI-871          | ready, not started                                              |
+| Follow-ups the programme raised                        | CLI-872, CLI-873 | ready, not started                                              |
+| Decisions returned to the owner                        | CLI-875          | `Investigate` — needs a ruling before it is work                |
+
 ## In flight — the editor v6 design programme (started 2026-08-26)
 
 **EDITOR-09** is no longer design-gated: the design folder was refreshed in place on 2026-08-25 and
