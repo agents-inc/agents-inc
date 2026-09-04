@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import path from "path";
+import { pick } from "remeda";
 
 // Mock file system and logger (manual mocks from __mocks__ directories)
 vi.mock("../../utils/fs");
@@ -15,9 +17,12 @@ import {
 } from "./loader";
 import { readFile, glob, directoryExists, fileExists } from "../../utils/fs";
 import { warn } from "../../utils/logger";
-import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { DIRS, LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import { renderSkillMd, renderAgentYaml } from "../__tests__/content-generators";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
+import { entryAt } from "../__tests__/helpers/element-at.js";
+import { typedKeys } from "../../utils/typed-object.js";
+import type { AgentDefinition } from "../../types";
 
 describe("parseFrontmatter", () => {
   it("should parse valid frontmatter with name and description", () => {
@@ -392,6 +397,100 @@ describe("loadAllAgents", () => {
     const result = await loadAllAgents("/project");
 
     expect(result).toStrictEqual({});
+  });
+
+  /**
+   * The loader builds its `AgentDefinition` from an explicit field list, so a key `metadata.yaml`
+   * declares and this list omits is dropped here — before the resolver, before the template, and
+   * without a warning, because the schema accepted it.
+   *
+   * Five fields were being dropped that way and every one is read downstream: `agent.liquid`
+   * renders `effort`, `disallowedTools`, `permissionMode`, `isolation` and `hooks`. `effort` is the
+   * one that shows the shape of the bug best — `resolveAgents` reads `agentConfig.effort ??
+   * definition.effort`, and `definition.effort` could never be anything but `undefined`, so the
+   * fallback half of a documented two-source setting had no reachable value.
+   *
+   * A roster rather than a field-by-field check: the subject is which declared fields survive the
+   * read, and a per-key assertion cannot see the next one to be dropped. Bound to
+   * {@link LOADED_OPTIONAL_FIELDS} rather than written twice, because the roster had already been
+   * outgrown by its own fixture: `experimental` was added to the metadata this test writes with no
+   * matching line in the assertion or in the sibling's filter, so deleting the loader's
+   * `experimental` spread left all 56 specs in this file green. Binding both tests to one constant
+   * makes that a compile error instead of a silent gap — add a key here and it is written into the
+   * metadata and checked by both assertions in the same edit. `resolver.test.ts` binds its own
+   * pair the same way, one layer down.
+   */
+  const LOADED_OPTIONAL_FIELDS = {
+    model: "opus",
+    effort: "xhigh",
+    disallowedTools: ["Bash", "WebFetch"],
+    permissionMode: "plan",
+    isolation: "worktree",
+    hooks: { SubagentStop: [{ hooks: [{ type: "command", command: "echo gate" }] }] },
+    experimental: { cacheTtl: "1h" },
+  } as const satisfies Partial<AgentDefinition>;
+
+  it("carries every optional field metadata.yaml declares", async () => {
+    vi.mocked(glob).mockResolvedValue(["tuned/metadata.yaml"]);
+    vi.mocked(readFile).mockResolvedValue(
+      renderAgentYaml("web-developer", "A tuned agent", LOADED_OPTIONAL_FIELDS),
+    );
+
+    const loaded = await loadAllAgents("/project");
+
+    expect(pick(entryAt(loaded, "web-developer"), typedKeys(LOADED_OPTIONAL_FIELDS))).toStrictEqual(
+      LOADED_OPTIONAL_FIELDS,
+    );
+  });
+
+  /**
+   * The refusal that belongs at this boundary rather than two layers downstream.
+   *
+   * `agent.liquid` emits `hooks: {{ agent.hooks | json }}` from whatever this loader returned, and
+   * a compiled agent's frontmatter is read back through `agentFrontmatterValidationSchema` by
+   * `doctor` and by `compileAgentPlugin`. The loader used to take a looser hooks contract than
+   * that reader: a definition written with its actions one level flat was stripped to `{}` here
+   * with no error, the template emitted the empty definition, and the refusal then arrived against
+   * a compiled `.md` the user never wrote — with the command they did write already gone.
+   *
+   * The path is asserted alongside the field, because naming the file is the whole reason the
+   * refusal belongs here: this is the last boundary that still knows which `metadata.yaml` the
+   * value came from. The permitted case is the roster above, which declares a well-formed hooks
+   * block and must keep loading it.
+   */
+  it("refuses a hooks block declaring no actions, naming the file and the field", async () => {
+    const HOOK_EVENT = "SubagentStop";
+    const AGENT_DIR = "gated";
+    vi.mocked(glob).mockResolvedValue([`${AGENT_DIR}/metadata.yaml`]);
+    vi.mocked(readFile).mockResolvedValue(
+      renderAgentYaml("web-developer", "A gated agent", {
+        hooks: { [HOOK_EVENT]: [{ type: "command", command: "echo gate" }] },
+      }),
+    );
+
+    const loaded = await loadAllAgents("/project");
+
+    expect(
+      loaded,
+      "a hooks block the frontmatter reader refuses was loaded anyway, with the actions silently emptied",
+    ).toStrictEqual({});
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Skipping invalid metadata.yaml at '${path.join("/project", DIRS.agents, AGENT_DIR, "metadata.yaml")}': hooks.${HOOK_EVENT}.0.hooks`,
+      ),
+    );
+  });
+
+  it("leaves an optional field off entirely when metadata.yaml declares none", async () => {
+    vi.mocked(glob).mockResolvedValue(["plain/metadata.yaml"]);
+    vi.mocked(readFile).mockResolvedValue(renderAgentYaml("web-developer"));
+
+    const loaded = await loadAllAgents("/project");
+
+    expect(
+      typedKeys(LOADED_OPTIONAL_FIELDS).filter((key) => key in entryAt(loaded, "web-developer")),
+      "an absent field must stay absent — an explicit undefined renders as an empty frontmatter key",
+    ).toStrictEqual([]);
   });
 
   it("loadMergedAgents merges CLI and source agents with source precedence", async () => {

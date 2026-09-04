@@ -126,6 +126,20 @@ export async function resolveAgents(
           ...(model !== undefined && { model }),
           ...(effort !== undefined && { effort }),
           tools: definition.tools,
+          // Every optional frontmatter field `agent.liquid` reads. Spread conditionally rather
+          // than unconditionally, because the template branches on presence — an explicit
+          // `undefined` renders as an empty key.
+          ...(definition.disallowedTools !== undefined && {
+            disallowedTools: definition.disallowedTools,
+          }),
+          ...(definition.permissionMode !== undefined && {
+            permissionMode: definition.permissionMode,
+          }),
+          ...(definition.isolation !== undefined && { isolation: definition.isolation }),
+          ...(definition.hooks !== undefined && { hooks: definition.hooks }),
+          ...(definition.experimental !== undefined && {
+            experimental: definition.experimental,
+          }),
           skills: resolvedSkills,
           ...(definition.path !== undefined && { path: definition.path }),
           ...(definition.sourceRoot !== undefined && { sourceRoot: definition.sourceRoot }),

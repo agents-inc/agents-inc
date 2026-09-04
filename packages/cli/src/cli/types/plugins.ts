@@ -19,7 +19,7 @@ export type PluginManifest = {
   commands?: string | string[];
   agents?: string | string[];
   skills?: string | string[];
-  hooks?: string | Record<string, AgentHookDefinition[]>;
+  hooks?: string | Record<string, Partial<AgentHookDefinition>[]>;
 };
 
 /** Remote source configuration for marketplace plugins (GitHub or URL) */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { elementAt, firstElement } from "./element-at.js";
+import { elementAt, entryAt, firstElement } from "./element-at.js";
 
 const LETTERS = ["a", "b", "c"];
 
@@ -40,5 +40,23 @@ describe("firstElement", () => {
     expect(() => firstElement([])).toThrow(
       "Expected an element at index 0, but the collection holds 0.",
     );
+  });
+});
+
+describe("entryAt", () => {
+  const RECORD: Record<string, { id: string } | undefined> = { first: { id: "only" } };
+
+  it("returns the value at the given key", () => {
+    expect(entryAt(RECORD, "first")).toStrictEqual({ id: "only" });
+  });
+
+  it("throws naming the key and the record's own keys when the key is absent", () => {
+    expect(() => entryAt(RECORD, "second")).toThrow(
+      'Expected an entry for "second", but the record holds: first.',
+    );
+  });
+
+  it("throws when the key exists but holds undefined", () => {
+    expect(() => entryAt({ first: undefined }, "first")).toThrow('Expected an entry for "first"');
   });
 });

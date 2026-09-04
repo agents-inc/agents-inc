@@ -13,10 +13,17 @@ import { formatZodIssue } from "./schema-validator";
 import { isRecord } from "../utils/type-guards";
 import { warn } from "../utils/logger";
 import { SKILL_SLUGS, CATEGORIES } from "../types/generated/source-types";
-import { EFFORT_NAMES, MODEL_NAMES, PERMISSION_MODES } from "../types/matrix";
+import {
+  AGENT_ISOLATIONS,
+  CACHE_TTLS,
+  EFFORT_NAMES,
+  MODEL_NAMES,
+  PERMISSION_MODES,
+} from "../types/matrix";
 import type {
   AgentHookAction,
   AgentHookDefinition,
+  AgentIsolation,
   AgentName,
   AgentYamlConfig,
   AlternativeGroup,
@@ -73,12 +80,49 @@ export const agentHookActionSchema: z.ZodType<AgentHookAction> = z.object({
   prompt: z.string().exactOptional(),
 });
 
-export const agentHookDefinitionSchema: z.ZodType<AgentHookDefinition> = z.object({
+/**
+ * A hook definition as a `plugin.json` authored elsewhere may carry one, and `Partial` because
+ * nothing in this CLI reads a manifest's hooks — {@link pluginManifestSchema}'s two callers take
+ * `name` and `version` and nothing else, and both degrade to skipping the plugin entirely when the
+ * parse throws. Refusing a shape we never read would drop the whole plugin from discovery.
+ *
+ * Deliberately NOT the shape an agent declares: {@link strictHooksRecordSchema} is what both the
+ * loader and the compiled-frontmatter reader take, because a definition carrying no actions fires
+ * nothing and a `metadata.yaml` writing one is a mistake worth reporting rather than emptying.
+ */
+export const agentHookDefinitionSchema: z.ZodType<Partial<AgentHookDefinition>> = z.object({
   matcher: z.string().exactOptional(),
   hooks: z.array(agentHookActionSchema).exactOptional(),
 });
 
+/** Lenient hooks record — {@link pluginManifestObjectSchema} is its only consumer. */
 export const hooksRecordSchema = z.record(z.string(), z.array(agentHookDefinitionSchema));
+
+/**
+ * The isolation modes Claude Code's sub-agent frontmatter documents.
+ *
+ * `z.enum(AGENT_ISOLATIONS)` rather than a literal spelling the one member out, which is the
+ * bridge pattern its four siblings above use and the only form that MOVES with the vocabulary. A
+ * `satisfies z.ZodType<AgentIsolation>` does not compensate: `ZodType`'s output parameter is
+ * covariant, so a narrower schema satisfies a wider one and widening the array produced zero `tsc`
+ * errors — while every parse of a newly-documented mode failed at runtime.
+ */
+export const agentIsolationSchema = z.enum(AGENT_ISOLATIONS) as z.ZodType<AgentIsolation>;
+
+/**
+ * Experimental frontmatter options; `cacheTtl` is the only one Claude Code documents today.
+ *
+ * `.strict()` HERE rather than at each use site, because the site that most needed it never had
+ * it: `agentYamlConfigSchema` reads the `metadata.yaml` a user hand-authors, and a plain
+ * `z.object` there emptied `experimental: { cacheTtlSeconds: "1h" }` to `{}` before either strict
+ * reader saw it — the template then emitted `experimental: {}` (Liquid reads an empty hash as
+ * truthy) and the reader had nothing left to refuse.
+ */
+export const agentExperimentalSchema = z
+  .object({
+    cacheTtl: z.enum(CACHE_TTLS).exactOptional(),
+  })
+  .strict();
 
 /** Strict hook definition — hooks array is required and must have at least one action */
 const strictAgentHookDefinitionSchema = z.object({
@@ -178,7 +222,17 @@ export const agentYamlConfigSchema: z.ZodType<AgentYamlConfig> = z.object({
   tools: z.array(z.string()),
   disallowedTools: z.array(z.string()).exactOptional(),
   permissionMode: permissionModeSchema.exactOptional(),
-  hooks: hooksRecordSchema.exactOptional(),
+  isolation: agentIsolationSchema.exactOptional(),
+  /**
+   * The same contract `agentFrontmatterValidationSchema` reads the compiled agent back through.
+   * The lenient {@link hooksRecordSchema} used to sit here, and every key its definition declares
+   * is optional — so a block written with its actions one level flat was stripped to `{}` with no
+   * error, `agent.liquid` emitted the empty definition, and the refusal arrived from the
+   * frontmatter reader against a compiled `.md` the user never wrote. This is the last boundary
+   * that still knows which `metadata.yaml` the value came from.
+   */
+  hooks: strictHooksRecordSchema.exactOptional(),
+  experimental: agentExperimentalSchema.exactOptional(),
   outputFormat: z.string().exactOptional(),
   domain: (z.string() as z.ZodType<Domain>).exactOptional(),
   custom: z.boolean().exactOptional(),
@@ -599,7 +653,15 @@ export const projectSourceConfigSchema = renamedFieldGuard.pipe(projectSourceCon
 // Strict validation schemas enforce all constraints and use .strict() to reject unknown fields,
 // unlike the lenient loader schemas above which use .passthrough() for forward compatibility at parse boundaries
 
-/** Strict schema for compiled agent metadata.yaml output. Lenient id (any string) since marketplace agents may use custom identifiers. */
+/**
+ * Strict schema for a source agent's `metadata.yaml` — compilation's hand-authored INPUT rather
+ * than an output, since compiling an agent writes one `.md` file and no YAML at all. It generates
+ * `src/schemas/agent.schema.json`, which every `metadata.yaml` points at in its
+ * `yaml-language-server` line, and `validateAgents` in `lib/source-validator.ts` is its only
+ * runtime caller, globbing `src/agents` and reporting each failure as a source issue.
+ *
+ * Lenient id (any string) since marketplace agents may use custom identifiers.
+ */
 export const agentYamlGenerationSchema = z
   .object({
     $schema: z.string().exactOptional(),
@@ -611,14 +673,28 @@ export const agentYamlGenerationSchema = z
     tools: z.array(z.string()).min(1),
     disallowedTools: z.array(z.string()).exactOptional(),
     permissionMode: permissionModeSchema.exactOptional(),
+    isolation: agentIsolationSchema.exactOptional(),
     hooks: strictHooksRecordSchema.exactOptional(),
+    experimental: agentExperimentalSchema.exactOptional(),
     outputFormat: z.string().exactOptional(),
     domain: (z.string() as z.ZodType<Domain>).exactOptional(),
     custom: z.boolean().exactOptional(),
   })
   .strict();
 
-/** Strict validation for agent AGENT.md frontmatter (used by plugin-validator) */
+/**
+ * Strict validation for a compiled agent's `.md` frontmatter, read by two callers whose failure
+ * modes differ sharply. `validateAgentFrontmatter` in `lib/plugins/plugin-validator.ts` collects
+ * the issues and returns an invalid `ValidationResult`, so the agent is reported and the run
+ * continues. `parseAgentFrontmatter` in `lib/agents/agent-plugin-compiler.ts` returns the refusal
+ * with its reason, and `compileAgentPlugin` throws it at the agent it was asked to package — the
+ * loud one, and why a key this schema omits fails a packaging run rather than merely a report.
+ *
+ * Its `hooks`, `isolation` and `experimental` are the same three schemas `agentYamlConfigSchema`
+ * loads a `metadata.yaml` through, deliberately: `agent.liquid` writes all three from what that
+ * load returned, so a value one accepts and the other refuses is a compiled agent this CLI cannot
+ * read back.
+ */
 export const agentFrontmatterValidationSchema = z
   .object({
     /** Agent name in kebab-case (becomes the Task tool identifier) */
@@ -631,6 +707,8 @@ export const agentFrontmatterValidationSchema = z
     model: modelNameSchema.exactOptional(),
     effort: effortLevelSchema.exactOptional(),
     permissionMode: permissionModeSchema.exactOptional(),
+    isolation: agentIsolationSchema.exactOptional(),
+    experimental: agentExperimentalSchema.exactOptional(),
     /** Skill names to preload (embed in agent prompt) */
     skills: z.array(z.string().min(1)).exactOptional(),
     hooks: strictHooksRecordSchema.exactOptional(),

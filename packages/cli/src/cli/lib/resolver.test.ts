@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { Liquid } from "liquidjs";
+import { pick } from "remeda";
 import {
   resolveSkillReference,
   resolveSkillReferences,
@@ -26,8 +27,13 @@ import {
   WEB_ONLY_COMPILE_CONFIG,
 } from "./__tests__/mock-data/mock-matrices.js";
 import { EXPECTED_SKILLS } from "./__tests__/expected-values.js";
-import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
+import { FALLBACK_USAGE } from "./__tests__/mock-data/mock-skills.js";
+import { getSkillById } from "./matrix/matrix-provider.js";
+import { elementAt, entryAt, firstElement } from "./__tests__/helpers/element-at.js";
+import { typedKeys } from "../utils/typed-object.js";
 import type {
+  AgentConfig,
+  AgentDefinition,
   CompileAgentConfig,
   CompiledAgentData,
   Skill,
@@ -119,14 +125,28 @@ describe("buildSkillRefsFromConfig", () => {
     expect(firstElement(result).preloaded).toBe(false);
   });
 
-  it("should include usage guidance with category name", () => {
+  it("carries the guidance the skill states for itself rather than the category name", () => {
     const agentStack: StackAgentConfig = {
       "web-framework": [sa("web-framework-react")],
     };
 
+    // Nothing in this file calls `initializeMatrix`, so the lookup runs against
+    // BUILT_IN_MATRIX — the shipped catalogue, where this skill states its own trigger
+    // sentence. Read rather than written out: the subject is the wiring, and a copy of the
+    // sentence here would redden on any edit to the skill's own metadata. The negative below
+    // is what stops that read from being vacuous.
+    const stated = getSkillById("web-framework-react").usageGuidance;
+
     const result = buildSkillRefsFromConfig(agentStack);
 
-    expect(firstElement(result).usage).toBe("when working with web-framework");
+    expect(stated, "the catalogue entry this spec reads must still state guidance").toEqual(
+      expect.any(String),
+    );
+    expect(firstElement(result).usage).toBe(stated);
+    expect(
+      firstElement(result).usage,
+      "a category name states a filing, not when to reach for the skill",
+    ).not.toBe(FALLBACK_USAGE["web-framework"]);
   });
 
   it("should return empty array for empty config", () => {
@@ -710,8 +730,10 @@ describe("resolveAgents", () => {
 
   /**
    * The agent's own metadata.yaml carries the default; the project config carries the user's
-   * choice. RESOLVE_AGENTS_DEFINITIONS pins both agents at `model: opus`, so a config value that
-   * survives resolution can only have come from the config.
+   * choice. `RESOLVE_AGENTS_DEFINITIONS` pins `web-developer` at `model: sonnet`, which is neither
+   * the `haiku` the override spec sets nor the `opus` every bundled agent declares — so a value
+   * that survives resolution names which side it came from in both directions, and neither
+   * assertion can be satisfied by a resolver that ignored one of them.
    */
   describe("model and effort", () => {
     it("should prefer the config model and effort over the agent metadata default", async () => {
@@ -742,8 +764,81 @@ describe("resolveAgents", () => {
         "/test/path",
       );
 
-      expect(result["web-developer"]?.model).toBe("opus");
+      expect(result["web-developer"]?.model).toBe("sonnet");
       expect(result["web-developer"]?.effort).toBe("low");
+    });
+  });
+
+  /**
+   * `resolveAgents` builds its `AgentConfig` from an explicit field list rather than by spreading
+   * the definition, so a field the list omits is dropped between `metadata.yaml` and the template —
+   * silently, because the template runs `strictVariables: false` and renders a missing variable as
+   * nothing at all.
+   *
+   * Four fields were being dropped that way, and each is read by `agent.liquid`: an agent declaring
+   * `isolation` compiled without it, one declaring its own `hooks` silently got the emitted
+   * completion gate instead, and `disallowedTools` had never reached a compiled agent at all. The
+   * one spec that appeared to cover the pair — `WEB_DEV_TUNED_PERMISSIONS` in `compiler.test.ts` —
+   * hands `compileAgentForPlugin` an `AgentConfig` it built itself, so it enters the pipeline
+   * downstream of this function and could not see the gap.
+   *
+   * A roster rather than a field-by-field check: the subject is which fields survive, and a per-key
+   * assertion cannot see the next one to be dropped. Bound to {@link TUNED_OPTIONAL_FIELDS} rather
+   * than written twice, because a field once already went missing this way without either test
+   * reddening: `experimental` reached `resolveAgents`'s own field list correctly, but was added to
+   * the fixture below with no matching line in the assertion, so the roster passed on a field it
+   * never looked at. Binding both tests to one constant makes that class of drift a compile error
+   * instead of a silent gap — add a key here and it is fed to the fixture and checked by both
+   * assertions in the same edit.
+   */
+  const TUNED_OPTIONAL_FIELDS = {
+    disallowedTools: ["Bash", "WebFetch"],
+    permissionMode: "plan",
+    isolation: "worktree",
+    hooks: { SubagentStop: [{ hooks: [{ type: "command", command: "echo gate" }] }] },
+    experimental: { cacheTtl: "1h" },
+  } as const satisfies Partial<AgentConfig>;
+
+  describe("fields the template reads", () => {
+    it("carries every optional frontmatter field from the metadata through to the template", async () => {
+      const definitions: Record<string, AgentDefinition> = {
+        "web-developer": {
+          ...elementAt(Object.values(RESOLVE_AGENTS_DEFINITIONS), 0),
+          ...TUNED_OPTIONAL_FIELDS,
+        },
+      };
+
+      const result = await resolveAgents(
+        definitions,
+        RESOLVE_AGENTS_SKILL_MAP,
+        WEB_ONLY_COMPILE_CONFIG,
+        "/test/path",
+      );
+
+      expect(
+        pick(entryAt(result, "web-developer"), typedKeys(TUNED_OPTIONAL_FIELDS)),
+      ).toStrictEqual(TUNED_OPTIONAL_FIELDS);
+    });
+
+    it("leaves each of them off entirely when the metadata declares none", async () => {
+      // `createMockAgent` defaults `permissionMode`, so the shared definition declares one and
+      // cannot be the subject here. Dropping the key is what makes this the absent case.
+      const { permissionMode: _declared, ...declaresNone } = elementAt(
+        Object.values(RESOLVE_AGENTS_DEFINITIONS),
+        0,
+      );
+
+      const result = await resolveAgents(
+        { "web-developer": declaresNone },
+        RESOLVE_AGENTS_SKILL_MAP,
+        WEB_ONLY_COMPILE_CONFIG,
+        "/test/path",
+      );
+
+      expect(
+        typedKeys(TUNED_OPTIONAL_FIELDS).filter((key) => key in entryAt(result, "web-developer")),
+        "an absent field must stay absent — an explicit undefined renders as an empty frontmatter key",
+      ).toStrictEqual([]);
     });
   });
 });

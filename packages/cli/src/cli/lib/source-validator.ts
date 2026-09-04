@@ -481,8 +481,10 @@ async function validateStacks(resolvedPath: string): Promise<SourceValidationIss
 }
 
 /**
- * Validates agent metadata.yaml files against the compiled agent output schema.
- * Skips silently when src/agents/ does not exist.
+ * Validates each hand-authored agent `metadata.yaml` under `DIRS.agents` against
+ * `agentYamlGenerationSchema` — compilation's INPUT schema rather than an output one, since
+ * compiling an agent writes one `.md` file and no YAML at all. Skips silently when src/agents/
+ * does not exist.
  */
 async function validateAgents(resolvedPath: string): Promise<SourceValidationIssue[]> {
   const agentsDir = path.join(resolvedPath, DIRS.agents);

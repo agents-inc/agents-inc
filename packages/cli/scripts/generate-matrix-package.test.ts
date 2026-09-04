@@ -12,6 +12,7 @@
 import { cpSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import { STANDARD_FILES } from "../src/cli/consts.js";
 import { bytewise } from "../src/cli/utils/string.js";
@@ -24,6 +25,9 @@ import { AGENT_NAMES } from "../src/cli/types/agents.js";
 import { BUILT_IN_MATRIX } from "../src/cli/types/generated/matrix.js";
 
 import { check, generate, matrixShapeIssues } from "./generate-matrix-package.js";
+
+import type { GeneratedAgentDefinition } from "@workspace/matrix";
+import type { AgentName, AgentYamlConfig } from "../src/cli/types/index.js";
 
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 const MATRIX_ROOT = path.resolve(CLI_ROOT, "../matrix");
@@ -44,32 +48,76 @@ const VENDORED_CONFIG_FILE = "config.ts";
 
 const DEVELOPER_FLAVOR = "developer";
 const TESTER_FLAVOR = "tester";
+const META_FLAVOR = "meta";
+const PLANNING_FLAVOR = "planning";
+const REVIEWER_FLAVOR = "reviewer";
+
+/**
+ * The two agents the entry spot-checks are written against, typed so that retiring one is a
+ * compile error here rather than a `toContain` left searching for a string nothing emits.
+ */
+const AGENT_SUMMONER: AgentName = "agent-summoner";
+const PM: AgentName = "pm";
+
+/**
+ * One emitted `AGENT_DEFINITIONS` entry, with every value READ from the agent's own
+ * `metadata.yaml`. Only `flavor` and `path` are stated, because those two are derived from the
+ * directory rather than declared in the file — which is what {@link PM_ENTRY}'s test exists to pin.
+ *
+ * **Read rather than pasted, and that is the whole point of this function.** The values were
+ * pasted until `agent-summoner`'s description lost its trailing clause, at which point this spec
+ * asserted a sentence no file in the repository contained. Prose in a source file is not the
+ * subject here — the FIELD ROSTER is, which is why the seven fields are spelled out one per line
+ * rather than looped over — so a second copy of that prose bought nothing and rotted on the first
+ * wording change.
+ *
+ * **What reading the values still buys, and what a keys-only assertion would give up, is
+ * PROVENANCE**: a generator carrying the right seven keys with a value of its own invention would
+ * satisfy any roster check and fail here. Byte-identity against `packages/matrix` cannot make that
+ * catch, because regenerating rewrites the committed file and moves both sides of that comparison
+ * together.
+ *
+ * The line format is shared with `serializeAgentDefinition` deliberately and is not what is being
+ * tested — the ENCODING is byte-identity's subject, and this function's is which fields carry
+ * which source values.
+ *
+ * The outer key is the DIRECTORY name while `"id"` is read from the file, so the two disagreeing
+ * fails too — which is what the pasted form asserted by spelling one literal twice.
+ */
+function agentDefinitionEntry(flavor: string, agent: AgentName): string {
+  const metadataPath = path.join(
+    CLI_ROOT,
+    CLI_AGENTS_DIR,
+    flavor,
+    agent,
+    STANDARD_FILES.AGENT_METADATA_YAML,
+  );
+
+  // Parse boundary: the CLI's own metadata.yaml, shaped by src/schemas/agent.schema.json.
+  // `Required` names the five fields these spot-checks read out of it; a source missing one
+  // renders `undefined` into the expectation, which fails loudly rather than quietly matching.
+  const source = parseYaml(readFileSync(metadataPath, "utf-8")) as Required<
+    Pick<AgentYamlConfig, "id" | "title" | "description" | "model" | "tools">
+  >;
+
+  return [
+    `  ${JSON.stringify(agent)}: {`,
+    `    "id": ${JSON.stringify(source.id)},`,
+    `    "title": ${JSON.stringify(source.title)},`,
+    `    "description": ${JSON.stringify(source.description)},`,
+    `    "model": ${JSON.stringify(source.model)},`,
+    `    "tools": ${JSON.stringify(source.tools)},`,
+    `    "flavor": ${JSON.stringify(flavor)},`,
+    `    "path": ${JSON.stringify(`${flavor}/${agent}`)},`,
+    "  },",
+  ].join("\n");
+}
 
 /** Spot-checks against the real `src/agents/meta/agent-summoner/metadata.yaml`. */
-const AGENT_SUMMONER_ENTRY = [
-  '  "agent-summoner": {',
-  '    "id": "agent-summoner",',
-  '    "title": "Agent Summoner Agent",',
-  '    "description": "Expert in creating agents and skills - understands agent architecture deeply - invoke when you need to create, improve, or analyze agents/skills",',
-  '    "model": "opus",',
-  '    "tools": ["Read","Write","Edit","Grep","Glob","Bash"],',
-  '    "flavor": "meta",',
-  '    "path": "meta/agent-summoner",',
-  "  },",
-].join("\n");
+const AGENT_SUMMONER_ENTRY = agentDefinitionEntry(META_FLAVOR, AGENT_SUMMONER);
 
 /** Spot-checks against the real `src/agents/planning/pm/metadata.yaml`. */
-const PM_ENTRY = [
-  '  "pm": {',
-  '    "id": "pm",',
-  '    "title": "PM and Architect Agent",',
-  '    "description": "Creates implementation specs for any feature - frontend, backend, CLI, and AI alike - by researching the codebase\'s real patterns and naming the ones to follow, with fenced scope and verifiable success criteria; domain planning frameworks arrive via meta-planning skills - invoke BEFORE a developer for any new feature",',
-  '    "model": "opus",',
-  '    "tools": ["Read","Write","Edit","Grep","Glob","Bash"],',
-  '    "flavor": "planning",',
-  '    "path": "planning/pm",',
-  "  },",
-].join("\n");
+const PM_ENTRY = agentDefinitionEntry(PLANNING_FLAVOR, PM);
 
 const listFilesRecursive = (root: string): string[] =>
   readdirSync(root, { recursive: true, withFileTypes: true })
@@ -96,12 +144,68 @@ const fixtureTypeSource = (relativePath: string): string => `// fixture stub for
  */
 type FixtureAgent = Omit<(typeof AGENT_DEFS)[keyof typeof AGENT_DEFS], "name"> & { name: string };
 
-function writeFixtureAgent(cliRoot: string, flavor: string, agent: FixtureAgent): void {
+/**
+ * The fields every emitted entry carries however the agent was authored — the four `AGENT_DEFS`
+ * supplies and the two the generator derives from the directory. Everything else is forwarded
+ * through a conditional spread, and {@link CONDITIONAL_METADATA} is the roster of those.
+ */
+type UnconditionalAgentField = "id" | "title" | "description" | "tools" | "flavor" | "path";
+
+/** The rest: every field an entry carries only because the `metadata.yaml` declared it. */
+type ConditionalAgentMetadata = Required<Omit<GeneratedAgentDefinition, UnconditionalAgentField>>;
+
+/**
+ * Every field `toAgentDefinition` forwards only when the agent's `metadata.yaml` declares it,
+ * with a value for each.
+ *
+ * **No shipped agent declares six of the seven** — `model` is the exception — so every other
+ * spread is unentered while the generator runs against the real tree:
+ *
+ * ```
+ * for k in effort disallowedTools permissionMode isolation experimental outputFormat; do \
+ *   printf '%s %s\n' "$k" "$(grep -l "^$k:" $(find src/agents -name metadata.yaml) | wc -l)"; done
+ * ```
+ *
+ * Deleting one of those spreads therefore leaves `packages/matrix/src/generated/agents.ts`
+ * byte-identical, so neither the byte comparison against the committed file nor the two
+ * spot-check entries above — which read only the five fields every agent declares — can see it.
+ * This constant is what gives the mapping a subject, and the fixture agent below is authored to
+ * declare all seven at once.
+ *
+ * `Required<Omit<…>>` is the binding rather than decoration: a field added to the emitted
+ * `GeneratedAgentDefinition` and not given a value here stops compiling at this literal, which is
+ * the only thing that stops the next conditional mapping arriving unexercised the same way. The
+ * type is imported from `packages/matrix` because that is the copy this generator emits and every
+ * consumer reads.
+ *
+ * `model` is `haiku` rather than the `opus` all eighteen shipped agents carry, so the assertion
+ * over it cannot pass on a value the fixture and a hardcoded default happen to share.
+ */
+const CONDITIONAL_METADATA: ConditionalAgentMetadata = {
+  model: "haiku",
+  effort: "xhigh",
+  disallowedTools: ["Bash"],
+  permissionMode: "plan",
+  isolation: "worktree",
+  experimental: { cacheTtl: "1h" },
+  outputFormat: "markdown",
+};
+
+function writeFixtureAgent(
+  cliRoot: string,
+  flavor: string,
+  agent: FixtureAgent,
+  conditional?: ConditionalAgentMetadata,
+): void {
   const agentDir = path.join(cliRoot, CLI_AGENTS_DIR, flavor, agent.name);
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(
     path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
-    renderAgentYaml(agent.name, agent.description, { title: agent.title, tools: agent.tools }),
+    renderAgentYaml(agent.name, agent.description, {
+      title: agent.title,
+      tools: agent.tools,
+      ...conditional,
+    }),
   );
 }
 
@@ -276,6 +380,65 @@ describe("generating from a fixture cli root", () => {
       agentsContent,
       "agents outside the cli root passed in must not appear in the output",
     ).not.toContain("agent-summoner");
+  });
+});
+
+// -- Conditional field mappings ----------------------------------------------
+
+/**
+ * The entry {@link CONDITIONAL_METADATA} produces, one line per field in emission order.
+ *
+ * Spelled out rather than looped over {@link CONDITIONAL_METADATA}, for the reason
+ * {@link agentDefinitionEntry} gives: a loop would restate `serializeAgentDefinition`'s own
+ * encoding, and a test that reimplements the code under test agrees with it by construction.
+ * Written as one block rather than one assertion per field so the ORDER is pinned too — the
+ * emitted order is `toAgentDefinition`'s literal order, and nothing else in this file can see it
+ * for a field no shipped agent declares.
+ */
+const CONDITIONAL_METADATA_ENTRY = [
+  `  ${JSON.stringify(AGENT_DEFS.reviewer.name)}: {`,
+  `    "id": ${JSON.stringify(AGENT_DEFS.reviewer.name)},`,
+  `    "title": ${JSON.stringify(AGENT_DEFS.reviewer.title)},`,
+  `    "description": ${JSON.stringify(AGENT_DEFS.reviewer.description)},`,
+  `    "model": ${JSON.stringify(CONDITIONAL_METADATA.model)},`,
+  `    "effort": ${JSON.stringify(CONDITIONAL_METADATA.effort)},`,
+  `    "tools": ${JSON.stringify(AGENT_DEFS.reviewer.tools)},`,
+  `    "disallowedTools": ${JSON.stringify(CONDITIONAL_METADATA.disallowedTools)},`,
+  `    "permissionMode": ${JSON.stringify(CONDITIONAL_METADATA.permissionMode)},`,
+  `    "isolation": ${JSON.stringify(CONDITIONAL_METADATA.isolation)},`,
+  `    "experimental": ${JSON.stringify(CONDITIONAL_METADATA.experimental)},`,
+  `    "outputFormat": ${JSON.stringify(CONDITIONAL_METADATA.outputFormat)},`,
+  `    "flavor": ${JSON.stringify(REVIEWER_FLAVOR)},`,
+  `    "path": ${JSON.stringify(`${REVIEWER_FLAVOR}/${AGENT_DEFS.reviewer.name}`)},`,
+  "  },",
+].join("\n");
+
+describe("generating from an agent that declares every conditional field", () => {
+  let fixtureCliRoot: string;
+  let outputRoot: string;
+  let agentsContent: string;
+
+  beforeAll(async () => {
+    fixtureCliRoot = await createTempDir("matrix-conditional-cli-");
+    outputRoot = await createTempDir("matrix-conditional-out-");
+
+    writeFixtureTypes(fixtureCliRoot, listFilesRecursive(VENDOR_DIR));
+    writeFixtureAgent(fixtureCliRoot, REVIEWER_FLAVOR, AGENT_DEFS.reviewer, CONDITIONAL_METADATA);
+
+    generate({ matrixRoot: outputRoot, cliRoot: fixtureCliRoot });
+    agentsContent = readFileSync(path.join(outputRoot, AGENTS_FILE), "utf-8");
+  });
+
+  afterAll(async () => {
+    await cleanupTempDir(fixtureCliRoot);
+    await cleanupTempDir(outputRoot);
+  });
+
+  it("forwards every declared field, in the order the entry emits them", () => {
+    expect(
+      agentsContent,
+      "a conditional spread stopped forwarding its field — no shipped agent declares six of these, so nothing else in this suite reads them",
+    ).toContain(CONDITIONAL_METADATA_ENTRY);
   });
 });
 

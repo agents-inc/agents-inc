@@ -67,9 +67,12 @@ type GeneratedAgentDefinition = Pick<
   | "title"
   | "description"
   | "model"
+  | "effort"
   | "tools"
   | "disallowedTools"
   | "permissionMode"
+  | "isolation"
+  | "experimental"
   | "outputFormat"
 > & { flavor: string; path: string };
 
@@ -89,7 +92,7 @@ const AGENTS_HEADER = `// AUTO-GENERATED from packages/cli/src/agents/*/*/metada
 // Fills the AGENT_DEFINITIONS gap the shared matrix package left open.
 
 import type { AgentName } from "../vendor/generated/source-types"
-import type { ModelName, PermissionMode } from "../vendor/matrix"
+import type { AgentIsolation, CacheTtl, EffortLevel, ModelName, PermissionMode } from "../vendor/matrix"
 
 /** Agent metadata as shipped by the CLI's per-agent metadata.yaml files. */
 export type GeneratedAgentDefinition = {
@@ -97,9 +100,13 @@ export type GeneratedAgentDefinition = {
   title: string
   description: string
   model?: ModelName
+  effort?: EffortLevel
   tools: string[]
   disallowedTools?: string[]
   permissionMode?: PermissionMode
+  /** Runs the agent in a git worktree of its own. Carried so a browser render matches the CLI's. */
+  isolation?: AgentIsolation
+  experimental?: { cacheTtl?: CacheTtl }
   outputFormat?: string
   /** Agent role, from the CLI's src/agents/<flavor>/ directory. */
   flavor: string
@@ -138,9 +145,12 @@ function toAgentDefinition({ flavor, agent, metadataPath }: AgentSource): Genera
     title: metadata.title,
     description: metadata.description,
     ...(metadata.model !== undefined && { model: metadata.model }),
+    ...(metadata.effort !== undefined && { effort: metadata.effort }),
     tools: metadata.tools,
     ...(metadata.disallowedTools !== undefined && { disallowedTools: metadata.disallowedTools }),
     ...(metadata.permissionMode !== undefined && { permissionMode: metadata.permissionMode }),
+    ...(metadata.isolation !== undefined && { isolation: metadata.isolation }),
+    ...(metadata.experimental !== undefined && { experimental: metadata.experimental }),
     ...(metadata.outputFormat !== undefined && { outputFormat: metadata.outputFormat }),
     flavor,
     path: `${flavor}/${agent}`,

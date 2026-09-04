@@ -118,6 +118,16 @@ type LoadAgentsFromDirOptions = {
   verboseLabel: string;
 };
 
+/**
+ * The one sentence a user gets about an agent `metadata.yaml` this loader would not take.
+ *
+ * The path is the point: this is the last boundary that still knows which file the value came
+ * from. Everything downstream reports against a compiled `.md` the user never wrote.
+ */
+function refusalOfAgentMetadata(metadataPath: string, reason: string): string {
+  return `Skipping invalid ${STANDARD_FILES.AGENT_METADATA_YAML} at '${metadataPath}': ${reason}`;
+}
+
 // Boundary cast: agent keys come from agentYamlConfigSchema which types config.id as AgentName;
 // custom agents (not in the union) are accepted by the schema's z.string() base
 async function loadAgentsFromDir(
@@ -132,13 +142,31 @@ async function loadAgentsFromDir(
     const fullPath = path.join(agentsDir, file);
     try {
       const content = await readFile(fullPath);
-      const config = agentYamlConfigSchema.parse(parseYaml(content));
+      // safeParse rather than parse: a ZodError's own message is a JSON dump of its issues, and
+      // this warning is the only place a user is told which metadata.yaml is wrong and why.
+      const parsed = agentYamlConfigSchema.safeParse(parseYaml(content));
+      if (!parsed.success) {
+        warn(refusalOfAgentMetadata(fullPath, formatZodIssues(parsed.error.issues)));
+        continue;
+      }
+      const config = parsed.data;
 
       agents[config.id] = {
         title: config.title,
         description: config.description,
         ...(config.model !== undefined && { model: config.model }),
+        ...(config.effort !== undefined && { effort: config.effort }),
         tools: config.tools,
+        // The rest of what `agent.liquid` reads. Spread conditionally, because the template
+        // branches on presence — an explicit `undefined` renders as an empty frontmatter key.
+        ...(config.disallowedTools !== undefined && {
+          disallowedTools: config.disallowedTools,
+        }),
+        ...(config.permissionMode !== undefined && { permissionMode: config.permissionMode }),
+        ...(config.isolation !== undefined && { isolation: config.isolation }),
+        ...(config.hooks !== undefined && { hooks: config.hooks }),
+        ...(config.experimental !== undefined && { experimental: config.experimental }),
+        ...(config.outputFormat !== undefined && { outputFormat: config.outputFormat }),
         path: path.dirname(file),
         sourceRoot,
         ...(options.agentBaseDir ? { agentBaseDir: options.agentBaseDir } : {}),
@@ -148,7 +176,7 @@ async function loadAgentsFromDir(
 
       verbose(`Loaded ${options.verboseLabel}: ${config.id} from ${file}`);
     } catch (error) {
-      warn(`Skipping invalid metadata.yaml at '${fullPath}': ${getErrorMessage(error)}`);
+      warn(refusalOfAgentMetadata(fullPath, getErrorMessage(error)));
     }
   }
 

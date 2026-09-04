@@ -27,3 +27,21 @@ export function elementAt<T>(items: readonly T[], index: number): T {
 export function firstElement<T>(items: readonly T[]): T {
   return elementAt(items, 0);
 }
+
+/**
+ * The value at `key`, or a failure naming the key and the record's own keys.
+ *
+ * The record equivalent of {@link elementAt}: `record[key] ?? {}` reads as an absence guard
+ * but is satisfied just as well by a key that quietly stopped being populated, so a spec
+ * asserting the ABSENCE of fields on that value passes whether the key is present-and-empty
+ * or missing entirely — the two cases an absence spec exists to tell apart.
+ */
+export function entryAt<T>(record: Readonly<Record<string, T | undefined>>, key: string): T {
+  const value = record[key];
+  if (value === undefined) {
+    throw new Error(
+      `Expected an entry for "${key}", but the record holds: ${Object.keys(record).join(", ")}.`,
+    );
+  }
+  return value;
+}

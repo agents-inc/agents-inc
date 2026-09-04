@@ -15,11 +15,15 @@ import {
 import { readTestJson } from "./__tests__/helpers/config-io.js";
 import { buildSkillConfigs } from "./__tests__/helpers/wizard-simulation.js";
 import { EJECT_SOURCE } from "../consts";
+import { AGENT_DEFS } from "./__tests__/mock-data/mock-agents.js";
+import { AGENT_ISOLATIONS, CACHE_TTLS } from "../types/matrix";
+import type { AgentYamlConfig } from "../types";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
   VALID_SKILL_CATEGORIES_FILE,
 } from "./__tests__/mock-data/mock-source-files.js";
 import {
+  agentFrontmatterValidationSchema,
   agentYamlConfigSchema,
   categoryPathSchema,
   formatZodIssues,
@@ -1017,5 +1021,128 @@ describe("formatZodIssues", () => {
 
   it("should handle empty issues array", () => {
     expect(formatZodIssues([])).toBe("");
+  });
+});
+
+/**
+ * The three keys `agent.liquid` writes conditionally, judged on the side that READS the
+ * `metadata.yaml` a user hand-authors.
+ *
+ * A compiled agent is written by one schema and read back by another: `agentYamlConfigSchema`
+ * loads the `metadata.yaml`, `agent.liquid` emits `isolation:`, `experimental:` and `hooks:` from
+ * what that load returned, and `agentFrontmatterValidationSchema` parses the result back —
+ * `validateAgentFrontmatter` in `lib/plugins/plugin-validator.ts` behind `doctor`, and
+ * `parseAgentFrontmatter` in `lib/agents/agent-plugin-compiler.ts` behind `compileAgentPlugin`.
+ * The two schemas therefore have to name one contract per key, and for two of the three they did
+ * not.
+ *
+ * The refusals are the subject rather than the acceptances, and they belong HERE rather than only
+ * on the reading side, because the loader is the only boundary that still knows which file the
+ * value came from: `loadAgentsFromDir` names `metadata.yaml`'s full path in its warning, while a
+ * refusal arriving at the frontmatter reader names a compiled `.md` the user never wrote and a
+ * value the loader has already emptied.
+ */
+describe("the agent metadata a compiled agent is written from, against the schema that reads it back", () => {
+  /** Every fixture below is this agent plus exactly one of the three keys. */
+  const AGENT_METADATA = {
+    id: AGENT_DEFS.webDev.name,
+    title: AGENT_DEFS.webDev.title,
+    description: AGENT_DEFS.webDev.description,
+    tools: AGENT_DEFS.webDev.tools,
+  };
+
+  /** The frontmatter the template writes for {@link AGENT_METADATA}, minus the key under test. */
+  const COMPILED_FRONTMATTER = {
+    name: AGENT_DEFS.webDev.name,
+    description: AGENT_DEFS.webDev.description,
+  };
+
+  const HOOK_EVENT = "SubagentStop";
+
+  /** A hooks block in the shape Claude Code documents: a matcher, and the actions it fires. */
+  const DECLARED_HOOKS = {
+    [HOOK_EVENT]: [{ matcher: "Write", hooks: [{ type: "command", command: "npm run lint" }] }],
+  } as const satisfies NonNullable<AgentYamlConfig["hooks"]>;
+
+  /**
+   * The same intent written one level flat — the action list hung straight off the event, with no
+   * definition around it. Not a foreign shape: it is what a hooks block looks like with the
+   * `hooks:` wrapper forgotten, and every key in it is a key the action schema declares.
+   */
+  const ACTIONS_WITHOUT_A_DEFINITION = {
+    [HOOK_EVENT]: [{ type: "command", command: "npm run lint" }],
+  };
+
+  /** Where a definition carrying no actions is refused, in both schemas' path vocabulary. */
+  const NO_ACTIONS_DECLARED = [["hooks", HOOK_EVENT, 0, "hooks"]];
+
+  /** Zod's own issue code for a key a `.strict()` object does not name. */
+  const UNRECOGNIZED_KEY = "unrecognized_keys";
+
+  /** A near miss of `cacheTtl`, because a mistyped option name is what strictness exists to report. */
+  const UNDOCUMENTED_EXPERIMENTAL_KEY = "cacheTtlSeconds";
+
+  it("carries every hook action the metadata declares", () => {
+    const parsed = agentYamlConfigSchema.parse({ ...AGENT_METADATA, hooks: DECLARED_HOOKS });
+
+    expect(
+      parsed.hooks,
+      "the actions a user wrote must survive the load — the template emits what this returns, and nothing downstream can put back a command that was dropped here",
+    ).toStrictEqual(DECLARED_HOOKS);
+  });
+
+  it("refuses a hooks block declaring no actions, where the file declaring it is", () => {
+    const readBack = agentFrontmatterValidationSchema.safeParse({
+      ...COMPILED_FRONTMATTER,
+      hooks: ACTIONS_WITHOUT_A_DEFINITION,
+    });
+    const loaded = agentYamlConfigSchema.safeParse({
+      ...AGENT_METADATA,
+      hooks: ACTIONS_WITHOUT_A_DEFINITION,
+    });
+
+    expect(
+      readBack.error?.issues.map((issue) => issue.path),
+      "the reading side stopped refusing this shape, so the loader below has nothing to agree with",
+    ).toStrictEqual(NO_ACTIONS_DECLARED);
+    expect(
+      loaded.error?.issues.map((issue) => issue.path),
+      "the loader accepts a hooks block the frontmatter reader refuses — it strips the actions to an empty definition and lets the refusal arrive two layers later, against a compiled file the user never wrote",
+    ).toStrictEqual(NO_ACTIONS_DECLARED);
+  });
+
+  it("accepts every cache TTL the experimental options document", () => {
+    const refused = CACHE_TTLS.filter(
+      (cacheTtl) =>
+        !agentYamlConfigSchema.safeParse({ ...AGENT_METADATA, experimental: { cacheTtl } }).success,
+    );
+
+    expect(
+      refused,
+      "a refused TTL makes an agent declaring it unloadable, so nothing it asks for reaches the template",
+    ).toStrictEqual([]);
+  });
+
+  it("refuses an experimental option the vocabulary does not document", () => {
+    const result = agentYamlConfigSchema.safeParse({
+      ...AGENT_METADATA,
+      experimental: { [UNDOCUMENTED_EXPERIMENTAL_KEY]: CACHE_TTLS[0] },
+    });
+
+    expect(
+      result.error?.issues.map((issue) => ({ code: issue.code, path: issue.path })),
+      "the experimental map is strict only at the two schemas that read a compiled agent, so a mistyped option is emptied here and the reader is handed a map with nothing left to refuse",
+    ).toStrictEqual([{ code: UNRECOGNIZED_KEY, path: ["experimental"] }]);
+  });
+
+  it("judges isolation against the whole documented vocabulary", () => {
+    const refused = AGENT_ISOLATIONS.filter(
+      (isolation) => !agentYamlConfigSchema.safeParse({ ...AGENT_METADATA, isolation }).success,
+    );
+
+    expect(
+      refused,
+      "a mode the vocabulary documents is refused at load, so an agent declaring it never reaches the template that emits it",
+    ).toStrictEqual([]);
   });
 });
