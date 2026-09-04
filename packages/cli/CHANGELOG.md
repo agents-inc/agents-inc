@@ -7,6 +7,21 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.163.0] - 2026-09-04
+
+**Every compiled sub-agent gets a slimmer, cacheable prompt and a deterministic completion gate, and a skill's own trigger sentence finally reaches the agent that loads it**
+
+- A skill's own `usageGuidance` reaches the sub-agent that loads it, replacing a sentence derived from the category key. Two zod schemas were stripping the field, which is why the placeholder looked like the design — a stripped optional and an unstated one are the same value by two routes (CLI-872)
+- The fleet is uniformly Opus 5 at 18 of 18, by owner ruling the other way round from the proposal. Two specs moved onto `config.ts` rather than staying green on a roster that can no longer discriminate (CLI-874)
+- The `SKILL.md` budget number is gone rather than converted to tokens: the proposed figure was reachable by 0 of 238 skills where the old one flagged 42, and a threshold invites trimming to the number rather than to the job (CLI-876)
+- A carried skill can no longer install itself over a catalogue id, writing its bytes into that skill's own directory while the run exits SUCCESS and `doctor` reports nothing. Three refusals — the loaded catalogue, the shipped catalogue no payload can move, and the disk (CLI-884)
+- A global fan-out writes each registered project from that project's own catalogue instead of the triggering command's, ending a fight where the project's next `compile` undid the propagation. The parameter is deleted rather than corrected, so the defect is unrepresentable (CLI-888)
+- Six methodology partials become one, the volatile skill list moves to a trailing block, and the provenance marker stops carrying the version — so a compiled agent's prompt prefix is byte-stable between invocations and across releases
+- Every writing sub-agent stops against a `Stop` hook running the project's typecheck, composed with whatever hooks it declared rather than lost to them. Typecheck only, by ruling: lint and tests are the project's own judgement to gate on
+- `isolation` and `experimental.cacheTtl` are supported end to end, emitted only when an agent declares them. No shipped agent carries either
+
+See [changelogs/0.163.0.md](./changelogs/0.163.0.md) for full details.
+
 ## [0.162.0] - 2026-09-03
 
 **Every compiled sub-agent gains the Skill tool, text the CLI did not author reaches the terminal inert, and a refused share says what the store said**
