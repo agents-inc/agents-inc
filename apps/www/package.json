@@ -29,7 +29,7 @@
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
-    "playwright": "1.56.1",
+    "playwright": "1.62.1",
     "tailwindcss": "^4",
     "typescript": "~6",
     "wrangler": "^4"
