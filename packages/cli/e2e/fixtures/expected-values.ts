@@ -218,15 +218,24 @@ export const E2E_AGENT = {
  * it from the bundled definitions — which is what lets one install cover four models or five
  * efforts at once rather than needing one install per value. `defaultModel` is the value that
  * agent's bundled `metadata.yaml` declares, so a spec asserting "no override, so the metadata
- * default survives" has an authoritative expected value instead of a guess. `api-tester` is the
- * one whose default is NOT `opus`, which is why the default-preserving specs use it: an assertion
- * of `opus` there would pass on a hardcoded fallback.
+ * default survives" has an authoritative expected value instead of a guess.
+ *
+ * **The bundled roster is uniform, and that costs the model assertions half their reach.** Every
+ * agent declares the same model, so no `defaultModel` here can distinguish "the compiler read THIS
+ * agent's metadata" from "it read some other agent's" or "something invented that value" — the
+ * assertions still catch a default that is DROPPED, because `agent.liquid` writes
+ * `model: {{ agent.model | default: "inherit" }}` and `inherit` is not what any of these say. Where
+ * a spec needs proof that an OVERRIDE arrived rather than coincided, the discriminating surface is
+ * `config.ts` rather than the frontmatter: an override that never arrived writes no key at all,
+ * where the frontmatter writes the resolved value either way. Re-derive the roster with:
+ *
+ *     grep -h '^model:' $(find src/agents -name metadata.yaml) | sort | uniq -c
  */
 export const E2E_BUILTIN_AGENT = {
   "web-tester": { name: "web-tester", defaultModel: "opus" },
   reviewer: { name: "reviewer", defaultModel: "opus" },
   "cli-developer": { name: "cli-developer", defaultModel: "opus" },
-  "api-tester": { name: "api-tester", defaultModel: "sonnet" },
+  "api-tester": { name: "api-tester", defaultModel: "opus" },
 } as const satisfies Partial<Record<AgentName, { name: AgentName; defaultModel: ModelName }>>;
 
 // Derive from E2E source agent definitions (create-e2e-source.ts).

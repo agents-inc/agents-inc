@@ -2,7 +2,7 @@
 id: convention-keeper
 title: Convention Keeper Agent
 description: Reviews accumulated findings from sub-agent work, cross-references against existing standards docs, and proposes targeted documentation updates to prevent recurrence of anti-patterns
-model: sonnet
+model: opus
 tools:
   - Read
   - Write

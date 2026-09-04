@@ -45,10 +45,25 @@ export const AGENT_DEFS = {
 // Agent definitions from resolver.test.ts
 // ---------------------------------------------------------------------------
 
+/**
+ * `sonnet` rather than `opus`, and the divergence is the assertion.
+ *
+ * `resolveAgents` resolves a model as `agentConfig.model ?? definition.model`, so a spec proving
+ * the metadata default SURVIVES a config that overrides only `effort` can only discriminate while
+ * this value is one nothing else in the run would produce. Every bundled agent has declared
+ * `model: opus` since the owner ruled the roster uniform on 2026-09-03 — re-derive with
+ * `grep -h '^model:' $(find src/agents -name metadata.yaml) | sort | uniq -c` — so pinning this
+ * mock at `opus` made `?? definition.model` and a hardcoded `?? "opus"` produce the same byte, and
+ * the assertion went unfalsifiable while continuing to read as rigorous.
+ *
+ * These are the suite's own definitions and no ruling about shipped agents reaches them, so the
+ * value is chosen deliberately: `sonnet` is neither the shipped default nor the `haiku` the
+ * override spec sets, which keeps the two directions telling different stories.
+ */
 const WEB_DEVELOPER_DEFINITION = createMockAgent("Web Developer", {
   description: "Frontend web developer",
   tools: ["Read", "Write", "Edit"],
-  model: "opus",
+  model: "sonnet",
   path: "web/web-developer",
 });
 

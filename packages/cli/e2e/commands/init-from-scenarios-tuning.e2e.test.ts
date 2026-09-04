@@ -89,8 +89,12 @@ describe("init --from <id>: sub-agent model and effort", () => {
 
   it("carries every model the contract allows onto its own sub-agent", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // api-tester is the one sub-agent whose bundled default is not opus, so it takes the opus row:
-    // asserting opus on an opus-by-default sub-agent would pass without the override arriving.
+    // Which sub-agent takes which row is arbitrary — the bundled roster is uniformly `opus`, so no
+    // choice of agent makes the OPUS row's frontmatter assertion discriminating: a mapper that
+    // dropped `opus` from what it forwards would still compile `model: opus` off the metadata.
+    // The config assertion below is what carries that row: an override that never arrived writes
+    // no `model` key, and `toStrictEqual` against one that names it fails. The other three rows
+    // name values no metadata declares, so their frontmatter assertions stand on their own.
     store.publish(
       "Models01",
       buildSeedPayload({
@@ -201,7 +205,13 @@ describe("init --from <id>: sub-agent model and effort", () => {
       model: "haiku",
       noEffort: true,
     });
-    // Effort only: the model stays whatever api-tester's own metadata declares.
+    // Effort only: the model stays whatever api-tester's own metadata declares. Dropping it
+    // instead renders `model: inherit` (`agent.liquid`'s fallback), and the sibling above pins
+    // `haiku` in the same payload, so an entry's model bleeding across sub-agents fails here too.
+    // What this cannot see, with the bundled roster uniformly `opus`: a resolver answering a
+    // hardcoded `opus` in place of reading the metadata. No E2E fixture can, because the roster it
+    // installs from is the shipped one. That failure mode belongs to the unit layer, where the
+    // definitions are the spec's own to pin off `opus`.
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, {
       model: E2E_BUILTIN_AGENT["api-tester"].defaultModel,
       effort: "xhigh",
@@ -231,6 +241,10 @@ describe("init --from <id>: sub-agent model and effort", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
+    // A default that never reached the template renders `model: inherit`, which is what this
+    // catches; effort has no default at all, so its correct outcome is no key. The same uniform-
+    // roster limit as the spec above applies to the model half, and here there is not even a
+    // tuned sibling to rule out a bleed — the payload names one sub-agent, deliberately.
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, {
       model: E2E_BUILTIN_AGENT["api-tester"].defaultModel,
       noEffort: true,

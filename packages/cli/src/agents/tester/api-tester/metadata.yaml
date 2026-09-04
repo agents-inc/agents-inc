@@ -2,7 +2,7 @@
 id: api-tester
 title: API Tester Agent
 description: Tests backend features - API endpoint integration tests, database operation tests, auth flow tests, middleware chain tests, error response validation - invoke BEFORE or AFTER api-developer implements features
-model: sonnet
+model: opus
 tools:
   - Read
   - Write
