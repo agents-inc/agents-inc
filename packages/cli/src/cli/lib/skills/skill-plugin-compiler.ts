@@ -117,10 +117,16 @@ export async function compileSkillPlugin(
   const skillMdContent = await readFile(skillMdPath);
   const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);
 
+  // No cause is inlined here, and that is the difference from the agent side. `parseFrontmatter`
+  // has already warned the exact reason against this same `skillMdPath`, and it is shared by six
+  // call sites — five of which skip the skill rather than throw, so its warn is their only report
+  // and cannot be removed. Repeating the reason in this message would print it twice on every
+  // path that reaches here. What is gone is the hard-coded `Required fields: 'name' and
+  // 'description'`, which named two fields whatever had actually failed.
   if (!frontmatter) {
     throw new Error(
       `Skill '${dirBasename}' has invalid or missing YAML frontmatter in ${STANDARD_FILES.SKILL_MD}. ` +
-        `Required fields: 'name' and 'description'. File: ${skillMdPath}`,
+        `File: ${skillMdPath}`,
     );
   }
 
