@@ -96,8 +96,17 @@ storybook-static
 CLAUDE.md
 V2.md
 
-# Playwright. These are anchored, and correctly so: only apps/editor runs
-# Playwright, and it sits at the same depth it did in the web repository.
+# Playwright. The anchored paths are apps/editor's, and correctly so: only that
+# workspace runs Playwright, and it sits at the same depth it did in the web
+# repository.
+#
+# `test-results/` is UNANCHORED, and that is the one exception. Playwright
+# resolves `outputDir` against the process's working directory rather than
+# against the config's, so a run invoked from the repository root — `bunx
+# playwright test`, with the config found by walking up — writes the directory
+# there instead. The anchored entry below cannot see that one, and what lands is
+# a `.last-run.json` nobody wants in a commit.
+test-results/
 apps/editor/test-results/
 apps/editor/playwright-report/
 apps/editor/blob-report/
