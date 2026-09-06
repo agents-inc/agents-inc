@@ -50,14 +50,24 @@ const latticeCellVariants = cva(
         true: "z-1 outline-1 -outline-offset-1 outline-brand",
         false: "",
       },
-      // Incompatible skills are shown but disabled — never hidden. Dimming is
-      // the whole signal, as in the design.
+      // INCOMPATIBLE CELLS RECEDE, THEY DO NOT FADE. A cell is white because it
+      // is available; one that is not simply stops being white and sinks into
+      // the column it sits on. That is the whole treatment — no opacity, no ink
+      // change, no border change.
+      //
+      // `opacity: .4` was the previous drawing and is rejected by name. It put
+      // the skill's own name at roughly 2.1:1, and it faded the cell's
+      // HAIRLINES with it, breaking the lattice's continuity — which read as a
+      // rendering fault rather than as a state. The name stays at 14.8:1 here.
+      //
+      // Adjacent receded cells merging into one field is correct rather than a
+      // side effect: they are one exclusive group losing to the same choice.
       //
       // Deliberately not `pointer-events-none`: the cell has to stay hoverable
       // or the tooltip explaining *why* it is out never opens. Callers pass
       // `interactive={false}` and guard their own handlers instead.
       disabled: {
-        true: "cursor-default opacity-40",
+        true: "cursor-default bg-column",
         false: "",
       },
       // Clipped so a long name cannot bleed across a hairline, except when

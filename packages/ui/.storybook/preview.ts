@@ -109,9 +109,12 @@ const preview: Preview = {
     // over an inaccessible component. `error` makes axe a gate.
     //
     // `color-contrast` is held out permanently — an owner ruling (2026-08-07),
-    // not a pending fix. The measured ratios (amber ink on the accent wash at
-    // 3.97:1, the dimmed incompatible cell at 2.4:1) are the design as
-    // intended; the palette is a deliberate taste decision for this project.
+    // not a pending fix. The measured ratio (amber ink on the accent wash at
+    // 3.97:1) is the design as intended; the palette is a deliberate taste
+    // decision for this project. The ruling's second example, the incompatible
+    // cell at 2.4:1, is GONE rather than still held out: that cell was 40%
+    // opacity and now recedes to the column colour at full opacity, so its name
+    // measures 14.8:1 and the rule would pass it.
     // The holdout keeps every *structural* check — names, labels, roles —
     // gating, which is what this suite is for. Do not re-enable the rule
     // expecting a token fix; none is planned.

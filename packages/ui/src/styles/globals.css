@@ -172,15 +172,16 @@
   ); /* add-skill's hairline, the band's only one */
   --color-band-edge-hover: var(--band-edge-hover);
 
-  /* Domain strip — the tabs under the search band. The active tab is 25px
-     Inter and every other one is a 10.5px mono label, so the strip needs two
-     greys of its own: one quiet enough that eight inactive labels do not
-     compete with the one you are reading, and one quieter still for the
-     counts. `tab-field` is the wash the active tab takes once the bar sticks
-     and the strip regains its rule. */
-  --color-tab-label: var(--tab-label);
-  --color-tab-count: var(--tab-count);
-  --color-tab-field: var(--tab-field);
+  /* Domain strip — the tabs under the search band. Labels and counts hold the
+     ordinary mono grey (`muted-foreground`), because every cell now carries
+     the same type at the same size and only the index and the count CHANGE
+     with selection. So the strip needs exactly one grey of its own: the
+     index's, quiet enough to sit at 45% under the pointer without reading as a
+     second label. `tab-label`, `tab-count` and `tab-field` were the three the
+     retired drawing needed — a 25px Inter active label, a quieter count under
+     it, and the wash that label took once the bar stuck — and all three went
+     with it. */
+  --color-tab-index: var(--tab-index);
 
   /* Lines */
   --color-hairline: var(--hairline); /* the cell lattice, dialog rules */
@@ -302,7 +303,6 @@
   --logo-slot: var(--warm-05);
   --muted: var(--warm-05);
   --flash: var(--amber-01);
-  --tab-field: var(--amber-01);
   --matrix: var(--warm-06);
   --wash: var(--amber-02);
   --band-ink: var(--warm-07);
@@ -326,7 +326,6 @@
   --dots: var(--warm-13);
   --line-hover: var(--warm-13);
   --roster-empty: var(--warm-13);
-  --tab-count: var(--warm-13);
   --band-brand: var(--amber-05);
   --field-border: var(--warm-14);
   --input: var(--warm-14);
@@ -335,7 +334,7 @@
   --chart-3: var(--amber-06);
   --use-ink: var(--warm-15);
   --dialog-border: var(--warm-15);
-  --tab-label: var(--warm-15);
+  --tab-index: var(--warm-15);
   --band-faint: var(--warm-16);
   --field-faint: var(--warm-17);
   --brand-dim: var(--amber-07);

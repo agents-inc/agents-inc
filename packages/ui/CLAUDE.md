@@ -37,11 +37,16 @@ mode, so a structural violation — an unnamed control, a bad role, a missing la
 **`color-contrast` is held out permanently.** It is an owner ruling of
 2026-08-07, not a pending fix, and `preview.ts` says so:
 
-> The measured ratios (amber ink on the accent wash at 3.97:1, the dimmed
-> incompatible cell at 2.4:1) are the design as intended; the palette is a
-> deliberate taste decision for this project. The holdout keeps every
-> _structural_ check — names, labels, roles — gating, which is what this suite is
-> for. Do not re-enable the rule expecting a token fix; none is planned.
+> The measured ratio (amber ink on the accent wash at 3.97:1) is the design as
+> intended; the palette is a deliberate taste decision for this project. The
+> holdout keeps every _structural_ check — names, labels, roles — gating, which
+> is what this suite is for. Do not re-enable the rule expecting a token fix;
+> none is planned.
+
+The ruling's second example — the incompatible cell at 2.4:1 — no longer exists.
+That cell was `opacity: .4`; it recedes to the column colour at full opacity now,
+so its name measures 14.8:1 and the rule would pass it. The holdout stands on the
+amber pair alone.
 
 ## Chromatic is the other half of the gate
 

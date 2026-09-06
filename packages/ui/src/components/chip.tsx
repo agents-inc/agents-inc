@@ -3,9 +3,18 @@ import type { ComponentProps } from "react"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// The bordered mono toggle. One idiom at three sizes: `filter` in the filter
-// bar (domain + selected chips), `segment` inside the skill options panel,
-// `stage` on the add-skill result rows.
+// The bordered mono toggle. One idiom at three sizes: `filter`, which is the
+// default, `segment` inside the skill options panel, and `stage` on the
+// add-skill result rows.
+//
+// `filter` is named for where it started rather than for where it is: the
+// filter bar's domain chips, then the `selected` toggle beside them. Both
+// MOVED and neither stopped being a chip — the domains became the strip's own
+// cells, and `selected` is `HingeToggle` in `divider.tsx`, which renders this
+// component with the three overrides a chip standing on a RULE needs. So the
+// size still has its caller, one level of indirection away, and the on-state
+// amber below is the same pair in both places precisely because there is only
+// one of it.
 //
 // Off is a hairline outline on nothing; on is amber ink on the accent wash
 // with an amber border. Hover only firms the border — it never goes amber,

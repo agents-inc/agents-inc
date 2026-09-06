@@ -7,6 +7,26 @@ import { cn } from "@workspace/ui/lib/utils"
 // Both search fields in the design are borderless — the border belongs to the
 // bar or field wrapping them, so the input itself contributes only type.
 //
+// THE BORDER IS THE WRAPPER'S AND THE PADDING IS NOT. That is the half this
+// said nothing about until 2026-09-05, and all three wrappers had taken the
+// padding as well — so between the border a visitor sees and the text they read
+// sat a ring belonging to neither, on the field's own fill, inside the field's
+// own border, dead to a click. The field was a strip in the middle of its box.
+// `p-0` below is the DEFAULT a bare field starts from, not a rule: a wrapper
+// hands its inset down through `className` and the field's box then fills the
+// border it is drawn inside, which is what makes every pixel of that box take
+// the caret at the point it was pressed.
+//
+// The figures stay at the call sites because they are the boxes' rather than
+// this component's — 15px in the filter bar against 12px in the dialogs, and
+// the bar's swaps for a single gutter and animates when the bar pins. A box
+// that cannot give its padding away because something else is standing in it —
+// `add-skill-dialog.tsx`, whose border holds a glyph and a caret bar either
+// side of the field — is a `<label>`, so its decorations' own area reaches the
+// field too. `e2e/specs/field-hit-area.spec.ts` is what holds all of this: it
+// presses each corner of each drawn box and asks what has the caret, which is
+// the only question a padding rule cannot be satisfied without answering.
+//
 // The focus ring is the field's own, in the cva base beside the `outline-none`
 // it answers: every render of these variants dresses an `<input>`, so there is
 // no passive form to keep it off. It read as the wrapper's job until

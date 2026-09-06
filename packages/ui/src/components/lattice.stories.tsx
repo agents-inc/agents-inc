@@ -52,7 +52,10 @@ export const PartialRow: Story = {
   },
 }
 
-// Selected is an amber outline; incompatible is dimmed but never hidden, and
+// Selected is an amber outline. Incompatible RECEDES — it stops being white and
+// drops to the colour of the column it sits on — rather than fading: the 40%
+// opacity this replaced took the cell's own hairlines with it, so the lattice
+// broke and it read as a rendering fault rather than a state. Never hidden, and
 // deliberately still hoverable so its tooltip can explain why.
 export const CellStates: Story = {
   args: {
