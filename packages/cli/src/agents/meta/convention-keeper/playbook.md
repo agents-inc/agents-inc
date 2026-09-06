@@ -1,180 +1,100 @@
 <retrieval_strategy>
 
-**Just-in-Time Context Loading:**
+## Loading Findings and Standards
 
-When processing findings:
+1. **Glob** `.ai-docs/agent-findings/*.md`. `README.md`, `INDEX.md` and `TEMPLATE.md` sit in that
+   directory and are not findings.
+2. **Read** each finding, and take its state from the frontmatter `status:` field rather than from
+   its location — `open` and `partial` are yours, `resolved` and `superseded` are done. Nothing is
+   ever filed by directory.
+3. **Grep** `CLAUDE.md` and `.ai-docs/standards/` for each finding's own vocabulary, and read only
+   the sections that match.
 
-1. **Glob** `.ai-docs/agent-findings/*.md` (excluding `done/`) to find all unprocessed findings
-2. **Read** each finding file to understand what was discovered
-3. **Grep** `.ai-docs/standards/` and `CLAUDE.md` for keywords from each finding to check if rules exist
-4. **Read** specific sections of standards docs only when a match is found
-5. Load standards docs selectively - don't pre-read every doc upfront
-
-This preserves context window for thorough cross-referencing.
+Loading every standards doc up front spends on pages no finding touches the context the
+cross-referencing needs.
 
 </retrieval_strategy>
 
 ---
 
-## Your Workflow
-
 <standards_review_workflow>
 
-### Review Mode (Default)
+## Review Mode
 
-**Step 1: Collect Findings**
+**Step 1 — collect.** Read every open and partial finding completely, and note the frontmatter:
+`type`, `severity`, `affected_files`, `standards_docs`, `date`, `reporting_agent`, `category`,
+`domain`, `root_cause`. `reporting_agent` is the field that says whose instructions need changing,
+and it is the one most often skipped.
 
-1. Glob `.ai-docs/agent-findings/*.md` to list all unprocessed findings
-2. Skip `done/` subdirectory
-3. Read each finding file completely
-4. Note the frontmatter metadata: type, severity, affected_files, standards_docs, date, reporting_agent, category, domain, root_cause
+**Step 2 — group by theme.** Each finding declares its own `category` and `domain`, and
+`TEMPLATE.md` defines what every value covers, so start from those rather than from a scheme of your
+own. A group is what a single rule could prevent: two findings sharing a category but not a cause
+are two groups, and one cause spanning two categories is one.
 
-**Step 2: Group by Theme**
+**Step 3 — cross-reference and classify.** Grep `CLAUDE.md`, then `.ai-docs/standards/`, then
+`.ai-docs/standards/e2e/` where the group is test-related.
 
-Cluster related findings. Common themes:
+| Classification        | What it means                             | What to propose                                                                                                                                       |
+| --------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Enforcement gap**   | The rule exists and was violated          | Sharpen the rule where it lives — it is buried, vague, or has no example. Promote it to a `CLAUDE.md` NEVER/ALWAYS row where it governs widely enough |
+| **Documentation gap** | No rule covers the pattern                | One new rule in the most relevant existing doc, placed beside its neighbours                                                                          |
+| **Convention drift**  | A rule exists and practice contradicts it | Neither side silently. Present the documented rule and the observed practice, and let the user decide which changes                                   |
 
-- DRY violations (duplicated constants, repeated helpers)
-- TypeScript issues (casts, `any` usage, type safety, missing guards)
-- Testing patterns (assertions, cleanup, test structure, test data)
-- Complexity issues (over-engineering, unnecessary abstractions, backward-compat shims)
-- Performance issues (unnecessary work, N+1 patterns, missing caching)
-- Architecture issues (wrong layer, wrong file location, boundary violations)
+**Step 4 — write the proposal.** Each one names the exact target file, the exact section, the text
+ready to paste, and the findings it closes.
 
-**Step 3: Cross-Reference Each Group**
+**A finding's Proposed Standard is evidence that a rule is needed rather than the text of one.**
+Its diagnosis is grounded in observed code and its prescription is not, and both read as equally
+authoritative. Check it against `CLAUDE.md`'s NEVER/ALWAYS rules and the governing standards doc
+before adopting it, and re-derive from source whatever the finding named most specifically — the
+call, the matcher, the field, the version — because that is both the part most likely to have moved
+and the part a reader will copy. **Where source and the finding disagree, source wins, and the
+disagreement is reported rather than quietly reconciled.**
 
-For each theme group, search existing standards:
+**Check whether a count in a finding is a census or a sample** before scoping anything from it.
+`affected_files:` reads as the whole population when it is often only the instance the author had
+open. Run the grep that gives the real one.
 
-1. **Search `CLAUDE.md`** - Grep for keywords related to the finding
-2. **Search `.ai-docs/standards/`** - Grep across all standards docs
-3. **Search `.ai-docs/standards/e2e/`** - Check E2E-specific standards if finding is test-related
+**Step 5 — apply, once the user approves.** Edit surgically, then read each new rule back in its
+new surroundings before moving on. Mark each processed finding in the file at its own path:
+`status: resolved` with a `resolved_by:` where the whole finding is closed, `status: partial` with a
+`partial_note:` where only the standards half landed.
 
-Classify each group:
-
-| Classification        | Meaning                               | Action                                                                      |
-| --------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| **Enforcement gap**   | Rule exists but was violated          | Suggest making the rule more specific, prominent, or adding an example      |
-| **Documentation gap** | No rule exists for this pattern       | Propose a new rule in the most relevant existing doc                        |
-| **Convention drift**  | Rule exists but practice has diverged | Suggest updating the rule to match current practice, or flag for discussion |
-
-**Step 4: Propose Updates**
-
-For each group, write a targeted proposal:
-
-- Which file to update (exact path)
-- Which section to add to or modify
-- The exact text to add (ready to paste)
-- Which finding files this addresses (by filename)
-
-**Step 5: Apply Approved Updates**
-
-After the user approves proposals:
-
-1. Apply edits using the Edit tool (surgical additions, not rewrites)
-2. Re-read each edited file to verify changes were written
-3. Move processed finding files to `.ai-docs/agent-done/`
-
-**Step 6: Report Results**
-
-Summarize what was incorporated and what was deferred.
+**Step 6 — report** in the shape this agent's output format gives.
 
 ---
 
-### Audit Mode
+## Audit Mode
 
-When given a specific standards doc to audit:
+**Step 1.** Read the target standards doc completely, and turn every rule into a searchable pattern
+— the identifier, the call shape or the construct a violation would contain.
 
-**Step 1: Read the Standards Doc**
+**Step 2.** Grep the directories the rule governs, and judge each hit. A rule almost always has
+documented exceptions; a match inside one is not a violation.
 
-Read the target document completely. Extract every rule as a concrete, searchable pattern.
+**Step 3.** Write a finding per violation, from `.ai-docs/agent-findings/TEMPLATE.md`. That file's
+own frontmatter block is the definition of every field and enum, `scripts/check-findings-frontmatter.ts`
+reads the enums from it, and a finding written from a remembered copy fails that check on the values
+the copy predates.
 
-**Step 2: Scan for Violations**
-
-For each rule:
-
-1. Determine what a violation looks like in code
-2. Use Grep to search the relevant directories
-3. Evaluate each match - is it a genuine violation or an acceptable exception?
-
-**Step 3: Write Findings**
-
-For each violation found, create a finding file in `.ai-docs/agent-findings/` using the finding template format:
-
-```yaml
----
-type: anti-pattern
-severity: [high | medium | low]
-affected_files:
-  - [file path]
-standards_docs:
-  - [the doc being audited]
-date: [today]
-reporting_agent:
-  [agent-type that discovered the issue -- indicates whose instructions may need updating]
-category: [dry | typescript | testing | complexity | performance | architecture]
-domain: [e2e | cli | web | api | shared | infra]
-root_cause:
-  [
-    missing-rule | rule-not-visible | rule-not-specific-enough | convention-undocumented | enforcement-gap,
-  ]
----
-```
-
-Include: What Was Wrong, Fix Applied (or "None -- discovery only"), Proposed Standard.
+Each finding carries What Was Wrong, Fix Applied — "None, discovery only" where you only found it —
+and Proposed Standard. **State whether your count is a census or a sample**: write the grep you ran
+and its hit count, or say plainly that you only opened what you happened to be reading.
 
 ---
 
-### Gap Analysis Mode
+## Gap Analysis Mode
 
-**Step 1: Read Current Standards**
+**Step 1.** Read `CLAUDE.md` and `.ai-docs/standards/`, and hold what is already ruled on.
 
-Read `CLAUDE.md` and all files in `.ai-docs/standards/`. Build a mental inventory of documented rules.
+**Step 2.** Read recent history — `git log --oneline -N`, defaulting to 50 unless the user names a
+number, and `git diff HEAD~N..HEAD --stat` for the files that move most. Reading git is yours;
+writing it is not.
 
-**Step 2: Examine Recent History**
+**Step 3.** Look for the three shapes worth a rule: the same class of fix landing repeatedly, a
+convention established in recent work that no doc states, and a rule citing a file or pattern that
+no longer exists.
 
-Use `git log --oneline -N` (where N is specified by user, default 50) to see recent commits. Read commit messages for patterns.
-
-Use `git diff HEAD~N..HEAD --stat` to identify frequently changed files.
-
-**Step 3: Identify Undocumented Patterns**
-
-Look for:
-
-- Repeated fixes to the same type of issue (suggests missing preventive rule)
-- New conventions established in recent PRs but not yet documented
-- Rules that reference files/patterns that no longer exist
-
-**Step 4: Propose New Rules**
-
-For each undocumented pattern, propose a rule addition to the most relevant existing doc.
+**Step 4.** Propose each as an addition to the most relevant existing doc, in the Step 4 shape above.
 
 </standards_review_workflow>
-
----
-
-## Finding Classification Guide
-
-<classification_guide>
-
-### Enforcement Gap
-
-The rule exists, but it was violated anyway. This suggests:
-
-- The rule is buried too deep in the doc
-- The rule is too vague to be actionable
-- The rule lacks a concrete example
-
-**Action:** Make the existing rule more prominent, specific, or add an example. Consider adding it to `CLAUDE.md` NEVER/ALWAYS sections if it's important enough.
-
-### Documentation Gap
-
-No rule covers this pattern. This is a new convention that emerged from practice.
-
-**Action:** Add a new rule to the most relevant existing standards doc. Place it near related rules. Keep it concise and actionable.
-
-### Convention Drift
-
-A rule exists but current practice contradicts it. Either the rule is outdated or the practice is wrong.
-
-**Action:** Flag for discussion. Present both the documented rule and the observed practice. Let the user decide which should change.
-
-</classification_guide>

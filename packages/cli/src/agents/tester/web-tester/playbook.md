@@ -31,7 +31,9 @@ Before writing tests:
 
 ## Tester Workflow
 
-**ALWAYS follow the Red-Green-Refactor cycle:**
+**Work the red-green-refactor cycle in order, and own only the red half.** The green and refactor
+phases are `web-developer`'s; yours is to establish what they implement against and to verify the
+result.
 
 ```xml
 <tester_workflow>
@@ -42,18 +44,16 @@ Before writing tests:
 4. Verify tests fail for the RIGHT reason
 5. Document expected behavior clearly
 
-**GREEN: Implement to Pass**
-1. Write minimal code to make tests pass
-2. Don't add extra features not in tests
-3. Run tests -> they should PASS
-4. All tests green? Move to next behavior
+**GREEN: Confirm the implementation satisfies the tests**
+1. Run the suite once web-developer's implementation exists
+2. Every test passes, with no test edited to get there
+3. Investigate any test that passed suspiciously early - it may assert nothing
+4. Green on this behavior? Move to the next one - the cycle runs per behavior, not once per feature
 
-**REFACTOR: Improve Code**
-1. Clean up implementation without changing behavior
-2. Remove duplication
-3. Improve clarity and maintainability
-4. Run tests -> they should STILL PASS
-5. Tests are your safety net
+**REFACTOR: Confirm the tests held**
+1. web-developer cleans up the implementation without changing behavior
+2. Re-run the suite - it must still pass, unedited
+3. A test that reddens on a behavior-preserving refactor was testing implementation; fix that test
 
 **Hand Off to Developer:**
 - Provide complete test file
@@ -87,85 +87,30 @@ it("calls useState with initial value");
 
 ## What to Test
 
-### 1. Happy Path (Primary Flows)
+Six categories, each of which needs cases before a feature is covered:
 
-**Always test the main use case:**
-
-```typescript
-describe("ProfileForm", () => {
-  it("successfully submits valid profile data", async () => {
-    // User fills out form correctly and submits
-    // Expect success message and data saved
-  });
-});
-```
-
-### 2. Validation & Error Cases
-
-**Test all validation rules:**
-
-```typescript
-it('shows error when email missing @ symbol', () => { ... })
-it('shows error when name exceeds 50 characters', () => { ... })
-it('shows error when required field is empty', () => { ... })
-it('prevents submission when validation fails', () => { ... })
-```
-
-### 3. Edge Cases
-
-**Test boundary conditions:**
-
-```typescript
-it('handles empty form submission', () => { ... })
-it('handles exactly 50 character name (boundary)', () => { ... })
-it('handles rapid repeated clicks', () => { ... })
-it('handles special characters in input', () => { ... })
-```
-
-### 4. Error Scenarios
-
-**Test failure modes:**
-
-```typescript
-it('displays error message when API call fails', () => { ... })
-it('handles network timeout gracefully', () => { ... })
-it('shows generic error for unknown failures', () => { ... })
-it('allows retry after error', () => { ... })
-```
-
-### 5. Integration Points
-
-**Test interactions with other systems:**
-
-```typescript
-it('calls user API with correct data', () => { ... })
-it('triggers navigation after save', () => { ... })
-it('closes modal after successful submission', () => { ... })
-```
-
-### 6. Accessibility
-
-**Test screen reader support:**
-
-```typescript
-it('has accessible form labels', () => { ... })
-it('announces errors to screen readers', () => { ... })
-it('manages focus correctly on modal open', () => { ... })
-it('allows keyboard navigation', () => { ... })
-```
-
----
+| Category            | Cases it owes                                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Happy path**      | The main use case end to end — valid input submitted, success shown, data saved                                  |
+| **Validation**      | Each validation rule stated separately, plus that submission is blocked while any fails                          |
+| **Edge cases**      | Empty input, the exact boundary value, rapid repeated interaction, special characters                            |
+| **Error scenarios** | The request fails, it times out, an unknown failure surfaces a generic message, and retry works after an error   |
+| **Integration**     | The call the component makes with the data it sends, the navigation it triggers, the state it updates            |
+| **Accessibility**   | Labels are associated, errors are announced, focus is managed on open and close, and the flow is keyboard-usable |
 
 ## What NOT to Test
 
-**DON'T test:**
+**Test what matters to the user:** can they see what they need, can they interact successfully, does
+feedback appear, and do errors help them recover?
+
+**Skip:**
 
 - **Implementation details** - Specific hooks used, internal state
 - **External libraries** - React, MobX are already tested
 - **Styling** - Unless functional (like visibility)
 - **Third-party components** - Trust their tests
 
-**DO test:**
+**Test instead:**
 
 - **Component behavior** - Does it show/hide correctly?
 - **User interactions** - What happens when clicked?
@@ -178,109 +123,47 @@ it('allows keyboard navigation', () => { ... })
 
 ### 1. Test Behavior, Not Implementation
 
-```typescript
-// Bad - tests implementation details
-expect(component.state.loading).toBe(true);
-expect(useState).toHaveBeenCalledWith({ name: "" });
+Assert what the user can perceive — what is on screen, what is disabled, what changed after an
+interaction. An assertion that reaches into a component's internal state or spies on a hook passes
+until the day someone refactors without changing anything a user could notice, and then fails for a
+reason no user would recognise.
 
-// Good - tests user-visible behavior
-expect(screen.getByRole("button")).toBeDisabled();
-expect(screen.getByText("Loading...")).toBeInTheDocument();
-```
+### 2. Query by Something Stable
 
-### 2. Use Testing Library Queries Correctly
+Pick the element by something the user or the accessibility tree can see — its role and accessible
+name, its label, its visible text — or by an attribute the markup carries expressly for testing.
+What a selector must not depend on is structure: a class name or a position in the DOM breaks on the
+next refactor while still presenting as a test failure.
 
-**Priority order:**
+**Which of those your library ranks first differs, and your stack's testing skill states its order.**
+Some rank by how a user perceives the element and treat a test id as the last resort; others reach
+for an explicit test attribute by default. Follow the one your project's skill teaches rather than
+importing another library's ordering — and where an element cannot be found by any user-facing
+handle at all, that is usually an accessibility defect rather than a testing problem.
 
-1. **`getByRole`** - Most accessible
-2. **`getByLabelText`** - Form elements
-3. **`getByPlaceholderText`** - Only when no label
-4. **`getByText`** - Content
-5. **`getByTestId`** - Last resort
+### 3. Wait for the Assertion, Never for the Clock
 
-```typescript
-// Best - accessible and robust
-screen.getByRole("button", { name: "Save" });
-screen.getByLabelText("Email");
+An assertion that runs before the state it describes has settled fails on a fast machine and passes
+on a slow one. Wait on the condition itself — the element appearing, the element leaving — and never
+on a fixed delay. Where your library offers more than one waiting form, prefer the one that reports
+what it found when it gave up — a timeout that names only the last error tells you the test failed
+and not what the screen held.
 
-// Okay - readable but less accessible
-screen.getByText("Profile Settings");
+The library's own async queries and utilities are in your stack's testing skill.
 
-// Avoid - not accessible, implementation detail
-screen.getByTestId("save-button");
-screen.getByClassName("submit-btn");
-```
+### 4. Mock External Dependencies, and Reset Them Between Tests
 
-### 3. Async Testing Patterns
-
-```typescript
-// Best - finds element when it appears
-expect(await screen.findByText("Saved!")).toBeInTheDocument();
-
-// Good - waits for condition
-await waitFor(() => {
-  expect(screen.getByText("Saved!")).toBeInTheDocument();
-});
-
-// Good - waits for element to disappear
-await waitForElementToBeRemoved(() => screen.getByText("Loading..."));
-
-// Bad - doesn't wait, will fail
-expect(screen.getByText("Saved!")).toBeInTheDocument();
-```
-
-### 4. Mock External Dependencies
-
-```typescript
-// Mock API calls
-jest.mock("@/lib/api-client", () => ({
-  apiClient: {
-    put: jest.fn(),
-    get: jest.fn(),
-  },
-}));
-
-// Mock stores
-jest.mock("@/stores/user-store", () => ({
-  userStore: {
-    updateUser: jest.fn(),
-    user: { id: "123", name: "John" },
-  },
-}));
-```
-
-### 5. Clean Up After Tests
-
-```typescript
-beforeEach(() => {
-  // Reset before each test
-  jest.clearAllMocks();
-});
-
-afterEach(() => {
-  // Clean up after each test
-  cleanup(); // RTL cleanup
-  jest.restoreAllMocks();
-});
-```
+Mock the API client, the stores and any external service the component sits behind, then clear the
+mocks and unmount in the project's own setup hooks. Copy the mocking and cleanup style from the
+existing test files you read rather than introducing a second one — two mocking idioms in one suite
+means the reset in the project's setup hook covers some of the doubles and not others, and the test
+that leaks is rarely the one that fails.
 
 ---
 
 ## Test Anti-Patterns to Avoid
 
-### 1. Testing Implementation Details
-
-```typescript
-// Bad - breaks when implementation changes
-expect(useState).toHaveBeenCalledWith({ name: "", email: "" });
-expect(component.find(".error-message")).toHaveLength(1);
-
-// Good - tests behavior
-expect(screen.getByLabelText("Name")).toHaveValue("");
-expect(screen.getByRole("alert")).toHaveTextContent("Invalid email");
-```
-
-### 2. Overly Coupled Tests
+### 1. Overly Coupled Tests
 
 ```typescript
 // Bad - tests depend on each other
@@ -301,7 +184,7 @@ it("test 1", () => {
 });
 ```
 
-### 3. Testing Too Much at Once
+### 2. Testing Too Much at Once
 
 ```typescript
 // Bad - giant test doing everything
@@ -314,51 +197,6 @@ it('validates email format', () => { ... })
 it('shows error for empty name', () => { ... })
 it('submits form data successfully', () => { ... })
 ```
-
-### 4. Not Testing Error Cases
-
-```typescript
-// Bad - only happy path
-it('saves profile successfully', () => { ... })
-
-// Good - includes error cases
-describe('profile save', () => {
-  it('saves profile successfully', () => { ... })
-  it('displays error when API fails', () => { ... })
-  it('handles network timeout', () => { ... })
-  it('shows validation errors', () => { ... })
-})
-```
-
----
-
-## Critical Rules for Test Writing
-
-### 1. Never Test Implementation - Test Behavior
-
-The developer should be able to refactor implementation without breaking tests (as long as behavior stays the same).
-
-### 2. Tests Must Fail First (RED)
-
-If tests pass before implementation exists, they're not testing anything useful. Always verify tests fail for the RIGHT reason.
-
-### 3. Use Existing Test Utilities
-
-Check the codebase for:
-
-- Custom render functions
-- Test data factories
-- Shared mock utilities
-- Helper functions
-
-### 4. Test What Matters to Users
-
-Focus on:
-
-- Can they see what they need?
-- Can they interact successfully?
-- Does feedback appear correctly?
-- Do errors help them recover?
 
 ---
 
@@ -400,7 +238,7 @@ Focus on:
 2. **Tests are incorrect** - You wrote the wrong expected behavior
 3. **Test structure improvements** - Better organization, but same assertions
 
-**Tests should NEVER change because:**
+**These are not reasons to change a test:**
 
 - Developer found them inconvenient
 - Implementation is "close enough"
@@ -417,12 +255,11 @@ Focus on:
 
 **When exploring test patterns:**
 
-- Don't pre-load every test file in the codebase
-- Start with file patterns: `*.test.ts`, `*.spec.ts`
+- Start with file patterns rather than reading the suite: `*.test.ts`, `*.spec.ts`
 - Use Glob to find similar test files first
 - Use Grep to search for specific patterns (describe blocks, mocking)
 - Read detailed test files only when needed for reference
 
-This preserves context window for actual test writing.
+Reading only what the current suite needs is what leaves context for writing it.
 
 </retrieval_strategy>

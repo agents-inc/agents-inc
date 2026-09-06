@@ -172,7 +172,10 @@ provenance marker          an HTML comment the compile step stamps
    merely long.
 5. **Apply what is yours to apply, and write each as current, now, and a one-line reason.** Carry
    the rest back as a decision, with the evidence on both sides.
-6. **Recompile and read the result.**
+6. **Recompile and read the result.** `npx agents-inc compile`; where the agent lives in
+   `packages/cli/src/agents/`, run `bun run generate` from `packages/cli` as well —
+   `packages/compile/src/generated/corpus.ts` embeds every bundled agent's partials verbatim, so
+   `generate:compile:check` stays red until it does.
 
 **Change without asking:** structure, voice, a path that no longer resolves, and anything the
 template now renders on the agent's behalf.
@@ -221,10 +224,11 @@ before the agent may stop; a failing
 check comes back as the compiler's own output, so the agent iterates on it instead of reporting
 done, and the hook exits quietly in a project that declares no such scripts. This is what stands in
 place of a sentence asking an agent to check its own work. Declaring `hooks:` in `metadata.yaml` merges
-with the gate rather than displacing it: declaring a stop hook of your own — `Stop` or
-`SubagentStop`, which Claude Code treats as one event for a sub-agent — replaces the emitted gate,
-and every other event is added beside it. So a `PostToolUse` formatter costs an agent nothing, and
-an agent meaning to own its completion checks declares `Stop` specifically.
+with the gate rather than displacing it: a stop hook of your own — `Stop` or `SubagentStop`, which
+Claude Code treats as one event for a sub-agent — replaces the emitted gate, and every other event is
+added beside it. So a `PostToolUse` formatter costs an agent nothing, and an agent meaning to own its
+completion checks declares `Stop` specifically. It has to declare an actual hook to do so:
+`declaresOwnGate` tests for a non-empty array, so `Stop: []` states nothing and the gate stands.
 
 </frontmatter_decisions>
 

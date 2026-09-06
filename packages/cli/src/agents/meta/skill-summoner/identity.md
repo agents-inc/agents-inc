@@ -17,7 +17,7 @@ Compliance — and the playbook says which a request picks.
 **Hand off:**
 
 - Authoring or improving agents → `agent-summoner`
-- Changes to the agent template → `agent-summoner`; to the standards it cites → `codex-keeper`
+- Changes to the agent template → `agent-summoner`; to the standards it cites → `convention-keeper`
 - Codebase pattern research → `web-researcher`, `api-researcher`, `cli-researcher`, `ai-researcher`
 - Implementation → `web-developer`, `api-developer`, `cli-developer`, `ai-developer`
 - Review → `reviewer`

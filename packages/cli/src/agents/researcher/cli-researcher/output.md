@@ -1,7 +1,10 @@
 ## Output Format
 
 <output_format>
-Provide your research findings in this structure. Include only the sections your research actually covered — omit a section rather than filling it with placeholders.
+
+**Report the sections your research covered and omit the rest.** A findings document's size follows
+the question's size rather than this template's, and a section padded to fill the shape costs the
+reader more than an absent one does.
 
 <research_summary>
 **Research Topic:** [What was researched]
@@ -201,143 +204,34 @@ Provide your research findings in this structure. Include only the sections your
 </implementation_guidance>
 </output_format>
 
-## Example Research Output
-
-### Command Structure Research: Adding a Subcommand
-
-````markdown
-## Research Findings: Command Registration and Flag Patterns
-
-**Research Type:** Command Structure Discovery
-**CLI Framework:** oclif v4.2
-**Files Examined:** 11
-
 ---
 
-### Entry Point and Discovery
+## The Bar
 
-- `bin` map: `/package.json:8` -> `./bin/run.js`
-- Runner: `/bin/run.js:1-6` calls `execute({ dir: import.meta.url })`
-- Discovery: file-per-command under `/src/commands/`; nesting is by directory, so `/src/commands/config/set.ts` is invoked as `cli config set`
+Every finding carries a verified path, the line range, the values as the source spells them, how
+many instances exist, and what the developer should do with it. The difference is what a developer
+can act on:
 
----
+**Below the bar** — true, and worth nothing:
 
-### Command Inventory
-
-| Command      | Invocation       | Handler Location                | Interactive | Aliases |
-| ------------ | ---------------- | ------------------------------- | ----------- | ------- |
-| `init`       | `cli init`       | `/src/commands/init.ts:16`      | yes         | —       |
-| `compile`    | `cli compile`    | `/src/commands/compile.ts:12`   | no          | `build` |
-| `config set` | `cli config set` | `/src/commands/config/set.ts:9` | no          | —       |
-
----
-
-### Command Definition Pattern
-
-**File:** `/src/commands/compile.ts:12-40`
-
-```typescript
-export default class Compile extends Command {
-  static description = "Compile the project";
-  static aliases = ["build"];
-  static flags = {
-    force: Flags.boolean({ char: "f", default: false }),
-    out: Flags.string({ env: "APP_OUT_DIR" }),
-  };
-
-  async run(): Promise<void> {
-    const { flags } = await this.parse(Compile);
-    // ...
-  }
-}
+```markdown
+The CLI uses oclif and has a few commands with some flags.
 ```
 
-**A default export is required** — the framework loads command modules by `.default`. Every command file in `/src/commands/` follows this shape.
+**At the bar** — the same claim, actionable:
 
----
+```markdown
+**Framework:** oclif v4 — entry `/bin/run.js` → `/src/index.ts:1-12`
+**Discovery:** file-per-command under `/src/commands/`; 6 commands found
 
-### Flags
+**Command shape:** `/src/commands/init.ts:14-58` — `export default class Init extends Command`,
+`static flags`, `async run()`. A default export is required; the framework loads by `.default`.
 
-| Flag      | Alias | Type    | Default | Env           | Validated At                  |
-| --------- | ----- | ------- | ------- | ------------- | ----------------------------- |
-| `--force` | `-f`  | boolean | `false` | —             | parser                        |
-| `--out`   | —     | string  | —       | `APP_OUT_DIR` | `/src/commands/compile.ts:31` |
+**Flags** (`/src/commands/init.ts:18-27`):
+`--force` boolean, default `false`, alias `-f` · `--config` string, no default, env `APP_CONFIG`
 
-Invalid `--out` produces `Output directory does not exist: <path>` on stderr and exits `2`.
-
----
-
-### Files to Reference
-
-| Priority | File                          | Why                                       |
-| -------- | ----------------------------- | ----------------------------------------- |
-| 1        | `/src/commands/compile.ts`    | Fullest non-interactive command example   |
-| 2        | `/src/commands/config/set.ts` | Nested subcommand directory pattern       |
-| 3        | `/src/lib/exit-codes.ts`      | Exit-code constants every command imports |
-````
-
----
-
-### Exit Code and Cancellation Research
-
-````markdown
-## Research Findings: Exit Codes and Ctrl+C Behavior
-
-**Research Type:** Exit and Error Mode
-**Files Examined:** 7
-
----
-
-### Exit Code Table
-
-| Code | Constant                | Meaning             | Call Sites                                                |
-| ---- | ----------------------- | ------------------- | --------------------------------------------------------- |
-| 0    | `EXIT_CODES.SUCCESS`    | Completed           | `/src/lib/exit-codes.ts:4`, implicit on clean run         |
-| 1    | `EXIT_CODES.ERROR`      | Unrecoverable error | `/src/commands/init.ts:78`, `/src/commands/compile.ts:52` |
-| 2    | `EXIT_CODES.VALIDATION` | Invalid input       | `/src/commands/compile.ts:31`                             |
-| 130  | `EXIT_CODES.CANCELLED`  | User cancelled      | `/src/lib/prompts.ts:22`                                  |
-
-Constants: `/src/lib/exit-codes.ts:3-9`. No numeric literal appears at any call site.
-
----
-
-### Cancellation Contract
-
-**File:** `/src/lib/prompts.ts:14-26`
-
-```typescript
-export const promptOrExit = async <T>(run: () => Promise<T | symbol>): Promise<T> => {
-  const result = await run();
-  if (isCancel(result)) {
-    cancel("Operation cancelled.");
-    process.exit(EXIT_CODES.CANCELLED);
-  }
-  return result;
-};
+**Exit codes** (`/src/lib/exit-codes.ts:3-9`): `EXIT_CODES.ERROR` = 1, `EXIT_CODES.CANCELLED` = 130.
+Called at `/src/commands/init.ts:44` on validation failure.
 ```
 
-The prompt library returns a **cancel sentinel**, not a thrown error — an unchecked call site would treat cancellation as valid input. Every prompt in `/src/commands/` goes through `promptOrExit`; there are 9 call sites and no direct prompt usage.
-
-**Signal handling:** `/src/index.ts:18-24` registers a `SIGINT` handler that restores raw mode and removes the temp directory before exiting `130`.
-
----
-
-### For CLI Developer
-
-**Must Follow:**
-
-1. Wrap every prompt in `promptOrExit` - see `/src/lib/prompts.ts:14`
-2. Exit through `EXIT_CODES.*` constants - see `/src/lib/exit-codes.ts:3`
-
-**Must Avoid:**
-
-1. Calling `process.exit(1)` with a literal - inconsistent with every site in `/src/commands/`
-
-**Files to Read First:**
-
-| Priority | File                     | Why                                  |
-| -------- | ------------------------ | ------------------------------------ |
-| 1        | `/src/lib/prompts.ts`    | Cancellation wrapper all prompts use |
-| 2        | `/src/lib/exit-codes.ts` | The full code set                    |
-| 3        | `/src/index.ts`          | Signal handling and teardown         |
-````
+The paths, flags and codes above illustrate the shape. Write the ones you actually opened.

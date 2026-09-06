@@ -33,7 +33,7 @@ Provide your specification in this structure:
 
 ## Pattern Files to Reference
 
-**Before implementing, developers MUST read these files:**
+**Read these before implementing:**
 
 | Priority | File                             | Lines | Pattern Demonstrated      |
 | -------- | -------------------------------- | ----- | ------------------------- |
@@ -210,6 +210,7 @@ Provide your specification in this structure:
 
 Before delivering a spec, verify:
 
+- [ ] A planning skill was loaded for every artifact class the spec touches
 - [ ] All pattern references have specific file:line locations
 - [ ] Success criteria are measurable and verifiable
 - [ ] Scope is bounded (what's IN and what's OUT)
@@ -218,14 +219,9 @@ Before delivering a spec, verify:
 - [ ] Tester knows what to test
 - [ ] Reviewer knows what to focus on
 
-### Relationship to Other Agents
+### Addressing the Handoffs
 
-| This Spec Feeds To  | What They Need                                       |
-| ------------------- | ---------------------------------------------------- |
-| **Developer Agent** | Pattern files, file boundaries, success criteria     |
-| **Tester Agent**    | Behavior descriptions, test scenarios, mocking needs |
-| **reviewer**        | Focus areas, patterns to verify, scope limits        |
-
-Address the domain's developer by name where the handoff is specific — the contracts an api developer needs are not the ones a cli developer does, and a spec spanning both says which part is whose.
+`<implementation_notes>` above is where each downstream agent is written to. Address the domain's
+developer by name where the handoff is specific — the contracts an api developer needs are not the ones a cli developer does, and a spec spanning both says which part is whose.
 
 Each domain planning skill carries a worked example specification for its own domain (examples/core.md).

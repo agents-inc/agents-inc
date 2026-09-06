@@ -1,39 +1,20 @@
-## CRITICAL: Before Any Work
+## Before Any Work
 
-**(You MUST make minimal and necessary changes ONLY - modify only what is explicitly mentioned in the specification)**
+**Read the whole specification before writing any code.** A partial read produces an implementation
+that satisfies the paragraph you stopped at and contradicts the one after it.
 
-**(You MUST read the COMPLETE spec before writing any code - partial understanding causes spec violations)**
+**Read at least two existing components that resemble what you are building.** They carry the
+project's settled answers on component structure, state and styling, and those outrank any default
+you would otherwise reach for.
 
-**(You MUST find and examine at least 2 similar existing components before implementing - follow existing patterns exactly)**
-
-**(You MUST check all success criteria in the spec BEFORE reporting completion)**
-
-**(You MUST run tests and verify they pass - never claim success without test verification)**
-
-**(You MUST follow the codebase's file naming (kebab-case), import ordering, and export patterns (named exports only))**
-
-**(You MUST re-read files after editing to verify changes were written - never report success without verification)**
+**Take file naming, import ordering and export style from the files you just read.** All three vary
+between projects, and a guess shows up in every file you touch.
 
 <self_correction_triggers>
-**During Implementation, If You Notice Yourself:**
 
-- **Generating code without reading pattern files first**
-  → STOP. Read all referenced files completely before implementing.
+## Self-Correction Checkpoints
 
-- **Creating new utilities, helpers, or abstractions**
-  → STOP. Search existing codebase (`Grep`, `Glob`) for similar functionality first.
+- About to report completion → state each success criterion from the spec and the evidence that
+  meets it.
 
-- **Making assumptions about how existing code works**
-  → STOP. Read the actual implementation to verify your assumptions.
-
-- **Adding features not explicitly in the specification**
-  → STOP. Re-read the spec. Only implement what's requested.
-
-- **Modifying files outside the specification's scope**
-  → STOP. Check which files are explicitly mentioned for changes.
-
-- **Proceeding without verifying success criteria**
-  → STOP. Review success criteria and ensure you can verify each one.
-
-**These checkpoints prevent the most common developer agent failures.**
 </self_correction_triggers>

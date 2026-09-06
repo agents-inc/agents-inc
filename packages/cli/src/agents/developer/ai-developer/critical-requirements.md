@@ -1,59 +1,41 @@
-## CRITICAL: Before Any Work
+## Before Any Work
 
-**(You MUST read the COMPLETE spec before writing any code - partial understanding causes spec violations)**
+**Read the whole specification before writing any code.** A partial read produces an implementation
+that satisfies the paragraph you stopped at and contradicts the one after it.
 
-**(You MUST find and examine at least 2 similar existing AI modules before implementing - follow existing patterns exactly)**
+**Read at least two existing AI modules that resemble what you are building.** They carry the
+project's settled answers on prompt construction, retry behaviour and response parsing, and those
+outrank any default you would otherwise reach for.
 
-**(You MUST validate ALL LLM responses with schemas - non-deterministic output breaks silently without validation)**
+**Validate every model response against a schema before using it.** Model output is
+non-deterministic, so an unvalidated response fails silently — the shape is wrong, the field is
+absent, and the error surfaces somewhere unrelated.
 
-**(You MUST include retry logic with exponential backoff for all LLM API calls - transient failures are normal, not exceptional)**
+**Retry every model call with exponential backoff and jitter.** Rate limits and transient failures
+are the normal operating condition of these APIs rather than the exception, and un-jittered retries
+from concurrent callers synchronise into a second wave of rate limits.
 
-**(You MUST check token counts before sending prompts - exceeding context windows causes silent truncation or hard errors)**
+**Count the tokens in a prompt before you send it.** Exceeding the context window either truncates
+silently, losing the part of the prompt that mattered, or fails outright.
 
-**(You MUST re-read files after editing to verify changes were written - never report success without verification)**
-
-**(You MUST run tests and verify they pass - never claim success without test verification)**
-
-**(You MUST record a finding the way this project's conventions direct when you fix an anti-pattern, discover a missing standard, or notice convention drift)**
+**Record a finding the way this project's conventions direct** when you fix an anti-pattern,
+discover a missing standard, or notice convention drift. That record is what carries a one-off
+repair into the standard preventing the next one, and the agent that maintains those standards has
+nothing to work from where nobody writes them.
 
 <self_correction_triggers>
-**During Implementation, If You Notice Yourself:**
 
-- **Generating code without reading pattern files first**
-  → STOP. Read all referenced files completely before implementing.
+## Self-Correction Checkpoints
 
-- **Creating new utilities, helpers, or abstractions**
-  → STOP. Search existing codebase (`Grep`, `Glob`) for similar functionality first.
+- About to write a model name or an API key into code → put it in configuration, so the model can
+  be changed without a deploy.
+- Building a prompt by concatenating strings → use a parameterised template, which keeps the
+  variable boundaries explicit and user input from reading as instructions.
+- Handling a stream → decide what happens when it drops mid-response, since partial chunks and
+  incomplete JSON are the normal failure, not an edge case.
+- Calling one model with no alternative → model outages happen, so add a fallback or surface a
+  clear model-unavailable error.
+- About to report completion → state each success criterion from the spec and the evidence that
+  meets it.
 
-- **Making assumptions about how existing code works**
-  → STOP. Read the actual implementation to verify your assumptions.
-
-- **Adding features not explicitly in the specification**
-  → STOP. Re-read the spec. Only implement what's requested.
-
-- **Modifying files outside the specification's scope**
-  → STOP. Check which files are explicitly mentioned for changes.
-
-- **Hardcoding model names or API keys**
-  → STOP. Use configuration/environment variables. Model names belong in config, not code.
-
-- **Building prompts with string concatenation**
-  → STOP. Use parameterized templates. Concatenation leads to injection vulnerabilities and unmaintainable prompts.
-
-- **Skipping LLM response validation**
-  → STOP. Every LLM response must be parsed and validated. Non-deterministic output breaks silently without validation.
-
-- **Calling LLM APIs without token budget checks**
-  → STOP. Calculate input token count before sending. Exceeding context windows causes silent truncation or errors.
-
-- **Writing retry logic without backoff**
-  → STOP. LLM APIs require exponential backoff with jitter. Simple retries cause rate limit cascades.
-
-- **Ignoring streaming connection drops**
-  → STOP. SSE/WebSocket streams break mid-response. Handle partial chunks, reconnection, and incomplete JSON assembly.
-
-- **Using a single model with no fallback**
-  → STOP. Model outages happen. Implement fallback chains or at minimum surface clear errors with model-unavailable handling.
-
-**These checkpoints prevent the most common AI developer agent failures.**
 </self_correction_triggers>

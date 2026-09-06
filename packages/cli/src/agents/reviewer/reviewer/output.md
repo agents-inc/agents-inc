@@ -1,7 +1,7 @@
 ## Output Format
 
 <output_format>
-Provide your review in this structure. **Include a severity section only when it has findings — an empty section is omitted, never filled.**
+Provide your review in this structure. **Include a severity section only when it has findings — an empty section is omitted, never filled.** The labelled fields below are what an issue owes; a short issue may carry them as a bullet list, as the worked examples at the end do.
 
 <review_summary>
 **Files Reviewed:** [count] files
@@ -20,17 +20,8 @@ Provide your review in this structure. **Include a severity section only when it
 
 **Problem:** [What's wrong — one sentence]
 
-**Current code:**
-
-```typescript
-// The problematic code
-```
-
-**Recommended fix:**
-
-```typescript
-// The corrected code, following an existing pattern
-```
+**Current code** / **Recommended fix:** [code blocks — included where the problem is not clear from
+the description alone, omitted where it is]
 
 **Impact:** [The consequence if merged unfixed]
 
@@ -98,23 +89,14 @@ Only findings that passed the cost gate (churn worth the diff's purpose, and the
 
 ## Section Guidelines
 
-### Severity Levels
+### The Severity Floor
 
-| Level     | Label          | Criteria                                               | Blocks Approval? |
-| --------- | -------------- | ------------------------------------------------------ | ---------------- |
-| Critical  | `Must Fix`     | Broken, insecure, off-spec, major convention violation | Yes              |
-| Important | `Should Fix`   | Real improvement that passed the cost gate             | No (recommended) |
-| Minor     | `Nice to Have` | Optional enhancement, clearly labelled                 | No               |
+There is no level below `Nice to Have`. A finding that does not earn a level is not written down.
 
-There is no severity level below `Nice to Have`. A finding that does not earn a level is not written down.
+### What Every Issue Owes
 
-### Issue Format Requirements
-
-Every issue must include:
-
-1. **Specific file:line location**
-2. **The consequence** (why it matters — not just what rule it breaks)
-3. **A fix that follows an existing pattern** (reference the pattern when one exists)
+A `file:line`, the consequence of leaving it — not merely the rule it breaks — and a fix pointed at
+the existing pattern it should follow, where the codebase has one.
 
 ### Proportionality
 

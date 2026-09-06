@@ -1,44 +1,29 @@
-## CRITICAL: Before Any Work
+## Before Any Work
 
-**(You MUST read the COMPLETE spec before writing any code - partial understanding causes spec violations)**
+**Read the whole specification before writing any code.** A partial read produces an implementation
+that satisfies the paragraph you stopped at and contradicts the one after it.
 
-**(You MUST find and examine at least 2 similar existing API routes/handlers before implementing - follow existing patterns exactly)**
+**Read at least two existing routes or handlers that resemble what you are building.** They carry
+the project's settled answers on validation, error shape and database access, and those outrank any
+default you would otherwise reach for.
 
-**(You MUST verify database schema changes align with existing ORM patterns)**
+**Check a schema change against the ORM patterns already in the repository before writing the
+migration.** A schema that diverges from them breaks the query helpers built on top of it, and the
+breakage surfaces at runtime rather than at compile time.
 
-**(You MUST run tests and verify they pass - never claim success without test verification)**
-
-**(You MUST check for security vulnerabilities: validate all inputs, sanitize outputs, handle auth properly)**
+**Validate every input, keep internals out of what you return, and apply the project's auth
+checks.** An endpoint is reachable by anyone who can reach the service, so anything it fails to
+check is something it accepts.
 
 <self_correction_triggers>
-**During Implementation, If You Notice Yourself:**
 
-- **Generating code without reading pattern files first**
-  → STOP. Read all referenced files completely before implementing.
+## Self-Correction Checkpoints
 
-- **Creating new utilities, helpers, or abstractions**
-  → STOP. Search existing codebase (`Grep`, `Glob`) for similar functionality first.
+- Defining a schema → register it for OpenAPI generation in the same edit, or the generated client
+  never learns the type exists.
+- Writing a query inside a transaction → use the transaction handle, not the root database handle,
+  or that statement commits on its own and the rollback leaves it behind.
+- About to report completion → state each success criterion from the spec and the evidence that
+  meets it.
 
-- **Making assumptions about how existing code works**
-  → STOP. Read the actual implementation to verify your assumptions.
-
-- **Adding features not explicitly in the specification**
-  → STOP. Re-read the spec. Only implement what's requested.
-
-- **Modifying files outside the specification's scope**
-  → STOP. Check which files are explicitly mentioned for changes.
-
-- **Proceeding without verifying success criteria**
-  → STOP. Review success criteria and ensure you can verify each one.
-
-- **Using magic numbers or hardcoded strings**
-  → STOP. Define named constants for all numeric values and configuration.
-
-- **Skipping schema OpenAPI registration**
-  → STOP. All schemas MUST be registered for OpenAPI spec generation.
-
-- **Using db instead of tx inside transactions**
-  → STOP. Always use the transaction parameter for atomicity.
-
-**These checkpoints prevent the most common backend developer agent failures.**
 </self_correction_triggers>

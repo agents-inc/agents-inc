@@ -115,7 +115,8 @@ function createScriptedModel(script: Array<ModelResponse | Error>) {
 
 ## AI Testing Workflow
 
-**ALWAYS follow the red-green cycle:**
+**Work the red-green cycle in order.** A test written after the code it covers tends to assert what
+the code does rather than what the feature owes.
 
 ```xml
 <ai_testing_workflow>
@@ -154,6 +155,16 @@ function createScriptedModel(script: Array<ModelResponse | Error>) {
 ---
 
 ## Test Categories
+
+**Every model call site owes four tests before it is covered**, and each one proves something the
+others cannot:
+
+| Case             | What it proves                                                 |
+| ---------------- | -------------------------------------------------------------- |
+| Success          | Request parameters are correct and the response is parsed      |
+| Schema violation | Bad output produces a typed error, not a crash or a silent nil |
+| Provider error   | Retry, fallback, or a clear typed failure                      |
+| Budget boundary  | Trimming or rejection happens before the call is billed        |
 
 ### 1. Prompt Assembly
 
@@ -628,47 +639,24 @@ it("sanitizes model output before it reaches a renderer", () => {
 
 ### 11. Evals and Golden Datasets (Model-in-the-Loop)
 
-Evals measure the model. They are a separate suite with their own gate.
-
-```typescript
-// evals/support-answers.eval.ts - excluded from the CI test run
-describe("support answer quality", { timeout: EVAL_TIMEOUT_MS }, () => {
-  const dataset = loadGoldenDataset("./datasets/support-questions.jsonl");
-
-  it("meets the schema-validity threshold across the dataset", async () => {
-    const results = await runEval(dataset, { model: liveModel, samples: 1 });
-
-    expect(rate(results, (r) => r.schemaValid)).toBeGreaterThanOrEqual(0.98);
-  });
-
-  it("meets the tool-selection accuracy threshold", async () => {
-    const results = await runEval(dataset, { model: liveModel, samples: 3 });
-
-    expect(rate(results, (r) => r.toolCalled === r.expectedTool)).toBeGreaterThanOrEqual(0.9);
-  });
-
-  it("stays under the eval cost cap", async () => {
-    const results = await runEval(dataset, { model: liveModel, samples: 1 });
-
-    expect(totalCostUsd(results)).toBeLessThanOrEqual(EVAL_COST_CAP_USD);
-  });
-});
-```
+Evals measure the model. They are a separate suite with their own gate, asserting a rate across a
+dataset rather than an outcome per case.
 
 **Eval design rules:**
 
-| Element         | Requirement                                                                           |
-| --------------- | ------------------------------------------------------------------------------------- |
-| Dataset         | Versioned file, one case per line, with input, expectation, and a stable case id      |
-| Case coverage   | Typical cases, known-hard cases, adversarial cases, and past production failures      |
-| Grader          | Prefer exact match, regex, or schema validation; use an LLM judge only when necessary |
-| Judge control   | Pin the judge model and prompt; snapshot the judge prompt like any other prompt       |
-| Threshold       | A documented pass rate, not a per-case assertion — single cases are noise             |
-| Sampling        | Report the sample count; ≥3 samples per case whenever a rate is being claimed         |
-| Determinism aid | Temperature 0 and a pinned model version reduce, but never remove, variance           |
-| Cost            | Every eval run has a cost cap and reports actual spend                                |
-| Gate            | Reported, never blocking; a threshold regression opens a task, it does not fail CI    |
-| Provenance      | Record model id, version, date, and dataset revision with every result                |
+| Element         | Requirement                                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Dataset         | Versioned file, one case per line, with input, expectation, and a stable case id                                        |
+| Case coverage   | Typical cases, known-hard cases, adversarial cases, and past production failures                                        |
+| Grader          | Prefer exact match, regex, or schema validation; use an LLM judge only when necessary                                   |
+| Judge control   | Pin the judge model and prompt; snapshot the judge prompt like any other prompt                                         |
+| Threshold       | A documented pass rate, not a per-case assertion — single cases are noise                                               |
+| Sampling        | Report the sample count; ≥3 samples per case whenever a rate is being claimed                                           |
+| Determinism aid | Temperature 0 and a pinned model version reduce, but never remove, variance                                             |
+| Cost            | Every eval run has a cost cap and reports actual spend                                                                  |
+| Timeout         | An eval calls a live model across a whole dataset — give the suite its own extended timeout, never the runner's default |
+| Gate            | Reported, never blocking; a threshold regression opens a task, it does not fail CI                                      |
+| Provenance      | Record model id, version, date, and dataset revision with every result                                                  |
 
 **Adding a case is how a bug gets fixed permanently:** when a model failure reaches production, add it to the golden dataset before anything else.
 
@@ -784,6 +772,6 @@ Follow the project's existing structure when it differs — the requirement is t
 - Read existing tests and fixtures before reading more source — conventions constrain everything you write.
 - Load additional source only when a specific test needs it.
 
-This preserves context window for actual test writing.
+Reading only what the current suite needs is what leaves context for writing it.
 
 </retrieval_strategy>

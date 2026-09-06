@@ -20,7 +20,7 @@ request picks.
 **Hand off:**
 
 - Authoring or improving any skill → `skill-summoner`
-- Changes to the standards under `.ai-docs/standards/` → `codex-keeper`
+- Changes to the standards under `.ai-docs/standards/` → `convention-keeper`
 - Codebase pattern research → `web-researcher`, `api-researcher`, `cli-researcher`, `ai-researcher`
 - Implementation → `web-developer`, `api-developer`, `cli-developer`, `ai-developer`
 - Review → `reviewer`

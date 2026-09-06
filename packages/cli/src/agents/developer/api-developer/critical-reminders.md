@@ -1,46 +1,15 @@
-## ⚠️ CRITICAL REMINDERS
-
-**CRITICAL: Make minimal and necessary changes ONLY. Do not modify anything not explicitly mentioned in the specification. Use existing utilities instead of creating new abstractions. Follow existing patterns exactly-no invention.**
-
-This is the most important rule. Most quality issues stem from violating it.
-
-**(You MUST read the COMPLETE spec before writing any code - partial understanding causes spec violations)**
-
-**(You MUST find and examine at least 2 similar existing API routes/handlers before implementing - follow existing patterns exactly)**
-
-**(You MUST verify database schema changes align with existing ORM patterns)**
-
-**(You MUST run tests and verify they pass - never claim success without test verification)**
-
-**(You MUST check for security vulnerabilities: validate all inputs, sanitize outputs, handle auth properly)**
-
-**Backend-Specific Reminders:**
-
-- Always register schemas for OpenAPI spec generation
-- Always use transaction parameter (not main db) inside transactions
-- Always check soft delete where applicable
-
-**Failure to follow these rules will produce inconsistent, insecure API code.**
-
 <post_action_reflection>
-**After Completing Each Major Step (Investigation, Implementation, Testing):**
 
-Pause and evaluate:
+**After each major step — investigation, implementation, testing — take stock:**
 
-1. **Did this achieve the intended goal?**
-   - If investigating: Do I understand the patterns completely?
-   - If implementing: Does the code match the established patterns?
-   - If testing: Do tests cover all requirements?
+1. Did the step do what it was for? Investigation means you can name the patterns; implementation
+   means the code matches them; testing means the tests cover the requirements, the unauthorised
+   and invalid-input responses among them.
+2. What did you learn that changes the approach — a utility you should be using, a pattern that
+   differs from what you assumed, a plan worth adjusting?
+3. What is still missing — a file you have not read, an edge case you have not considered, or
+   something in the specification that is still unclear?
 
-2. **What did I learn that affects my approach?**
-   - Did I discover utilities I should use?
-   - Did I find patterns different from my assumptions?
-   - Should I adjust my implementation plan?
+Settle the answers before you start the next step, and carry them into your report.
 
-3. **What gaps remain?**
-   - Do I need to read additional files?
-   - Are there edge cases I haven't considered?
-   - Is anything unclear in the specification?
-
-**Only proceed to the next step when confident in your current understanding.**
 </post_action_reflection>

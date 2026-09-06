@@ -1,10 +1,11 @@
 ## Output Format
 
 <output_format>
-Provide your implementation in this structure:
+
+Report your implementation in this structure.
 
 <summary>
-**Task:** [Brief description of what was implemented]
+**Task:** [what was implemented]
 **Status:** [Complete | Partial | Blocked]
 **Files Changed:** [count] files ([+additions] / [-deletions] lines)
 </summary>
@@ -12,34 +13,34 @@ Provide your implementation in this structure:
 <investigation>
 **Files Examined:**
 
-| File            | Lines | What Was Learned             |
-| --------------- | ----- | ---------------------------- |
-| [/path/to/file] | [X-Y] | [Pattern/utility discovered] |
+| File            | Symbol read       | What it showed             |
+| --------------- | ----------------- | -------------------------- |
+| [/path/to/file] | [function / type] | [pattern or utility found] |
 
 **Patterns Identified:**
 
-- **LLM integration:** [How API calls are structured - from /path:lines]
-- **Prompt design:** [How prompts are templated - from /path:lines]
-- **Error handling:** [How LLM errors are managed - from /path:lines]
-- **Response parsing:** [How output is validated - from /path:lines]
+- **LLM integration:** [how calls are wrapped — from /path, naming the symbol]
+- **Prompt design:** [how prompts are templated — from /path, naming the symbol]
+- **Error handling:** [how failures are handled — from /path, naming the symbol]
+- **Response parsing:** [how output is validated — from /path, naming the symbol]
 
 **Existing Code Reused:**
 
-- [Utility/module] from [/path] - [Why reused instead of creating new]
+- [utility or module] from [/path] — [why reused rather than written]
   </investigation>
 
 <approach>
-**Summary:** [1-2 sentences describing the implementation approach]
+**Summary:** [the implementation approach, in a sentence or two]
 
 **Files:**
 
-| File            | Action             | Purpose               |
-| --------------- | ------------------ | --------------------- |
-| [/path/to/file] | [created/modified] | [What change and why] |
+| File            | Action             | Purpose                |
+| --------------- | ------------------ | ---------------------- |
+| [/path/to/file] | [created/modified] | [what changed and why] |
 
 **Key Decisions:**
 
-- [Decision]: [Rationale based on existing patterns from /path:lines]
+- [decision]: [the existing pattern it follows, and where that pattern lives]
   </approach>
 
 <implementation>
@@ -47,16 +48,17 @@ Provide your implementation in this structure:
 ### [filename.ts]
 
 **Location:** `/absolute/path/to/file.ts`
-**Changes:** [Brief description - e.g., "New RAG pipeline" or "Added retry logic"]
+**Changes:** [e.g. "new RAG pipeline" or "added retry logic"]
 
 ```typescript
-// [Description of this code block]
-[Your implementation code]
+// [what this block does]
+[implementation code]
 ```
 
-### [filename2.ts] (if applicable)
+**Design Notes:**
 
-[Same structure...]
+- [why this approach]
+- [the existing pattern it matches]
 
 </implementation>
 
@@ -68,33 +70,33 @@ Provide your implementation in this structure:
 
 | Use Case       | Model        | Rationale                   |
 | -------------- | ------------ | --------------------------- |
-| [Primary task] | [model name] | [Why this model fits]       |
-| [Fallback]     | [model name] | [Cost/capability trade-off] |
+| [primary task] | [model name] | [why this model fits]       |
+| [fallback]     | [model name] | [cost/capability trade-off] |
 
 ### Token Budget
 
-| Component        | Budget   | Strategy if Exceeded               |
-| ---------------- | -------- | ---------------------------------- |
-| System prompt    | [tokens] | [Fixed - not compressible]         |
-| Context/RAG      | [tokens] | [Truncate oldest / re-rank]        |
-| User input       | [tokens] | [Summarize if over limit]          |
-| Response reserve | [tokens] | [Minimum needed for useful output] |
+| Component        | Budget   | Strategy if Exceeded          |
+| ---------------- | -------- | ----------------------------- |
+| System prompt    | [tokens] | [fixed — not compressible]    |
+| Context / RAG    | [tokens] | [truncate oldest, or re-rank] |
+| User input       | [tokens] | [summarise if over limit]     |
+| Response reserve | [tokens] | [minimum for a useful output] |
 
 ### Prompt Design
 
-- **Template approach:** [Parameterized / few-shot / chain-of-thought]
-- **Output format:** [JSON mode / tool_use / free text + regex]
-- **Validation:** [Zod schema / manual parse / retry on failure]
+- **Template approach:** [parameterised / few-shot / chain-of-thought]
+- **Output format:** [JSON mode / tool use / free text]
+- **Validation:** [the schema, and what happens when it fails]
 
 ### Error Recovery
 
-| Failure Mode      | Strategy                                  |
-| ----------------- | ----------------------------------------- |
-| Rate limit (429)  | Exponential backoff with jitter           |
-| Timeout           | Retry with shorter prompt / cheaper model |
-| Malformed output  | Re-prompt with correction hint            |
-| Content filter    | Log + return safe fallback                |
-| Model unavailable | Fallback to alternate model               |
+| Failure Mode      | Strategy                                     |
+| ----------------- | -------------------------------------------- |
+| Rate limit (429)  | Exponential backoff with jitter              |
+| Timeout           | Retry with a shorter prompt or cheaper model |
+| Malformed output  | Re-prompt with a correction hint             |
+| Content filter    | Log, and return a safe fallback              |
+| Model unavailable | Fall back to the alternate model             |
 
 </ai_design>
 
@@ -105,23 +107,18 @@ Provide your implementation in this structure:
 **Location:** `/absolute/path/to/file.test.ts`
 
 ```typescript
-[Test code covering the implementation]
+[test code covering the implementation]
 ```
 
 **Coverage:**
 
 - [x] Happy path: [scenario]
-- [x] Malformed LLM response: [scenarios]
+- [x] Malformed model response: [scenarios]
 - [x] Token limit exceeded: [scenarios]
-- [x] API failure + retry: [scenarios]
+- [x] API failure and retry: [scenarios]
 - [x] Streaming interruption: [scenarios]
 
-**Test Commands:**
-
-```bash
-# Run tests for this feature
-[specific test command]
-```
+**Test command:** `[the command that runs these]`
 
 </tests>
 
@@ -129,50 +126,47 @@ Provide your implementation in this structure:
 
 ## Success Criteria
 
-| Criterion            | Status    | Evidence                                       |
-| -------------------- | --------- | ---------------------------------------------- |
-| [From specification] | PASS/FAIL | [How verified - test name, manual check, etc.] |
+| Criterion            | Status    | Evidence                             |
+| -------------------- | --------- | ------------------------------------ |
+| [from specification] | PASS/FAIL | [test name, command, or observation] |
 
-## Universal Quality Checks
+## Quality Checks
 
-**AI Integration:**
+**AI integration:**
 
-- [ ] All LLM responses validated with schemas
-- [ ] Token counts checked before API calls
-- [ ] Retry logic with exponential backoff on all LLM calls
-- [ ] Model names in config, not hardcoded
-- [ ] Prompts use parameterized templates
-- [ ] Agent loops have max iteration limits
+- [ ] Every response validated against a schema
+- [ ] Token counts checked before each call
+- [ ] Retries using exponential backoff with jitter
+- [ ] Model names read from configuration
+- [ ] Prompts built from parameterised templates
+- [ ] Agent loops bounded by a maximum iteration count
 
-**Error Handling:**
+**Error handling:**
 
-- [ ] Rate limit (429) handled with backoff
-- [ ] Timeout handled with retry or fallback
-- [ ] Malformed output handled with re-prompt or safe fallback
-- [ ] Content filter responses handled gracefully
-- [ ] Streaming connection drops handled
+- [ ] Rate limits (429) backed off rather than retried harder
+- [ ] Timeouts retried, or failed over to the fallback
+- [ ] Malformed output re-prompted once, then answered with a safe fallback
+- [ ] Content-filtered responses handled rather than treated as an error
+- [ ] Dropped streams handled mid-response
 
-**Cost Awareness:**
+**Cost:**
 
-- [ ] Cheapest capable model selected for each task
-- [ ] Embeddings cached where possible
-- [ ] Batch operations used where available
-- [ ] No redundant LLM calls
+- [ ] The cheapest capable model chosen for each task
+- [ ] Embeddings cached, so the same text is not embedded twice
+- [ ] Batch endpoints used where the work allows it
+- [ ] No call whose result the pipeline already has
 
 **Code Quality:**
 
-- [ ] No magic numbers (named constants used)
-- [ ] No `any` types without justification
-- [ ] Follows existing naming conventions
-- [ ] Follows existing file/folder structure
+- [ ] Named constants rather than magic numbers
+- [ ] No `any` without a justification in a comment
+- [ ] Naming and file placement match the files you read
 
 ## Build & Test Status
 
 - [ ] Existing tests pass
-- [ ] New tests pass (if added)
-- [ ] Build succeeds
-- [ ] No type errors
-- [ ] No lint errors
+- [ ] New tests pass
+- [ ] Build succeeds, with no type or lint errors
 
 </verification>
 
@@ -180,31 +174,24 @@ Provide your implementation in this structure:
 
 ## For Reviewer
 
-- [Areas to focus review on - e.g., "The prompt template design"]
-- [Decisions that may need discussion]
-- [Alternative approaches considered and why rejected]
+- [where to focus — e.g. the prompt template design]
+- [decisions worth discussing]
+- [alternatives considered and rejected]
 
 ## Scope Control
 
-**Added only what was specified:**
-
-- [Feature implemented as requested]
-
-**Did NOT add:**
-
-- [Unrequested feature avoided - why it was tempting but wrong]
+**Added:** [what the spec asked for]
+**Did not add:** [what was tempting and out of scope]
 
 ## Known Limitations
 
-- [Any scope reductions from spec]
-- [Technical debt incurred and why]
-- [Non-deterministic edge cases documented]
+- [scope reduced from the spec, debt taken on, or non-deterministic edge cases, and why]
 
 ## Dependencies
 
-- [New packages added: none / list with justification]
-- [Breaking changes: none / description]
-- [API key requirements: list any new env vars needed]
+- [packages added: none, or each with its justification]
+- [breaking changes: none, or what breaks]
+- [new environment variables, including any API keys]
 
 </notes>
 
@@ -212,155 +199,15 @@ Provide your implementation in this structure:
 
 ---
 
-## Section Guidelines
+## When to Include Each Section
 
-### When to Include Each Section
-
-| Section            | When Required                     |
-| ------------------ | --------------------------------- |
-| `<summary>`        | Always                            |
-| `<investigation>`  | Always - proves research was done |
-| `<approach>`       | Always - shows planning           |
-| `<implementation>` | Always - the actual code          |
-| `<ai_design>`      | When LLM calls are added/modified |
-| `<tests>`          | When tests are part of the task   |
-| `<verification>`   | Always - proves completion        |
-| `<notes>`          | When there's context for reviewer |
-
-## Example Implementation Output
-
-Here's what a complete, high-quality AI developer output looks like:
-
-````markdown
-# Implementation: Add RAG-Powered Knowledge Base Query
-
-## Investigation Notes
-
-**Files Read:**
-
-- src/ai/chat-service.ts:12-89 - Existing completion wrapper with retry logic
-- src/ai/embeddings.ts:1-45 - Embedding generation using config-driven model selection
-- src/ai/prompts/templates.ts:20-67 - Parameterized prompt templates with variable substitution
-- src/ai/schemas/response.ts:1-34 - Zod schemas for structured LLM output validation
-
-**Pattern Found:**
-All LLM calls go through `chatService.complete()` which handles retry + token counting.
-Embeddings are cached in vector store keyed by content hash.
-Prompts use `buildPrompt(template, variables)` pattern from templates.ts.
-
-**Existing Code Reused:**
-
-- `chatService.complete()` from chat-service.ts - handles retry, rate limits, token counting
-- `generateEmbedding()` from embeddings.ts - cached embedding generation
-- `buildPrompt()` from templates.ts - parameterized template rendering
-- `responseSchema` pattern from schemas/response.ts - Zod validation of LLM output
-
-## Implementation Plan
-
-1. Add knowledge base query prompt template to templates.ts
-2. Create retrieval module with vector similarity search
-3. Wire RAG pipeline: embed query -> retrieve -> build context -> generate
-4. Add response schema for structured knowledge base answers
-5. Add tests with mocked LLM responses
-
-## Changes Made
-
-### 1. Prompt Template (src/ai/prompts/templates.ts +18 lines)
-
-- Added `KNOWLEDGE_BASE_QUERY` template with system context, retrieved documents, and user query slots
-- Uses existing `buildPrompt()` pattern
-
-### 2. Response Schema (src/ai/schemas/kb-response.ts, new file, 22 lines)
-
-```typescript
-const kbResponseSchema = z.object({
-  answer: z.string(),
-  sources: z.array(
-    z.object({
-      documentId: z.string(),
-      relevance: z.number().min(0).max(1),
-      excerpt: z.string(),
-    }),
-  ),
-  confidence: z.enum(["high", "medium", "low"]),
-});
-```
-````
-
-### 3. RAG Pipeline (src/ai/knowledge-base.ts, new file, 67 lines)
-
-- `queryKnowledgeBase(query, options)` - full RAG pipeline
-- Token budget: 500 system + 2000 context + 500 response reserve
-- Uses `generateEmbedding()` for query embedding (cached)
-- Retrieves top-k documents with similarity threshold
-- Validates response with `kbResponseSchema.safeParse()`
-- Falls back to "I don't have enough information" on parse failure
-
-### 4. Tests (src/ai/**tests**/knowledge-base.test.ts, new file, 89 lines)
-
-- Mocked chat service and embedding generator
-- Tests: happy path, empty results, malformed LLM output, token limit exceeded
-
-## AI Design Decisions
-
-### Model Selection
-
-| Use Case       | Model                  | Rationale                           |
-| -------------- | ---------------------- | ----------------------------------- |
-| RAG generation | `config.defaultModel`  | Configurable, not hardcoded         |
-| Fallback       | `config.fallbackModel` | Lower cost, used on primary failure |
-
-### Token Budget
-
-| Component        | Budget | Strategy if Exceeded               |
-| ---------------- | ------ | ---------------------------------- |
-| System prompt    | 500    | Fixed -- not compressible          |
-| Context/RAG      | 2000   | Truncate lowest-relevance docs     |
-| Response reserve | 500    | Minimum for structured JSON output |
-
-### Prompt Design
-
-- **Template approach:** Parameterized via `buildPrompt()` from templates.ts
-- **Output format:** JSON mode with Zod validation (`kbResponseSchema`)
-- **Validation:** `safeParse()` with fallback message on failure
-
-### Error Recovery
-
-| Failure Mode      | Strategy                                  |
-| ----------------- | ----------------------------------------- |
-| Rate limit (429)  | Handled by `chatService.complete()` retry |
-| Malformed output  | Re-prompt once, then return safe fallback |
-| Model unavailable | Fall back to `config.fallbackModel`       |
-
-## Verification
-
-**Success Criteria:**
-
-- [x] Query returns structured answer with sources (test: knowledge-base.test.ts:23)
-- [x] Low-relevance documents excluded (test: knowledge-base.test.ts:45)
-- [x] Malformed LLM output returns safe fallback (test: knowledge-base.test.ts:67)
-- [x] Token budget respected (test: knowledge-base.test.ts:78)
-
-**Quality Checks:**
-
-- [x] LLM response validated with Zod schema
-- [x] Token counts checked before API call
-- [x] Existing chat-service retry logic reused
-- [x] Model name from config, not hardcoded
-- [x] Embeddings use cached generation
-
-**Build Status:**
-
-- [x] `npm test` passes
-- [x] `npm run build` succeeds
-- [x] No type/lint errors
-
-## Summary
-
-**Files:** 3 changed, 1 new (+196 lines)
-**Scope:** Added RAG query pipeline only. Did NOT add document ingestion, admin UI, or analytics (not in spec).
-**For Reviewer:** Evaluate the token budget allocation -- 2000 tokens for context may need tuning based on average document length.
-
-```
-
-```
+| Section            | When Required                          |
+| ------------------ | -------------------------------------- |
+| `<summary>`        | Always                                 |
+| `<investigation>`  | Always — it evidences the research     |
+| `<approach>`       | Always — it evidences the planning     |
+| `<implementation>` | Always — the actual code               |
+| `<ai_design>`      | When model calls are added or changed  |
+| `<tests>`          | When tests are part of the task        |
+| `<verification>`   | Always — it evidences completion       |
+| `<notes>`          | When there is context for the reviewer |

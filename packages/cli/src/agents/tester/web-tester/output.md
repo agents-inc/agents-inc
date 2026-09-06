@@ -122,10 +122,10 @@ describe("[Feature/Component Name]", () => {
 
 **Implementation patterns to follow:**
 
-| Pattern        | Reference                         |
-| -------------- | --------------------------------- |
-| [Pattern type] | [/path/to/similar/file.tsx:lines] |
-| [Pattern type] | [/path/to/utility.ts:lines]       |
+| Pattern        | Reference                              |
+| -------------- | -------------------------------------- |
+| [Pattern type] | [file, and the symbol in it to follow] |
+| [Pattern type] | [file, and the symbol in it to follow] |
 
 **The implementation must NOT:**
 
@@ -177,14 +177,14 @@ const mockApi = {
 **Test Commands:**
 
 ```bash
-# Run these tests
-bun test [path/to/feature.test.ts]
+# Use the project's own test command - the `test` script in its package.json
+npm test -- [path/to/feature.test.ts]
 
 # Run with coverage
-bun test [path/to/feature.test.ts] --coverage
+npm test -- [path/to/feature.test.ts] --coverage
 
 # Run in watch mode during development
-bun test [path/to/feature.test.ts] --watch
+npm test -- [path/to/feature.test.ts] --watch
 ```
 
 </test_status>
@@ -202,120 +202,15 @@ bun test [path/to/feature.test.ts] --watch
 
 **Common Pitfalls:**
 
-- Don't modify tests to make them pass - fix implementation
+- Fix the implementation to satisfy the test, rather than the test to satisfy the implementation
 - If a test seems wrong, discuss before changing
 - Ensure cleanup in tests doesn't mask real bugs
 
 **Pattern References:**
 
-- See [/path/to/similar/implementation.tsx] for correct approach
-- Reuse utilities from [/path/to/utils/]
+- [The existing file and symbol whose approach this should follow]
+- [The utilities to reuse rather than rebuild]
 
 </developer_guidance>
 
 </output_format>
-
----
-
-## Section Guidelines
-
-### Test Quality Requirements
-
-| Requirement                      | Description                                                |
-| -------------------------------- | ---------------------------------------------------------- |
-| **Minimum 3 tests per function** | Happy path + edge case + error case                        |
-| **Behavior-focused names**       | "displays error when email invalid" not "sets error state" |
-| **Isolated tests**               | Each test can run independently                            |
-| **Clear assertions**             | One concept per test                                       |
-| **Comprehensive mocking**        | All external dependencies mocked                           |
-
-### Test Naming Convention
-
-```typescript
-// Good - describes user-visible behavior
-it("displays error message when email format is invalid", () => {});
-it("disables submit button while loading", () => {});
-it("calls onSuccess callback after successful submission", () => {});
-
-// Bad - describes implementation details
-it("sets isError to true", () => {});
-it("updates state", () => {});
-it("triggers effect", () => {});
-```
-
-### Red-Green-Refactor Contract
-
-1. **RED:** All tests fail initially (this output)
-2. **GREEN:** Developer implements until tests pass
-3. **REFACTOR:** Developer cleans up while keeping tests green
-
-The tester's job is to provide the RED phase - comprehensive, failing tests that define the contract.
-
-## Example Test Output
-
-Here's what a complete, high-quality test file handoff looks like:
-
-```markdown
-# Test Suite: ProfileEditModal
-
-## Test File
-
-`components/profile/ProfileEditModal.test.tsx`
-
-## Coverage Summary
-
-- Happy path: 2 tests
-- Validation: 4 tests
-- Error handling: 3 tests
-- Accessibility: 2 tests
-- **Total: 11 tests**
-
-## Test Categories
-
-### Rendering
-
-- shows modal with current user values
-- displays all form fields (name, email, bio)
-
-### Validation
-
-- shows error when email is invalid format
-- shows error when name is empty
-- shows error when name exceeds 50 characters
-- prevents submission when validation fails
-
-### Submission
-
-- calls API with correct data on valid submission
-- shows success message after successful save
-- closes modal after successful save
-
-### Error Handling
-
-- displays error message when API call fails
-- allows retry after network error
-
-### Accessibility
-
-- manages focus on modal open
-- supports keyboard navigation (Escape closes)
-
-## Test Status
-
-All tests: FAILING (ready for implementation)
-
-## Expected Patterns
-
-Developer should implement to make these tests pass:
-
-- Use ModalContainer wrapper
-- Use existing validateEmail() utility
-- Follow SettingsForm error display pattern
-- Use userStore.updateProfile() action
-```
-
-This handoff gives the developer:
-
-- Clear understanding of what to implement
-- Specific test coverage to achieve
-- Pattern references for implementation

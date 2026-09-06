@@ -1,10 +1,11 @@
 ## Output Format
 
 <output_format>
-Provide your implementation in this structure:
+
+Report your implementation in this structure.
 
 <summary>
-**Task:** [Brief description of what was implemented]
+**Task:** [what was implemented]
 **Status:** [Complete | Partial | Blocked]
 **Files Changed:** [count] files ([+additions] / [-deletions] lines)
 </summary>
@@ -12,34 +13,34 @@ Provide your implementation in this structure:
 <investigation>
 **Files Examined:**
 
-| File            | Lines | What Was Learned             |
-| --------------- | ----- | ---------------------------- |
-| [/path/to/file] | [X-Y] | [Pattern/utility discovered] |
+| File            | Symbol read       | What it showed             |
+| --------------- | ----------------- | -------------------------- |
+| [/path/to/file] | [function / type] | [pattern or utility found] |
 
 **Patterns Identified:**
 
-- **Route structure:** [How routes are organized - from /path:lines]
-- **Validation approach:** [How input is validated - from /path:lines]
-- **Error handling:** [How errors are managed - from /path:lines]
-- **Database access:** [Query patterns used - from /path:lines]
+- **Route structure:** [how routes are registered — from /path, naming the symbol]
+- **Validation approach:** [how input is validated — from /path, naming the symbol]
+- **Error handling:** [how errors are shaped — from /path, naming the symbol]
+- **Database access:** [the query patterns used — from /path, naming the symbol]
 
 **Existing Code Reused:**
 
-- [Utility/middleware] from [/path] - [Why reused instead of creating new]
+- [utility or middleware] from [/path] — [why reused rather than written]
   </investigation>
 
 <approach>
-**Summary:** [1-2 sentences describing the implementation approach]
+**Summary:** [the implementation approach, in a sentence or two]
 
 **Files:**
 
-| File            | Action             | Purpose               |
-| --------------- | ------------------ | --------------------- |
-| [/path/to/file] | [created/modified] | [What change and why] |
+| File            | Action             | Purpose                |
+| --------------- | ------------------ | ---------------------- |
+| [/path/to/file] | [created/modified] | [what changed and why] |
 
 **Key Decisions:**
 
-- [Decision]: [Rationale based on existing patterns from /path:lines]
+- [decision]: [the existing pattern it follows, and where that pattern lives]
   </approach>
 
 <implementation>
@@ -47,51 +48,45 @@ Provide your implementation in this structure:
 ### [filename.ts]
 
 **Location:** `/absolute/path/to/file.ts`
-**Changes:** [Brief description - e.g., "New route handler" or "Added validation"]
+**Changes:** [e.g. "new route handler" or "added validation"]
 
 ```typescript
-// [Description of this code block]
-[Your implementation code]
+// [what this block does]
+[implementation code]
 ```
 
 **Design Notes:**
 
-- [Why this approach was chosen]
-- [How it matches existing patterns]
-
-### [filename2.ts]
-
-[Same structure...]
+- [why this approach]
+- [the existing pattern it matches]
 
 </implementation>
 
 <api_changes>
 
-## Endpoints Added/Modified
+## Endpoints Added or Modified
 
 ### [METHOD] [/api/path]
 
-**Handler:** `/path/to/route.ts:lines`
-**Auth Required:** [Yes - middleware name / No]
+**Handler:** `[symbol]` in `/path/to/route.ts`
+**Auth required:** [the middleware that enforces it, or No]
 
 **Request:**
 
 ```typescript
-// Path params / Query params / Body schema
+// path params / query params / body schema
 {
-  // Schema definition or description
 }
 ```
 
-**Success Response:** [status code]
+**Success response:** [status code]
 
 ```typescript
 {
-  // Response shape
 }
 ```
 
-**Error Responses:**
+**Error responses:**
 
 | Status | Condition          | Response Shape                       |
 | ------ | ------------------ | ------------------------------------ |
@@ -105,33 +100,26 @@ Provide your implementation in this structure:
 
 <database_changes>
 
-## Schema Changes (if applicable)
+## Schema Changes
 
 ### Table: [table_name]
 
-**File:** `/path/to/schema.ts:lines`
+**Defined by:** `[symbol]` in `/path/to/schema.ts`
 
-**Columns Added/Modified:**
+| Column | Type   | Constraints                    | Purpose      |
+| ------ | ------ | ------------------------------ | ------------ |
+| [name] | [type] | [nullable, default, unique, …] | [why needed] |
 
-| Column | Type   | Constraints                       | Purpose      |
-| ------ | ------ | --------------------------------- | ------------ |
-| [name] | [type] | [nullable, default, unique, etc.] | [Why needed] |
+**Relationships:** [one-to-many / many-to-many] with [other_table], via [foreign key]
+**Indexes:** [columns] — [the query this serves]
 
-**Relationships:**
-
-- [one-to-many / many-to-many] with [other_table] via [foreign key]
-
-**Indexes:**
-
-- [Index on columns] for [query optimization reason]
-
-## Migrations (if applicable)
+## Migrations
 
 **File:** `/path/to/migration.sql`
-**Reversible:** [Yes / No - why not]
+**Reversible:** [Yes, or No and why not]
 
 ```sql
--- Migration SQL
+-- migration SQL
 ```
 
 </database_changes>
@@ -140,34 +128,32 @@ Provide your implementation in this structure:
 
 ## Security Verification
 
-**Input Validation:**
+**Input validation:**
 
-- [ ] All user inputs validated before use
-- [ ] SQL injection prevented (parameterized queries / ORM)
-- [ ] Path traversal prevented (if file operations)
+- [ ] Every user-supplied value validated before use
+- [ ] Queries parameterised or built through the ORM — never assembled by string concatenation
+- [ ] Path traversal prevented, where the endpoint touches the filesystem
 - [ ] Request size limits enforced
 
-**Authentication/Authorization:**
+**Authentication and authorization:**
 
-- [ ] Auth middleware applied to protected routes
-- [ ] Permission/role checks where needed
-- [ ] Resource ownership verified (user can only access their data)
+- [ ] Auth middleware applied to every protected route
+- [ ] Identity and permission both checked — authentication alone answers only who is calling
+- [ ] Resource ownership verified, so a caller reaches only their own records
 
-**Sensitive Data:**
+**Sensitive data:**
 
-- [ ] No secrets hardcoded (using env vars)
-- [ ] No PII in logs
-- [ ] Sensitive fields excluded from API responses
-- [ ] Passwords hashed (if auth-related)
+- [ ] Secrets read from the environment, never committed
+- [ ] No passwords, tokens or PII written to logs
+- [ ] Sensitive fields excluded from responses
+- [ ] Passwords hashed, where this touches credentials
 
-**Rate Limiting:**
+**Rate limiting:**
 
-- [ ] Rate limiting applied (if public endpoint)
-- [ ] Abuse vectors considered
+- [ ] Applied where the endpoint is public
+- [ ] Abuse vectors considered and named
 
-**Notes:**
-
-- [Any security decisions or considerations]
+**Notes:** [security decisions taken, and what they assume]
 
 </security>
 
@@ -175,23 +161,22 @@ Provide your implementation in this structure:
 
 ## Error Handling
 
-**Pattern Used:** [Matches pattern from /path:lines]
+**Pattern followed:** `[symbol]` in `/path`
 
-**Errors Handled:**
+| Error Type     | HTTP Status | Handling                   | Logged? |
+| -------------- | ----------- | -------------------------- | ------- |
+| Validation     | 400         | Return validation details  | No      |
+| Auth           | 401/403     | Return a generic message   | Yes     |
+| Not Found      | 404         | Return a not-found message | No      |
+| Business Logic | 400/422     | Return the specific error  | Depends |
+| Database       | 500         | Log, return generic        | Yes     |
+| Unknown        | 500         | Log, return generic        | Yes     |
 
-| Error Type     | HTTP Status | Handling                  | Logged? |
-| -------------- | ----------- | ------------------------- | ------- |
-| Validation     | 400         | Return validation details | No      |
-| Auth           | 401/403     | Return generic message    | Yes     |
-| Not Found      | 404         | Return not found message  | No      |
-| Business Logic | 400/422     | Return specific error     | Depends |
-| Database       | 500         | Log + generic message     | Yes     |
-| Unknown        | 500         | Log + generic message     | Yes     |
+Client errors take a 4xx and server errors a 5xx; the message a client sees never carries internals,
+and the log carries enough to debug without carrying PII. The same error shape applies across every
+endpoint, so a consumer parses one format.
 
-**Logging:**
-
-- Errors logged with: [correlation ID, user ID, request path, etc.]
-- Log level: [error / warn depending on type]
+**Logging:** [what each error record carries — correlation id, user id, request path] at [level]
 
 </error_handling>
 
@@ -202,7 +187,7 @@ Provide your implementation in this structure:
 **Location:** `/absolute/path/to/file.test.ts`
 
 ```typescript
-[Test code covering the implementation]
+[test code covering the implementation]
 ```
 
 **Coverage:**
@@ -212,12 +197,7 @@ Provide your implementation in this structure:
 - [x] Auth errors: [scenarios]
 - [x] Edge cases: [scenarios]
 
-**Test Commands:**
-
-```bash
-# Run tests for this feature
-[specific test command]
-```
+**Test command:** `[the command that runs these]`
 
 </tests>
 
@@ -225,48 +205,47 @@ Provide your implementation in this structure:
 
 ## Success Criteria
 
-| Criterion            | Status    | Evidence                                       |
-| -------------------- | --------- | ---------------------------------------------- |
-| [From specification] | PASS/FAIL | [How verified - test name, curl command, etc.] |
+| Criterion            | Status    | Evidence                             |
+| -------------------- | --------- | ------------------------------------ |
+| [from specification] | PASS/FAIL | [test name, request, or observation] |
 
-## Universal Quality Checks
+## Quality Checks
 
-**API Design:**
+**API design:**
 
-- [ ] RESTful conventions followed (or GraphQL if applicable)
-- [ ] Consistent response format across endpoints
-- [ ] Appropriate HTTP status codes used
-- [ ] API versioning considered (if breaking change)
+- [ ] The project's conventions followed, REST or GraphQL
+- [ ] Response format consistent with the endpoints beside it
+- [ ] Status codes appropriate to each outcome
+- [ ] `PUT` and `DELETE` idempotent
+- [ ] List endpoints paginated, and filterable where callers need it
+- [ ] Versioning considered, where this breaks an existing consumer
 
 **Database:**
 
-- [ ] Queries optimized (no N+1, proper indexes)
-- [ ] Transactions used for multi-step operations
-- [ ] Soft delete checks where applicable
-- [ ] Connection pooling respected
+- [ ] No N+1 — related data fetched in one query rather than inside a loop
+- [ ] Indexes present for the columns this queries on
+- [ ] Multi-step operations wrapped in a transaction, atomic as a unit
+- [ ] Soft-delete checks applied where the project soft-deletes
+- [ ] Connections returned to the pool rather than leaked
 
 **Code Quality:**
 
-- [ ] No magic numbers (named constants used)
-- [ ] No `any` types without justification
-- [ ] Follows existing naming conventions
-- [ ] Follows existing file/folder structure
-- [ ] No hardcoded config values (uses env/config)
+- [ ] Named constants rather than magic numbers
+- [ ] No `any` without a justification in a comment
+- [ ] Naming and file placement match the files you read
+- [ ] Configuration read from the environment rather than hardcoded
 
 **Observability:**
 
-- [ ] Appropriate logging added
-- [ ] Errors include context for debugging
-- [ ] Metrics/tracing hooks (if applicable)
+- [ ] Errors logged with enough context to debug them
+- [ ] Metrics or tracing hooks, where the project has them
 
 ## Build & Test Status
 
 - [ ] Existing tests pass
-- [ ] New tests pass (if added)
-- [ ] Build succeeds
-- [ ] No type errors
-- [ ] No lint errors
-- [ ] Migrations run successfully (if applicable)
+- [ ] New tests pass
+- [ ] Build succeeds, with no type or lint errors
+- [ ] Migrations run, where the change adds one
 
 </verification>
 
@@ -274,31 +253,24 @@ Provide your implementation in this structure:
 
 ## For Reviewer
 
-- [Areas to focus review on - e.g., "The permission check logic"]
-- [Decisions that may need discussion]
-- [Alternative approaches considered and why rejected]
+- [where to focus]
+- [decisions worth discussing]
+- [alternatives considered and rejected]
 
 ## Scope Control
 
-**Added only what was specified:**
-
-- [Feature implemented as requested]
-
-**Did NOT add:**
-
-- [Unrequested feature avoided - why it was tempting but wrong]
+**Added:** [what the spec asked for]
+**Did not add:** [what was tempting and out of scope]
 
 ## Known Limitations
 
-- [Any scope reductions from spec]
-- [Technical debt incurred and why]
-- [Performance considerations for high load]
+- [scope reduced from the spec, debt taken on, or behaviour under load, and why]
 
 ## Dependencies
 
-- [New packages added: none / list with justification]
-- [Breaking changes: none / description]
-- [Migration required: yes/no]
+- [packages added: none, or each with its justification]
+- [breaking changes: none, or what breaks]
+- [migration required: yes or no]
 
 </notes>
 
@@ -306,127 +278,18 @@ Provide your implementation in this structure:
 
 ---
 
-## Section Guidelines
+## When to Include Each Section
 
-### When to Include Each Section
-
-| Section              | When Required                     |
-| -------------------- | --------------------------------- |
-| `<summary>`          | Always                            |
-| `<investigation>`    | Always - proves research was done |
-| `<approach>`         | Always - shows planning           |
-| `<implementation>`   | Always - the actual code          |
-| `<api_changes>`      | When API endpoints added/modified |
-| `<database_changes>` | When schema/migrations added      |
-| `<security>`         | Always for backend work           |
-| `<error_handling>`   | Always - shows error strategy     |
-| `<tests>`            | When tests are part of the task   |
-| `<verification>`     | Always - proves completion        |
-| `<notes>`            | When there's context for reviewer |
-
-### Security Checks (Framework-Agnostic)
-
-These apply regardless of framework:
-
-- **Input validation:** Never trust user input - validate everything
-- **SQL injection:** Use parameterized queries or ORM, never string concatenation
-- **Auth checks:** Verify identity AND authorization on every protected route
-- **Secrets:** Environment variables only, never in code
-- **Logging:** Never log passwords, tokens, or PII
-
-### Database Checks (ORM-Agnostic)
-
-- **Transactions:** Multi-step operations must be atomic
-- **N+1 queries:** Avoid fetching related data in loops
-- **Indexes:** Add for frequently queried columns
-- **Soft delete:** Check for deleted records if pattern exists
-- **Connection handling:** Don't leak connections
-
-### Error Handling (Framework-Agnostic)
-
-Every error needs:
-
-1. **Appropriate status code:** 4xx for client errors, 5xx for server
-2. **Safe message:** Don't expose internals to clients
-3. **Logging:** Log enough to debug, not too much PII
-4. **Consistency:** Same error format across all endpoints
-
-### API Design (Framework-Agnostic)
-
-- **Idempotency:** PUT/DELETE should be idempotent
-- **Pagination:** List endpoints should paginate
-- **Filtering:** Support common filter patterns
-- **Versioning:** Consider when making breaking changes
-
-## Example Implementation Output
-
-Here's what a complete, high-quality backend developer output looks like:
-
-```markdown
-# Implementation: Add Job Skills Endpoint
-
-## Investigation Notes
-
-**Files Read:**
-
-- app/api/routes/jobs.ts:45-89 - Existing job routes pattern
-- app/api/schemas.ts:12-67 - Schema definition pattern
-- lib/db/schema.ts:134-156 - Job skills relation definition
-
-**Pattern Found:**
-Routes use createRoute with OpenAPI registration, schemas use .openapi() method
-Existing filtering uses comma-separated values with case-insensitive matching
-
-## Implementation Plan
-
-1. Add SkillSchema and JobSkillSchema to schemas.ts
-2. Create getJobSkills route in routes/jobs.ts
-3. Add skill filtering to existing getJobs route
-4. Add tests for new endpoint
-
-## Changes Made
-
-### 1. Added Schemas (app/api/schemas.ts)
-
-- Added SkillSchema with .openapi("Skill")
-- Added JobSkillsQuerySchema for filtering
-- Exported types with z.infer
-
-### 2. Created Route (app/api/routes/jobs.ts)
-
-- Added getJobSkillsRoute with operationId "getJobSkills"
-- Implemented filtering by skill name (case-insensitive)
-- Added soft delete check (isNull(jobs.deletedAt))
-- Used .with() for relation loading (no N+1)
-
-### 3. Updated Existing Route
-
-- Added optional skill_ids filter to getJobsRoute
-- Used inArray() for multiple skill filtering
-
-## Verification
-
-**Success Criteria:**
-
-- [x] GET /jobs/:id/skills returns skills for a job
-- [x] Skills can be filtered by name (case-insensitive)
-- [x] Response includes skill metadata (popularity, slug)
-- [x] OpenAPI spec generates correctly (tested with generate script)
-
-**Quality Checks:**
-
-- [x] All schemas have .openapi() registration
-- [x] Named constants used (MAX_SKILLS_PER_JOB = 50)
-- [x] Follows existing patterns
-
-**Build Status:**
-
-- [x] `bun test` passes
-- [x] `bun run build` succeeds
-
-## Summary
-
-**Files:** 2 changed (+91 lines)
-**Scope:** Added skills endpoint + filtering. Did NOT add skill CRUD operations (not in spec).
-**For Reviewer:** Verify OpenAPI spec renders correctly with Swagger UI.
-```
+| Section              | When Required                          |
+| -------------------- | -------------------------------------- |
+| `<summary>`          | Always                                 |
+| `<investigation>`    | Always — it evidences the research     |
+| `<approach>`         | Always — it evidences the planning     |
+| `<implementation>`   | Always — the actual code               |
+| `<api_changes>`      | When endpoints are added or modified   |
+| `<database_changes>` | When schema or migrations change       |
+| `<security>`         | Always, for backend work               |
+| `<error_handling>`   | Always — it states the error strategy  |
+| `<tests>`            | When tests are part of the task        |
+| `<verification>`     | Always — it evidences completion       |
+| `<notes>`            | When there is context for the reviewer |

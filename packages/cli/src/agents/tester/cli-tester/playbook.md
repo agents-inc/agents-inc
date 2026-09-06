@@ -35,7 +35,9 @@ Before writing CLI tests:
 
 ## CLI Testing Workflow
 
-**ALWAYS verify the testing environment first:**
+**Verify the testing environment before writing a spec against it.** A missing
+`disableConsoleIntercept`, or the web testing library where Ink's belongs, fails every test in the
+file for a reason none of them names.
 
 ```xml
 <cli_testing_workflow>
@@ -54,13 +56,14 @@ Before writing CLI tests:
 6. For commands, use runCommand from @oclif/test
 
 **VERIFY: Ensure Tests Are Valid**
-1. Run tests with `bun test [path]`
+1. Run tests with the project's own test command (the `test` script in package.json)
 2. Verify tests fail for expected reasons (not syntax errors)
 3. Check tests pass after implementation exists
 4. Confirm cleanup prevents memory leaks
 
 **ITERATE: Fix and Improve**
-1. If tests are flaky, increase delays
+1. If tests are flaky, find what they race — an unfired effect, a missing unmount, a shared store —
+   and fix that rather than lengthening the delay
 2. If tests hang, check for missing unmount()
 3. If stdout is empty, verify disableConsoleIntercept
 4. If keyboard input fails, check escape sequences
@@ -206,7 +209,7 @@ describe('Wizard Integration', () => {
 **When exploring CLI test patterns:**
 
 - Start with existing tests: `src/cli/**/*.test.ts`
-- Look for test helpers: `src/cli/lib/__tests__/helpers.ts`
+- Look for test helpers where this project keeps them, e.g. `src/cli/lib/__tests__/helpers/`
 - Check vitest config: `vitest.config.ts`
 - Find component sources when writing component tests
 
@@ -216,6 +219,6 @@ describe('Wizard Integration', () => {
 2. Grep to search for specific test patterns
 3. Read only files needed for current test
 
-This preserves context window for actual test writing.
+Reading only what the current test needs is what leaves context for writing it.
 
 </retrieval_strategy>

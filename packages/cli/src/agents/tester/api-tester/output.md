@@ -172,17 +172,6 @@ npm test -- src/api/
 
 ## Section Guidelines
 
-### API Test Quality Requirements
-
-| Requirement                    | Description                                        |
-| ------------------------------ | -------------------------------------------------- |
-| **Seed/teardown per suite**    | Each describe block manages its own database state |
-| **Status + body assertions**   | Every request asserts both status code and shape   |
-| **Auth coverage per endpoint** | Every protected route tested without/wrong auth    |
-| **Database verification**      | Write operations verified by direct DB query       |
-| **Error shape consistency**    | All error responses match the project's contract   |
-| **No shared mutable state**    | Tests must run independently and in parallel       |
-
 ### Common HTTP Status Codes to Test
 
 | Status | Meaning               | When to Test                           |
@@ -201,84 +190,12 @@ npm test -- src/api/
 
 ### Test File Location Convention
 
+Follow the project's own layout where it differs — these are the common shapes, not a claim about
+the tree you are in.
+
 | Test Type   | Location                                     |
 | ----------- | -------------------------------------------- |
 | Integration | Co-located: `src/api/**/*.test.ts`           |
 | E2E         | Separate: `tests/e2e/api/*.test.ts`          |
 | Factories   | Shared: `test/factories/` or `test/helpers/` |
 | Fixtures    | Shared: `test/fixtures/`                     |
-
-## Example Test Output
-
-Here's what a complete, high-quality API test file handoff looks like:
-
-```markdown
-# Test Suite: User CRUD Endpoints
-
-## Test File
-
-`src/api/routes/users/__tests__/users.test.ts`
-
-## Coverage Summary
-
-- Success Paths: 5 tests
-- Request Validation: 4 tests
-- Auth Boundaries: 4 tests
-- Error Responses: 3 tests
-- Database State: 3 tests
-- **Total: 19 tests**
-
-## Test Categories
-
-### Success Paths
-
-- GET /api/users returns 200 with paginated list
-- GET /api/users/:id returns 200 with user object
-- POST /api/users returns 201 with created user
-- PUT /api/users/:id returns 200 with updated user
-- DELETE /api/users/:id returns 204
-
-### Request Validation
-
-- POST /api/users returns 400 for missing name
-- POST /api/users returns 400 for invalid email format
-- PUT /api/users/:id returns 400 for empty body
-- GET /api/users returns 400 for negative page offset
-
-### Auth Boundaries
-
-- GET /api/users returns 401 without token
-- DELETE /api/users/:id returns 403 for non-admin
-- PUT /api/users/:id returns 403 when editing other user
-- GET /api/users returns 401 for expired token
-
-### Error Responses
-
-- GET /api/users/:id returns 404 for nonexistent ID
-- POST /api/users returns 409 for duplicate email
-- All error responses match { error: string } shape
-
-### Database State
-
-- POST creates record with correct fields and timestamps
-- PUT updates only specified fields
-- DELETE sets deletedAt (soft delete)
-
-## Test Status
-
-All tests: PASSING
-
-## Investigation Findings
-
-- Test runner: vitest with supertest for HTTP assertions
-- Auth tokens: generated via `createTestToken(role)` from test/helpers
-- Database: test transactions rolled back in afterEach
-- Seed data: `UserFactory.create()` from test/factories
-
-## Patterns Applied
-
-- Used existing `createTestToken("admin")` for admin auth
-- Used existing `UserFactory.create()` for seed data
-- Followed `orders.test.ts` pattern for request/response shape
-- Database assertions query via `db.select()` after write ops
-```

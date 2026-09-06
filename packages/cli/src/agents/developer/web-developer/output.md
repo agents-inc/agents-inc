@@ -1,10 +1,11 @@
 ## Output Format
 
 <output_format>
-Provide your implementation in this structure:
+
+Report your implementation in this structure.
 
 <summary>
-**Task:** [Brief description of what was implemented]
+**Task:** [what was implemented]
 **Status:** [Complete | Partial | Blocked]
 **Files Changed:** [count] files ([+additions] / [-deletions] lines)
 </summary>
@@ -12,33 +13,33 @@ Provide your implementation in this structure:
 <investigation>
 **Files Examined:**
 
-| File            | Lines | What Was Learned             |
-| --------------- | ----- | ---------------------------- |
-| [/path/to/file] | [X-Y] | [Pattern/utility discovered] |
+| File            | Symbol read       | What it showed             |
+| --------------- | ----------------- | -------------------------- |
+| [/path/to/file] | [function / type] | [pattern or utility found] |
 
 **Patterns Identified:**
 
-- **Component structure:** [How components are organized - from /path:lines]
-- **State approach:** [How state is managed - from /path:lines]
-- **Styling method:** [How styling is applied - from /path:lines]
+- **Component structure:** [how components are organised — from /path, naming the symbol]
+- **State approach:** [how state is managed — from /path, naming the symbol]
+- **Styling method:** [how styling is applied — from /path, naming the symbol]
 
 **Existing Code Reused:**
 
-- [Utility/component] from [/path] - [Why reused instead of creating new]
+- [utility or component] from [/path] — [why reused rather than written]
   </investigation>
 
 <approach>
-**Summary:** [1-2 sentences describing the implementation approach]
+**Summary:** [the implementation approach, in a sentence or two]
 
 **Files:**
 
-| File            | Action             | Purpose               |
-| --------------- | ------------------ | --------------------- |
-| [/path/to/file] | [created/modified] | [What change and why] |
+| File            | Action             | Purpose                |
+| --------------- | ------------------ | ---------------------- |
+| [/path/to/file] | [created/modified] | [what changed and why] |
 
 **Key Decisions:**
 
-- [Decision]: [Rationale based on existing patterns from /path:lines]
+- [decision]: [the existing pattern it follows, and where that pattern lives]
   </approach>
 
 <implementation>
@@ -46,21 +47,17 @@ Provide your implementation in this structure:
 ### [filename.tsx]
 
 **Location:** `/absolute/path/to/file.tsx`
-**Changes:** [Brief description - e.g., "New component" or "Added prop handling"]
+**Changes:** [e.g. "new component" or "added prop handling"]
 
 ```tsx
-// [Description of this code block]
-[Your implementation code]
+// [what this block does]
+[implementation code]
 ```
 
 **Design Notes:**
 
-- [Why this approach was chosen]
-- [How it matches existing patterns]
-
-### [filename2.styles] (if applicable)
-
-[Same structure...]
+- [why this approach]
+- [the existing pattern it matches]
 
 </implementation>
 
@@ -71,7 +68,7 @@ Provide your implementation in this structure:
 **Location:** `/absolute/path/to/file.test.tsx`
 
 ```tsx
-[Test code covering the implementation]
+[test code covering the implementation]
 ```
 
 **Coverage:**
@@ -86,49 +83,49 @@ Provide your implementation in this structure:
 
 ## Success Criteria
 
-| Criterion            | Status    | Evidence                                       |
-| -------------------- | --------- | ---------------------------------------------- |
-| [From specification] | PASS/FAIL | [How verified - test name, manual check, etc.] |
+| Criterion            | Status    | Evidence                             |
+| -------------------- | --------- | ------------------------------------ |
+| [from specification] | PASS/FAIL | [test name, command, or observation] |
 
-## Universal Quality Checks
+## Quality Checks
 
 **Accessibility:**
 
-- [ ] Semantic HTML elements used (not div soup)
-- [ ] Interactive elements keyboard accessible
-- [ ] Focus management handled (if applicable)
-- [ ] ARIA attributes present where needed
-- [ ] Color not sole means of conveying information
+- [ ] Semantic elements used — `<button>` rather than a `<div>` with a click handler
+- [ ] Interactive elements reachable by Tab and activated by Enter or Space
+- [ ] Focus indicators visible, and focus managed where the UI moves it
+- [ ] ARIA attributes only where HTML semantics do not already carry the meaning
+- [ ] Colour is never the only thing conveying a state
 
 **Performance:**
 
-- [ ] No unnecessary re-renders introduced
-- [ ] Large lists virtualized (if applicable)
-- [ ] Images optimized/lazy-loaded (if applicable)
-- [ ] Heavy computations memoized (if applicable)
+- [ ] No re-renders introduced that the change did not need
+- [ ] Lists beyond roughly 100 items virtualised
+- [ ] Below-the-fold images and heavy components lazy-loaded
+- [ ] Memoisation applied only to a bottleneck you measured
 
-**Error Handling:**
+**States:** every async operation shows the user four things —
 
-- [ ] Loading states handled
-- [ ] Error states handled with user feedback
-- [ ] Empty states handled (if applicable)
-- [ ] Form validation feedback (if applicable)
+- [ ] Loading: something is happening
+- [ ] Error: what went wrong, and a way to retry
+- [ ] Empty: there is no data, rather than a broken screen
+- [ ] Success: the result
+
+Where the feature takes input, validation feedback names the field that is wrong and what would fix
+it.
 
 **Code Quality:**
 
-- [ ] No magic numbers (named constants used)
-- [ ] No `any` types without justification
-- [ ] Follows existing naming conventions
-- [ ] Follows existing file/folder structure
-- [ ] No hardcoded strings (uses i18n if available)
+- [ ] Named constants rather than magic numbers
+- [ ] No `any` without a justification in a comment
+- [ ] Naming and file placement match the files you read
+- [ ] Strings routed through i18n where the project has it
 
 ## Build & Test Status
 
 - [ ] Existing tests pass
-- [ ] New tests pass (if added)
-- [ ] Build succeeds
-- [ ] No type errors
-- [ ] No lint errors
+- [ ] New tests pass
+- [ ] Build succeeds, with no type or lint errors
 
 </verification>
 
@@ -136,29 +133,23 @@ Provide your implementation in this structure:
 
 ## For Reviewer
 
-- [Areas to focus review on]
-- [Decisions that may need discussion]
-- [Alternative approaches considered]
+- [where to focus]
+- [decisions worth discussing]
+- [alternatives considered and rejected]
 
 ## Scope Control
 
-**Added only what was specified:**
-
-- [Feature implemented as requested]
-
-**Did NOT add:**
-
-- [Unrequested feature avoided - why it was tempting but wrong]
+**Added:** [what the spec asked for]
+**Did not add:** [what was tempting and out of scope]
 
 ## Known Limitations
 
-- [Any scope reductions from spec]
-- [Technical debt incurred and why]
+- [scope reduced from the spec, or debt taken on, and why]
 
 ## Dependencies
 
-- [New packages added: none / list with justification]
-- [Breaking changes: none / description]
+- [packages added: none, or each with its justification]
+- [breaking changes: none, or what breaks]
 
 </notes>
 
@@ -166,158 +157,14 @@ Provide your implementation in this structure:
 
 ---
 
-## Section Guidelines
+## When to Include Each Section
 
-### When to Include Each Section
-
-| Section            | When Required                     |
-| ------------------ | --------------------------------- |
-| `<summary>`        | Always                            |
-| `<investigation>`  | Always - proves research was done |
-| `<approach>`       | Always - shows planning           |
-| `<implementation>` | Always - the actual code          |
-| `<tests>`          | When tests are part of the task   |
-| `<verification>`   | Always - proves completion        |
-| `<notes>`          | When there's context for reviewer |
-
-### Accessibility Checks (Framework-Agnostic)
-
-These apply regardless of React, Vue, Svelte, or any framework:
-
-- **Semantic HTML:** Use `<button>` not `<div onClick>`, `<nav>` not `<div class="nav">`
-- **Keyboard access:** Tab order logical, Enter/Space activate controls
-- **Focus visible:** Focus indicators present and visible
-- **ARIA:** Only when HTML semantics insufficient
-
-### Performance Checks (Framework-Agnostic)
-
-- **Re-renders:** Don't cause parent re-renders unnecessarily
-- **Virtualization:** Lists over ~100 items should virtualize
-- **Lazy loading:** Images below fold, heavy components
-- **Memoization:** Only for measured bottlenecks
-
-### Error Handling States (Framework-Agnostic)
-
-Every async operation needs:
-
-1. **Loading:** User knows something is happening
-2. **Error:** User knows what went wrong + can retry
-3. **Empty:** User knows there's no data (not broken)
-4. **Success:** User sees the result
-
-### Code Quality (Framework-Agnostic)
-
-- **Constants:** `const MAX_ITEMS = 10` not `items.slice(0, 10)`
-- **Types:** Explicit interfaces, no implicit any
-- **Naming:** Match codebase conventions exactly
-- **Structure:** Match existing file organization
-
-## Example Implementation Output
-
-Here's what a complete, high-quality frontend developer output looks like:
-
-````markdown
-# Implementation: Add Dark Mode Toggle to Settings Panel
-
-## Investigation Notes
-
-**Files Read:**
-
-- src/components/SettingsPanel.tsx:67-134 - Settings use controlled inputs with Zustand store
-- src/styles/theme.scss:12-45 - Theme tokens use CSS custom properties with cascade layers
-- src/stores/ThemeStore.ts:1-89 - Store uses persist middleware for localStorage
-
-**Patterns Found:**
-
-- Settings items use Switch component with label prop (SettingsPanel.tsx:112)
-- Zustand with persist middleware, actions defined inline (ThemeStore.ts:45-67)
-- CSS custom properties scoped to `[data-theme]` selector (theme.scss:12)
-
-**Existing Code Reused:**
-
-- Switch component from `@repo/ui/switch` - handles accessibility and styling
-- useThemeStore hook - consistent with other settings
-
-## Implementation Plan
-
-1. Add darkMode state and toggleDarkMode action to ThemeStore.ts
-2. Create DarkModeToggle component following Switch pattern
-3. Add toggle to SettingsPanel
-4. Add dark mode color tokens to theme.scss
-5. Apply data-theme attribute in App.tsx
-
-## Changes Made
-
-### 1. ThemeStore.ts (+12 lines)
-
-Added to existing store:
-
-```tsx
-darkMode: false,
-toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
-```
-````
-
-### 2. dark-mode-toggle.tsx (new file, 18 lines)
-
-```tsx
-import { Switch } from "@repo/ui/switch";
-import { useThemeStore } from "../stores/ThemeStore";
-
-export function DarkModeToggle({ className }: { className?: string }) {
-  const { darkMode, toggleDarkMode } = useThemeStore();
-  return (
-    <Switch label="Dark mode" checked={darkMode} onChange={toggleDarkMode} className={className} />
-  );
-}
-```
-
-### 3. theme.scss (+8 lines)
-
-```scss
-[data-theme="dark"] {
-  --color-background: var(--gray-900);
-  --color-surface: var(--gray-800);
-  --color-text-primary: var(--gray-50);
-  --color-border: var(--gray-700);
-}
-```
-
-### 4. SettingsPanel.tsx (+2 lines)
-
-- Imported DarkModeToggle
-- Added `<DarkModeToggle />` to settings list
-
-### 5. App.tsx (+3 lines)
-
-- Applied `data-theme={darkMode ? "dark" : "light"}` to root
-
-## Verification
-
-**Success Criteria:**
-
-- [x] Toggle appears in settings panel (visually verified)
-- [x] Clicking toggle changes theme (tested)
-- [x] Theme persists across reload (localStorage verified)
-
-**Quality Checks:**
-
-- [x] Keyboard accessible (Switch handles this)
-- [x] No new dependencies
-- [x] Follows existing patterns
-
-**Build Status:**
-
-- [x] `bun test` passes
-- [x] `bun build` succeeds
-- [x] No type/lint errors
-
-## Summary
-
-**Files:** 5 changed (+43 lines)
-**Scope:** Added only toggle + persistence. Did NOT add system preference detection or transition animations (not in spec).
-**For Reviewer:** Verify theme.scss color choices match design system.
-
-```
-
-```
+| Section            | When Required                          |
+| ------------------ | -------------------------------------- |
+| `<summary>`        | Always                                 |
+| `<investigation>`  | Always — it evidences the research     |
+| `<approach>`       | Always — it evidences the planning     |
+| `<implementation>` | Always — the actual code               |
+| `<tests>`          | When tests are part of the task        |
+| `<verification>`   | Always — it evidences completion       |
+| `<notes>`          | When there is context for the reviewer |

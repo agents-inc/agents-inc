@@ -1,51 +1,33 @@
-## CRITICAL: Before Any Work
+## Before Any Work
 
-**(You MUST read the COMPLETE spec before writing any code - partial understanding causes spec violations)**
+**Read the whole specification before writing any code.** A partial read produces an implementation
+that satisfies the paragraph you stopped at and contradicts the one after it.
 
-**(You MUST find and examine at least 2 similar existing commands before implementing - follow existing patterns exactly)**
+**Read at least two existing commands that resemble what you are building.** They carry the
+project's settled answers on registration, option parsing and output, and those outrank any default
+you would otherwise reach for.
 
-**(You MUST handle SIGINT (Ctrl+C) gracefully and exit with appropriate codes)**
+**Handle SIGINT in the entry point.** Without a handler, Ctrl+C leaves spinners running and work
+half-done, so catch it and exit with the cancellation code.
 
-**(You MUST detect and handle cancellation in ALL interactive prompts gracefully)**
+**Check for cancellation after every interactive prompt.** @clack/prompts returns a cancel symbol
+rather than throwing, so an unchecked result flows on as a value and the command proceeds as though
+the user answered.
 
-**(You MUST use named constants for ALL exit codes - NEVER use magic numbers like `process.exit(1)`)**
+**Put every exit code in a named constant.** A bare `process.exit(1)` tells a caller nothing about
+which failure it was, and scripts consuming this CLI branch on those numbers.
 
-**(You MUST use `parseAsync()` for async actions to properly propagate errors)**
-
-**(You MUST run tests and verify they pass - never claim success without test verification)**
+**Where the project uses Commander, call `program.parseAsync()` rather than `parse()`, and reach
+parent options through `optsWithGlobals()`.** `parse()` drops rejections from async actions, so a
+failing command exits 0; `opts()` alone sees only the subcommand's own flags.
 
 <self_correction_triggers>
-**During Implementation, If You Notice Yourself:**
 
-- **Generating code without reading pattern files first**
-  → STOP. Read all referenced files completely before implementing.
+## Self-Correction Checkpoints
 
-- **Creating new utilities, helpers, or abstractions**
-  → STOP. Search existing codebase (`Grep`, `Glob`) for similar functionality first.
+- Reaching for `console.log` → use the project's styling helper instead, so this command's output
+  matches every other one.
+- About to report completion → state each success criterion from the spec and the evidence that
+  meets it.
 
-- **Making assumptions about how existing code works**
-  → STOP. Read the actual implementation to verify your assumptions.
-
-- **Adding features not explicitly in the specification**
-  → STOP. Re-read the spec. Only implement what's requested.
-
-- **Modifying files outside the specification's scope**
-  → STOP. Check which files are explicitly mentioned for changes.
-
-- **Proceeding without verifying success criteria**
-  → STOP. Review success criteria and ensure you can verify each one.
-
-- **Using magic numbers for exit codes**
-  → STOP. Use EXIT_CODES.\* named constants. Never `process.exit(1)`.
-
-- **Forgetting p.isCancel() after prompts**
-  → STOP. ALL @clack/prompts MUST check for cancellation.
-
-- **Using console.log instead of picocolors**
-  → STOP. Use pc.green(), pc.red(), pc.dim() for consistent styling.
-
-- **Not handling SIGINT in entry point**
-  → STOP. Add SIGINT handler that exits with EXIT_CODES.CANCELLED.
-
-**These checkpoints prevent the most common CLI developer agent failures.**
 </self_correction_triggers>

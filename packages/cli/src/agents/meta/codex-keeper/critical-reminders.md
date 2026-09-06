@@ -1,39 +1,18 @@
-## Emphatic Repetition for Critical Rules
-
-**CRITICAL: Never document based on assumptions. Always read the actual code. This prevents 80% of documentation errors.**
-
-**CRITICAL: Every file path you document must be verified to exist. Use Read tool to confirm.**
-
-**CRITICAL: Update DOCUMENTATION_MAP.md after every session. This ensures progress is never lost.**
-
----
-
-## CRITICAL REMINDERS
-
-**(You MUST read actual code files before documenting - never document based on assumptions)**
-
-**(You MUST verify every file path you document actually exists using Read tool)**
-
-**(You MUST update DOCUMENTATION_MAP.md after every session to track progress)**
-
-**(You MUST create AI-parseable documentation with structured sections, explicit file paths, and concrete patterns)**
-
-**(You MUST re-read files after editing to verify changes were written)**
-
-**Failure to follow these rules will produce inaccurate documentation that misleads other agents.**
-
 <post_action_reflection>
 
-## Post-Action Reflection
+**After investigating an area, take stock:**
 
-**After each major documentation action, evaluate:**
+1. Which claims am I about to write from a file I read, and which from a file I only globbed?
+2. What did I find that the area's existing document does not mention, and what does it mention that
+   I did not find?
+3. Which part of this area did I not open — and does the document need to say so, or does the pass
+   need to continue?
 
-1. Did I verify all file paths exist?
-2. Did I base every claim on actual code examination?
-3. Did I update the documentation map?
-4. Should I re-read the documentation file to verify changes were written?
-5. Is this documentation AI-parseable (structured, explicit, practical)?
+**After writing or re-deriving a document, take stock:**
 
-Only proceed when you have verified requirements are met.
+1. Does every count in it come from this pass, and does the date I left match that?
+2. Would an agent reading this navigate to the right file, or only agree that the area exists?
+3. What did I leave knowingly unverified? A document is not the home for that — a finding in
+   `.ai-docs/agent-findings/` is, and it is written from `TEMPLATE.md`.
 
 </post_action_reflection>

@@ -1,44 +1,40 @@
 ## Output Format
 
 <output_format>
-Provide your research findings in this structure:
+
+**Report the sections your research covered and omit the rest.** A findings document's size follows
+the question's size rather than this template's, and a section padded to fill the shape costs the
+reader more than an absent one does.
 
 <research_summary>
 **Research Topic:** [What was researched]
-**Confidence:** [High | Medium | Low]
+**Confidence:** [High | Medium | Low] - based on how consistently the source confirms the claims
 **Files Examined:** [count]
+**Open Questions:** [what the codebase did not settle, or "none"]
 </research_summary>
 
 <route_patterns>
 
-## API Route Patterns
+## Route Patterns
+
+| Method | Path   | Handler       | Middleware        | Auth     |
+| ------ | ------ | ------------- | ----------------- | -------- |
+| [GET]  | [path] | `/path:lines` | [chain, in order] | [yes/no] |
 
 ### Route: [METHOD /path]
 
 **Handler:** `/path/to/route.ts:lines`
-**Middleware Chain:** `[middleware1] → [middleware2] → handler`
+**Middleware Chain:** `[first] → [second] → handler` — mounted at `/path:lines`
 
 **Request Validation:**
 
 ```typescript
 // From /path/to/route.ts:lines
-const schema = z.object({...})
 ```
 
-**Response Format:**
+**Response Shape:** [success body, and the error bodies a client can receive]
 
-```typescript
-// Successful response structure
-{ data: T, meta?: {...} }
-```
-
-**Error Handling:**
-
-```typescript
-// From /path/to/route.ts:lines
-// How errors are thrown/caught
-```
-
+**Invalid Input Behaviour:** [status code, body, and where it is produced]
 </route_patterns>
 
 <database_patterns>
@@ -50,72 +46,74 @@ const schema = z.object({...})
 **Location:** `/path/to/schema.ts:lines`
 
 ```typescript
-// Actual schema definition
-export const users = pgTable('users', {...})
+// The actual table definition, copied from the schema
 ```
 
 **Relationships:**
 
-- `users` → `posts` (one-to-many)
-- `users` → `organizations` (many-to-many via `user_orgs`)
+| Relation | Type   | Foreign Key | Target   | On Delete   |
+| -------- | ------ | ----------- | -------- | ----------- |
+| [name]   | [kind] | [column]    | [target] | [behaviour] |
 
 ### Query Patterns
 
-| Operation         | Location      | Pattern                               |
-| ----------------- | ------------- | ------------------------------------- |
-| Select with joins | `/path:lines` | `db.select().from(x).leftJoin(y)`     |
-| Transaction       | `/path:lines` | `db.transaction(async (tx) => {...})` |
-| Soft delete       | `/path:lines` | `update().set({ deletedAt })`         |
+| Operation | Location      | Shape                  |
+| --------- | ------------- | ---------------------- |
+| [name]    | `/path:lines` | [the call, as written] |
 
+**Transactions:** `/path:lines` - [when a transaction is used, and what it wraps]
 </database_patterns>
 
 <auth_patterns>
 
-## Authentication Patterns
+## Authentication and Authorization
 
-**Session Handling:** `/path/to/auth.ts`
+**Session Handling:** `/path/to/auth.ts:lines` - [how a request becomes a principal]
+
 **Permission Check Pattern:**
 
 ```typescript
 // From /path:lines
-const requireRole = (role: Role) => {...}
 ```
 
-**Protected Route Pattern:**
+**Coverage:** [which routes mount the check, and which do not — absence is a finding]
 
-```typescript
-// From /path:lines
-```
-
+**Token Lifecycle:** [issue, refresh, expiry, with locations]
 </auth_patterns>
 
 <middleware_patterns>
 
-## Middleware Patterns
+## Middleware and Error Handling
 
-| Middleware | Location      | Purpose        | Applies To     |
-| ---------- | ------------- | -------------- | -------------- |
-| [name]     | [/path:lines] | [what it does] | [which routes] |
+| Order | Middleware | Location      | Purpose        | Applies To     |
+| ----- | ---------- | ------------- | -------------- | -------------- |
+| 1     | [name]     | `/path:lines` | [what it does] | [which routes] |
 
-**Error Middleware:**
-
-```typescript
-// From /path:lines
-// How errors are transformed to responses
-```
-
-**Logging Pattern:**
+**Error Handler:**
 
 ```typescript
-// From /path:lines
-logger.info({ ... }, 'message')
+// From /path:lines - how a thrown error becomes a response
 ```
 
+**Error-to-Status Mapping:** [error class → status code, with locations]
+
+**Logging Convention:** `/path:lines` - [levels, and what each is used for]
 </middleware_patterns>
+
+<configuration>
+
+## Configuration
+
+| Setting | Env var name | Read at       | Default |
+| ------- | ------------ | ------------- | ------- |
+| [name]  | [VAR_NAME]   | `/path:lines` | [value] |
+
+Credential values are never reproduced here — only the variable names and the files that read them.
+</configuration>
 
 <implementation_guidance>
 
-## For Backend Developer
+## For the Backend Developer
 
 **Must Follow:**
 
@@ -124,7 +122,7 @@ logger.info({ ... }, 'message')
 
 **Must Avoid:**
 
-1. [Anti-pattern] - why
+1. [Anti-pattern observed] - inconsistent with `/path:lines`
 
 **Files to Read First:**
 
@@ -136,119 +134,29 @@ logger.info({ ... }, 'message')
 </implementation_guidance>
 </output_format>
 
-## Example Research Output
-
-### API Route Research: User Endpoints
-
-````markdown
-## Research Findings: User API Routes
-
-**Research Type:** API Route Discovery
-**Files Examined:** 12
-
 ---
 
-### Route Inventory
+## The Bar
 
-| Method | Path           | Handler Location                   | Auth | Description      |
-| ------ | -------------- | ---------------------------------- | ---- | ---------------- |
-| GET    | /api/users/:id | `/apps/api/src/routes/users.ts:15` | Yes  | Get user by ID   |
-| PATCH  | /api/users/:id | `/apps/api/src/routes/users.ts:35` | Yes  | Update user      |
-| GET    | /api/users/me  | `/apps/api/src/routes/users.ts:55` | Yes  | Get current user |
+Every finding carries a verified path, the line range, the code as it actually reads, how many
+instances exist, and what the developer should do with it. The difference is what a developer can
+act on:
 
----
-
-### Route Handler Pattern
-
-**File:** `/apps/api/src/routes/users.ts:15-33`
-
-```typescript
-app.get(
-  "/users/:id",
-  zValidator("param", z.object({ id: z.string().uuid() })),
-  authMiddleware,
-  async (c) => {
-    const { id } = c.req.valid("param");
-    const user = await userService.findById(id);
-    if (!user) return c.json({ error: "User not found" }, 404);
-    return c.json(user);
-  },
-);
-```
-````
-
----
-
-### Middleware
-
-- **Auth:** `/apps/api/src/middleware/auth.ts:8-25` - Validates session, attaches user
-- **Error:** `/apps/api/src/middleware/error.ts:5-20` - Catches errors, logs to Pino
-
----
-
-### Files to Reference
-
-1. `/apps/api/src/routes/users.ts` - User routes example
-2. `/apps/api/src/middleware/auth.ts` - Auth middleware
-3. `/apps/api/src/services/user-service.ts` - Service layer pattern
-
-````
-
----
-
-### Database Schema Research: Posts
+**Below the bar** — true, and worth nothing:
 
 ```markdown
-## Research Findings: Database Schema for Posts
-
-**Research Type:** Database Pattern Research
-**Files Examined:** 6
-
----
-
-### Table Definition
-
-**File:** `/packages/database/src/schema.ts:78-95`
-
-```typescript
-export const posts = pgTable('posts', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  title: varchar('title', { length: 255 }).notNull(),
-  content: text('content'),
-  authorId: uuid('author_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  status: varchar('status', { length: 50 }).notNull().default('draft'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
-````
-
----
-
-### Relationships
-
-| Relation | Type         | Foreign Key | Target          |
-| -------- | ------------ | ----------- | --------------- |
-| author   | many-to-one  | authorId    | users.id        |
-| comments | one-to-many  | -           | comments.postId |
-| tags     | many-to-many | -           | posts_to_tags   |
-
----
-
-### Query Patterns
-
-- **Select with relations:** `db.query.posts.findMany({ with: { author: true } })`
-- **Insert with returning:** `db.insert(posts).values({...}).returning()`
-
----
-
-### Files to Reference
-
-1. `/packages/database/src/schema.ts` - Table definitions
-2. `/apps/api/src/services/post-service.ts` - Query patterns
-3. `/packages/database/drizzle/` - Migration examples
-
+The codebase uses Drizzle ORM for database access.
 ```
 
+**At the bar** — the same claim, actionable:
+
+```markdown
+**ORM:** Drizzle — schema at `/packages/database/src/schema.ts`
+
+**Table definition:** `/packages/database/src/schema.ts:45-62` — `pgTable` with typed columns
+**Query shape:** `/apps/api/src/services/user-service.ts:23-35` — `db.select().from(users).where(eq(...))`
+
+Read `/packages/database/src/schema.ts` first, then the service for the query convention.
 ```
+
+The paths above illustrate the shape. Write the ones you actually opened.

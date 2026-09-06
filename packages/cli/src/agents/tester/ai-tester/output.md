@@ -61,14 +61,15 @@ Provide your AI test output in this structure:
 | [Vector store]    | [In-memory fixture store]    | Deterministic retrieval order       |
 | [Clock / timers]  | `vi.useFakeTimers()`         | Backoff and timeout without waiting |
 
-**Fixtures used:**
+**Fixtures used**, at the paths this project keeps them — one row per fixture, each named for the
+case it demonstrates rather than for the model that produced it:
 
-| Fixture                                 | Represents                                 |
-| --------------------------------------- | ------------------------------------------ |
-| `fixtures/ai/extraction-valid.json`     | Well-formed structured output              |
-| `fixtures/ai/extraction-truncated.json` | Stream cut before the JSON closed          |
-| `fixtures/ai/refusal.json`              | Model refusal, distinct from a parse error |
-| `fixtures/ai/rate-limit-429.json`       | Provider rate limit with `retry-after`     |
+| Fixture                         | Represents                                 |
+| ------------------------------- | ------------------------------------------ |
+| [path to the valid-payload one] | Well-formed structured output              |
+| [path to the truncated one]     | Stream cut before the JSON closed          |
+| [path to the refusal one]       | Model refusal, distinct from a parse error |
+| [path to the rate-limited one]  | Provider rate limit with `retry-after`     |
 
 **Recording provenance:** [Where fixtures came from, what was redacted, when re-recorded]
 
@@ -236,140 +237,3 @@ npm run eval -- [path/to/feature.eval.ts]
 </test_patterns_used>
 
 </output_format>
-
----
-
-## Section Guidelines
-
-### AI Test Quality Requirements
-
-| Requirement                       | Description                                                      |
-| --------------------------------- | ---------------------------------------------------------------- |
-| **Named seam**                    | Every suite states where the model was stubbed and why           |
-| **No live calls in CI**           | Blocking tests need no key, no network, no billed tokens         |
-| **Error paths first-class**       | Malformed output, 429, timeout, and stream drop each have a test |
-| **Structural assertions**         | Shape, arguments, ordering, and state - never model prose        |
-| **Deterministic by construction** | Fake timers, injected clock, seeded RNG, isolated fixtures       |
-| **Evals separated and capped**    | Tagged out of CI, with thresholds, sample counts, and a cost cap |
-| **Red before green**              | Every test observed failing for the right reason at least once   |
-
-### Minimum Coverage Per Model Call Site
-
-| Case             | What it proves                                               |
-| ---------------- | ------------------------------------------------------------ |
-| Success          | Request parameters are correct and the response is parsed    |
-| Schema violation | Bad output produces a typed error, not a crash or silent nil |
-| Provider error   | Retry, fallback, or a clear typed failure                    |
-| Budget boundary  | Trimming or rejection happens before the call is billed      |
-
-### Assertion Style
-
-```typescript
-// Good - stable across model revisions
-expect(result.ok).toBe(true);
-expect(result.value).toStrictEqual({ name: "Ada", role: "engineer" });
-expect(model.calls[0]).toMatchObject({ model: SUPPORT_MODEL_ID, temperature: 0 });
-expect(result.stopReason).toBe("max_steps");
-
-// Bad - asserts the model's wording, not your code
-expect(result.text).toBe("Your order will arrive tomorrow.");
-expect(result.text).toContain("I'd be happy to help");
-```
-
-### Red-Green Contract
-
-1. **RED:** deterministic tests fail for the right reason, with the seam and fixtures in place
-2. **GREEN:** ai-developer implements until they pass, without editing the tests
-3. **VERIFY:** suite is stable across repeated runs; evals report separately
-
-## Example Test Output
-
-Here's what a complete, high-quality AI test handoff looks like:
-
-```markdown
-# Test Suite: Support Agent Loop
-
-## Test File
-
-`src/ai/support/__tests__/support-agent.test.ts`
-
-## Seam
-
-Provider SDK client, stubbed with `createScriptedModel([...])` from `tests/helpers/scripted-model.ts`.
-Prompt builder, parser, tool dispatcher, retry wrapper, and budget logic all run for real.
-
-## Coverage Summary
-
-- Prompt Assembly: 4 tests
-- Context Construction: 5 tests
-- Request Assertions: 3 tests
-- Structured Output: 8 tests
-- Tool Calls & Agent Loop: 6 tests
-- Resilience: 6 tests
-- Streaming: 5 tests
-- Token & Cost Budgets: 4 tests
-- Safety (deterministic): 3 tests
-- **Total blocking: 44 tests**
-- Evals: 3 (excluded from CI)
-
-## Determinism Classification
-
-Blocking: everything above. Zero live model calls; the HTTP transport throws if reached.
-Reported only: answer groundedness, tool-selection accuracy, schema-validity rate.
-
-## Test Categories
-
-### Structured Output
-
-- valid payload parses to Extraction
-- malformed JSON returns invalid_model_output
-- truncated JSON returns invalid_model_output
-- prose-wrapped JSON returns invalid_model_output
-- missing required field rejected
-- wrong field type rejected
-- unknown field rejected
-- refusal returns kind "refusal", not a parse error
-
-### Resilience
-
-- 429 retried after retry-after (2s, fake timers)
-- backoff schedule is [500ms, 1000ms] across two 5xx failures
-- retry ceiling produces model_unavailable
-- 400 is not retried
-- fallback model answers after the primary is exhausted
-- timeout aborts the in-flight request and propagates the abort signal
-
-### Streaming
-
-- chunks assemble in order
-- partial JSON is not parsed until complete
-- mid-stream disconnect returns stop_reason "stream_error" plus partial text
-- abort stops chunk delivery immediately
-- usage recorded from the terminal event
-
-## Evals
-
-`evals/support-agent.eval.ts` against `evals/datasets/support.jsonl` (v3, 120 cases).
-Thresholds: schema validity ≥ 0.98 (1 sample), tool selection ≥ 0.90 (3 samples),
-groundedness ≥ 0.85 (3 samples, pinned judge model and snapshotted judge prompt).
-Cost cap $4.00 per run. Excluded from CI by the `*.eval.ts` path exclusion in the test config.
-
-## Test Status
-
-All 44 blocking tests: FAILING (ready for implementation)
-Verified failing for the right reasons; no import or setup errors.
-
-## Investigation Findings
-
-- Test runner: vitest; fake timers available and already used elsewhere
-- Existing helper `createScriptedModel` reused from tests/helpers (not rebuilt)
-- Fixtures recorded from the provider and redacted; stored in tests/fixtures/ai/
-- Tokenizer: the project's `countTokens` wrapper; budget logic asserted around it
-
-## For ai-developer
-
-- Parser must return a typed Result, never throw, and must distinguish refusals
-- Retry wrapper must read `retry-after` and skip retries for 4xx other than 429
-- Loop must terminate with an explicit stop reason: "done", "max_steps", or "cost_ceiling"
-- Reuse the existing budget helper; do not add a second token counter
-```

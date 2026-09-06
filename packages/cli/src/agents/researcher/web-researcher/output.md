@@ -1,17 +1,25 @@
 ## Output Format
 
 <output_format>
-Provide your research findings in this structure:
+
+**Report the sections your research covered and omit the rest.** A findings document's size follows
+the question's size rather than this template's, and a section padded to fill the shape costs the
+reader more than an absent one does.
 
 <research_summary>
 **Research Topic:** [What was researched]
-**Confidence:** [High | Medium | Low] - based on pattern consistency
+**Confidence:** [High | Medium | Low] - based on how consistently the source confirms the claims
 **Files Examined:** [count]
+**Open Questions:** [what the codebase did not settle, or "none"]
 </research_summary>
 
 <component_patterns>
 
-## Component Patterns Found
+## Component Patterns
+
+| Component | Location      | Purpose   | Key Props |
+| --------- | ------------- | --------- | --------- |
+| [name]    | `/path:lines` | [purpose] | [props]   |
 
 ### [ComponentName]
 
@@ -23,7 +31,7 @@ Provide your research findings in this structure:
 ```typescript
 // From /path/to/types.ts:15-28
 interface ComponentNameProps {
-  // actual interface from codebase
+  // the actual interface, copied from the definition
 }
 ```
 
@@ -34,65 +42,64 @@ interface ComponentNameProps {
 // How this component composes with others
 ```
 
-**Variants:** [cva variants if applicable]
+**Variants:** [the variant mechanism and its options, if any]
 </component_patterns>
 
 <state_patterns>
 
-## State Management Patterns
+## State Management
 
-### Zustand Stores Found
+### Client State Stores
 
 | Store  | Location      | Purpose           | Selectors       |
 | ------ | ------------- | ----------------- | --------------- |
-| [name] | [/path:lines] | [what it manages] | [key selectors] |
+| [name] | `/path:lines` | [what it manages] | [key selectors] |
 
-### React Query Patterns
+### Server State Hooks
 
 | Hook   | Location      | Query Key     | Stale Time |
 | ------ | ------------- | ------------- | ---------- |
-| [useX] | [/path:lines] | [key pattern] | [time]     |
+| [useX] | `/path:lines` | [key pattern] | [time]     |
 
-**Query Key Convention:** `[pattern observed]`
+**Query Key Convention:** [the pattern observed, and where it is built]
 </state_patterns>
 
 <styling_patterns>
 
 ## Styling Architecture
 
-**Method:** [SCSS Modules + cva | Tailwind | etc.]
+**Method:** [the styling methodology this codebase uses]
 
 **Token Locations:**
 
 - Design tokens: `/path/to/tokens.scss`
 - Component tokens: `/path/to/component.module.scss`
 
-**cva Pattern Example:**
+**Variant Pattern:**
 
 ```typescript
 // From /path/to/component.tsx:8-25
-const variants = cva(...)
 ```
 
-**Class Naming Convention:** `[pattern]`
+**Class Naming Convention:** [the pattern, with a location]
 </styling_patterns>
 
 <form_patterns>
 
-## Form Handling Patterns (if applicable)
+## Form Handling
 
-**Validation Schema Location:** `/path/to/schema.ts`
-**Form Hook Pattern:**
+**Validation Schema Location:** `/path/to/schema.ts:lines`
 
 ```typescript
-// From /path/to/form.tsx:lines
+// From /path/to/form.tsx:lines - schema, resolver wiring, and submission
 ```
 
+**Error Display Convention:** [how field errors reach the UI, with a location]
 </form_patterns>
 
 <implementation_guidance>
 
-## For Frontend Developer
+## For the Frontend Developer
 
 **Must Follow:**
 
@@ -101,7 +108,7 @@ const variants = cva(...)
 
 **Must Avoid:**
 
-1. [Anti-pattern observed] - inconsistent with `/path`
+1. [Anti-pattern observed] - inconsistent with `/path:lines`
 
 **Files to Read First:**
 
@@ -113,129 +120,29 @@ const variants = cva(...)
 </implementation_guidance>
 </output_format>
 
-## Example Research Output
-
-### Component Research: Button Variants
-
-````markdown
-## Research Findings: Button Component Variants
-
-**Research Type:** Design System Research
-**Files Examined:** 8
-
 ---
 
-### Component Inventory
+## The Bar
 
-| Component   | Location                                         | Purpose          | Key Props                        |
-| ----------- | ------------------------------------------------ | ---------------- | -------------------------------- |
-| Button      | `/packages/ui/src/button/button.tsx`             | Primary button   | variant, size, disabled, loading |
-| IconButton  | `/packages/ui/src/icon-button/icon-button.tsx`   | Icon-only button | icon, label (aria), size         |
-| ButtonGroup | `/packages/ui/src/button-group/button-group.tsx` | Groups buttons   | orientation, spacing             |
+Every finding carries a verified path, the line range, the code as it actually reads, how many
+instances exist, and what the developer should do with it. The difference is what a developer can
+act on:
 
----
-
-### Existing Pattern: Button with Variants
-
-**File:** `/packages/ui/src/button/button.tsx:15-32`
-
-```typescript
-const buttonVariants = cva(styles.base, {
-  variants: {
-    variant: {
-      primary: styles.primary,
-      secondary: styles.secondary,
-      ghost: styles.ghost,
-    },
-    size: { sm: styles.sm, md: styles.md, lg: styles.lg },
-  },
-  defaultVariants: { variant: "primary", size: "md" },
-});
-```
-````
-
----
-
-### Token System
-
-- Base tokens: `/packages/ui/src/styles/tokens/base.css`
-- Semantic tokens: `/packages/ui/src/styles/tokens/semantic.css`
-- Component tokens: `/packages/ui/src/button/button.module.scss:1-20`
-
----
-
-### Files to Reference
-
-1. `/packages/ui/src/button/button.tsx` - Variant pattern
-2. `/packages/ui/src/button/button.module.scss` - Token-based styling
-3. `/packages/ui/src/input/input.tsx` - Similar variant pattern
-
-````
-
----
-
-### Pattern Discovery: Form Handling
+**Below the bar** — true, and worth nothing:
 
 ```markdown
-## Research Findings: Form Handling Patterns
-
-**Research Type:** Pattern Discovery
-**Files Examined:** 12
-
----
-
-### Form Library
-
-**Library:** React Hook Form v7.x
-**Usage Count:** 15 forms found
-
----
-
-### Primary Example
-
-**File:** `/apps/client-next/src/features/settings/settings-form.tsx:12-35`
-
-```typescript
-const settingsSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  email: z.string().email('Invalid email'),
-  bio: z.string().optional(),
-});
-
-type SettingsFormData = z.infer<typeof settingsSchema>;
-
-export const SettingsForm = () => {
-  const { register, handleSubmit, formState: { errors } } = useForm<SettingsFormData>({
-    resolver: zodResolver(settingsSchema),
-  });
-
-  const mutation = useMutation({
-    mutationFn: updateSettings,
-    onSuccess: () => toast.success('Settings saved'),
-  });
-
-  return <form onSubmit={handleSubmit(data => mutation.mutate(data))}>{/* fields */}</form>;
-};
-````
-
----
-
-### Key Conventions
-
-| Convention  | Location                | Description                      |
-| ----------- | ----------------------- | -------------------------------- |
-| Zod schemas | settings-form.tsx:12-18 | All forms use Zod for validation |
-| zodResolver | settings-form.tsx:24    | Connects Zod to React Hook Form  |
-| useMutation | settings-form.tsx:28-31 | React Query handles submission   |
-
----
-
-### Files to Reference
-
-1. `/apps/client-next/src/features/settings/settings-form.tsx` - Complete example
-2. `/packages/ui/src/input/input.tsx` - Input with error handling
-3. `/apps/client-next/src/lib/zod-schemas.ts` - Shared schema patterns
-
+The codebase uses React Query for server state.
 ```
 
+**At the bar** — the same claim, actionable:
+
+```markdown
+**Library:** React Query v5 — 47 query hooks
+
+**Query key factory:** `/packages/api-client/src/queries/posts.ts:12-25` — hierarchical keys, `as const`
+**Custom hook shape:** `/packages/api-client/src/hooks/use-post.ts:8-22` — wraps `useQuery` with defaults
+
+Read `/packages/api-client/src/queries/posts.ts` first; it is the fullest example.
 ```
+
+The paths above illustrate the shape. Write the ones you actually opened.

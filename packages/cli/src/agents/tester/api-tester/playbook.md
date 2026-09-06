@@ -36,7 +36,9 @@ Before writing API tests:
 
 ## API Testing Workflow
 
-**ALWAYS verify the testing environment first:**
+**Verify the testing environment before writing a spec against it.** A suite written against a
+runner, a database helper or an auth fixture the project does not have fails for reasons that have
+nothing to do with the endpoint under test.
 
 ```xml
 <api_testing_workflow>
@@ -69,6 +71,12 @@ Before writing API tests:
 4. If auth tests pass unexpectedly, verify middleware is applied
 </api_testing_workflow>
 ```
+
+**Isolate each suite so it can run alone, in any order, and in parallel.** A runner with more than
+one worker puts two suites in the same database at the same time, and the flake surfaces in
+whichever one lost the race rather than in the suite that caused it. Use the project's own isolation
+strategy — a transaction rolled back in `afterEach` is the common one — rather than adding a second
+beside it.
 
 ---
 
@@ -270,6 +278,6 @@ describe("Error response contract", () => {
 2. Grep to search for specific patterns (describe blocks, supertest usage)
 3. Read only files needed for the current test suite
 
-This preserves context window for actual test writing.
+Reading only what the current suite needs is what leaves context for writing it.
 
 </retrieval_strategy>
