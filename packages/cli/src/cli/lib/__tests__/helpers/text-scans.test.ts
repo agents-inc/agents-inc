@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { offendingLines, retiredFormsIn } from "./text-scans.js";
+import { offendingLines, retiredFormsIn, withExemptionsRemoved } from "./text-scans.js";
 
 describe("offendingLines", () => {
   const SHOUTS = /\bNEVER\b/;
@@ -31,5 +31,31 @@ describe("retiredFormsIn", () => {
     const text = "Read the skill before you use it.";
 
     expect(retiredFormsIn(text, FORMS)).toStrictEqual([]);
+  });
+});
+
+describe("withExemptionsRemoved", () => {
+  const EXEMPTIONS = ["NEVER/ALWAYS"];
+
+  it("takes an exempt spelling out of reach of a scan that would otherwise fire on it", () => {
+    const text = "Promote it to a NEVER/ALWAYS row.";
+
+    expect(offendingLines(withExemptionsRemoved(text, EXEMPTIONS), [/\bNEVER\b/])).toStrictEqual(
+      [],
+    );
+  });
+
+  it("leaves a line whose emphasis is not the exempt spelling", () => {
+    const text = "NEVER skip this step.";
+
+    expect(offendingLines(withExemptionsRemoved(text, EXEMPTIONS), [/\bNEVER\b/])).toStrictEqual([
+      "NEVER skip this step.",
+    ]);
+  });
+
+  it("keeps the line structure the scans split on", () => {
+    const text = "one NEVER/ALWAYS one\ntwo\nthree";
+
+    expect(withExemptionsRemoved(text, EXEMPTIONS).split("\n")).toHaveLength(3);
   });
 });

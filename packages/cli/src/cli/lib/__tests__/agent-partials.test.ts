@@ -136,7 +136,6 @@ const OPTIONAL_PARTIAL_SHIPPERS = {
     "cli-tester",
     "codex-keeper",
     "convention-keeper",
-    "pm",
     "reviewer",
     "skill-summoner",
     "web-developer",
