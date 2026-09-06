@@ -5,7 +5,7 @@ CLI-413 and EDITOR-15 to EDITOR-21. No code was changed.
 
 ## The premise correction
 
-The editor's add-skill UI is NOT flag-guarded — the `＋ Add skill` button renders unconditionally
+The editor's add-skill UI is NOT flag-guarded — the **Add skill** button renders unconditionally
 (`filter-bar.tsx`, dialog mounted in `configure-screen.tsx`, 11 green Playwright specs). It is
 live in production. The flag-guarded feature is the CLI's `cc new skill`
 (`FEATURE_FLAGS.NEW_SKILL_COMMAND`, default false, env-overridable via

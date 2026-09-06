@@ -6,6 +6,14 @@
 before building, because it tells you the shape the UI has to be ready to receive, and nothing in
 this document may foreclose it.
 
+> **SUPERSEDED IN PART BY PHASE G (2026-09-05).** This spec is the record of what Phase C
+> built, and it stays as written. Where it pins a TEXT GLYPH byte-exactly — `＋` U+FF0B, `−` U+2212,
+> `▾` U+25BE, `↩` U+21A9 — that pin is retired: G8 replaced all four with the shared `Glyph`
+> component at one geometry (1.75 stroke, butt caps, miter joins), and `packages/ui/src/components/glyph.tsx`
+> carries the reasoning. `✕`, `✓`, `⌘` and `↗` are still text and still pinned. Any instruction here
+> not to normalise those characters now reads as an instruction to undo a landed decision; it does
+> not apply. See [`README.md`](./README.md) § Phase G.
+
 ---
 
 ## Goal

@@ -197,10 +197,12 @@ Five things about it that are easy to break:
   dot-on-grid, and the diagonal at several pitches among them. Do not reintroduce any of them.
 - **THERE IS NO RULER AND NO COORDINATE FIGURES.** A tick strip along the top and `0` / `1024` at its
   ends were built and removed the same day. The page states its own width nowhere, deliberately.
-- **THE CONTENT COLUMN IS `--color-column`, NOT `--color-page`** — `#fdfdfc`, the surface the editor
-  gives its own middle column (`configure-screen.tsx`, `bg-column`). The header, `main` and the
-  footer must all carry it; they briefly disagreed, with two on `#fdfdfc` and one on white, which is
-  invisible by eye and obvious in computed style.
+- **THE CONTENT COLUMN IS `--color-column`, NOT `--color-page`** — the surface the editor gives its
+  own middle column (`configure-screen.tsx`, `bg-column`). Named by its TOKEN and never by a hex: the
+  value moved on 2026-09-05 and the site follows it through `@workspace/ui/globals.css`, so the token
+  is the half that does not rot. The header, `main` and the footer must all carry it; they briefly
+  disagreed, with two on the column and one on white, which is invisible by eye and obvious in
+  computed style.
 - **THE BAND IS A MEASURE CONTROL, NOT A MARGIN.** `--frame-gutter` is 8.75rem because that is what
   pulls the prose to 80 characters; at the old 3.75rem it ran to 99. Change it and the line length
   changes with it — that is the knob, not `--measure`, which now simply lets prose fill what the

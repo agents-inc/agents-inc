@@ -10,6 +10,14 @@ Four items. Each is independently landable and each carries success criteria a t
 Everything below was re-derived against the tree on 2026-08-26; the corrections that re-derivation
 produced are in [§0](#0-corrections-to-the-inputs) and they change what gets built.
 
+> **SUPERSEDED IN PART BY PHASE G (2026-09-05).** This spec is the record of what Phase B built and
+> stays as written. Its **preview entry point** is retired whole: G5 replaced the full-width recessed
+> `#eeece4` field with a third equal outlined cell on a Save / Share / Preview row above Install, so
+> every figure in that section describes a treatment the design has since ruled out — dead rather
+> than wrong. The button's visible copy is `Preview`; `Preview generated code` survives as its
+> `title`. The open question under **Needs the owner** about footer density was settled by the same
+> change. See [`README.md`](./README.md) § Phase G.
+
 ---
 
 ## 0. Corrections to the inputs

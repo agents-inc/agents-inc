@@ -6481,3 +6481,161 @@ had its own taxonomy deleted with the global one. Regression is the byte compari
 check can make — the project's `config-types.ts` identical across global → project → global, in
 `e2e/lifecycle/project-tracking-propagation.e2e.test.ts`, paired with a permitted case where a global
 addition legitimately widens the union.
+
+## 2026-09-04 - the nav rail gained a Marketplace section and lost a link, and the copy pointing at a renamed label followed it
+
+Owner-requested, no tracker row. The floating marketplace button moved into the rail as a
+non-floating section above the account row, sharing `RAIL_SECTION_CLASS` with it rather than
+restating the treatment; `MarketplaceButton` and the old `MarketplaceSwitcher` were deleted from
+`marketplace-dialog.tsx`. Then `Home` became `About` — the word names a destination instead of a
+position, and it is an `<a>` to the `agents-inc-www` Worker while the logo directly above it is a
+`<Link>` to this app, two controls that both said "home" and meant different places. `Configure`
+became `Editor`, and the `Settings` link was removed, leaving `/settings` as a route nothing links
+to (noted on EDITOR-07, which files Settings as one of five undesigned surfaces).
+
+**The load-bearing part was the round trip in `catalog-first.spec.ts`**, which used the Settings link
+to leave and return. Replaced with `pushState` + `goBack()`, both same-document because
+`createBrowserHistory` patches `win.history.pushState` and notifies subscribers, and proved two ways:
+substituting `page.goto()` gave `Received array: [null, null]` and a sibling timeout — a `goto` round
+trip does not fail the assertion, it stops asking it — and deleting the identity guard from
+`seatMarketplace` produced the same red while the pre-round-trip assertion still passed.
+
+**The rename's second half is the finding.** `shared-link.spec.ts` asserted
+`toContainText("Configure")` against the shared-configuration notice — the label's literal checked
+against the copy, so it is red in one direction only: copy drifts, red; label drifts, green. The two
+`getByRole("link", { name: "Configure" })` locators in the same file DID redden on the label change,
+so the author repointed those, saw the file green and stopped, leaving product copy telling people
+their configuration is safe under a nav word that no longer existed. A partial red is worse than
+none, because it certifies the file as considered. Filed as
+`2026-09-04-a-label-rename-leaves-the-copy-that-points-at-it-pinned-to-the-retired-word.md`.
+
+Four sites moved with the copy (`SHARED_NOTICE`, its `sayCatalogue(null)` comment, the `fromId`
+comment in `routes/search.ts`, the `NAV_ITEM_CLASS` comment in `nav-rail.tsx`) and the spec's
+assertion followed. `// The Configure screen's URL` was deliberately left: it names `ConfigureScreen`,
+and no identifier was renamed. Gates: typecheck 0, lint 0, e2e 507 collected / 507 passed.
+
+**Corrections the dispatches returned.** The nav lane: no local visual baselines exist (Argos-hosted,
+`uploadToArgos` keyed to `CI`), so "regenerate snapshots" named an operation this repo does not have;
+and the fallout list was incomplete — `shared-link.spec.ts:233` sits in a shared `goToOwn` helper, so
+four sites produced eight failing tests. The rename lane: the brief said the route "is still
+`/configure`", and `configureRoute` declares `path: "/"` — the Configure screen is the index route.
+A brief telling the next reader to leave `/configure` alone points at a path no grep will find.
+
+## 2026-09-04 - the rail's one horizontal rule, and the constant that had to be split to lose the second
+
+Owner-requested, no tracker row. The hairline between the Marketplace section and the account row is
+gone; Marketplace keeps the rule above it, which separates it from the nav words. `RAIL_SECTION_CLASS`
+had carried both the box and the rule and was shared by the two sections deliberately, its comment
+warning that two byte-identical class strings are how a rail treatment drifts. That argument was still
+right about the box and no longer applied to the rule, so the constant split rather than being copied:
+`RAIL_SECTION_CLASS` keeps the layout, a new `RAIL_RULE_CLASS` takes the pseudo-element and `relative`
+with it — positioning that element being the only thing `relative` did — and the anti-drift comment was
+repointed at what is still shared rather than deleted.
+
+**The lane verified the identification against the render rather than the JSX**, which was the right
+instinct: both rules sit at `top: 0` of their own section, so which pair a rule separates is a fact
+about layout order, not about markup. Measured live, Marketplace's rule landed at y≈189 under nav words
+ending at y≈114, and the account's at y≈237 under a marketplace box ending at 217 — naming the second
+as the one between the two sections.
+
+**One spec asserted the divider, and it was pinning it deliberately** — its whole comment is about why
+the rail's rule is partial rather than full-width, and it reads the pseudo-element because there is
+nothing else to locate a `::before` by. Red before the change:
+`Expected: "1px" / Received: "auto"` at `accounts.spec.ts` "draws a partial rule above the account row".
+What it protected survives on Marketplace, so it was repointed rather than deleted, and the account
+half added beside it so the removal is pinned too — an absence asserted alone cannot tell a rule
+deliberately dropped from one section from a treatment that has vanished off both. Both halves were
+proved to bite: restoring the rule to the account row reddens one, removing it from Marketplace
+reddens the other.
+
+`pt-3.5` on the account section is clearance for a hairline it no longer has, and was left standing on
+purpose — stripping padding from one section alone needs the same split-or-override decision as its
+`mt-[1.125rem]`, which is EDITOR-77.
+
+Gates: typecheck exit 0 (forced, so no project was skipped by incremental build info), lint 167 files
+0 errors 0 warnings, prettier clean, e2e **507 passed**. Argos holds the visual baselines and is
+CI-keyed, so the next CI visual run will legitimately diff on this.
+
+**Correction the lane returned:** the EDITOR-77 row written while it was in flight cited "EDITOR-74's
+divider work". EDITOR-74 is the `savedStack` id collision; this work had no row at all. Fixed.
+
+## 2026-09-04 - EDITOR-75: the padding below a sticky dock was not clearance, it was 132px of grid nobody could reach
+
+`<main>` in `configure-screen.tsx` carried `pb-30`. The owner asked for it gone and said the value had
+been chosen at random, which removed the question of what it was _meant_ to reserve and left only
+whether it was accidentally load-bearing.
+
+**It was not, and it was not neutral either.** A `sticky bottom-0` box is confined to its containing
+block's **content** box, so the padding lay entirely below anywhere the dock could ever come to rest.
+Measured at maximum scroll, 1600×1000: with the padding, `main.bottom - dock.bottom` was 132px and the
+dock parked 132px above the viewport floor over a strip of bare `bg-column`, with 132px of grid
+permanently off-screen; without it, both are 0 and the dock sits flush. The real clearance above the
+last row is the dock's own `mt-[1.625rem]` and was unaffected — 29px against 28px. An empty filter
+result had been scrolling 129px for nothing.
+
+Deleted outright rather than tuned. Had the checks come back dirty the fix would not have been a
+smaller constant: the dock's own comment argues against hardcoding its height at all, since it grows a
+conditional child and any constant goes stale.
+
+**No spec could see it.** The suite reads `<main>`'s box exactly once — `band.width` against
+`main.width` — and nothing anywhere reads its bottom or height. The spec written for this hazard
+(`does not permanently cover the end of the grid`) stayed green throughout because it measures the
+dock's own margin, and the padding sat _below_ the dock; it was verified still live by setting that
+margin to `-mt-20`, which reddens at `Received: -87.984375`. Filed as a finding proposing
+`main.bottom === dock.bottom` at maximum scroll.
+
+Gates: typecheck 0, lint 0 problems, prettier clean, e2e **507 passed**.
+
+**Two corrections the lane returned, both about figures in my brief.** `pb-30` renders **132px**, not
+the 120px a default root gives — `globals.css` sets the root to `font-size: 110%`. The same knob makes
+every px figure on EDITOR-55 about 10% low: `min-w-[85.25rem]` computes to **1500.4px**, where that row
+and both Playwright configs say 1324 or 1364. EDITOR-55 has been annotated. A first "narrow case" probe
+at 1364 was therefore below the floor and already scrolling sideways; re-run at 1501 it was clean.
+
+- **2026-09-05 — EDITOR-09, Phase G** (editor.md, the 2026-09-05 design refresh) — the eleven changes
+  the owner named against the refreshed `.claude-design/` all landed in one session. `selected` left
+  the domain strip for the skills hinge and states its value (`all 238` ⇄ `selected 23`); the
+  `N skills selected ✕` block went with it, because the first stack cell already means "nothing
+  selected" and now says so (`Clear and start from scratch` / `removes N skills and every sub-agent`,
+  which also releases the filter). The domain strip became equal `flex:1` cells spanning the column at
+  one type size, retiring the 25px-Inter active label and the scrolling group. The assignment pulse
+  moved off the pin button onto the whole agent row, bleeding 17px left to the panel's border and 8px
+  right into the scroller's own padding, with no ink moving. Save / Share / Preview became three equal
+  outlined cells above Install, and the recessed `Preview generated code` field went. The output
+  preview gained a fullscreen toggle (glyph, double-click, `esc` steps out before it closes) and a
+  tree/code splitter clamped 180–560 design px, both surviving a close. The composer's field became
+  the whole of its band — the control row is drawn over its measured foot and lets presses through.
+  One icon set replaced five glyphs from four sources at `1.75 / butt / miter`. Incompatible cells
+  recede to the column colour instead of fading to 40%. `--warm-02` moved to `#faf8f2`, carrying the
+  four surfaces that must move together. The active nav item and the roster's grouping control both
+  took the amber field bled to their own edge.
+
+  Gates: editor e2e **536 passed**, editor unit 514 passed / 1 expected fail, `packages/ui` 112 passed
+  and token parity green, lint 0, typecheck 0, build green. `packages/cli`'s
+  `check-findings-frontmatter` was already red on entry and is untouched by this — the
+  `2026-09-04-*` findings name `src/skills/web-data-fetching-swr/examples/*` files that do not exist.
+
+- **2026-09-05 — EDITOR-76** (editor.md, new 2026-09-04, owner) — every bordered text field is the
+  whole of its own border. The shared `Input` is a bare field meant to sit in a box that draws the
+  border, and each of those boxes kept the padding as well, so the ring between the border and the
+  text looked like the field, sat inside its border and moved the caret nowhere. Fixed at the call
+  sites rather than in the component, which the row had preferred: the wrappers own the border and
+  the fill, the field owns every inset. The acceptance is a CLICK rather than a class, because a rule
+  about which element holds the padding is satisfied by any number of arrangements that still leave a
+  dead ring — `field-hit-area.spec.ts` presses 2px inside each corner of each drawn box and reports
+  which corners took the caret, and asserts the caret lands where the pointer went rather than at the
+  end, which is the half a `<label>` wrapper satisfies by accident. All five bordered fields are
+  covered: the search field at rest and stuck, the composer's band, the add-skill search, the
+  marketplace field and the access-token field. The composer was the last and the hardest — its
+  control row is drawn OVER the field's measured foot now, so the ~69px beside the Send button takes
+  the caret instead of swallowing the press.
+- **2026-09-05 — EDITOR-79** (editor.md, new 2026-09-05, owner) — the domain strip navigates the
+  list rather than filtering it. Clicking `API` no longer hides `web`: it scrolls the API section to
+  rest under the bar, and scrolling back up makes `web` current again. `isVisibleDomain` stopped
+  reading `search.domain`, so every domain renders at every value; `?domain=` became an ANCHOR that
+  is honoured once on arrival (`useDomainOnArrival`) rather than a filter that persists; and the
+  click-again-to-release toggle went, because a pick that hides nothing has nothing to release. The
+  tab reports `aria-current` and no longer `aria-pressed` — a pressed state on a control that only
+  moves the page is a toggle a reader cannot turn off. `domain-tabs.spec.ts` carries it whole,
+  including the landing window under the bar, which is measured against the bar's own box rather
+  than a figure: the bar's height is the design's, in rem against a root set to 110%.
