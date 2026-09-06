@@ -7,6 +7,19 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.164.0] - 2026-09-06
+
+**Every shipped sub-agent moves to the 2026-09-03 doctrine, the web skills say when to reach for them, and the editor takes the 2026-09-05 design refresh**
+
+- All 18 shipped sub-agents now read in the doctrine's voice: 14,236 markdown lines down to 9,026 (−37%), 228 `**(You MUST …)**` down to 1 — the one that names the retired form in order to forbid it — and 26 `CRITICAL:` headings and 15 "Failure to follow…" closers to zero
+- A `web-*` skill's `usageGuidance` names the situation it is for rather than restating its title. A third pass over the marketplace closed two surfaces the first two never reached, found by byte-comparing every file against the baseline rather than trusting an estimate: 38 files and 10,190 lines had never been opened, against an estimate of ~4,000
+- The editor takes the third in-place design refresh — `selected` onto the skills hinge stating its own value, equal full-width domain cells at one type size, the first stack cell as the reset, a full-row assignment pulse, three action cells over Install, fullscreen and a splitter on the output preview, one icon set, receding disabled cells, a warmer column and an amber field on the active nav item (EDITOR-09)
+- EDITOR-75: `pb-30` under a `sticky bottom-0` dock was not clearance — a sticky box is confined to its containing block's content box, so the padding lay entirely below anywhere the dock could rest, parking it 132px above the viewport floor with 132px of grid off-screen
+- EDITOR-76: every bordered text field is now the whole of its own border. All five take the caret from every corner, and the caret lands where the pointer went rather than at the end — the half a `<label>` wrapper satisfies by accident
+- EDITOR-79: the domain strip navigates rather than filters. Clicking `API` no longer hides `web`, `?domain=` is an anchor rather than a filter, and a tab reports `aria-current` instead of a pressed state it could never turn off
+
+See [changelogs/0.164.0.md](./changelogs/0.164.0.md) for full details.
+
 ## [0.163.0] - 2026-09-04
 
 **Every compiled sub-agent gets a slimmer, cacheable prompt and a deterministic completion gate, and a skill's own trigger sentence finally reaches the agent that loads it**
