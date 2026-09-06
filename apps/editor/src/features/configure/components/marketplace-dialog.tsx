@@ -46,10 +46,10 @@ import type { Matrix } from "@workspace/matrix/matrix-schema"
 // ship one org's token to every visitor.
 //
 // A browser may hold several, each with its own token (EDITOR-39), so this
-// dialog is where one is NAMED and the switcher below is where one already
-// named is chosen between. Loading a second cannot cost the first its
-// credential: the token is filed under the marketplace it authorizes, and this
-// form can only ever write the key it just loaded.
+// dialog is where one is NAMED and the switcher in the nav rail's marketplace
+// section is where one already named is chosen between. Loading a second cannot
+// cost the first its credential: the token is filed under the marketplace it
+// authorizes, and this form can only ever write the key it just loaded.
 
 // The failures a token might fix. `invalid` is deliberately not one of them: a
 // catalogue that will not parse comes back identical however it is authorized,
@@ -118,13 +118,30 @@ function Note({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * The inset between a field's border and its text — held BY THE FIELD, which is
+ * why it is a constant here rather than a class on the box below: `Field` takes
+ * its child as a node and cannot reach inside it, and the two call sites must
+ * not drift apart on a figure that is the same box drawn twice.
+ *
+ * The whole utility rather than its figures, for the reason `FIELD_HEIGHT_CAP`
+ * in `composer.tsx` is: Tailwind reads class strings out of the source, so
+ * anything interpolated into one compiles to no padding at all.
+ */
+const FIELD_INSET = "px-3 py-2.5"
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="mt-3 block">
       <span className="block pb-1.5 font-mono text-9 font-medium tracking-[.04em] text-muted-foreground uppercase">
         {label}
       </span>
-      <span className="flex items-center gap-[0.5625rem] border border-field-border px-3 py-2.5">
+      {/* The box only. Its padding is the field's — see `input.tsx` — and the
+          field is this box's one child, so the whole of the area inside this
+          border takes the caret AT THE POINT IT WAS PRESSED. The `<label>`
+          above already brought focus here from the ring; what it could not do
+          is put the caret anywhere but the end of what is typed. */}
+      <span className="flex items-center border border-field-border">
         {children}
       </span>
     </label>
@@ -132,108 +149,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /**
- * The floating entry point. It belongs to no section, because which marketplace
- * is loaded is a statement about everything in the column rather than about any
- * one part of it — so it floats over the whole of it and travels with the
- * scroll.
- *
- * Sticky to the foot of the skills column, and NOT fixed to the viewport
- * (EDITOR-35). Fixed put it in the viewport's bottom-left corner, which the nav
- * rail already owns: it covered the rail's Github link outright, leaving a
- * sliver of the Octocat showing past its right edge. A constant `left` cannot
- * fix that either, because the page grid is centred once the window passes its
- * max width — the rail slides right while anything pinned to the viewport stays
- * put, so a value that clears the rail on one monitor lands on it on the next,
- * or floats out in the margin beside the page. Sticky asks the column where it
- * is instead of guessing, so this tracks the grid at every width and carries no
- * layout constant of its own.
- *
- * The STICKY ITSELF now lives one level up, on the wrapper in
- * `configure-screen.tsx` that holds this row above the docked composer. The
- * composer docks to the same column foot, so the two float as one element with
- * this as the previous sibling — which is what keeps the dock's height
- * intrinsic instead of becoming an offset somebody has to maintain here. Every
- * word above still holds: the mechanism moved, the ruling did not.
- *
- * `w-fit` because the box is over the grid: any width it does not need is a
- * strip of skill cells that cannot be clicked — and `pointer-events-auto`
- * because that wrapper switches them off for exactly this reason, so the strip
- * beside this row falls through to the cells rather than merely looking as
- * though it does.
- */
-export function MarketplaceButton() {
-  const setDialog = useUiStore((state) => state.setDialog)
-  const marketplace = useCatalogStore((state) => state.marketplace)
-
-  return (
-    <div className="pointer-events-auto flex w-fit items-center gap-[0.5625rem]">
-      <Button variant="outline" onClick={() => setDialog("marketplace")}>
-        {/* The name when one is loaded, so the button doubles as the answer to
-            "which catalogue am I looking at?" — the only place on screen that
-            says so. */}
-        Marketplace{marketplace ? ` · ${marketplace}` : ""}
-      </Button>
-      <MarketplaceSwitcher />
-    </div>
-  )
-}
-
-/**
- * The other marketplaces this browser saved, one press away.
- *
- * Beside the button that names where you are rather than inside the dialog,
- * because it answers the same question the button does and answering it should
- * not cost a dialog. It lists what the visitor SAVED and never what a link
- * brought (EDITOR-37) — so a marketplace appearing here that nobody typed would
- * be a bug on screen rather than one in storage.
- *
- * Absent below two, and that is not a special case: with one saved marketplace
- * the button already names it and there is nowhere to switch to, so a switcher
- * would be furniture over the grid — which is a strip of skill cells that
- * cannot be clicked.
- */
-function MarketplaceSwitcher() {
-  const saved = useMarketplaceStore((state) => state.saved)
-  const current = useMarketplaceStore((state) => state.current)
-  const requestMarketplace = useUiStore((state) => state.requestMarketplace)
-
-  // The owner's condition, and it is about what is SAVED rather than about
-  // what is on screen: a switcher shown when more than one exists.
-  const refs = Object.keys(saved)
-  if (refs.length <= 1) return null
-
-  const others = refs.filter((marketplace) => marketplace !== current)
-
-  return (
-    <div
-      role="group"
-      aria-label="Saved marketplaces"
-      className="flex items-center gap-[0.5625rem]"
-    >
-      {others.map((marketplace) => (
-        <Button
-          key={marketplace}
-          variant="outline"
-          // Asking, never switching: the confirmation names what the switch
-          // costs, and the CTA in it is the only thing that performs one.
-          onClick={() => requestMarketplace(marketplace)}
-        >
-          Switch to {marketplace}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
-/**
  * The dialog shell, which owns only whether it is open.
  *
- * It owns that whichever way it was reached — the floating button, an arriving
- * payload whose catalogue could not be read, or this browser's own saved
- * marketplace failing to load on startup (EDITOR-36). One owner is what makes
- * cancelling a recovery ordinary: the dialog closes and whatever was parked
- * stays parked, so re-opening it from the button offers the same pre-filled
- * form.
+ * It owns that whichever way it was reached — the rail's marketplace section,
+ * an arriving payload whose catalogue could not be read, or this browser's own
+ * saved marketplace failing to load on startup (EDITOR-36). One owner is what
+ * makes cancelling a recovery ordinary: the dialog closes and whatever was
+ * parked stays parked, so re-opening it from the rail offers the same
+ * pre-filled form.
  *
  * The form is a separate component and is mounted only while open, which is
  * what makes a cancelled edit disappear: its `useState` initialisers read the
@@ -449,6 +372,7 @@ function MarketplaceForm({
         <Field label="Marketplace">
           <Input
             variant="dialog"
+            className={FIELD_INSET}
             // The caret goes to whichever field is the open question. Naming
             // the repository is that question until an answer says a token
             // might reach it — and for a recovery it never is, because the
@@ -465,6 +389,7 @@ function MarketplaceForm({
           <Field label="Access token">
             <Input
               variant="dialog"
+              className={FIELD_INSET}
               // Focused the moment it appears, because by then it is the only
               // thing left to supply — the repository is already named, and on
               // a recovery it was never asked for.

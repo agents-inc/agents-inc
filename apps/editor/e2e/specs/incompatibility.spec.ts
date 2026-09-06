@@ -50,13 +50,24 @@ test.describe("incompatible skills", () => {
     ).toBe(true)
   })
 
-  test("a ruled-out cell is visibly dimmed", async ({ configure }) => {
+  // A cell is white because it is AVAILABLE. One that is not simply stops being
+  // white and sinks into the column — no opacity, no ink change, no border
+  // change. The `opacity: .4` this replaces put the skill's own name at roughly
+  // 2.1:1 and faded the cell's hairlines with it; the name stays at 14.8:1 now,
+  // which is why the assertion is on the FILL and never on the text.
+  test("a ruled-out cell recedes into the column, at full opacity", async ({
+    configure,
+  }) => {
     const sveltekit = configure.skillIn(web, blockedCategory, SVELTEKIT)
-    expect(await sveltekit.opacity()).toBe(1)
+    const available = await sveltekit.background()
 
     await configure.skillIn(web, triggerCategory, REACT).toggle()
 
-    expect(await sveltekit.opacity()).toBeLessThan(1)
+    const receded = await sveltekit.background()
+    expect(receded).not.toBe(available)
+    expect(
+      await sveltekit.cell.evaluate((node) => getComputedStyle(node).opacity)
+    ).toBe("1")
   })
 
   test("a ruled-out cell reads as disabled to the browser", async ({

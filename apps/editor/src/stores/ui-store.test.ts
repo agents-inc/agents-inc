@@ -167,6 +167,59 @@ describe("the ui slot's arrangement actions", () => {
     expect(store.getState().stackCollapsed).toBe(false)
   })
 
+  // THE OUTPUT PREVIEW'S TWO FIELDS ARE ARRANGEMENT AND ARE NOT PERSISTED, and
+  // that pair is the whole claim: the design says both survive a CLOSE, which
+  // is what a store field buys — the dialog renders its body only while open,
+  // so anything held inside it would start over on every open. Surviving a
+  // RELOAD is a different promise and nobody made it, which is why
+  // `PERSISTED_UI_KEYS` above still names four.
+  it("toggles the output preview between fullscreen and back", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    expect(store.getState().outputFullscreen).toBe(false)
+
+    store.getState().toggleOutputFullscreen()
+    expect(store.getState().outputFullscreen).toBe(true)
+
+    store.getState().toggleOutputFullscreen()
+    expect(store.getState().outputFullscreen).toBe(false)
+  })
+
+  // Its own verb rather than the toggle reused, and the difference is what
+  // `esc` needs: the ladder it steps down is ORDERED, so the first press has to
+  // be able to say "leave fullscreen" without asking what state it is in. A
+  // toggle at the bottom of that ladder would put the reader back INTO
+  // fullscreen on the press that was meant to close the dialog.
+  it("leaves fullscreen without asking what state it was in", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().exitOutputFullscreen()
+    expect(store.getState().outputFullscreen).toBe(false)
+
+    store.getState().toggleOutputFullscreen()
+    store.getState().exitOutputFullscreen()
+    expect(store.getState().outputFullscreen).toBe(false)
+  })
+
+  // The tree rests at the design's own 250 and is CLAMPED HERE rather than at
+  // the pointer handler, so the bound is stated once and every caller — a drag,
+  // a future keyboard nudge, a restored value — is held to it. Neither pane may
+  // be dragged out of existence.
+  it("clamps the tree width to the bounds neither pane may leave", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    expect(store.getState().outputTreeWidth).toBe(250)
+
+    store.getState().setOutputTreeWidth(320)
+    expect(store.getState().outputTreeWidth).toBe(320)
+
+    store.getState().setOutputTreeWidth(20)
+    expect(store.getState().outputTreeWidth).toBe(180)
+
+    store.getState().setOutputTreeWidth(2000)
+    expect(store.getState().outputTreeWidth).toBe(560)
+  })
+
   // Two key spaces in one record, disjoint by construction: a domain id can
   // never contain a colon, so switching modes cannot collapse a band the
   // other mode's visitor never shut. Neither mode resets the other's keys.

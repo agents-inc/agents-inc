@@ -1,3 +1,5 @@
+import { useNavigate } from "@tanstack/react-router"
+
 import { fetchSharedConfig } from "@/lib/api/configs"
 import { useConfigStore } from "@/stores/config-store"
 import { useSavedStackStore } from "@/stores/saved-stack-store"
@@ -35,6 +37,20 @@ export const useApplyStackRequest = () => {
   const applyStack = useConfigStore((state) => state.applyStack)
   const applySavedStack = useConfigStore((state) => state.applySavedStack)
   const saved = useSavedStackStore((state) => state.saved)
+  const navigate = useNavigate({ from: "/" })
+
+  // CLEARING RELEASES THE `selected` FILTER, and it is half the act rather than
+  // a courtesy: the toggle that turned it on is drawn only while something is
+  // selected, so emptying the selection with it still on leaves an empty column
+  // and no control on screen to get back from it. Only the reset does this —
+  // applying a real stack with the filter on is a reader narrowing to what they
+  // just chose, which is the filter working.
+  const releaseSelectedOnly = () =>
+    void navigate({
+      search: (prev) => ({ ...prev, sel: false }),
+      resetScroll: false,
+      replace: true,
+    })
 
   // SAME PAYLOAD, SAME WELCOME, and that is EDITOR-59. A saved stack holds the
   // payload a share link holds — the local slot outright, an account's stack
@@ -70,7 +86,10 @@ export const useApplyStackRequest = () => {
   }
 
   return (request: StackRequest) => {
-    if (request.kind === "stack") return applyStack(request.stackId)
+    if (request.kind === "stack") {
+      if (request.stackId === null) releaseSelectedOnly()
+      return applyStack(request.stackId)
+    }
 
     // An account's stack is a POINTER, so applying it is a fetch — the same
     // one a share link makes, against the same route, returning the same

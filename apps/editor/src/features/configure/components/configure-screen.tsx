@@ -1,11 +1,18 @@
-import { getRouteApi } from "@tanstack/react-router"
-import { Hinge, HingeButton } from "@workspace/ui/components/divider"
+import { getRouteApi, useNavigate } from "@tanstack/react-router"
+import {
+  Hinge,
+  HingeButton,
+  HingeToggle,
+} from "@workspace/ui/components/divider"
+import { Glyph } from "@workspace/ui/components/glyph"
 import { useMemo } from "react"
 
 import {
   blockedNotice,
+  catalogueSkillCount,
   selectDomainTabs,
   selectDomainViews,
+  selectedOnlyLabel,
   summarize,
 } from "@/features/configure/lib/derive"
 import { useCatalogFirst } from "@/features/configure/lib/use-catalog-first"
@@ -17,7 +24,7 @@ import { Composer } from "./composer"
 import { DomainSection } from "./domain-section"
 import { FilterBar } from "./filter-bar"
 import { InstallDialog } from "./install-dialog"
-import { MarketplaceButton, MarketplaceDialog } from "./marketplace-dialog"
+import { MarketplaceDialog } from "./marketplace-dialog"
 import { MarketplaceSwitchDialog } from "./marketplace-switch-dialog"
 import { OutputPreviewDialog } from "./output-preview-dialog"
 import { RosterPanel } from "./roster-panel"
@@ -29,6 +36,7 @@ const route = getRouteApi("/")
 
 export function ConfigureScreen() {
   const search = route.useSearch()
+  const navigate = useNavigate({ from: "/" })
   const skills = useConfigStore((state) => state.skills)
   const stackId = useConfigStore((state) => state.stackId)
   const agents = useConfigStore((state) => state.agents)
@@ -104,7 +112,7 @@ export function ConfigureScreen() {
 
   return (
     <>
-      <main className="min-w-0 bg-column px-gutter pt-0 pb-30">
+      <main className="min-w-0 bg-column px-gutter pt-0">
         {line && (
           <p
             role="alert"
@@ -130,24 +138,61 @@ export function ConfigureScreen() {
               aria-label={stackCollapsed ? "Show stacks" : "Hide stacks"}
               onClick={toggleStackCollapsed}
             >
-              {stackCollapsed ? "+" : "−"}
+              <Glyph name={stackCollapsed ? "plus" : "minus"} />
             </HingeButton>
           }
         />
         {!stackCollapsed && <StackGrid />}
 
-        {/* The page's only instructional copy, and it changes with the stack. */}
-        {stack ? (
-          <Hinge label="then customise" emphasis={stack.name.toLowerCase()} />
-        ) : (
-          <Hinge label="then" emphasis="pick your skills" />
-        )}
+        {/* The page's only instructional copy, and it changes with the stack —
+            and the rule it is set on carries the column's one filter.
+
+            `min-h-6` IS NOT SPACING. The hinge's natural line box is 13px and
+            the toggle is 24px absolutely centred on it, so it overhangs by 6px
+            top and bottom — and `FilterBar` below is a `-mx-gutter` sticky at
+            `z-60` whose background paints over that overhang and eats the
+            button's bottom border. Giving the hinge the control's own height
+            removes the overhang; raising the toggle's `z-index` instead would
+            float it over the dark band the moment the bar sticks. */}
+        <Hinge
+          className="min-h-6"
+          label={stack ? "then customise" : "then"}
+          emphasis={stack ? stack.name.toLowerCase() : "pick your skills"}
+          action={
+            // ONLY ONCE SOMETHING IS SELECTED. A toggle whose only possible
+            // effect is an empty column is not a control.
+            summary.skillCount > 0 ? (
+              <HingeToggle
+                active={search.sel}
+                // The words are the VALUE and change with it, so they cannot
+                // also be the name: a spec and a screen reader meet one stable
+                // control rather than a differently named one after every
+                // click in the grid.
+                aria-label="Show only selected skills"
+                title={
+                  search.sel ? "show every skill" : "show only selected skills"
+                }
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, sel: !search.sel }),
+                    resetScroll: false,
+                  })
+                }
+              >
+                {selectedOnlyLabel(
+                  search.sel,
+                  summary.skillCount,
+                  catalogueSkillCount()
+                )}
+              </HingeToggle>
+            ) : null
+          }
+        />
 
         <FilterBar
           search={search}
           tabs={domainTabs}
           renderedDomains={renderedDomains}
-          selectedCount={summary.skillCount}
         />
 
         {domainViews.length === 0 ? (
@@ -160,28 +205,33 @@ export function ConfigureScreen() {
           ))
         )}
 
-        {/* TWO FLOATING CONTROLS, ONE STICKY ELEMENT.
+        {/* ONE FLOATING CONTROL, AND THE STICKY THAT CARRIES IT.
 
-            The composer docks to this column's foot and the marketplace button
-            already owned that slot, so they share a single sticky wrapper with
-            the button as the previous sibling. That introduces no layout
-            constant: the button rides above the dock because it comes before
-            it, so the dock's height is intrinsic and never measured — which
-            matters because the dock grows a conditional child (the openers at
-            rest, a proposal after a submit) and any `bottom: <composer height>`
-            would have to be re-measured every time it did.
+            The marketplace button was the other one until 2026-09-04, when the
+            owner moved it into the nav rail as a section of its own; the
+            wrapper stays because the sticky belongs to it rather than to the
+            composer, and because `pointer-events-none` here with
+            `pointer-events-auto` on the dock is what keeps the full-bleed strip
+            beside the dock falling through to the skill cells underneath.
 
-            Sticky rather than fixed, exactly as before (EDITOR-35): fixed put
-            the button in the viewport's bottom-left corner, which the nav rail
-            already owns, and a constant `left` cannot fix that because the page
-            grid centres itself past 105.25rem. The mechanism has simply moved
-            one level up, from the button to this wrapper.
+            Sticky rather than fixed (EDITOR-35): fixed puts a control in the
+            viewport's bottom-left corner, which the nav rail owns, and a
+            constant `left` cannot fix that because the page grid centres itself
+            past 105.25rem. Asking the column where it is costs no layout
+            constant at all, which is why the dock's height is never measured —
+            it grows a conditional child (the openers at rest, a proposal after
+            a submit) and any `bottom: <composer height>` would have to be
+            re-measured every time it did.
 
-            `pointer-events-none` with each child turning it back on, so the
-            strip beside the `w-fit` button still falls through to the skill
-            cells underneath rather than being a wide box over the grid. */}
+            AND THE COLUMN RESERVES NOTHING BELOW IT (EDITOR-75). The dock is
+            the last thing in flow, so a `pb-*` on `<main>` lands entirely
+            UNDER it — a sticky box cannot leave its containing block, so at
+            maximum scroll the dock comes to rest that far above the viewport
+            floor with a strip of bare column beneath it, and a page with no
+            results scrolls by exactly that much for nothing. The gap the last
+            skill cell needs is the dock's own `mt-*`, which is the composer's
+            to own. */}
         <div className="pointer-events-none sticky bottom-0 z-60">
-          <MarketplaceButton />
           <Composer />
         </div>
       </main>

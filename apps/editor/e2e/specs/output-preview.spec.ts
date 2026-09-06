@@ -213,14 +213,16 @@ test.describe("the output preview", () => {
   })
 
   /**
-   * "Generated" is load-bearing in the label — it says the files do not exist
-   * yet — and there is deliberately no count beside it: at 250px the label is
-   * all that fits, and the dialog footer already states the file count.
+   * One word, because the cell is one third of a 300px panel now. The claim the
+   * old label carried — "generated", which says the files do not exist yet —
+   * moves to the `title`, which is the design's own home for it.
    */
-  test("its label says the files do not exist yet, and carries no count", async ({
+  test("its label is one word, and the title still says generated", async ({
     configure,
   }) => {
-    await expect(configure.roster.previewButton).toHaveText(
+    await expect(configure.roster.previewButton).toHaveText("Preview")
+    await expect(configure.roster.previewButton).toHaveAttribute(
+      "title",
       "Preview generated code"
     )
   })
@@ -759,6 +761,142 @@ test.describe("the content pane", () => {
 
     expect(tree?.width).toBe(TREE_PANE_RENDERED_PX)
     expect(content?.width).toBeGreaterThan(TREE_PANE_RENDERED_PX)
+  })
+})
+
+// THE CODE PANE IS ~60 CHARACTERS AT 760px, which is narrow enough that
+// generated `config.ts` lines wrap and stop looking like the file they claim to
+// be. Fullscreen is the answer to that, and the splitter is the answer to the
+// tension underneath it: long paths and long code lines competing for one
+// width. Free window resizing was built and rejected — nobody wants 812px, they
+// want MORE.
+test.describe("fullscreen and the splitter", () => {
+  const MIN_TREE_RENDERED_PX = (180 * ROOT_FONT_SCALE_PERCENT) / 100
+  const MAX_TREE_RENDERED_PX = (560 * ROOT_FONT_SCALE_PERCENT) / 100
+
+  test.beforeEach(async ({ configure }) => {
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.roster.previewButton.click()
+  })
+
+  test("the header carries a maximise control that names the action", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+
+    await expect(preview.fullscreenButton).toHaveAccessibleName("Fullscreen")
+
+    await preview.fullscreenButton.click()
+
+    await expect(preview.fullscreenButton).toHaveAccessibleName(
+      "Exit fullscreen"
+    )
+  })
+
+  // Sized against the sheet's own inset rather than the viewport: a width of
+  // `calc(100vw - 48px)` pushed the footer, and with it the only Close button,
+  // off the bottom of the screen.
+  test("fills the viewport but keeps its footer on screen", async ({
+    configure,
+    page,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.fullscreenButton.click()
+
+    const sheet = (await preview.root.boundingBox())!
+    const viewport = page.viewportSize()!
+
+    expect(sheet.width).toBeGreaterThan(viewport.width * 0.9)
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual(viewport.height)
+    await expect(preview.closeButton).toBeVisible()
+  })
+
+  test("double-clicking the header does the same", async ({ configure }) => {
+    const preview = configure.outputPreviewDialog
+
+    await preview.header.dblclick()
+
+    await expect(preview.fullscreenButton).toHaveAccessibleName(
+      "Exit fullscreen"
+    )
+  })
+
+  // ONE PRESS EACH, IN ORDER. A maximised sheet is a place you are in, so the
+  // first escape is a reader asking to leave it rather than to leave the
+  // preview — and the second still closes.
+  test("esc steps out of fullscreen before it closes", async ({
+    configure,
+    page,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.fullscreenButton.click()
+
+    await page.keyboard.press("Escape")
+
+    await expect(preview.root).toBeVisible()
+    await expect(preview.fullscreenButton).toHaveAccessibleName("Fullscreen")
+
+    await page.keyboard.press("Escape")
+
+    await expect(preview.root).toBeHidden()
+  })
+
+  test("dragging the splitter widens the tree and narrows the code", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    const before = (await preview.contentPane.boundingBox())!
+
+    await preview.dragSplitter(80)
+
+    const tree = (await preview.treePane.boundingBox())!
+    const after = (await preview.contentPane.boundingBox())!
+
+    expect(tree.width).toBeGreaterThan(TREE_PANE_RENDERED_PX)
+    expect(after.width).toBeLessThan(before.width)
+  })
+
+  // Clamped at both ends, so neither pane can be dragged out of existence.
+  test("refuses to drag either pane out of existence", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+
+    await preview.dragSplitter(-600)
+    expect((await preview.treePane.boundingBox())!.width).toBeCloseTo(
+      MIN_TREE_RENDERED_PX,
+      0
+    )
+
+    await preview.dragSplitter(2000)
+    expect((await preview.treePane.boundingBox())!.width).toBeCloseTo(
+      MAX_TREE_RENDERED_PX,
+      0
+    )
+  })
+
+  // Both survive a close, which is the design's own rule: the reader who
+  // widened the tree to read a path did it for the file they are about to open
+  // next as well as the one they just closed.
+  test("keeps the width and the fullscreen state between opens", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.fullscreenButton.click()
+    await preview.dragSplitter(60)
+    const widened = (await preview.treePane.boundingBox())!.width
+
+    await preview.closeButton.click()
+    await expect(preview.root).toBeHidden()
+    await configure.roster.previewButton.click()
+
+    await expect(preview.fullscreenButton).toHaveAccessibleName(
+      "Exit fullscreen"
+    )
+    expect((await preview.treePane.boundingBox())!.width).toBeCloseTo(
+      widened,
+      0
+    )
   })
 })
 

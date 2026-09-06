@@ -33,13 +33,35 @@ test.describe("saving a stack", () => {
     await expect(configure.roster.saveButton).toBeDisabled()
   })
 
-  test("Save sits above Share in the footer", async ({ configure }) => {
+  // Save, Share and Preview are one row of equal cells above Install now, not
+  // three stacked full-width buttons. The order is the tab order the design put
+  // them in, so it is asserted left-to-right rather than top-to-bottom.
+  test("Save sits before Share on the action row", async ({ configure }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
 
     const save = (await configure.roster.saveButton.boundingBox())!
     const share = (await configure.roster.shareButton.boundingBox())!
+    const preview = (await configure.roster.previewButton.boundingBox())!
 
-    expect(save.y).toBeLessThan(share.y)
+    expect(save.y).toBe(share.y)
+    expect(share.y).toBe(preview.y)
+    expect(save.x).toBeLessThan(share.x)
+    expect(share.x).toBeLessThan(preview.x)
+  })
+
+  // Three EQUAL cells, and Install still the only filled thing in the panel —
+  // three fills stacked over it would make Install the fourth thing on the row.
+  test("gives the three actions an equal share of the row", async ({
+    configure,
+  }) => {
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+
+    const save = (await configure.roster.saveButton.boundingBox())!
+    const share = (await configure.roster.shareButton.boundingBox())!
+    const preview = (await configure.roster.previewButton.boundingBox())!
+
+    expect(save.width).toBeCloseTo(share.width, 0)
+    expect(share.width).toBeCloseTo(preview.width, 0)
   })
 })
 
@@ -57,7 +79,11 @@ test.describe("the saved stack in the grid", () => {
     await page.reload()
     await configure.stacks.waitFor()
 
-    await expect(configure.stackCell(0)).toHaveAccessibleName(STACKS.scratch)
+    // The first cell wears its cleared words here — a skill is selected, which
+    // is exactly what makes it the reset rather than a starting point.
+    await expect(configure.stackCell(0)).toHaveAccessibleName(
+      STACKS.clearScratch
+    )
     await expect(configure.stackCell(1)).toHaveAccessibleName(SAVED_STACK)
   })
 

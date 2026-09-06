@@ -67,7 +67,7 @@ const refusedNotice = (error: string) =>
 // that id any more — the address names where this view came FROM, and
 // re-sharing is what mints an address for what it has become.
 const SHARED_NOTICE =
-  "A shared configuration, not your own. Yours is untouched under Configure, and nothing changed here is saved."
+  "A shared configuration, not your own. Yours is untouched under Editor, and nothing changed here is saved."
 
 // What a payload arriving at an address is called in the sentence that says its
 // catalogue would not load.
@@ -128,7 +128,7 @@ export const useCatalogFirst = (fromId: string): void => {
     // mounted, so nothing clears on the way out unless it is cleared here.
     //
     // The shared notice most of all: it says what is on screen is not this
-    // browser's and that their own is safe under Configure. Left standing over
+    // browser's and that their own is safe under Editor. Left standing over
     // their own grid it is the app vouching for a swap — which is precisely
     // what EDITOR-42 was (EDITOR-43). A recovery goes with it for the same
     // reason and one more: its endings close over the payload the LAST address

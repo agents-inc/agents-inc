@@ -259,8 +259,8 @@ naming the value that moved rather than half the suite going red.
 
 **Scroll assertions cannot be exact.** Filtering removes results, which
 shortens the page, and the browser's scroll anchoring then shifts the offset to
-keep the visible content stable — measured at 1200 → 588 on a narrowing filter
-chip. Both are correct behaviour. The only invariant worth asserting is that
+keep the visible content stable — measured at 1200 → 588 on a narrowing search
+query. Both are correct behaviour. The only invariant worth asserting is that
 the position is not zero; anything tighter ends up encoding the anchoring
 arithmetic instead of the behaviour under test. Two earlier versions of that
 assertion flaked for exactly this reason.

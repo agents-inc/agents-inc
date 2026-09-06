@@ -112,10 +112,12 @@ test.describe("adding an external skill", () => {
     await expect(cell.cell).toContainText("added")
   })
 
-  // EDITOR-19: the chip filters by domain, and the skill has one now. It used
-  // to sit outside every domain, so any chip at all erased it — including one
-  // for the domain it had just been filed under.
-  test("a domain chip keeps it rather than erasing it", async ({
+  // EDITOR-19 is closed twice over and the claim is kept as the WEAKER of the
+  // two: an added skill is filed under a real domain, so the strip reaches it
+  // like its neighbours. The defect itself can no longer recur — the skill used
+  // to sit outside every domain, so any domain filter at all erased it, and a
+  // pick has not filtered anything since EDITOR-79.
+  test("a domain tab keeps it rather than erasing it", async ({
     configure,
   }) => {
     const dialog = configure.addSkillDialog
@@ -124,7 +126,7 @@ test.describe("adding an external skill", () => {
     await dialog.categorise(SKILL_NAME, CATEGORY_OPTION)
     await dialog.confirm()
 
-    await configure.toggleChip(DOMAINS.web)
+    await configure.domainTab(DOMAINS.web).click()
 
     await expect(
       configure.skillIn(DOMAINS.web, CATEGORY, SKILL_NAME).root

@@ -22,12 +22,15 @@ import {
 } from "@/stores/persisted-schema"
 import {
   SCOPE_ERROR,
+  catalogueSkillCount,
   isStackCustom,
   monogramOf,
+  selectDomainTabs,
   selectDomainViews,
   selectInstallInventory,
   selectReachability,
   selectRosterGroups,
+  selectedOnlyLabel,
   summarize,
   toSkillContents,
   type ConfigSelection,
@@ -929,41 +932,33 @@ describe("selectDomainViews", () => {
     expect(selectDomainViews(empty, SEARCH).length).toBe(CATALOG.domains.length)
   })
 
-  it("narrows to one domain", () => {
+  // EDITOR-79: a pick is a scroll target rather than a filter, so it takes
+  // nothing off the page. This is the whole of what `domain` does to the grid,
+  // and the assertion is the same one as the line above it on purpose — the two
+  // searches differ only in the field that is meant not to matter.
+  it("renders every domain when one of them is picked", () => {
     const views = selectDomainViews(empty, search({ domain: "web" }))
 
-    expect(views).toHaveLength(1)
-    expect(views[0]!.id).toBe("web")
+    expect(views.map((view) => view.id)).toStrictEqual(
+      selectDomainViews(empty, SEARCH).map((view) => view.id)
+    )
   })
 
-  // EDITOR-64. The domain pick and the query used to INTERSECT: domains were
-  // filtered to the picked one and only then were skills matched inside it, so
-  // a query could never reach past the tab you were on. A search that finds
-  // nothing reads as "no such skill" rather than "not on this tab", which is
-  // how the catalogue came to look like it was missing something it has.
-  it("finds a match outside the picked domain, because a query outranks the pick", () => {
-    const [picked, elsewhere] = CATALOG.domains
-    const stranger = allCells(empty, { domain: elsewhere!.id })[0]!.skill
-
-    const ids = allCells(empty, {
-      domain: picked!.id,
-      q: stranger.displayName,
-    }).map((cell) => cell.skill.id)
-
-    expect(ids).toContain(stranger.id)
-  })
-
-  // The instance that was reported, kept by name: its id says `meta-` while its
-  // category is `shared-tooling`, so it sits in `shared` — the one domain a
-  // reader hunting a "meta" skill would not think to open.
-  it("finds stack detection from a domain that is not its own", () => {
+  // EDITOR-64, and the reason the pick has to stay out of `cellsIn` as well as
+  // out of the domain list. The pick and the query used to INTERSECT: domains
+  // were filtered to the picked one and only then were skills matched inside
+  // it, so a query could never reach past the tab you were on. A search that
+  // finds nothing reads as "no such skill" rather than "not on this tab", which
+  // is how the catalogue came to look like it was missing something it has.
+  //
+  // The instance that was reported carries the query, so the case stays named:
+  // `meta-config-stack-detect`'s id says `meta-` while its category is
+  // `shared-tooling`, so it sits in `shared` — the one domain a reader hunting
+  // a "meta" skill would not think to open.
+  it("finds a skill through a query with another domain in the address", () => {
     const id = "meta-config-stack-detect"
-    const home = CATALOG.domains.find((domain) =>
-      allCells(empty, { domain: domain.id }).some(
-        (cell) => cell.skill.id === id
-      )
-    )!
-    const elsewhere = CATALOG.domains.find((domain) => domain.id !== home.id)!
+    const home = CATALOG.skillsById[id]!.domainId
+    const elsewhere = CATALOG.domains.find((domain) => domain.id !== home)!
 
     const ids = allCells(empty, {
       domain: elsewhere.id,
@@ -1264,6 +1259,11 @@ describe("derivations over an external skill", () => {
   // EDITOR-17: it lands beside the skills it belongs with. There is no Added
   // section and no Uncategorized category, because the dropdown made the
   // placement a decision rather than a guess `categoriseRepo` had to make.
+  //
+  // EDITOR-19 rides here too, now that the domain chip filters nothing: what
+  // that task was about is that this skill sits INSIDE a real domain rather
+  // than outside every one of them, which is what the lookup below asserts and
+  // is what the strip needs to be able to scroll to it.
   it("renders in the category it was filed under", () => {
     const views = selectDomainViews(scratch(), SEARCH)
     const domain = views.find((view) => view.id === DOMAIN)!
@@ -1284,25 +1284,6 @@ describe("derivations over an external skill", () => {
 
     expect(cell.skill.added).toBe(true)
     expect(cell.skill.sourceUrl).toContain("acme/skills")
-  })
-
-  // EDITOR-19: the chip filters domains, and this skill now has one. It used to
-  // sit outside every domain, so any chip at all erased it — selected or not.
-  it("survives its own domain's filter chip", () => {
-    const views = selectDomainViews(picked(), search({ domain: DOMAIN }))
-    const domain = views.find((view) => view.id === DOMAIN)!
-
-    expect(cellsIn(domain, CATEGORY).map((cell) => cell.skill.id)).toContain(
-      HOUSE_ID
-    )
-  })
-
-  it("is filtered out by another domain's chip, exactly as its neighbours are", () => {
-    const views = selectDomainViews(picked(), search({ domain: "api" }))
-
-    expect(
-      views.flatMap((view) => view.categories.flatMap((c) => c.cells))
-    ).not.toContainEqual(expect.objectContaining({ skill: { id: HOUSE_ID } }))
   })
 
   it("answers the search box like any other skill", () => {
@@ -1509,5 +1490,47 @@ describe("a catalogue skill's source link", () => {
     expect(linkTo(outsider.id)).toBe(
       "https://github.com/obra/superpowers/tree/HEAD/skills/outsider"
     )
+  })
+})
+
+// THE STRIP'S TOTALS AND THE HINGE'S TOTAL COUNT THE SAME THING, which is the
+// only reason the two can sit one above the other and be read against each
+// other. Both are the CATALOGUE's, deliberately blind to every filter — a count
+// against a filtered list says nothing, and the way back to everything else
+// would be a number that had already moved.
+describe("catalogueSkillCount", () => {
+  it("is every skill the catalogue holds", () => {
+    expect(catalogueSkillCount()).toBe(
+      CATALOG.domains.reduce((total, domain) => total + domain.skillCount, 0)
+    )
+  })
+
+  // The assertion that keeps the hinge and the strip honest with each other:
+  // one number over nine, summed the other way round.
+  it("agrees with the strip's own per-domain counts", () => {
+    expect(catalogueSkillCount()).toBe(
+      selectDomainTabs().reduce((total, tab) => total + tab.skillCount, 0)
+    )
+  })
+})
+
+// The toggle states its VALUE, not its name. Which is why the words are derived
+// rather than fixed, and why the two halves count different things: `all` is
+// the catalogue's size and `selected` is the selection's.
+describe("selectedOnlyLabel", () => {
+  it("reads out the catalogue's size while it is off", () => {
+    expect(selectedOnlyLabel(false, 23, 238)).toBe("all 238")
+  })
+
+  it("reads out the selection's size while it is on", () => {
+    expect(selectedOnlyLabel(true, 23, 238)).toBe("selected 23")
+  })
+
+  // The two counts are never the same number by accident: a label that read
+  // `all 23` while the filter was off would be the selection's count wearing
+  // the catalogue's word, which is exactly the swap this pins.
+  it("never lets one count wear the other's word", () => {
+    expect(selectedOnlyLabel(false, 1, 2)).toBe("all 2")
+    expect(selectedOnlyLabel(true, 1, 2)).toBe("selected 1")
   })
 })

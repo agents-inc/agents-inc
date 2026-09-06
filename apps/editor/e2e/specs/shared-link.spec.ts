@@ -91,7 +91,7 @@ test.describe("a shared link keeps its own address", () => {
     await page.goto(`/?fromId=${STORED_ID}`)
 
     await expect(configure.importNotice).toContainText("shared configuration")
-    await expect(configure.importNotice).toContainText("Configure")
+    await expect(configure.importNotice).toContainText("Editor")
   })
 })
 
@@ -186,14 +186,14 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
 
   // The way back the notice actually names, which is a nav item rather than a
   // fresh page load — so the escape has to work without one.
-  test("returns to the visitor's own from the Configure nav item", async ({
+  test("returns to the visitor's own from the Editor nav item", async ({
     configure,
     page,
   }) => {
     await page.goto(`/?fromId=${STORED_ID}`)
     await expect(configure.skill(SHARED_SKILL).root).toBeVisible()
 
-    await page.getByRole("link", { name: "Configure" }).click()
+    await page.getByRole("link", { name: "Editor" }).click()
 
     await expect(page).toHaveURL("/editor/")
     await expect(configure.skill(ACME_SKILL).root).toHaveAttribute(
@@ -230,7 +230,7 @@ test.describe("a visitor who has saved nothing", () => {
 
     // The way the notice itself names, rather than a fresh page load — which
     // is what makes this a return to their own address instead of a boot.
-    await configure.page.getByRole("link", { name: "Configure" }).click()
+    await configure.page.getByRole("link", { name: "Editor" }).click()
     await expect(configure.page).toHaveURL("/editor/")
   }
 

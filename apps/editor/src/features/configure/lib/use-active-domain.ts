@@ -3,14 +3,14 @@ import { useEffect, useState, type RefObject } from "react"
 import { observe } from "./use-pinned"
 
 /**
- * WHICH DOMAIN THE COLUMN IS SHOWING — the strip's job when nothing is picked.
+ * WHICH DOMAIN THE COLUMN IS SHOWING — the strip's whole answer.
  *
- * The domain tabs are a scroll indicator first and a control second. Pick one
- * and it filters the column, and the pick owns the active state; pick nothing
- * and the strip follows the page, naming whichever section has passed under
- * the bar. That second half is what makes the strip a map rather than a row of
- * filters, and it is the half that has no CSS equivalent — `position: sticky`
- * can pin an element but cannot tell anything else that it did.
+ * The domain tabs are a scroll indicator first and a control second, and since
+ * EDITOR-79 they are only ever the first: picking a tab jumps the page to that
+ * section rather than filtering to it, so the strip follows the page at every
+ * position with no exception for a pick. That is what makes it a map rather
+ * than a row of filters, and it is what has no CSS equivalent — `position:
+ * sticky` can pin an element but cannot tell anything else that it did.
  *
  * MEASURED, NOT OBSERVED. An `IntersectionObserver` answers "is this section on
  * screen", and several always are — the question here is which of them is
@@ -70,9 +70,9 @@ export function useActiveDomain(
   // every render, so its identity changes when nothing about it has. What the
   // effect actually cares about is the SET of anchors on the page, and a change
   // to that set has to re-derive immediately rather than on the next scroll —
-  // releasing a filter re-renders eight sections without moving the page at
-  // all, and a strip still naming the released domain is pointing at a filter
-  // that is gone.
+  // clearing a query re-renders every section without moving the page at all,
+  // and the domain the reader is left in front of is not the one they were in
+  // front of a moment ago.
   const key = rendered.join(" ")
 
   useEffect(() => {

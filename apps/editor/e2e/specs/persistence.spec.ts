@@ -70,7 +70,7 @@ test.describe("persistence", () => {
     // One off the rule's reach — the agent whose only row was switched off
     // derives off on its own — and one pinned on beside it.
     await expect(configure.roster.installButton).toContainText(
-      `${DOMAIN_REACH.web - 1 + 1} sub-agents and 1 skill`
+      `${DOMAIN_REACH.web - 1 + 1} agents · 1 skill`
     )
   })
 

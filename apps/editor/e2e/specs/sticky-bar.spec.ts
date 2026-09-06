@@ -1,4 +1,5 @@
 import type { Locator } from "@playwright/test"
+import type { ConfigurePage } from "../pages/configure-page"
 
 import { expect, test } from "../fixtures"
 import { DOMAINS } from "../support/catalog"
@@ -33,6 +34,23 @@ const PLACEHOLDER_TEXT = "rgb(106, 103, 92)"
 // reveal: one direct computed-style lookup, no parsing.
 const placeholderColorOf = (locator: Locator) =>
   locator.evaluate((node) => getComputedStyle(node, "::placeholder").color)
+
+// The add-skill block's box, and how much band runs on past its right edge.
+//
+// Both read live and compared against their own RESTING values rather than
+// against a coordinate: the block ends on the content edge in both states, so
+// the air beside it is the page's 60px gutter without this spec ever naming the
+// number or converting a rem by hand.
+const blockGeometry = async (configure: ConfigurePage) => {
+  const block = await configure.addSkillButton.boundingBox()
+  const band = await configure.filterBand.boundingBox()
+  if (!block || !band) throw new Error("the block and the band must be drawn")
+
+  return {
+    width: block.width,
+    clearance: band.x + band.width - (block.x + block.width),
+  }
+}
 
 // The bar changes shape at the moment CSS pins it. That state is published as
 // a root attribute rather than as React state, so these read the attribute —
@@ -101,22 +119,12 @@ test.describe("sticky filter bar", () => {
     )
   })
 
-  // The selection filters live in the strip, so they keep their RESTING
-  // treatment while the bar is stuck. Copying the band's chip rules onto them
-  // was a real bug: #8f8b7d on #fdfdfc is 3.35:1 and the borders vanished.
-  test("keeps the selection filters in their resting treatment", async ({
-    configure,
-  }) => {
-    const selected = configure.chip("Selected")
-    const resting = await selected.evaluate(
-      (node) => getComputedStyle(node).borderTopColor
-    )
-
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
-
-    await expect(selected).toHaveCSS("border-top-color", resting)
-  })
+  // The claim this replaces was that the selection filters, riding at the far
+  // end of the strip, kept their resting treatment while the band above them
+  // went dark. There are no filters on the strip any more — `selected` is on
+  // the skills hinge, which never sticks at all — so the claim has nothing left
+  // to be true of. It is deleted rather than rewritten: the treatment it was
+  // guarding cannot regress from a row it is not on.
 
   // Sticking is a scroll position, not an instruction. The bar used to put the
   // caret in its own search field the moment it pinned — on the theory that
@@ -189,6 +197,41 @@ test.describe("sticky filter bar", () => {
       "box-shadow",
       BAND_EDGE_INSET
     )
+  })
+
+  // THE BLOCK IS A CONTROL ON THE BAND, NOT THE BAND'S RIGHT-HAND END. It used
+  // to take the bar's right gutter as its own padding once pinned, which walked
+  // its box out to the bleed edge — so the hairline the test above pins was
+  // drawn around a strip with the label adrift inside it, which is a filled
+  // band's shape rather than a button's. The gutter is space BESIDE the block;
+  // the block hugs its label in both states.
+  test("keeps its width once the bar sticks", async ({ configure }) => {
+    const atRest = await blockGeometry(configure)
+
+    await configure.scrollTo(PAST_THE_BAR)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    await expect
+      .poll(async () => (await blockGeometry(configure)).width)
+      .toBeCloseTo(atRest.width, 1)
+  })
+
+  // The other half, and the one that says where the gutter went. The resting
+  // clearance is asserted first because it is the channel: a run where the band
+  // and the block share a right edge in BOTH states would satisfy a stuck-only
+  // assertion for the wrong reason.
+  test("keeps the band running on past it once stuck", async ({
+    configure,
+  }) => {
+    const atRest = await blockGeometry(configure)
+    expect(atRest.clearance).toBeGreaterThan(0)
+
+    await configure.scrollTo(PAST_THE_BAR)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    await expect
+      .poll(async () => (await blockGeometry(configure)).clearance)
+      .toBeCloseTo(atRest.clearance, 1)
   })
 
   // A typed query is a decision the visitor made and the prompt is not, so the

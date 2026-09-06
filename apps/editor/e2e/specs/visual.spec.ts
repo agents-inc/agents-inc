@@ -187,6 +187,25 @@ test.describe("the dialogs", () => {
     await capture(configure, "dialog-output-preview")
   })
 
+  // ITS OWN SCREEN, because it is the one state in this app where the sheet
+  // stops being a sheet: it drops its 760px width and its 96px top for the
+  // viewport's own inset on all four edges, and every proportion inside it —
+  // the tree against the code, the header's controls against the subtitle, the
+  // footer's note against Close — is measured against a different box. The
+  // design ships it as a capture of its own for the same reason.
+  //
+  // It is also the state the reason for the whole feature is visible in: at
+  // 760px the code pane is ~60 characters and generated source WRAPS, which is
+  // exactly what a picture catches and `getByRole` cannot.
+  test("output preview in fullscreen", async ({ configure }) => {
+    await withSelection(configure)
+    await configure.roster.previewButton.click()
+    await configure.outputPreviewDialog.root.waitFor()
+    await configure.outputPreviewDialog.fullscreenButton.click()
+
+    await capture(configure, "dialog-output-preview-fullscreen")
+  })
+
   test("add skill", async ({ configure, page }) => {
     stubSkillIndex(page)
     await configure.addSkillButton.click()

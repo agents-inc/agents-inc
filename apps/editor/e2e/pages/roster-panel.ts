@@ -29,30 +29,33 @@ export class RosterPanel {
   readonly installButton: Locator
   readonly shareButton: Locator
   readonly saveButton: Locator
-  // The recessed field between Share and Install — "you preview, then you
-  // install". Its label is fixed and carries no count, so unlike the three
-  // buttons around it this one is located by the whole of its own name.
+  // The third cell of the action row, after Save and Share and above Install —
+  // "you preview, then you install". Its label is the only one of the three
+  // that never narrates, so unlike its neighbours it is located by its whole
+  // name rather than by a resting word.
   readonly previewButton: Locator
   // The grouping control in the panel header, and the flat two-item menu it
   // opens. Located by an `aria-label` rather than by its visible text, because
-  // that text is the current VALUE — `domain ▾` says nothing about what the
+  // that text is the current VALUE — `domain` says nothing about what the
   // control does, and it changes the moment the control is used.
   readonly groupControl: Locator
 
   constructor(private page: Page) {
     this.root = page.getByRole("complementary")
     this.heading = this.root.getByText(ROSTER_HEADER_LABEL, { exact: true })
-    // Its label carries the counts — `Install 4 sub-agents and 1 skill` — so
+    // Its label carries the counts — `Install 4 agents · 1 skill` — so
     // specs assert the numbers on the button itself.
     this.installButton = this.root.getByRole("button", { name: /^Install / })
     // Its accessible name narrates the share lifecycle ("Share", "Link
     // copied", …), so specs asserting an outcome locate it by that state.
     this.shareButton = this.root.getByRole("button", { name: "Share" })
-    // Sits above Share, and snapshots the selection into the stack grid — so
-    // like Share it has nothing to offer a selection holding no skills.
+    // Sits first on the action row, before Share, and snapshots the selection
+    // into the stack grid — so like Share it has nothing to offer a selection
+    // holding no skills.
     this.saveButton = this.root.getByRole("button", { name: "Save" })
     this.previewButton = this.root.getByRole("button", {
-      name: /preview generated code/i,
+      name: "Preview",
+      exact: true,
     })
     this.groupControl = this.root.getByRole("button", {
       name: /^Group sub-agents by/,
@@ -121,6 +124,19 @@ export class RosterPanel {
       name: role,
       exact: true,
     })
+  }
+
+  // The whole agent row — the pin button AND the three cycling words beside it
+  // — which is the box the assignment pulse paints. Located by slot for the
+  // reason `headerRule` is: the row is a semantics-free wrapper, so there is no
+  // role or name to reach it by, and an `xpath=..` hop off the pin button would
+  // break in silence the next time the row gains an element.
+  agentRow(domainId: string, role: string): Locator {
+    return this.domainSection(domainId)
+      .locator('[data-slot="agent-row"]')
+      .filter({
+        has: this.page.getByRole("button", { name: role, exact: true }),
+      })
   }
 
   // The same row reached by its whole name instead of through its band, which

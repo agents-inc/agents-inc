@@ -7,6 +7,11 @@
 
 export const STACKS = {
   scratch: "Start from scratch",
+  // The SAME CELL, wearing the words it takes once anything is selected. There
+  // is no separate clear control: applying the first cell and clearing are the
+  // same act, so the cell states the cost instead of describing a starting
+  // point the visitor is no longer at.
+  clearScratch: "Clear and start from scratch",
   nextjs: "Next.js Full-Stack",
   t3: "Next.js T3 Stack",
   remix: "Remix Full-Stack",

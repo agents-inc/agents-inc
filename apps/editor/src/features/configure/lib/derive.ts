@@ -90,11 +90,13 @@ export type DomainView = {
 export type DomainTab = {
   // The catalogue's own id rather than a bare string, because picking a tab
   // WRITES it to the URL — `ConfigureSearch.domain` is this enum, so a widened
-  // id here would make the strip the one filter that could set a domain the
+  // id here would make the strip the one control that could set a domain the
   // address bar cannot hold.
   id: Domain
   label: string
-  /** `01`, `02`, … — a fixed slot, so picking one never shifts the strip. */
+  /** `01`, `02`, … — always rendered, at zero opacity when it is not showing,
+   *  so selecting a tab never shifts the ink inside its cell. The STRIP cannot
+   *  shift either way: its cells are equal and span the column. */
   index: string
   /** Every skill the domain holds, filtered or not. */
   skillCount: number
@@ -327,33 +329,6 @@ type GridContext = {
   judgement: SelectionJudgement
 }
 
-/**
- * A QUERY OUTRANKS THE DOMAIN PICK rather than compounding with it (EDITOR-64).
- *
- * The two used to intersect, so a query could only ever match inside the tab
- * you were on. `meta-config-stack-detect` is the instance that reported it: its
- * id reads `meta-` while its category is `shared-tooling`, so it lives in
- * `shared` — and searching for it from anywhere else returned nothing. An empty
- * result reads as "no such skill", never as "not on this tab", so the catalogue
- * looked like it was missing something it has.
- *
- * NOTHING IS LOST BY THE OVERRIDE: the pick is not cleared, so emptying the
- * query drops the reader back on the tab they were on.
- *
- * WHAT THE STRIP DOES WHILE A QUERY IS ACTIVE IS NOT SETTLED. `filter-bar.tsx`
- * reads `search.domain ?? scrolledDomain ?? tabs[0]`, and because the pick
- * survives, that `??` short-circuits on it — so the picked chip keeps its
- * active treatment while the grid below shows every domain. The two disagree
- * on screen. Whether the chip should dim, clear, or say something while a
- * query outranks it is a design question rather than a bug in this function,
- * and it is filed rather than guessed at here.
- */
-const isVisibleDomain = (domain: CatalogDomain, search: ConfigureSearch) =>
-  searchesWholeCatalog(search) || domain.id === search.domain
-
-const searchesWholeCatalog = (search: ConfigureSearch) =>
-  !search.domain || search.q !== ""
-
 // Applied to the cell, not the skill, so "selected" has one definition.
 const survivesSelectionFilter = (
   cell: SkillCellView,
@@ -421,9 +396,16 @@ const toDomainView = (
 // Categories that filter down to nothing are dropped, and so are the domains
 // that lose all of theirs, so the page never renders an empty header.
 //
+// `search.domain` IS NOT READ HERE, and its absence is the whole of EDITOR-79:
+// picking a domain scrolls the column to that section rather than narrowing to
+// it, so a pick has no effect on what is drawn at all. Only the query and the
+// `selected` filter can remove anything. That also retires the design question
+// this function used to carry — a query could contradict the pick because the
+// pick was a mode, and a scroll target is not one.
+//
 // There is no trailing Added section, and its absence is the point: an added
 // skill is placed by the category the user confirmed, so it renders under a
-// real domain and answers the domain chip like its neighbours. The orphan
+// real domain and is reached by the strip like its neighbours. The orphan
 // section used to be the only home for a skill `categoriseRepo` could not
 // guess a category for, and it was invisible to every filter (EDITOR-17,
 // EDITOR-19).
@@ -438,18 +420,17 @@ export const selectDomainViews = (
   }
 
   return activeCatalog()
-    .domains.filter((domain) => isVisibleDomain(domain, search))
-    .map((domain) => toDomainView(domain, context))
+    .domains.map((domain) => toDomainView(domain, context))
     .filter(hasCategories)
 }
 /**
  * THE STRIP IS THE PAGE'S MAP, so it is derived from the catalogue alone.
  *
- * Every domain, always, in catalogue order — deliberately blind to the search,
- * the domain pick and the `selected` filter, all three of which `selectDomainViews`
- * above answers. A strip that shrank with the filter would be a map that
- * redraws itself the moment you use it: picking `api` would leave one tab, and
- * the way back to everything else would be gone.
+ * Every domain, always, in catalogue order — deliberately blind to the search
+ * and to the `selected` filter, both of which `selectDomainViews` above
+ * answers. A strip that shrank with the filter would be a map that redraws
+ * itself the moment you use it, and the way back to everything else would be
+ * gone.
  *
  * The count is the domain's WHOLE size for the same reason the category counts
  * read `x of y` against the whole category — a count against a filtered list
@@ -462,6 +443,38 @@ export const selectDomainTabs = (): DomainTab[] =>
     index: String(position + 1).padStart(2, "0"),
     skillCount: domain.skillCount,
   }))
+
+/**
+ * How many skills the catalogue holds, which is the number the skills hinge's
+ * toggle reads out at rest: `all 42`.
+ *
+ * Summed from the domains rather than counted from `skillsById`, so it answers
+ * with exactly what the strip above it counts — a skill in the catalogue that
+ * no domain renders would otherwise make the hinge's total and the strip's
+ * totals disagree by one, and there would be no way to tell from the screen
+ * which of the two was wrong.
+ */
+export const catalogueSkillCount = (): number =>
+  activeCatalog().domains.reduce(
+    (total, domain) => total + domain.skillCount,
+    0
+  )
+
+/**
+ * What the skills hinge's toggle READS OUT, which is its value rather than its
+ * name: `all 238` is what you are looking at now, `selected 23` is what you
+ * would be looking at instead.
+ *
+ * Here rather than inline in the JSX because the two halves count different
+ * things — one the catalogue, one the selection — and a reader should not have
+ * to work out which is which from a ternary. The accessible name stays fixed
+ * and lives at the call site; this is only ever the drawn words.
+ */
+export const selectedOnlyLabel = (
+  selectedOnly: boolean,
+  selectedCount: number,
+  catalogueCount: number
+) => (selectedOnly ? `selected ${selectedCount}` : `all ${catalogueCount}`)
 
 // ── Roster ───────────────────────────────────────────────────────────────
 

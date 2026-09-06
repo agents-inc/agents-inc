@@ -10,23 +10,17 @@ const { web, api } = DOMAINS
 const NO_MATCH_QUERY = "zzzznotaskill"
 const SCROLLED = 1200
 
+// THE DOMAIN STRIP IS NOT HERE, and its absence is the point. It carried two
+// tests in this file while a pick narrowed the column to one domain; since
+// EDITOR-79 a pick scrolls to a section and filters nothing, so the strip is
+// not a filter and `domain-tabs.spec.ts` owns it whole. What remains in this
+// file is the query and the `selected` toggle, which are the only two things
+// that can take a skill off the page.
 test.describe("filtering", () => {
-  test("every domain renders when no tab is picked", async ({ configure }) => {
+  test("every domain renders before anything is filtered", async ({
+    configure,
+  }) => {
     await expect(configure.domain(web)).toBeVisible()
-    await expect(configure.domain(api)).toBeVisible()
-  })
-
-  test("a domain tab narrows to that domain", async ({ configure }) => {
-    await configure.domainTab(web).click()
-
-    await expect(configure.domain(web)).toBeVisible()
-    await expect(configure.domain(api)).toBeHidden()
-  })
-
-  test("clicking the picked domain tab clears it", async ({ configure }) => {
-    await configure.domainTab(web).click()
-    await configure.domainTab(web).click()
-
     await expect(configure.domain(api)).toBeVisible()
   })
 
@@ -48,11 +42,13 @@ test.describe("filtering", () => {
     await expect(configure.skillCells).toHaveCount(0)
   })
 
-  test("the selected chip narrows to chosen skills", async ({ configure }) => {
+  test("the selected toggle narrows to chosen skills", async ({
+    configure,
+  }) => {
     await configure.chooseStack(STACKS.nextjs)
     const before = await configure.skillCells.count()
 
-    await configure.toggleChip("Selected")
+    await configure.selectedOnlyToggle.click()
 
     const after = await configure.skillCells.count()
     expect(after).toBeLessThan(before)
@@ -61,20 +57,44 @@ test.describe("filtering", () => {
     ).toBeVisible()
   })
 
-  test("the selected chip shows nothing when nothing is chosen", async ({
+  // A toggle whose only possible effect is an empty column is not a control, so
+  // it is ABSENT rather than pressable-and-useless. This replaces a test that
+  // asserted the opposite — that pressing it with nothing chosen empties the
+  // grid — which is the state the design removed the ability to reach.
+  test("the selected toggle is not drawn until something is chosen", async ({
     configure,
   }) => {
-    await configure.toggleChip("Selected")
-    await expect(configure.emptyState).toBeVisible()
+    await expect(configure.selectedOnlyToggle).toHaveCount(0)
+
+    await configure.chooseStack(STACKS.nextjs)
+
+    await expect(configure.selectedOnlyToggle).toBeVisible()
+  })
+
+  // It states its VALUE, not its name: `all 42` is what you are looking at now
+  // and `selected 14` is what you would be looking at instead. The totals are
+  // read off the page rather than written here — the catalogue is generated.
+  test("the selected toggle states the count on each side of it", async ({
+    configure,
+  }) => {
+    await configure.chooseStack(STACKS.nextjs)
+
+    await expect(configure.selectedOnlyToggle).toHaveText(/^all \d+$/)
+
+    await configure.selectedOnlyToggle.click()
+
+    await expect(configure.selectedOnlyToggle).toHaveText(/^selected \d+$/)
   })
 })
 
-// THE FIELD HOLDS SEARCH AND NOTHING ELSE. Filters lived inside its border for
-// most of this design's life and never read as filters there — a chip inside a
-// text field looks like something the field did, not something you can do to
-// the grid. They sit at the far end of the domain strip now, on the row whose
-// other end names what they narrow.
-test.describe("where the filters live", () => {
+// THE FIELD HOLDS SEARCH AND NOTHING ELSE, and the strip holds domains and
+// nothing else. Both were tried as homes for `selected` and both were rejected
+// by name: a chip inside a text field looks like something the field did, and a
+// chip on the domain strip is a column-wide control riding on a row of
+// section-wide ones. It is a SECTION-LEVEL control, so it sits on the section
+// rule — the skills hinge — at the same content edge and in the same border as
+// the stack accordion button.
+test.describe("where the selected toggle lives", () => {
   test("the search field holds no controls at all", async ({ configure }) => {
     // The channel first: the field really is on the page and really is the box
     // around the input, or the count below is a claim about nothing.
@@ -84,76 +104,63 @@ test.describe("where the filters live", () => {
     await expect(configure.searchField.getByRole("button")).toHaveCount(0)
   })
 
-  test("the selection filters ride on the domain strip", async ({
+  test("it sits on the skills hinge, not in the bar", async ({ configure }) => {
+    await configure.chooseStack(STACKS.nextjs)
+
+    await expect(
+      configure.hinge("pick your skills").or(configure.hinge("then customise"))
+    ).toContainText(/^then/)
+    await expect(
+      configure
+        .hinge("then customise")
+        .getByRole("button", { name: "Show only selected skills" })
+    ).toBeVisible()
+    await expect(
+      configure.filterBar.getByRole("button", {
+        name: "Show only selected skills",
+      })
+    ).toHaveCount(0)
+  })
+
+  // The rule runs behind it and out to the bleed edge, so the control's own
+  // right edge is the content edge every other thing in the column ends on —
+  // the same x the accordion button above it holds.
+  test("ends on the same content edge as the stack accordion", async ({
     configure,
   }) => {
-    const strip = configure.filterBar.getByRole("button", { name: "Selected" })
+    await configure.chooseStack(STACKS.nextjs)
 
-    await expect(strip).toBeVisible()
-    await expect(
-      configure.searchField.getByRole("button", { name: "Selected" })
-    ).toHaveCount(0)
+    const toggle = await configure.selectedOnlyToggle.boundingBox()
+    const accordion = await configure.stackToggle.boundingBox()
+    if (!toggle || !accordion) throw new Error("both controls must be drawn")
+
+    expect(toggle.x + toggle.width).toBeCloseTo(
+      accordion.x + accordion.width,
+      0
+    )
   })
 })
 
-// `N skills selected ✕` — the one control that says how much has been chosen,
-// and the one door back to nothing. It is absent rather than disabled while
-// nothing is selected, because a counter reading zero is furniture.
+// CLEARING HAS NO CONTROL OF ITS OWN. `N skills selected ✕` was built and
+// removed: the first stack cell already means "nothing selected", so applying
+// it and clearing are the same act and the cell says so. Its own claims live in
+// `stacks.spec.ts`; what belongs here is the one consequence a FILTER has —
+// that clearing releases the toggle above, or the visitor lands on an empty
+// column with no control on screen to get back from it.
 test.describe("clearing every selection", () => {
-  test("appears only once something is selected, and counts it", async ({
-    configure,
-  }) => {
-    await expect(configure.clearSelectionButton).toHaveCount(0)
-
-    await configure.chooseStack(STACKS.nextjs)
-
-    await expect(configure.clearSelectionButton).toBeVisible()
-    await expect(configure.clearSelectionButton).toContainText(
-      /\d+ skills selected/
-    )
-  })
-
-  // Every selection, not just the visible ones: the stack goes with them, which
-  // is what the second hinge reports. A control that cleared the grid and left
-  // the page still saying "then customise next.js full-stack" would be telling
-  // the visitor they still had a stack.
-  test("empties the whole configuration, stack included", async ({
-    configure,
-  }) => {
-    await configure.chooseStack(STACKS.nextjs)
-    const cell = configure.skillIn(
-      web,
-      EXCLUSIVE_CATEGORY.name,
-      STACK_MEMBER_SKILL
-    )
-    expect(await cell.isSelected()).toBe(true)
-
-    await configure.clearSelectionButton.click()
-
-    expect(await cell.isSelected()).toBe(false)
-    await expect(configure.clearSelectionButton).toHaveCount(0)
-    await expect(configure.hinge("pick your skills")).toBeVisible()
-  })
-
-  // Clearing releases the `selected` filter too. Without it the visitor lands
-  // on an empty column with no way back to the grid except a filter they have
-  // to notice is still on.
   test("releases the selected filter, so the grid comes back", async ({
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
-    await configure.toggleChip("Selected")
-    await expect(configure.chip("Selected")).toHaveAttribute(
+    await configure.selectedOnlyToggle.click()
+    await expect(configure.selectedOnlyToggle).toHaveAttribute(
       "aria-pressed",
       "true"
     )
 
-    await configure.clearSelectionButton.click()
+    await configure.stack(STACKS.clearScratch).click()
 
-    await expect(configure.chip("Selected")).toHaveAttribute(
-      "aria-pressed",
-      "false"
-    )
+    await expect(configure.selectedOnlyToggle).toHaveCount(0)
     await expect(configure.emptyState).toHaveCount(0)
     await expect(configure.domain(web)).toBeVisible()
   })
@@ -171,26 +178,12 @@ test.describe("clearing every selection", () => {
 // arithmetic rather than the behaviour under test.
 const NO_RESET = "filtering must not scroll the page back to the top"
 
+// The domain tab's half of this moved to `domain-tabs.spec.ts`: a pick now
+// scrolls the page ON PURPOSE, so "did not go to the top" is no longer the
+// question — "landed under the bar" is, and the landing assertion there fails
+// by the height of everything above the first domain if the router ever starts
+// resetting scroll on a pick.
 test.describe("filtering and scroll position", () => {
-  test("a domain tab does not scroll the page to the top", async ({
-    configure,
-  }) => {
-    await configure.scrollTo(SCROLLED)
-    // Deliberately not an equality check: late layout settling nudges the
-    // offset by a few pixels, and the precondition only needs "we are scrolled".
-    await expect.poll(() => configure.scrollY()).toBeGreaterThan(0)
-
-    await configure.domainTab(web).click()
-    await expect(configure.domainTab(web)).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    )
-
-    await expect
-      .poll(() => configure.scrollY(), { message: NO_RESET })
-      .toBeGreaterThan(0)
-  })
-
   test("typing does not scroll the page to the top", async ({ configure }) => {
     await configure.scrollTo(SCROLLED)
     // Deliberately not an equality check: late layout settling nudges the

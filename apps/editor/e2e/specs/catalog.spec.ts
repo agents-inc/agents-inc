@@ -14,8 +14,13 @@ import {
 // drift surfaces as one failure naming the value that moved, rather than as
 // every other spec going red at once.
 test.describe("catalog assumptions", () => {
+  // `clearScratch` is held out because it is not a stack: it is the first cell's
+  // OTHER name, worn only while something is selected, and this test runs on a
+  // fresh visit where nothing is. The pair is asserted where it belongs, in
+  // `stacks.spec.ts`'s "the first cell as the reset".
   test("the stacks the specs use are present", async ({ configure }) => {
-    for (const name of Object.values(STACKS)) {
+    for (const [key, name] of Object.entries(STACKS)) {
+      if (key === "clearScratch") continue
       await expect(configure.stack(name)).toBeVisible()
     }
   })

@@ -1,5 +1,6 @@
 import { Button } from "@workspace/ui/components/button"
-import { useId, useRef, useState } from "react"
+import { Glyph } from "@workspace/ui/components/glyph"
+import { useId, useLayoutEffect, useRef, useState } from "react"
 
 import { composeProposal, type ComposeRefusal } from "@/lib/api/compose"
 import { groupsFor } from "../lib/compose-proposal"
@@ -9,7 +10,7 @@ import { useConfigStore } from "@/stores/config-store"
 import { ProposalBlock } from "./proposal"
 
 import type { Proposal } from "./proposal"
-import type { KeyboardEvent } from "react"
+import type { CSSProperties, KeyboardEvent } from "react"
 
 /**
  * A SENTENCE AT THE FOOT OF THE COLUMN, AND A PROPOSAL BACK.
@@ -68,15 +69,21 @@ const HINT = "nothing changes until you apply"
 // ── The keyboard ───────────────────────────────────────────────────────────
 
 /**
- * Which chord to DRAW. U+2318 PLACE OF INTEREST SIGN and U+21A9 LEFTWARDS ARROW
- * WITH HOOK, adjacent, with no space, no plus sign and no key caps — exactly as
- * the design has them, and neither is U+23CE nor U+21B5.
+ * Which chord to DRAW. U+2318 PLACE OF INTEREST SIGN and the icon set's `enter`
+ * glyph, adjacent, with no space, no plus sign and no key caps — exactly as the
+ * design has them.
+ *
+ * The return key is DRAWN rather than typed, and that is the whole of the icon
+ * decision in one place: it used to be U+21A9, a typographic character that
+ * inherited the button's own weight and baseline while the ＋ beside it in the
+ * filter bar inherited a different font's. Two glyphs a row apart disagreeing
+ * about where the middle of a line is.
  *
  * Only one is drawn, and BOTH are bound on every platform: a bound key that is
  * not drawn costs nothing, and a drawn key that is not bound is a lie.
  */
 const IS_APPLE_PLATFORM = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
-const SEND_CHORD = IS_APPLE_PLATFORM ? "⌘↩" : "Ctrl↩"
+const SEND_MODIFIER = IS_APPLE_PLATFORM ? "⌘" : "Ctrl"
 
 /** What the hidden glyph publishes to anyone who cannot see it. The one
  *  standard attribute for this, and it names both chords because both are
@@ -93,15 +100,21 @@ const isSubmitChord = (event: KeyboardEvent<HTMLTextAreaElement>) =>
   event.key === "Enter" && (event.metaKey || event.ctrlKey)
 
 /**
- * Six lines at the field's own 19px line box, past which it scrolls.
+ * How much TEXT the field may hold before it scrolls, past which the dock would
+ * eventually cover the page it is docked to.
  *
- * The dock is sticky at the viewport's foot, so an uncapped field would
- * eventually cover the page it is docked to. The constant is the whole utility
- * rather than its number: Tailwind reads class strings out of the source, so a
- * figure interpolated into one compiles to nothing at all — no build error, no
- * lint error, just an uncapped field.
+ * A `calc` rather than a figure, and both terms are load-bearing: `max-height`
+ * is a border-box height under preflight, and the field's box now runs the
+ * whole band — 15px of air above the first line, then the text, then a foot
+ * exactly as tall as the control row drawn over it. So the cap has to carry
+ * both paddings or the field would stop growing while its own visible room was
+ * still filling.
+ *
+ * The constant is the whole utility rather than its number: Tailwind reads
+ * class strings out of the source, so a figure interpolated into one compiles
+ * to nothing at all — no build error, no lint error, just an uncapped field.
  */
-const FIELD_HEIGHT_CAP = "max-h-[7.125rem]"
+const FIELD_HEIGHT_CAP = "max-h-[calc(0.9375rem+7.125rem+var(--composer-tail))]"
 
 // What a refusal says, in the composer's own words. The worker sends a code
 // rather than a sentence for the reason `ShareRefusal` does: these are
@@ -144,6 +157,40 @@ export function Composer() {
   // ref type's rather than a state this app can be in.
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const hintId = useId()
+
+  // THE BAND'S FOOT, MEASURED RATHER THAN NAMED. The control row is drawn over
+  // the bottom of the field now, so the field reserves exactly its height as
+  // padding — and that height is not arithmetic from the design's figures: the
+  // button draws `⌘↩` in whatever font has those glyphs, and the fallback's
+  // line box is what actually sets the row's height. A constant here would be
+  // right on one machine.
+  const tailRef = useRef<HTMLDivElement>(null)
+  const [tail, setTail] = useState(0)
+
+  // A LAYOUT effect, so the first paint already reserves the room: a passive
+  // one would draw the field over its own control row for a frame, and the
+  // press that landed in that frame would go to the wrong element.
+  // A custom property in a `style` object, which React honours and
+  // `CSSProperties` has no member for. Declared rather than asserted: the
+  // annotation is what makes the property name checked, where a cast would let
+  // any string through and the field would silently lose its foot.
+  const bandStyle: CSSProperties & Record<"--composer-tail", string> = {
+    "--composer-tail": `${tail}px`,
+  }
+
+  useLayoutEffect(() => {
+    const row = tailRef.current
+    if (!row) return
+
+    // The BORDER box, not `contentRect`: the row's own 9px above the button
+    // and 13px below it are part of the foot the field has to reserve, and
+    // `contentRect` reports neither.
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setTail(entry.target.getBoundingClientRect().height)
+    })
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [])
 
   // `trim` rather than `=== ""`, so a field holding three spaces is the empty
   // state it looks like: the button stays out of reach and the chord's own
@@ -253,8 +300,8 @@ export function Composer() {
   return (
     <div
       data-slot="composer-dock"
-      // `pointer-events-auto` against the sticky wrapper's `none`, so the strip
-      // beside the marketplace button falls through to the grid underneath.
+      // `pointer-events-auto` against the sticky wrapper's `none`, so the
+      // full-bleed strip beside the dock falls through to the grid underneath.
       // The bleed is the gutter VARIABLE and never its value: four separate
       // bugs in this design came from writing the number out, and the prototype
       // itself gets it wrong in two rules while right in five.
@@ -274,11 +321,24 @@ export function Composer() {
       <section
         aria-label="Natural-language composer"
         // Hairlines as insets rather than `border-y`, because an inset does not
-        // affect box size and cannot accidentally acquire a side. `px-gutter`
-        // re-insets the content, so the field's left edge and the button's
-        // right edge land on the same content edge the grid and the filter bar
-        // use — this is that bar's idiom upside down.
-        className="bg-cell px-gutter shadow-[inset_0_1px_0_var(--color-hairline),inset_0_-1px_0_var(--color-hairline)]"
+        // affect box size and cannot accidentally acquire a side.
+        //
+        // NO PADDING HERE, IN EITHER DIRECTION, AND THE BAND'S HEIGHT IS THE
+        // FIELD'S HEIGHT. Every inset — the gutter that puts the text on the
+        // content edge, the 15px of air above it, the foot the control row
+        // occupies — belongs to the field, so the field's own box IS this band
+        // and a press anywhere inside the drawn rectangle takes the caret.
+        //
+        // It was the top third of it. The gutter came off this band first (a
+        // 66px strip either side that looked like the field, sat on the field's
+        // fill and did nothing); the foot is the same defect standing up — the
+        // control row was a second child under the field, so the ~69px of band
+        // beside the Send button was dead to a click.
+        //
+        // `relative` is the containing block for that row, and is here for
+        // nothing else.
+        style={bandStyle}
+        className="relative bg-cell shadow-[inset_0_1px_0_var(--color-hairline),inset_0_-1px_0_var(--color-hairline)]"
       >
         <textarea
           ref={fieldRef}
@@ -301,15 +361,38 @@ export function Composer() {
           // stays at its floor and scrolls — which is exactly the state the
           // design draws, so the degradation is the design rather than a broken
           // variant of it.
-          className={`field-sizing-content ${FIELD_HEIGHT_CAP} min-h-[1.1875rem] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 pt-[0.9375rem] text-12_5 leading-[1.5] text-ink outline-none placeholder:text-field-faint focus-visible:ring-1 focus-visible:ring-ring`}
+          // EVERY INSET OF THE BAND IS THIS FIELD'S PADDING. `px-gutter` puts
+          // the text on the content edge the grid and the filter bar use while
+          // the field's box still reaches the bleed; `pt` is the design's air
+          // above the first line; `pb` is the control row's own measured
+          // height, so the field reaches the band's bottom edge and the row is
+          // drawn over its foot rather than under it. `FIELD_HEIGHT_CAP`
+          // carries the same two figures, because `max-height` is a border-box
+          // height and would otherwise spend them out of the text's room.
+          // `block` rather than the textarea's own `inline-block`, and it is
+          // the difference between the field BEING the band and being 7px
+          // shorter than it: an inline-block child sits on a line box, and the
+          // line box reserves descender space under it that belongs to nobody.
+          className={`field-sizing-content ${FIELD_HEIGHT_CAP} block min-h-[1.1875rem] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 px-gutter pt-[0.9375rem] pb-[var(--composer-tail)] text-12_5 leading-[1.5] text-ink outline-none placeholder:text-field-faint focus-visible:ring-1 focus-visible:ring-ring`}
         />
 
         {/* The control row, and the whole of it: ONE BUTTON, on the column's
             right content edge. The mode track used to sit on its left and the
             hint after that, which is why the row looks like it has room it does
             not have — anything put there is a second control in an action row
-            that has one action. */}
-        <div className="flex items-center gap-2 pt-[0.5625rem] pb-[0.8125rem]">
+            that has one action.
+
+            DRAWN OVER THE FIELD'S FOOT rather than stacked under it, and
+            `pointer-events-none` is what makes that a drawing rather than a
+            lid: the empty run left of the button falls through to the field
+            underneath, and the button alone takes its presses back. Absolute
+            rather than a grid row, because the field's padding is measured FROM
+            this element — a flow child would size the band and the band would
+            size the padding that sizes the child. */}
+        <div
+          ref={tailRef}
+          className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 px-gutter pt-[0.5625rem] pb-[0.8125rem]"
+        >
           {/* The claim ruling 3 settled, published and not drawn. Both the
               field and the button point at it with `aria-describedby`, because
               a reason goes in the accessible description and never in the name
@@ -334,7 +417,7 @@ export function Composer() {
               stretched to the filter bar's height. */}
           <Button
             variant="block"
-            className="ml-auto gap-2 px-[0.9375rem] py-[0.5625rem]"
+            className="pointer-events-auto ml-auto gap-2 px-[0.9375rem] py-[0.5625rem]"
             // Nothing to send, or nothing to send it with: a round trip is a
             // state the composer is IN rather than an instant it passes
             // through, and a button that stays live through one accepts a
@@ -345,12 +428,13 @@ export function Composer() {
             aria-describedby={hintId}
             onClick={() => void submit()}
           >
-            {SEND_LABEL}{" "}
+            {SEND_LABEL}
             <span
               aria-hidden="true"
-              className="font-normal tracking-normal text-faint"
+              className="flex items-center gap-[0.1875rem] font-normal tracking-normal text-faint"
             >
-              {SEND_CHORD}
+              {SEND_MODIFIER}
+              <Glyph name="enter" size={12} />
             </span>
           </Button>
         </div>

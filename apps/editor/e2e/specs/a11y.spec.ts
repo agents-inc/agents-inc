@@ -143,6 +143,20 @@ test.describe("the dialogs", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
+  // The capture in `visual.spec.ts` has an audit here, which is this file's own
+  // rule — and fullscreen is not the same page with a bigger box. It swaps the
+  // maximise control's accessible name for its opposite, and the splitter it
+  // draws is a `separator` carrying a value, which is a shape axe has opinions
+  // about that no other dialog in this app presents it with.
+  test("output preview in fullscreen", async ({ configure }) => {
+    await withSelection(configure)
+    await configure.roster.previewButton.click()
+    await configure.outputPreviewDialog.root.waitFor()
+    await configure.outputPreviewDialog.fullscreenButton.click()
+
+    expect(await audit(configure)).toStrictEqual([])
+  })
+
   test("add skill", async ({ configure, page }) => {
     stubSkillIndex(page)
     await configure.addSkillButton.click()

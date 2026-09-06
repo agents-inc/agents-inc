@@ -192,7 +192,7 @@ test.describe("opening a share link", () => {
     expect(skillNames).toHaveLength(1)
     // One agent carries the skill, one travelled pinned on with nothing.
     await expect(configure.roster.installButton).toContainText(
-      "2 sub-agents and 1 skill"
+      "2 agents · 1 skill"
     )
     await expect(
       configure.roster.loadWord(EXCLUSIVE_CATEGORY.first, "web-developer")

@@ -8,6 +8,7 @@ import {
   DialogFooterNote,
   DialogHeader,
 } from "@workspace/ui/components/dialog"
+import { Glyph } from "@workspace/ui/components/glyph"
 import { Input } from "@workspace/ui/components/input"
 import { LatticeRow, LatticeRows } from "@workspace/ui/components/lattice"
 import { useEffect, useState, type ReactNode } from "react"
@@ -406,12 +407,22 @@ export function AddSkillDialog() {
             </div>
           )}
 
-          <div className="mb-0.5 flex items-center gap-[0.5625rem] border border-field-border px-3 py-2.5">
+          {/* A LABEL rather than a div, and that is the whole of the box being
+              the field here. The other three fields hand the box's padding to
+              the input and are done; this one cannot, because the glyph and the
+              caret bar are inside the border too and the horizontal padding is
+              what places them. So the input owns the vertical padding — the
+              part nothing else is standing in — and the label carries the rest:
+              a press on the glyph, on the bar, or in either corner reaches the
+              field, which is what the marketplace dialog's own field has done
+              all along. */}
+          <label className="mb-0.5 flex items-center gap-[0.5625rem] border border-field-border px-3">
             <span aria-hidden className="font-mono text-11 text-faint">
               ⌕
             </span>
             <Input
               variant="dialog"
+              className="py-2.5"
               autoFocus
               value={query}
               placeholder="search external skills"
@@ -419,7 +430,7 @@ export function AddSkillDialog() {
               onChange={(event) => setQuery(event.target.value)}
             />
             <span aria-hidden className="h-[0.9375rem] w-px bg-brand" />
-          </div>
+          </label>
 
           {index.status === "loading" && <Note>loading skills…</Note>}
 
@@ -538,9 +549,23 @@ export function AddSkillDialog() {
                               className={chipVariants({
                                 size: "stage",
                                 active: stagedHere,
+                                // The mark is a drawn glyph rather than a text
+                                // character now, so it is a flex item and needs
+                                // the row's own gap; `＋` carried its spacing
+                                // in the font, which is exactly why it never
+                                // sat level with anything beside it.
+                                className:
+                                  "inline-flex items-center gap-[0.1875rem]",
                               })}
                             >
-                              {stagedHere ? "staged" : "＋ stage"}
+                              {stagedHere ? (
+                                "staged"
+                              ) : (
+                                <>
+                                  <Glyph name="plus" size={11} />
+                                  stage
+                                </>
+                              )}
                             </span>
                           )}
                         </div>

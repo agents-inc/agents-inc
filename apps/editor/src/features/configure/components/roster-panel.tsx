@@ -1,6 +1,7 @@
 import { DOMAIN_LABELS, type SubAgent } from "@workspace/matrix"
 import { Button } from "@workspace/ui/components/button"
 import { Hinge } from "@workspace/ui/components/divider"
+import { Glyph } from "@workspace/ui/components/glyph"
 import {
   Menu,
   MenuPopup,
@@ -41,9 +42,13 @@ import {
 } from "@/stores/saved-stack-store"
 import { useUiStore } from "@/stores/ui-store"
 
-// What would install, under the Install button's own name.
+// What would install, under the Install button's own name. `agents · skills`
+// rather than the sentence it used to be: the button shares its footer with a
+// row of three now, and the design sets the pair as a stat line rather than
+// prose — the middot is what keeps two counts legible in a 300px panel that
+// narrows to 250px.
 const installLabel = ({ agentCount, skillCount }: ConfigSummary) =>
-  `${agentCount} ${agentCount === 1 ? "sub-agent" : "sub-agents"} and ` +
+  `${agentCount} ${agentCount === 1 ? "agent" : "agents"} · ` +
   `${skillCount} ${skillCount === 1 ? "skill" : "skills"}`
 
 /**
@@ -227,8 +232,11 @@ const QUIET_AT_REST =
 //
 // The glyph is that info glyph with the stem and the dot swapped — the same
 // circle, the same 12px, the same stroke — which is the whole difference
-// between an `i` and a `!`. The design ships no icon set beyond the GitHub
-// mark, so drawing it here is what the panel already does.
+// between an `i` and a `!`. Both are members of the shared set now, named for
+// what they SAY rather than for the shape, because saying it is the only thing
+// that separates them. The set is what makes them the same drawing: they were
+// two hand-rolled SVGs at round caps until 2026-09-05, and nothing held them to
+// each other or to the ＋ two rows up.
 //
 // `destructive` is the one colour in the tokens that is neither the reserved
 // amber (which means "the user chose this") nor the roster's off-grey (which
@@ -246,20 +254,7 @@ function ScopeErrorMark({ reason }: { reason: string }) {
       // own toggle is a sibling beneath this rather than an ancestor above it.
       className="pointer-events-auto ml-1 inline-flex shrink-0 cursor-help align-[-0.125rem] text-destructive outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        aria-hidden
-      >
-        <circle cx="12" cy="12" r="9.25" />
-        <path d="M12 7v5.5" />
-        <path d="M12 16.3v.1" />
-      </svg>
+      <Glyph name="warning" size={12} />
     </button>
   )
 }
@@ -474,6 +469,21 @@ function EffortWord({
   )
 }
 
+// THE AGENT ROW'S TWO BOXES, and the pair is one decision rather than two
+// class strings. Each is a padding with an equal negative margin and a width
+// that adds both back, so the content box is exactly 100% either way: the box
+// grows as the pulse arrives and NOTHING ON THE ROW MOVES.
+//
+// At rest the row bleeds 4px each side, which is only enough for a hover tint
+// to clear the ink. Pulsing it bleeds 17px left — the flush edge every row in
+// this panel is locked to, so the tint reaches the panel's border — and 8px
+// right, which reclaims the roster scroller's own padding and stops flush
+// against the scrollbar.
+const RESTING_ROW =
+  "-mx-1 w-[calc(100%+0.5rem)] px-1 py-0.5 hover:bg-roster-hover"
+const PULSING_ROW =
+  "-mt-1 -mr-2 -mb-1 -ml-[1.0625rem] w-[calc(100%+1.5625rem)] bg-flash py-1.5 pr-2 pl-[1.0625rem]"
+
 function AgentBlock({
   row,
   domainPrefix,
@@ -500,21 +510,43 @@ function AgentBlock({
     // detail reveals over: pointing at one row answers for the whole agent,
     // and the next agent stays quiet.
     <div className="group/agent pb-2">
-      {/* The name row. The three controls are siblings of the pin, never
-          children of it: nested they would each swallow the click that pins
-          and bury their own values inside the pin's accessible name. */}
-      <div className="-mx-1 flex w-[calc(100%+0.5rem)] items-baseline">
+      {/* The name row, and the box the assignment pulse paints.
+          THE TINT IS THE WHOLE ROW, and the two geometries below are one
+          decision: it used to sit on the pin button, which is `flex-1` and
+          stops where the three cycling words begin — so a pulse said "these
+          three skills reached this agent" while leaving the agent's own model,
+          effort and scope outside the thing being pointed at.
+
+          Flashed, the box takes the panel's full width: 17px left, which is
+          exactly the flush edge every row in this panel is locked to, so the
+          tint reaches the border-left; and 8px right, which reclaims the
+          roster's own scroll padding and stops flush against the scrollbar.
+          Each bleed is a padding and an equal negative margin, so the box grows
+          and NOTHING ON THE ROW MOVES — the ink is in the same place pulsing
+          and at rest, which is the only reason a 250ms colour change can be the
+          whole treatment.
+
+          Hover lives on the same element for the same reason, and loses to the
+          pulse rather than the other way round: an agent the selection just
+          reached is a fact about what happened, and the pointer happening to be
+          over it does not change it.
+
+          The three controls are siblings of the pin, never children of it:
+          nested they would each swallow the click that pins and bury their own
+          values inside the pin's accessible name. */}
+      <div
+        data-slot="agent-row"
+        className={`flex items-baseline transition-colors duration-[250ms] ${
+          flashed ? PULSING_ROW : RESTING_ROW
+        }`}
+      >
         {/* State is colour only — no checkbox, no bracket. Click pins the
             agent to the opposite of what it currently derives to. */}
         <button
           type="button"
           aria-pressed={on}
           onClick={() => toggleAgentPin(agent.id)}
-          // The pulse is the row's own tint and nothing else — the prototype's
-          // amber left bar reads as a second, competing marker at this size.
-          className={`min-w-0 flex-1 cursor-pointer px-1 py-0.5 text-left transition-colors duration-[250ms] ${
-            flashed ? "bg-flash" : "hover:bg-roster-hover"
-          }`}
+          className="min-w-0 flex-1 cursor-pointer text-left"
         >
           <span
             className={`text-11_5 ${
@@ -567,13 +599,13 @@ function AgentBlock({
   )
 }
 
-// How the panel is banded, as the word itself plus U+25BE — the same idiom
-// the three agent-row words use, except that at two values a menu is what the
-// design draws rather than a cycle.
+// How the panel is banded, as the word itself plus the set's chevron — the
+// same idiom the three agent-row words use, except that at two values a menu is
+// what the design draws rather than a cycle.
 //
 // The accessible name is the ACTION, not the value: the visible text is
-// `domain ▾`, which says nothing about what pressing it would do, and it
-// changes the moment it is used.
+// `domain`, which says nothing about what pressing it would do, and it changes
+// the moment it is used.
 function GroupControl({ onPick }: { onPick: () => void }) {
   const rosterGroupBy = useUiStore((state) => state.rosterGroupBy)
   const setRosterGroupBy = useUiStore((state) => state.setRosterGroupBy)
@@ -585,15 +617,24 @@ function GroupControl({ onPick }: { onPick: () => void }) {
 
   return (
     <Menu>
-      {/* The design gives this control neither a hover nor an open state —
-          both its rules restate the resting colour, which leaves it the one
-          interactive element in the panel with no state at all. It gets the
-          hover step every other word here has. */}
+      {/* AN AMBER FIELD BLED TO THE PANEL'S INSET, the same treatment the
+          rail's active nav item wears and for the same reason: amber marks
+          what the user deliberately chose, and the grouping is a choice sitting
+          on a rule with no other ink on it.
+
+          The negative margin CANCELS the padding, so the field paints larger
+          without moving a single neighbour — the label to its left and the rule
+          to its right are exactly where they were, which is what keeps the
+          panel's one flush edge and its never-collapsing rule intact. Only the
+          INNER side is padded; the outer side runs to the panel's own inset. */}
       <MenuTrigger
         aria-label={`Group sub-agents by ${rosterGroupBy}`}
-        className="shrink-0 cursor-pointer font-mono text-9_5 font-normal tracking-[.02em] whitespace-nowrap text-ink normal-case hover:text-ink-primary"
+        className="-my-[0.1875rem] -mr-2.5 flex shrink-0 cursor-pointer items-center gap-1 bg-wash py-[0.1875rem] pr-2.5 pl-2 font-mono text-9_5 font-normal tracking-[.02em] whitespace-nowrap text-brand-ink normal-case hover:text-brand-hover"
       >
-        {rosterGroupBy} ▾
+        {rosterGroupBy}
+        {/* One step lighter than the word, so the caret reads as furniture on a
+            field rather than a second piece of ink on it. */}
+        <Glyph name="chevronDown" size={10} className="text-brand-dim" />
       </MenuTrigger>
       <MenuPopup>
         <MenuRadioGroup value={rosterGroupBy} onValueChange={pick}>
@@ -616,46 +657,35 @@ const BAND_LABEL_CLASS = {
   scope: "text-8_5 tracking-[.02em] normal-case",
 } as const satisfies Record<RosterGroupBy, string>
 
-// The way into the output preview, and the panel's one recessed field.
+// The third cell of the action row, and the way into the output preview.
 //
-// A real `<button>` rather than the prototype's `div` with an `onClick`: it
-// sits between Share and Install in the tab order, which is where the design
-// put it, and a div would have no place in that order at all.
+// It was a full-width recessed field reading `Preview generated code` until the
+// refreshed design put Save, Share and Preview on one row of equal outlined
+// cells. The half of that field's reasoning that survives is its POSITION —
+// "above the Install button reads as a step before it; below reads as an aside.
+// I prefer above — you preview, then you install" — and its place in the tab
+// order between Share and Install. The half that goes is the recessed
+// treatment: three filled cells over Install would make Install the fourth
+// thing on the row rather than the panel's one filled element.
 //
-// "Generated" is load-bearing in the label — it says the files do not exist
-// yet. The glyph is a code-brackets pair at Lucide's geometry, drawn here
-// because the design ships no icon set beyond the GitHub mark, and it keeps its
-// amber under the pointer: the design gives the block a hover surface and a
-// hover label, and no hover rule for the glyph.
+// The words the shortened label drops are not lost — "generated" was carrying
+// the claim that the files do not exist yet, and it says so in the `title`.
 function PreviewEntryPoint({ disabled }: { disabled: boolean }) {
   const setDialog = useUiStore((state) => state.setDialog)
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="action"
       disabled={disabled}
+      title="Preview generated code"
       onClick={() => setDialog("output")}
-      className="group/preview mb-[0.5625rem] flex w-full cursor-pointer items-center gap-[0.4375rem] bg-track px-3 py-2.5 outline-none hover:bg-track-hover focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50 disabled:hover:bg-track"
     >
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-        className="flex-none text-brand"
-      >
-        <path d="M16 18l6-6-6-6" />
-        <path d="M8 6l-6 6 6 6" />
-      </svg>
-      <span className="truncate font-mono text-10 font-semibold tracking-[.04em] text-track-ink uppercase group-hover/preview:text-ink-primary">
-        Preview generated code
-      </span>
-    </button>
+      {/* The row's one piece of colour, and it keeps it under the pointer: the
+          design gives the cell a hover border and a hover label, and no hover
+          rule for the glyph. */}
+      <Glyph name="code" className="text-brand" />
+      <span className="min-w-0 truncate">Preview</span>
+    </Button>
   )
 }
 
@@ -858,46 +888,54 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
       </div>
 
       <div className="flex-none border-t border-divider pt-3.5 pr-0.5 pl-4">
-        {/* Snapshots the selection into the stack grid, where it becomes a
-            starting point like any stack. Its label moves only when nothing
-            arrived in the grid: a cell appearing is the feedback on the way
-            that works, and a refusal produces no cell to read. Nothing to
-            snapshot without skills, the same rule Share follows. */}
-        <Button
-          className="mb-2 w-full"
-          disabled={stats.skillCount === 0 || saving}
-          onClick={() => void save()}
-        >
-          {narration?.label ?? "Save"}
-        </Button>
-        {/* Copies a `?fromId=` link. The button is the only feedback surface
-            the panel has, so the words belong to whichever ending happened —
-            `useShareLink` owns one narration per ending and this renders it. A
-            table here could only key off the coarse state, which is how four
-            endings came to share the word "failed" and how the one that a
-            reload fixes came to vanish after two seconds (SERVER-04). */}
-        <Button
-          className="mb-2 w-full"
-          disabled={
-            shareState === "sharing" || stats.skillCount === 0 || blocked
-          }
-          onClick={() => void share()}
-        >
-          {shareLabel}
-        </Button>
-        {/* Above Install and below Share, which is the design's own reason:
-            "above the Install button reads as a step before it; below reads as
-            an aside. I prefer above — you preview, then you install."
+        {/* THREE EQUAL CELLS IN ONE ROW, over the panel's one filled element.
+            They were three full-width stacked buttons, which spent four rows of
+            a 300px panel on secondary actions and put two outlines directly
+            over a fill.
 
-            A recessed field rather than a fourth outline or a second fill:
-            Install is the panel's only filled element and the panel has no
-            borders to spend, so this is the segmented track's colour used
-            inverted. Disabled with nothing selected, the same rule Save and
-            Share follow and for the same reason — nothing to write.
+            DOM ORDER IS LOAD-BEARING: Save, Share, Preview, then Install. It is
+            the tab order the design put them in, and the output preview's own
+            keyboard test tabs from Share and expects Preview next.
 
-            No count beside the label, deliberately: at 250px the label is all
-            that fits, and the dialog's own footer states the file count. */}
-        <PreviewEntryPoint disabled={stats.skillCount === 0} />
+            Each label is truncated inside its own third: two of the three
+            NARRATE — Share says what happened to the link, Save says what
+            happened to the snapshot — and those sentences are far longer than a
+            third of 300px. Clipping the words is right where wrapping them
+            would move Install. */}
+        <div className="mb-[0.5625rem] flex gap-[0.5625rem]">
+          {/* Snapshots the selection into the stack grid, where it becomes a
+              starting point like any stack. Its label moves only when nothing
+              arrived in the grid: a cell appearing is the feedback on the way
+              that works, and a refusal produces no cell to read. Nothing to
+              snapshot without skills, the same rule Share follows. */}
+          <Button
+            variant="action"
+            title="Save this configuration"
+            disabled={stats.skillCount === 0 || saving}
+            onClick={() => void save()}
+          >
+            <span className="min-w-0 truncate">
+              {narration?.label ?? "Save"}
+            </span>
+          </Button>
+          {/* Copies a `?fromId=` link. The button is the only feedback surface
+              the panel has, so the words belong to whichever ending happened —
+              `useShareLink` owns one narration per ending and this renders it. A
+              table here could only key off the coarse state, which is how four
+              endings came to share the word "failed" and how the one that a
+              reload fixes came to vanish after two seconds (SERVER-04). */}
+          <Button
+            variant="action"
+            title="Share this configuration"
+            disabled={
+              shareState === "sharing" || stats.skillCount === 0 || blocked
+            }
+            onClick={() => void share()}
+          >
+            <span className="min-w-0 truncate">{shareLabel}</span>
+          </Button>
+          <PreviewEntryPoint disabled={stats.skillCount === 0} />
+        </div>
         {/* One rule, both doors (EDITOR-08). A project skill on a sub-agent
             resting at global is a pair `init --from` THROWS on, so a link
             minted from here would fail on the recipient — which is worse than

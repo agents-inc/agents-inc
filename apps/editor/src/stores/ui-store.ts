@@ -1,3 +1,7 @@
+import {
+  TREE_WIDTH_DEFAULT_PX,
+  clampTreeWidth,
+} from "@workspace/ui/components/dialog"
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
@@ -56,6 +60,20 @@ type UiState = {
   // Not persisted, like every other transient field here: reloading into a
   // selection is never right.
   outputSelection: string | null
+  // Whether the output preview fills the sheet, and how wide its tree column
+  // is in DESIGN pixels.
+  //
+  // Here rather than inside the dialog for the reason `outputSelection` above
+  // is: `OutputPreviewDialog` renders its body only while open, so anything
+  // held in the dialog would start over on every open — and the design's rule
+  // is that both survive a close.
+  //
+  // NOT PERSISTED, like every other transient field here. The design's own
+  // mechanism is component state on a root that never unmounts, so "persists
+  // between opens" means within a session; reloading into a maximised sheet is
+  // a different promise, and one nobody made.
+  outputFullscreen: boolean
+  outputTreeWidth: number
   // Group key → that roster accordion is shut. Domain mode keys it by the bare
   // domain id and scope mode by `scope:<scope>`, so one record serves both.
   rosterCollapsed: Record<string, boolean>
@@ -92,6 +110,9 @@ type UiState = {
   setDialog: (dialog: UiState["dialog"]) => void
   previewSkill: (skillId: string | null) => void
   selectOutputNode: (path: string) => void
+  toggleOutputFullscreen: () => void
+  exitOutputFullscreen: () => void
+  setOutputTreeWidth: (width: number) => void
   toggleRosterDomain: (groupKey: string) => void
   setRosterGroupBy: (groupBy: RosterGroupBy) => void
   toggleStackCollapsed: () => void
@@ -115,6 +136,8 @@ export const useUiStore = create<UiState>()(
       dialog: "none",
       previewSkillId: null,
       outputSelection: null,
+      outputFullscreen: false,
+      outputTreeWidth: TREE_WIDTH_DEFAULT_PX,
       rosterCollapsed: {},
       rosterGroupBy: "domain",
       stackCollapsed: false,
@@ -137,6 +160,20 @@ export const useUiStore = create<UiState>()(
       setDialog: (dialog) => set({ dialog }),
       previewSkill: (skillId) => set({ previewSkillId: skillId }),
       selectOutputNode: (outputSelection) => set({ outputSelection }),
+
+      toggleOutputFullscreen: () =>
+        set((state) => ({ outputFullscreen: !state.outputFullscreen })),
+      // Its own verb rather than the toggle reused, because `esc` has to be
+      // able to say "leave fullscreen" without asking what state it is in —
+      // the ladder it steps down is ordered, and a toggle at the bottom of it
+      // would put the reader back into fullscreen on the press that was meant
+      // to close the dialog.
+      exitOutputFullscreen: () => set({ outputFullscreen: false }),
+      // Clamped HERE rather than at the pointer handler, so the bound is stated
+      // once and every caller — a drag, a future keyboard nudge, a restored
+      // value — is held to it.
+      setOutputTreeWidth: (width) =>
+        set({ outputTreeWidth: clampTreeWidth(width) }),
 
       toggleRosterDomain: (groupKey) =>
         set((state) => ({

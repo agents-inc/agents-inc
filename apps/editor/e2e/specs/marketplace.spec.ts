@@ -1,5 +1,6 @@
 import {
   MARKETPLACE_CANONICAL_REF,
+  MARKETPLACE_CATALOG,
   MARKETPLACE_TOKEN,
   PRIVATE_MARKETPLACE_CANONICAL_REF,
 } from "@workspace/api-mocks/fixtures"
@@ -10,18 +11,21 @@ import { expect, test } from "../fixtures"
 import { stubSkillIndex } from "../support/skill-index"
 import { STACKS } from "../support/catalog"
 import {
+  BIGCO_REF,
   stubMalformedCatalog,
   stubMarketplaceCatalog,
+  stubMarketplaceEstate,
   stubMissingMarketplace,
   stubPrivateMarketplaceCatalog,
 } from "../support/marketplace"
 import { captureCreateConfig } from "../support/sharing"
 
+import type { Locator } from "@playwright/test"
 import type { ConfigurePage } from "../pages/configure-page"
 
-// A floating button opens a dialog, a marketplace is named, and the grid runs
-// on that marketplace's catalogue instead of the public one. The whole of leg 1
-// from the outside.
+// A section of the nav rail opens a dialog, a marketplace is named, and the
+// grid runs on that marketplace's catalogue instead of the public one. The
+// whole of leg 1 from the outside.
 
 // Fixed points in the fixture catalogue. The prefix is CLI-498's: every custom
 // marketplace's ids carry its name, so no id can be in both catalogues and
@@ -44,6 +48,16 @@ const ACME = {
 // rather than a merge.
 const PUBLIC_SKILL = "React"
 
+// What `ACME.stack` picks, read off the catalogue the stub publishes rather
+// than written out here. That catalogue is the INPUT — what the marketplace
+// said its stack contains — so taking the list from it leaves the assertion
+// below saying what the app did with it, which is the whole claim. Sorted,
+// because a payload's key order belongs to the config store and a set is what
+// is being compared.
+const ACME_STACK_SKILL_IDS = [
+  ...MARKETPLACE_CATALOG.suggestedStacks[0]!.allSkillIds,
+].sort()
+
 // Wide enough that the page grid stops filling the window and starts being
 // CENTRED in it, which slides the nav rail right while anything pinned to the
 // viewport stays where it is. Pinned because that is the width a constant
@@ -52,52 +66,148 @@ const PUBLIC_SKILL = "React"
 // a monitor two thirds wider.
 const CENTRED_VIEWPORT = { width: 2560, height: 1000 }
 
-// How much air there is between the nav rail's right edge and the floating
-// button's left one. Negative is the overlap, in pixels, which is what a
-// failure has to print: "expected true to be false" says nothing a reader can
-// act on, and this row was found by measuring in the first place.
-//
-// Both boxes are read live, so there is not a single coordinate in here. What
-// is asserted is a RELATIONSHIP between two elements that are on screen now.
-const railGap = async (configure: ConfigurePage) => {
-  const rail = await configure.page.getByRole("navigation").boundingBox()
-  const button = await configure.marketplaceButton.boundingBox()
-  if (!rail || !button) throw new Error("the rail and the button must be drawn")
+// The layout's own floor — `min-w-[85.25rem]` in
+// `src/routes/route-components.tsx` — below which the page scrolls sideways
+// rather than reflowing, paired with the shortest window worth drawing. The
+// rail is at its tightest here: `h-svh` gives its column the least room it will
+// ever have, which is where a section that outgrew its box would push into the
+// one below it.
+const NARROW_VIEWPORT = { width: 1364, height: 640 }
 
-  return button.x - (rail.x + rail.width)
+// How much air there is between two rows of the rail. Negative is the overlap,
+// in pixels, which is what a failure has to print: "expected true to be false"
+// says nothing a reader can act on, and EDITOR-35 was found by measuring in the
+// first place.
+//
+// VERTICAL now, where the same question about the floating button was
+// horizontal, and that follows from the ruling rather than from taste. A
+// control floating over the grid had to begin where the rail's column ended; a
+// SECTION of the rail is in that column already, so the only way it can reach
+// another row is by outgrowing its own box and running down into it. Both boxes
+// are read live, so there is not a coordinate in here — what is asserted is a
+// relationship between two elements on screen now.
+const gapBetween = async (above: Locator, below: Locator) => {
+  const top = await above.boundingBox()
+  const bottom = await below.boundingBox()
+  if (!top || !bottom) throw new Error("both rows must be drawn")
+
+  return bottom.y - (top.y + top.height)
 }
 
-test.describe("marketplace dialog", () => {
-  test("a floating button opens it", async ({ configure }) => {
-    await configure.marketplaceButton.click()
+// How far the section spills out of the column it belongs to, on whichever side
+// spills further — positive is the overspill, in pixels. The horizontal half of
+// the same claim, and the half that keeps the section honest at a width nobody
+// tested: the rail is a grid track rather than a viewport offset, so a section
+// wider than its track is the one way back into the middle column.
+const railSpill = async (configure: ConfigurePage) => {
+  const rail = await configure.page.getByRole("navigation").boundingBox()
+  const section = await configure.marketplaceSection.boundingBox()
+  if (!rail || !section) {
+    throw new Error("the rail and the section must be drawn")
+  }
 
-    await expect(configure.marketplaceDialog.root).toBeVisible()
+  const pastTheLeftEdge = rail.x - section.x
+  const pastTheRightEdge = section.x + section.width - (rail.x + rail.width)
+
+  return Math.max(pastTheLeftEdge, pastTheRightEdge)
+}
+
+// Adding a marketplace, through the section in the rail and the dialog it
+// opens. The one door a visitor has, so every spec below that needs a
+// marketplace loaded goes through it rather than seeding the slot.
+const loadMarketplace = async (configure: ConfigurePage, ref: string) => {
+  await configure.marketplaceButton.click()
+  await configure.marketplaceDialog.fill(ref)
+  await configure.marketplaceDialog.load()
+}
+
+// EDITOR-35 said this control must clear the nav rail because a `fixed` version
+// had landed on top of the rail's Github link. The owner overturned that on
+// 2026-09-04: it is a section OF the rail now, so "clears the rail" is no
+// longer a claim anything could make about it — and the collision that row
+// describes is exactly what this group has to keep watching, from the inside.
+test.describe("the rail's marketplace section", () => {
+  test("is drawn inside the rail, and drawn once", async ({ configure }) => {
+    await expect(configure.railMarketplaceSection).toBeVisible()
+    // One section, so "inside the rail" cannot be true of a second copy still
+    // floating over the grid.
+    await expect(configure.marketplaceSection).toHaveCount(1)
   })
 
-  // EDITOR-35. No visibility assertion could have caught this: both elements
-  // are present and visible to the DOM, and the button simply sat on top of the
-  // rail's Github link — the word hidden outright, a sliver of the Octocat
-  // showing past the button's right edge.
-  //
-  // Asserted against the RAIL rather than against the link inside it, and that
-  // is what makes it robust rather than a snapshot of today's pixels. The rail
-  // is a full-height column at the page's left edge, so vertical separation is
-  // impossible by construction and the whole question is horizontal: the button
-  // has to begin where the column ends. Move the Github link, put a second item
-  // beside it, or change the column's width, and this still says the same
-  // thing — and it says it about the whole class of "a floating control was
-  // dropped on the nav rail" rather than about one link.
-  test("the floating button clears the nav rail rather than covering it", async ({
+  test("sits above the sign-in section rather than over it", async ({
+    configure,
+  }) => {
+    expect(
+      await gapBetween(configure.marketplaceSection, configure.accountRow)
+    ).toBeGreaterThanOrEqual(0)
+  })
+
+  // The link the floating version covered outright — the word hidden, a sliver
+  // of the Octocat showing past the button's right edge. Asserted against the
+  // link itself rather than against the footer row, because the link is what
+  // the defect was about.
+  test("clears the Github link the floating version covered", async ({
+    configure,
+  }) => {
+    expect(
+      await gapBetween(configure.marketplaceSection, configure.githubLink)
+    ).toBeGreaterThanOrEqual(0)
+  })
+
+  test("stays inside the rail's own column at every width", async ({
     configure,
     page,
   }) => {
-    expect(await railGap(configure)).toBeGreaterThanOrEqual(0)
+    expect(await railSpill(configure)).toBeLessThanOrEqual(0)
 
-    // Again where the grid is centred rather than filling the window, because
-    // the rail and a viewport-pinned control move apart there.
+    // Where the grid is centred rather than filling the window, which is where
+    // the whole page slides right under a control that does not move with it.
     await page.setViewportSize(CENTRED_VIEWPORT)
+    expect(await railSpill(configure)).toBeLessThanOrEqual(0)
 
-    expect(await railGap(configure)).toBeGreaterThanOrEqual(0)
+    // And at the layout's floor, which is the narrowest the rail is ever drawn.
+    await page.setViewportSize(NARROW_VIEWPORT)
+    expect(await railSpill(configure)).toBeLessThanOrEqual(0)
+  })
+})
+
+// The section at its tallest, in the shortest window the layout draws. Two
+// saved marketplaces is what puts a switcher inside it, so this is the state in
+// which the rail has the most to fit and the least room to fit it in — and the
+// one in which a row that outgrew its box would reach the rows below.
+test.describe("the rail's marketplace section with a switcher in it", () => {
+  test.beforeEach(({ page }) => {
+    stubMarketplaceEstate(page)
+  })
+
+  test("still clears the sign-in section and the Github link", async ({
+    configure,
+    page,
+  }) => {
+    await page.setViewportSize(NARROW_VIEWPORT)
+
+    await loadMarketplace(configure, ACME.ref)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await loadMarketplace(configure, BIGCO_REF)
+    await expect(configure.switchTo(ACME.stored)).toBeVisible()
+
+    expect(
+      await gapBetween(configure.marketplaceSection, configure.accountRow)
+    ).toBeGreaterThanOrEqual(0)
+    // The spacer between the account and the footer collapses to nothing in a
+    // window this short, so these two really are adjacent here.
+    expect(
+      await gapBetween(configure.accountRow, configure.githubLink)
+    ).toBeGreaterThanOrEqual(0)
+    expect(await railSpill(configure)).toBeLessThanOrEqual(0)
+  })
+})
+
+test.describe("marketplace dialog", () => {
+  test("the rail's marketplace section opens it", async ({ configure }) => {
+    await configure.marketplaceButton.click()
+
+    await expect(configure.marketplaceDialog.root).toBeVisible()
   })
 
   // One field to start with. The token is progressive, so the public case —
@@ -253,6 +363,74 @@ test.describe("loading a marketplace", () => {
     await expect(configure.skill(PUBLIC_SKILL).root).toBeVisible()
     await expect(configure.stack(STACKS.nextjs)).toBeVisible()
     expect(await configure.savedMarketplaces()).toBeNull()
+  })
+})
+
+// THE WHOLE JOURNEY, IN ONE TEST, AND THAT IS THE POINT OF IT.
+//
+// The describes above cut it into the legs each of them is about: a dialog
+// opens, a grid swaps, a payload carries the right ref. Every one of those
+// starts from a state the previous one left, and none of them is the claim a
+// visitor cares about — which is that a marketplace they add is a marketplace
+// they can then build and install from, in one sitting, without reloading or
+// being handed a seeded slot.
+//
+// Its stack rather than a hand-picked skill, deliberately. Nothing in this
+// suite ever chose a custom marketplace's stack before this test: `ACME.stack`
+// appears once, in an assertion that it is DRAWN. Drawn and choosable are
+// different claims, and a stack is the one place a catalogue's own author says
+// which of its skills go together — so a stack that renders and cannot be
+// applied would leave the rest of this file entirely green.
+test.describe("adding a marketplace, seeing it, and installing from it", () => {
+  test.beforeEach(({ page }) => {
+    stubMarketplaceCatalog(page)
+  })
+
+  test("its stack can be chosen, and installs the skills that stack picks", async ({
+    configure,
+    page,
+  }) => {
+    const posted = captureCreateConfig(page)
+
+    // 1 — added, through the section in the rail.
+    await loadMarketplace(configure, ACME.ref)
+
+    // 2 — the catalogue on screen is the one that was just added. Both halves,
+    // because a merge and a replacement are different outcomes and only the
+    // absence tells them apart.
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await expect(configure.skill(PUBLIC_SKILL).root).toBeHidden()
+    await expect(configure.stack(ACME.stack)).toBeVisible()
+    await expect(configure.stack(STACKS.nextjs)).toBeHidden()
+
+    // 3 — its stack is applied, and it selects its own catalogue's skills.
+    await configure.chooseStack(ACME.stack)
+    await expect(configure.stack(ACME.stack)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    expect(await configure.skill(ACME.skill).isSelected()).toBe(true)
+    expect(await configure.skill(ACME.otherSkill).isSelected()).toBe(true)
+
+    // …and installing writes those skills, from that marketplace. The header
+    // and the payload are two different claims: one is what the visitor is
+    // told, the other is what the CLI is handed.
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toBeVisible()
+    await expect(configure.installDialog.header).toContainText(
+      `marketplace ${ACME.stored}`
+    )
+    await expect(configure.installDialog.skillsPane).toContainText(ACME.skill)
+    await expect(configure.installDialog.skillsPane).toContainText(
+      ACME.otherSkill
+    )
+
+    const [body] = posted
+    expect(body).toBeDefined()
+    expect(body!.marketplace).toBe(ACME.stored)
+    expect(
+      Object.keys(body!.skills as Record<string, unknown>).sort()
+    ).toStrictEqual(ACME_STACK_SKILL_IDS)
   })
 })
 

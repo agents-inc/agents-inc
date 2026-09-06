@@ -221,7 +221,7 @@ test.describe("memory boundaries", () => {
     await react.toggle()
 
     await expect(configure.roster.installButton).toContainText(
-      "0 sub-agents and 0 skills"
+      "0 agents · 0 skills"
     )
     await expect(configure.roster.skillRow(REACT, "web-developer")).toBeHidden()
   })

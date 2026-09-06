@@ -904,17 +904,27 @@ test.describe("the composer's geometry", () => {
   // button's right are the two edges the design names, and a domain section is
   // an ordinary child of the column, so its box IS that edge — measured rather
   // than computed from the gutter for the reason above.
+  //
+  // The field's TEXT edge, which is not its box edge any more: the band handed
+  // its gutter down to the field, so the box bleeds and the padding is what
+  // insets the prompt. The claim is unchanged and the measurement had to move
+  // to keep making it — a box edge said this only for as long as the field had
+  // no padding of its own, and it had none for as long as the strip either side
+  // of it was dead to a click (EDITOR-76).
   test("insets its content to the edge the skill grid sits on", async ({
     configure,
   }) => {
     const { composer } = configure
     const section = await configure.domain(web).boundingBox()
     const field = await composer.field.boundingBox()
+    const inset = await composer.field.evaluate((node) =>
+      parseFloat(getComputedStyle(node).paddingLeft)
+    )
     const send = await composer.sendButton.boundingBox()
     if (!section || !field || !send)
       throw new Error("the section, the field and the button must be drawn")
 
-    expect(field.x).toBeCloseTo(section.x, 0)
+    expect(field.x + inset).toBeCloseTo(section.x, 0)
     expect(send.x + send.width).toBeCloseTo(section.x + section.width, 0)
   })
 

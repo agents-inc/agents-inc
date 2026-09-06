@@ -66,7 +66,7 @@ export function SkillCell({
   // •••, and both badges all funnel into `toggleSkill`, so each entry point
   // has to check. The cell stays hoverable so its reason can be read.
   const select = () => {
-    // The refusal is the interesting half. A click here means the 40% dim
+    // The refusal is the interesting half. A click here means the receded cell
     // read as "broken" rather than "unavailable", and it is the only direct
     // evidence there is for the catalog's unaudited relationships. It cannot
     // be emitted from the store, because the whole point is that the store is

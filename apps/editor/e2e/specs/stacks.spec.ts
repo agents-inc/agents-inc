@@ -108,3 +108,52 @@ test.describe("switching stacks", () => {
     ).toHaveAccessibleName("Install mode: eject")
   })
 })
+
+// THE FIRST CELL IS THE RESET, AND IT SAYS SO. There is no separate clear
+// control — `N skills selected ✕` was built and removed — because applying the
+// first cell and clearing are the same act, so the cell states the cost instead
+// of describing a starting point the visitor is no longer at.
+test.describe("the first cell as the reset", () => {
+  test("describes a starting point while nothing is selected", async ({
+    configure,
+  }) => {
+    await expect(configure.stack(STACKS.scratch)).toBeVisible()
+    await expect(configure.stackCell(0)).toContainText(
+      "no stack · pick every skill yourself"
+    )
+  })
+
+  // Both lines move together: a cell that renamed but went on offering to "pick
+  // every skill yourself" would be two sentences disagreeing about what the
+  // press does.
+  test("renames and states the cost once something is selected", async ({
+    configure,
+  }) => {
+    await configure.chooseStack(STACKS.nextjs)
+
+    await expect(configure.stack(STACKS.clearScratch)).toBeVisible()
+    await expect(configure.stack(STACKS.scratch)).toHaveCount(0)
+    await expect(configure.stackCell(0)).toContainText(
+      /removes \d+ skills and every sub-agent/
+    )
+  })
+
+  // Every selection, not just the visible ones: the stack goes with them, which
+  // is what the second hinge reports. A reset that cleared the grid and left the
+  // page still saying "then customise next.js full-stack" would be telling the
+  // visitor they still had a stack.
+  test("empties the whole configuration, stack included", async ({
+    configure,
+  }) => {
+    await configure.chooseStack(STACKS.nextjs)
+    const cell = configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL)
+    expect(await cell.isSelected()).toBe(true)
+
+    await configure.stack(STACKS.clearScratch).click()
+
+    expect(await cell.isSelected()).toBe(false)
+    await expect(configure.stack(STACKS.scratch)).toBeVisible()
+    await expect(configure.hinge("pick your skills")).toBeVisible()
+    await expect(configure.roster.installButton).toContainText("0 skills")
+  })
+})

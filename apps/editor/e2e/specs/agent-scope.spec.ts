@@ -47,7 +47,7 @@ test.describe("agent scope", () => {
     await configure.roster.scopeControl(DEVELOPER).click()
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await expect(configure.roster.installButton).toContainText("0 sub-agents")
+    await expect(configure.roster.installButton).toContainText("0 agents")
   })
 
   test("the choice belongs to one agent, not the domain", async ({

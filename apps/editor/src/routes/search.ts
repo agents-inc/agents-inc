@@ -6,9 +6,13 @@ import { z } from "zod"
 // (stack, selected skills, assignments, per-skill options) stays in the store,
 // and sharing that is the Share destination's job.
 //
-// `domain` is nullable and defaults to null: the design renders every domain
-// section at once, and a chip narrows to one rather than the page opening
-// pre-filtered. Clicking the active chip clears it.
+// `domain` is nullable and defaults to null, and it is an ANCHOR rather than a
+// filter (EDITOR-79): every domain section is always rendered, and picking a
+// tab scrolls to that section and records where you were sent, so `?domain=api`
+// opens at API with the whole catalogue still under it. It is written on a
+// pick and never on a scroll — a link says "take me to API", and one that
+// rewrote itself as the reader moved would be a cursor nobody asked for, at a
+// router navigation per section crossed.
 //
 // Every field `.catch()`es its default so a hand-edited URL degrades instead
 // of throwing.
@@ -21,7 +25,7 @@ export const configureSearchSchema = z.object({
   // is not your own. Carrying it makes `/?fromId=<id>` the ADDRESS of a shared
   // configuration rather than a one-shot command (EDITOR-37): it is read on
   // every load, so a reload reopens the same state, and clearing it — which is
-  // what the nav rail's Configure link does — is how you get back to your own.
+  // what the nav rail's Editor link does — is how you get back to your own.
   // It used to be stripped the moment it was applied, which is exactly why a
   // reload had no idea it had ever been a shared link.
   //

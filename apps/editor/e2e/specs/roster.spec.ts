@@ -59,7 +59,7 @@ const inkStartOf = async (locator: Locator) => {
 test.describe("roster panel", () => {
   test("starts with every agent off", async ({ configure }) => {
     await expect(configure.roster.installButton).toContainText(
-      "0 sub-agents and 0 skills"
+      "0 agents · 0 skills"
     )
     await expect(configure.roster.domainBand("web")).toContainText("0 of")
     await expect(
@@ -114,7 +114,7 @@ test.describe("roster panel", () => {
       configure.roster.skillRow(REACT, "agent-summoner")
     ).toBeHidden()
     await expect(configure.roster.installButton).toContainText(
-      `${DOMAIN_REACH.web} sub-agents and 1 skill`
+      `${DOMAIN_REACH.web} agents · 1 skill`
     )
   })
 
@@ -135,27 +135,89 @@ test.describe("roster panel", () => {
     // Pinned clock: the pulse's 2.6s decay must not race the assertions.
     await page.clock.install()
     await page.clock.pauseAt(Date.now())
-    const developer = configure.roster.agentButton("web", "developer")
+    const row = configure.roster.agentRow("web", "developer")
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
 
-    await expect(developer).toHaveClass(/bg-flash/)
+    await expect(row).toHaveClass(/bg-flash/)
 
     await page.clock.fastForward(2600)
-    await expect(developer).not.toHaveClass(/bg-flash/)
+    await expect(row).not.toHaveClass(/bg-flash/)
+  })
+
+  // THE TINT IS THE WHOLE ROW, edge to edge. It used to sit on the pin button,
+  // which stops where the agent's three cycling words begin — so a pulse said
+  // "these skills reached this agent" while leaving that agent's own model,
+  // effort and scope outside the thing being pointed at.
+  //
+  // Geometry rather than a class, because the class is present either way: the
+  // flashed row's painted box has to reach the panel's border-left on one side
+  // and the scroller's own padding on the other.
+  test("paints the pulse across the whole panel width", async ({
+    configure,
+    page,
+  }) => {
+    await page.clock.install()
+    await page.clock.pauseAt(Date.now())
+    const row = configure.roster.agentRow("web", "developer")
+
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await expect(row).toHaveClass(/bg-flash/)
+
+    const painted = (await row.boundingBox())!
+    const panel = (await configure.roster.root.boundingBox())!
+    // The aside's own right padding, MEASURED rather than named: it is written
+    // in rem against a root carrying a sizing knob, so a figure here would be a
+    // second copy of it going stale on its own.
+    const asideInset = await configure.roster.root.evaluate((node) =>
+      parseFloat(getComputedStyle(node).paddingRight)
+    )
+
+    // The 1px border-left is the panel's own and is not the row's to paint.
+    expect(painted.x).toBeCloseTo(panel.x + 1, 0)
+    // Everything up to that inset is the row's, which is the scroller's own
+    // padding reclaimed — the tint stops flush against the scrollbar.
+    expect(panel.x + panel.width - (painted.x + painted.width)).toBeCloseTo(
+      asideInset,
+      0
+    )
+  })
+
+  // The bleed is a padding and an equal negative margin, so the box grows and
+  // the ink does not move. A pulse that shifted the row would be a 250ms nudge
+  // of everything the reader was looking at.
+  test("moves nothing on the row as the pulse arrives", async ({
+    configure,
+    page,
+  }) => {
+    await page.clock.install()
+    await page.clock.pauseAt(Date.now())
+    const name = configure.roster.agentButton("web", "developer")
+
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    const pulsing = (await name.boundingBox())!
+
+    await page.clock.fastForward(2600)
+    await expect(configure.roster.agentRow("web", "developer")).not.toHaveClass(
+      /bg-flash/
+    )
+    const resting = (await name.boundingBox())!
+
+    expect(pulsing.x).toBeCloseTo(resting.x, 0)
+    expect(pulsing.y).toBeCloseTo(resting.y, 0)
   })
 
   test("deselecting clears an in-flight pulse", async ({ configure, page }) => {
     await page.clock.install()
     await page.clock.pauseAt(Date.now())
-    const developer = configure.roster.agentButton("web", "developer")
+    const row = configure.roster.agentRow("web", "developer")
     const react = configure.skillIn(web, CATEGORY, REACT)
 
     await react.toggle()
-    await expect(developer).toHaveClass(/bg-flash/)
+    await expect(row).toHaveClass(/bg-flash/)
 
     await react.toggle()
-    await expect(developer).not.toHaveClass(/bg-flash/)
+    await expect(row).not.toHaveClass(/bg-flash/)
   })
 
   test("clicking an agent pins it off and back on", async ({ configure }) => {
@@ -180,7 +242,7 @@ test.describe("roster panel", () => {
 
     await expect(configure.roster.root).toContainText("no skills — base agent")
     await expect(configure.roster.installButton).toContainText(
-      "1 sub-agent and 0 skills"
+      "1 agent · 0 skills"
     )
   })
 
@@ -356,7 +418,7 @@ test.describe("agent model and effort", () => {
     await configure.roster.modelWord("web-developer").click()
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await expect(configure.roster.installButton).toContainText("0 sub-agents")
+    await expect(configure.roster.installButton).toContainText("0 agents")
   })
 
   test("the effort word rests on medium and cycles upward", async ({
@@ -590,10 +652,12 @@ test.describe("roster header", () => {
 // which band an agent falls into, what that band is called, and whether the
 // row has to name its own domain.
 test.describe("roster grouping", () => {
-  // The visible text is the current VALUE plus U+25BE, which is why the
-  // control is located by an aria-label instead: `domain ▾` names no action.
-  const AT_DOMAIN = "domain ▾"
-  const AT_SCOPE = "scope ▾"
+  // The visible text is the current VALUE, which is why the control is located
+  // by an aria-label instead: `domain` names no action. The caret beside it is
+  // a drawn glyph rather than U+25BE now — one icon set, one geometry — and a
+  // drawn glyph contributes no text, so these are the bare words.
+  const AT_DOMAIN = "domain"
+  const AT_SCOPE = "scope"
   // Scope mode moves the domain off the band and onto the row.
   const PREFIXED_DEVELOPER = "web · developer"
   const BARE_DEVELOPER = "developer"

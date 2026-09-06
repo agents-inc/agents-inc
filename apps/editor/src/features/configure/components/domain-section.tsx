@@ -12,8 +12,7 @@ const COLUMNS = 4
 //
 // THE DOMAIN'S TITLE IS NOT HERE. It used to be a 25px heading pinning under
 // the filter bar as you reached it; every title is now on screen at once in the
-// strip under that bar, and the one you are reading is the one set in 25px
-// there. A heading left behind would repeat, under the strip, the name the
+// strip under that bar. A heading left behind would repeat, under the strip, the name the
 // strip is already carrying.
 //
 // What replaces it is a zero-height anchor at the section's top edge, which is

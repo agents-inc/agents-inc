@@ -35,10 +35,13 @@ test.describe("the saved stack, applied", () => {
   })
 
   // Scratch is what a snapshot taken from scratch would otherwise light up,
-  // which reads as "no stack" over a selection the user deliberately named.
+  // which reads as "no stack" over a selection the user deliberately named. It
+  // is located by its CLEARED words throughout this file: every test here runs
+  // with a snapshot applied, and a selected skill is exactly what makes the
+  // first cell the reset.
   test("draws its own cell as the applied stack", async ({ configure }) => {
     await expect(configure.savedStack).toHaveAttribute("aria-pressed", "true")
-    await expect(configure.stack(STACKS.scratch)).toHaveAttribute(
+    await expect(configure.stack(STACKS.clearScratch)).toHaveAttribute(
       "aria-pressed",
       "false"
     )
@@ -97,7 +100,7 @@ test.describe("the saved stack, applied", () => {
     await configure.stacks.waitFor()
 
     await expect(configure.savedStack).toHaveAttribute("aria-pressed", "true")
-    await expect(configure.stack(STACKS.scratch)).toHaveAttribute(
+    await expect(configure.stack(STACKS.clearScratch)).toHaveAttribute(
       "aria-pressed",
       "false"
     )
@@ -118,7 +121,7 @@ test.describe("saving the current selection", () => {
 
     await expect(configure.savedStack).toBeVisible()
     await expect(configure.savedStack).toHaveAttribute("aria-pressed", "true")
-    await expect(configure.stack(STACKS.scratch)).toHaveAttribute(
+    await expect(configure.stack(STACKS.clearScratch)).toHaveAttribute(
       "aria-pressed",
       "false"
     )

@@ -43,14 +43,44 @@ const membersLine = (skillIds: readonly string[]) => {
     : names.join(" · ")
 }
 
-// The app's own cell rather than any catalogue's, so it survives a marketplace
-// swap unchanged — every catalogue can be started from nothing.
-const scratchCell: StackCell = {
-  key: "scratch",
+/**
+ * THE FIRST CELL IS THE RESET, AND IT SAYS SO ONCE THERE IS SOMETHING TO
+ * RESET.
+ *
+ * Applying it and clearing everything are the same act, so the design gives
+ * clearing no control of its own: a separate `N skills selected ✕` block was
+ * built and removed, because a cell that already means "nothing selected" is
+ * where clearing belongs. What changes is the words — both lines of them, so
+ * the cell states the cost rather than describing a starting point somebody is
+ * no longer at.
+ *
+ * The app's own cell rather than any catalogue's, so it survives a marketplace
+ * swap unchanged — every catalogue can be started from nothing.
+ */
+// What the cell says while there is nothing to clear: it describes a starting
+// point, because that is all it can offer yet.
+const SCRATCH_AT_REST = {
   name: "Start from scratch",
   members: "no stack · pick every skill yourself",
+} as const
+
+// And what it says once there is. "and every sub-agent" is the half that is on
+// screen nowhere else: the roster empties with the selection, and a cell
+// promising only to remove skills would understate what the press costs.
+const clearedScratchWords = (selectedCount: number) => ({
+  name: "Clear and start from scratch",
+  members: `removes ${selectedCount} ${
+    selectedCount === 1 ? "skill" : "skills"
+  } and every sub-agent`,
+})
+
+const scratchCell = (selectedCount: number): StackCell => ({
+  key: "scratch",
   request: { kind: "stack", stackId: null },
-}
+  ...(selectedCount === 0
+    ? SCRATCH_AT_REST
+    : clearedScratchWords(selectedCount)),
+})
 
 const toCatalogueCells = (
   stacks: readonly { id: string; name: string }[]
@@ -183,12 +213,12 @@ export function StackGrid() {
   // point rather than a stack the catalogue knows about.
   const cells = useMemo(
     () => [
-      scratchCell,
+      scratchCell(Object.keys(skills).length),
       ...(saved && keepsLocalSlot ? [savedCell(saved)] : []),
       ...accountCells(accountStacks),
       ...catalogueCells,
     ],
-    [keepsLocalSlot, accountStacks, saved, catalogueCells]
+    [skills, keepsLocalSlot, accountStacks, saved, catalogueCells]
   )
 
   // The saved cell is drawn as the current stack by the selection *being* the

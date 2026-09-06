@@ -1,4 +1,5 @@
 import { Button } from "@workspace/ui/components/button"
+import { Glyph } from "@workspace/ui/components/glyph"
 import { useId } from "react"
 
 /**
@@ -36,7 +37,7 @@ export type ProposalRow = {
   state: string
   /** Whether `state` — or its `after` half — is the non-default choice. */
   amber: boolean
-  /** Whether the mark track draws the amber `＋`. A changed row draws none. */
+  /** Whether the mark track draws the amber plus. A changed row draws none. */
   added: boolean
 }
 
@@ -69,12 +70,6 @@ const CLOSE_QUOTE = "”"
 // The app's existing joiner, U+00B7 with a space either side — the same one
 // `Marketplace · <name>` uses on the button a few pixels below this block.
 const SEPARATOR = " · "
-
-// U+FF0B FULLWIDTH PLUS SIGN, as `＋ Add skill` on the filter bar uses. Amber
-// because it marks what the visitor gets, and `aria-hidden` because seven
-// repetitions of "fullwidth plus sign" before seven names is what happens
-// otherwise.
-const ADDED_MARK = "＋"
 
 // The design's template is `<n> + ' changes'`, which yields `0 changes` — a
 // string that reads as a broken template rather than as an answer. NEW copy,
@@ -116,11 +111,12 @@ function Row({ row }: { row: ProposalRow }) {
       data-slot="proposal-row"
       className="flex h-[1.375rem] items-baseline gap-2"
     >
-      <span
-        aria-hidden="true"
-        className="flex-none font-mono text-10 font-normal text-brand"
-      >
-        {row.added ? ADDED_MARK : ""}
+      {/* The mark track. It is always drawn, whether or not the row has a mark
+          to put in it, so a changed row's name starts on the same x as an added
+          one's — a track that collapsed would give the block two left edges.
+          Amber because it marks what the visitor gets. */}
+      <span className="flex w-[0.625rem] flex-none justify-center self-center text-brand">
+        {row.added && <Glyph name="plus" size={11} />}
       </span>
       {/* Truncated rather than wrapped: a name that wraps takes the row off its
           22px rhythm and the four columns stop lining up across the block. */}

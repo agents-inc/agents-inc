@@ -83,6 +83,16 @@ export class OutputPreviewDialog {
   readonly subtitle: Locator
   readonly footerNote: Locator
   readonly closeButton: Locator
+  // The maximise glyph beside the ✕. Located by its accessible name, which is
+  // the ACTION rather than the state — so it changes with the state, and both
+  // spellings are matched here for the same reason `saveNarrating` exists: a
+  // locator that only matched the resting word could not reach the control that
+  // undoes it.
+  readonly fullscreenButton: Locator
+  readonly header: Locator
+  // The 5px band between the two panes. It has a role and a value, so it is
+  // reached the way every other control here is rather than by slot.
+  readonly splitter: Locator
 
   constructor(page: Page) {
     this.root = page.getByRole("dialog", { name: "Output preview" })
@@ -93,6 +103,30 @@ export class OutputPreviewDialog {
     this.closeButton = this.root
       .locator('[data-slot="dialog-footer"]')
       .getByRole("button", { name: "Close" })
+    this.fullscreenButton = this.root.getByRole("button", {
+      name: /^(Fullscreen|Exit fullscreen)$/,
+    })
+    this.header = this.root.locator('[data-slot="dialog-header"]')
+    this.splitter = this.root.getByRole("separator", {
+      name: "Resize the file tree",
+    })
+  }
+
+  /** Drags the splitter by `by` CSS pixels, positive to widen the tree. */
+  async dragSplitter(by: number) {
+    const handle = await this.splitter.boundingBox()
+    if (!handle) throw new Error("the splitter must be drawn")
+
+    const y = handle.y + handle.height / 2
+    await this.splitter.page().mouse.move(handle.x + handle.width / 2, y)
+    await this.splitter.page().mouse.down()
+    // Two moves, because a drag that jumps straight to its destination in one
+    // event is a drag some implementations never see the middle of.
+    await this.splitter
+      .page()
+      .mouse.move(handle.x + handle.width / 2 + by / 2, y)
+    await this.splitter.page().mouse.move(handle.x + handle.width / 2 + by, y)
+    await this.splitter.page().mouse.up()
   }
 
   row(path: string): Locator {
@@ -264,6 +298,11 @@ export class AddSkillDialog {
   readonly root: Locator
   readonly results: Locator
   readonly searchInput: Locator
+  // The bordered box the glyph, the field and the caret bar share — named for
+  // the reason `ConfigurePage.searchField` is: a claim about the box is not a
+  // claim about the input inside it, and "the whole of this border takes the
+  // caret" is a claim only the box can carry.
+  readonly searchField: Locator
   readonly footerNote: Locator
   readonly cancelButton: Locator
 
@@ -271,6 +310,11 @@ export class AddSkillDialog {
     this.root = page.getByRole("dialog").filter({ hasText: "ADD SKILL" })
     this.results = this.root.getByRole("group", { name: "Search results" })
     this.searchInput = this.root.getByLabel("Search external skills")
+    // The field's own parent, because the box carries no `data-slot` and no
+    // accessible name of its own — it is a `<label>`, and its name would be the
+    // field's. Structural rather than semantic, so it is here in `pages/`
+    // rather than in a spec, where the README says no locator may be built.
+    this.searchField = this.searchInput.locator("..")
     this.footerNote = this.root.locator('[data-slot="dialog-footer-note"]')
     this.cancelButton = this.root.getByRole("button", { name: "Cancel" })
   }
@@ -345,7 +389,10 @@ export class AddSkillDialog {
 export class MarketplaceDialog {
   readonly root: Locator
   readonly marketplaceInput: Locator
+  // The bordered box around it, on the same grounds as `AddSkillDialog`'s.
+  readonly marketplaceField: Locator
   readonly tokenInput: Locator
+  readonly tokenField: Locator
   readonly error: Locator
   // What the load would cost, named before it happens — the switcher's own
   // sentence, at the other door to the same act.
@@ -361,7 +408,13 @@ export class MarketplaceDialog {
   constructor(page: Page) {
     this.root = page.getByRole("dialog").filter({ hasText: "MARKETPLACE" })
     this.marketplaceInput = this.root.getByLabel("Marketplace")
+    this.marketplaceField = this.marketplaceInput.locator("..")
     this.tokenInput = this.root.getByLabel("Access token")
+    // The token field's own bordered box, reached the same way the marketplace
+    // field's is: `Input` is a bare field and the box around it is the wrapper,
+    // so a hit-area claim has to press the WRAPPER's corners rather than the
+    // input's own.
+    this.tokenField = this.tokenInput.locator("..")
     this.error = this.root.getByRole("alert")
     this.consequence = this.error
     this.loadButton = this.root.getByRole("button", { name: "Load" })

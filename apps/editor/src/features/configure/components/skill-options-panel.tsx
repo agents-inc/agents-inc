@@ -1,4 +1,5 @@
 import type { SubAgent } from "@workspace/matrix"
+import { Glyph } from "@workspace/ui/components/glyph"
 import {
   MatrixGrid,
   matrixCellVariants,
@@ -63,20 +64,7 @@ function InfoTip({
         aria-label={`About ${label}`}
         className="peer ml-[0.3125rem] inline-flex cursor-pointer align-[-0.0625rem] text-faint hover:text-brand-ink focus-visible:text-brand-ink"
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          aria-hidden
-        >
-          <circle cx="12" cy="12" r="9.25" />
-          <path d="M12 11v5.5" />
-          <path d="M12 7.6v.1" />
-        </svg>
+        <Glyph name="info" size={12} />
       </button>
       <span
         className={`absolute top-0 z-40 hidden w-[12.25rem] bg-tip-field px-[0.5625rem] py-[0.4375rem] font-mono text-8_5 leading-[1.65] font-normal tracking-normal text-matrix-ink normal-case peer-hover:block peer-focus:block ${
@@ -238,8 +226,8 @@ export function SkillOptionsPanel({
           <span className="font-mono text-8 font-semibold tracking-[.06em] text-ink-3 uppercase">
             Meta
           </span>
-          <span className="ml-auto font-mono text-10 font-normal text-dots group-hover:text-ink">
-            {metaOpen ? "−" : "＋"}
+          <span className="ml-auto flex text-dots group-hover:text-ink">
+            <Glyph name={metaOpen ? "minus" : "plus"} size={11} />
           </span>
         </button>
 
@@ -260,9 +248,11 @@ export function SkillOptionsPanel({
       {/* The panel's one outward link, and the only thing in it that is about
           the skill rather than about installing it. A new tab rather than a
           navigation: added skills live for this session only, so leaving the
-          page would take them with it. `↗` is a text glyph like the `✕` and
-          the `＋` — the design ships no icon set beyond the GitHub mark — and
-          it is hidden from the tree so the link is announced by its words. */}
+          page would take them with it. `↗` stays a TEXT glyph, and that is not
+          an oversight: the design's icon set is a closed list of nine shapes
+          and an outbound arrow is not one of them — as `✕` and `✓` are not —
+          so drawing one here would be inventing a tenth. It is hidden from the
+          tree so the link is announced by its words. */}
       <a
         href={sourceUrl}
         target="_blank"

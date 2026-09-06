@@ -111,12 +111,14 @@ export class SkillCell {
     return this.root.getAttribute("title")
   }
 
-  // Dimming is the whole visual signal for a ruled-out cell, so it is worth
-  // pinning: without it the cell looks live but is dead to every click.
-  // Read off the CELL, not the button. The dimming is a property of the whole
-  // cell — the overlay button that carries the press is transparent and sits at
-  // full opacity whatever the cell does.
-  async opacity() {
-    return this.cell.evaluate((node) => Number(getComputedStyle(node).opacity))
+  // RECEDING is the whole visual signal for a ruled-out cell: it stops being
+  // white and drops to the colour of the column it sits on. It was a 40% fade,
+  // which is rejected by name — the fade took the cell's own hairlines with it,
+  // so the lattice broke and it read as a rendering fault rather than a state.
+  //
+  // Read off the CELL, not the button: the overlay button that carries the
+  // press is transparent whatever the cell does.
+  async background() {
+    return this.cell.evaluate((node) => getComputedStyle(node).backgroundColor)
   }
 }

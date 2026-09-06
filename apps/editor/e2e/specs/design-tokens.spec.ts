@@ -23,10 +23,23 @@ const NEW_TOKENS = {
   "--color-tree-border": "#eeece4",
 } as const
 
-// The two the effort meter took with it. A cycling word needs no square, so
-// an empty square's outline and its fill on a switched-off agent have no
-// consumer left — and this project is pre-1.0, so they go rather than linger.
-const RETIRED_TOKENS = ["--color-meter-border", "--color-meter-off"] as const
+// Tokens whose drawing was retired, gone rather than left resolving to a value
+// nobody reads. This project is pre-1.0, so they go rather than linger.
+//
+//   meter-border / meter-off — the effort meter's empty square and its fill on
+//     a switched-off agent. A cycling word needs no square.
+//   tab-label / tab-count / tab-field — the domain strip's own three greys,
+//     which existed for a drawing where the active tab was 25px Inter over a
+//     wash and every other one was a quieter mono label. Every cell holds the
+//     same type at the same size now, so the strip needs one grey of its own
+//     (`--color-tab-index`) and takes the ordinary mono grey for the rest.
+const RETIRED_TOKENS = [
+  "--color-meter-border",
+  "--color-meter-off",
+  "--color-tab-label",
+  "--color-tab-count",
+  "--color-tab-field",
+] as const
 
 // An existing token with no utility consumer and no `var()` reference
 // anywhere. It is the channel: if THIS resolves, the stylesheet publishes
@@ -65,7 +78,12 @@ test.describe("design tokens", () => {
     configure,
   }) => {
     const dock = configure.composer.dock
-    await expect(dock).toHaveCSS("background-color", "rgb(253, 253, 252)")
+    // #faf8f2 — the main column, which the dock carries as its own ground so
+    // there is no seam when it sticks. It moved off #fdfdfc with the substrate
+    // change: the cells stayed white and the column stepped away from them, so
+    // a cell reads as an object on a surface and a ruled-out one has somewhere
+    // to recede to.
+    await expect(dock).toHaveCSS("background-color", "rgb(250, 248, 242)")
 
     await configure.page.addStyleTag({ content: ":root { --column: #ff0000 }" })
 
@@ -106,7 +124,7 @@ test.describe("design tokens", () => {
     })
   }
 
-  test("the effort meter's two tokens are gone rather than orphaned", async ({
+  test("a retired drawing's tokens are gone rather than orphaned", async ({
     configure,
   }) => {
     for (const name of RETIRED_TOKENS) {

@@ -1,3 +1,5 @@
+import type { Locator } from "@playwright/test"
+
 import { STACKS_URL } from "@workspace/api-mocks"
 
 import { expect, test } from "../fixtures"
@@ -152,6 +154,19 @@ test.describe("signed out", () => {
   })
 })
 
+// The hairline a rail section draws above itself, and the section's own width
+// to measure it against. `height` is `"1px"` where a rule is drawn and `"auto"`
+// where the pseudo-element has no `content` and generates no box.
+const ruleOn = async (section: Locator) =>
+  await section.evaluate((node) => {
+    const style = getComputedStyle(node, "::before")
+    return {
+      height: style.height,
+      width: parseFloat(style.width),
+      section: node.getBoundingClientRect().width,
+    }
+  })
+
 // WHERE THE ACCOUNT SITS IN THE RAIL, which is a claim about the rail's whole
 // order rather than about the row. It used to be pinned to the bottom, under a
 // flexible spacer, which put "sign in" and "GitHub" on the same footing; it
@@ -164,44 +179,52 @@ test.describe("the rail's order", () => {
     stubSignedOut(page)
     const configure = await arrive(page)
 
-    const configureLink = await page
-      .getByRole("link", { name: "Configure" })
+    const editorLink = await page
+      .getByRole("link", { name: "Editor" })
       .boundingBox()
     const account = await configure.accountRow.boundingBox()
     const theme = await configure.themeToggle.boundingBox()
-    if (!configureLink || !account || !theme)
+    if (!editorLink || !account || !theme)
       throw new Error("the rail's three landmarks must be drawn")
 
-    expect(configureLink.y).toBeLessThan(account.y)
+    expect(editorLink.y).toBeLessThan(account.y)
     expect(account.y).toBeLessThan(theme.y)
   })
 
-  // The rule above the account row, and the one horizontal rule in the rail. It
-  // is what separates identity from navigation now that neither is in a box —
-  // a bordered pill and a recessed field were both built and rejected, because
-  // a container in a rail of bare words is the only container in it.
+  // THE RAIL HAS ONE HORIZONTAL RULE, above the marketplace section, and it is
+  // what separates the two lower sections from the navigation now that none of
+  // the three is in a box — a bordered pill and a recessed field were both
+  // built and rejected, because a container in a rail of bare words is the only
+  // container in it.
+  //
+  // BOTH HALVES ARE THE ASSERTION. The marketplace half was the whole of this
+  // spec while the account row carried a rule of its own, separating it from
+  // the marketplace above; the owner had that one removed. An absence pinned on
+  // its own cannot tell a rule deliberately dropped from one section from a
+  // treatment that has vanished off both, and the two halves are byte-identical
+  // in a screenshot of a rail whose sections are already spaced apart.
   //
   // Read off the pseudo-element the same way `sticky-bar.spec.ts` reads a
   // `::placeholder`: it carries no role and no text, so there is nothing else
-  // to locate it by. Its WIDTH is the assertion — the rule stops short of the
-  // rail's left edge and ends flush on the vertical divider, so a full-width
-  // one is the failure this catches.
-  test("draws a partial rule above the account row", async ({ page }) => {
+  // to locate it by. The surviving rule's WIDTH is what the first half is about
+  // — it stops short of the rail's left edge and ends flush on the vertical
+  // divider, so a full-width one is the failure that half catches.
+  test("draws one partial rule, above the marketplace and not the account", async ({
+    page,
+  }) => {
     stubSignedOut(page)
     const configure = await arrive(page)
 
-    const rule = await configure.accountRow.evaluate((node) => {
-      const style = getComputedStyle(node, "::before")
-      return {
-        height: style.height,
-        width: parseFloat(style.width),
-        row: node.getBoundingClientRect().width,
-      }
-    })
+    const marketplace = await ruleOn(configure.marketplaceSection)
+    expect(marketplace.height).toBe("1px")
+    expect(marketplace.width).toBeGreaterThan(0)
+    expect(marketplace.width).toBeLessThan(marketplace.section)
 
-    expect(rule.height).toBe("1px")
-    expect(rule.width).toBeGreaterThan(0)
-    expect(rule.width).toBeLessThan(rule.row)
+    // Nothing between the two lower sections: they are one block under the
+    // navigation, and the spacing is the whole of what sets them apart. A
+    // pseudo-element with no `content` generates no box at all, which is what
+    // `"auto"` is here rather than a height of zero.
+    expect((await ruleOn(configure.accountRow)).height).toBe("auto")
   })
 })
 

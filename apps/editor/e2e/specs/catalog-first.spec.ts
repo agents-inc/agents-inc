@@ -320,21 +320,49 @@ test.describe("a saved configuration its seated catalogue has outgrown", () => {
   })
 })
 
+// The other route this Worker serves, written with the prefix because it is
+// pushed at `window.history` rather than built by the router — `basepath:
+// "/editor"` in `src/routes/router.tsx` is what the router would have added
+// itself, and what it strips back off before matching.
+const SETTINGS_URL = "/editor/settings"
+
 // Leaving the screen and coming back remounts the whole opening, and it must
 // not run a second time. Both halves of it are expensive in their own way: a
 // catalogue is 400 KB to arrive where the app already is, and a second read of
 // storage would replace what is in memory with what `partialize` chose to write
 // — which is deliberately less.
 test.describe("returning to the screen", () => {
-  // SETTINGS, and it has to be an in-app destination. This used to go via Docs,
-  // which stopped being one when the apex was split: `/docs` is Starlight on the
-  // `agents-inc-www` Worker now, so clicking it leaves the app entirely and
-  // there is no "Configure" link on the far side to come back with. Settings is
-  // the only nav word left that this Worker actually serves, which is exactly
-  // what makes it the right one for a round trip that must stay inside the SPA.
+  // THERE IS NO NAV WORD LEFT TO LEAVE BY, and the round trip still has to be
+  // one this app performs on itself. It went via Docs until the apex was split
+  // — `/docs` is Starlight on the `agents-inc-www` Worker now, so clicking it
+  // leaves the app entirely — and then via Settings, until the Settings nav
+  // item was removed. The `/settings` ROUTE is still in the router and still
+  // renders; only the click that reached it is gone, so the destination this
+  // needs survives and the way in is what has to be replaced.
+  //
+  // `history.pushState` is the replacement, and it is the router's own doorway
+  // rather than a way around it: `createBrowserHistory` in @tanstack/history
+  // patches `win.history.pushState` and notifies its subscribers on every call,
+  // so an external push reaches the router as the same event its own `<Link>`
+  // raised. `page.goBack()` returns on `popstate`, which is the other half of
+  // that one subscription.
+  //
+  // WHAT MUST NOT HAPPEN HERE IS A DOCUMENT LOAD, and that is the whole reason
+  // this helper is written out rather than being two `goto`s. The assertion
+  // downstream is that the catalogue is fetched NO SECOND TIME, which a fresh
+  // boot satisfies by fetching it again — so a `page.goto()` round trip does
+  // not fail, it stops asking. Both legs here are same-document.
+  //
+  // The Settings placeholder between them is what proves the leave happened at
+  // all: it can only be on screen once `ConfigureScreen` has unmounted, which
+  // is the remount this pair of tests is about.
   const leaveAndReturn = async (page: Page) => {
-    await page.getByRole("link", { name: "Settings" }).click()
-    await page.getByRole("link", { name: "Configure" }).click()
+    await page.evaluate(
+      (url) => window.history.pushState(null, "", url),
+      SETTINGS_URL
+    )
+    await expect(page.getByRole("main")).toHaveText("Settings")
+    await page.goBack()
   }
 
   test("fetches the marketplace catalogue no second time", async ({

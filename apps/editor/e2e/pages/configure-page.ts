@@ -59,6 +59,10 @@ export type StoredUi = {
 // so nothing on the bar can ever match this.
 const SKILL_CELL = 'main section [data-slot="lattice-cell"]'
 
+// The rail's marketplace row, claimed twice below: once as an element and once
+// as an element of the navigation landmark.
+const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
+
 // How far the keyboard may walk looking for the pin. Reaching it takes around
 // seventy stops from the bar; this is headroom, and a walk that spends it all
 // leaves the bar unstuck for the spec to fail on.
@@ -96,16 +100,31 @@ export class ConfigurePage {
   readonly filterBar: Locator
   readonly filterBand: Locator
   // The domain strip under the band: one tab per domain in the catalogue,
-  // scoped as a group so a tab can never be confused with a filter chip
-  // sharing the row.
+  // scoped as a group. Nothing else shares the row any more — `selected` moved
+  // to the skills hinge and the clear control to the first stack cell — but the
+  // group stays, because a bare `button` under the bar would still match the
+  // add-skill block above it.
   readonly domainTabs: Locator
-  // `N skills selected ✕`, drawn only while something is selected.
-  readonly clearSelectionButton: Locator
+  // The skills hinge's own control: `all 42` ⇄ `selected 14`, drawn only once
+  // something is selected. Located by its accessible name, which is fixed —
+  // its VISIBLE words are the value and change with every click in the grid.
+  readonly selectedOnlyToggle: Locator
   readonly emptyState: Locator
-  // The floating button that opens the marketplace dialog. Floating because it
-  // belongs to the whole page rather than to any section of it — which
-  // marketplace the grid runs on is a statement about everything on screen.
+  // The control in the rail's marketplace section that opens the dialog. Its
+  // accessible name carries the catalogue it is on as well as the word
+  // `Marketplace`, so the locator is a SUBSTRING match and specs assert the ref
+  // on the same node.
   readonly marketplaceButton: Locator
+  // The rail's marketplace section as a whole — the word, the catalogue it
+  // names, and the switcher when there is one. Located by SLOT for the reason
+  // `accountRow` is: the row has to be MEASURED against the rows around it,
+  // whichever of its faces it happens to be wearing.
+  readonly marketplaceSection: Locator
+  // The same node, claimed through the navigation landmark. Two locators for
+  // one element because "it is drawn" and "it is drawn INSIDE the rail" are two
+  // claims, and only the second says the control stopped floating over the
+  // grid.
+  readonly railMarketplaceSection: Locator
   // What an arriving share link had to say for itself, above the grid. Scoped
   // to `main` because a dialog's own status line is an alert too, and a parked
   // import shows both at once.
@@ -117,9 +136,8 @@ export class ConfigurePage {
   readonly adoptionNotice: Locator
 
   readonly roster: RosterPanel
-  // The docked natural-language composer at the foot of the same column the
-  // marketplace button floats in — which is why the two are asserted against
-  // each other rather than each on its own.
+  // The docked natural-language composer at the foot of the main column, and
+  // the one thing still floating there.
   readonly composer: Composer
   readonly installDialog: InstallDialog
   readonly addSkillDialog: AddSkillDialog
@@ -128,9 +146,9 @@ export class ConfigurePage {
   readonly marketplaceDialog: MarketplaceDialog
   readonly marketplaceSwitchDialog: MarketplaceSwitchDialog
   readonly stackSwitchDialog: StackSwitchDialog
-  // The saved marketplaces the visitor is not currently on, offered beside the
-  // floating button. Absent entirely until there is more than one to choose
-  // between, because a switcher with one entry is furniture.
+  // The saved marketplaces the visitor is not currently on, offered under the
+  // control that names where they are. Absent entirely until there is more than
+  // one to choose between, because a switcher with one entry is furniture.
   readonly marketplaceSwitcher: Locator
   // The account, at the foot of the nav rail. Located by role and by a
   // `data-slot` rather than by the person's name, which is data.
@@ -144,6 +162,10 @@ export class ConfigurePage {
   // The single glyph in the rail's footer. Only the active theme's icon is
   // drawn, so its accessible name is the action rather than the state.
   readonly themeToggle: Locator
+  // The mark beside it, and the reason it is named: it is what the floating
+  // marketplace button covered outright in EDITOR-35, so it is what the section
+  // that replaced that button has to clear.
+  readonly githubLink: Locator
   // The rail's own refusal line, scoped to the `nav` so it cannot pick up
   // `importNotice` — both are `role="alert"`, and an unscoped locator would
   // match whichever the page happened to be drawing.
@@ -156,15 +178,19 @@ export class ConfigurePage {
     })
     this.searchInput = page.getByLabel("Search skills")
     this.searchField = page.locator('[data-slot="search-field"]')
-    this.addSkillButton = page.getByRole("button", { name: "＋ Add skill" })
+    this.addSkillButton = page.getByRole("button", { name: "Add skill" })
     this.filterBar = page.locator('[data-slot="filter-bar"]')
     this.filterBand = page.locator('[data-slot="filter-band"]')
     this.domainTabs = page.getByRole("group", { name: "Domains" })
-    this.clearSelectionButton = page.getByRole("button", {
-      name: "Clear all selected skills",
+    this.selectedOnlyToggle = page.getByRole("button", {
+      name: "Show only selected skills",
     })
     this.emptyState = page.getByText("No skills match this filter.")
     this.marketplaceButton = page.getByRole("button", { name: "Marketplace" })
+    this.marketplaceSection = page.locator(MARKETPLACE_SECTION)
+    this.railMarketplaceSection = page
+      .getByRole("navigation")
+      .locator(MARKETPLACE_SECTION)
     this.importNotice = page.locator("main").getByRole("alert")
     this.adoptionNotice = page.locator('[data-slot="adoption-notice"]')
 
@@ -185,6 +211,7 @@ export class ConfigurePage {
     this.accountName = page.locator('[data-slot="account-name"]')
     this.accountRow = page.locator('[data-slot="account-row"]')
     this.themeToggle = page.locator('[data-slot="theme-toggle"]')
+    this.githubLink = page.getByRole("link", { name: "GitHub" })
     this.accountNotice = page.locator("nav").getByRole("alert")
   }
 
@@ -308,8 +335,13 @@ export class ConfigurePage {
     return (JSON.parse(raw) as { state: StoredUi }).state
   }
 
-  async goto() {
-    await this.page.goto(CONFIGURE_URL)
+  /** Opens the screen at an address naming a domain, as a shared link does. */
+  async gotoDomain(domainId: string) {
+    await this.goto(`?domain=${domainId}`)
+  }
+
+  async goto(search = "") {
+    await this.page.goto(`${CONFIGURE_URL}${search}`)
     await this.stacks.waitFor()
     // Wait for the skill grids too, not just the stacks. They are what makes
     // the page taller than the viewport, so scrolling before they exist
@@ -350,16 +382,8 @@ export class ConfigurePage {
 
   // ── Filters ────────────────────────────────────────────────────────────
 
-  chip(name: string): Locator {
-    return this.page.getByRole("button", { name, exact: true })
-  }
-
   async search(term: string) {
     await this.searchInput.fill(term)
-  }
-
-  async toggleChip(name: string) {
-    await this.chip(name).click()
   }
 
   // ── Skills ─────────────────────────────────────────────────────────────
@@ -394,6 +418,26 @@ export class ConfigurePage {
       if (!anchor) throw new Error(`no anchor for the ${id} domain`)
 
       window.scrollTo(0, window.scrollY + anchor.getBoundingClientRect().top)
+    }, domainId)
+  }
+
+  // How far a domain's top edge sits BELOW the bar's underside — the one
+  // measurement that says a jump landed the section in view rather than
+  // underneath the thing that pins over it. Negative means the section's top
+  // is hidden behind the bar; a large positive means the jump undershot.
+  //
+  // Measured rather than compared against a figure written here: the bar's
+  // height is the design's, in rem against a root set to 110%, so any constant
+  // in this file would be a second copy of it going stale on its own.
+  async domainGapUnderBar(domainId: string) {
+    return this.page.evaluate((id) => {
+      const anchor = document.querySelector(`[data-domain-anchor="${id}"]`)
+      const bar = document.querySelector('[data-slot="filter-bar"]')
+      if (!anchor || !bar) throw new Error(`no anchor or bar for ${id}`)
+
+      return (
+        anchor.getBoundingClientRect().top - bar.getBoundingClientRect().bottom
+      )
     }, domainId)
   }
 

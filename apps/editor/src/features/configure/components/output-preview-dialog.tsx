@@ -7,6 +7,7 @@ import {
   DialogFooterNote,
   DialogHeader,
   DialogPane,
+  DialogPaneSplitter,
   DialogPanes,
 } from "@workspace/ui/components/dialog"
 import { Fragment, useEffect, useMemo, useState } from "react"
@@ -210,12 +211,36 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
   const state = useOutputPreview(payload, live)
 
   const open = dialog === "output"
+  const fullscreen = useUiStore((state) => state.outputFullscreen)
+  const exitFullscreen = useUiStore((state) => state.exitOutputFullscreen)
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && setDialog("none")}>
-      {/* 760px. `wide` is 620px, which is the widest the shell otherwise goes,
-          and this sheet holds a 250px column plus a file. */}
-      <DialogContent className="w-[47.5rem]">
+    <Dialog
+      open={open}
+      onOpenChange={(next, details) => {
+        if (next) return
+
+        // `esc` STEPS OUT OF FULLSCREEN BEFORE IT CLOSES — one press each, in
+        // that order, because a maximised sheet is a place you are in and the
+        // first press is a reader asking to leave it rather than to leave the
+        // preview. One branch on the library's own event rather than a document
+        // listener racing it: a second listener would have to guess whether the
+        // dialog was going to handle the same key.
+        if (fullscreen && details.reason === "escape-key") {
+          details.cancel()
+          exitFullscreen()
+          return
+        }
+
+        setDialog("none")
+      }}
+    >
+      {/* 760px at rest. `wide` is 620px, which is the widest the shell
+          otherwise goes, and this sheet holds a 250px column plus a file.
+          Fullscreen is the answer to the code pane being ~60 characters here,
+          which is narrow enough that generated `config.ts` lines wrap and stop
+          looking like the file they claim to be. */}
+      <DialogContent fullscreen={fullscreen} className="w-[47.5rem]">
         {open && <Preview state={state} />}
       </DialogContent>
     </Dialog>
@@ -225,6 +250,10 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
 function Preview({ state }: { state: PreviewState }) {
   const selection = useUiStore((store) => store.outputSelection)
   const selectNode = useUiStore((store) => store.selectOutputNode)
+  const fullscreen = useUiStore((store) => store.outputFullscreen)
+  const toggleFullscreen = useUiStore((store) => store.toggleOutputFullscreen)
+  const treeWidth = useUiStore((store) => store.outputTreeWidth)
+  const setTreeWidth = useUiStore((store) => store.setOutputTreeWidth)
 
   const preview = state.status === "ready" ? state.preview : null
   const nodes = preview?.roots.flatMap((root) => root.nodes) ?? []
@@ -259,6 +288,11 @@ function Preview({ state }: { state: PreviewState }) {
             {selected ? `${selected.id} · ${markerFor(selected)}` : ""}
           </span>
         }
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+        // The design's second door onto the same act. It costs one attribute
+        // and reaches the reader who tries it before looking for a control.
+        onDoubleClick={toggleFullscreen}
       />
 
       {/* Each column scrolls on its own: a long file must not carry the tree
@@ -275,6 +309,13 @@ function Preview({ state }: { state: PreviewState }) {
           // clear the gutter, and a long filename ellipsizes rather than
           // widening the column.
           className="[scrollbar-gutter:stable] overflow-x-hidden overflow-y-auto px-0 py-2.5"
+          // THE `/16` IS NOT DECORATION. The store holds DESIGN pixels — the
+          // unit every dimension in this app is written in — and `:root`
+          // carries a sizing knob that scales rem. Writing the number as CSS
+          // pixels would freeze this one column out of proportion with the row
+          // height, the font and the indent inside it, at every knob setting
+          // but 100%.
+          style={{ width: `${treeWidth / 16}rem` }}
         >
           {preview?.roots.flatMap((root, rootIndex) =>
             root.nodes.map((node, nodeIndex) => (
@@ -289,6 +330,10 @@ function Preview({ state }: { state: PreviewState }) {
             ))
           )}
         </DialogPane>
+
+        {/* The real tension in this dialog, given a handle: long paths and long
+            generated lines competing for one width. */}
+        <DialogPaneSplitter width={treeWidth} onWidth={setTreeWidth} />
 
         <ContentPane node={selected} failure={state} />
       </DialogPanes>
