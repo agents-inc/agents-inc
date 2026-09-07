@@ -6037,7 +6037,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       displayName: "React Query",
       description: "Server state and caching",
       usageGuidance:
-        "Use when fetching API data with React Query, generating API clients from OpenAPI specs with hey-api, or configuring query caching and error handling.",
+        "Use when fetching API data with React Query, wiring typed clients generated from an API schema, or configuring query caching and error handling.",
       category: "web-server-state",
       author: "@vince",
       conflictsWith: [
@@ -6351,7 +6351,8 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       slug: "scss-modules",
       displayName: "SCSS Modules",
       description: "SCSS Modules styling",
-      usageGuidance: "Use when styling with SCSS Modules, design tokens, or CSS cascade layers.",
+      usageGuidance:
+        "Use when writing scoped component styles in .module.scss, organising Sass with @use and @forward, or ordering styles with CSS cascade layers.",
       category: "web-styling",
       author: "@vince",
       conflictsWith: [],
@@ -6701,7 +6702,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       displayName: "Headless UI",
       description: "Unstyled accessible UI components by Tailwind Labs",
       usageGuidance:
-        "Use when building accessible UI with Headless UI — Dialog, Menu, Listbox, Combobox, Popover, Tabs, Disclosure, and other unstyled primitives designed for Tailwind CSS.",
+        "Use when building accessible UI with Headless UI — Dialog, Menu, Listbox, Combobox, Popover, Tabs, Disclosure, and other unstyled primitives you style yourself.",
       category: "web-ui-components",
       author: "@vince",
       conflictsWith: [],
