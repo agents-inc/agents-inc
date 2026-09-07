@@ -155,4 +155,4 @@ export const CORPUS_TEMPLATES: Record<string, string> = {
  * manifest to read one out of. The preview stamps this, so its claim is true rather than a guess
  * — and bumping the CLI without regenerating turns `generate:compile:check` red.
  */
-export const CORPUS_CLI_VERSION = "0.163.0"
+export const CORPUS_CLI_VERSION = "0.164.0"
