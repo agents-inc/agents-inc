@@ -3,10 +3,20 @@ import { defineConfig, devices } from "@playwright/test"
 const PORT = 5173
 const BASE_URL = `http://localhost:${PORT}`
 
-// The editor is a desktop-only screen with a hard 1324px `min-width`;
-// below it the page scrolls horizontally rather than reflowing. Anything
-// narrower would be testing a layout that is explicitly not designed yet, so
-// the viewport is fixed above that floor for every project.
+// The editor is a desktop-only screen with a floor of its own, below which the
+// page scrolls sideways rather than reflowing. The floor is stated as
+// `min-w-[68.1818rem]` in `src/routes/route-components.tsx` — 1200px against a
+// root at 110% — but what a window actually bottoms out at is 1223px, because
+// the three grid tracks together (`7rem`, the middle column's `43.75rem`
+// minimum, `18.75rem`) are wider than the declared minimum. Measure rather than
+// trust either figure: `document.documentElement.scrollWidth` at the width in
+// question is the only answer that cannot go stale.
+//
+// The viewport is fixed above the app's one media query — the 1500px threshold
+// in `src/lib/viewport.ts` — which is why every spec here is written against the
+// WIDE drawing: four lattice tracks, and a domain tab carrying its index and its
+// count. `viewport-threshold.spec.ts` overrides this to reach the other one, and
+// it is the only file that should.
 const VIEWPORT = { width: 1600, height: 1000 }
 
 const CHROMIUM = { ...devices["Desktop Chrome"], viewport: VIEWPORT }

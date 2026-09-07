@@ -1,14 +1,28 @@
 import type { DomainTab } from "@/features/configure/lib/derive"
+import { useWideViewport } from "@/lib/viewport"
 
 /**
- * THE DOMAIN TITLES, AS ONE FULL-BLEED STRIP OF EQUAL CELLS.
+ * THE DOMAIN TITLES, AS ONE FULL-BLEED STRIP OF CONTENT-SIZED CELLS.
  *
- * `flex: 1` on every cell is the whole layout, and it is what the previous two
- * drawings could not do: variable-width tabs overflowed the column on a wide
- * catalogue, and the scrolling group that replaced them hid tabs behind an
- * edge. Equal cells spanning the column can never overflow at any width, so
- * there is nothing to scroll, nothing to keep in view, and no controls at the
- * far end competing with the domains for the same track.
+ * `flex: 1 1 auto` on every cell is the whole layout, and the `auto` basis is
+ * the part that carries it: each cell starts at the width of its own label and
+ * the slack left over is shared out equally, so `Desktop` gets the room its
+ * name needs and `AI` never holds a track three times what it can fill.
+ * Nothing can overflow at any width either — the labels clip to an ellipsis
+ * before the row does — which is what the two drawings before this could not
+ * promise: variable-width tabs overflowed the column on a wide catalogue, and
+ * the scrolling group that replaced them hid tabs behind an edge.
+ *
+ * `flex: 1 1 0` was the drawing in between, and it is the one this replaces:
+ * equal cells could not overflow either, but they spent the same width on every
+ * name and so pushed the long ones through their own ellipsis while the short
+ * ones sat in empty tracks.
+ *
+ * THE INDEX AND THE COUNT ARE THE WIDE VIEWPORT'S ALONE. Below the threshold in
+ * `lib/viewport.ts` a cell carries its label and nothing else — nine domains
+ * each holding three pieces of text is what pushes the labels back through the
+ * ellipsis the `auto` basis exists to avoid, and the two dropped are decoration
+ * on a control whose name is the domain.
  *
  * LABELS HOLD ONE SIZE AT ALL TIMES. The active label used to jump to 600 25px
  * Inter, which reflowed the column on every selection — the strip grew taller,
@@ -19,8 +33,10 @@ import type { DomainTab } from "@/features/configure/lib/derive"
  * Three details that are load-bearing, all for the same reason — the rule under
  * the strip must never move:
  *
- *  · the index occupies its slot AT ALL TIMES, at zero opacity when it is not
- *    showing, so selection never shifts a cell's contents sideways;
+ *  · wherever the index is drawn it occupies its slot AT ALL TIMES, at zero
+ *    opacity when it is not showing, so selection never shifts a cell's
+ *    contents sideways. The narrow strip omits it outright rather than hiding
+ *    it, so there is no slot for selection to move either;
  *  · each cell draws its OWN baseline as an inset shadow. There is no rule
  *    across the container, and that is what lets hover darken one segment;
  *  · the active cell's 2px amber baseline REPLACES the 1px hairline rather than
@@ -45,10 +61,13 @@ const CELL_RULE_ACTIVE =
 function DomainTabButton({
   tab,
   active,
+  detailed,
   onPick,
 }: {
   tab: DomainTab
   active: boolean
+  /** Whether the cell carries its index and count as well as its label. */
+  detailed: boolean
   onPick: () => void
 }) {
   return (
@@ -70,26 +89,35 @@ function DomainTabButton({
       // is the thing pushing `Desktop` out through its own ellipsis. The cells
       // are `justify-center`, so on a short label the inset is invisible either
       // way — all it decides is whether a long one survives.
-      className={`group box-border flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 px-1 py-3 whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-ring ${CELL_RULE} ${CELL_RULE_HOVER} ${CELL_RULE_ACTIVE}`}
+      //
+      // `flex-auto` rather than `flex-1`: the basis is the cell's own content,
+      // so the width a name needs is the width it gets. See the note above.
+      className={`group box-border flex min-w-0 flex-auto cursor-pointer items-center justify-center gap-1.5 px-1 py-3 whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-ring ${CELL_RULE} ${CELL_RULE_HOVER} ${CELL_RULE_ACTIVE}`}
     >
       {/* The index and the count are decoration on a control whose name is the
           domain: nine repetitions of a two-digit number in front of nine
-          domains is what an accessible name carrying them sounds like. */}
-      <span
-        aria-hidden="true"
-        className="inline-block flex-none font-mono text-9 leading-none font-medium text-tab-index opacity-0 transition-opacity duration-[240ms] ease-in group-hover:opacity-45 group-data-active:text-brand group-data-active:opacity-100"
-      >
-        {tab.index}
-      </span>
+          domains is what an accessible name carrying them sounds like. Which is
+          also why dropping them on a narrow strip costs a reader nothing — the
+          name is unchanged either way. */}
+      {detailed && (
+        <span
+          aria-hidden="true"
+          className="inline-block flex-none font-mono text-9 leading-none font-medium text-tab-index opacity-0 transition-opacity duration-[240ms] ease-in group-hover:opacity-45 group-data-active:text-brand group-data-active:opacity-100"
+        >
+          {tab.index}
+        </span>
+      )}
       <span className="overflow-hidden font-mono text-11 leading-none font-semibold tracking-[.12em] text-ellipsis text-muted-foreground uppercase group-hover:text-track-ink group-data-active:text-ink-primary">
         {tab.label}
       </span>
-      <span
-        aria-hidden="true"
-        className="flex-none font-mono text-9 leading-none font-normal text-muted-foreground transition-colors duration-[240ms] ease-in group-data-active:text-brand-ink"
-      >
-        {tab.skillCount}
-      </span>
+      {detailed && (
+        <span
+          aria-hidden="true"
+          className="flex-none font-mono text-9 leading-none font-normal text-muted-foreground transition-colors duration-[240ms] ease-in group-data-active:text-brand-ink"
+        >
+          {tab.skillCount}
+        </span>
+      )}
     </button>
   )
 }
@@ -101,7 +129,11 @@ function DomainTabButton({
  * here — both were rejected by name. `selected` is a section-level control and
  * lives on the skills hinge's rule now; clearing lives on the first stack cell,
  * which already means "nothing selected". What is left is one kind of thing
- * across the whole row, which is why it can be equal cells at all.
+ * across the whole row, which is why it can be one shared flex line at all.
+ *
+ * The viewport is asked ONCE, here, rather than by each cell: every tab is
+ * drawn the same way, and nine subscriptions to one media query is nine
+ * answers that can only ever agree.
  */
 export function DomainTabs({
   tabs,
@@ -114,6 +146,8 @@ export function DomainTabs({
   activeDomain: string | null
   onPick: (domainId: DomainTab["id"]) => void
 }) {
+  const detailed = useWideViewport()
+
   return (
     <div
       role="group"
@@ -139,6 +173,7 @@ export function DomainTabs({
           key={tab.id}
           tab={tab}
           active={tab.id === activeDomain}
+          detailed={detailed}
           onPick={() => onPick(tab.id)}
         />
       ))}

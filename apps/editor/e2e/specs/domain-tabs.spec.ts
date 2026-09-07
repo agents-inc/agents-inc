@@ -31,23 +31,25 @@ test.describe("the domain strip", () => {
     await expect(configure.domainTab(ai)).toBeVisible()
   })
 
-  // EQUAL CELLS SPANNING THE COLUMN, which is what makes overflow impossible at
-  // any width — the failure of every variable-width drawing before it, and of
-  // the scrolling group that replaced them. Two claims in one test because
-  // either alone passes on a broken strip: equal widths hold on a strip that
-  // has scrolled its last tab out of sight, and a strip that fits holds with
-  // wildly uneven cells.
-  test("gives every domain an equal cell and never overflows", async ({
+  // CELLS SIZED TO THEIR OWN LABEL, on a strip that still cannot overflow at
+  // any width. `flex: 1 1 0` was the drawing before this one: equal cells could
+  // not overflow either, but they spent the same track on `AI` as on `Desktop`
+  // and pushed the long names through their own ellipsis. `flex: 1 1 auto`
+  // starts each cell at its content and shares the slack out equally, so the
+  // difference between two cells is exactly the difference between two labels.
+  //
+  // Two claims in one test because either alone passes on a broken strip:
+  // content-sized cells hold on a strip that has scrolled its last tab out of
+  // sight, and a strip that fits holds with every cell the same width.
+  test("sizes each domain to its own label and never overflows", async ({
     configure,
   }) => {
-    const widths = await configure.domainTabs
-      .getByRole("button")
-      .evaluateAll((tabs) =>
-        tabs.map((tab) => tab.getBoundingClientRect().width)
-      )
+    const widthOf = (label: string) =>
+      configure
+        .domainTab(label)
+        .evaluate((tab) => tab.getBoundingClientRect().width)
 
-    expect(widths.length).toBeGreaterThan(1)
-    for (const width of widths) expect(width).toBeCloseTo(widths[0] ?? 0, 0)
+    expect(await widthOf(api)).toBeGreaterThan(await widthOf(ai))
 
     const strip = configure.domainTabs
     expect(await strip.evaluate((node) => node.scrollWidth)).toBe(
@@ -77,6 +79,10 @@ test.describe("the domain strip", () => {
   // The `01/02/03` index and the per-domain count ride on the tab but are not
   // part of its name: nine repetitions of a two-digit number in front of nine
   // domains is what happens otherwise.
+  //
+  // This viewport is the wide one — 1600px, past the threshold in
+  // `src/lib/viewport.ts` — which is where the two are drawn at all. The narrow
+  // strip is the describe at the foot of this file.
   test("carries an index and a count that stay out of the tab's name", async ({
     configure,
   }) => {

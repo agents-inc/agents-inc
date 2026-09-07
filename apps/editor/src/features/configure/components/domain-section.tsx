@@ -4,9 +4,8 @@ import { Lattice } from "@workspace/ui/components/lattice"
 
 import type { DomainView } from "@/features/configure/lib/derive"
 import { DOMAIN_ANCHOR } from "@/features/configure/lib/use-active-domain"
+import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
 import { SkillCell } from "./skill-cell"
-
-const COLUMNS = 4
 
 // Every skill in the category is rendered — no accordion, no collapse.
 //
@@ -25,6 +24,11 @@ export function DomainSection({
   view: DomainView
   first: boolean
 }) {
+  // Read here rather than threaded down from the screen, and used twice: the
+  // grid is drawn with it, and each cell is told which of its columns it landed
+  // in. One value for both, or the popover flips against a grid that moved.
+  const columns = useLatticeColumns()
+
   return (
     // Named so the domain is a landmark rather than an anonymous <section>.
     <section aria-label={`${view.label} skills`}>
@@ -46,13 +50,13 @@ export function DomainSection({
             </Badge>
           </div>
 
-          <Lattice columns={COLUMNS}>
+          <Lattice columns={columns}>
             {category.cells.map((cell, index) => (
               <SkillCell
                 key={cell.skill.id}
                 view={cell}
-                column={index % COLUMNS}
-                columns={COLUMNS}
+                column={index % columns}
+                columns={columns}
               />
             ))}
           </Lattice>

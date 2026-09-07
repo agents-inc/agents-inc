@@ -26,10 +26,12 @@ import { defineConfig, devices } from "@playwright/test"
 const PORT = 4173
 const BASE_URL = `http://localhost:${PORT}`
 
-// The same floor the behavioural suite pins, and for the same reason: the
-// editor is desktop-only below 1324px. Restated rather than imported, because
-// a shared constant across two configs is a coupling that would silently move
-// every baseline the day the other suite retuned its viewport.
+// The same width the behavioural suite pins, and for the same reason: the editor
+// is desktop-only, and 1600 is above both its layout floor and the 1500px
+// threshold in `src/lib/viewport.ts` that decides how many tracks the lattice
+// draws. Restated rather than imported, because a shared constant across two
+// configs is a coupling that would silently move every baseline the day the
+// other suite retuned its viewport.
 //
 // It is the only capture dimension pinned HERE. The other one is the theme,
 // and it is pinned per capture in e2e/specs/visual.spec.ts instead: the app has

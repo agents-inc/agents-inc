@@ -5,6 +5,7 @@ import { useMemo } from "react"
 import { isStackCustom } from "@/features/configure/lib/derive"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
+import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
 import {
   activeSkillById,
   expandActiveStack,
@@ -164,6 +165,10 @@ export function StackGrid() {
   const stacks = useCatalogStore((state) => state.stacks)
   const requestStack = useUiStore((state) => state.requestStack)
   const applyStackRequest = useApplyStackRequest()
+  // The same count the skill grid below is drawn at, and for the same reason:
+  // the two lattices are one language, and a stack row three across over skills
+  // four across reads as two grids rather than one page.
+  const columns = useLatticeColumns()
 
   const edited = useMemo(
     () => isStackCustom({ stackId, skills, agents }),
@@ -274,7 +279,7 @@ export function StackGrid() {
           {unadoptedNotice(unadopted)}
         </p>
       )}
-      <Lattice columns={4} role="group" aria-label="Stacks">
+      <Lattice columns={columns} role="group" aria-label="Stacks">
         {cells.map((cell) => (
           <LatticeCell
             key={cell.key}

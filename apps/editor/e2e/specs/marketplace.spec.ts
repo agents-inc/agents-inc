@@ -66,13 +66,17 @@ const ACME_STACK_SKILL_IDS = [
 // a monitor two thirds wider.
 const CENTRED_VIEWPORT = { width: 2560, height: 1000 }
 
-// The layout's own floor — `min-w-[85.25rem]` in
-// `src/routes/route-components.tsx` — below which the page scrolls sideways
-// rather than reflowing, paired with the shortest window worth drawing. The
-// rail is at its tightest here: `h-svh` gives its column the least room it will
-// ever have, which is where a section that outgrew its box would push into the
-// one below it.
-const NARROW_VIEWPORT = { width: 1364, height: 640 }
+// The layout's own floor — `min-w-[68.1818rem]` in
+// `src/routes/route-components.tsx`, 1200px against a root at 110% — paired
+// with the shortest window worth drawing. The rail is at its tightest here:
+// `h-svh` gives its column the least room it will ever have, which is where a
+// section that outgrew its box would push into the one below it.
+//
+// The page does still scroll sideways by 23px at this width, and that is the
+// grid's doing rather than this figure's: the three tracks together bottom out
+// at 1223px, so the declared minimum is the narrower of the two. Which makes it
+// the right width for THIS spec, whose subject is a rail with nothing to spare.
+const NARROW_VIEWPORT = { width: 1200, height: 640 }
 
 // How much air there is between two rows of the rail. Negative is the overlap,
 // in pixels, which is what a failure has to print: "expected true to be false"

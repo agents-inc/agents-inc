@@ -212,6 +212,16 @@ mechanism rather than a number to tune. Use `sticky` within the column the
 control belongs to, and assert the geometry at a width where the grid centres
 as well as at the pinned one.
 
+**The viewport is the config's, and `viewport-threshold.spec.ts` is the one
+file that overrides it.** Every project in `playwright.config.ts` runs at
+1600×1000, which is above the app's one media query — the 1500px threshold in
+`src/lib/viewport.ts`, where the skill lattice and the stack grid go from three
+tracks to four and each domain tab picks up its index and its count. So every
+other spec in this directory is written against the WIDE drawing, and a spec
+that wants the other one says so with a `test.use({ viewport })` of its own.
+Keep that to the file whose subject is the threshold: a viewport override
+elsewhere makes a failure a question about which drawing was on screen.
+
 **Watch the console.** A suite that ignores it is not watching the application
 it drives: a warning fired on every single page load and survived a full green
 run of the suite, because nothing here asserted anything about what the app

@@ -9,6 +9,12 @@ import { NavRail } from "@/components/nav-rail"
 // Desktop-only, with a hard `min-w` below which the page scrolls sideways.
 // The route supplies the other two columns, so Docs can span both.
 //
+// THE FLOOR IS 1200px, AND IT IS WRITTEN IN REM BECAUSE EVERY DIMENSION HERE IS.
+// `globals.css` sets the root to 110%, so a rem on this page is 17.6px and
+// 68.1818rem is 1200px at the design's native size — and moves with the sizing
+// knob, as the columns it is a floor for do. A px figure would stay put while
+// everything it bounds grew.
+//
 // `mx-auto max-w-*` is why `position: fixed` is unusable for anything that has
 // to line up with this grid: past the max width the grid stops filling the
 // window and starts being centred in it, so every column slides right as the
@@ -16,7 +22,7 @@ import { NavRail } from "@/components/nav-rail"
 // the column the control belongs to. See `e2e/README.md` under Conventions.
 export function RootLayout() {
   return (
-    <div className="mx-auto grid max-w-[105.25rem] min-w-[85.25rem] grid-cols-[9.5rem_minmax(43.75rem,1fr)_18.75rem] items-start bg-page">
+    <div className="mx-auto grid max-w-[105.25rem] min-w-[68.1818rem] grid-cols-[7rem_minmax(43.75rem,1fr)_18.75rem] items-start bg-page">
       {/* The document's one heading, and the shell is where it has to live:
           the design opens straight onto the grid and draws no page title at
           all, on any route, so there is no visible element for the name to be.
