@@ -8,13 +8,11 @@ import { cn } from "@workspace/ui/lib/utils"
 // add-skill result rows.
 //
 // `filter` is named for where it started rather than for where it is: the
-// filter bar's domain chips, then the `selected` toggle beside them. Both
-// MOVED and neither stopped being a chip — the domains became the strip's own
-// cells, and `selected` is `HingeToggle` in `divider.tsx`, which renders this
-// component with the three overrides a chip standing on a RULE needs. So the
-// size still has its caller, one level of indirection away, and the on-state
-// amber below is the same pair in both places precisely because there is only
-// one of it.
+// filter bar's domain chips, then the `selected` toggle beside them. Both left,
+// and they left in different directions — the domains became the strip's own
+// cells, and `selected` became a two-cell `ButtonGroup` on the skills hinge in
+// the 2026-09-06 refresh, because a chip states one value and the refresh is
+// about showing both. `filter` is the size the dialogs still reach for.
 //
 // Off is a hairline outline on nothing; on is amber ink on the accent wash
 // with an amber border. Hover only firms the border — it never goes amber,

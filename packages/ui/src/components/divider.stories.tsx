@@ -2,11 +2,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 import { expect, screen } from "storybook/test"
 
 import {
-  Hinge,
-  HingeButton,
-  HingeToggle,
-  Rule,
-} from "@workspace/ui/components/divider"
+  ButtonGroup,
+  ButtonGroupItem,
+} from "@workspace/ui/components/button-group"
+import { Hinge, HingeButton, Rule } from "@workspace/ui/components/divider"
 import { Glyph } from "@workspace/ui/components/glyph"
 
 // Both dividers bleed out of the main column's gutter with `-mx-gutter`, so
@@ -53,27 +52,41 @@ export const HingeWithAction: Story = {
 // fill as the button above, because it is the same class of control — and the
 // hinge takes the control's own height, or the sticky bar below paints over the
 // 6px it would otherwise overhang by.
+//
+// The control in the slot is a `ButtonGroup` at `field` size since the
+// 2026-09-06 refresh — `all 42 | selected 14`, both counts on screen. It was a
+// `HingeToggle` rendering one count at a time, and that component is gone
+// rather than deprecated: a chip states ONE value, which is the thing the
+// refresh removed from every control in the app.
 export const HingeWithToggle: Story = {
   args: {
     className: "min-h-6",
     label: "then",
     emphasis: "pick your skills",
     action: (
-      <HingeToggle aria-label="Show only selected skills">all 42</HingeToggle>
+      <ButtonGroup size="field" aria-label="Show only selected skills">
+        <ButtonGroupItem size="field" active>
+          all 42
+        </ButtonGroupItem>
+        <ButtonGroupItem size="field">selected 14</ButtonGroupItem>
+      </ButtonGroup>
     ),
   },
 }
 
-// On, it takes the amber pair — the design's one accent, and it means "not the
-// default" rather than "active" anywhere it appears.
+// Filtered, the other cell takes the amber pair — the design's one accent, and
+// it means "not the default" rather than "active" anywhere it appears.
 export const HingeWithToggleOn: Story = {
   ...HingeWithToggle,
   args: {
     ...HingeWithToggle.args,
     action: (
-      <HingeToggle active aria-label="Show only selected skills">
-        selected 14
-      </HingeToggle>
+      <ButtonGroup size="field" aria-label="Show only selected skills">
+        <ButtonGroupItem size="field">all 42</ButtonGroupItem>
+        <ButtonGroupItem size="field" active>
+          selected 14
+        </ButtonGroupItem>
+      </ButtonGroup>
     ),
   },
 }
@@ -114,27 +127,10 @@ export const AccordionButtonFocusDrawsTheRing: Story = {
   },
 }
 
-export const ToggleFocusDrawsTheRing: Story = {
-  ...HingeWithToggle,
-  play: async () => {
-    const toggle = screen.getByRole("button", {
-      name: "Show only selected skills",
-    })
-
-    toggle.focus()
-
-    await expect(getComputedStyle(toggle).boxShadow).not.toBe("none")
-  },
-}
-
-// The toggle's STATE is `aria-pressed`, and it has to be, because its visible
-// words are its value rather than its name — they change with every click in
-// the grid, so a reader who cannot see them has only this to go on.
-export const TogglePublishesItsState: Story = {
-  ...HingeWithToggleOn,
-  play: async () => {
-    await expect(
-      screen.getByRole("button", { name: "Show only selected skills" })
-    ).toHaveAttribute("aria-pressed", "true")
-  },
-}
+// The filter's OWN claims — the focus ring, the exclusive group, the roving tab
+// stop — are `button-group.stories.tsx`'s, and they are not restated here. Two
+// stories asserted them through `HingeToggle` until that component was removed
+// in the 2026-09-06 refresh; a second copy of an assertion in the caller's file
+// is how the two come to disagree. What the two stories above still own is the
+// only thing this file can say about it: that the slot holds it, and that it
+// masks the rule it interrupts rather than being struck through by it.

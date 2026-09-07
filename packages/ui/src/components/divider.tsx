@@ -1,7 +1,6 @@
 import { cva, type VariantProps } from "class-variance-authority"
 import type { ComponentProps, ReactNode } from "react"
 
-import { Chip } from "@workspace/ui/components/chip"
 import { cn } from "@workspace/ui/lib/utils"
 
 // The page has exactly two kinds of horizontal rule (design language rule 5),
@@ -152,56 +151,6 @@ function HingeButton({
   )
 }
 
-/**
- * THE OTHER THING THAT SITS IN A HINGE'S `action` SLOT: the `selected` filter,
- * stating its own value — `all 42` ⇄ `selected 14`.
- *
- * IT IS A CHIP, AND THAT IS THE WHOLE POINT OF THIS COMPONENT. The control did
- * not stop being a chip when it moved; it moved. It was the last chip on the
- * filter bar's own row, and two homes for it were built and rejected — inside
- * the search field, and on the domain strip — both because they put a control
- * that narrows the WHOLE column inside something narrower than it. So it sits
- * on the rule that names the section instead, which is the only surface in the
- * column as wide as the thing it filters.
- *
- * Rendering `Chip` rather than restating it keeps one idiom: the on-state is
- * the amber pair every chip in the app wears, the `aria-pressed` is the chip's
- * own, and the focus ring comes with it. What this adds is the three things a
- * chip standing ON A RULE needs and a chip standing on a surface does not:
- *
- *  · the hinge's OWN border rather than the chip border, because it interrupts
- *    that rule and should read as a knot in the line;
- *  · the column's fill, which is what MASKS the rule running behind it —
- *    transparent and the line strikes through the words;
- *  · a fixed 24px height, so it matches `HingeButton` on the rule above it.
- *    That is also why the padding goes horizontal-only: the height sets the
- *    box, and the chip's own vertical padding would fight it.
- *
- * It states its value rather than its name, so the resting label is not the
- * control's name and cannot be its accessible name either: the caller supplies
- * an `aria-label` that stays still while the words change.
- */
-function HingeToggle({
-  className,
-  active = false,
-  ...props
-}: ComponentProps<"button"> & { active?: boolean }) {
-  return (
-    <Chip
-      data-slot="hinge-toggle"
-      active={active}
-      className={cn(
-        "flex h-6 items-center py-0 select-none",
-        active
-          ? "hover:border-brand-faint hover:bg-brand-glow"
-          : "border-rule bg-column hover:border-dialog-border hover:bg-muted hover:text-ink",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
 // An unlabelled full-bleed rule — used only between domain sections.
 function Rule({ className, ...props }: ComponentProps<"div">) {
   return (
@@ -214,11 +163,4 @@ function Rule({ className, ...props }: ComponentProps<"div">) {
   )
 }
 
-export {
-  Hinge,
-  HingeButton,
-  HingeToggle,
-  Rule,
-  hingeRuleVariants,
-  hingeVariants,
-}
+export { Hinge, HingeButton, Rule, hingeRuleVariants, hingeVariants }

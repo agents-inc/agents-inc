@@ -1,16 +1,8 @@
-import type { ComponentProps, KeyboardEvent } from "react"
+import type { ComponentProps } from "react"
 
 import { Chip } from "@workspace/ui/components/chip"
+import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
-
-const SEGMENT = '[role="radio"]'
-
-const STEP_BY_KEY: Record<string, number> = {
-  ArrowRight: 1,
-  ArrowDown: 1,
-  ArrowLeft: -1,
-  ArrowUp: -1,
-}
 
 // A row of mutually-exclusive chips — Install mode and Install scope inside
 // the skill options panel. Sections are separated by whitespace only; the
@@ -31,7 +23,7 @@ function Segmented({ className, onKeyDown, ...props }: ComponentProps<"div">) {
       role="radiogroup"
       onKeyDown={(event) => {
         onKeyDown?.(event)
-        moveToAdjacentSegment(event)
+        moveToAdjacentRadio(event)
       }}
       className={cn(
         "flex gap-[0.125rem] px-[0.625rem] pb-[0.125rem]",
@@ -40,27 +32,6 @@ function Segmented({ className, onKeyDown, ...props }: ComponentProps<"div">) {
       {...props}
     />
   )
-}
-
-// Arrows move the choice and wrap at both ends, selection following focus, as a
-// native radio group does. The move goes through the segment's own click, so the
-// caller's `onClick` stays the only place a choice is ever made.
-function moveToAdjacentSegment(event: KeyboardEvent<HTMLDivElement>) {
-  const step = STEP_BY_KEY[event.key]
-  if (step === undefined) return
-
-  const segments = [
-    ...event.currentTarget.querySelectorAll<HTMLElement>(SEGMENT),
-  ]
-  const from = segments.findIndex((segment) => segment === event.target)
-  if (from === -1) return
-
-  const next = segments[(from + step + segments.length) % segments.length]
-  if (!next) return
-
-  event.preventDefault()
-  next.focus()
-  next.click()
 }
 
 function SegmentedItem({
