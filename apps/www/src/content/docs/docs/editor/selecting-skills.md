@@ -31,24 +31,22 @@ There's no accordion and nothing collapses: every skill in a category is on scre
 
 **A cell that's dimmed is ruled out by something you already picked.** Hover it and the reason reads `Conflicts with <name>`, `Needs <a> and <b>`, or `Needs one of <a>, <b>`. Clicking does nothing. Incompatibility carries through the chain — picking React rules out Nuxt because Nuxt needs Vue — so the reason names the nearest cause rather than the whole path.
 
-Each selected cell carries a small right-aligned label reading `no agents`, `1 agent` or `N agents`. That's derived from the assignments underneath, not stored on the skill, and `no agents` means the skill would install and no sub-agent would receive it.
-
 ## Exclusive categories
 
 **Picking a second skill in a `one of` category doesn't throw the first one away.** Its install mode, its scope and every sub-agent assignment you set are kept, so swapping back restores them exactly. Swapping between two ORMs while you make up your mind costs nothing.
 
-The same memory covers a skill you configure _without_ selecting. The `•••` and the two badges configure a skill; they never select one. Set a skill to eject, walk away, select it a week later, and it comes back ejected.
+The same memory covers a skill you configure _without_ selecting. The `•••` and the two badge pairs configure a skill; they never select one. Set a skill to eject, walk away, select it a week later, and it comes back ejected.
 
-## The two badges on a cell
+## The two badge pairs on a cell
 
-Every cell carries two badges, and both are toggles.
+Every cell carries two pairs, and **both values of each are on screen**. The one you're on is amber; the other is what a click would set. The pair butts together so it reads as one control, and the two pairs are spaced apart because they're two separate decisions.
 
-| Badge        | Flips between        | Means                                                                                     |
-| ------------ | -------------------- | ----------------------------------------------------------------------------------------- |
-| Install mode | `plugin` ⇄ `eject`   | Whether the skill is registered as a Claude Code plugin or copied into `.claude/skills/`. |
-| Scope        | `project` ⇄ `global` | Whether it installs into this project or into `~/.claude`.                                |
+| Pair         | Cells              | Means                                                                                     |
+| ------------ | ------------------ | ----------------------------------------------------------------------------------------- |
+| Install mode | `plugin` `eject`   | Whether the skill is registered as a Claude Code plugin or copied into `.claude/skills/`. |
+| Scope        | `project` `global` | Whether it installs into this project or into `~/.claude`.                                |
 
-[Install modes](/docs/concepts/install-modes) explains both choices. On a skill you added yourself, the install badge is a statement rather than a control — there's no plugin form of it, so it always reads `eject`.
+[Install modes](/docs/concepts/install-modes) explains both choices. On a skill you added yourself the install mode isn't a pair at all, but a single `eject` statement — there's no plugin form of it, so there's nothing to choose between.
 
 ## The skill options panel
 
@@ -72,7 +70,9 @@ At the foot of the panel, **Source code ↗** opens the skill's own directory on
 
 ## Filters are in the URL
 
-The search text, the domain chip and the **Selected** chip are all URL search parameters, not component state. A filtered grid therefore has an address: narrow to the AI domain, copy the URL, and whoever opens it sees the same view.
+The search text, the domain the strip is on and the **all / selected** filter are all URL search parameters, not component state. A filtered grid therefore has an address: narrow to the AI domain, copy the URL, and whoever opens it sees the same view.
+
+That filter sits at the right end of the skills hinge and reads `all 238 | selected 23` — both counts at once, so you can see what narrowing would cost before you press it. It appears only once something is selected.
 
 Filters change what's drawn and never what's selected. Nothing you can't see is dropped, and the roster keeps reporting the whole configuration regardless of what the grid is showing.
 

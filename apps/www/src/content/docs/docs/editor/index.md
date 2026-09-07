@@ -54,17 +54,17 @@ The right column groups every sub-agent under sticky bands. The control in its h
 
 **Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty.
 
-Three words on each agent row cycle when clicked.
+**Three words on each agent row state its settings, and clicking any of them opens one panel holding all three.** Each column sits directly under the word it belongs to, every value is on screen at once, and picking one sets it and closes the panel. One panel is open across the whole roster at a time; press the word again, press Escape, or press anywhere outside the roster to close it without choosing.
 
-| Word   | Cycles                              | Where it rests                                           |
+| Word   | Values                              | Where it rests                                           |
 | ------ | ----------------------------------- | -------------------------------------------------------- |
-| model  | `opus → fable → sonnet → haiku`     | whatever the sub-agent's own metadata names, or `sonnet` |
-| effort | `low → medium → high → xhigh → max` | `medium`, and turns amber the moment it leaves it        |
-| scope  | `project ⇄ global`                  | `global`                                                 |
+| model  | `opus` `fable` `sonnet` `haiku`     | whatever the sub-agent's own metadata names, or `sonnet` |
+| effort | `low` `medium` `high` `xhigh` `max` | `medium`, and turns amber the moment it leaves it        |
+| scope  | `project` `global`                  | `global`                                                 |
 
 Under each agent sits one row per skill it carries. Hover or put focus anywhere in that agent's block and two more things appear on the right of every row: a load word — `pre` or `lazy`, click to flip it for this agent alone — and, when the skill reaches more than one switched-on agent, a count that opens a list naming all of them. Clicking a row itself switches that copy off without removing it; it stays listed, recessed.
 
-**A project skill on a sub-agent resting at global cannot install.** That row gets a `!` marker whose text is the fix — _"This sub-agent must be set to project scope too"_ — Install and Share both stay disabled while any of them stand, and a line at the top of the middle column counts them: _"Install is blocked: N sub-agents need project scope. Look for the marked rows under Sub-agents, or set the skill itself to global."_ Both ways out are real: flip each marked sub-agent to project scope, or set the skill back to global. The disabled Install button repeats the count as its own label. The CLI refuses that pair outright, so a link minted from one would fail on whoever you sent it to.
+**A project skill on a sub-agent resting at global cannot install.** That row gets a `!` marker whose text is the fix — _"This sub-agent must be set to project scope too"_ — and Install and Share both stay disabled while any of them stand. Both ways out are real: flip each marked sub-agent to project scope, or set the skill back to global. The disabled Install button carries the count as its own label. The CLI refuses that pair outright, so a link minted from one would fail on whoever you sent it to.
 
 The footer holds **Save**, **Share**, **Preview generated code** and **Install**, in that order. The first three are disabled until something is selected. [Installing and sharing](/docs/editor/install-and-share) covers the last three.
 
