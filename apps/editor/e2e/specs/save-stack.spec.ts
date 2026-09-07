@@ -181,7 +181,7 @@ test.describe("the saved stack in the grid", () => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     // A per-agent override too: the snapshot is the whole selection, not the
     // list of skills in it.
-    await configure.roster.modelWord("web-developer").click()
+    await configure.roster.setModel("web-developer", "fable")
     const saved = await mint()
 
     await configure.roster.saveButton.click()

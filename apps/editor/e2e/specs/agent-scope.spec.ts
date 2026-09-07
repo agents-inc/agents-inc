@@ -24,15 +24,19 @@ test.describe("agent scope", () => {
     )
   })
 
-  test("clicking the scope control toggles it to project and back", async ({
+  // PICKED RATHER THAN CYCLED. The word stepped to the next value until the
+  // 2026-09-06 refresh; it opens the options panel now, and the value you want
+  // is pressed directly in it. Both directions, because a panel that can only
+  // move a setting one way is a cycle wearing a menu.
+  test("each scope is picked directly from the panel", async ({
     configure,
   }) => {
     const scope = configure.roster.scopeControl(DEVELOPER)
 
-    await scope.click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: project`)
 
-    await scope.click()
+    await configure.roster.setScope(DEVELOPER, "global")
     await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: global`)
   })
 
@@ -44,7 +48,7 @@ test.describe("agent scope", () => {
     const developer = configure.roster.agentButton("web", "developer")
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
     await expect(configure.roster.installButton).toContainText("0 agents")
@@ -53,7 +57,7 @@ test.describe("agent scope", () => {
   test("the choice belongs to one agent, not the domain", async ({
     configure,
   }) => {
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
 
     await expect(configure.roster.scopeControl(REVIEWER)).toHaveAccessibleName(
       `Scope for ${REVIEWER}: global`
@@ -63,7 +67,7 @@ test.describe("agent scope", () => {
   // As expensive to make twice as a model or an effort, and stored the same
   // way — so it has to rebuild from storage rather than re-derive.
   test("a scope choice survives a reload", async ({ configure, page }) => {
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
       `Scope for ${DEVELOPER}: project`
     )
@@ -99,7 +103,7 @@ test.describe("sharing an agent's scope", () => {
     const posted = captureCreateConfig(page)
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
 
     await configure.roster.shareButton.click()
     await expect(
@@ -134,9 +138,9 @@ test.describe("sharing an agent's scope", () => {
     const posted = captureCreateConfig(page)
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     // An entry of its own, earned by the model — and still no scope on it.
-    await configure.roster.modelWord(REVIEWER).click()
+    await configure.roster.setModel(REVIEWER, "sonnet")
 
     await configure.roster.shareButton.click()
     await expect(
@@ -146,7 +150,7 @@ test.describe("sharing an agent's scope", () => {
     const [body] = posted
     expect(body!.agents).toEqual({
       [DEVELOPER]: { scope: "project" },
-      [REVIEWER]: { model: "fable" },
+      [REVIEWER]: { model: "sonnet" },
     })
   })
 
@@ -183,7 +187,7 @@ test.describe("install dialog agent scope", () => {
 
   test("groups the agents pane by scope", async ({ configure }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
 
     await configure.roster.installButton.click()
 
@@ -204,7 +208,7 @@ test.describe("install dialog agent scope", () => {
     )
     await configure.installDialog.close()
 
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.agentsPane).toContainText("Project")

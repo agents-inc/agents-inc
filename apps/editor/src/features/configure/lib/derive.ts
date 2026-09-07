@@ -70,7 +70,6 @@ export type SkillCellView = {
   incompatibleReason?: string
   // A soft warning: the pairing is advised against, the choice stays open.
   discouragedReason?: string
-  agentCount: number
 }
 
 export type CategoryView = {
@@ -249,38 +248,18 @@ const incompatibleReasonOf = (cause: IncompatibilityCause): string => {
  *
  * The fix rather than the diagnosis: the row already names the skill and sits
  * under the sub-agent, so what it owes the reader is the thing to do about it.
- * Spelled once because the marker and the notice above the grid both say it.
+ *
+ * IT IS NOW ONE OF TWO SIGNALS RATHER THAN THREE. A line above the grid used to
+ * say the same thing a third time, in a sentence at the top of a column the
+ * marked row is often several screens down from; it is gone, and what is left
+ * are the two signals that sit ON the problem — this marker, and the Install
+ * button's disabled label counting what is outstanding.
  *
  * It is the sub-agent that is named because that is the one-click fix — its
  * scope word is on the row directly above. Setting the skill back to global is
- * the other way out, and the notice says both.
+ * the other way out.
  */
 export const SCOPE_ERROR = "This sub-agent must be set to project scope too"
-
-/**
- * The same problem said above the grid, in one line, or `null` when there is
- * none.
- *
- * The third of three live signals and the widest: the marker says WHICH row,
- * the Install button says how many are left, and this says what the state is
- * and both ways out of it. All three are derived from the same count, so none
- * of them can stand while the others are gone — which is what a one-shot notice
- * set at arrival could not promise.
- *
- * It points at the marked rows rather than naming the skills. Those markers are
- * on screen, each beside the one control that resolves it, which is further
- * than a name in a sentence can get anyone.
- */
-export const blockedNotice = (unscopedAgentCount: number) => {
-  if (unscopedAgentCount === 0) return null
-
-  const subject =
-    unscopedAgentCount === 1
-      ? "1 sub-agent needs"
-      : `${unscopedAgentCount} sub-agents need`
-
-  return `Install is blocked: ${subject} project scope. Look for the marked rows under Sub-agents, or set the skill itself to global.`
-}
 
 // An enabled row this sub-agent cannot carry, because a project skill is
 // installed under one project's `.claude` and a global sub-agent's front-matter
@@ -315,7 +294,6 @@ const toCell = (
   incompatible: reason !== undefined,
   ...(reason !== undefined && { incompatibleReason: reason }),
   ...(discouragedReason !== undefined && { discouragedReason }),
-  agentCount: entry ? enabledAssignments(entry).length : 0,
 })
 
 // ── Grid ─────────────────────────────────────────────────────────────────
@@ -470,11 +448,27 @@ export const catalogueSkillCount = (): number =>
  * to work out which is which from a ternary. The accessible name stays fixed
  * and lives at the call site; this is only ever the drawn words.
  */
-export const selectedOnlyLabel = (
-  selectedOnly: boolean,
+/**
+ * THE FILTER'S TWO CELLS, BOTH OF THEM, IN THE ORDER THEY ARE DRAWN.
+ *
+ * It was one label that changed with the value until the 2026-09-06 refresh —
+ * `all 42` OR `selected 14`, never both — so the count you were about to switch
+ * to was the one thing the control could not tell you. Now the pair states the
+ * whole choice at rest, which is why this returns a list rather than a string.
+ *
+ * The words are the VALUE rather than the name: `all 42` is what you are
+ * looking at, `selected 14` is what you would be looking at instead. Neither
+ * count is written here — both are counted off the catalogue and the
+ * selection, which is what keeps them honest as either moves.
+ */
+export const selectedOnlyOptions = (
   selectedCount: number,
   catalogueCount: number
-) => (selectedOnly ? `selected ${selectedCount}` : `all ${catalogueCount}`)
+) =>
+  [
+    { selectedOnly: false, label: `all ${catalogueCount}` },
+    { selectedOnly: true, label: `selected ${selectedCount}` },
+  ] as const
 
 // ── Roster ───────────────────────────────────────────────────────────────
 

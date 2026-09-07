@@ -93,8 +93,11 @@ test.describe("incompatible skills", () => {
     await sveltekit.root.click({ force: true })
     expect(await sveltekit.isSelected()).toBe(false)
 
-    // The controls inside it all route to the same toggle.
-    await sveltekit.installBadge.click({ force: true })
+    // The controls inside it all route to the same toggle. Either cell of the
+    // install pair will do — the claim is that nothing inside a ruled-out cell
+    // selects it, so the one that happens to be on is as good a probe as the
+    // one that is not.
+    await sveltekit.installCell("plugin").click({ force: true })
     expect(await sveltekit.isSelected()).toBe(false)
 
     await sveltekit.optionsButton.click({ force: true })

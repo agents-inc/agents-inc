@@ -1,26 +1,27 @@
 import { Badge } from "@workspace/ui/components/badge"
 import {
+  ButtonGroup,
+  ButtonGroupItem,
+  buttonGroupItemVariants,
+} from "@workspace/ui/components/button-group"
+import {
   LatticeCell,
   LatticeCellButton,
 } from "@workspace/ui/components/lattice"
+import { cn } from "@workspace/ui/lib/utils"
 import { useEffect, useMemo, useRef } from "react"
 
 import { SkillIcon } from "@/components/skill-icon"
 import type { SkillCellView } from "@/features/configure/lib/derive"
 import { track } from "@/lib/analytics/track"
 import { freshEntry, isEjectOnly, useConfigStore } from "@/stores/config-store"
+import { SKILL_INSTALL_MODES, SKILL_SCOPES } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
 import { SkillOptionsPanel } from "./skill-options-panel"
 
 // The three squares of the ••• control, top to bottom. Named rather than
 // indexed so the keys mean something.
 const DOTS = ["top", "middle", "bottom"] as const
-
-// "0 agents" reads as a failure on a skill that was just picked.
-const agentSummary = (count: number) => {
-  if (count === 0) return "no agents"
-  return count === 1 ? "1 agent" : `${count} agents`
-}
 
 // The whole cell toggles selection — through a `LatticeCellButton` stretched
 // over it, not through the cell itself, because the cell also holds the •••
@@ -46,7 +47,7 @@ export function SkillCell({
   const openPanel = useUiStore((state) => state.openPanel)
   const previewSkill = useUiStore((state) => state.previewSkill)
 
-  const { skill, entry, selected, incompatible, agentCount } = view
+  const { skill, entry, selected, incompatible } = view
   const open = openPanelSkillId === skill.id
   // A skill from outside the catalogue has no plugin form, so its badge is a
   // statement rather than a toggle — see `isEjectOnly`.
@@ -206,64 +207,73 @@ export function SkillCell({
         </button>
       </div>
 
-      <div className="pointer-events-none relative z-1 mt-[0.5625rem] -ml-[0.3125rem] flex items-center gap-[0.125rem]">
-        <Badge
-          interactive={!ejectOnly}
-          alt={options.install === "eject"}
-          className="pointer-events-auto"
-          render={
-            ejectOnly ? (
-              // A statement rather than a control: an added skill has no plugin
-              // form, so there is nothing here to press. It still has to CATCH
-              // the press — while the cell was the control, one that fell
-              // through TOGGLED SELECTION, which made one target on screen mean
-              // two different things depending on the kind of skill under it
-              // (EDITOR-45). It catches it by being the topmost thing at that
-              // point rather than by stopping anything now.
-              <span aria-label={`Install mode: ${options.install}`} />
-            ) : (
-              <button
-                type="button"
-                // "plugin, button" tells a screen reader nothing on its own.
-                aria-label={`Install mode: ${options.install}`}
-                onClick={() =>
-                  flip({
-                    install: options.install === "eject" ? "plugin" : "eject",
-                  })
-                }
-              />
-            )
-          }
-        >
-          {options.install}
-        </Badge>
+      {/* TWO BUTTED PAIRS, EVERY VALUE ON SCREEN. Each was one word that
+          flipped on click until the 2026-09-06 refresh, so what a press would
+          do was invisible until you had done it.
 
-        <Badge
-          interactive
-          alt={options.scope === "global"}
-          className="pointer-events-auto"
-          render={
-            <button
-              type="button"
-              aria-label={`Scope: ${options.scope}`}
-              onClick={() =>
-                flip({
-                  scope: options.scope === "global" ? "project" : "global",
-                })
-              }
-            />
-          }
-        >
-          {options.scope}
-        </Badge>
+          THE GAPS ARE THE WHOLE LAYOUT AND THEY ARE NOT INTERCHANGEABLE: 0px
+          inside a pair, which is what makes a pair read as one control, and
+          10px between them, which is what separates mode from scope. The other
+          way round draws four unrelated chips. `min-w-0` on the row and
+          `flex-none` on the groups, or four cells in a 222px box shrink and
+          wrap.
 
-        {/* Derived from assignments, never stored on the skill. A label, not a
-            control: the ••• is the only way into the options panel. */}
-        {selected && (
-          <span className="ml-auto shrink-0 py-[0.1875rem] font-mono text-8 font-medium tracking-[.06em] whitespace-nowrap text-muted-foreground uppercase">
-            {agentSummary(agentCount)}
+          `pointer-events-auto` per group rather than per cell: the row is
+          inert so the selection overlay underneath it keeps the cell's own
+          clicks, and each group takes back exactly its own box. */}
+      <div className="pointer-events-none relative z-1 mt-[0.5625rem] -ml-[0.3125rem] flex min-w-0 items-center gap-[0.625rem]">
+        {ejectOnly ? (
+          // A STATEMENT RATHER THAN A CHOICE, and so not a group at all: an
+          // added skill has no plugin form, and a `PLUGIN` cell that refuses
+          // the press is a dead affordance the refresh's own rule forbids —
+          // the inactive cell is what you read to know what a click does, so
+          // one that does nothing is worse than absent.
+          //
+          // It still has to CATCH the press. While the cell was the control, a
+          // press falling through here TOGGLED SELECTION, which made one target
+          // on screen mean two different things depending on the kind of skill
+          // under it (EDITOR-45). It catches it by being the topmost thing at
+          // that point rather than by stopping anything.
+          <span
+            aria-label={`Install mode: ${options.install}`}
+            className={cn(
+              buttonGroupItemVariants({ active: true }),
+              "pointer-events-auto flex-none cursor-default"
+            )}
+          >
+            {options.install}
           </span>
+        ) : (
+          <ButtonGroup
+            aria-label="Install mode"
+            className="pointer-events-auto flex-none"
+          >
+            {SKILL_INSTALL_MODES.map((mode) => (
+              <ButtonGroupItem
+                key={mode}
+                active={options.install === mode}
+                onClick={() => flip({ install: mode })}
+              >
+                {mode}
+              </ButtonGroupItem>
+            ))}
+          </ButtonGroup>
         )}
+
+        <ButtonGroup
+          aria-label="Scope"
+          className="pointer-events-auto flex-none"
+        >
+          {SKILL_SCOPES.map((scope) => (
+            <ButtonGroupItem
+              key={scope}
+              active={options.scope === scope}
+              onClick={() => flip({ scope })}
+            >
+              {scope}
+            </ButtonGroupItem>
+          ))}
+        </ButtonGroup>
       </div>
 
       {open && (

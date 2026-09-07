@@ -30,7 +30,7 @@ import {
   selectInstallInventory,
   selectReachability,
   selectRosterGroups,
-  selectedOnlyLabel,
+  selectedOnlyOptions,
   summarize,
   toSkillContents,
   type ConfigSelection,
@@ -993,37 +993,13 @@ describe("selectDomainViews", () => {
     expect(allCells(empty, { sel: true })).toEqual([])
   })
 
-  it("derives the agent count from live assignments only", () => {
-    const config = scratch({
-      [FIRST_SKILL]: {
-        ...DEFAULT_SKILL_OPTIONS,
-        assignments: {
-          "web-developer": live(),
-          reviewer: live("preloaded"),
-          "web-tester": off(),
-        },
-      },
-    })
-
-    const cell = allCells(config, { sel: true })[0]!
-    expect(cell.agentCount).toBe(2)
-  })
-
-  // The cell's number answers "how many sub-agents carry this skill", and a
-  // scope flip does not un-assign anything — it makes each of those an error to
-  // resolve. Dropping the count to zero would hide what the user built and
-  // leave the roster's marked rows unexplained.
-  it("keeps the agent count when the skill moves to project scope", () => {
-    const config = scratch({
-      [FIRST_SKILL]: {
-        ...DEFAULT_SKILL_OPTIONS,
-        scope: "project",
-        assignments: { "web-developer": live(), reviewer: live() },
-      },
-    })
-
-    expect(allCells(config, { sel: true })[0]!.agentCount).toBe(2)
-  })
+  // A CELL CARRIES NO COUNT ANY MORE. Two tests here derived one from live
+  // assignments and pinned it across a scope flip; the label they were about
+  // was removed on 2026-09-07 and the field with it. What the second of them
+  // was really guarding — that moving a skill to project scope un-assigns
+  // nothing, it only makes each assignment an error to resolve — is asserted
+  // where it is now visible, on the roster's own rows, in
+  // `e2e/specs/scope-reach.spec.ts`.
 })
 
 // Incompatibility is the one derivation that reads the whole catalogue at
@@ -1514,23 +1490,26 @@ describe("catalogueSkillCount", () => {
   })
 })
 
-// The toggle states its VALUE, not its name. Which is why the words are derived
-// rather than fixed, and why the two halves count different things: `all` is
-// the catalogue's size and `selected` is the selection's.
-describe("selectedOnlyLabel", () => {
-  it("reads out the catalogue's size while it is off", () => {
-    expect(selectedOnlyLabel(false, 23, 238)).toBe("all 238")
+// The filter states its VALUES, not its name — both of them at once since the
+// 2026-09-06 refresh, which is why this returns the pair rather than the one
+// that happens to be on. The two halves count different things: `all` is the
+// catalogue's size and `selected` is the selection's.
+describe("selectedOnlyOptions", () => {
+  it("offers both cells, off first", () => {
+    expect(selectedOnlyOptions(23, 238)).toEqual([
+      { selectedOnly: false, label: "all 238" },
+      { selectedOnly: true, label: "selected 23" },
+    ])
   })
 
-  it("reads out the selection's size while it is on", () => {
-    expect(selectedOnlyLabel(true, 23, 238)).toBe("selected 23")
-  })
-
-  // The two counts are never the same number by accident: a label that read
-  // `all 23` while the filter was off would be the selection's count wearing
-  // the catalogue's word, which is exactly the swap this pins.
+  // The two counts are never the same number by accident: a cell that read
+  // `all 23` would be the selection's count wearing the catalogue's word, which
+  // is exactly the swap this pins — and it is a swap the old single-label form
+  // could hide, because only one of the two was ever on screen to compare.
   it("never lets one count wear the other's word", () => {
-    expect(selectedOnlyLabel(false, 1, 2)).toBe("all 2")
-    expect(selectedOnlyLabel(true, 1, 2)).toBe("selected 1")
+    expect(selectedOnlyOptions(1, 2)).toEqual([
+      { selectedOnly: false, label: "all 2" },
+      { selectedOnly: true, label: "selected 1" },
+    ])
   })
 })

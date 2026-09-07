@@ -104,8 +104,8 @@ test.describe("switching stacks", () => {
       "true"
     )
     await expect(
-      configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).installBadge
-    ).toHaveAccessibleName("Install mode: eject")
+      configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).installMode
+    ).toHaveText("eject")
   })
 })
 

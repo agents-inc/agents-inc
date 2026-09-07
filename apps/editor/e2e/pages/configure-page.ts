@@ -59,6 +59,10 @@ export type StoredUi = {
 // so nothing on the bar can ever match this.
 const SKILL_CELL = 'main section [data-slot="lattice-cell"]'
 
+// The collapsed hairline grid itself, scoped by whoever asks for it. Read for
+// its track count, which is the one thing about it the viewport changes.
+const LATTICE = '[data-slot="lattice"]'
+
 // The rail's marketplace row, claimed twice below: once as an element and once
 // as an element of the navigation landmark.
 const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
@@ -105,10 +109,15 @@ export class ConfigurePage {
   // group stays, because a bare `button` under the bar would still match the
   // add-skill block above it.
   readonly domainTabs: Locator
-  // The skills hinge's own control: `all 42` ⇄ `selected 14`, drawn only once
-  // something is selected. Located by its accessible name, which is fixed —
-  // its VISIBLE words are the value and change with every click in the grid.
-  readonly selectedOnlyToggle: Locator
+  // The skills hinge's own control: `all 42 | selected 14`, drawn only once
+  // something is selected. Located by the GROUP's accessible name, which is
+  // fixed — the two cells' visible words are the values and change with every
+  // click in the grid.
+  //
+  // It was one cell whose words changed with its own state until the
+  // 2026-09-06 refresh. Both counts are on screen now, so "which is on" is
+  // `selectedFilterOn` rather than an attribute on a single control.
+  readonly selectedFilter: Locator
   readonly emptyState: Locator
   // The control in the rail's marketplace section that opens the dialog. Its
   // accessible name carries the catalogue it is on as well as the word
@@ -182,7 +191,7 @@ export class ConfigurePage {
     this.filterBar = page.locator('[data-slot="filter-bar"]')
     this.filterBand = page.locator('[data-slot="filter-band"]')
     this.domainTabs = page.getByRole("group", { name: "Domains" })
-    this.selectedOnlyToggle = page.getByRole("button", {
+    this.selectedFilter = page.getByRole("radiogroup", {
       name: "Show only selected skills",
     })
     this.emptyState = page.getByText("No skills match this filter.")
@@ -392,6 +401,22 @@ export class ConfigurePage {
     return this.page.getByRole("region", { name: `${label} skills` })
   }
 
+  // One cell of the skills hinge's filter, by the word it starts with: `all` or
+  // `selected`. A substring match, because the visible words carry a count that
+  // moves with the catalogue and with the selection — pinning either here would
+  // be writing down a number the page derives.
+  selectedFilterCell(word: "all" | "selected"): Locator {
+    return this.selectedFilter.getByRole("radio", {
+      name: new RegExp(`^${word} \\d+$`),
+    })
+  }
+
+  // Whichever cell is on. What every spec that used to read the single
+  // control's text is actually asking.
+  get selectedFilterOn(): Locator {
+    return this.selectedFilter.locator('[aria-checked="true"]')
+  }
+
   // One tab in the domain strip, by the domain's own label — the whole of its
   // accessible name. The index and the count beside it are `aria-hidden`, so a
   // tab announces the domain and nothing else.
@@ -455,6 +480,22 @@ export class ConfigurePage {
       name: categoryName,
       exact: true,
     })
+  }
+
+  // The grid a category's cells are laid out in, as distinct from the cells
+  // themselves. Named because its track count is what the viewport threshold
+  // moves, and `grid-template-columns` is the only place that count is stated.
+  skillLattice(domainLabel: string, categoryName: string): Locator {
+    return this.category(domainLabel, categoryName).locator(LATTICE)
+  }
+
+  // How many tracks a lattice is drawing. Computed style rather than a class
+  // name: `grid-cols-3` and `grid-cols-4` are strings a test can be told, and
+  // resolved tracks are what the browser actually laid out.
+  async latticeTracks(lattice: Locator) {
+    return lattice.evaluate(
+      (node) => getComputedStyle(node).gridTemplateColumns.split(" ").length
+    )
   }
 
   // Scope to a category when a skill name might repeat across domains.

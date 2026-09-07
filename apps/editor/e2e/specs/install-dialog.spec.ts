@@ -221,7 +221,7 @@ test.describe("install dialog counts", () => {
     await configure
       .skillIn(web, SINGLE_AGENT_SKILL.category, SINGLE_AGENT_SKILL.name)
       .flipScope()
-    await configure.roster.scopeControl(SINGLE_AGENT_SKILL.agentId).click()
+    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
 
     await configure.roster.installButton.click()
 

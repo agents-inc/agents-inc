@@ -34,8 +34,8 @@ test.describe("configuration survives deselection", () => {
 
     await react.toggle()
 
-    await expect(react.installBadge).toHaveAccessibleName("Install mode: eject")
-    await expect(react.scopeBadge).toHaveAccessibleName("Scope: project")
+    await expect(react.installMode).toHaveText("eject")
+    await expect(react.scope).toHaveText("project")
   })
 
   test("re-selecting restores sub-agent assignments", async ({ configure }) => {
@@ -46,13 +46,17 @@ test.describe("configuration survives deselection", () => {
     await react.toggle()
     await react.openOptions()
     await react.options.cycleAssignment(MATRIX_DOMAIN, MATRIX_ROLE)
-    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
+    await expect(configure.roster.skillRowsFor(REACT)).toHaveCount(
+      DOMAIN_REACH.web - 1
+    )
     await configure.roster.heading.click()
 
     await react.toggle()
     await react.toggle()
 
-    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
+    await expect(configure.roster.skillRowsFor(REACT)).toHaveCount(
+      DOMAIN_REACH.web - 1
+    )
     await expect(configure.roster.skillRow(REACT, "web-developer")).toBeHidden()
   })
 
@@ -92,14 +96,20 @@ test.describe("configuration survives deselection", () => {
     await configure.chooseStack(STACKS.nextjs)
     const react = configure.skillIn(web, EXCLUSIVE, STACK_MEMBER_SKILL)
 
-    const assigned = await react.agentCount.textContent()
-    expect(assigned).not.toBe("0 agents")
+    // Counted off the roster, which is where the assignments are legible now —
+    // the cell's own `N agents` label was removed on 2026-09-07.
+    const assigned = await configure.roster
+      .skillRowsFor(STACK_MEMBER_SKILL)
+      .count()
+    expect(assigned).toBeGreaterThan(0)
 
     await react.toggle()
     await expect(react.root).toHaveAttribute("aria-pressed", "false")
     await react.toggle()
 
-    await expect(react.agentCount).toHaveText(assigned ?? "")
+    await expect(configure.roster.skillRowsFor(STACK_MEMBER_SKILL)).toHaveCount(
+      assigned
+    )
   })
 
   test("a stack-provided skill keeps its options through a toggle", async ({
@@ -112,7 +122,7 @@ test.describe("configuration survives deselection", () => {
     await react.toggle()
     await react.toggle()
 
-    await expect(react.scopeBadge).toHaveAccessibleName("Scope: project")
+    await expect(react.scope).toHaveText("project")
   })
 
   // select() must restore the enabled:false row verbatim instead of
@@ -131,7 +141,11 @@ test.describe("configuration survives deselection", () => {
     const row = configure.roster.skillRow(REACT, "web-developer")
     await expect(row).toBeVisible()
     await expect(row).toHaveAttribute("aria-pressed", "false")
-    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
+    // The switched-off row is kept and listed, so it is still one of these —
+    // what dropped is the assignment the toggle took with it.
+    await expect(configure.roster.skillRowsFor(REACT)).toHaveCount(
+      DOMAIN_REACH.web
+    )
   })
 
   test("an unconfigured skill starts from the rule every time", async ({
@@ -147,11 +161,11 @@ test.describe("configuration survives deselection", () => {
     await skill.toggle()
     await skill.toggle()
 
-    await expect(skill.installBadge).toHaveAccessibleName(
-      "Install mode: plugin"
-    )
+    await expect(skill.installMode).toHaveText("plugin")
     // Not blank — selection assigns across its own domain's roster afresh.
-    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web} agents`)
+    await expect(
+      configure.roster.skillRowsFor(MULTI_CATEGORY.first)
+    ).toHaveCount(DOMAIN_REACH.web)
   })
 })
 
@@ -167,7 +181,7 @@ test.describe("configuration survives an exclusive swap", () => {
     await vue.toggle()
 
     await expect(vue.root).toHaveAttribute("aria-pressed", "true")
-    await expect(vue.installBadge).toHaveAccessibleName("Install mode: plugin")
+    await expect(vue.installMode).toHaveText("plugin")
   })
 
   test("swapping back restores the evicted skill", async ({ configure }) => {
@@ -184,8 +198,10 @@ test.describe("configuration survives an exclusive swap", () => {
 
     await react.toggle()
 
-    await expect(react.installBadge).toHaveAccessibleName("Install mode: eject")
-    await expect(react.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
+    await expect(react.installMode).toHaveText("eject")
+    await expect(configure.roster.skillRowsFor(REACT)).toHaveCount(
+      DOMAIN_REACH.web - 1
+    )
     await expect(vue.root).toHaveAttribute("aria-pressed", "false")
   })
 })
@@ -203,9 +219,7 @@ test.describe("memory boundaries", () => {
     await configure.chooseStack(STACKS.t3)
     await react.toggle()
 
-    await expect(react.installBadge).toHaveAccessibleName(
-      "Install mode: plugin"
-    )
+    await expect(react.installMode).toHaveText("plugin")
   })
 
   test("a deselected skill is absent from the roster and counts", async ({
@@ -237,7 +251,7 @@ test.describe("memory boundaries", () => {
 
     await configure.skillIn(web, EXCLUSIVE, REACT).toggle()
     await expect(
-      configure.skillIn(web, EXCLUSIVE, REACT).installBadge
-    ).toHaveAccessibleName("Install mode: eject")
+      configure.skillIn(web, EXCLUSIVE, REACT).installMode
+    ).toHaveText("eject")
   })
 })

@@ -286,7 +286,7 @@ test.describe("the tree", () => {
     ).toBeVisible()
     await configure.outputPreviewDialog.close()
 
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await configure.roster.previewButton.click()
 
     const preview = configure.outputPreviewDialog
@@ -304,7 +304,7 @@ test.describe("the tree", () => {
    * having: an empty root would show two files an install does not write there.
    */
   test("every emitted root holds the config pair", async ({ configure }) => {
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await configure.roster.previewButton.click()
 
     const preview = configure.outputPreviewDialog
@@ -378,7 +378,7 @@ test.describe("the tree", () => {
     configure,
   }) => {
     for (const agent of REACHED_AGENTS) {
-      await configure.roster.scopeControl(agent).click()
+      await configure.roster.setScope(agent, "project")
     }
     await configure.skillIn(web, CATEGORY, REACT).flipScope()
 
@@ -492,7 +492,7 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
    * told there is one root when there are two.
    */
   test("the two roots are siblings of each other", async ({ configure }) => {
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await configure.roster.previewButton.click()
 
     const preview = configure.outputPreviewDialog
@@ -636,7 +636,7 @@ test.describe("the header and the selection", () => {
     )
     await preview.close()
 
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
     await configure.roster.previewButton.click()
 
     await expect(preview.subtitle).toHaveText(`${PROJECT_CONFIG_PATH} · ${NEW}`)

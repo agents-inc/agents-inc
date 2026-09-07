@@ -9,7 +9,9 @@ import {
   MenuRadioItem,
   MenuTrigger,
 } from "@workspace/ui/components/menu"
-import { useEffect, useRef, useState } from "react"
+import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
+import { cn } from "@workspace/ui/lib/utils"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
 
 import {
   selectRosterGroups,
@@ -28,9 +30,7 @@ import {
   AGENT_SCOPES,
   ROSTER_GROUP_BYS,
   restingAgentOptions,
-  type AgentEffort,
-  type AgentModel,
-  type AgentScope,
+  type AgentOptions,
   type RosterGroupBy,
 } from "@/stores/persisted-schema"
 import { createSharedConfig, type ShareRefusal } from "@/lib/api/configs"
@@ -110,11 +110,6 @@ type UseTip = {
   right: number | null
   y: number
 }
-
-// Both roster controls step through their scale and wrap, starting from
-// whatever the row currently resolves to.
-const nextInCycle = <T,>(cycle: readonly T[], current: T): T =>
-  cycle[(cycle.indexOf(current) + 1) % cycle.length]!
 
 const tipName = (agent: SubAgent) =>
   `${DOMAIN_LABELS[agent.domainId].toLowerCase()} ${agent.label.toLowerCase()}`
@@ -353,141 +348,249 @@ function SkillRow({
   )
 }
 
-// The model an agent runs on, as the word itself. Click cycles the four the
-// CLI offers, starting from whatever the row resolves to — there is no menu,
-// because at four values a menu costs more than a second click.
-function ModelWord({
+/**
+ * THE THREE SETTINGS AN AGENT CARRIES, AS ONE DESCRIPTION RATHER THAN THREE
+ * COMPONENTS.
+ *
+ * They were three words that each cycled independently until the 2026-09-06
+ * refresh — so effort's five steps were invisible until you had clicked past
+ * four, which is the hidden-alternative pattern the whole refresh removes. They
+ * are one panel now, and a panel drawing three columns wants one list.
+ *
+ * The order is the order the row draws them in, and the closed row and the open
+ * panel both derive their grid from it — see `OPTION_TRACKS`.
+ */
+const AGENT_OPTION_FIELDS = [
+  { field: "model", values: AGENT_MODELS },
+  { field: "effort", values: AGENT_EFFORTS },
+  { field: "scope", values: AGENT_SCOPES },
+] as const satisfies readonly {
+  field: keyof AgentOptions
+  values: readonly string[]
+}[]
+
+type AgentOptionField = (typeof AGENT_OPTION_FIELDS)[number]["field"]
+
+// Capitalised for the accessible name only — `Model for web-developer: sonnet`.
+// The visible word is the value and is never the name, because it changes.
+const FIELD_NAMES: Record<AgentOptionField, string> = {
+  model: "Model",
+  effort: "Effort",
+  scope: "Scope",
+}
+
+/**
+ * ALIGNMENT IS STRUCTURAL RATHER THAN TUNED, and this is the whole mechanism:
+ * the closed row and the open panel declare THE SAME three tracks, so a panel
+ * header cannot drift from the word it covers. Per-column padding was the
+ * design's first attempt and every column was off.
+ *
+ * As CSS variables rather than a class string because the dividers are
+ * positioned in the column gaps and their offsets have to be ARITHMETIC on
+ * these numbers. Written out at either end, the two would agree until the first
+ * time one was edited.
+ *
+ * THE WIDTHS ARE THIS APP'S, NOT THE DESIGN FILE'S. The design sizes them to
+ * `sonnet` / `low` / `project` (35 / 23 / 40px) against a prototype offering
+ * three models and four efforts. `persisted-schema.ts` offers four and five,
+ * and the longest words are `sonnet`, `medium` and `project` — 6, 6 and 7
+ * characters. IBM Plex Mono's advance is 0.6em and the row is `text-9_5`
+ * (0.59375rem), so a character is 0.35625rem: 2.25rem clears six and 2.625rem
+ * clears seven. Copying the design's numbers would clip `medium` by a third.
+ */
+const OPTION_VARS: CSSProperties & Record<`--${string}`, string> = {
+  "--c1": "2.25rem",
+  "--c2": "2.25rem",
+  "--c3": "2.625rem",
+  "--cg": "0.625rem",
+  // The panel's own left padding, which every divider offset starts from.
+  "--op": "0.5625rem",
+  // How far the panel bleeds past the block's right edge, and the row's own
+  // right padding. BOTH are in the panel's right padding, and that is the whole
+  // reason they are named: the bleed is what gives the field a flush edge
+  // against the roster's clip, and `--rp` is what the closed row holds its
+  // words off that edge by — so a panel padded by the bleed alone lands its
+  // headers exactly `--rp` to the right of the words they cover. Measured at
+  // 4.38px of drift before this was written down.
+  "--bleed": "0.875rem",
+  "--rp": "0.25rem",
+}
+
+const OPTION_TRACKS =
+  "grid grid-cols-[var(--c1)_var(--c2)_var(--c3)] gap-x-[var(--cg)]"
+
+// A divider sits in a column GAP rather than on a column edge: `border-left` on
+// a track adds 1px inside it and pushes every option out of line with its own
+// header, which is the defect the design names.
+const DIVIDER = "absolute top-[1.625rem] bottom-2 w-px bg-hairline content-['']"
+
+/**
+ * One of the three words on the closed row. It STATES a value and OPENS the
+ * panel; it no longer changes anything by itself.
+ *
+ * Its accessible name carries the value, because the visible word is the value
+ * and a screen reader given `sonnet, button` has been told nothing about what
+ * the button is for.
+ */
+function AgentOptionWord({
   agentId,
-  model,
+  field,
+  value,
   on,
+  open,
+  onOpen,
+  className,
 }: {
   agentId: string
-  model: AgentModel
+  field: AgentOptionField
+  value: string
   on: boolean
+  open: boolean
+  onOpen: () => void
+  className?: string | undefined
 }) {
-  const setAgentOption = useConfigStore((state) => state.setAgentOption)
-
   return (
     <button
       type="button"
-      // The word is the value, so a screen reader gets it either way — but not
-      // *which* value it is, which is the whole content of the control.
-      aria-label={`Model for ${agentId}: ${model}`}
-      onClick={() =>
-        setAgentOption(agentId, { model: nextInCycle(AGENT_MODELS, model) })
-      }
-      className={`cursor-pointer font-mono text-9_5 font-medium ${
-        on ? "text-matrix-ink hover:text-ink-primary" : "text-roster-off"
-      }`}
+      aria-label={`${FIELD_NAMES[field]} for ${agentId}: ${value}`}
+      aria-expanded={open}
+      onClick={onOpen}
+      className={cn(
+        "cursor-pointer text-left font-mono text-9_5 font-medium",
+        on ? "text-matrix-ink hover:text-ink-primary" : "text-roster-off",
+        className
+      )}
     >
-      {model}
+      {value}
     </button>
   )
 }
 
-// Where this agent's front-matter is written: the project, or the user's own
-// ~/.claude. Two values rather than four, so the word is even more plainly the
-// control — and it is the same shape the model word takes for the same reason.
-function ScopeWord({
+/**
+ * ONE PANEL FOR ALL THREE SETTINGS, opened by any of the three words.
+ *
+ * Every column sits directly under the word it belongs to, which is the reason
+ * a per-word popover was rejected: three open states, and the rightmost of them
+ * opened off the panel entirely.
+ *
+ * THE HEADERS ARE THE WORDS, AND THEY CLOSE WHAT THEY OPENED. The trigger row
+ * behind this is hidden rather than removed, so each header lands exactly on
+ * the word it replaces — the same pixel closes the panel that opened it. It
+ * also means the two never both reach the accessibility tree: `visibility:
+ * hidden` takes the trigger out of it, so a locator asking for
+ * `Model for X: sonnet` finds whichever of the pair is currently on screen.
+ *
+ * A column is a `radiogroup`: five efforts of which one is on is one choice
+ * with five options, and only the role says so.
+ */
+function AgentOptionsPanel({
   agentId,
-  scope,
-  on,
+  options,
+  onClose,
+  onPick,
 }: {
   agentId: string
-  scope: AgentScope
-  on: boolean
+  options: AgentOptions
+  onClose: () => void
+  onPick: (patch: Partial<AgentOptions>) => void
 }) {
-  const setAgentOption = useConfigStore((state) => state.setAgentOption)
-
   return (
-    <button
-      type="button"
-      aria-label={`Scope for ${agentId}: ${scope}`}
-      onClick={() =>
-        setAgentOption(agentId, { scope: nextInCycle(AGENT_SCOPES, scope) })
-      }
-      className={`cursor-pointer font-mono text-8 font-medium tracking-[.06em] uppercase ${
-        on ? "text-matrix-ink hover:text-ink-primary" : "text-roster-off"
-      }`}
+    <div
+      data-slot="agent-options"
+      // Bleeds past the panel's right edge and is clipped by the roster's own
+      // overflow, which is what gives it a flush edge there.
+      className={`absolute -top-[0.1875rem] right-[calc(var(--bleed)*-1)] z-[130] ${OPTION_TRACKS} bg-tip-field pt-[0.3125rem] pr-[calc(var(--bleed)+var(--rp))] pb-2 pl-[var(--op)]`}
     >
-      {scope}
-    </button>
+      <span
+        aria-hidden
+        className={`${DIVIDER} left-[calc(var(--op)+var(--c1)+var(--cg)/2)]`}
+      />
+      <span
+        aria-hidden
+        className={`${DIVIDER} left-[calc(var(--op)+var(--c1)+var(--cg)+var(--c2)+var(--cg)/2)]`}
+      />
+
+      {AGENT_OPTION_FIELDS.map(({ field }) => (
+        <button
+          key={field}
+          type="button"
+          aria-label={`${FIELD_NAMES[field]} for ${agentId}: ${options[field]}`}
+          aria-expanded
+          onClick={onClose}
+          className="cursor-pointer pb-1.5 text-left font-mono text-9_5 font-medium whitespace-nowrap text-matrix-ink hover:text-ink-primary"
+        >
+          {options[field]}
+        </button>
+      ))}
+
+      {AGENT_OPTION_FIELDS.map(({ field, values }) => (
+        <div
+          key={field}
+          role="radiogroup"
+          aria-label={`${FIELD_NAMES[field]} for ${agentId}`}
+          onKeyDown={moveToAdjacentRadio}
+          className="flex flex-col gap-px"
+        >
+          {values.map((value) => {
+            const current = options[field] === value
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={current}
+                tabIndex={current ? 0 : -1}
+                onClick={() => onPick({ [field]: value })}
+                className={`cursor-pointer text-left font-mono text-9_5 leading-[1.6] font-medium whitespace-nowrap outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  current
+                    ? "text-brand-ink"
+                    : "text-matrix-ink hover:text-ink-primary"
+                }`}
+              >
+                {value}
+              </button>
+            )
+          })}
+        </div>
+      ))}
+    </div>
   )
 }
 
-// How much thinking the agent is given, as the word itself — the same shape
-// the model word takes, and for the same reason. It was five drawn squares
-// until the word replaced them; the design had already built and rejected a
-// meter ("max effort was unreadable"), and a drawn value says itself only to a
-// screen reader.
+// THE AGENT ROW'S ONE BOX, WORN TWO WAYS.
 //
-// The floor is `medium` at six characters — IBM Plex Mono's advance is 0.6em,
-// so 6 × 0.6 × 9.5px = 34.2px and 36px clears it. Right-aligned against it so
-// the row does not jitter as the word cycles.
-const EFFORT_WORD_WIDTH = "min-w-[2.25rem] text-right"
-
-function EffortWord({
-  agentId,
-  effort,
-  on,
-}: {
-  agentId: string
-  effort: AgentEffort
-  on: boolean
-}) {
-  const setAgentOption = useConfigStore((state) => state.setAgentOption)
-  // Written through the resolver rather than against the literal `"medium"`.
-  // There is no per-role effort default yet — `persisted-schema.ts` says so —
-  // so the two read identically today, and the day the CLI puts an effort on
-  // agent metadata this line becomes per-role with no edit here.
-  //
-  // Computed here rather than added to `RosterAgentRow`: the resolver is
-  // already exported and pure, and a boolean only one word needs would
-  // otherwise touch every spec under the derive layer's two roster blocks.
-  const isDefault = effort === restingAgentOptions(agentId).effort
-
-  return (
-    <button
-      type="button"
-      aria-label={`Effort for ${agentId}: ${effort}`}
-      onClick={() =>
-        setAgentOption(agentId, { effort: nextInCycle(AGENT_EFFORTS, effort) })
-      }
-      // Amber has no hover step, deliberately: amber means "the user chose
-      // this", so nothing the pointer does may mask it. The design's own
-      // cascade darkens it by accident; here the arm simply carries no hover.
-      className={`cursor-pointer font-mono text-9_5 font-medium ${EFFORT_WORD_WIDTH} ${
-        on
-          ? isDefault
-            ? "text-matrix-ink hover:text-ink-primary"
-            : "text-brand-ink"
-          : "text-roster-off"
-      }`}
-    >
-      {effort}
-    </button>
-  )
-}
-
-// THE AGENT ROW'S TWO BOXES, and the pair is one decision rather than two
-// class strings. Each is a padding with an equal negative margin and a width
-// that adds both back, so the content box is exactly 100% either way: the box
-// grows as the pulse arrives and NOTHING ON THE ROW MOVES.
+// The two axes are deliberately different mechanisms. SIDEWAYS is a padding
+// with an equal negative margin and a width that adds both back, so the content
+// box is exactly 100% and the 4px bleed is only enough for a tint to clear the
+// ink. VERTICALLY it is a margin, and that is the whole difference between a
+// tint that reads as this row and one that reads as this row's block: a
+// background paints under its own padding, so 2px of `py` here put the fill
+// hard against the skill row beneath and against the agent above, and the three
+// touching fills closed into one field. A margin is outside the box, so the
+// same 2px is air the fill never reaches — and the ink does not move either
+// way, because a margin displaces the whole box rather than the content inside
+// it.
 //
-// At rest the row bleeds 4px each side, which is only enough for a hover tint
-// to clear the ink. Pulsing it bleeds 17px left — the flush edge every row in
-// this panel is locked to, so the tint reaches the panel's border — and 8px
-// right, which reclaims the roster scroller's own padding and stops flush
-// against the scrollbar.
-const RESTING_ROW =
-  "-mx-1 w-[calc(100%+0.5rem)] px-1 py-0.5 hover:bg-roster-hover"
-const PULSING_ROW =
-  "-mt-1 -mr-2 -mb-1 -ml-[1.0625rem] w-[calc(100%+1.5625rem)] bg-flash py-1.5 pr-2 pl-[1.0625rem]"
+// THE PULSE AND THE HOVER PAINT THE SAME BOX, and that is the whole of this
+// constant. They were two geometries until 2026-09-06: a pulsing row bled 17px
+// left to the panel's border and 8px right into the scroller's padding, and
+// grew 4px taller — a box wider and taller than anything else on the row ever
+// paints, which read as the agent's whole BLOCK having been tinted rather than
+// its name row. The row the pointer highlights is the row the assignment
+// reached, so it is one box and the state changes only the fill.
+//
+// It also retires a live hazard rather than only a wrong drawing: two boxes
+// meant the row grew as the pulse landed, and the growth was cancelled by hand
+// with matched margins. Nothing cancels now because nothing grows.
+const AGENT_ROW = "-mx-1 my-0.5 w-[calc(100%+0.5rem)] px-1"
 
 function AgentBlock({
   row,
   domainPrefix,
   flashed,
+  optionsOpen,
+  onToggleOptions,
+  onCloseOptions,
   onShowUses,
   onHideUses,
 }: {
@@ -499,45 +602,61 @@ function AgentBlock({
   // has been told less than the screen shows.
   domainPrefix: string | null
   flashed: boolean
+  /** Whether THIS agent's options panel is the one open. At most one is. */
+  optionsOpen: boolean
+  onToggleOptions: () => void
+  onCloseOptions: () => void
   onShowUses: (anchor: HTMLElement, skill: RosterSkillRow) => void
   onHideUses: () => void
 }) {
   const toggleAgentPin = useConfigStore((state) => state.toggleAgentPin)
+  const setAgentOption = useConfigStore((state) => state.setAgentOption)
   const { agent, on, model, effort, scope, skills } = row
+  const options = { model, effort, scope }
+
+  // Picking closes. The value is the whole reason the panel opened, so leaving
+  // it up afterwards would ask for a second dismissal for nothing — and one
+  // panel at a time means the next word to be pressed opens its own.
+  const pick = (patch: Partial<AgentOptions>) => {
+    setAgentOption(agent.id, patch)
+    onCloseOptions()
+  }
 
   return (
     // The block is agent row + its skill rows, which is the unit the quiet
     // detail reveals over: pointing at one row answers for the whole agent,
     // and the next agent stays quiet.
-    <div className="group/agent pb-2">
+    //
+    // `relative` IS LOAD-BEARING: it is what the options panel resolves
+    // against. Without it the panel anchors to the roster and lands in a
+    // different place on every row.
+    <div className="group/agent relative pb-2" style={OPTION_VARS}>
       {/* The name row, and the box the assignment pulse paints.
-          THE TINT IS THE WHOLE ROW, and the two geometries below are one
-          decision: it used to sit on the pin button, which is `flex-1` and
-          stops where the three cycling words begin — so a pulse said "these
-          three skills reached this agent" while leaving the agent's own model,
-          effort and scope outside the thing being pointed at.
 
-          Flashed, the box takes the panel's full width: 17px left, which is
-          exactly the flush edge every row in this panel is locked to, so the
-          tint reaches the border-left; and 8px right, which reclaims the
-          roster's own scroll padding and stops flush against the scrollbar.
-          Each bleed is a padding and an equal negative margin, so the box grows
-          and NOTHING ON THE ROW MOVES — the ink is in the same place pulsing
-          and at rest, which is the only reason a 250ms colour change can be the
-          whole treatment.
+          THE TINT IS THE WHOLE ROW AND NOTHING BUT THE ROW. It sat on the pin
+          button once, which is `flex-1` and stops where the three words begin —
+          so a pulse said "these skills reached this agent" while leaving the
+          agent's own model, effort and scope outside the thing being pointed
+          at. Then it overshot the other way, bleeding out to the panel's border
+          and down past the row's own edges, which read as the whole block. It
+          is the row, drawn exactly as the pointer draws it.
 
-          Hover lives on the same element for the same reason, and loses to the
-          pulse rather than the other way round: an agent the selection just
-          reached is a fact about what happened, and the pointer happening to be
-          over it does not change it.
+          A COLOUR CHANGE AND NOTHING ELSE, which is what lets 250ms be the
+          whole treatment: one geometry means the ink is in the same place
+          pulsing and at rest without anything being cancelled to keep it there.
+
+          Hover lives on the same element and LOSES to the pulse — an agent the
+          selection just reached is a fact about what happened, and the pointer
+          happening to be over it does not change it. So the two fills are
+          exclusive rather than layered.
 
           The three controls are siblings of the pin, never children of it:
           nested they would each swallow the click that pins and bury their own
           values inside the pin's accessible name. */}
       <div
         data-slot="agent-row"
-        className={`flex items-baseline transition-colors duration-[250ms] ${
-          flashed ? PULSING_ROW : RESTING_ROW
+        className={`${AGENT_ROW} flex items-baseline transition-colors duration-[250ms] ${
+          flashed ? "bg-flash" : "hover:bg-roster-hover"
         }`}
       >
         {/* State is colour only — no checkbox, no bracket. Click pins the
@@ -572,12 +691,54 @@ function AgentBlock({
           </span>
         </button>
 
-        <span className="flex flex-none items-center gap-2 pr-1">
-          <ModelWord agentId={agent.id} model={model} on={on} />
-          <EffortWord agentId={agent.id} effort={effort} on={on} />
-          <ScopeWord agentId={agent.id} scope={scope} on={on} />
+        {/* THE SAME THREE TRACKS THE PANEL DECLARES, which is what keeps a
+            header from drifting off the word it covers.
+
+            HIDDEN RATHER THAN REMOVED while the panel is up: the row has to go
+            on occupying its box or the panel's headers would land somewhere the
+            words never were, and the whole roster would reflow as one opened.
+            It also takes the three triggers out of the accessibility tree for
+            exactly as long as the headers are in it, so the pair is never both
+            reachable under one name. */}
+        <span
+          className={`${OPTION_TRACKS} ml-auto flex-none items-baseline pr-[var(--rp)] ${
+            optionsOpen ? "invisible" : ""
+          }`}
+        >
+          {AGENT_OPTION_FIELDS.map(({ field }) => (
+            <AgentOptionWord
+              key={field}
+              agentId={agent.id}
+              field={field}
+              value={options[field]}
+              on={on}
+              open={optionsOpen}
+              onOpen={onToggleOptions}
+              // Effort is the one that goes amber, and amber means "not the
+              // default" rather than "active" everywhere in this design. Its
+              // resting value is resolved rather than compared to a literal, so
+              // the day the CLI puts an effort on agent metadata this becomes
+              // per-role with no edit here.
+              className={
+                field === "effort" &&
+                on &&
+                effort !== restingAgentOptions(agent.id).effort
+                  ? "text-brand-ink hover:text-brand-ink"
+                  : undefined
+              }
+            />
+          ))}
         </span>
       </div>
+
+      {optionsOpen && (
+        <AgentOptionsPanel
+          agentId={agent.id}
+          options={options}
+          onClose={onCloseOptions}
+          onPick={pick}
+        />
+      )}
 
       {skills.map((skill) => (
         <SkillRow
@@ -751,6 +912,37 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
 
   const asideRef = useRef<HTMLElement>(null)
   const [tip, setTip] = useState<UseTip | null>(null)
+  // ONE OPEN PANEL FOR THE WHOLE ROSTER rather than one per agent. Held here
+  // because that is the only place that can promise it: three words on one row
+  // used to carry three independent open states, and the design replaced them
+  // with one per agent — held per row, "one at a time" would be a rule every
+  // row kept about itself and none of them kept about each other.
+  const [optionsFor, setOptionsFor] = useState<string | null>(null)
+  // The same dismissal the skill options panel keeps, and for the same reasons:
+  // `pointerdown` rather than `click`, so the panel is gone before the press
+  // resolves — otherwise a press on another agent's word would close this one
+  // and the click would then reopen it. Presses INSIDE the roster are left
+  // alone, because a press on a word or an option is already handled by the
+  // control it landed on.
+  useEffect(() => {
+    if (optionsFor === null) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!asideRef.current?.contains(event.target as Node)) {
+        setOptionsFor(null)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOptionsFor(null)
+    }
+
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [optionsFor])
 
   const groups = selectRosterGroups(config, rosterGroupBy)
   const stats = summarize(config)
@@ -838,6 +1030,7 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
                   index × 26px so collapsed headers stack flush. */}
               <button
                 type="button"
+                data-slot="roster-band"
                 aria-expanded={!shut}
                 onClick={() => {
                   // Collapsing can take the tooltip's anchor with it.
@@ -874,6 +1067,13 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
                           : null
                       }
                       flashed={flashed.has(row.agent.id)}
+                      optionsOpen={optionsFor === row.agent.id}
+                      onToggleOptions={() =>
+                        setOptionsFor(
+                          optionsFor === row.agent.id ? null : row.agent.id
+                        )
+                      }
+                      onCloseOptions={() => setOptionsFor(null)}
                       onShowUses={(event, skill) =>
                         showUses(event, skill, row.agent.id)
                       }

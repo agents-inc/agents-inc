@@ -67,14 +67,18 @@ test.describe("a project skill on a global sub-agent", () => {
   }) => {
     const skill = configure.skillIn(web, CATEGORY, REACT)
     await skill.toggle()
-    const assigned = await skill.agentCount.textContent()
+    // Counted off the roster: moving a skill to project scope un-assigns
+    // nothing, it only makes each assignment an error to resolve, so the rows
+    // are all still there afterwards. This was read off the cell's own
+    // `N agents` label until that was removed on 2026-09-07.
+    const assigned = await configure.roster.skillRowsFor(REACT).count()
 
     await skill.flipScope()
 
     await expect(
       configure.roster.agentButton("web", "developer")
     ).toHaveAttribute("aria-pressed", "true")
-    await expect(skill.agentCount).toHaveText(assigned ?? "")
+    await expect(configure.roster.skillRowsFor(REACT)).toHaveCount(assigned)
   })
 
   test("blocks Install and says how many sub-agents to change", async ({
@@ -173,7 +177,7 @@ test.describe("a project skill on a global sub-agent", () => {
     await skill.flipScope()
     await expect(configure.roster.installButton).toBeDisabled()
 
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
 
     await expect(configure.roster.scopeError(REACT, DEVELOPER)).toBeHidden()
     // The other sub-agents React reaches are still global, so one click fixes
@@ -221,8 +225,10 @@ test.describe("a project skill on a global sub-agent", () => {
 
 // The other door the pair arrives through. Nothing is dropped — silently losing
 // assignments somebody SHARED is the outcome the ruling forbids — so it lands
-// in the error state with Install blocked, and the line above the grid says
-// what to do about it.
+// in the error state with Install blocked, and the marked row says what to do
+// about it. A line above the grid used to say it a second time and no longer
+// does: the signals are the row's own marker and the disabled Install button,
+// both of them beside the control that resolves the problem.
 test.describe("a shared link holding the pair", () => {
   test.beforeEach(({ page }) => {
     stubGetConfig(page, OUT_OF_SCOPE_IMPORT_ID, OUT_OF_SCOPE_PAYLOAD)
@@ -239,19 +245,9 @@ test.describe("a shared link holding the pair", () => {
     await expect(configure.roster.scopeError(REACT, DEVELOPER)).toBeVisible()
   })
 
-  test("says what must be done, above the grid", async ({
-    configure,
-    page,
-  }) => {
-    await page.goto(`/?fromId=${OUT_OF_SCOPE_IMPORT_ID}`)
-
-    await expect(configure.importNotice).toContainText("project scope")
-    await expect(configure.importNotice).toContainText("Sub-agents")
-  })
-
-  // The line is an explanation, not a substitute for what the address already
-  // had to say about itself.
-  test("keeps what the shared address already said", async ({
+  // The notice above the grid carries what the ARRIVAL cost and nothing about
+  // the configuration it produced. It used to carry both, in one composed line.
+  test("keeps the notice to what the shared address said", async ({
     configure,
     page,
   }) => {
@@ -271,18 +267,17 @@ test.describe("a shared link holding the pair", () => {
     await expect(configure.roster.shareButton).toBeDisabled()
   })
 
-  test("resolves in one click from the row the notice points at", async ({
+  test("resolves in one click from the marked row", async ({
     configure,
     page,
   }) => {
     await page.goto(`/?fromId=${OUT_OF_SCOPE_IMPORT_ID}`)
     await expect(configure.roster.scopeError(REACT, DEVELOPER)).toBeVisible()
 
-    await configure.roster.scopeControl(DEVELOPER).click()
+    await configure.roster.setScope(DEVELOPER, "project")
 
     await expect(configure.roster.scopeError(REACT, DEVELOPER)).toBeHidden()
     await expect(configure.roster.installButton).toBeEnabled()
-    await expect(configure.importNotice).not.toContainText("project scope")
   })
 })
 

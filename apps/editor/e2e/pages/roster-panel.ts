@@ -148,10 +148,19 @@ export class RosterPanel {
     return this.root.getByRole("button", { name, exact: true })
   }
 
-  // The controls right-aligned on the agent's name row. Each is a sibling
-  // of the pin button rather than a child of it, so clicking one configures
-  // the agent without also flipping it on or off. Their accessible names carry
-  // the current value.
+  // THE THREE WORDS ON THE AGENT'S NAME ROW, each stating its current value.
+  // Siblings of the pin button rather than children of it, so pressing one
+  // configures the agent without also flipping it on or off.
+  //
+  // SINCE THE 2026-09-06 REFRESH A PRESS OPENS THE OPTIONS PANEL rather than
+  // cycling the value — so these READ, and `setModel`/`setEffort`/`setScope`
+  // below are what WRITE.
+  //
+  // Each locator resolves to exactly one element in both states, which is not a
+  // coincidence: while the panel is open the closed row is `visibility:hidden`
+  // and so out of the accessibility tree, and the panel's header — the same
+  // word, in the same place, closing what it opened — is in it under the same
+  // name. Playwright's role engine sees whichever of the pair is on screen.
   modelWord(agentId: string): Locator {
     return this.root.getByRole("button", {
       name: new RegExp(`^Model for ${agentId}:`),
@@ -173,6 +182,54 @@ export class RosterPanel {
     })
   }
 
+  // The panel any of the three words opens: one per agent, and one open across
+  // the whole roster at a time.
+  agentOptions(agentId: string): Locator {
+    return this.root
+      .locator('[data-slot="agent-options"]')
+      .filter({
+        has: this.page.getByRole("radiogroup", {
+          name: `Model for ${agentId}`,
+        }),
+      })
+  }
+
+  // One column of it. Every option is on screen at once, which is the point of
+  // the panel — effort's five steps were invisible until you had clicked past
+  // four.
+  agentOptionColumn(agentId: string, field: string): Locator {
+    return this.root.getByRole("radiogroup", {
+      name: `${field} for ${agentId}`,
+    })
+  }
+
+  agentOption(agentId: string, field: string, value: string): Locator {
+    return this.agentOptionColumn(agentId, field).getByRole("radio", {
+      name: value,
+      exact: true,
+    })
+  }
+
+  // OPEN, THEN PICK — the two acts a value change now takes, and picking closes
+  // the panel again. Every spec that used to click a word N times to cycle to a
+  // value says the value instead.
+  private async setAgentOption(agentId: string, field: string, value: string) {
+    await this.modelWord(agentId).click()
+    await this.agentOption(agentId, field, value).click()
+  }
+
+  async setModel(agentId: string, value: string) {
+    await this.setAgentOption(agentId, "Model", value)
+  }
+
+  async setEffort(agentId: string, value: string) {
+    await this.setAgentOption(agentId, "Effort", value)
+  }
+
+  async setScope(agentId: string, value: string) {
+    await this.setAgentOption(agentId, "Scope", value)
+  }
+
   // The assignment line's SELECTION TARGET, e.g. "React on web-developer".
   //
   // Kept as the button because that is what a spec clicks and what carries the
@@ -184,6 +241,16 @@ export class RosterPanel {
   skillRow(skillName: string, agentId: string): Locator {
     return this.root.getByRole("button", {
       name: `${skillName} on ${agentId}`,
+    })
+  }
+
+  // EVERY ROW THIS SKILL HAS, across all its sub-agents — which is to say how
+  // many sub-agents carry it. The cell used to state that as `N agents` under
+  // its own badges; the label was removed on 2026-09-07, so the roster is the
+  // one place the number is legible, and it always was the place it was true.
+  skillRowsFor(skillName: string): Locator {
+    return this.root.getByRole("button", {
+      name: new RegExp(`^${skillName} on `),
     })
   }
 

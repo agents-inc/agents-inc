@@ -1,18 +1,17 @@
 import { getRouteApi, useNavigate } from "@tanstack/react-router"
 import {
-  Hinge,
-  HingeButton,
-  HingeToggle,
-} from "@workspace/ui/components/divider"
+  ButtonGroup,
+  ButtonGroupItem,
+} from "@workspace/ui/components/button-group"
+import { Hinge, HingeButton } from "@workspace/ui/components/divider"
 import { Glyph } from "@workspace/ui/components/glyph"
 import { useMemo } from "react"
 
 import {
-  blockedNotice,
   catalogueSkillCount,
   selectDomainTabs,
   selectDomainViews,
-  selectedOnlyLabel,
+  selectedOnlyOptions,
   summarize,
 } from "@/features/configure/lib/derive"
 import { useCatalogFirst } from "@/features/configure/lib/use-catalog-first"
@@ -100,25 +99,22 @@ export function ConfigureScreen() {
   const summary = summarize(config)
   const stack = stacks.find((candidate) => candidate.id === stackId)
 
-  // Composed rather than assigned, and the halves are deliberately different
-  // kinds of thing. `notice` describes what the last catalogue-first act cost
-  // — a fact about a moment, which is why it is state — while this describes
-  // the configuration as it stands right now. Set once at arrival it would go
-  // on saying "Install is blocked" after the user had unblocked it, which is
-  // the same stale-vouching problem EDITOR-43 was about, wearing the other
-  // coat.
-  const blockedLine = blockedNotice(summary.unscopedAgentCount)
-  const line = [notice, blockedLine].filter((part) => part !== null).join(" ")
-
   return (
     <>
       <main className="min-w-0 bg-column px-gutter pt-0">
-        {line && (
+        {/* WHAT THE LAST CATALOGUE-FIRST ACT COST, and nothing else. A second
+            sentence describing the configuration as it stands — the sub-agents
+            still resting at global scope — used to be composed onto the end of
+            this one; it is gone, and the two live signals that remain are the
+            `!` marker on each offending roster row and the Install button's own
+            disabled label, both of them beside the control that resolves
+            them. */}
+        {notice && (
           <p
             role="alert"
             className="pt-4 font-mono text-11 text-muted-foreground italic"
           >
-            {line}
+            {notice}
           </p>
         )}
 
@@ -159,32 +155,42 @@ export function ConfigureScreen() {
           label={stack ? "then customise" : "then"}
           emphasis={stack ? stack.name.toLowerCase() : "pick your skills"}
           action={
-            // ONLY ONCE SOMETHING IS SELECTED. A toggle whose only possible
-            // effect is an empty column is not a control.
+            // ONLY ONCE SOMETHING IS SELECTED. A control whose only possible
+            // effect is an empty column is not a control — and a `selected 0`
+            // cell drawn beside `all 238` would be exactly that, stated.
             summary.skillCount > 0 ? (
-              <HingeToggle
-                active={search.sel}
-                // The words are the VALUE and change with it, so they cannot
-                // also be the name: a spec and a screen reader meet one stable
-                // control rather than a differently named one after every
-                // click in the grid.
-                aria-label="Show only selected skills"
-                title={
-                  search.sel ? "show every skill" : "show only selected skills"
-                }
-                onClick={() =>
-                  void navigate({
-                    search: (prev) => ({ ...prev, sel: !search.sel }),
-                    resetScroll: false,
-                  })
-                }
-              >
-                {selectedOnlyLabel(
-                  search.sel,
+              // BOTH COUNTS ON SCREEN. It was one cell whose words changed with
+              // its own value until the 2026-09-06 refresh, so the number you
+              // were about to switch to was the one thing it could not show
+              // you.
+              //
+              // The words are the VALUES and change as the grid does, so they
+              // cannot also be the name: the GROUP is named once and for good,
+              // and a spec and a screen reader meet one stable control rather
+              // than a differently named one after every click in the grid.
+              <ButtonGroup size="field" aria-label="Show only selected skills">
+                {selectedOnlyOptions(
                   summary.skillCount,
                   catalogueSkillCount()
-                )}
-              </HingeToggle>
+                ).map((option) => (
+                  <ButtonGroupItem
+                    key={option.label}
+                    size="field"
+                    active={search.sel === option.selectedOnly}
+                    onClick={() =>
+                      void navigate({
+                        search: (prev) => ({
+                          ...prev,
+                          sel: option.selectedOnly,
+                        }),
+                        resetScroll: false,
+                      })
+                    }
+                  >
+                    {option.label}
+                  </ButtonGroupItem>
+                ))}
+              </ButtonGroup>
             ) : null
           }
         />

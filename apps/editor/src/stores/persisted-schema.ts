@@ -28,12 +28,19 @@ export const assignmentSchema = z.object({
   enabled: z.boolean(),
 })
 
+// The two pairs a skill cell draws, in the order the cells are drawn in. Arrays
+// rather than bare enums because the cell RENDERS them now: every value is on
+// screen at once since the 2026-09-06 refresh, so the option list is read
+// rather than only validated, exactly as the agent's three are below.
+export const SKILL_INSTALL_MODES = ["plugin", "eject"] as const
+export const SKILL_SCOPES = ["project", "global"] as const
+
 // A skill says where it installs and which agents carry it. Model and effort
 // were here until v7 and are the sub-agent's now: a skill is a plugin from
 // someone else's repo, so a per-skill model never described anything real.
 export const skillEntrySchema = z.object({
-  install: z.enum(["plugin", "eject"]),
-  scope: z.enum(["project", "global"]),
+  install: z.enum(SKILL_INSTALL_MODES),
+  scope: z.enum(SKILL_SCOPES),
   // Sub-agent id → how that agent carries the skill. The single source of
   // truth for assignment; every count and list on screen is derived from it.
   assignments: z.record(z.string(), assignmentSchema),

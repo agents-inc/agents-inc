@@ -48,7 +48,7 @@ test.describe("filtering", () => {
     await configure.chooseStack(STACKS.nextjs)
     const before = await configure.skillCells.count()
 
-    await configure.selectedOnlyToggle.click()
+    await configure.selectedFilterCell("selected").click()
 
     const after = await configure.skillCells.count()
     expect(after).toBeLessThan(before)
@@ -57,33 +57,58 @@ test.describe("filtering", () => {
     ).toBeVisible()
   })
 
-  // A toggle whose only possible effect is an empty column is not a control, so
+  // A filter whose only possible effect is an empty column is not a control, so
   // it is ABSENT rather than pressable-and-useless. This replaces a test that
   // asserted the opposite — that pressing it with nothing chosen empties the
   // grid — which is the state the design removed the ability to reach.
-  test("the selected toggle is not drawn until something is chosen", async ({
+  test("the selected filter is not drawn until something is chosen", async ({
     configure,
   }) => {
-    await expect(configure.selectedOnlyToggle).toHaveCount(0)
+    await expect(configure.selectedFilter).toHaveCount(0)
 
     await configure.chooseStack(STACKS.nextjs)
 
-    await expect(configure.selectedOnlyToggle).toBeVisible()
+    await expect(configure.selectedFilter).toBeVisible()
   })
 
-  // It states its VALUE, not its name: `all 42` is what you are looking at now
-  // and `selected 14` is what you would be looking at instead. The totals are
-  // read off the page rather than written here — the catalogue is generated.
-  test("the selected toggle states the count on each side of it", async ({
+  // BOTH COUNTS AT ONCE, which is the whole of the 2026-09-06 refresh here: it
+  // was one cell that stated only the mode you were already in, so the number
+  // you were about to switch to was the one thing it could not show you.
+  //
+  // The totals are read off the page rather than written here — the catalogue
+  // is generated — but the two cells are asserted to carry DIFFERENT numbers,
+  // which is what says one count is not wearing the other's word.
+  test("states both counts at rest, and they are different numbers", async ({
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
 
-    await expect(configure.selectedOnlyToggle).toHaveText(/^all \d+$/)
+    await expect(configure.selectedFilterCell("all")).toBeVisible()
+    await expect(configure.selectedFilterCell("selected")).toBeVisible()
 
-    await configure.selectedOnlyToggle.click()
+    const countIn = async (word: "all" | "selected") =>
+      Number(
+        (await configure.selectedFilterCell(word).innerText()).replace(
+          /\D+/g,
+          ""
+        )
+      )
 
-    await expect(configure.selectedOnlyToggle).toHaveText(/^selected \d+$/)
+    expect(await countIn("all")).toBeGreaterThan(await countIn("selected"))
+  })
+
+  // Picked directly rather than cycled into: the cell you press is the mode you
+  // get, which is what having both on screen is for.
+  test("pressing a cell puts the grid in that mode", async ({ configure }) => {
+    await configure.chooseStack(STACKS.nextjs)
+
+    await expect(configure.selectedFilterOn).toHaveText(/^all \d+$/)
+
+    await configure.selectedFilterCell("selected").click()
+    await expect(configure.selectedFilterOn).toHaveText(/^selected \d+$/)
+
+    await configure.selectedFilterCell("all").click()
+    await expect(configure.selectedFilterOn).toHaveText(/^all \d+$/)
   })
 })
 
@@ -113,10 +138,10 @@ test.describe("where the selected toggle lives", () => {
     await expect(
       configure
         .hinge("then customise")
-        .getByRole("button", { name: "Show only selected skills" })
+        .getByRole("radiogroup", { name: "Show only selected skills" })
     ).toBeVisible()
     await expect(
-      configure.filterBar.getByRole("button", {
+      configure.filterBar.getByRole("radiogroup", {
         name: "Show only selected skills",
       })
     ).toHaveCount(0)
@@ -130,11 +155,11 @@ test.describe("where the selected toggle lives", () => {
   }) => {
     await configure.chooseStack(STACKS.nextjs)
 
-    const toggle = await configure.selectedOnlyToggle.boundingBox()
+    const filter = await configure.selectedFilter.boundingBox()
     const accordion = await configure.stackToggle.boundingBox()
-    if (!toggle || !accordion) throw new Error("both controls must be drawn")
+    if (!filter || !accordion) throw new Error("both controls must be drawn")
 
-    expect(toggle.x + toggle.width).toBeCloseTo(
+    expect(filter.x + filter.width).toBeCloseTo(
       accordion.x + accordion.width,
       0
     )
@@ -152,15 +177,12 @@ test.describe("clearing every selection", () => {
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
-    await configure.selectedOnlyToggle.click()
-    await expect(configure.selectedOnlyToggle).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    )
+    await configure.selectedFilterCell("selected").click()
+    await expect(configure.selectedFilterOn).toHaveText(/^selected \d+$/)
 
     await configure.stack(STACKS.clearScratch).click()
 
-    await expect(configure.selectedOnlyToggle).toHaveCount(0)
+    await expect(configure.selectedFilter).toHaveCount(0)
     await expect(configure.emptyState).toHaveCount(0)
     await expect(configure.domain(web)).toBeVisible()
   })

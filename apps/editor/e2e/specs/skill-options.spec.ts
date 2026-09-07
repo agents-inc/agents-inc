@@ -158,8 +158,10 @@ test.describe("skill options panel", () => {
     await configure.roster.heading.click()
     await skill.toggle()
 
-    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
-    await expect(skill.installBadge).toHaveAccessibleName("Install mode: eject")
+    await expect(configure.roster.skillRowsFor(SKILL)).toHaveCount(
+      DOMAIN_REACH.web - 1
+    )
+    await expect(skill.installMode).toHaveText("eject")
     await skill.openOptions()
     await expect(skill.options.segment("eject")).toHaveAttribute(
       "aria-checked",
@@ -167,24 +169,11 @@ test.describe("skill options panel", () => {
     )
   })
 
-  // A label, not a control: only the ••• reaches the panel.
-  //
-  // `force` because the count is exactly what it claims to be — a span with no
-  // pointer events of its own, sitting over the cell's transparent selection
-  // target. Playwright refuses an ordinary click on a covered element; a real
-  // person's click lands on the target underneath, which is what this drives.
-  // Asserting the count is not a button as well, so the claim in the sentence
-  // above is checked rather than implied by a click that could not open a panel
-  // for a second reason.
-  test("the agent count does not open the panel", async ({ configure }) => {
-    const skill = configure.skillIn(web, CATEGORY, SKILL)
-    await skill.toggle()
-
-    await expect(skill.agentCount).not.toHaveRole("button")
-    await skill.agentCount.click({ force: true })
-
-    await expect(skill.options.root).toBeHidden()
-  })
+  // A test that the cell's `N agents` label could not open the panel stood here
+  // until 2026-09-07. The label is gone, so the claim has nothing to be true
+  // of — deleted rather than re-pointed at some other span, since "this
+  // particular non-control is not a control" is only worth asserting about a
+  // thing that exists.
 
   test("Escape closes the panel", async ({ configure, page }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
@@ -238,7 +227,7 @@ test.describe("skill options panel", () => {
 
     await skill.options.choose("eject")
 
-    await expect(skill.installBadge).toHaveAccessibleName("Install mode: eject")
+    await expect(skill.installMode).toHaveText("eject")
   })
 
   test("a cell badge flip is reflected back in the panel", async ({
@@ -370,15 +359,23 @@ test.describe("sub-agent assignment", () => {
     await expect(cell).toHaveText("pre")
   })
 
-  test("unassigning updates the cell's agent count", async ({ configure }) => {
+  // Read off the roster, which is the surface that both shows the assignments
+  // and loses one — the cell used to state the number under its own badges and
+  // no longer does.
+  test("unassigning drops the skill's row from that agent", async ({
+    configure,
+  }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
-    // The count only shows on a selected skill, and the ••• no longer selects.
     await skill.toggle()
     await skill.openOptions()
 
-    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web} agents`)
+    await expect(configure.roster.skillRowsFor(SKILL)).toHaveCount(
+      DOMAIN_REACH.web
+    )
     await skill.options.cycleAssignment(MATRIX_DOMAIN, MATRIX_ROLE)
-    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web - 1} agents`)
+    await expect(configure.roster.skillRowsFor(SKILL)).toHaveCount(
+      DOMAIN_REACH.web - 1
+    )
   })
 
   // A web skill never reaches API on its own — relevance keeps it inside its

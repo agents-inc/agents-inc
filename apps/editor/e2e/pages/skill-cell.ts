@@ -36,21 +36,52 @@ export class SkillCell {
     this.options = new OptionsPanel(page)
   }
 
-  // The install-mode badge, whose accessible name carries its current value.
-  get installBadge(): Locator {
-    return this.cell.getByRole("button", { name: /^Install mode: / })
+  // THE TWO PAIRS, AND THE CELL EACH IS RESTING ON. Every value has been on
+  // screen since the 2026-09-06 refresh, so "what is the install mode" is no
+  // longer a question about one control's accessible name — it is which of the
+  // pair's cells is checked, which is what `installMode` reads.
+  //
+  // Scoped to the group rather than to the cell, because `plugin` and `project`
+  // are two radios in one skill cell and a bare `getByRole("radio")` there
+  // cannot say which pair it found.
+  get installGroup(): Locator {
+    return this.cell.getByRole("radiogroup", { name: "Install mode" })
   }
 
-  // The same badge whatever it renders as: a button on a catalogue skill, and a
-  // plain statement on an eject-only one, which has no plugin form to flip to.
-  // `installBadge` asks for the CONTROL and finds nothing on the second kind;
-  // this asks for what a pointer lands on, which is one target either way.
-  get installBadgeTarget(): Locator {
-    return this.cell.locator('[aria-label^="Install mode: "]')
+  get scopeGroup(): Locator {
+    return this.cell.getByRole("radiogroup", { name: "Scope" })
   }
 
-  get scopeBadge(): Locator {
-    return this.cell.getByRole("button", { name: /^Scope: / })
+  // The install mode this skill is on, whatever the pair renders as: the
+  // checked cell on a catalogue skill, and a plain statement on an eject-only
+  // one, which has no plugin form and so is not a choice at all. One locator
+  // for both, because every spec asking this is asking the same question.
+  get installMode(): Locator {
+    return this.cell.locator(
+      '[aria-label="Install mode"] [aria-checked="true"], [aria-label^="Install mode: "]'
+    )
+  }
+
+  get scope(): Locator {
+    return this.scopeGroup.locator('[aria-checked="true"]')
+  }
+
+  // One cell of a pair, by the value it sets. This is how a choice is MADE now
+  // — a click on the value you want rather than a click that cycles to it.
+  installCell(mode: string): Locator {
+    return this.installGroup.getByRole("radio", { name: mode, exact: true })
+  }
+
+  scopeCell(scope: string): Locator {
+    return this.scopeGroup.getByRole("radio", { name: scope, exact: true })
+  }
+
+  async setInstallMode(mode: string) {
+    await this.installCell(mode).click()
+  }
+
+  async setScope(scope: string) {
+    await this.scopeCell(scope).click()
   }
 
   get optionsButton(): Locator {
@@ -75,12 +106,6 @@ export class SkillCell {
     )
   }
 
-  // Only rendered on selected skills, and a label rather than a control — the
-  // ••• is the only way into the options panel.
-  get agentCount(): Locator {
-    return this.cell.getByText(/^(no agents|\d+ agents?)$/)
-  }
-
   async toggle() {
     await this.root.click()
   }
@@ -89,12 +114,19 @@ export class SkillCell {
     await this.optionsButton.click()
   }
 
+  // MOVE THE VALUE, WITHOUT NAMING THE ONE IT MOVES TO. There is no flip on
+  // screen any more — the pair is picked from directly — so this presses
+  // whichever cell is not currently on, which is what every spec that only
+  // needs the value CHANGED was asking for when it said "flip".
+  //
+  // A spec that cares WHICH value it lands on says so with `setInstallMode` /
+  // `setScope` instead, and several now do.
   async flipInstall() {
-    await this.installBadge.click()
+    await this.installGroup.locator('[aria-checked="false"]').click()
   }
 
   async flipScope() {
-    await this.scopeBadge.click()
+    await this.scopeGroup.locator('[aria-checked="false"]').click()
   }
 
   async isSelected() {

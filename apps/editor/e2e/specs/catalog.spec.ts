@@ -71,13 +71,14 @@ test.describe("catalog assumptions", () => {
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
-    const skill = configure.skillIn(
-      DOMAINS.web,
-      SINGLE_AGENT_SKILL.category,
-      SINGLE_AGENT_SKILL.name
-    )
 
-    await expect(skill.agentCount).toHaveText("1 agent")
+    // Counted off the roster, which is where the number is legible now — the
+    // cell's own `1 agent` label was removed on 2026-09-07. Both halves are
+    // still asserted: how many rows the skill has, and that the one it has is
+    // the agent every spec leaning on this fixture names.
+    await expect(
+      configure.roster.skillRowsFor(SINGLE_AGENT_SKILL.name)
+    ).toHaveCount(1)
     await expect(
       configure.roster.skillRow(
         SINGLE_AGENT_SKILL.name,
@@ -100,7 +101,9 @@ test.describe("catalog assumptions", () => {
     )
     await skill.toggle()
 
-    await expect(skill.agentCount).toHaveText(`${DOMAIN_REACH.web} agents`)
+    await expect(
+      configure.roster.skillRowsFor(EXCLUSIVE_CATEGORY.first)
+    ).toHaveCount(DOMAIN_REACH.web)
   })
 
   // The relationship data is upstream and can be re-authored, so the pair the

@@ -42,8 +42,8 @@ test.describe("persistence", () => {
       "true"
     )
     await expect(
-      configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).installBadge
-    ).toHaveAccessibleName("Install mode: eject")
+      configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).installMode
+    ).toHaveText("eject")
   })
 
   // The two v5 surfaces — a row switched off and an explicit pin — must
@@ -80,7 +80,7 @@ test.describe("persistence", () => {
     configure,
     page,
   }) => {
-    await configure.roster.modelWord("web-developer").click()
+    await configure.roster.setModel("web-developer", "fable")
     await expect(
       configure.roster.modelWord("web-developer")
     ).toHaveAccessibleName("Model for web-developer: fable")

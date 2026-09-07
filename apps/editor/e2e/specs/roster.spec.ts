@@ -145,15 +145,21 @@ test.describe("roster panel", () => {
     await expect(row).not.toHaveClass(/bg-flash/)
   })
 
-  // THE TINT IS THE WHOLE ROW, edge to edge. It used to sit on the pin button,
-  // which stops where the agent's three cycling words begin — so a pulse said
-  // "these skills reached this agent" while leaving that agent's own model,
-  // effort and scope outside the thing being pointed at.
+  // THE PULSE PAINTS EXACTLY THE ROW THE POINTER HIGHLIGHTS, and this is the
+  // assertion that says so.
   //
-  // Geometry rather than a class, because the class is present either way: the
-  // flashed row's painted box has to reach the panel's border-left on one side
-  // and the scroller's own padding on the other.
-  test("paints the pulse across the whole panel width", async ({
+  // It has now been wrong in both directions. It sat on the pin button once,
+  // which stops where the agent's three words begin, so a pulse left that
+  // agent's own model, effort and scope outside the thing being pointed at.
+  // Then it bled 17px left to the panel's border, 8px right into the scroller's
+  // padding and 4px taller — a box wider and taller than anything else on the
+  // row ever paints, which read as the agent's whole BLOCK having been tinted.
+  //
+  // Geometry rather than a class, because the class is present either way. The
+  // resting box IS the hover box — hover adds a fill and no geometry — so
+  // measuring the pulsing box against the resting one is measuring the two
+  // states against each other with nothing written down that can go stale.
+  test("paints the pulse on exactly the row hover highlights", async ({
     configure,
     page,
   }) => {
@@ -161,26 +167,20 @@ test.describe("roster panel", () => {
     await page.clock.pauseAt(Date.now())
     const row = configure.roster.agentRow("web", "developer")
 
+    // The channel first: hover really does tint this element, or "the same box
+    // as hover" is a claim about a box nothing paints.
+    await row.hover()
+    await expect(row).toHaveClass(/hover:bg-roster-hover/)
+    const hovered = (await row.boundingBox())!
+
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     await expect(row).toHaveClass(/bg-flash/)
-
     const painted = (await row.boundingBox())!
-    const panel = (await configure.roster.root.boundingBox())!
-    // The aside's own right padding, MEASURED rather than named: it is written
-    // in rem against a root carrying a sizing knob, so a figure here would be a
-    // second copy of it going stale on its own.
-    const asideInset = await configure.roster.root.evaluate((node) =>
-      parseFloat(getComputedStyle(node).paddingRight)
-    )
 
-    // The 1px border-left is the panel's own and is not the row's to paint.
-    expect(painted.x).toBeCloseTo(panel.x + 1, 0)
-    // Everything up to that inset is the row's, which is the scroller's own
-    // padding reclaimed — the tint stops flush against the scrollbar.
-    expect(panel.x + panel.width - (painted.x + painted.width)).toBeCloseTo(
-      asideInset,
-      0
-    )
+    expect(painted.x).toBeCloseTo(hovered.x, 0)
+    expect(painted.y).toBeCloseTo(hovered.y, 0)
+    expect(painted.width).toBeCloseTo(hovered.width, 0)
+    expect(painted.height).toBeCloseTo(hovered.height, 0)
   })
 
   // The bleed is a padding and an equal negative margin, so the box grows and
@@ -254,12 +254,14 @@ test.describe("roster panel", () => {
 
     await row.click()
     await expect(row).toHaveAttribute("aria-pressed", "false")
-    // Its agent loses its only skill and derives off; the grid count follows.
+    // Its agent loses its only LIVE skill and derives off — while the row it
+    // switched off is kept and still listed, which is the title's claim and the
+    // reason the count of rows does not move.
     await expect(
       configure.roster.agentButton("web", "developer")
     ).toHaveAttribute("aria-pressed", "false")
-    await expect(configure.skillIn(web, CATEGORY, REACT).agentCount).toHaveText(
-      `${DOMAIN_REACH.web - 1} agents`
+    await expect(configure.roster.skillRowsFor(REACT)).toHaveCount(
+      DOMAIN_REACH.web
     )
 
     await row.click()
@@ -356,14 +358,19 @@ test.describe("roster panel", () => {
     await configure.chooseStack(STACKS.nextjs)
 
     const rail = page.locator("aside .rail-scrollbar")
-    // Scoped through `section`, which is what a band sits in and the header
-    // hinge does not. `aria-expanded` alone also matches the grouping control
-    // — Base UI writes the attribute on a menu trigger whether the menu is
-    // open or not — and that control precedes the bands in the same scroller,
-    // so it became `first()` and `step` became its 14px instead of the band's
-    // 26px, with every offset below measured off the wrong ruler.
+    // BY SLOT, WHICH IS THE ONLY THING HERE THAT NAMES A BAND. `aria-expanded`
+    // was the hook until 2026-09-06 and it caught two innocents in turn: the
+    // grouping control, which Base UI writes the attribute on whether its menu
+    // is open or not, and then every agent's option word, which discloses the
+    // options panel. Both precede or sit among the bands in this scroller, so
+    // one of them became `first()` and `step` became its height instead of the
+    // band's 26px — with every offset below measured off the wrong ruler.
+    //
+    // A second `section`-scoped guess would only postpone the third one. The
+    // slot is a contract; an ARIA attribute any disclosure may legitimately
+    // carry is not.
     const bands = page.locator(
-      "aside .rail-scrollbar section button[aria-expanded]"
+      'aside .rail-scrollbar [data-slot="roster-band"]'
     )
 
     const total = await bands.count()
@@ -398,14 +405,118 @@ test.describe("agent model and effort", () => {
     )
   })
 
-  // opus → fable → sonnet → haiku, starting from wherever the agent rests.
-  test("clicking the model word cycles it", async ({ configure }) => {
+  // PICKED FROM THE PANEL, not cycled by the word. The word stepped opus →
+  // fable → sonnet → haiku until the 2026-09-06 refresh, so three of the four
+  // were invisible until you had clicked past them; it opens the panel now and
+  // every model is on screen at once.
+  test("a model is picked from the options panel", async ({ configure }) => {
     const model = configure.roster.modelWord("web-developer")
 
-    await model.click()
+    await configure.roster.setModel("web-developer", "haiku")
 
-    await expect(model).toHaveText("fable")
-    await expect(model).toHaveAccessibleName("Model for web-developer: fable")
+    await expect(model).toHaveText("haiku")
+    await expect(model).toHaveAccessibleName("Model for web-developer: haiku")
+  })
+
+  // THE WHOLE POINT OF THE PANEL, and the claim a cycling word could not make:
+  // every value the setting has is on screen before anything is chosen, so what
+  // a press will do is readable rather than discovered.
+  test("the panel shows every model, effort and scope at once", async ({
+    configure,
+  }) => {
+    await configure.roster.modelWord("web-developer").click()
+
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Model")
+    ).toContainText(AGENT_OPTIONS.models.join(""))
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Effort")
+    ).toContainText(AGENT_OPTIONS.efforts.join(""))
+  })
+
+  // ONE PANEL FOR THE THREE SETTINGS, opened by any of the words — the design
+  // rejected per-word popovers by name, because three open states meant the
+  // rightmost of them opened off the panel entirely.
+  test("any of the three words opens the same panel", async ({ configure }) => {
+    await configure.roster.effortWord("web-developer").click()
+
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Model")
+    ).toBeVisible()
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Scope")
+    ).toBeVisible()
+  })
+
+  // ONE OPEN ACROSS THE WHOLE ROSTER. Held per row, "one at a time" would be a
+  // rule every row kept about itself and none of them kept about each other.
+  //
+  // THE SECOND AGENT IS OPENED FIRST, AND THAT IS THE TEST RATHER THAN AN
+  // ARRANGEMENT OF IT: the panel floats DOWN over the skill rows beneath its
+  // agent, so an open panel physically covers the words of every agent below it
+  // and none of the words above it. Reaching for the row under an open panel is
+  // not a thing a person can do either, so a spec that did it would be pinning
+  // an interaction the design does not have.
+  test("opening one agent's panel closes another's", async ({ configure }) => {
+    await configure.roster.modelWord("web-researcher").click()
+    await expect(
+      configure.roster.agentOptionColumn("web-researcher", "Model")
+    ).toBeVisible()
+
+    await configure.roster.modelWord("web-developer").click()
+
+    await expect(
+      configure.roster.agentOptionColumn("web-researcher", "Model")
+    ).toHaveCount(0)
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Model")
+    ).toBeVisible()
+  })
+
+  // ALIGNMENT IS STRUCTURAL RATHER THAN TUNED, and this is the assertion that
+  // says so. The closed row and the open panel declare the SAME three tracks,
+  // so a header cannot drift off the word it covers — per-column padding was
+  // the design's first attempt and every column was off.
+  //
+  // It caught a real 4.38px on the way in: the panel's right padding carried
+  // its bleed past the block's edge but not the row's own `--rp`, so all three
+  // headers landed a quarter-rem right of their words. A picture would not have
+  // shown that, and no assertion in this suite measured a box on this row.
+  test("every panel header lands exactly on the word it covers", async ({
+    configure,
+  }) => {
+    const wordsAt = () =>
+      configure.roster.root
+        .locator('[data-slot="agent-row"]')
+        .first()
+        .locator("button[aria-expanded]")
+        .evaluateAll((words) => words.map((w) => w.getBoundingClientRect().x))
+
+    const before = await wordsAt()
+    await configure.roster.modelWord("web-developer").click()
+
+    const headers = await configure.roster
+      .agentOptions("web-developer")
+      .locator(":scope > button")
+      .evaluateAll((cells) => cells.map((c) => c.getBoundingClientRect().x))
+
+    expect(headers).toHaveLength(before.length)
+    headers.forEach((x, index) => expect(x).toBeCloseTo(before[index]!, 0))
+  })
+
+  // The header sits exactly where the word was and means the same thing, so the
+  // same pixel closes what it opened.
+  test("pressing the word again closes the panel", async ({ configure }) => {
+    await configure.roster.modelWord("web-developer").click()
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Model")
+    ).toBeVisible()
+
+    await configure.roster.modelWord("web-developer").click()
+
+    await expect(
+      configure.roster.agentOptionColumn("web-developer", "Model")
+    ).toHaveCount(0)
   })
 
   // It sits on the agent's row, so the one thing it must never do is pin it.
@@ -415,13 +526,13 @@ test.describe("agent model and effort", () => {
     const developer = configure.roster.agentButton("web", "developer")
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await configure.roster.modelWord("web-developer").click()
+    await configure.roster.setModel("web-developer", "haiku")
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
     await expect(configure.roster.installButton).toContainText("0 agents")
   })
 
-  test("the effort word rests on medium and cycles upward", async ({
+  test("the effort word rests on medium, and any step is one press", async ({
     configure,
   }) => {
     const effort = configure.roster.effortWord("web-developer")
@@ -433,10 +544,11 @@ test.describe("agent model and effort", () => {
       `Effort for web-developer: ${AGENT_OPTIONS.restingEffort}`
     )
 
-    // low → medium → high → xhigh → max → low, so two steps from medium is
-    // xhigh.
-    await effort.click()
-    await effort.click()
+    // `xhigh` was three steps from `medium` while the word cycled low → medium
+    // → high → xhigh → max, and the four it was not on were invisible. It is
+    // one press in the panel, which is the whole reason the panel exists — of
+    // the three settings, effort is the one with five values.
+    await configure.roster.setEffort("web-developer", "xhigh")
 
     await expect(effort).toHaveText("xhigh")
     await expect(effort).toHaveAccessibleName("Effort for web-developer: xhigh")
@@ -459,7 +571,7 @@ test.describe("agent model and effort", () => {
     // assertion below can tell a state from a stylesheet.
     await expect(effort).toHaveCSS("color", RESTING_WORD)
 
-    await effort.click()
+    await configure.roster.setEffort("web-developer", "high")
 
     await expect(effort).toHaveCSS("color", AMBER_TEXT)
   })
@@ -473,7 +585,7 @@ test.describe("agent model and effort", () => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     const effort = configure.roster.effortWord("web-developer")
 
-    await effort.click()
+    await configure.roster.setEffort("web-developer", "high")
     await expect(effort).toHaveCSS("color", AMBER_TEXT)
 
     await effort.hover()
@@ -494,7 +606,7 @@ test.describe("agent model and effort", () => {
     const effort = configure.roster.effortWord("web-developer")
     const developer = configure.roster.agentButton("web", "developer")
 
-    await effort.click()
+    await configure.roster.setEffort("web-developer", "high")
     await expect(effort).toHaveCSS("color", AMBER_TEXT)
 
     await developer.click()
@@ -510,7 +622,7 @@ test.describe("agent model and effort", () => {
   }) => {
     const developer = configure.roster.agentButton("web", "developer")
 
-    await configure.roster.effortWord("web-developer").click()
+    await configure.roster.setEffort("web-developer", "high")
 
     await expect(developer).toHaveAttribute("aria-pressed", "false")
   })
@@ -673,7 +785,7 @@ test.describe("roster grouping", () => {
   test("picking scope replaces the domain bands with the two destinations", async ({
     configure,
   }) => {
-    await configure.roster.scopeControl("web-developer").click()
+    await configure.roster.setScope("web-developer", "project")
 
     await configure.roster.groupBy("scope")
 
@@ -748,7 +860,7 @@ test.describe("roster grouping", () => {
     await configure.roster.groupBy("scope")
     await expect(configure.roster.scopeBand("project")).toHaveCount(0)
 
-    await configure.roster.scopeControl("web-developer").click()
+    await configure.roster.setScope("web-developer", "project")
 
     await expect(configure.roster.scopeBand("project")).toBeVisible()
     await expect(configure.roster.scopeBand("project")).toContainText("of 1")

@@ -207,10 +207,10 @@ test.describe("adding an external skill", () => {
     await added.toggle()
     expect(await added.isSelected()).toBe(true)
 
-    await added.installBadgeTarget.click()
+    await added.installMode.click()
 
     expect(await added.isSelected()).toBe(true)
-    await expect(added.installBadgeTarget).toHaveAttribute(
+    await expect(added.installMode).toHaveAttribute(
       "aria-label",
       "Install mode: eject"
     )
@@ -231,7 +231,7 @@ test.describe("adding an external skill", () => {
     const added = configure.skillIn(DOMAINS.web, CATEGORY, SKILL_NAME)
     expect(await added.isSelected()).toBe(false)
 
-    await added.installBadgeTarget.click()
+    await added.installMode.click()
 
     expect(await added.isSelected()).toBe(false)
   })
