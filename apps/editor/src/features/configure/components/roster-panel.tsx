@@ -405,6 +405,9 @@ const OPTION_VARS: CSSProperties & Record<`--${string}`, string> = {
   "--cg": "0.625rem",
   // The panel's own left padding, which every divider offset starts from.
   "--op": "0.5625rem",
+  // Its top padding, and named because the panel's `top` is the NEGATION of
+  // it: that is what lands the header on the word rather than near it.
+  "--ot": "0.3125rem",
   // How far the panel bleeds past the block's right edge, and the row's own
   // right padding. BOTH are in the panel's right padding, and that is the whole
   // reason they are named: the bleed is what gives the field a flush edge
@@ -480,6 +483,13 @@ function AgentOptionWord({
  * hidden` takes the trigger out of it, so a locator asking for
  * `Model for X: sonnet` finds whichever of the pair is currently on screen.
  *
+ * WHICH ONLY HOLDS IF THE LANDING IS STRUCTURAL, and vertically it was not: a
+ * panel hung off the BLOCK's top edge against words hung off the row's
+ * BASELINE differ by a font metric, and the headers came up 5.8px short. So the
+ * panel is a child of the words' own box, offset by nothing but the negation of
+ * its own top padding. `visible` is the cost — that box is the one that goes
+ * `invisible` to hide the triggers, and visibility inherits.
+ *
  * A column is a `radiogroup`: five efforts of which one is on is one choice
  * with five options, and only the role says so.
  */
@@ -499,7 +509,7 @@ function AgentOptionsPanel({
       data-slot="agent-options"
       // Bleeds past the panel's right edge and is clipped by the roster's own
       // overflow, which is what gives it a flush edge there.
-      className={`absolute -top-[0.1875rem] right-[calc(var(--bleed)*-1)] z-[130] ${OPTION_TRACKS} bg-tip-field pt-[0.3125rem] pr-[calc(var(--bleed)+var(--rp))] pb-2 pl-[var(--op)]`}
+      className={`visible absolute -top-[var(--ot)] right-[calc(var(--bleed)*-1)] z-[130] ${OPTION_TRACKS} bg-tip-field pt-[var(--ot)] pr-[calc(var(--bleed)+var(--rp))] pb-2 pl-[var(--op)]`}
     >
       <span
         aria-hidden
@@ -641,6 +651,10 @@ function AgentBlock({
           and down past the row's own edges, which read as the whole block. It
           is the row, drawn exactly as the pointer draws it.
 
+          AND IT STOPS AT THE PANEL, which is drawn inside this row: an open
+          panel is not a hover, and the pointer on a value would otherwise light
+          the agent's name behind it.
+
           A COLOUR CHANGE AND NOTHING ELSE, which is what lets 250ms be the
           whole treatment: one geometry means the ink is in the same place
           pulsing and at rest without anything being cancelled to keep it there.
@@ -656,7 +670,7 @@ function AgentBlock({
       <div
         data-slot="agent-row"
         className={`${AGENT_ROW} flex items-baseline transition-colors duration-[250ms] ${
-          flashed ? "bg-flash" : "hover:bg-roster-hover"
+          flashed ? "bg-flash" : optionsOpen ? "" : "hover:bg-roster-hover"
         }`}
       >
         {/* State is colour only — no checkbox, no bracket. Click pins the
@@ -700,8 +714,10 @@ function AgentBlock({
             It also takes the three triggers out of the accessibility tree for
             exactly as long as the headers are in it, so the pair is never both
             reachable under one name. */}
+        {/* `relative` IS LOAD-BEARING: this box is where the words actually
+            are, so it is the only thing the panel can hang from. */}
         <span
-          className={`${OPTION_TRACKS} ml-auto flex-none items-baseline pr-[var(--rp)] ${
+          className={`relative ${OPTION_TRACKS} ml-auto flex-none items-baseline pr-[var(--rp)] ${
             optionsOpen ? "invisible" : ""
           }`}
         >
@@ -728,17 +744,17 @@ function AgentBlock({
               }
             />
           ))}
+
+          {optionsOpen && (
+            <AgentOptionsPanel
+              agentId={agent.id}
+              options={options}
+              onClose={onCloseOptions}
+              onPick={pick}
+            />
+          )}
         </span>
       </div>
-
-      {optionsOpen && (
-        <AgentOptionsPanel
-          agentId={agent.id}
-          options={options}
-          onClose={onCloseOptions}
-          onPick={pick}
-        />
-      )}
 
       {skills.map((skill) => (
         <SkillRow
