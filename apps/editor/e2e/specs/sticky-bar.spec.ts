@@ -4,6 +4,11 @@ import type { ConfigurePage } from "../pages/configure-page"
 import { expect, test } from "../fixtures"
 import { DOMAINS } from "../support/catalog"
 
+// How far either side of the bar's own document offset the pin is crossed.
+// Small, because the transition is what is under test and the two positions
+// have to straddle it rather than sit at two round numbers.
+const PIN_STEP = 4
+
 const BELOW_THE_BAR = 200
 const PAST_THE_BAR = 1500
 
@@ -52,6 +57,60 @@ const blockGeometry = async (configure: ConfigurePage) => {
   }
 }
 
+// Where the page's own content sits in the window, and the bar's document
+// offset — the two figures the pin's continuity is measured with.
+//
+// A domain anchor rather than a cell: it is zero-height and marks a position
+// rather than occupying one, so nothing about the grid's own layout can move it.
+//
+// READ IN A SEPARATE ROUND TRIP FROM THE SCROLL, which is the whole of why this
+// is its own call: pinning is raised from a scroll listener, so a rect measured
+// in the same `evaluate` that scrolled is the layout the scroll displaced and
+// the growth under test has not happened yet. It reported continuity either way.
+//
+// Paired with the scroll position it was read at, because the position is not
+// the one that was asked for: holding the page still across the band's growth
+// MEANS moving the scroll by that growth, so the claim is the relationship
+// between the two rather than either figure.
+const columnAndScroll = (configure: ConfigurePage) =>
+  configure.page.evaluate(() => {
+    const anchor = document.querySelector("[data-domain-anchor]")
+    if (!anchor) throw new Error("the column must carry a domain anchor")
+    return { top: anchor.getBoundingClientRect().top, scrollY: window.scrollY }
+  })
+
+// SCROLLS ACROSS THE TRANSITION AND ASSERTS THE COLUMN MOVED BY WHAT WAS ASKED
+// FOR, and by nothing else — scrolling down `n` puts the content `n` higher in
+// the window, and a band growing under the reader is the one thing on this
+// screen that can break that.
+//
+// Against the scroll REQUESTED — where the page was sent, less where it already
+// was — rather than against where it ended up. Holding the page still across
+// the band's growth MEANS moving the scroll by that growth, so the two figures
+// differ by exactly the 31px this is about, and the second would call the
+// correction a success for having happened at all.
+const scrollAcrossThePin = async (
+  configure: ConfigurePage,
+  target: number,
+  stuck: boolean
+) => {
+  const before = await columnAndScroll(configure)
+  const asked = target - before.scrollY
+
+  await configure.scrollTo(target)
+  await expect.poll(() => configure.isBarStuck()).toBe(stuck)
+  const after = await columnAndScroll(configure)
+
+  expect(before.top - after.top).toBeCloseTo(asked, 0)
+}
+
+const barDocumentTop = (configure: ConfigurePage) =>
+  configure.page.evaluate(() => {
+    const bar = document.querySelector('[data-slot="filter-bar"]')
+    if (!bar) throw new Error("the bar must be drawn")
+    return window.scrollY + bar.getBoundingClientRect().top
+  })
+
 // The bar changes shape at the moment CSS pins it. That state is published as
 // a root attribute rather than as React state, so these read the attribute —
 // which is also what the styling reads.
@@ -76,6 +135,36 @@ test.describe("sticky filter bar", () => {
 
     await configure.scrollTo(0)
     await expect.poll(() => configure.isBarStuck()).toBe(false)
+  })
+
+  // PINNING MUST NOT MOVE THE PAGE, and this is the one moment it can: the band
+  // grows to 80px as it goes dark, and a sticky element's own growth pushes
+  // everything under it down by the difference. Uncompensated the column leapt
+  // 31px at the exact pixel the bar went dark, which reads as the catalogue
+  // jumping rather than the bar arriving.
+  //
+  // Measured either side of the bar's own document offset rather than at two
+  // round numbers: the transition is what is under test, so the two positions
+  // have to straddle it.
+  test("does not move the column as it sticks", async ({ configure }) => {
+    const pin = await barDocumentTop(configure)
+
+    await configure.scrollTo(pin - PIN_STEP)
+    await expect.poll(() => configure.isBarStuck()).toBe(false)
+
+    await scrollAcrossThePin(configure, pin + PIN_STEP, true)
+  })
+
+  // AND THE SAME ON THE WAY BACK UP, which is not the test above run backwards:
+  // the band shrinks on release, so the correction has to be negative, and a
+  // fix that only handled growth would leave the release jumping the other way.
+  test("does not move the column as it releases", async ({ configure }) => {
+    const pin = await barDocumentTop(configure)
+
+    await configure.scrollTo(pin + PIN_STEP)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    await scrollAcrossThePin(configure, pin - PIN_STEP, false)
   })
 
   test("stays usable while stuck", async ({ configure }) => {

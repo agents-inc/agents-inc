@@ -8,6 +8,7 @@ import {
 } from "react"
 
 import { DOMAIN_ANCHOR } from "./use-active-domain"
+import { publishPinned } from "./use-pinned"
 
 /**
  * PUTTING A DOMAIN'S SECTION UNDER THE BAR — the write half of the strip.
@@ -26,6 +27,15 @@ const anchorOf = (domainId: string) =>
 const offsetToUnderBar = (anchor: HTMLElement, bar: HTMLElement) =>
   anchor.getBoundingClientRect().top - bar.getBoundingClientRect().height
 
+// FLOORED, and it is the difference between landing under the bar and landing
+// just clear of it. Both measurements are fractional — the bar's height is rem
+// against a root carrying a 110% knob — and the browser snaps the resulting
+// scroll position to a device pixel, so an exact target rounds either way.
+// Flooring scrolls a fraction LESS, which can only ever leave the section's top
+// edge below the bar's underside rather than beneath it.
+const land = (anchor: HTMLElement, bar: HTMLElement) =>
+  window.scrollTo(0, Math.floor(window.scrollY + offsetToUnderBar(anchor, bar)))
+
 /**
  * Lands a domain's top edge just under the bar's underside.
  *
@@ -33,9 +43,18 @@ const offsetToUnderBar = (anchor: HTMLElement, bar: HTMLElement) =>
  * rem against a root set to 110%, so no constant written here could convert;
  * and the offset is the whole point, because the bar pins over the column and
  * a jump that ignored it would leave the section's first row underneath the
- * thing that jumped to it. The height is the same pinned and at rest by
- * construction — the tabs absorb the strip's top padding as it sticks — so one
- * measurement holds across the scroll it is about to cause.
+ * thing that jumped to it.
+ *
+ * TWICE, AND THE SECOND IS NOT A RETRY. The bar is not one height — the search
+ * band grows 31px as it pins — and the first scroll is what pins it, so the
+ * measurement that aimed the jump is stale by the time it lands.
+ * `publishPinned` makes the bar admit the pin, and the second landing is the
+ * one measured against the bar the reader ends up under. Both are in one task
+ * and neither paints, so this is one jump rather than two.
+ *
+ * It is also why that height is CSS off `data-pinned` rather than part of the
+ * React class the rest of the pinned treatment rides on: the arrival jump runs
+ * in a passive effect, where `flushSync` is refused outright.
  *
  * `window.scrollTo` rather than `scrollIntoView`: `scrollIntoView` walks every
  * scrollable ancestor and takes its own view of where "into view" is, and the
@@ -52,13 +71,9 @@ export const scrollToDomain = (bar: HTMLElement | null, domainId: string) => {
   const anchor = anchorOf(domainId)
   if (!bar || !anchor) return false
 
-  // FLOORED, and it is the difference between landing under the bar and landing
-  // just clear of it. Both measurements are fractional — the bar's height is
-  // rem against a root carrying a 110% knob — and the browser snaps the
-  // resulting scroll position to a device pixel, so an exact target rounds
-  // either way. Flooring scrolls a fraction LESS, which can only ever leave the
-  // section's top edge below the bar's underside rather than beneath it.
-  window.scrollTo(0, Math.floor(window.scrollY + offsetToUnderBar(anchor, bar)))
+  land(anchor, bar)
+  publishPinned(bar)
+  land(anchor, bar)
   return true
 }
 

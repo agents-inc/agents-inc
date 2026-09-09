@@ -180,10 +180,22 @@ const proposalToBandGap = async (configure: ConfigurePage) => {
   return band.y - (proposal.y + proposal.height)
 }
 
-const scrollToBottom = (configure: ConfigurePage) =>
-  configure.page.evaluate(() =>
-    window.scrollTo(0, document.documentElement.scrollHeight)
-  )
+// UNTIL IT STOPS MOVING, because one scroll does not reach the bottom of a page
+// this scroll makes taller: the filter bar's band grows as it pins, and that is
+// 31px of page the `scrollHeight` being aimed at had not counted yet. A single
+// pass lands 31px short, which is not the position these claims are about.
+const scrollToBottom = async (configure: ConfigurePage) => {
+  let previous = -1
+  let landed = 0
+
+  while (landed !== previous) {
+    previous = landed
+    landed = await configure.page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight)
+      return window.scrollY
+    })
+  }
+}
 
 test.describe("the docked composer", () => {
   test("is docked at the foot of the main column before any scroll", async ({
