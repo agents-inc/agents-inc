@@ -155,10 +155,9 @@ export function DomainTabs({
       // The strip's cells run to the column's content edge on both sides, so
       // the first and last baselines end exactly where the skill grid does.
       //
-      // ITS HEIGHT IS THE SAME PINNED AND AT REST, and that is a contract
-      // rather than a coincidence: `scrollToDomain` measures the bar ONCE and
-      // scrolls by that measurement, so a bar that grew as it pinned would land
-      // every jumped-to section under itself by the difference. The design adds
+      // ITS HEIGHT IS THE SAME PINNED AND AT REST. The band above it is the
+      // one row of the pair that changes size, and it is `scrollToDomain` that
+      // absorbs that; a second moving part here would buy nothing. The design adds
       // 12px of top padding here when the bar sticks, and it needs to — its own
       // band drops from 72px of vertical padding to 36px as it goes dark, so
       // the dark row's bottom edge would otherwise sit on these baselines. This

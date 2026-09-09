@@ -172,6 +172,54 @@ test.describe("the search field in the filter bar", () => {
       )
     ).toStrictEqual(ALL_FOUR)
   })
+
+  // AND THE BOX IS THE BAND'S OWN, which four live corners cannot say: the
+  // field is absolute once stuck and reaches both bleed edges and the full
+  // height, so the dark run a visitor sees IS the field rather than a strip
+  // inside it. Equal rects are the only form of that claim.
+  test("is the whole of the band once the bar is stuck", async ({
+    configure,
+  }) => {
+    await configure.scrollTo(1500)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    const band = await boxOf(configure.filterBand, "the band")
+    const field = await boxOf(configure.searchField, "the field")
+
+    expect(field.x).toBeCloseTo(band.x, 0)
+    expect(field.y).toBeCloseTo(band.y, 0)
+    expect(field.width).toBeCloseTo(band.width, 0)
+    expect(field.height).toBeCloseTo(band.height, 0)
+  })
+
+  // The one island in it, and the pair is the claim — the same pair the
+  // composer's control row makes below. An absolutely positioned sibling paints
+  // over a flex item, so the field now covers the add block's box: level with
+  // the block, the run to its left has to reach the field, and the block itself
+  // has to take its own press back rather than handing it to the caret.
+  test("takes the run beside the add block, and the block still opens", async ({
+    configure,
+    page,
+  }) => {
+    stubSkillIndex(page)
+    await configure.scrollTo(1500)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    const band = await boxOf(configure.filterBand, "the band")
+    const block = await boxOf(configure.addSkillButton, "the add block")
+    const level = block.y + block.height / 2
+
+    expect(
+      await pressesReaching(page, configure.searchInput, [
+        { name: "beside the block", x: band.x + INSET, y: level },
+      ])
+    ).toStrictEqual(["beside the block"])
+    await expect(configure.addSkillDialog.searchInput).toBeHidden()
+
+    await page.mouse.click(block.x + block.width / 2, level)
+
+    await expect(configure.addSkillDialog.searchInput).toBeVisible()
+  })
 })
 
 test.describe("the composer's field", () => {

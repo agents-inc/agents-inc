@@ -13,6 +13,7 @@ import {
 import {
   useBarStuckAttribute,
   usePinned,
+  usePinnedAttribute,
 } from "@/features/configure/lib/use-pinned"
 import type { ConfigureSearch } from "@/routes/search"
 import { useUiStore } from "@/stores/ui-store"
@@ -70,6 +71,11 @@ export function FilterBar({
   const stuck = usePinned(wrapRef)
   useBarStuckAttribute(stuck)
 
+  // The same fact on the bar itself, for the one part of the treatment a
+  // MEASUREMENT depends on: the band's height. `scrollToDomain` republishes it
+  // mid-jump, which React state cannot be made to do from inside an effect.
+  usePinnedAttribute(wrapRef)
+
   // Pinning changes how the bar looks and never where the caret is. It used to
   // take focus into the search field on the transition — but focus can cause
   // the scroll, so a Tab to anything below the fold stuck the bar and then had
@@ -101,7 +107,10 @@ export function FilterBar({
     <div
       ref={wrapRef}
       data-slot="filter-bar"
-      className="sticky top-0 z-60 -mx-gutter bg-column"
+      // A COLUMN so the band's bottom margin ADDS to the strip's top margin.
+      // As block siblings the two collapse to the larger, which silently takes
+      // 10px out of the 22px between them.
+      className="group/bar sticky top-0 z-60 -mx-gutter flex flex-col bg-column"
     >
       <div
         data-slot="filter-band"
@@ -109,6 +118,10 @@ export function FilterBar({
         // removes 78px of page height exactly as the bar pins, and scroll
         // anchoring then un-pins it — measured oscillating at scrollY 590/511.
         // The air above comes from the preceding hinge's margin instead.
+        //
+        // The air below is a MARGIN, and it has to be: a background paints
+        // under its own padding, so held inside this box it went dark with the
+        // band and ran the black on past the field's foot.
         //
         // 84a: once stuck, only the colour bleeds. ONLY THE LEFT GUTTER MOVES,
         // and it moves onto the field, so the whole of the search box out to the
@@ -120,7 +133,10 @@ export function FilterBar({
         // Collapsing it and re-homing it inside the block as `pr-gutter` bought
         // nothing on this side and walked the block's box out to that edge with
         // the fill.
-        className={`pr-gutter pb-3 transition-[padding,background-color] duration-150 ${
+        // `relative` and the height are BOTH here because the field is
+        // absolute once stuck: it is this box the field is pinned to, and this
+        // box is the only thing left holding the band open.
+        className={`relative mb-3 pr-gutter transition-[padding,background-color] duration-150 group-data-pinned/bar:h-20 ${
           stuck ? "bg-ink pl-0" : "pl-gutter"
         }`}
       >
@@ -128,7 +144,7 @@ export function FilterBar({
             instant the bar is already changing width and losing its border
             would be three simultaneous shifts, which read as a jump. Holding
             it costs nothing and the transition stays calm. */}
-        <div className="flex items-stretch gap-2.5">
+        <div className="flex h-full items-stretch justify-end gap-2.5">
           <div
             data-slot="search-field"
             // THE BOX ONLY. Border and fill, no padding of its own: the whole
@@ -140,7 +156,20 @@ export function FilterBar({
             //
             // The box itself goes on the band once stuck — border and fill both
             // — leaving the search text sitting straight on the dark.
-            className={`flex min-w-0 flex-1 items-center border ${
+            //
+            // AND ONCE STUCK IT IS THE WHOLE BAND: absolute against the band's
+            // padding box, so it reaches both bleed edges and the full 80px
+            // rather than the row's share of them. The add block stays in the
+            // flow beside it and is `relative` for that reason — an absolute
+            // sibling paints over a flex item, and the block has to take its own
+            // presses back. `items-stretch` is the last piece: centred, the
+            // input would be a 55px strip inside an 80px box, which is the dead
+            // ring above.
+            //
+            // On `data-pinned` rather than on `stuck` with the colours, because
+            // `scrollToDomain` measures the bar between its two landings and a
+            // geometry waiting on a React render is not there yet.
+            className={`flex min-w-0 flex-1 items-stretch border group-data-pinned/bar:absolute group-data-pinned/bar:inset-0 ${
               stuck
                 ? "border-transparent bg-transparent"
                 : "border-field-border bg-cell"
@@ -148,11 +177,13 @@ export function FilterBar({
           >
             <Input
               onDark={stuck}
-              // Equal vertical padding in both states: any height change here
-              // perturbs scroll at the moment of pinning. The horizontal half
-              // is what the pin swaps — a single gutter on the left, none on
-              // the right — and it animates on the band's own 150ms, or the
-              // pieces arrive at different times.
+              // Equal vertical padding in both states, and it no longer sets
+              // the height — the field's box does, and a stretched input
+              // centres its value in whatever box it is given. The horizontal
+              // half is what the pin swaps, and it animates on the band's own
+              // 150ms or the pieces arrive at different times. The height does
+              // not animate: it moves the whole page under the bar, and sliding
+              // that draws the catalogue moving rather than the bar arriving.
               className={`py-[0.9375rem] transition-[padding] duration-150 ${
                 stuck ? "pr-0 pl-gutter" : "px-[0.9375rem]"
               }`}
@@ -170,7 +201,7 @@ export function FilterBar({
             // held as the row's gap because the mark is a flex item here rather
             // than a text glyph inheriting the label's own spacing — which is
             // the whole reason it stopped being `＋`.
-            className="gap-2"
+            className="relative gap-2"
             // NO PADDING OF ITS OWN IN EITHER STATE, and so nothing here to
             // animate on the band's 150ms: the block's box is identical pinned
             // and at rest, and only its fill and hairline change. The gutter is
