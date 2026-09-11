@@ -17,7 +17,7 @@
     "remeda": "^2.33.6"
   },
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^26",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
