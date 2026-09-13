@@ -20,7 +20,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.122.0",
+    "@anthropic-ai/sdk": "^0.124.0",
     "@better-auth/drizzle-adapter": "^1.7",
     "@hono/zod-openapi": "^1",
     "@workspace/matrix": "workspace:*",
@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@better-auth/cli": "^1.4",
-    "@cloudflare/vitest-pool-workers": "^0.20",
+    "@cloudflare/vitest-pool-workers": "^0.22",
     "@cloudflare/workers-types": "^4",
     "@workspace/api-mocks": "workspace:*",
     "@workspace/eslint-config": "workspace:*",
