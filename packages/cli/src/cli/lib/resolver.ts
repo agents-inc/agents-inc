@@ -97,57 +97,84 @@ export async function resolveAgents(
   const entries = typedEntries<AgentName, CompileAgentConfig>(compileConfig.agents).map(
     ([agentName, agentConfig]) => {
       const definition = agents[agentName];
-      if (!definition) {
-        const availableAgents = typedKeys<AgentName>(agents);
-        const agentList =
-          availableAgents.length > 0
-            ? `Available agents: ${availableAgents.slice(0, 5).join(", ")}${availableAgents.length > 5 ? ` (and ${availableAgents.length - 5} more)` : ""}`
-            : "No agents found in scanned directories";
-        throw new Error(
-          `Agent '${agentName}' referenced in compile config but not found in scanned agents. ${agentList}. Check that src/agents/${agentName}/metadata.yaml exists.`,
-        );
-      }
+      if (!definition) throw new Error(agentNotFoundError(agentName, agents));
 
       const skillRefs = resolveAgentSkillRefs(agentConfig);
       const resolvedSkills = resolveSkillReferences(skillRefs, skills);
 
-      // The project config carries the user's deliberate choice; the agent's own metadata
-      // carries the default. Config wins, silently — warning on every compile for a setting
-      // someone made on purpose is noise. Neither present leaves the key off entirely.
-      const model = agentConfig.model ?? definition.model;
-      const effort = agentConfig.effort ?? definition.effort;
-
       return [
         agentName,
-        {
-          name: agentName,
-          title: definition.title,
-          description: definition.description,
-          ...(model !== undefined && { model }),
-          ...(effort !== undefined && { effort }),
-          tools: definition.tools,
-          // Every optional frontmatter field `agent.liquid` reads. Spread conditionally rather
-          // than unconditionally, because the template branches on presence — an explicit
-          // `undefined` renders as an empty key.
-          ...(definition.disallowedTools !== undefined && {
-            disallowedTools: definition.disallowedTools,
-          }),
-          ...(definition.permissionMode !== undefined && {
-            permissionMode: definition.permissionMode,
-          }),
-          ...(definition.isolation !== undefined && { isolation: definition.isolation }),
-          ...(definition.hooks !== undefined && { hooks: definition.hooks }),
-          ...(definition.experimental !== undefined && {
-            experimental: definition.experimental,
-          }),
-          skills: resolvedSkills,
-          ...(definition.path !== undefined && { path: definition.path }),
-          ...(definition.sourceRoot !== undefined && { sourceRoot: definition.sourceRoot }),
-          ...(definition.agentBaseDir !== undefined && { agentBaseDir: definition.agentBaseDir }),
-        },
+        assembleAgentConfig(agentName, definition, agentConfig, resolvedSkills),
       ] as const;
     },
   );
 
   return typedFromEntries(entries);
+}
+
+/** How many scanned agents a not-found refusal names before summarising the rest. */
+const MAX_LISTED_AVAILABLE_AGENTS = 5;
+
+/** The refusal for an agent the compile config names and no scanned directory defines. */
+function agentNotFoundError(
+  agentName: AgentName,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+): string {
+  const availableAgents = describeAvailableAgents(typedKeys<AgentName>(agents));
+  return `Agent '${agentName}' referenced in compile config but not found in scanned agents. ${availableAgents}. Check that src/agents/${agentName}/metadata.yaml exists.`;
+}
+
+/** The agents that WERE scanned, capped at {@link MAX_LISTED_AVAILABLE_AGENTS} names. */
+function describeAvailableAgents(availableAgents: AgentName[]): string {
+  if (availableAgents.length === 0) return "No agents found in scanned directories";
+
+  const listed = availableAgents.slice(0, MAX_LISTED_AVAILABLE_AGENTS).join(", ");
+  const unlisted = availableAgents.length - MAX_LISTED_AVAILABLE_AGENTS;
+  return unlisted > 0
+    ? `Available agents: ${listed} (and ${unlisted} more)`
+    : `Available agents: ${listed}`;
+}
+
+/**
+ * One agent as the compiler takes it: the definition's frontmatter, the compile config's
+ * overrides on top of it, and the skills already resolved.
+ */
+function assembleAgentConfig(
+  agentName: AgentName,
+  definition: AgentDefinition,
+  agentConfig: CompileAgentConfig,
+  resolvedSkills: Skill[],
+): AgentConfig {
+  // The project config carries the user's deliberate choice; the agent's own metadata
+  // carries the default. Config wins, silently — warning on every compile for a setting
+  // someone made on purpose is noise. Neither present leaves the key off entirely.
+  const model = agentConfig.model ?? definition.model;
+  const effort = agentConfig.effort ?? definition.effort;
+
+  return {
+    name: agentName,
+    title: definition.title,
+    description: definition.description,
+    ...(model !== undefined && { model }),
+    ...(effort !== undefined && { effort }),
+    tools: definition.tools,
+    // Every optional frontmatter field `agent.liquid` reads. Spread conditionally rather
+    // than unconditionally, because the template branches on presence — an explicit
+    // `undefined` renders as an empty key.
+    ...(definition.disallowedTools !== undefined && {
+      disallowedTools: definition.disallowedTools,
+    }),
+    ...(definition.permissionMode !== undefined && {
+      permissionMode: definition.permissionMode,
+    }),
+    ...(definition.isolation !== undefined && { isolation: definition.isolation }),
+    ...(definition.hooks !== undefined && { hooks: definition.hooks }),
+    ...(definition.experimental !== undefined && {
+      experimental: definition.experimental,
+    }),
+    skills: resolvedSkills,
+    ...(definition.path !== undefined && { path: definition.path }),
+    ...(definition.sourceRoot !== undefined && { sourceRoot: definition.sourceRoot }),
+    ...(definition.agentBaseDir !== undefined && { agentBaseDir: definition.agentBaseDir }),
+  };
 }

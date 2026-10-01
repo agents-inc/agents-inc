@@ -167,20 +167,18 @@ function readStack(
     const agentScope = agentScopes.get(agent);
     if (agentScope === undefined) continue;
 
-    for (const categoryAssignments of typedValues(agentStack)) {
-      for (const { id, preloaded } of categoryAssignments) {
-        const skillScope = skillScopes.get(id);
-        if (skillScope === undefined) continue;
+    for (const { id, preloaded } of typedValues(agentStack).flat()) {
+      const skillScope = skillScopes.get(id);
+      if (skillScope === undefined) continue;
 
-        if (!isScopePairCompatible(skillScope, agentScope)) {
-          unwritable.push(unwritablePairMessage(id, agent));
-          continue;
-        }
-
-        const forSkill = assignments.get(id) ?? {};
-        forSkill[agent] = seedLoadState(preloaded);
-        assignments.set(id, forSkill);
+      if (!isScopePairCompatible(skillScope, agentScope)) {
+        unwritable.push(unwritablePairMessage(id, agent));
+        continue;
       }
+
+      const forSkill = assignments.get(id) ?? {};
+      forSkill[agent] = seedLoadState(preloaded);
+      assignments.set(id, forSkill);
     }
   }
 

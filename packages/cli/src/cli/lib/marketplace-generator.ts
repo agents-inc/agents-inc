@@ -75,8 +75,7 @@ export async function generateMarketplace(
   const plugins: MarketplacePlugin[] = [];
 
   for (const manifestFile of manifestFiles) {
-    const separator = manifestFile.indexOf("/");
-    const pluginDirName = separator === -1 ? manifestFile : manifestFile.slice(0, separator);
+    const pluginDirName = pluginDirNameOf(manifestFile);
     const pluginDir = path.join(pluginsDir, pluginDirName);
 
     const manifest = await readPluginManifest(pluginDir);
@@ -112,6 +111,15 @@ export async function generateMarketplace(
     plugins: sortedPlugins,
     ...(options.description ? { description: options.description } : {}),
   };
+}
+
+/**
+ * The plugin directory a manifest belongs to: the first segment of its path under the plugins
+ * directory.
+ */
+function pluginDirNameOf(manifestFile: string): string {
+  const separator = manifestFile.indexOf("/");
+  return separator === -1 ? manifestFile : manifestFile.slice(0, separator);
 }
 
 /**

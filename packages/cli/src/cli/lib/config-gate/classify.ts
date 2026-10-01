@@ -151,22 +151,15 @@ export function classifyGlobalChange(
 ): GlobalChangeSet {
   const before = prev ? normalize(prev) : {};
   const after = normalize(next);
+  const moved = (key: string): boolean => !isDeepEqual(field(before, key), field(after, key));
 
   return {
     skills: diffSkills(before, after),
     agents: diffAgents(before, after),
-    stackChanged: !isDeepEqual(field(before, "stack"), field(after, "stack")),
-    selectedDomainsChanged: !isDeepEqual(
-      field(before, "selectedDomains"),
-      field(after, "selectedDomains"),
-    ),
-    scalarsChanged: scalarKeys(before, after).filter(
-      (key) => !isDeepEqual(field(before, key), field(after, key)),
-    ),
-    projectsChanged: !isDeepEqual(
-      field(before, REGISTRATION_FIELD),
-      field(after, REGISTRATION_FIELD),
-    ),
+    stackChanged: moved("stack"),
+    selectedDomainsChanged: moved("selectedDomains"),
+    scalarsChanged: scalarKeys(before, after).filter(moved),
+    projectsChanged: moved(REGISTRATION_FIELD),
   };
 }
 
