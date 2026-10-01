@@ -22,10 +22,20 @@
 
 import { describe, expect, it } from "vitest"
 
-import { buildAgentTemplateContext, type AgentFiles } from "./agent-source"
+import {
+  buildAgentTemplateContext,
+  renderAgent,
+  type AgentFiles,
+} from "./agent-source"
+import { createEngineFromTemplates } from "./engine"
+import { CORPUS_CLI_VERSION, CORPUS_TEMPLATES } from "./generated/corpus"
 import { renderAgentFromCorpus } from "./preview"
-import type { AgentConfig, Skill } from "./types"
+import type { AgentConfig } from "./types"
 import { typedKeys } from "./typed-object"
+import {
+  buildAgentConfig,
+  buildSkill,
+} from "./__tests__/factories/agent-config-factories"
 
 /** The partials are not this file's subject; every case renders the same empty set. */
 const NO_FILES: AgentFiles = {
@@ -36,31 +46,20 @@ const NO_FILES: AgentFiles = {
   criticalReminders: "",
 }
 
-const DYNAMIC_SKILL: Skill = {
-  id: "meta-design-expressive-typescript",
-  path: "meta/design/expressive-typescript",
-  description: "Readable functional patterns",
-  usage: "when shaping types",
+const DYNAMIC_SKILL = buildSkill("meta-design-expressive-typescript", {
   preloaded: false,
-}
+})
 
-const PRELOADED_SKILL: Skill = {
-  id: "cli-framework-oclif-ink",
-  path: "cli/framework/oclif-ink",
-  description: "oclif command structure and Ink components",
-  usage: "when working with cli-framework",
+const PRELOADED_SKILL = buildSkill("cli-framework-oclif-ink", {
   preloaded: true,
-}
+})
 
 describe("the tools a compiled sub-agent is granted", () => {
   it("adds Skill to a definition whose metadata omits it", () => {
-    const agent: AgentConfig = {
-      name: "cli-developer",
-      title: "CLI Developer Agent",
-      description: "Implements CLI features from detailed specs",
+    const agent = buildAgentConfig("cli-developer", {
       tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
       skills: [DYNAMIC_SKILL],
-    }
+    })
 
     const { agent: granted } = buildAgentTemplateContext(
       "cli-developer",
@@ -75,13 +74,10 @@ describe("the tools a compiled sub-agent is granted", () => {
   })
 
   it("adds Skill to a read-only researcher, which grants no write access", () => {
-    const agent: AgentConfig = {
-      name: "cli-researcher",
-      title: "CLI Researcher Agent",
-      description: "Read-only CLI research specialist",
+    const agent = buildAgentConfig("cli-researcher", {
       tools: ["Read", "Grep", "Glob", "Bash"],
       skills: [DYNAMIC_SKILL],
-    }
+    })
 
     const { agent: granted } = buildAgentTemplateContext(
       "cli-researcher",
@@ -99,13 +95,10 @@ describe("the tools a compiled sub-agent is granted", () => {
   })
 
   it("adds Skill to an agent carrying no dynamic skills at all", () => {
-    const agent: AgentConfig = {
-      name: "cli-developer",
-      title: "CLI Developer Agent",
-      description: "Implements CLI features from detailed specs",
+    const agent = buildAgentConfig("cli-developer", {
       tools: ["Read", "Bash"],
       skills: [PRELOADED_SKILL],
-    }
+    })
 
     const context = buildAgentTemplateContext("cli-developer", agent, NO_FILES)
 
@@ -120,13 +113,10 @@ describe("the tools a compiled sub-agent is granted", () => {
   })
 
   it("adds Skill to an agent carrying no skills at all", () => {
-    const agent: AgentConfig = {
-      name: "cli-developer",
-      title: "CLI Developer Agent",
-      description: "Implements CLI features from detailed specs",
+    const agent = buildAgentConfig("cli-developer", {
       tools: ["Read", "Bash"],
       skills: [],
-    }
+    })
 
     const { agent: granted } = buildAgentTemplateContext(
       "cli-developer",
@@ -138,13 +128,10 @@ describe("the tools a compiled sub-agent is granted", () => {
   })
 
   it("names Skill once and leaves the declared order alone", () => {
-    const agent: AgentConfig = {
-      name: "cli-developer",
-      title: "CLI Developer Agent",
-      description: "Implements CLI features from detailed specs",
+    const agent = buildAgentConfig("cli-developer", {
       tools: ["Read", "Skill", "Bash"],
       skills: [DYNAMIC_SKILL],
-    }
+    })
 
     const { agent: granted } = buildAgentTemplateContext(
       "cli-developer",
@@ -159,10 +146,7 @@ describe("the tools a compiled sub-agent is granted", () => {
   })
 
   it("changes nothing about the definition but its tools", () => {
-    const agent: AgentConfig = {
-      name: "cli-developer",
-      title: "CLI Developer Agent",
-      description: "Implements CLI features from detailed specs",
+    const agent = buildAgentConfig("cli-developer", {
       model: "opus",
       effort: "high",
       disallowedTools: ["WebFetch"],
@@ -170,7 +154,7 @@ describe("the tools a compiled sub-agent is granted", () => {
       path: "developer/cli-developer",
       tools: ["Read", "Bash"],
       skills: [DYNAMIC_SKILL],
-    }
+    })
 
     const { agent: granted } = buildAgentTemplateContext(
       "cli-developer",
@@ -187,13 +171,10 @@ describe("the tools a compiled sub-agent is granted", () => {
 
 describe("the frontmatter an install writes", () => {
   it("names Skill on a developer's tools line", async () => {
-    const agent: AgentConfig = {
-      name: "cli-developer",
-      title: "CLI Developer Agent",
-      description: "Implements CLI features from detailed specs",
+    const agent = buildAgentConfig("cli-developer", {
       tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
       skills: [DYNAMIC_SKILL],
-    }
+    })
 
     const rendered = await renderAgentFromCorpus("cli-developer", agent)
 
@@ -203,13 +184,10 @@ describe("the frontmatter an install writes", () => {
   })
 
   it("names Skill on a read-only researcher's tools line", async () => {
-    const agent: AgentConfig = {
-      name: "cli-researcher",
-      title: "CLI Researcher Agent",
-      description: "Read-only CLI research specialist",
+    const agent = buildAgentConfig("cli-researcher", {
       tools: ["Read", "Grep", "Glob", "Bash"],
       skills: [DYNAMIC_SKILL],
-    }
+    })
 
     const rendered = await renderAgentFromCorpus("cli-researcher", agent)
 
@@ -509,22 +487,16 @@ describe("the Liquid syntax a rendered sub-agent must not carry", () => {
  */
 
 /** A definition holding `Write`, which is the whole of what makes an agent one the gate is for. */
-const WRITING_AGENT: AgentConfig = {
-  name: "cli-developer",
-  title: "CLI Developer Agent",
-  description: "Implements CLI features from detailed specs",
+const WRITING_AGENT = buildAgentConfig("cli-developer", {
   tools: ["Read", "Write"],
   skills: [DYNAMIC_SKILL],
-}
+})
 
 /** The same shape with no writing tool — an agent the gate has nothing to say about. */
-const READ_ONLY_AGENT: AgentConfig = {
-  name: "cli-researcher",
-  title: "CLI Researcher Agent",
-  description: "Read-only CLI research specialist",
+const READ_ONLY_AGENT = buildAgentConfig("cli-researcher", {
   tools: ["Read", "Grep"],
   skills: [DYNAMIC_SKILL],
-}
+})
 
 /** A project's own completion gate: what a declared `Stop` is entitled to replace this one with. */
 const DECLARED_GATE_COMMAND = "make check"
@@ -770,5 +742,84 @@ describe("the Liquid syntax an author's own hooks must not carry", () => {
       SANITISED_HOOK_FIELDS.filter((field) => rendered.includes(marker(field))),
       "the branch that returns the definition untouched must still hand the author's hooks to the sanitiser"
     ).toStrictEqual([])
+  })
+})
+
+/**
+ * The file's fifth subject: the one token a partial may carry, and the refusal behind it.
+ *
+ * `agent-summoner`'s playbook tells an agent where to author a sub-agent, and the answer is the
+ * source folder THIS install writes — so that one value is substituted into the five partials
+ * before they are inlined. `@@SOURCE_FOLDER@@` is spelled out as a literal here rather than
+ * imported: it is a contract between the substitution and the shipped `.md` files, and an
+ * assertion importing it would move with a rename while every partial on disk still said the
+ * old thing.
+ *
+ * **The refusal and its permitted twin are both here, because neither says anything alone.** A
+ * folder-less engine must refuse a partial that ASKS for the folder — `strictVariables` is off in
+ * both engines, so a missing global renders to an empty string and the partial would otherwise
+ * compile to a path naming no installation. The same engine must still COMPILE a partial that only
+ * names the token behind its escape, because that one asks for no folder. Pin the refusal alone and
+ * a guard that refused every partial carrying the token, escape or not, would read as correct — and
+ * it would take out the one paragraph that teaches an author how to write it.
+ */
+
+/** What a partial writes to ask for the folder, and what it writes to name the token instead. */
+const SOURCE_FOLDER_TOKEN = "@@SOURCE_FOLDER@@"
+const SOURCE_FOLDER_ESCAPE = `\\${SOURCE_FOLDER_TOKEN}`
+
+/** A folder an install is really on, as test data rather than as the product's own constant. */
+const AN_INSTALL_FOLDER = ".agents-inc/claude"
+
+/** The five partials with `playbook` carrying `line` — the others are not this block's subject. */
+function partialsSaying(line: string): AgentFiles {
+  return { ...NO_FILES, playbook: line }
+}
+
+/** That agent rendered over the vendored templates, through an engine naming `folder` or none. */
+function renderedWith(
+  files: AgentFiles,
+  globals: Readonly<Record<string, string>>
+): Promise<string> {
+  return renderAgent(
+    createEngineFromTemplates(CORPUS_TEMPLATES, globals),
+    buildAgentTemplateContext("cli-developer", WRITING_AGENT, files),
+    CORPUS_CLI_VERSION
+  )
+}
+
+describe("the source folder a partial names", () => {
+  it("is the folder the engine carries", async () => {
+    const rendered = await renderedWith(
+      partialsSaying(`Author into \`${SOURCE_FOLDER_TOKEN}/agents/\`.`),
+      { sourceFolder: AN_INSTALL_FOLDER }
+    )
+
+    expect(
+      rendered,
+      "the opted-in token was not substituted, so an agent is told to author into a folder no install has"
+    ).toContain(`Author into \`${AN_INSTALL_FOLDER}/agents/\`.`)
+  })
+
+  it("refuses to compile when the partial asks for a folder the engine cannot name", async () => {
+    await expect(
+      renderedWith(
+        partialsSaying(`Author into \`${SOURCE_FOLDER_TOKEN}/agents/\`.`),
+        {}
+      ),
+      "a partial asking for the folder compiled under an engine naming none, so the name went to an empty string and the agent carries a path belonging to no installation"
+    ).rejects.toThrow(SOURCE_FOLDER_TOKEN)
+  })
+
+  it("compiles an escaped token under that same engine, because it asks for no folder", async () => {
+    const rendered = await renderedWith(
+      partialsSaying(`The token is \`${SOURCE_FOLDER_ESCAPE}\`.`),
+      {}
+    )
+
+    expect(
+      rendered,
+      "the escape was read as a request for the folder, so the paragraph that teaches an author to write the token cannot be written at all"
+    ).toContain(`The token is \`${SOURCE_FOLDER_TOKEN}\`.`)
   })
 })

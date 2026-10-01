@@ -1,7 +1,9 @@
+import type { AgentHookDefinition } from "@workspace/matrix"
 import type { Liquid } from "liquidjs"
 
 import { diagnostics } from "./diagnostics.js"
 import { DEFAULT_PLUGIN_NAME, EJECT_SOURCE } from "./paths.js"
+import { CODEX_DEVELOPER_INSTRUCTIONS_OPENER } from "./providers/codex/agent-role-toml.js"
 import type {
   AgentConfig,
   CompiledAgentData,
@@ -16,7 +18,28 @@ import type {
  * reads the CLI's own manifest. Both arrive here as data — {@link AgentFiles} and
  * the `version` argument of {@link renderAgent} — which is what lets a browser
  * render the same bytes from the vendored corpus.
+ *
+ * **The Codex provider's renderer is re-exported from here, and the reason is the package's own
+ * `exports` map.** `providers/codex/` has no entry of its own, so this module — the one whose
+ * subject is "how a resolved sub-agent becomes the file a host reads" — is where a CLI-side
+ * caller reaches it. The modules themselves stay separate: the TOML writer imports nothing from
+ * here, so the dependency runs one way and neither the root barrel nor the editor's first-paint
+ * budget acquires anything new.
  */
+export {
+  CODEX_DEVELOPER_INSTRUCTIONS_OPENER,
+  CODEX_REJECTED_ROLE_KEYS,
+  CODEX_REQUIRED_ROLE_KEYS,
+  renderAgentRoleToml,
+} from "./providers/codex/agent-role-toml.js"
+export {
+  AGENTS_NOT_ON_CODEX,
+  CODEX_AGENT_ROSTER,
+  UNEXPRESSIBLE_ON_CODEX,
+  agentsLeftOutOfCodexMessage,
+  compilesForCodex,
+  unexpressibleOnCodexMessage,
+} from "./providers/codex/roster.js"
 
 /** Pattern matching Liquid template delimiters that could enable template injection */
 const LIQUID_SYNTAX_PATTERN = /\{\{|\}\}|\{%|%\}/g
@@ -50,7 +73,7 @@ function sanitizeStringArray(values: string[], fieldName: string): string[] {
 /**
  * Hook definitions with every author-supplied string stripped of Liquid syntax.
  *
- * These are the only fields on an agent that render as an EXECUTABLE: a `SubagentStop` hook's
+ * These are the only fields on an agent that render as an EXECUTABLE: a `Stop` hook's
  * `command` is a shell line Claude Code runs when the sub-agent finishes. An agent definition
  * can arrive from a marketplace, so the strings here are as author-controlled as `agent.name`
  * beside them — and they were the one part of the definition the sanitiser did not cover,
@@ -60,10 +83,6 @@ function sanitizeStringArray(values: string[], fieldName: string): string[] {
  * can name any command it likes, and that is a property of installing an agent rather than of
  * this function. What this closes is the narrower hole of a hook string carrying template syntax
  * into a render.
- *
- * `hooks` is spread unconditionally where `matcher` beside it is guarded, because the two are
- * not both optional: a definition carrying no actions fires nothing, so `AgentHookDefinition`
- * requires the array and every schema that reads an agent refuses a definition without it.
  */
 function sanitizeHooks(
   hooks: NonNullable<AgentConfig["hooks"]>
@@ -71,27 +90,47 @@ function sanitizeHooks(
   return Object.fromEntries(
     Object.entries(hooks).map(([event, definitions]) => [
       sanitizeLiquidSyntax(event, "hook.event"),
-      definitions.map((definition) => ({
-        ...definition,
-        ...(definition.matcher !== undefined && {
-          matcher: sanitizeLiquidSyntax(definition.matcher, "hook.matcher"),
-        }),
-        hooks: definition.hooks.map((action) => ({
-          ...action,
-          type: sanitizeLiquidSyntax(action.type, "hook.type"),
-          ...(action.command !== undefined && {
-            command: sanitizeLiquidSyntax(action.command, "hook.command"),
-          }),
-          ...(action.script !== undefined && {
-            script: sanitizeLiquidSyntax(action.script, "hook.script"),
-          }),
-          ...(action.prompt !== undefined && {
-            prompt: sanitizeLiquidSyntax(action.prompt, "hook.prompt"),
-          }),
-        })),
-      })),
+      definitions.map(sanitizeHookDefinition),
     ])
   )
+}
+
+/**
+ * One definition from {@link sanitizeHooks}: its matcher, and every action it fires.
+ *
+ * `hooks` is spread unconditionally where `matcher` beside it is guarded, because the two are
+ * not both optional: a definition carrying no actions fires nothing, so `AgentHookDefinition`
+ * requires the array and every schema that reads an agent refuses a definition without it.
+ */
+function sanitizeHookDefinition(
+  definition: AgentHookDefinition
+): AgentHookDefinition {
+  return {
+    ...definition,
+    ...(definition.matcher !== undefined && {
+      matcher: sanitizeLiquidSyntax(definition.matcher, "hook.matcher"),
+    }),
+    hooks: definition.hooks.map(sanitizeHookAction),
+  }
+}
+
+/** One action a hook definition fires: its type, and whichever of command, script and prompt it holds. */
+function sanitizeHookAction(
+  action: AgentHookDefinition["hooks"][number]
+): AgentHookDefinition["hooks"][number] {
+  return {
+    ...action,
+    type: sanitizeLiquidSyntax(action.type, "hook.type"),
+    ...(action.command !== undefined && {
+      command: sanitizeLiquidSyntax(action.command, "hook.command"),
+    }),
+    ...(action.script !== undefined && {
+      script: sanitizeLiquidSyntax(action.script, "hook.script"),
+    }),
+    ...(action.prompt !== undefined && {
+      prompt: sanitizeLiquidSyntax(action.prompt, "hook.prompt"),
+    }),
+  }
 }
 
 /**
@@ -138,9 +177,13 @@ function sanitizeSkills(skills: Skill[]): Skill[] {
  * metadata and skill metadata before template rendering.
  *
  * Content fields (identity, playbook, output, criticalRequirementsTop,
- * criticalReminders) are passed through unchanged — LiquidJS does not
- * re-evaluate template syntax inside variable values, so double-curlies
- * in content (e.g. GitHub Actions `${{ secrets.X }}`) are safe.
+ * criticalReminders) are passed through unchanged, because they are not
+ * metadata reaching a template — they are PROSE, inlined verbatim, and nothing
+ * evaluates them: see {@link SOURCE_FOLDER_PLACEHOLDER} for the one token in a
+ * partial that is substituted and why it is a token rather than a render.
+ * Stripping the delimiters here would silently rewrite an author's prose — a
+ * GitHub Actions example that says `${{ secrets.X }}` means that, and compiles
+ * saying that.
  */
 export function sanitizeCompiledAgentData(
   data: CompiledAgentData
@@ -360,6 +403,24 @@ export function hasProvenanceMarker(content: string): boolean {
 }
 
 /**
+ * The same question for a Codex agent ROLE DEFINITION, where the prose lives inside a TOML key
+ * rather than under a frontmatter fence.
+ *
+ * The marker's POSITION is the claim here too — the line immediately after
+ * {@link CODEX_DEVELOPER_INSTRUCTIONS_OPENER} — so a role whose own prose quotes the line further
+ * down is the user's, and a sweep reading that as provenance would delete a file nothing here
+ * wrote. Same shape match as {@link hasProvenanceMarker}, so a role compiled by any release is
+ * recognised by any other.
+ */
+export function hasCodexRoleMarker(content: string): boolean {
+  const lines = content.split("\n")
+  const opener = lines.indexOf(CODEX_DEVELOPER_INSTRUCTIONS_OPENER)
+  const markerLine = opener === -1 ? undefined : lines[opener + 1]
+
+  return markerLine !== undefined && isProvenanceMarker(markerLine)
+}
+
+/**
  * The same content carrying exactly one provenance marker, on the first line after the
  * frontmatter.
  *
@@ -382,6 +443,145 @@ export function stampProvenanceMarker(content: string): string {
 
 /** The template every compiled sub-agent is rendered from, by name rather than by path. */
 const AGENT_TEMPLATE = "agent"
+
+/**
+ * The template holding everything AFTER the frontmatter fence, which {@link AGENT_TEMPLATE}
+ * `{% include %}`s as its own last line.
+ *
+ * **A host whose sub-agent file has no frontmatter needs the body and only the body.** A Codex
+ * agent ROLE DEFINITION carries the compiled prose in one `developer_instructions` key against a
+ * deserializer that drops the whole file on an unlisted one, so a Claude-shaped `---` block
+ * reaching that renderer is either quoted in as noise or emits keys that lose all sixteen
+ * sub-agents at once.
+ *
+ * **`include` rather than `render`, and rather than concatenating two renders in code.** `include`
+ * shares the parent's scope, so the partial reads `agent`, `identity` and the rest exactly as it
+ * did when it was one file; and an installation that ejected a whole `agent.liquid` before the
+ * split still renders through its own copy rather than having this body appended to it twice.
+ */
+const AGENT_BODY_TEMPLATE = "agent-body"
+
+/**
+ * The one token in a partial that is not prose.
+ *
+ * **A partial's text reaches the compiled agent byte for byte.** Anything in one that looks like
+ * template syntax — `${{ secrets.X }}` in a GitHub Actions example, `{{ user.name }}`,
+ * `{% if x %}` — IS text, in a bundled partial and in a user-authored one alike. An agent
+ * definition can arrive from a marketplace or be written by hand in a consuming project, and a
+ * partial that reached the Liquid engine would be both a silent rewrite of that author's prose and
+ * the template-injection boundary {@link sanitizeLiquidSyntax} exists to hold, gone.
+ *
+ * One value still has to be install-specific, which is what this token is for: `agent-summoner`'s
+ * playbook tells an agent where to author a new sub-agent, and the answer is the source folder THIS
+ * installation uses — `.agents-inc/claude/` for one created now, `.claude-src/` for one created
+ * before the rename and not yet migrated. A literal is right for one of those and wrong for the
+ * other, and the wrong one sends an agent to author into a folder the CLI does not read.
+ *
+ * So the substitution is an OPT-IN of exactly one token rather than a render of the whole file.
+ * Spelled with delimiters no template language in this repository uses and no prose reaches by
+ * accident, so a partial that does not carry it is returned by identity and cannot be rewritten by
+ * anything here. The repository's own partials that want it are found with:
+ *
+ * ```
+ * grep -rn '@@SOURCE_FOLDER@@' packages/cli/src/agents
+ * ```
+ *
+ * A partial that wants to NAME this token rather than ask for the folder writes
+ * {@link SOURCE_FOLDER_ESCAPE}.
+ */
+const SOURCE_FOLDER_PLACEHOLDER = "@@SOURCE_FOLDER@@"
+
+/**
+ * {@link SOURCE_FOLDER_PLACEHOLDER} with a backslash in front of it, which compiles to the token
+ * itself.
+ *
+ * **A substitution with no escape eats the one lesson that teaches it.** `agent-summoner`'s
+ * playbook is where an agent learns to write the token, and the paragraph saying so spelled the
+ * token — so every compiled copy read "the one exception is `.agents-inc/claude`" and named the
+ * token nowhere, teaching the folder literal the token exists to prevent. The escape is what lets
+ * a partial say the token's name out loud.
+ *
+ * A backslash because it is the escape every author already reaches for, and because it composes:
+ * the escape is stripped from the text around it, so `\\` in front of the token compiles to a
+ * backslash and the token — which is how a partial teaches the escape itself. There is no way to
+ * write a literal backslash immediately before a SUBSTITUTED token, and nothing needs one.
+ */
+const SOURCE_FOLDER_ESCAPE = `\\${SOURCE_FOLDER_PLACEHOLDER}`
+
+/**
+ * The product-authored expression that asks an engine for the install's source folder.
+ *
+ * A constant this file owns, so the only thing the Liquid engine is ever handed here is this
+ * string — never a partial. The engine is still what carries the value, because `globals` is where
+ * both front doors put it: `createLiquidEngine` in the CLI, over the project it is compiling for,
+ * and `createEngineFromTemplates` in the browser, over the layout a new installation gets.
+ */
+const SOURCE_FOLDER_EXPRESSION = "{{ sourceFolder }}"
+
+/** The refusal when a partial asks for the source folder and the engine cannot name one. */
+const NO_SOURCE_FOLDER =
+  `A partial names the install's source folder (${SOURCE_FOLDER_PLACEHOLDER}) and the engine ` +
+  `rendering it carries no 'sourceFolder' global, so the name would compile away to nothing.`
+
+/** The source folder this engine was built for, asked for through the engine's own globals. */
+function sourceFolderOf(engine: Liquid): Promise<string> {
+  // Boundary cast: liquidjs types parseAndRender as `Promise<any>` because a template can render
+  // to any value. This one renders a global declared `string` by both engine builders.
+  return engine.parseAndRender(SOURCE_FOLDER_EXPRESSION) as Promise<string>
+}
+
+/**
+ * One partial with every unescaped {@link SOURCE_FOLDER_PLACEHOLDER} replaced by `folder`, every
+ * {@link SOURCE_FOLDER_ESCAPE} left naming the token, and every other byte of it untouched.
+ *
+ * A partial that did not opt in is returned by identity, so nothing here can reach an author's
+ * prose. One that ASKS for the folder, in an engine naming no folder, is a refusal rather than a
+ * substitution: `strictVariables` is off in both engines — that is what lets a template reference a
+ * field an agent omits — so a missing global renders to an empty string, and the partial would
+ * compile to `/agents/`, a path that names no installation, in a file nobody reads back. One that
+ * only NAMES the token asks for no folder, so it is not held to that.
+ */
+function substituteSourceFolder(partial: string, folder: string): string {
+  if (!partial.includes(SOURCE_FOLDER_PLACEHOLDER)) return partial
+
+  const aroundEscapes = partial.split(SOURCE_FOLDER_ESCAPE)
+  const asksForTheFolder = aroundEscapes.some((text) =>
+    text.includes(SOURCE_FOLDER_PLACEHOLDER)
+  )
+  if (asksForTheFolder && folder === "") throw new Error(NO_SOURCE_FOLDER)
+
+  const folderNamedIn = (text: string): string =>
+    text.split(SOURCE_FOLDER_PLACEHOLDER).join(folder)
+
+  return aroundEscapes.map(folderNamedIn).join(SOURCE_FOLDER_PLACEHOLDER)
+}
+
+/**
+ * The same context with each of its five partials carrying this install's source folder.
+ *
+ * The five are listed as an {@link AgentFiles} literal rather than spread one by one over `data`,
+ * which is what makes the enumeration exhaustive: a sixth partial added to that type and forgotten
+ * here fails `tsc` on the missing property, where the spread alone would pass it through untouched
+ * and silently.
+ */
+async function withSourceFolder(
+  engine: Liquid,
+  data: CompiledAgentData
+): Promise<CompiledAgentData> {
+  const folder = await sourceFolderOf(engine)
+  const named = (partial: string): string =>
+    substituteSourceFolder(partial, folder)
+
+  const partials: AgentFiles = {
+    identity: named(data.identity),
+    playbook: named(data.playbook),
+    output: named(data.output),
+    criticalRequirementsTop: named(data.criticalRequirementsTop),
+    criticalReminders: named(data.criticalReminders),
+  }
+
+  return { ...data, ...partials }
+}
 
 /**
  * The deterministic completion gate every writing sub-agent stops against.
@@ -547,18 +747,59 @@ function prepareForRender(data: CompiledAgentData): CompiledAgentData {
  * The completion gate is composed into the agent's own hooks before the render rather than
  * branched on in the template — see {@link prepareForRender} — so the template holds one
  * unconditional `hooks:` emission and the gate reaches `sanitizeHooks` like any other hook.
+ *
+ * The five partials are inlined verbatim but for one opted-in token — see
+ * {@link SOURCE_FOLDER_PLACEHOLDER} — so an agent whose own text names the install's source folder
+ * names the one this engine was built for, and every other byte of an author's prose survives.
  */
 export async function renderAgent(
   engine: Liquid,
   data: CompiledAgentData,
   version: string
 ): Promise<string> {
+  return stampProvenanceMarker(
+    await renderFromTemplate(engine, AGENT_TEMPLATE, data, version)
+  )
+}
+
+/**
+ * The same sub-agent WITHOUT its frontmatter — the prose alone, carrying the provenance marker on
+ * its first line.
+ *
+ * It is exactly the tail of {@link renderAgent}, and that is the invariant rather than a golden
+ * file: `agent.liquid` ends by including {@link AGENT_BODY_TEMPLATE}, so a body that moved one
+ * byte would move the Claude render with it. `agent-body-split.test.ts` asserts the suffix
+ * relation over three shipped sub-agents rather than recording the bytes, because a golden the
+ * implementing pass can regenerate is a golden the implementing pass will regenerate.
+ *
+ * The marker is stamped here for the same reason `renderAgent` stamps it: a body with no frontmatter
+ * fence takes it on line one, which is where {@link hasProvenanceMarker} looks and where the Codex
+ * role renderer expects to find it inside `developer_instructions`.
+ */
+export async function renderAgentBody(
+  engine: Liquid,
+  data: CompiledAgentData,
+  version: string
+): Promise<string> {
+  return stampProvenanceMarker(
+    await renderFromTemplate(engine, AGENT_BODY_TEMPLATE, data, version)
+  )
+}
+
+/** The render both doors share: the same prepared context, against whichever template is named. */
+async function renderFromTemplate(
+  engine: Liquid,
+  template: string,
+  data: CompiledAgentData,
+  version: string
+): Promise<string> {
+  const prepared = await withSourceFolder(engine, prepareForRender(data))
+
   // Boundary cast: liquidjs types renderFile as `Promise<any>` because a template
   // can render to any value. The agent template renders a markdown file, and both
   // callers have declared `Promise<string>` since they were written.
-  const rendered = (await engine.renderFile(AGENT_TEMPLATE, {
-    ...prepareForRender(data),
+  return (await engine.renderFile(template, {
+    ...prepared,
     generatorVersion: sanitizeLiquidSyntax(version, "generatorVersion"),
   })) as string
-  return stampProvenanceMarker(rendered)
 }

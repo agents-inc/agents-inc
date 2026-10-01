@@ -65,7 +65,7 @@ lands.
 
 An agent is a directory of at most six files — three every agent owes and three it writes only where
 the role has something for them — and which tree it goes in follows from who it is for. An agent
-authored for a consuming project goes to that project's `.claude-src/agents/{category}/{agent-name}/`,
+authored for a consuming project goes to that project's `@@SOURCE_FOLDER@@/agents/{category}/{agent-name}/`,
 where `loadProjectAgents` reads it at runtime. An agent authored for this product goes to
 `packages/cli/src/agents/{category}/{agent-name}/`, the bundled tree every agent this CLI ships
 lives in, and then takes the generate step the create workflow names.
@@ -86,6 +86,14 @@ agent has none of its own.
 
 Where that column names a wrapper, the source file leaves it out; writing it there produces a
 doubled tag in the compiled output.
+
+**A partial is prose and nothing evaluates it.** What you write reaches the compiled agent byte for
+byte, so `{{ … }}`, `{% … %}` and the `${{ … }}` of a GitHub Actions example are text rather than
+template syntax. The one exception is `\@@SOURCE_FOLDER@@`, which the compile step replaces with the
+source folder the install being compiled for actually uses — write it wherever an instruction has to
+name that folder, and nowhere else. **A backslash in front of it names the token instead of asking
+for the folder**, which is how the sentence you are reading spells it: write `\\@@SOURCE_FOLDER@@`
+wherever a partial teaches the token rather than uses it.
 
 Four tags the source files write themselves have a fixed home, which every agent in the tree
 follows: `<domain_scope>` in `identity.md`, `<self_correction_triggers>` in
@@ -139,15 +147,15 @@ provenance marker          an HTML comment the compile step stamps
    to fill a slot fills with padding, and padding is what the reader pays for on every invocation.
    Keep each file to its own job: the playbook is the process, `output.md` is the shape, and
    neither repeats the other.
-5. **Register the agent in the config** — `packages/cli/.claude-src/config.ts` in the `agents-inc`
-   working tree, `.claude-src/config.ts` in a project that installed the CLI — and give it a stack,
-   which is where its skills come from.
+5. **Register the agent in the config** — `config.ts` in `packages/cli`'s own source folder in the
+   `agents-inc` working tree, whichever layout that checkout is on; `@@SOURCE_FOLDER@@/config.ts`
+   in a project that installed the CLI — and give it a stack, which is where its skills come from.
 6. **Where the agent went into this CLI's own `packages/cli/src/agents/` tree, run
    `bun run generate` from `packages/cli`.** The
    `AgentName` union is generated from `packages/cli/src/agents/*/*/metadata.yaml` by
    `packages/cli/scripts/generate-source-types.ts`, and the vendored catalogue is generated beside it — so until
    that runs, the new name is not a member of the union the config is typed against and the compile
-   has nothing to resolve. An agent authored into a project's own `.claude-src/agents/` skips this
+   has nothing to resolve. An agent authored into a project's own `@@SOURCE_FOLDER@@/agents/` skips this
    step: those are read at runtime rather than generated into a union.
 7. **Compile and read the result.** Run `npx agents-inc compile`, open the compiled file, and check
    the frontmatter, the section order, and that nothing in the body repeats what the template
@@ -201,7 +209,7 @@ fixer, and a reviewer that repairs what it finds leaves a diff where a finding s
 
 **Model and effort follow the work's difficulty rather than its importance.** A mechanical role — a
 sweep, a listing, a file-shaped report — runs well on a smaller model and a lower effort. Both
-fields can be overridden per project in `.claude-src/config.ts`, so the value in `metadata.yaml` is
+fields can be overridden per project in `@@SOURCE_FOLDER@@/config.ts`, so the value in `metadata.yaml` is
 the default rather than the last word.
 
 **`experimental.cacheTtl` decides how long this agent's prompt cache lives.** A compiled agent's
@@ -239,7 +247,7 @@ completion checks declares `Stop` specifically. It has to declare an actual hook
 ## Skills
 
 **An agent's skills come from the project's stack, not from its own metadata.**
-`.claude-src/config.ts` maps each agent to skill ids by category, and the compile step splits them
+`@@SOURCE_FOLDER@@/config.ts` maps each agent to skill ids by category, and the compile step splits them
 in two: a skill marked `preloaded: true` is listed in the compiled frontmatter and its content is in
 context from the first token, while every other skill is named in the trailing `<system-reminder>`
 for the agent to load through the `Skill` tool when a task calls for it.

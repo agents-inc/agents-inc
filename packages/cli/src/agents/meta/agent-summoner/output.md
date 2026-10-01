@@ -39,7 +39,7 @@ hooks:
           command: <shell command>
 ```
 
-**Config entry.** `.claude-src/config.ts` is a TypeScript module, and an agent with source files
+**Config entry.** `@@SOURCE_FOLDER@@/config.ts` is a TypeScript module, and an agent with source files
 and no entry there compiles into nothing.
 
 ```ts
