@@ -32,8 +32,8 @@ That handler ends with:
 
 ```js
 if (!hash) {
-  const scrollOptions = { top: 0, left: 0, behavior }
-  if (!windowRestored) scrollTo(scrollOptions)
+  const scrollOptions = { top: 0, left: 0, behavior };
+  if (!windowRestored) scrollTo(scrollOptions);
 }
 ```
 

@@ -54,7 +54,7 @@ Repaired in all four files, without changing what any example teaches:
 
 - `Card` added to the `antd` import.
 - The three product API calls given one `import { fetchProducts, createProduct, deleteProduct }
-  from "./product-api";` under a `// Your own data layer` comment, and `handleEdit` turned into an
+from "./product-api";` under a `// Your own data layer` comment, and `handleEdit` turned into an
   `onEdit` prop on `ProductManagementProps` — so the edit surface is owned by a caller rather than
   by a function that does not exist.
 - `mockFn` bound by the block's header comment: "`mockFn` stands for its mock factory - vi.fn,
@@ -78,7 +78,7 @@ Add to `.ai-docs/standards/skill-atomicity-bible.md`, in the section governing `
 > block gets an error naming a symbol the skill never mentioned again. Where the elided thing is
 > the reader's own module, import it from a plainly-local path (`./product-api`). Where it stands
 > for a tool the skill is agnostic about, bind it in a comment (`` `mockFn` stands for your
-> runner's mock factory ``). Where it is a real package, import it properly.
+runner's mock factory ``). Where it is a real package, import it properly.
 
 I have checked this against `CLAUDE.md`'s NEVER/ALWAYS rules and it conflicts with none of them.
 The nearest is the ban on codebase-specific imports in skills (`@repo/ui`, `@/lib/db`), which this

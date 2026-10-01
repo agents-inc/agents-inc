@@ -55,8 +55,8 @@ className={`transition-[padding] duration-150 ${stuck ? "pr-gutter pl-5" : ""}`}
 Chromium at 1600×1000, root at `font-size: 110%` so `--spacing-gutter: 3.75rem` computes to
 66px and the variant's `px-[1.125rem]` to 19.8px:
 
-| state          | block box            | its padding L/R | its label (Range over contents) | band right − block right |
-| -------------- | -------------------- | --------------- | ------------------------------- | -----------------------: |
+| state          | block box             | its padding L/R | its label (Range over contents) | band right − block right |
+| -------------- | --------------------- | --------------- | ------------------------------- | -----------------------: |
 | resting        | 121.53 × 57 @ 1082.47 | 19.8 / 19.8     | 81.94                           |                       66 |
 | stuck (before) | 169.94 × 57 @ 1100.06 | 22 / 66         | 81.94                           |                        0 |
 | stuck (after)  | 121.53 × 57 @ 1082.47 | 19.8 / 19.8     | 81.94                           |                       66 |
@@ -151,7 +151,7 @@ one element further in:
 > `toHaveCSS("box-shadow", …)` say what a control is painted with and nothing about the box the
 > paint lands on, so a border drawn around a strip twice the control's width satisfies both. The
 > two questions live in different files here — `grep -rln "toHaveCSS" specs | xargs grep -ln
-> "boundingBox"` — and a control whose SHAPE is part of the design needs one of each: pin the
+"boundingBox"` — and a control whose SHAPE is part of the design needs one of each: pin the
 > paint, and pin the box against a live read of something beside it. `sticky-bar.spec.ts`'s
 > add-skill trio is the shape.
 

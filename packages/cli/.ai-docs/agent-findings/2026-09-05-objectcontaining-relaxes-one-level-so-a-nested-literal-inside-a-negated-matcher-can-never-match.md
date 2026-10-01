@@ -22,9 +22,9 @@ resolved_by: >-
 `derive.test.ts` carried, at HEAD, one assertion that could not fail:
 
 ```ts
-expect(
-  views.flatMap((view) => view.categories.flatMap((c) => c.cells))
-).not.toContainEqual(expect.objectContaining({ skill: { id: HOUSE_ID } }))
+expect(views.flatMap((view) => view.categories.flatMap((c) => c.cells))).not.toContainEqual(
+  expect.objectContaining({ skill: { id: HOUSE_ID } }),
+);
 ```
 
 **`expect.objectContaining` relaxes exactly one level.** Its own keys are matched as a subset; every

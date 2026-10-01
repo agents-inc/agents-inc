@@ -53,12 +53,12 @@ Three properties make the class worth a rule rather than a sweep:
    `useSWR<User>` believes a `User` shape was specified and goes looking for it.
 3. **A "declared somewhere in the file" check is not sufficient, and would have missed the worst
    instance.** `mutations.md` used `Post` as a return type in its first block, where nothing declared
-   it, while a *different* `Post` — `{ id, likes, likedByMe }` against the create-post shape — was
+   it, while a _different_ `Post` — `{ id, likes, likedByMe }` against the create-post shape — was
    declared 90 lines further down. A file-scoped detector scores that file clean. Two contradictory
    declarations of one name in one document is the more serious defect, and only reading found it.
 
 The same rewrite produced two neighbouring shapes in these files, both also uncheckable: a stated
-*reason* that was invented (`captureOwnerStack` was annotated "the export does not exist on every
+_reason_ that was invented (`captureOwnerStack` was annotated "the export does not exist on every
 React 19 patch release", where React documents it as development-only and absent from production
 builds), and a real API genericised into a vaguer one (`examples/s3-upload.md` became
 `presigned-upload.md` with every S3 mention removed but S3's exact POST-policy condition syntax left
