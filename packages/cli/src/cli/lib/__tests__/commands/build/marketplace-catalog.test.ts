@@ -1,6 +1,6 @@
 import os from "os";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { appendFile, mkdir, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { matrixSchema, type Matrix } from "@workspace/matrix/matrix-schema";
 
@@ -12,6 +12,7 @@ import {
   SKILL_CATEGORIES_PATH,
   SKILLS_DIR_PATH,
   STACKS_FILE_PATH,
+  STANDARD_FILES,
 } from "../../../../consts";
 import { defaultCategories } from "../../../configuration/default-categories";
 import { defaultStacks } from "../../../configuration/default-stacks";
@@ -198,6 +199,9 @@ async function writeMarketplaceStacks(marketplaceDir: string): Promise<void> {
   });
 }
 
+/** A skill's short wizard label, distinct from its SKILL.md description on purpose. */
+const WIZARD_LABEL = "Short wizard label";
+
 describe("build:marketplace catalog emission", () => {
   let projectDir: string;
   let fakeHome: string;
@@ -268,6 +272,27 @@ describe("build:marketplace catalog emission", () => {
         secondBuild,
         "the editor fetches this file directly, so a byte that moves on every build defeats its cache and writes a diff into the marketplace's history",
       ).toBe(firstBuild);
+    });
+
+    /**
+     * CLI-898: the editor's preview drew each skill's `description` — the wizard's short
+     * `cliDescription` — into the activation table, where the install writes the SKILL.md
+     * description. The catalogue carries both, so the preview can draw the one the install does.
+     */
+    it("carries the SKILL.md description beside the wizard's short label", async () => {
+      const skill = marketplaceSkill();
+      await appendFile(
+        path.join(projectDir, SKILLS_DIR_PATH, skill.id, STANDARD_FILES.METADATA_YAML),
+        `cliDescription: ${WIZARD_LABEL}\n`,
+      );
+
+      await runCliCommand(["build:marketplace"]);
+
+      const catalog = await readTestJson<Matrix>(catalogPath);
+      expect(catalog.skills[MARKETPLACE_SKILL_ID]).toMatchObject({
+        description: WIZARD_LABEL,
+        activationDescription: skill.description,
+      });
     });
 
     it("carries the category the marketplace declares, not a synthesized stand-in", async () => {

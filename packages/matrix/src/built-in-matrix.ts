@@ -61,6 +61,8 @@ export const resolvedSkillSchema = z.object({
   // category — but a schema that omits the field STRIPS it, which is the same value
   // arriving by a route nothing can tell apart from the skill stating nothing.
   usageGuidance: z.string().exactOptional(),
+  // The SKILL.md description compile renders — see `SkillCore.activationDescription`.
+  activationDescription: z.string().exactOptional(),
   category: categorySchema,
   conflictsWith: z.array(skillRelationSchema),
   discourages: z.array(skillRelationSchema),

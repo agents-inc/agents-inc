@@ -138,6 +138,7 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
       id: skillId,
       directoryPath: skillDir,
       description: metadata.cliDescription || frontmatter.description,
+      ...(frontmatter.description && { activationDescription: frontmatter.description }),
       ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
       category: metadata.category,
       author: metadata.author,

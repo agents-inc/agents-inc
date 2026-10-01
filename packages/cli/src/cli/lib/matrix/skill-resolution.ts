@@ -434,6 +434,9 @@ function buildResolvedSkill(
     slug,
     displayName: skill.displayName,
     description: skill.description,
+    ...(skill.activationDescription !== undefined && {
+      activationDescription: skill.activationDescription,
+    }),
     ...(skill.usageGuidance !== undefined && { usageGuidance: skill.usageGuidance }),
     category: skill.category,
     author: skill.author,

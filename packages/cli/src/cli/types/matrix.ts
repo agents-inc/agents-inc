@@ -196,7 +196,15 @@ export type SkillCore = {
   slug: SkillSlug;
   /** Title-cased label for UI display (e.g., "React", "Apollo Client") */
   displayName: string;
+  /** The wizard's short label — `cliDescription` from metadata.yaml when the skill states one. */
   description: string;
+  /**
+   * The SKILL.md frontmatter `description`: what a compiled sub-agent's skill-activation table
+   * shows, because compile reads SKILL.md itself. It differs from `description` for every skill
+   * stating a `cliDescription`, so a preview reading `description` showed a line the install never
+   * writes (CLI-898). Optional: a catalogue built before it existed carries none.
+   */
+  activationDescription?: string;
   /** When an AI agent should invoke this skill (decision criteria) */
   usageGuidance?: string;
   /** Matches key in matrix.categories; determines which wizard category grid this skill appears in */

@@ -108,6 +108,7 @@ async function extractLocalSkill(
     id: skillId,
     directoryPath: skillDirName,
     description: metadata.cliDescription || frontmatter.description,
+    ...(frontmatter.description && { activationDescription: frontmatter.description }),
     ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
     category: metadata.category,
     author: LOCAL_DEFAULTS.AUTHOR,
