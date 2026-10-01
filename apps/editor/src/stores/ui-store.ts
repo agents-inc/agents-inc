@@ -12,6 +12,7 @@ import {
 } from "./persisted-schema"
 
 import type { MarketplaceRecovery } from "@/features/configure/lib/seat-catalog"
+import type { Provider } from "@workspace/compile"
 
 // How long the roster tints agents that a selection just reached — the design
 // prototype's `flashMs` default.
@@ -100,6 +101,20 @@ type UiState = {
   marketplaceRecovery: MarketplaceRecovery | null
   // Agents currently pulsing in the roster because a selection reached them.
   flashedAgentIds: string[]
+  /**
+   * WHICH CODING AGENT THIS CONFIGURATION IS BEING INSTALLED ONTO.
+   *
+   * Here rather than in `config-store`, and that is ruling 3 rather than convenience: the provider
+   * never enters the payload and never enters the saved selection, so one saved setup installs on
+   * either and every already-minted share id keeps working. It travels on the COMMAND the dialog
+   * prints. What it changes on screen is that command, the paths the two dialogs name, and which
+   * placements and sub-agents the panel will let a visitor ask for.
+   *
+   * Transient, like every other field below the arrangement four: a reload lands on Claude, which
+   * is what `init --from <id>` with no flag installs — so what a returning visitor sees and what
+   * the bare command does are the same thing.
+   */
+  provider: Provider
 
   openPanel: (skillId: string | null) => void
   togglePanel: (skillId: string) => void
@@ -121,6 +136,7 @@ type UiState = {
   parkCatalogue: (recovery: MarketplaceRecovery, waiting: string) => void
   flashAgents: (agentIds: string[]) => void
   clearFlash: () => void
+  setProvider: (provider: Provider) => void
 }
 
 // Module-level, not state: the pending timer is an implementation detail of
@@ -145,6 +161,7 @@ export const useUiStore = create<UiState>()(
       catalogueNotice: null,
       marketplaceRecovery: null,
       flashedAgentIds: [],
+      provider: "claude",
 
       openPanel: (skillId) => set({ openPanelSkillId: skillId }),
       togglePanel: (skillId) =>
@@ -230,6 +247,12 @@ export const useUiStore = create<UiState>()(
 
         flashTimer = setTimeout(() => set({ flashedAgentIds: [] }), FLASH_MS)
       },
+
+      // The whole of what the control writes. Nothing else moves: the provider
+      // decides where an install goes and which renderer writes it, so a press
+      // that touched a skill or a sub-agent would be changing something the
+      // visitor chose in order to answer a question about where it lands.
+      setProvider: (provider) => set({ provider }),
 
       // A pulse narrates a selection; when that selection is gone — deselect,
       // stack switch, import — the pulse must not outlive it.

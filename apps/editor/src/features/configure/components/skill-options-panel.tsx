@@ -20,8 +20,14 @@ import {
   type MatrixGroup,
   type RoleColumn,
 } from "@/features/configure/lib/agent-placement"
+import { placementRefusal } from "@/features/configure/lib/provider"
 import { isEjectOnly, useConfigStore } from "@/stores/config-store"
-import type { LoadState, SkillEntry } from "@/stores/persisted-schema"
+import type {
+  LoadState,
+  SkillEntry,
+  SkillOptions,
+} from "@/stores/persisted-schema"
+import { useUiStore } from "@/stores/ui-store"
 
 // The one option in the panel whose consequence is not self-evident, so the
 // one that gets explained — on demand rather than as standing hint text.
@@ -125,9 +131,23 @@ export function SkillOptionsPanel({
 }) {
   const setSkillOption = useConfigStore((state) => state.setSkillOption)
   const cycleAssignment = useConfigStore((state) => state.cycleAssignment)
+  const provider = useUiStore((state) => state.provider)
   const [metaOpen, setMetaOpen] = useState(false)
 
   const ejectOnly = isEjectOnly(skillId)
+
+  // The panel is the SECOND door onto the two values the cell's butted pairs
+  // set, so it asks the same question of the same rule — a guard on one door
+  // is a guard the other walks around, which is the shape the eject-only rule
+  // above already answers by being enforced twice.
+  const refusalFor = (patch: Partial<SkillOptions>) =>
+    placementRefusal(provider, { ...entry, ...patch })
+
+  const pick = (patch: Partial<SkillOptions>) => {
+    if (refusalFor(patch) !== undefined) return
+
+    setSkillOption(skillId, patch)
+  }
 
   // Both close over the open skill, so they live here rather than at module
   // scope — but they are still named, so the grid below reads as one line.
@@ -185,7 +205,13 @@ export function SkillOptionsPanel({
             // being overruled — the store refuses it too, and neither half is
             // a fallback for the other.
             disabled={ejectOnly && install === "plugin"}
-            onClick={() => setSkillOption(skillId, { install })}
+            // `aria-disabled` rather than `disabled` for the provider's own
+            // refusal, and the difference is the reason: this one HAS a reason
+            // to read, and a disabled control suppresses the pointer events
+            // that would open it.
+            aria-disabled={refusalFor({ install }) !== undefined || undefined}
+            title={refusalFor({ install })}
+            onClick={() => pick({ install })}
           >
             {install}
           </SegmentedItem>
@@ -203,7 +229,9 @@ export function SkillOptionsPanel({
           <SegmentedItem
             key={scope}
             active={entry.scope === scope}
-            onClick={() => setSkillOption(skillId, { scope })}
+            aria-disabled={refusalFor({ scope }) !== undefined || undefined}
+            title={refusalFor({ scope })}
+            onClick={() => pick({ scope })}
           >
             {scope}
           </SegmentedItem>

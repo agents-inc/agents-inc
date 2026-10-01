@@ -1,6 +1,7 @@
 // Everything the screen shows that is not stored. All pure — (catalog, config,
 // search) in, view data out — so nothing here can cache a stale copy.
 
+import type { Provider } from "@workspace/compile"
 import {
   SUB_AGENT_GROUPS,
   type AssignmentTarget,
@@ -37,6 +38,7 @@ import {
   type RosterGroupBy,
   type SkillEntry,
 } from "@/stores/persisted-schema"
+import { compilesAgent, offersPlacement } from "./provider"
 
 // The selection and nothing else. Narrower than `PersistedConfig` on purpose:
 // a remembered skill is not selected, so no derivation may see one.
@@ -239,6 +241,10 @@ const incompatibleReasonOf = (cause: IncompatibilityCause): string => {
       return requirement.needsAny && requirement.skillIds.length > 1
         ? `Needs one of ${listNames(requirement.skillIds, ", ")}`
         : `Needs ${listNames(requirement.skillIds, " and ")}`
+    }
+    default: {
+      const _exhaustive: never = cause
+      return _exhaustive
     }
   }
 }
@@ -759,6 +765,70 @@ export const summarize = (config: ConfigSelection): ConfigSummary => {
   }
 }
 
+/**
+ * The selected skills the chosen provider has no way to install, by the name the grid draws them
+ * under.
+ *
+ * NOT A FIELD OF {@link ConfigSummary}: every number there is a fact about the configuration
+ * alone, and this one is a fact about the configuration AND the provider — a pair that is
+ * perfectly legal on Claude and has no mechanism on Codex. Folding it in would make every count on
+ * screen depend on a control that is meant to change none of them.
+ *
+ * NAMES RATHER THAN A COUNT, because the notice has to say which skill is asking: a visitor who
+ * switched provider with fourteen skills selected cannot act on "one placement is unavailable".
+ *
+ * Sorted, so the sentence does not reshuffle as skills are picked — `config.skills` is keyed in
+ * selection order, which is an order nobody chose.
+ */
+export const selectUnofferedPlacements = (
+  config: ConfigSelection,
+  provider: Provider
+): string[] =>
+  Object.entries(config.skills)
+    .filter(([, entry]) => !offersPlacement(provider, entry))
+    .map(([skillId]) => ({ displayName: displayNameOf(skillId) }))
+    .sort(byDisplayName)
+    .map((skill) => skill.displayName)
+
+/**
+ * THE SUB-AGENTS AN INSTALL WOULD ACTUALLY WRITE, which is a fact about the configuration AND the
+ * provider — so it is a selector rather than a field of {@link ConfigSummary}, for the reason
+ * {@link selectUnofferedPlacements} is one.
+ *
+ * Every number in `summarize` is the configuration's own and must stay that way; this is the number
+ * the Install button and the install dialog's footer state, and those two are claims about an
+ * install. A Codex install drops `agent-summoner` and `skill-summoner` whatever the configuration
+ * says (D8), so a provider-blind count there states a number no install produces — and it was
+ * stating it beside an output preview that had already dropped them.
+ *
+ * THE CONFIGURATION IS UNTOUCHED. Ruling 3 keeps the payload provider-neutral: the pins are still
+ * there, the roster still draws both rows with their reason, and going back to Claude counts them
+ * again. This filters the ANSWER, never the selection.
+ */
+export const selectInstalledAgents = (
+  config: ConfigSelection,
+  provider: Provider
+): SubAgent[] =>
+  allAgents().filter(
+    (agent) => isAgentOn(config, agent.id) && compilesAgent(provider, agent.id)
+  )
+
+/**
+ * The pinned-on sub-agents the chosen provider leaves out — the other half of the pair above, and
+ * the half that lets a surface SAY so.
+ *
+ * Empty on Claude, and empty on Codex for a configuration that never pinned one: a summoner nobody
+ * selected was not "left out", it was never in. That is what keeps the notice off every Codex
+ * configuration rather than only off the ones with nothing to report.
+ */
+export const selectAgentsLeftOut = (
+  config: ConfigSelection,
+  provider: Provider
+): SubAgent[] =>
+  allAgents().filter(
+    (agent) => isAgentOn(config, agent.id) && !compilesAgent(provider, agent.id)
+  )
+
 // ── Install inventory ────────────────────────────────────────────────────
 
 export type InventorySkill = {
@@ -782,7 +852,20 @@ export type InventoryAgent = {
 export type InstallInventory = {
   project: InventorySkill[]
   global: InventorySkill[]
+  /** Only what this provider writes — see {@link selectInstalledAgents}. */
   agents: InventoryAgent[]
+  /**
+   * The pinned-on sub-agents it does not, so the pane can name them rather than
+   * drawing one fewer row than the roster shows.
+   *
+   * D18's reasoning one surface over: a visitor who toggled Claude → Codex must
+   * not watch two sub-agents vanish unexplained. The roster answers it by
+   * keeping the rows and disabling them; this pane is the list of what is about
+   * to be WRITTEN, so a disabled row there would be a file that is not written
+   * sitting in the list of files that are. A line naming them is the honest
+   * shape here.
+   */
+  leftOut: SubAgent[]
 }
 
 type ScopedInventorySkill = InventorySkill & { scope: "project" | "global" }
@@ -803,7 +886,8 @@ const inScope =
     skill.scope === scope
 
 export const selectInstallInventory = (
-  config: ConfigSelection
+  config: ConfigSelection,
+  provider: Provider
 ): InstallInventory => {
   const skills = toInventorySkills(config)
 
@@ -815,13 +899,14 @@ export const selectInstallInventory = (
   return {
     project: skills.filter(inScope("project")),
     global: skills.filter(inScope("global")),
-    agents: allAgents()
-      .filter((agent) => isAgentOn(config, agent.id))
-      .map((agent) => ({
-        agent,
-        baseOnly: !holdsSkills(agent.id),
-        scope: resolveAgentOptions(config.agents, agent.id).scope,
-      })),
+    // Through the same selector the Install button's count reads, so the pane's
+    // rows and the number under them cannot disagree about one install.
+    agents: selectInstalledAgents(config, provider).map((agent) => ({
+      agent,
+      baseOnly: !holdsSkills(agent.id),
+      scope: resolveAgentOptions(config.agents, agent.id).scope,
+    })),
+    leftOut: selectAgentsLeftOut(config, provider),
   }
 }
 

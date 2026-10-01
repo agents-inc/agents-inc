@@ -10,7 +10,7 @@ import {
   DialogPaneSplitter,
   DialogPanes,
 } from "@workspace/ui/components/dialog"
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { summarize } from "@/features/configure/lib/derive"
 import { toSeedPayload } from "@/features/configure/lib/seed"
@@ -22,6 +22,7 @@ import type {
   PreviewNode,
 } from "@/features/configure/lib/output-preview"
 import type { PreviewToken } from "@/features/configure/lib/render-tokens"
+import type { Provider } from "@workspace/compile"
 import type { SeedPayload } from "@workspace/matrix"
 import type { KeyboardEvent } from "react"
 
@@ -155,13 +156,22 @@ const failureMessage = (error: unknown): string =>
  * not a step. The work is one lazy import and a handful of Liquid renders, and
  * it is thrown away and redone whenever the configuration moves.
  */
-function useOutputPreview(payload: SeedPayload, live: boolean): PreviewState {
+function useOutputPreview(
+  payload: SeedPayload,
+  provider: Provider,
+  live: boolean
+): PreviewState {
   // Keyed by the payload it was built for, so "still building" is DERIVED from
   // the two rather than written into state by the effect. A `setState` in an
   // effect body is a cascading render, and it would also let an older build
   // that resolved late overwrite a newer one.
   const [built, setBuilt] = useState<{
     payload: SeedPayload
+    // Keyed by the provider as well as the payload, because the provider is not
+    // IN the payload (ruling 3) and the tree it draws is a different tree: two
+    // builds of the same selection on either provider would otherwise read as
+    // the same build and the second would never be asked for.
+    provider: Provider
     state: PreviewState
   } | null>(null)
 
@@ -171,23 +181,31 @@ function useOutputPreview(payload: SeedPayload, live: boolean): PreviewState {
     const attempt = new AbortController()
 
     void (async () => {
-      const state = await buildState(payload)
-      if (!attempt.signal.aborted) setBuilt({ payload, state })
+      const state = await buildState(payload, provider)
+      if (!attempt.signal.aborted) setBuilt({ payload, provider, state })
     })()
 
     return () => {
       attempt.abort()
     }
-  }, [payload, live])
+  }, [payload, provider, live])
 
-  return built?.payload === payload ? built.state : { status: "loading" }
+  return built?.payload === payload && built.provider === provider
+    ? built.state
+    : { status: "loading" }
 }
 
-async function buildState(payload: SeedPayload): Promise<PreviewState> {
+async function buildState(
+  payload: SeedPayload,
+  provider: Provider
+): Promise<PreviewState> {
   try {
     const { buildOutputPreview } =
       await import("@/features/configure/lib/output-preview")
-    return { status: "ready", preview: await buildOutputPreview(payload) }
+    return {
+      status: "ready",
+      preview: await buildOutputPreview(payload, provider),
+    }
   } catch (error) {
     // A payload the CLI would refuse — a project-scoped skill on a sub-agent
     // resting at global — throws in the decode rather than drawing a quieter
@@ -208,7 +226,10 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
   useWarmPreview(live)
 
   const payload = useMemo(() => toSeedPayload(config), [config])
-  const state = useOutputPreview(payload, live)
+  // Beside the payload rather than inside it: the provider decides which tree
+  // an install writes and never travels on the wire.
+  const provider = useUiStore((state) => state.provider)
+  const state = useOutputPreview(payload, provider, live)
 
   const open = dialog === "output"
   const fullscreen = useUiStore((state) => state.outputFullscreen)
@@ -542,34 +563,33 @@ function ContentPane({
           data-slot="preview-line"
           className="min-h-[1.0625rem] whitespace-pre-wrap"
         >
-          {tokens.map((token, index) =>
-            token.placeholder === true ? (
-              // The one run painted from the design rather than from the
-              // grammar. The ramp would give it the literal colour, which reads
-              // as a chosen value — and a value nobody has chosen yet is what
-              // this run says.
-              <span
-                key={index}
-                data-slot="preview-placeholder"
-                className="text-subtle"
-              >
-                {token.content}
-              </span>
-            ) : token.color === undefined ? (
-              <Fragment key={index}>{token.content}</Fragment>
-            ) : (
-              <span
-                key={index}
-                data-slot="preview-token"
-                style={{ color: token.color }}
-              >
-                {token.content}
-              </span>
-            )
-          )}
+          {tokens.map((token, index) => (
+            <TokenRun key={index} token={token} />
+          ))}
         </div>
       ))}
     </DialogPane>
+  )
+}
+
+/** One run of a line, painted the way its token says. */
+function TokenRun({ token }: { token: PreviewToken }) {
+  if (token.placeholder === true)
+    return (
+      // The one run painted from the design rather than from the grammar. The
+      // ramp would give it the literal colour, which reads as a chosen value —
+      // and a value nobody has chosen yet is what this run says.
+      <span data-slot="preview-placeholder" className="text-subtle">
+        {token.content}
+      </span>
+    )
+
+  if (token.color === undefined) return token.content
+
+  return (
+    <span data-slot="preview-token" style={{ color: token.color }}>
+      {token.content}
+    </span>
   )
 }
 
@@ -579,8 +599,8 @@ function ContentPane({
  * None of the five things a preview cannot know is papered over here. It cannot
  * see the disk it would install onto, so it is scoped to a clean machine and
  * says so as a claim rather than a hedge; it cannot know the project directory
- * or the relative import to `~/.claude-src`, so both are named rather than
- * guessed; it draws against the catalogue on screen, which a machine carrying
+ * or the relative import to the global source folder, so both are named rather
+ * than guessed; it draws against the catalogue on screen, which a machine carrying
  * locally-authored skills does not have; and a compiled sub-agent's first body
  * line is stamped with the release the corpus was vendored at, which is a real
  * difference for a visitor on an older CLI rather than one to hide.

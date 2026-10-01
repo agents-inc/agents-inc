@@ -19,6 +19,10 @@ const SCOPE_BAND_TEXT = {
 // copy of it, for the reason above.
 const ROSTER_HEADER_LABEL = "Sub-agents grouped by"
 
+// What the Share button says once the link is on the clipboard — the only
+// feedback a share has. Mirrored for the reason above; `shareLink` waits on it.
+const LINK_COPIED = "Link copied"
+
 // The right column: domain accordions, agents with their assignments inline,
 // and the footer pair of buttons. Everything is derived from `assignments` +
 // `agents`, so it is the natural place to assert that a change in the grid
@@ -62,6 +66,25 @@ export class RosterPanel {
     })
   }
 
+  /**
+   * WHAT THE CHOSEN PROVIDER CANNOT INSTALL, and which skill is asking for it.
+   *
+   * An ALERT, and that is the whole reason it is located by role rather than by
+   * slot: it appears in answer to a press — switching provider — and it BLOCKS
+   * Install while it is up. A change that takes a button away from someone is
+   * a change they are owed a word about, and `role="alert"` is the only way to
+   * give it to a reader who is not looking at the panel.
+   *
+   * Unambiguous inside the panel: `main`'s alert is the catalogue notice and
+   * `nav`'s is the account refusal, which is why both of those are scoped by
+   * their own landmark in `ConfigurePage`. The complementary landmark has no
+   * other alert, so this one is reached the way the README says everything
+   * should be.
+   */
+  get placementNotice(): Locator {
+    return this.root.getByRole("alert")
+  }
+
   // One row of the grouping menu. The tick beside the active one is decorative
   // — the state is `aria-checked` — so the name is the bare mode.
   groupOption(value: "domain" | "scope"): Locator {
@@ -78,6 +101,33 @@ export class RosterPanel {
   // a copy of it here would be a second statement of what the button says.
   saveNarrating(label: string): Locator {
     return this.root.getByRole("button", { name: label, exact: true })
+  }
+
+  // The Share button wearing the words its own ending gave it, for the reason
+  // `saveNarrating` exists: `shareButton` locates by the resting word, so it
+  // stops matching the instant the button narrates — and the button is the only
+  // feedback a share has, since the link goes to the clipboard where no
+  // assertion can see it.
+  //
+  // Here rather than in each spec, which is this suite's rule about where a
+  // locator may be built. Specs written before it wrote the same
+  // `getByRole` inline.
+  shareNarrating(label: string): Locator {
+    return this.root.getByRole("button", { name: label, exact: true })
+  }
+
+  /**
+   * Shares, and waits for the link to reach the clipboard.
+   *
+   * The two acts every spec reading a minted payload takes before it reads
+   * one: the POST is made on the press, and the narration is what says it was
+   * answered. A `waitFor` rather than an expectation, because this file locates
+   * and the specs expect — a share that never narrates fails the spec at its
+   * timeout, before any assertion reads a payload that was not answered.
+   */
+  async shareLink() {
+    await this.shareButton.click()
+    await this.shareNarrating(LINK_COPIED).waitFor()
   }
 
   // The sticky band, named by its whole text: "web 4 of 7".
@@ -126,7 +176,7 @@ export class RosterPanel {
     })
   }
 
-  // The whole agent row — the pin button AND the three cycling words beside it
+  // The whole agent row — the pin button AND the three option words beside it
   // — which is the box the assignment pulse paints. Located by slot for the
   // reason `headerRule` is: the row is a semantics-free wrapper, so there is no
   // role or name to reach it by, and an `xpath=..` hop off the pin button would
@@ -185,13 +235,11 @@ export class RosterPanel {
   // The panel any of the three words opens: one per agent, and one open across
   // the whole roster at a time.
   agentOptions(agentId: string): Locator {
-    return this.root
-      .locator('[data-slot="agent-options"]')
-      .filter({
-        has: this.page.getByRole("radiogroup", {
-          name: `Model for ${agentId}`,
-        }),
-      })
+    return this.root.locator('[data-slot="agent-options"]').filter({
+      has: this.page.getByRole("radiogroup", {
+        name: `Model for ${agentId}`,
+      }),
+    })
   }
 
   // One column of it. Every option is on screen at once, which is the point of

@@ -1,4 +1,7 @@
-import { MARKETPLACE_CANONICAL_REF } from "@workspace/api-mocks/fixtures"
+import {
+  MARKETPLACE_CANONICAL_REF,
+  MARKETPLACE_REF,
+} from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
 import {
@@ -26,9 +29,14 @@ const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
 // the loaded marketplace" is observable rather than a matter of counting.
 // `ref` is what a visitor types; `stored` is what the app then holds and what
 // the install command has to name — the form `--marketplace` reads as a
-// repository rather than as a directory on the receiver's disk.
+// repository rather than as a directory on the receiver's disk. Both come from
+// the fixture as a PAIR, because `stored` is the canonical form of `ref` and
+// the header assertion reads one after the spec typed the other: a typed ref
+// and a bound canonical one could drift apart, and the spec would then assert
+// a marketplace it never loaded. The skill's name stays written out — it is
+// text the grid renders.
 const ACME = {
-  ref: "acme/skills",
+  ref: MARKETPLACE_REF,
   stored: MARKETPLACE_CANONICAL_REF,
   skill: "Acme Widgets",
 } as const
@@ -58,6 +66,31 @@ test.describe("install dialog", () => {
   test("lists the sub-agents that will be written", async ({ configure }) => {
     await expect(configure.installDialog.agentsPane).toContainText("Agents")
     await expect(configure.installDialog.agentsPane).toContainText("developer")
+  })
+
+  /**
+   * D11. Step 2 has named `agents/config.ts` since 2026-08-04 — a path the
+   * installer writes nowhere, under a directory that does not exist at either
+   * root. Nothing here pinned the sentence, which is the whole reason it stood:
+   * every other assertion in this file is about the panes or the command.
+   *
+   * What the installer writes is the config pair, in the source folder, and
+   * `apps/www`'s `editor/install-and-share.md` has said so all along.
+   *
+   * The string is written out rather than imported, the rule this suite follows
+   * everywhere: an assertion reading the constant the product renders moves with
+   * it and can never fail. And the wrong path is pinned as an ABSENCE beside it,
+   * because a sentence naming both would satisfy the first assertion alone.
+   */
+  test("names the config file the installer actually writes", async ({
+    configure,
+  }) => {
+    await expect(configure.installDialog.root).toContainText(
+      ".agents-inc/claude/config.ts"
+    )
+    await expect(configure.installDialog.root).not.toContainText(
+      "agents/config.ts"
+    )
   })
 
   test("shows both commands", async ({ configure }) => {

@@ -121,6 +121,49 @@ export const captureCreateConfig = (page: Page) => {
 }
 
 /**
+ * The same spy, keeping the bytes rather than the object.
+ *
+ * `captureCreateConfig` above answers `request.json()`, which is the right
+ * reading for every spec that asks what a payload CONTAINS — and the wrong one
+ * for a spec whose whole claim is that two payloads are the SAME. A parse
+ * normalises: whitespace goes, and two bodies that differ only in how they were
+ * serialised come back equal. "One saved setup installs on either provider" is
+ * a claim about what leaves the browser, so what has to be compared is what
+ * left it.
+ *
+ * Appended in order, one entry per `POST /configs`, exactly as the sibling is —
+ * minting happens once per install-dialog open, so a spec comparing two
+ * configurations reads the entries it added around each one.
+ *
+ * A SPY AND NOTHING ELSE, for the reason written out at length above: the
+ * response is `configHandlers`' own, so this double is never looser than the
+ * route it stands in for, and a body the write contract refuses still lands in
+ * the log.
+ */
+export const captureCreateConfigBodies = (page: Page) => {
+  const bodies: string[] = []
+
+  stubWith(page, [
+    http.post<PathParams, Record<string, unknown>>(
+      CONFIGS_URL,
+      async ({ request }) => {
+        // A body can be consumed once and both steps below want it, so one of
+        // them reads a clone. Here it is the RECORDING that takes the original:
+        // `request.text()` is the unparsed form this helper exists for, and the
+        // clone is what carries the request on to the handlers that answer it.
+        const forwarded = request.clone()
+        bodies.push(await request.text())
+
+        return getResponse(configHandlers, forwarded)
+      }
+    ),
+    ...configHandlers,
+  ])
+
+  return bodies
+}
+
+/**
  * What the store answers a body handed straight to it, with no app in between.
  *
  * There is no route through the EDITOR to a body the write contract refuses:

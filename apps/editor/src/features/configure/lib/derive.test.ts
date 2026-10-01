@@ -8,18 +8,18 @@ import {
 } from "@workspace/matrix"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
+import {
+  liveAssignment,
+  offAssignment,
+  skillEntry,
+} from "@/__tests__/factories/config-selection-factories"
 import type { ConfigureSearch } from "@/routes/search"
 import {
   externalSkillId,
   useCatalogStore,
   type ExternalSkill,
 } from "@/stores/catalog-store"
-import {
-  DEFAULT_SKILL_OPTIONS,
-  type Assignment,
-  type LoadState,
-  type SkillEntry,
-} from "@/stores/persisted-schema"
+import type { SkillEntry } from "@/stores/persisted-schema"
 import {
   SCOPE_ERROR,
   catalogueSkillCount,
@@ -27,7 +27,9 @@ import {
   monogramOf,
   selectDomainTabs,
   selectDomainViews,
+  selectAgentsLeftOut,
   selectInstallInventory,
+  selectInstalledAgents,
   selectReachability,
   selectRosterGroups,
   selectedOnlyOptions,
@@ -54,21 +56,15 @@ const search = (over: Partial<ConfigureSearch> = {}): ConfigureSearch => ({
   ...over,
 })
 
-const live = (load: LoadState = "lazy"): Assignment => ({
-  load,
-  enabled: true,
-})
-const off = (load: LoadState = "lazy"): Assignment => ({
-  load,
-  enabled: false,
-})
-
 // One record per agent, holding all four of its decisions — the pin, the
 // model, the effort, the scope — and any of them may be absent.
 const scratch = (
   skills: Record<string, SkillEntry> = {},
   agents: ConfigSelection["agents"] = {}
 ): ConfigSelection => ({ stackId: null, skills, agents })
+
+// A sub-agent that writes files, and one Codex compiles like any other.
+const WRITING_AGENT = "web-developer"
 
 // A stack with real assignments, so the "unedited" baseline is not trivially empty.
 const STACK = STACKS.find((candidate) => {
@@ -83,14 +79,13 @@ const asApplied = (): ConfigSelection => ({
   skills: Object.fromEntries(
     EXPANSION.skillIds.map((skillId) => [
       skillId,
-      {
-        ...DEFAULT_SKILL_OPTIONS,
+      skillEntry({
         assignments: Object.fromEntries(
           (EXPANSION.assignmentsBySkill[skillId] ?? []).map(
-            ({ agentId, load }) => [agentId, live(load)]
+            ({ agentId, load }) => [agentId, liveAssignment(load)]
           )
         ),
-      } satisfies SkillEntry,
+      }),
     ])
   ),
 })
@@ -137,7 +132,7 @@ describe("isStackCustom", () => {
     expect(
       isStackCustom(
         scratch({
-          [FIRST_SKILL]: { ...DEFAULT_SKILL_OPTIONS, assignments: {} },
+          [FIRST_SKILL]: skillEntry({ assignments: {} }),
         })
       )
     ).toBe(true)
@@ -175,7 +170,7 @@ describe("isStackCustom", () => {
         edit({
           assignments: {
             ...current.assignments,
-            [agentId]: live(
+            [agentId]: liveAssignment(
               assignment.load === "preloaded" ? "lazy" : "preloaded"
             ),
           },
@@ -227,7 +222,7 @@ describe("isStackCustom", () => {
 
 describe("summarize", () => {
   it("counts nothing for an empty configuration", () => {
-    expect(summarize(scratch())).toEqual({
+    expect(summarize(scratch())).toStrictEqual({
       skillCount: 0,
       agentCount: 0,
       assignmentCount: 0,
@@ -239,14 +234,15 @@ describe("summarize", () => {
 
   it("counts each sub-agent once across skills, and assignments every time", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
+      a: skillEntry({
         assignments: {
-          "web-developer": live("preloaded"),
-          reviewer: live(),
+          "web-developer": liveAssignment("preloaded"),
+          reviewer: liveAssignment("lazy"),
         },
-      },
-      b: { ...DEFAULT_SKILL_OPTIONS, assignments: { "web-developer": live() } },
+      }),
+      b: skillEntry({
+        assignments: { "web-developer": liveAssignment("lazy") },
+      }),
     })
 
     expect(summarize(config)).toMatchObject({
@@ -260,13 +256,12 @@ describe("summarize", () => {
   // A row the roster switched off must not install, so it must not count.
   it("ignores disabled assignments everywhere", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
+      a: skillEntry({
         assignments: {
-          "web-developer": live("preloaded"),
-          reviewer: off("preloaded"),
+          "web-developer": liveAssignment("preloaded"),
+          reviewer: offAssignment("preloaded"),
         },
-      },
+      }),
     })
 
     expect(summarize(config)).toMatchObject({
@@ -285,10 +280,7 @@ describe("summarize", () => {
   it("does not count assignments on a pinned-off agent", () => {
     const config = scratch(
       {
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live() },
-        },
+        a: skillEntry({ assignments: { "web-developer": liveAssignment() } }),
       },
       { "web-developer": { on: false } }
     )
@@ -306,14 +298,13 @@ describe("summarize", () => {
   // the roster showed three rows.
   it("counts an assignment the two scopes rule out like any other", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
+      a: skillEntry({
         scope: "project",
         assignments: {
-          "web-developer": live("preloaded"),
-          reviewer: live(),
+          "web-developer": liveAssignment("preloaded"),
+          reviewer: liveAssignment("lazy"),
         },
-      },
+      }),
     })
 
     expect(summarize(config)).toMatchObject({
@@ -329,10 +320,13 @@ describe("summarize", () => {
   // to resolve — two project skills on one global sub-agent is one click.
   it("reports no unscoped sub-agents when every scope agrees", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
-        assignments: { "web-developer": live(), reviewer: live() },
-      },
+      a: skillEntry({
+        scope: "global",
+        assignments: {
+          "web-developer": liveAssignment(),
+          reviewer: liveAssignment(),
+        },
+      }),
     })
 
     expect(summarize(config).unscopedAgentCount).toBe(0)
@@ -340,16 +334,17 @@ describe("summarize", () => {
 
   it("counts each sub-agent needing project scope once", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
+      a: skillEntry({
         scope: "project",
-        assignments: { "web-developer": live(), reviewer: live() },
-      },
-      b: {
-        ...DEFAULT_SKILL_OPTIONS,
+        assignments: {
+          "web-developer": liveAssignment(),
+          reviewer: liveAssignment(),
+        },
+      }),
+      b: skillEntry({
         scope: "project",
-        assignments: { "web-developer": live() },
-      },
+        assignments: { "web-developer": liveAssignment() },
+      }),
     })
 
     expect(summarize(config).unscopedAgentCount).toBe(2)
@@ -360,11 +355,10 @@ describe("summarize", () => {
   it("clears the count once the sub-agent is pinned to the project", () => {
     const config = scratch(
       {
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
+        a: skillEntry({
           scope: "project",
-          assignments: { "web-developer": live("preloaded") },
-        },
+          assignments: { "web-developer": liveAssignment("preloaded") },
+        }),
       },
       { "web-developer": { scope: "project" } }
     )
@@ -385,15 +379,14 @@ describe("summarize", () => {
   // this assertion green over a channel that never carried a value.
   it("does not count a switched-off row as needing anything", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
-        assignments: { "web-developer": live() },
-      },
-      b: {
-        ...DEFAULT_SKILL_OPTIONS,
+      a: skillEntry({
+        scope: "global",
+        assignments: { "web-developer": liveAssignment() },
+      }),
+      b: skillEntry({
         scope: "project",
-        assignments: { "web-developer": off() },
-      },
+        assignments: { "web-developer": offAssignment() },
+      }),
     })
 
     expect(summarize(config).unscopedAgentCount).toBe(0)
@@ -404,11 +397,10 @@ describe("summarize", () => {
   it("does not count a pinned-off sub-agent as needing anything", () => {
     const config = scratch(
       {
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
+        a: skillEntry({
           scope: "project",
-          assignments: { "web-developer": live() },
-        },
+          assignments: { "web-developer": liveAssignment() },
+        }),
       },
       { "web-developer": { on: false } }
     )
@@ -418,12 +410,14 @@ describe("summarize", () => {
 
   it("counts ejected skills rather than ejected assignments", () => {
     const config = scratch({
-      a: {
-        ...DEFAULT_SKILL_OPTIONS,
+      a: skillEntry({
         install: "eject",
-        assignments: { "web-developer": live(), reviewer: live() },
-      },
-      b: { ...DEFAULT_SKILL_OPTIONS, assignments: {} },
+        assignments: {
+          "web-developer": liveAssignment(),
+          reviewer: liveAssignment(),
+        },
+      }),
+      b: skillEntry({ assignments: {} }),
     })
 
     expect(summarize(config).ejectedCount).toBe(1)
@@ -446,10 +440,12 @@ describe("selectRosterGroups", () => {
   it("derives on from holding an enabled skill", () => {
     const rows = allRows(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live(), reviewer: off() },
-        },
+        a: skillEntry({
+          assignments: {
+            "web-developer": liveAssignment(),
+            reviewer: offAssignment(),
+          },
+        }),
       })
     )
 
@@ -457,7 +453,7 @@ describe("selectRosterGroups", () => {
     // A disabled row keeps the skill listed but does not switch the agent on.
     const reviewer = rows.find((row) => row.agent.id === "reviewer")!
     expect(reviewer.on).toBe(false)
-    expect(reviewer.skills.map((skill) => skill.id)).toEqual(["a"])
+    expect(reviewer.skills.map((skill) => skill.id)).toStrictEqual(["a"])
     expect(reviewer.skills[0]!.enabled).toBe(false)
   })
 
@@ -465,10 +461,7 @@ describe("selectRosterGroups", () => {
     const rows = allRows(
       scratch(
         {
-          a: {
-            ...DEFAULT_SKILL_OPTIONS,
-            assignments: { "web-developer": live() },
-          },
+          a: skillEntry({ assignments: { "web-developer": liveAssignment() } }),
         },
         { "web-developer": { on: false }, "web-tester": { on: true } }
       )
@@ -481,10 +474,12 @@ describe("selectRosterGroups", () => {
   it("counts only on agents in the domain badge", () => {
     const groups = selectRosterGroups(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live(), "web-tester": live() },
-        },
+        a: skillEntry({
+          assignments: {
+            "web-developer": liveAssignment(),
+            "web-tester": liveAssignment(),
+          },
+        }),
       })
     )
     const web = groups.find((group) => group.key === "web")!
@@ -498,10 +493,12 @@ describe("selectRosterGroups", () => {
   it("counts the reviewer in the meta badge", () => {
     const groups = selectRosterGroups(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live(), reviewer: live() },
-        },
+        a: skillEntry({
+          assignments: {
+            "web-developer": liveAssignment(),
+            reviewer: liveAssignment(),
+          },
+        }),
       })
     )
 
@@ -513,17 +510,16 @@ describe("selectRosterGroups", () => {
     const rows = allRows(
       scratch(
         {
-          a: {
-            ...DEFAULT_SKILL_OPTIONS,
+          a: skillEntry({
             assignments: {
-              "web-developer": live(),
-              reviewer: live(),
+              "web-developer": liveAssignment(),
+              reviewer: liveAssignment(),
               // Disabled — must not appear as a use.
-              "web-tester": off(),
+              "web-tester": offAssignment(),
               // Live, but the agent is pinned off — must not appear either.
-              "api-developer": live(),
+              "api-developer": liveAssignment(),
             },
-          },
+          }),
         },
         { "api-developer": { on: false } }
       )
@@ -533,7 +529,7 @@ describe("selectRosterGroups", () => {
       .find((row) => row.agent.id === "web-developer")!
       .skills[0]!.usedBy.map((agent) => agent.id)
 
-    expect(usedBy).toEqual(["web-developer", "reviewer"])
+    expect(usedBy).toStrictEqual(["web-developer", "reviewer"])
   })
 
   // The row carries the error and the sub-agent stays ON. Both halves matter:
@@ -543,27 +539,26 @@ describe("selectRosterGroups", () => {
   it("marks a row the two scopes rule out, leaving the sub-agent on", () => {
     const rows = allRows(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
+        a: skillEntry({
           scope: "project",
-          assignments: { "web-developer": live() },
-        },
+          assignments: { "web-developer": liveAssignment() },
+        }),
       })
     )
     const developer = rows.find((row) => row.agent.id === "web-developer")!
 
     expect(developer.on).toBe(true)
-    expect(developer.skills.map((skill) => skill.id)).toEqual(["a"])
+    expect(developer.skills.map((skill) => skill.id)).toStrictEqual(["a"])
     expect(developer.skills[0]!.scopeError).toBe(SCOPE_ERROR)
   })
 
   it("leaves a row the scopes allow unmarked", () => {
     const rows = allRows(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live() },
-        },
+        a: skillEntry({
+          scope: "global",
+          assignments: { "web-developer": liveAssignment() },
+        }),
       })
     )
 
@@ -579,11 +574,10 @@ describe("selectRosterGroups", () => {
   it("does not mark a switched-off row", () => {
     const rows = allRows(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
+        a: skillEntry({
           scope: "project",
-          assignments: { "web-developer": off() },
-        },
+          assignments: { "web-developer": offAssignment() },
+        }),
       })
     )
     const row = rows.find((agentRow) => agentRow.agent.id === "web-developer")!
@@ -600,11 +594,13 @@ describe("selectRosterGroups", () => {
     const rows = allRows(
       scratch(
         {
-          a: {
-            ...DEFAULT_SKILL_OPTIONS,
+          a: skillEntry({
             scope: "project",
-            assignments: { "web-developer": live(), reviewer: live() },
-          },
+            assignments: {
+              "web-developer": liveAssignment(),
+              reviewer: liveAssignment(),
+            },
+          }),
         },
         { reviewer: { scope: "project" } }
       )
@@ -614,7 +610,7 @@ describe("selectRosterGroups", () => {
       rows
         .find((row) => row.agent.id === "reviewer")!
         .skills[0]!.usedBy.map((agent) => agent.id)
-    ).toEqual(["web-developer", "reviewer"])
+    ).toStrictEqual(["web-developer", "reviewer"])
   })
 })
 
@@ -640,10 +636,7 @@ describe("selectRosterGroups grouped by scope", () => {
   const withOneAtProject = () =>
     scratch(
       {
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
-          assignments: { "web-developer": live() },
-        },
+        a: skillEntry({ assignments: { "web-developer": liveAssignment() } }),
       },
       { "web-developer": { scope: "project" } }
     )
@@ -782,10 +775,7 @@ describe("roster model, effort and scope", () => {
     const row = rowFor(
       scratch(
         {
-          a: {
-            ...DEFAULT_SKILL_OPTIONS,
-            assignments: { "web-developer": live() },
-          },
+          a: skillEntry({ assignments: { "web-developer": liveAssignment() } }),
         },
         { "web-developer": { on: false, effort: "xhigh" } }
       ),
@@ -800,22 +790,17 @@ describe("roster model, effort and scope", () => {
 
 describe("selectInstallInventory", () => {
   const config = scratch({
-    [FIRST_SKILL]: {
-      ...DEFAULT_SKILL_OPTIONS,
-      scope: "project",
-      assignments: {},
-    },
-    [EXPANSION.skillIds[1]!]: {
-      ...DEFAULT_SKILL_OPTIONS,
-      assignments: {},
-    },
+    [FIRST_SKILL]: skillEntry({ scope: "project", assignments: {} }),
+    [EXPANSION.skillIds[1]!]: skillEntry({ scope: "global", assignments: {} }),
   })
 
   it("splits skills by scope", () => {
-    const inventory = selectInstallInventory(config)
+    const inventory = selectInstallInventory(config, "claude")
 
-    expect(inventory.project.map((skill) => skill.id)).toEqual([FIRST_SKILL])
-    expect(inventory.global.map((skill) => skill.id)).toEqual([
+    expect(inventory.project.map((skill) => skill.id)).toStrictEqual([
+      FIRST_SKILL,
+    ])
+    expect(inventory.global.map((skill) => skill.id)).toStrictEqual([
       EXPANSION.skillIds[1],
     ])
   })
@@ -823,20 +808,24 @@ describe("selectInstallInventory", () => {
   // Insertion order would reshuffle the pane as skills are toggled.
   it("orders agents by the catalog, not by which skill referenced them first", () => {
     const applied = asApplied()
-    const forward = selectInstallInventory(applied)
-    const reversed = selectInstallInventory({
-      ...applied,
-      skills: Object.fromEntries(Object.entries(applied.skills).reverse()),
-    })
+    const forward = selectInstallInventory(applied, "claude")
+    const reversed = selectInstallInventory(
+      {
+        ...applied,
+        skills: Object.fromEntries(Object.entries(applied.skills).reverse()),
+      },
+      "claude"
+    )
 
-    expect(forward.agents.map(({ agent }) => agent.id)).toEqual(
+    expect(forward.agents.map(({ agent }) => agent.id)).toStrictEqual(
       reversed.agents.map(({ agent }) => agent.id)
     )
   })
 
   it("includes a pinned bare agent, marked base-only", () => {
     const inventory = selectInstallInventory(
-      scratch({}, { "web-developer": { on: true } })
+      scratch({}, { "web-developer": { on: true } }),
+      "claude"
     )
 
     expect(inventory.agents).toHaveLength(1)
@@ -855,14 +844,15 @@ describe("selectInstallInventory", () => {
           "web-developer": { on: true, scope: "project" },
           reviewer: { on: true },
         }
-      )
+      ),
+      "claude"
     )
 
     expect(
       Object.fromEntries(
         inventory.agents.map(({ agent, scope }) => [agent.id, scope])
       )
-    ).toEqual({ "web-developer": "project", reviewer: "global" })
+    ).toStrictEqual({ "web-developer": "project", reviewer: "global" })
   })
 
   // The pane lists what the install writes, and the install is blocked while an
@@ -871,15 +861,15 @@ describe("selectInstallInventory", () => {
   it("lists an agent whose skills the scopes rule out", () => {
     const inventory = selectInstallInventory(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
+        a: skillEntry({
           scope: "project",
-          assignments: { "web-developer": live() },
-        },
-      })
+          assignments: { "web-developer": liveAssignment() },
+        }),
+      }),
+      "claude"
     )
 
-    expect(inventory.agents.map(({ agent }) => agent.id)).toEqual([
+    expect(inventory.agents.map(({ agent }) => agent.id)).toStrictEqual([
       "web-developer",
     ])
   })
@@ -889,12 +879,12 @@ describe("selectInstallInventory", () => {
   it("does not call it base-only — it holds a skill", () => {
     const inventory = selectInstallInventory(
       scratch({
-        a: {
-          ...DEFAULT_SKILL_OPTIONS,
+        a: skillEntry({
           scope: "project",
-          assignments: { "web-developer": live() },
-        },
-      })
+          assignments: { "web-developer": liveAssignment() },
+        }),
+      }),
+      "claude"
     )
 
     expect(inventory.agents[0]!.baseOnly).toBe(false)
@@ -904,22 +894,126 @@ describe("selectInstallInventory", () => {
     const inventory = selectInstallInventory(
       scratch(
         {
-          a: {
-            ...DEFAULT_SKILL_OPTIONS,
-            assignments: { "web-developer": live() },
-          },
+          a: skillEntry({ assignments: { "web-developer": liveAssignment() } }),
         },
         { "web-developer": { on: false } }
-      )
+      ),
+      "claude"
     )
 
-    expect(inventory.agents).toEqual([])
+    expect(inventory.agents).toStrictEqual([])
+  })
+})
+
+/**
+ * WHAT WOULD INSTALL IS A FACT ABOUT THE CONFIGURATION **AND** THE PROVIDER.
+ *
+ * Every number in {@link summarize} is a fact about the configuration alone and stays that way —
+ * that is the rule `selectUnofferedPlacements` is already outside it for. The sub-agent count on
+ * the Install button and in the install dialog's footer is NOT one of those: a Codex install drops
+ * `agent-summoner` and `skill-summoner` whatever the configuration says, so a provider-blind count
+ * states a number no install produces.
+ *
+ * IT IS NOT HYPOTHETICAL. Every one of the seventeen shipped stacks staffs both summoners, so there
+ * is no Codex configuration that avoids it — `Next.js Full-Stack` turns eleven sub-agents on and
+ * nine of them land. Re-derive with:
+ *
+ *   bun -e 'import {MATRIX} from "./packages/matrix/src/read-model/source.ts";
+ *     import {expandStack} from "./packages/matrix/src/read-model/stacks.ts";
+ *     for (const s of MATRIX.suggestedStacks) { const e = expandStack(s.id);
+ *       const on = new Set(Object.values(e.assignmentsBySkill).flat().map(t => t.agentId));
+ *       console.log(s.id, on.size, [...on].filter(a => a.endsWith("-summoner")).length) }'
+ *
+ * BOTH SIDES OF EVERY ASSERTION, because "Codex installs fewer" is equally satisfied by a selector
+ * that dropped the whole roster. The Claude arm is the control, and it is the one that says the two
+ * are ordinary sub-agents everywhere else.
+ */
+describe("the sub-agents a provider would actually install", () => {
+  const SUMMONERS = ["agent-summoner", "skill-summoner"] as const
+
+  const withBothSummoners = scratch(
+    {},
+    {
+      [SUMMONERS[0]]: { on: true },
+      [SUMMONERS[1]]: { on: true },
+      [WRITING_AGENT]: { on: true },
+    }
+  )
+
+  // Sorted on both sides, which is what lets the members be named without also
+  // pinning the catalogue's domain order — that order is its own spec two
+  // blocks up ("orders agents by the catalog"), and restating it here would
+  // make a domain reshuffle redden a claim about providers.
+  const idsOf = (agents: readonly { id: string }[]) =>
+    agents.map((agent) => agent.id).sort()
+
+  it("counts all three on Claude", () => {
+    expect(
+      idsOf(selectInstalledAgents(withBothSummoners, "claude"))
+    ).toStrictEqual([...SUMMONERS, WRITING_AGENT].sort())
+  })
+
+  it("counts only the one Codex compiles", () => {
+    expect(
+      idsOf(selectInstalledAgents(withBothSummoners, "codex"))
+    ).toStrictEqual([WRITING_AGENT])
+  })
+
+  // The dialog has to be able to SAY which two, rather than quietly listing one
+  // fewer row than the roster shows — D18's reasoning arriving one surface over.
+  it("names the ones it dropped, and names none on Claude", () => {
+    expect(
+      idsOf(selectAgentsLeftOut(withBothSummoners, "codex"))
+    ).toStrictEqual([...SUMMONERS].sort())
+    expect(selectAgentsLeftOut(withBothSummoners, "claude")).toStrictEqual([])
+  })
+
+  // A summoner nobody pinned is not something the install "left out" — it was
+  // never in it. Without this the notice fires on every Codex configuration.
+  it("names nothing for a summoner that was never on", () => {
+    expect(
+      selectAgentsLeftOut(
+        scratch({}, { [WRITING_AGENT]: { on: true } }),
+        "codex"
+      )
+    ).toStrictEqual([])
+  })
+
+  /**
+   * The install dialog's own list, which is the surface that was listing both
+   * summoners under "Agents" while the preview beside it drew neither.
+   */
+  it("keeps them out of the install inventory on Codex, and in it on Claude", () => {
+    const on = (provider: "claude" | "codex") =>
+      idsOf(
+        selectInstallInventory(withBothSummoners, provider).agents.map(
+          ({ agent }) => agent
+        )
+      )
+
+    expect(on("codex")).toStrictEqual([WRITING_AGENT])
+    expect(on("claude")).toStrictEqual([...SUMMONERS, WRITING_AGENT].sort())
+  })
+
+  // The arithmetic the two surfaces state, over a real stack rather than a
+  // hand-built pair — this is the configuration a visitor actually arrives with.
+  it("drops the two summoners out of an applied stack's count", () => {
+    const applied = asApplied()
+    const onClaude = selectInstalledAgents(applied, "claude")
+    const onCodex = selectInstalledAgents(applied, "codex")
+
+    for (const summoner of SUMMONERS) {
+      expect(idsOf(onClaude)).toContain(summoner)
+      expect(idsOf(onCodex)).not.toContain(summoner)
+    }
+    expect(onCodex.length).toBe(onClaude.length - 2)
+    expect(summarize(applied).agentCount).toBe(onClaude.length)
   })
 })
 
 describe("selectDomainViews", () => {
   const selected = scratch({
-    [FIRST_SKILL]: { ...DEFAULT_SKILL_OPTIONS, assignments: {} },
+    [FIRST_SKILL]: skillEntry({ assignments: {} }),
   })
   const empty = scratch()
 
@@ -979,18 +1073,18 @@ describe("selectDomainViews", () => {
 
   it("drops categories and domains that filter down to nothing", () => {
     const views = selectDomainViews(empty, search({ q: "zzzznotaskill" }))
-    expect(views).toEqual([])
+    expect(views).toStrictEqual([])
   })
 
   it("keeps only selected skills when asked", () => {
     const cells = allCells(selected, { sel: true })
 
-    expect(cells.map((cell) => cell.skill.id)).toEqual([FIRST_SKILL])
+    expect(cells.map((cell) => cell.skill.id)).toStrictEqual([FIRST_SKILL])
     expect(cells.every((cell) => cell.selected)).toBe(true)
   })
 
   it("shows nothing selected as nothing at all", () => {
-    expect(allCells(empty, { sel: true })).toEqual([])
+    expect(allCells(empty, { sel: true })).toStrictEqual([])
   })
 
   // A CELL CARRIES NO COUNT ANY MORE. Two tests here derived one from live
@@ -1107,7 +1201,7 @@ describe("incompatible cells", () => {
       .find((cell) => cell.skill.id === skillId)
 
   const withReact = scratch({
-    "web-framework-react": { ...DEFAULT_SKILL_OPTIONS, assignments: {} },
+    "web-framework-react": skillEntry({ assignments: {} }),
   })
 
   it("marks an unreachable skill incompatible, with the reason", () => {
@@ -1151,10 +1245,7 @@ describe("incompatible cells", () => {
   // Both are meta-frameworks, so swapping really is the way between them.
   it("still leaves the implier's own siblings swappable", () => {
     const withNextjs = scratch({
-      "web-meta-framework-nextjs": {
-        ...DEFAULT_SKILL_OPTIONS,
-        assignments: {},
-      },
+      "web-meta-framework-nextjs": skillEntry({ assignments: {} }),
     })
 
     expect(cellFor(withNextjs, "web-meta-framework-remix")!.incompatible).toBe(
@@ -1166,11 +1257,8 @@ describe("incompatible cells", () => {
   // sibling exemption must not rescue it.
   it("disables a sibling whose own requirement is out of reach", () => {
     const config = scratch({
-      "web-framework-react": { ...DEFAULT_SKILL_OPTIONS, assignments: {} },
-      "web-meta-framework-nextjs": {
-        ...DEFAULT_SKILL_OPTIONS,
-        assignments: {},
-      },
+      "web-framework-react": skillEntry({ assignments: {} }),
+      "web-meta-framework-nextjs": skillEntry({ assignments: {} }),
     })
 
     expect(cellFor(config, "web-meta-framework-sveltekit")!.incompatible).toBe(
@@ -1214,11 +1302,11 @@ describe("derivations over an external skill", () => {
 
   const picked = () =>
     scratch({
-      [HOUSE_ID]: {
+      [HOUSE_ID]: skillEntry({
         install: "eject",
         scope: "project",
-        assignments: { "web-developer": live() },
-      },
+        assignments: { "web-developer": liveAssignment() },
+      }),
     })
 
   beforeEach(() => {
@@ -1282,7 +1370,7 @@ describe("derivations over an external skill", () => {
   })
 
   it("is listed in the install inventory under its own name", () => {
-    const inventory = selectInstallInventory(picked())
+    const inventory = selectInstallInventory(picked(), "claude")
 
     expect(inventory.project.map((skill) => skill.displayName)).toStrictEqual([
       "House React",
@@ -1294,7 +1382,7 @@ describe("derivations over an external skill", () => {
   // provenance flag `GridSkill.added` carries for the cell's tag — a marker, not
   // a branch in any derivation.
   it("is marked in the install inventory as one whose contents can be read", () => {
-    const inventory = selectInstallInventory(picked())
+    const inventory = selectInstallInventory(picked(), "claude")
 
     expect(inventory.project[0]?.added).toBe(true)
   })
@@ -1496,7 +1584,7 @@ describe("catalogueSkillCount", () => {
 // catalogue's size and `selected` is the selection's.
 describe("selectedOnlyOptions", () => {
   it("offers both cells, off first", () => {
-    expect(selectedOnlyOptions(23, 238)).toEqual([
+    expect(selectedOnlyOptions(23, 238)).toStrictEqual([
       { selectedOnly: false, label: "all 238" },
       { selectedOnly: true, label: "selected 23" },
     ])
@@ -1507,7 +1595,7 @@ describe("selectedOnlyOptions", () => {
   // is exactly the swap this pins — and it is a swap the old single-label form
   // could hide, because only one of the two was ever on screen to compare.
   it("never lets one count wear the other's word", () => {
-    expect(selectedOnlyOptions(1, 2)).toEqual([
+    expect(selectedOnlyOptions(1, 2)).toStrictEqual([
       { selectedOnly: false, label: "all 2" },
       { selectedOnly: true, label: "selected 1" },
     ])

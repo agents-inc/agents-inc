@@ -4,8 +4,10 @@ import { seedPayloadSchema } from "@workspace/matrix"
 
 import { createSharedConfig } from "@/lib/api/configs"
 import { useCatalogStore } from "@/stores/catalog-store"
+import { useUiStore } from "@/stores/ui-store"
 import { toSeedPayload } from "./seed"
 
+import type { Provider } from "@workspace/compile"
 import type { ConfigSelection } from "./derive"
 import type { ShareRefusal, ShareResult } from "@/lib/api/configs"
 
@@ -20,6 +22,30 @@ const BASE_COMMAND = "npx agents-inc init"
 // itself — so brevity buys nothing, while a named flag says what the id is and
 // leaves room to accept a file or a URL later without a second one.
 const ID_FLAG = "--from"
+
+/**
+ * Which coding agent to install onto, and the one thing on this line the app chose rather than the
+ * visitor's configuration.
+ *
+ * ONLY EVER WRITTEN FOR A PROVIDER THAT IS NOT THE RESTING ONE. `init --from <id>` installs Claude,
+ * so a Claude command carrying the flag would be stating a default — and the flag's whole job here
+ * is to say that this install is the other thing.
+ *
+ * AFTER THE ID, not before it: the id is what the reader is being handed and the provider is a
+ * qualifier on it, which is also the order `packages/cli`'s own install fixture pairs them in.
+ */
+const PROVIDER_FLAG = "--provider"
+
+/**
+ * D15: `--provider` IS INVALID WITHOUT `--from`, so the flag cannot ride along on the fallback.
+ *
+ * `init --provider codex` with no id exits INVALID_ARGS, which is what makes "the interactive flow
+ * is Claude-only" provable rather than conventional. Appending it to the bare command would hand
+ * somebody whose worker is down a line that exits non-zero instead of one that starts a wizard — so
+ * the command stays bare and the absence is EXPLAINED here, or a Codex visitor reads a Claude
+ * command and finds out on their own machine.
+ */
+const PROVIDER_NEEDS_AN_ID = "a provider needs --from"
 
 export type InstallCommand =
   | { status: "minting" }
@@ -81,11 +107,29 @@ const toCommand = (minted: Minted | null, key: string): InstallCommand => {
   return { status: "ready", id: minted.result.id }
 }
 
-const noteFor = (command: InstallCommand, copied: boolean): string => {
+const noteFor = (
+  command: InstallCommand,
+  copied: boolean,
+  provider: Provider
+): string => {
   if (copied) return COMMAND_NOTES.copied
-  if (command.status === "failed") return COMMAND_NOTES[command.refusal]
+  if (command.status !== "failed") return COMMAND_NOTES[command.status]
 
-  return COMMAND_NOTES[command.status]
+  // The refusal's own words first, because what went wrong is the same either
+  // way — and then, on a provider the bare command does not install, what the
+  // command consequently cannot carry.
+  const refusal = COMMAND_NOTES[command.refusal]
+  return provider === "claude"
+    ? refusal
+    : `${refusal} · ${PROVIDER_NEEDS_AN_ID}`
+}
+
+/** The whole line the block hands over, which is what the clipboard gets. */
+const commandText = (command: InstallCommand, provider: Provider): string => {
+  if (command.status !== "ready") return BASE_COMMAND
+
+  const providerArgs = provider === "claude" ? [] : [PROVIDER_FLAG, provider]
+  return [BASE_COMMAND, ID_FLAG, command.id, ...providerArgs].join(" ")
 }
 
 // The install dialog's whole job is handing over a command that carries the
@@ -96,6 +140,12 @@ const noteFor = (command: InstallCommand, copied: boolean): string => {
 // exists, so re-opening the same configuration costs a read rather than one of
 // the free tier's 1000 daily writes.
 export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
+  // Read here rather than taken as an argument: the provider changes the
+  // command and nothing else the caller holds, and the dialog that renders this
+  // line has no other use for it. It is deliberately NOT in `serialized` below
+  // — the payload is the same bytes on either provider (ruling 3), so pressing
+  // the control must not re-mint and must not produce a second id.
+  const provider = useUiStore((state) => state.provider)
   // The seat's own two facts, subscribed rather than read once. A payload is
   // stamped with the marketplace it can be resolved against and the version it
   // was minted on, and `toSeedPayload` takes both off whichever catalogue is
@@ -155,11 +205,7 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
   }, [copied])
 
   const command = toCommand(minted, serialized)
-
-  const text =
-    command.status === "ready"
-      ? `${BASE_COMMAND} ${ID_FLAG} ${command.id}`
-      : BASE_COMMAND
+  const text = commandText(command, provider)
 
   const copy = async () => {
     try {
@@ -171,5 +217,11 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
     }
   }
 
-  return { command, copied, copy, note: noteFor(command, copied), text }
+  return {
+    command,
+    copied,
+    copy,
+    note: noteFor(command, copied, provider),
+    text,
+  }
 }

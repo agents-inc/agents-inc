@@ -1,4 +1,4 @@
-import { pluginRefFor } from "@workspace/compile/agent-source"
+import { compilesForCodex, pluginRefFor } from "@workspace/compile/agent-source"
 import { generateConfigSource } from "@workspace/compile/config-source"
 import {
   deriveCategories,
@@ -15,7 +15,6 @@ import {
 } from "@workspace/compile/seed-to-config"
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
   SKILLS_DIR_PATH,
@@ -26,7 +25,9 @@ import {
   effectivelyExcludedSkillIds,
   isActiveAt,
   seatCatalog,
+  sourceDirName,
 } from "@workspace/compile"
+import type { Provider } from "@workspace/compile"
 import { AGENT_DEFINITIONS, AGENT_NAMES } from "@workspace/matrix"
 
 import {
@@ -136,8 +137,8 @@ export type OutputPreview = {
    *
    * Answered here rather than in the dialog because it is a fact about where
    * the files went — the dialog holds a path string and would have to
-   * reconstruct `.claude-src/config.ts` to find one, which is the second
-   * implementation of a path this module already owns.
+   * reconstruct the source folder's `config.ts` to find one, which is the
+   * second implementation of a path this module already owns.
    */
   defaultSelectionId: string | null
 }
@@ -155,10 +156,12 @@ const SCOPE_OF: Record<PreviewBase, SkillScope> = {
 
 // `COMPUTED_AT_INSTALL` stands in for the two values the machine the install
 // runs on decides, and which the preview therefore refuses to invent: the
-// import specifier `path.relative(<project>/.claude-src, $HOME/.claude-src)`
-// and the project's name `path.basename(<project>)`. A browser has no disk to
-// probe for either, and `../../../.claude-src` is exactly the plausible-looking
-// lie the whole phase exists to remove.
+// import specifier `path.relative(<project source folder>, <global source
+// folder>)` and the project's name `path.basename(<project>)`. A browser has no
+// disk to probe for either, and a ready-made `../../../…` is exactly the
+// plausible-looking lie the whole phase exists to remove — the more so now that
+// the specifier's own depth depends on which layout each scope is on, which is
+// a second thing about that string only the CLI can know.
 //
 // It is declared in `./render-tokens` rather than here, because a placeholder
 // the ink ramp paints like every other chosen value is only half-refused — that
@@ -395,7 +398,10 @@ const resolveSkill = (
     // template renders it nowhere, and a browser has no disk — so it is empty
     // rather than reconstructed from the id.
     path: "",
-    description: described.description,
+    // The SKILL.md description compile reads, where the catalogue carries it:
+    // `description` is the wizard's short label, which no install writes
+    // (CLI-898). An older catalogue carries only the label.
+    description: described.activationDescription ?? described.description,
     usage: reference.usage,
     preloaded: reference.preloaded,
     ...(origin !== undefined && { source: origin }),
@@ -404,7 +410,7 @@ const resolveSkill = (
   return [{ ...skill, ...pluginRefFor(skill) }]
 }
 
-/** One compiled sub-agent: its markdown, and the root it is written under. */
+/** One compiled sub-agent: its body, and the root it is written under. */
 type CompiledAgent = { name: AgentName; scope: SkillScope; body: string }
 
 /**
@@ -425,7 +431,48 @@ type CompiledAgent = { name: AgentName; scope: SkillScope; body: string }
 const corpusRenderer = () => import("@workspace/compile/preview")
 
 /**
- * Every sub-agent the configuration selects, compiled from the vendored corpus.
+ * Every sub-agent the configuration selects for this provider, compiled from the vendored corpus:
+ * each one's `AgentConfig` assembled by {@link agentConfigFor}, then rendered.
+ */
+async function compileAgents(
+  config: ProjectConfig,
+  matrix: Matrix,
+  renderAgent: (name: AgentName, agent: AgentConfig) => Promise<string>,
+  provider: Provider
+): Promise<CompiledAgent[]> {
+  const selected = config.agents.filter((agent) =>
+    isCompiledFor(provider, agent)
+  )
+
+  return Promise.all(
+    selected.map(async (agent) => ({
+      name: agent.name,
+      scope: agent.scope,
+      body: await renderAgent(
+        agent.name,
+        agentConfigFor(config, matrix, agent)
+      ),
+    }))
+  )
+}
+
+/**
+ * Whether this provider's install compiles this configured sub-agent.
+ *
+ * The two sub-agents no Codex install compiles are dropped HERE rather than
+ * filtered out of the roster upstream, for the reason ruling 3 gives: the
+ * payload is provider-neutral and the app writes both either way, so this is
+ * the same drop the CLI performs at install time and the preview is drawing
+ * what that install writes. `compilesForCodex` is the renderer's own
+ * predicate — the preview may not keep a second list.
+ */
+const isCompiledFor = (provider: Provider, agent: AgentScopeConfig): boolean =>
+  !agent.excluded &&
+  agent.name in AGENT_DEFINITIONS &&
+  (provider === "claude" || compilesForCodex(agent.name))
+
+/**
+ * One selected sub-agent's `AgentConfig`, composed the way the CLI's `resolveAgents` composes it.
  *
  * The definition fields are the CLI's own `metadata.yaml`, and the template
  * reads them through the same conditional spreads `resolveAgents` composes
@@ -460,69 +507,56 @@ const corpusRenderer = () => import("@workspace/compile/preview")
  * `outputFormat` stays dropped, matching `resolveAgents`: it reaches no
  * template field there either, so there is nothing here to forward it into.
  */
-async function compileAgents(
+function agentConfigFor(
   config: ProjectConfig,
   matrix: Matrix,
-  renderAgent: (name: AgentName, agent: AgentConfig) => Promise<string>
-): Promise<CompiledAgent[]> {
-  const selected = config.agents.filter(
-    (agent) => !agent.excluded && agent.name in AGENT_DEFINITIONS
-  )
+  agent: AgentScopeConfig
+): AgentConfig {
+  const definition = AGENT_DEFINITIONS[agent.name]
+  // A second binding to the SAME value, typed as the full interface rather than left on
+  // `definition`'s own inferred literal shape. `AGENT_DEFINITIONS` is `as const satisfies
+  // Record<AgentName, GeneratedAgentDefinition>`, so indexing it with the widened `AgentName`
+  // parameter infers a union of each agent's own literal shape — which is what lets the
+  // `model` line below stay unconditional, since every shipped entry's literal type states
+  // one, and is exactly what breaks for `effort`, `disallowedTools`, `permissionMode`,
+  // `isolation` and `experimental`: a field a given agent's metadata never sets is absent from
+  // that literal entirely, which TypeScript does not read as "present and undefined" the way an
+  // optional property on `GeneratedAgentDefinition` does. A `Pick` of only those five fields cannot
+  // carry the assignment either — every property it would name is optional, and TypeScript's
+  // weak-type check refuses a source object sharing none of them by name (`agent-summoner`'s
+  // own literal has no `disallowedTools` key at all). The full-interface annotation avoids
+  // both: `title`, `tools` and the rest are required, non-optional and genuinely in common,
+  // so the assignment is an ordinary widening rather than a weak-type one — and it is kept on
+  // a name of its own so the `model` line keeps reading `definition`'s narrow literal type.
+  const definitionFields: GeneratedAgentDefinition = definition
+  const effort = agent.effort ?? definitionFields.effort
 
-  return Promise.all(
-    selected.map(async (agent) => {
-      const definition = AGENT_DEFINITIONS[agent.name]
-      // A second binding to the SAME value, typed as the full interface rather than left on
-      // `definition`'s own inferred literal shape. `AGENT_DEFINITIONS` is `as const satisfies
-      // Record<AgentName, GeneratedAgentDefinition>`, so indexing it with the widened `AgentName`
-      // parameter infers a union of each agent's own literal shape — which is what lets the
-      // `model` line below stay unconditional, since every shipped entry's literal type states
-      // one, and is exactly what breaks for `effort`, `disallowedTools`, `permissionMode`,
-      // `isolation` and `experimental`: a field a given agent's metadata never sets is absent from
-      // that literal entirely, which TypeScript does not read as "present and undefined" the way an
-      // optional property on `GeneratedAgentDefinition` does. A `Pick` of only those five fields cannot
-      // carry the assignment either — every property it would name is optional, and TypeScript's
-      // weak-type check refuses a source object sharing none of them by name (`agent-summoner`'s
-      // own literal has no `disallowedTools` key at all). The full-interface annotation avoids
-      // both: `title`, `tools` and the rest are required, non-optional and genuinely in common,
-      // so the assignment is an ordinary widening rather than a weak-type one — and it is kept on
-      // a name of its own so the `model` line keeps reading `definition`'s narrow literal type.
-      const definitionFields: GeneratedAgentDefinition = definition
-      const effort = agent.effort ?? definitionFields.effort
-      const compiled: AgentConfig = {
-        name: agent.name,
-        title: definition.title,
-        description: definition.description,
-        // The config's choice over the agent's own metadata, which is
-        // `resolveAgents`'s rule. Unconditional because every shipped
-        // definition declares a model — a future one that does not turns this
-        // line into a type error rather than a branch nothing takes.
-        model: agent.model ?? definition.model,
-        ...(effort !== undefined && { effort }),
-        tools: [...definition.tools],
-        ...(definitionFields.disallowedTools !== undefined && {
-          disallowedTools: definitionFields.disallowedTools,
-        }),
-        ...(definitionFields.permissionMode !== undefined && {
-          permissionMode: definitionFields.permissionMode,
-        }),
-        ...(definitionFields.isolation !== undefined && {
-          isolation: definitionFields.isolation,
-        }),
-        ...(definitionFields.experimental !== undefined && {
-          experimental: definitionFields.experimental,
-        }),
-        skills: agentSkills(config, matrix, agent),
-        path: definition.path,
-      }
-
-      return {
-        name: agent.name,
-        scope: agent.scope,
-        body: await renderAgent(agent.name, compiled),
-      }
-    })
-  )
+  return {
+    name: agent.name,
+    title: definition.title,
+    description: definition.description,
+    // The config's choice over the agent's own metadata, which is
+    // `resolveAgents`'s rule. Unconditional because every shipped
+    // definition declares a model — a future one that does not turns this
+    // line into a type error rather than a branch nothing takes.
+    model: agent.model ?? definition.model,
+    ...(effort !== undefined && { effort }),
+    tools: [...definition.tools],
+    ...(definitionFields.disallowedTools !== undefined && {
+      disallowedTools: definitionFields.disallowedTools,
+    }),
+    ...(definitionFields.permissionMode !== undefined && {
+      permissionMode: definitionFields.permissionMode,
+    }),
+    ...(definitionFields.isolation !== undefined && {
+      isolation: definitionFields.isolation,
+    }),
+    ...(definitionFields.experimental !== undefined && {
+      experimental: definitionFields.experimental,
+    }),
+    skills: agentSkills(config, matrix, agent),
+    path: definition.path,
+  }
 }
 
 // ── The two config files, per root ───────────────────────────────────────
@@ -790,21 +824,29 @@ const ejectedDirectoryBody = (
 
 /**
  * A plugin skill's reference. It has no path under either root and that is the
- * point of the row: `installPluginSkills` shells out to `claude plugin install`,
- * so the destination belongs to Claude Code and naming a directory here would
- * name one the install never creates.
+ * point of the row: `installPluginSkills` shells out to the host's own plugin
+ * command, so the destination belongs to the host and naming a directory here
+ * would name one the install never creates.
+ *
+ * The eject destination is the LAYOUT's, never composed here: on Codex a project
+ * skill is a committed file at `.agents/skills/`, which is nowhere near the
+ * directory Claude's copy lands in.
  */
-const pluginReferenceNote = (skill: SkillConfig, base: PreviewBase) =>
+const pluginReferenceNote = (
+  skill: SkillConfig,
+  base: PreviewBase,
+  layout: RootLayout
+) =>
   [
     skill.id,
     ``,
     `Installed as a plugin, at ${SCOPE_OF[base]} scope. No files are written`,
-    `under ${base} for it — Claude Code owns where a plugin lands, and the skill`,
-    `resolves from ${seatedMarketplacePhrase()} at run time, as`,
+    `under ${base} for it — ${layout.hostName} owns where a plugin lands, and the`,
+    `skill resolves from ${seatedMarketplacePhrase()} at run time, as`,
     `${skill.id}:${skill.id}.`,
     ``,
     `Switch it to eject and the CLI writes a copy you own, at`,
-    `${base}${CLAUDE_DIR}/${STANDARD_DIRS.SKILLS}/${skill.id}/.`,
+    `${layout.skills.path}${skill.id}/.`,
   ].join("\n")
 
 // ── The tree ─────────────────────────────────────────────────────────────
@@ -818,95 +860,223 @@ const structural = (id: string, name: string, depth: number): PreviewNode =>
   node({ id, name, depth, marker: null, body: "" })
 
 /**
+ * WHERE ONE ROOT'S ROWS GO, which is a question about the provider as much as about the scope.
+ *
+ * Claude writes everything under one `.claude/` at either scope. Codex does not: a project's role
+ * files go under `.codex/` while a project's SKILLS are committed at `.agents/skills/`, a directory
+ * outside it — Codex's own mechanism for a project skill rather than a degraded fallback — and a
+ * global install writes both under `$CODEX_HOME`, which on a clean machine is `~/.codex`. So the
+ * skills directory carries its own depth rather than being assumed a child of the host's.
+ *
+ * DERIVED FROM THE PROVIDER PER ROOT rather than from a constant. `PREVIEWED_PROVIDER` sat here
+ * until C7a, with a docblock saying the button was what would replace it; this is that button
+ * arriving. The provider is an argument the whole way down for C2's reason: a default is a question
+ * left unasked, and the answer it gives silently is Claude.
+ */
+type DirRow = {
+  /** The row's own path, trailing slash and all — what every child is built from. */
+  path: string
+  /** What the row reads in the tree, which may carry more than one segment (D10). */
+  name: string
+  depth: number
+}
+
+type RootLayout = {
+  source: DirRow
+  /** The host's own directory: `.claude/` on Claude, `.codex/` on Codex. */
+  host: DirRow
+  hostName: string
+  agents: DirRow
+  /** What one compiled sub-agent is written as, which is not the same FILE on the two providers. */
+  agentFile: (agent: AgentName) => { name: string; lang: PreviewLang }
+  skills: DirRow
+  /** Whether {@link skills} hangs under {@link host} — false is Codex's committed project directory. */
+  skillsUnderHost: boolean
+}
+
+const CODEX_DIR = ".codex"
+
+// Where a Codex project's skills are committed, relative to the repository root. The CLI's
+// `CODEX_PROJECT_SKILLS_PATH` is the same directory, and `codex-provider.spec.ts` is what holds the
+// two equal — this package is reached from the grid through `import()` alone, so the constant
+// cannot be imported from either side.
+const CODEX_PROJECT_SKILLS = ".agents/skills"
+
+const dir = (path: string, name: string, depth: number): DirRow => ({
+  path,
+  name,
+  depth,
+})
+
+const dirUnder = (parent: DirRow, name: string): DirRow =>
+  dir(`${parent.path}${name}/`, `${name}/`, parent.depth + 1)
+
+const sourceRow = (provider: Provider, base: PreviewBase): DirRow =>
+  dir(`${base}${sourceDirName(provider)}/`, `${sourceDirName(provider)}/`, 1)
+
+const claudeLayout = (base: PreviewBase): RootLayout => {
+  const host = dir(`${base}${CLAUDE_DIR}/`, `${CLAUDE_DIR}/`, 1)
+
+  return {
+    source: sourceRow("claude", base),
+    host,
+    hostName: "Claude Code",
+    agents: dirUnder(host, STANDARD_DIRS.AGENTS),
+    agentFile: (agent) => ({ name: `${agent}.md`, lang: "markdown" }),
+    skills: dirUnder(host, STANDARD_DIRS.SKILLS),
+    skillsUnderHost: true,
+  }
+}
+
+const codexLayout = (base: PreviewBase): RootLayout => {
+  const host = dir(`${base}${CODEX_DIR}/`, `${CODEX_DIR}/`, 1)
+  // A project skill on Codex is COMMITTED rather than installed, at a directory
+  // outside everything else the provider owns — so it is the one row whose
+  // depth is not the host's plus one.
+  const committed = base === PROJECT_BASE
+
+  return {
+    source: sourceRow("codex", base),
+    host,
+    hostName: "Codex",
+    agents: dirUnder(host, STANDARD_DIRS.AGENTS),
+    // A Codex sub-agent is an agent role definition rather than markdown with frontmatter, and
+    // nothing here highlights TOML: the body is prose inside one multi-line string, so `text` is
+    // the honest grammar rather than a missing one.
+    agentFile: (agent) => ({ name: `${agent}.toml`, lang: "text" }),
+    skills: committed
+      ? dir(`${base}${CODEX_PROJECT_SKILLS}/`, `${CODEX_PROJECT_SKILLS}/`, 1)
+      : dirUnder(host, STANDARD_DIRS.SKILLS),
+    skillsUnderHost: !committed,
+  }
+}
+
+const layoutFor = (provider: Provider, base: PreviewBase): RootLayout =>
+  provider === "claude" ? claudeLayout(base) : codexLayout(base)
+
+/** A directory row and whatever hangs under it, or nothing at all when it holds nothing. */
+const directoryNodes = (
+  row: DirRow,
+  children: readonly PreviewNode[]
+): PreviewNode[] =>
+  children.length === 0
+    ? []
+    : [structural(row.path, row.name, row.depth), ...children]
+
+/** A file this install writes, one level under the directory row it is written into. */
+const writtenFile = (
+  directory: DirRow,
+  name: string,
+  body: string,
+  lang: PreviewLang = "text"
+): PreviewNode =>
+  node({
+    id: `${directory.path}${name}`,
+    name,
+    depth: directory.depth + 1,
+    marker: "new",
+    body,
+    lang,
+  })
+
+/**
  * One root's rows, in emission order.
  *
  * A root is two directories, which is the correction that matters most to the
- * shape below: the config pair lives in `.claude-src/` and everything else in
- * `.claude/`. `plugin skills` is neither — it is a group, and it carries no
- * trailing slash for exactly that reason.
+ * shape below: the config pair lives in the source folder and everything else
+ * under the host's own. `plugin skills` is neither — it is a group, and it
+ * carries no trailing slash for exactly that reason.
+ *
+ * THE SOURCE FOLDER IS ONE ROW, at the depth the host's directory sits at,
+ * although its name now carries two segments (owner's decision D10). Drawn as a
+ * parent and a child instead, every row under it would move a level down, for a
+ * directory whose two halves nothing in this dialog lets a reader act on
+ * separately.
+ *
+ * EVERY PATH COMES OFF {@link RootLayout}. Nothing here spells `.claude/` or
+ * `.codex/`, because which of them a row sits under is the provider's answer
+ * rather than this function's — and a Codex project's skills are not under
+ * either.
  */
 function rootNodes(
   base: PreviewBase,
+  layout: RootLayout,
   pair: { configTs: string; configTypesTs: string },
   agents: readonly CompiledAgent[],
   skills: readonly SkillConfig[],
   external: Readonly<Record<string, SeedExternalSkill>>,
   catalog: Matrix
 ): PreviewNode[] {
-  const claudeSrc = `${base}${CLAUDE_SRC_DIR}/`
-  const claude = `${base}${CLAUDE_DIR}/`
-  const agentsDir = `${claude}${STANDARD_DIRS.AGENTS}/`
-  const skillsDir = `${claude}${STANDARD_DIRS.SKILLS}/`
-
   const ejected = skills.filter((skill) => !isPluginSkill(skill))
   const plugins = skills.filter(isPluginSkill)
+
+  const agentNodes = agents.map((agent) => {
+    const file = layout.agentFile(agent.name)
+    return writtenFile(layout.agents, file.name, agent.body, file.lang)
+  })
+
+  const skillNodes = ejected.flatMap((skill) =>
+    ejectedSkillNodes(layout.skills, skill, external[skill.id], catalog)
+  )
+
+  // What hangs under the host's own directory, which on a Codex project is the
+  // role files and nothing else: a project skill there is a committed file
+  // outside it, so the host row is drawn for the sub-agents alone.
+  const underHost = [
+    ...directoryNodes(layout.agents, agentNodes),
+    ...(layout.skillsUnderHost
+      ? directoryNodes(layout.skills, skillNodes)
+      : []),
+  ]
 
   return [
     structural(base, base, 0),
 
-    structural(claudeSrc, `${CLAUDE_SRC_DIR}/`, 1),
-    node({
-      id: `${claudeSrc}${STANDARD_FILES.CONFIG_TS}`,
-      name: STANDARD_FILES.CONFIG_TS,
-      depth: 2,
-      marker: "new",
-      body: pair.configTs,
-      lang: "typescript",
-    }),
-    node({
-      id: `${claudeSrc}${STANDARD_FILES.CONFIG_TYPES_TS}`,
-      name: STANDARD_FILES.CONFIG_TYPES_TS,
-      depth: 2,
-      marker: "new",
-      body: pair.configTypesTs,
-      lang: "typescript",
-    }),
+    structural(layout.source.path, layout.source.name, layout.source.depth),
+    writtenFile(
+      layout.source,
+      STANDARD_FILES.CONFIG_TS,
+      pair.configTs,
+      "typescript"
+    ),
+    writtenFile(
+      layout.source,
+      STANDARD_FILES.CONFIG_TYPES_TS,
+      pair.configTypesTs,
+      "typescript"
+    ),
 
-    ...(agents.length > 0 || ejected.length > 0
-      ? [structural(claude, `${CLAUDE_DIR}/`, 1)]
-      : []),
+    ...directoryNodes(layout.host, underHost),
 
-    ...(agents.length > 0
-      ? [
-          structural(agentsDir, `${STANDARD_DIRS.AGENTS}/`, 2),
-          ...agents.map((agent) =>
-            node({
-              id: `${agentsDir}${agent.name}.md`,
-              name: `${agent.name}.md`,
-              depth: 3,
-              marker: "new",
-              body: agent.body,
-              lang: "markdown",
-            })
-          ),
-        ]
-      : []),
+    ...(layout.skillsUnderHost
+      ? []
+      : directoryNodes(layout.skills, skillNodes)),
 
-    ...(ejected.length > 0
-      ? [
-          structural(skillsDir, `${STANDARD_DIRS.SKILLS}/`, 2),
-          ...ejected.flatMap((skill) =>
-            ejectedSkillNodes(skillsDir, skill, external[skill.id], catalog)
-          ),
-        ]
-      : []),
+    ...pluginGroupNodes(base, layout, plugins),
+  ]
+}
 
-    ...(plugins.length > 0
-      ? [
-          structural(`${base}${PLUGIN_GROUP}`, PLUGIN_GROUP, 1),
-          ...plugins.map((skill) =>
-            node({
-              // No base and no directory: a plugin skill's identity is its id,
-              // because it has no path under this root to be identified by.
-              id: skill.id,
-              name: skill.id,
-              depth: 2,
-              marker: "plugin",
-              body: pluginReferenceNote(skill, base),
-            })
-          ),
-        ]
-      : []),
+/** The plugin group's row and one row per plugin under it, or nothing when there are none. */
+const pluginGroupNodes = (
+  base: PreviewBase,
+  layout: RootLayout,
+  plugins: readonly SkillConfig[]
+): PreviewNode[] => {
+  if (plugins.length === 0) return []
+
+  return [
+    structural(`${base}${PLUGIN_GROUP}`, PLUGIN_GROUP, 1),
+    ...plugins.map((skill) =>
+      node({
+        // No base and no directory: a plugin skill's identity is its id,
+        // because it has no path under this root to be identified by.
+        id: skill.id,
+        name: skill.id,
+        depth: 2,
+        marker: "plugin",
+        body: pluginReferenceNote(skill, base, layout),
+      })
+    ),
   ]
 }
 
@@ -924,19 +1094,19 @@ const PLUGIN_GROUP = "plugin skills"
  * skill's are in a marketplace nobody has fetched.
  */
 function ejectedSkillNodes(
-  skillsDir: string,
+  skillsDir: DirRow,
   skill: SkillConfig,
   external: SeedExternalSkill | undefined,
   catalog: Matrix
 ): PreviewNode[] {
-  const directory = `${skillsDir}${skill.id}/`
+  const skillDir = dirUnder(skillsDir, skill.id)
 
   // The amber label is on the directory row and only there; its children,
   // where there are any, read `new` like every other file.
   const directoryRow = node({
-    id: directory,
-    name: `${skill.id}/`,
-    depth: 3,
+    id: skillDir.path,
+    name: skillDir.name,
+    depth: skillDir.depth,
     marker: "eject",
     body: ejectedDirectoryBody(skill, external, catalog),
   })
@@ -950,18 +1120,10 @@ function ejectedSkillNodes(
     // machine reading them.
     ...Object.entries(external.files)
       .sort(([a], [b]) => bytewise(a, b))
-      .map(([path, text]) =>
-        node({
-          id: `${directory}${path}`,
-          name: path,
-          depth: 4,
-          marker: "new",
-          // Somebody else's bytes, so no grammar runs over them —
-          // `skill-contents-dialog.tsx`'s rendering-safety decision, arriving
-          // in a second dialog.
-          body: text,
-        })
-      ),
+      // Somebody else's bytes, so no grammar runs over them — `writtenFile`'s
+      // `text` default, and `skill-contents-dialog.tsx`'s rendering-safety
+      // decision arriving in a second dialog.
+      .map(([path, text]) => writtenFile(skillDir, path, text)),
   ]
 }
 
@@ -981,7 +1143,8 @@ const countWrittenFiles = (roots: readonly PreviewRoot[]): number =>
     .length
 
 export async function buildOutputPreview(
-  payload: SeedPayload
+  payload: SeedPayload,
+  provider: Provider
 ): Promise<OutputPreview> {
   // The catalogue every renderer is handed, and the one
   // `generateProjectConfigFromSkills` reads off its own seat — the editor is
@@ -991,12 +1154,28 @@ export async function buildOutputPreview(
   const catalog = activeMatrix()
   seatCatalog(catalog)
 
-  const { CORPUS_CLI_VERSION, renderAgentFromCorpus } = await corpusRenderer()
+  const corpus = await corpusRenderer()
 
   const config = buildConfig(payload)
   const { global: globalSplit, project: projectSplit } =
     splitConfigByScope(config)
-  const agents = await compileAgents(config, catalog, renderAgentFromCorpus)
+  // A Codex sub-agent is a different FILE, so the provider picks the renderer
+  // rather than being passed to one: markdown with frontmatter on Claude, an
+  // agent role definition in TOML on Codex — both off the same corpus and the
+  // same two builders the CLI's install path calls.
+  //
+  // Reached through the module rather than destructured off it, so a Claude
+  // preview never touches the Codex renderer's name: a Claude render that
+  // demands the other export exist is a Claude render that breaks on any double
+  // standing in for this module.
+  const agents = await compileAgents(
+    config,
+    catalog,
+    provider === "claude"
+      ? corpus.renderAgentFromCorpus
+      : corpus.renderAgentRoleFromCorpus,
+    provider
+  )
   const external = payload.external ?? {}
 
   const holdsSomething = (split: ProjectConfig) =>
@@ -1013,6 +1192,7 @@ export async function buildOutputPreview(
             config: globalSplit,
             nodes: rootNodes(
               GLOBAL_BASE,
+              layoutFor(provider, GLOBAL_BASE),
               globalPair(globalSplit, catalog),
               agents.filter((agent) => agent.scope === "global"),
               globalSplit.skills,
@@ -1029,6 +1209,7 @@ export async function buildOutputPreview(
             config: projectSplit,
             nodes: rootNodes(
               PROJECT_BASE,
+              layoutFor(provider, PROJECT_BASE),
               projectPair(projectSplit, globalSplit, hasGlobalRoot, catalog),
               agents.filter((agent) => agent.scope !== "global"),
               projectSplit.skills,
@@ -1043,7 +1224,7 @@ export async function buildOutputPreview(
   return {
     roots,
     fileCount: countWrittenFiles(roots),
-    corpusVersion: CORPUS_CLI_VERSION,
+    corpusVersion: corpus.CORPUS_CLI_VERSION,
     defaultSelectionId: defaultSelection(roots),
   }
 }

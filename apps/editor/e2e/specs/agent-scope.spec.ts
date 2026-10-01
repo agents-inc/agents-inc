@@ -96,7 +96,7 @@ test.describe("agent scope", () => {
 test.describe("sharing an agent's scope", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
 
-  test("posts the v3 shape with the agent's scope in its entry", async ({
+  test("posts the agent's scope in its entry, at the version that carries it", async ({
     configure,
     page,
   }) => {
@@ -105,16 +105,13 @@ test.describe("sharing an agent's scope", () => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     await configure.roster.setScope(DEVELOPER, "project")
 
-    await configure.roster.shareButton.click()
-    await expect(
-      configure.roster.root.getByRole("button", { name: "Link copied" })
-    ).toBeVisible()
+    await configure.roster.shareLink()
 
     const [body] = posted
     // The skill's own `scope` is a different field with the same name — where
     // the plugin is installed, not where the agent is written — and scope on
     // the agent must leave it exactly as it was.
-    expect(body).toEqual({
+    expect(body).toStrictEqual({
       v: SEED_VERSION,
       matrixVersion: expect.any(String),
       stackId: null,
@@ -142,20 +139,24 @@ test.describe("sharing an agent's scope", () => {
     // An entry of its own, earned by the model — and still no scope on it.
     await configure.roster.setModel(REVIEWER, "sonnet")
 
-    await configure.roster.shareButton.click()
-    await expect(
-      configure.roster.root.getByRole("button", { name: "Link copied" })
-    ).toBeVisible()
+    await configure.roster.shareLink()
 
     const [body] = posted
-    expect(body!.agents).toEqual({
+    expect(body!.agents).toStrictEqual({
       [DEVELOPER]: { scope: "project" },
       [REVIEWER]: { model: "sonnet" },
     })
   })
 
-  // The same drop-on-resting rule model and effort follow: cycling back to the
-  // default removes the choice rather than recording it.
+  // The same drop-on-resting rule model and effort follow: picking the default
+  // again removes the choice rather than recording it.
+  //
+  // THE SCOPE HAS TO LEAVE GLOBAL FIRST, and the word itself cannot take it
+  // there: since the 2026-09-06 refresh a press on it opens the options panel,
+  // and a second press closes it again. Two presses left the scope where it
+  // started, so an empty map was the answer whatever the store did with a
+  // choice returned to its default. The value is picked in the panel both
+  // ways, and the departure is asserted before the return.
   test("returning an agent to global drops the key again", async ({
     configure,
     page,
@@ -164,16 +165,16 @@ test.describe("sharing an agent's scope", () => {
     const scope = configure.roster.scopeControl(DEVELOPER)
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await scope.click()
-    await scope.click()
+    await configure.roster.setScope(DEVELOPER, "project")
+    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: project`)
 
-    await configure.roster.shareButton.click()
-    await expect(
-      configure.roster.root.getByRole("button", { name: "Link copied" })
-    ).toBeVisible()
+    await configure.roster.setScope(DEVELOPER, "global")
+    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: global`)
+
+    await configure.roster.shareLink()
 
     const [body] = posted
-    expect(body!.agents).toEqual({})
+    expect(body!.agents).toStrictEqual({})
   })
 })
 

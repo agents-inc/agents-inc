@@ -3,7 +3,12 @@ import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "../fixtures"
 import { ConfigurePage } from "../pages/configure-page"
 import { stubCompose, stubSignedIn } from "../support/auth"
-import { EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
+import {
+  DOMAINS,
+  EXCLUSIVE_CATEGORY,
+  SINGLE_AGENT_SKILL,
+  STACKS,
+} from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
@@ -105,6 +110,38 @@ test.describe("the configure screen", () => {
     await withSelection(configure)
     await configure.scrollTo(1200)
     await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    expect(await audit(configure)).toStrictEqual([])
+  })
+
+  // The provider control adds a fourth radiogroup to a screen that already
+  // draws three, and choosing Codex turns rows in the roster and cells in the
+  // grid inert — `aria-disabled` with a reason, which is a shape axe has
+  // opinions about and a shape no state above this one puts on screen.
+  test("with Codex chosen as the provider", async ({ configure }) => {
+    await withSelection(configure)
+    await configure.provider.choose("codex")
+    await expect(configure.provider.chosen).toHaveText(/codex/i)
+
+    expect(await audit(configure)).toStrictEqual([])
+  })
+
+  // And the one state that introduces an ALERT inside the roster panel, which
+  // is a live region announced over whatever the visitor was doing.
+  test("with a placement Codex does not offer left to resolve", async ({
+    configure,
+  }) => {
+    await withSelection(configure)
+    await configure
+      .skillIn(
+        DOMAINS.web,
+        SINGLE_AGENT_SKILL.category,
+        SINGLE_AGENT_SKILL.name
+      )
+      .flipScope()
+    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
+    await configure.provider.choose("codex")
+    await expect(configure.roster.placementNotice).toBeVisible()
 
     expect(await audit(configure)).toStrictEqual([])
   })

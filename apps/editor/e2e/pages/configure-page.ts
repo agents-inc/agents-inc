@@ -10,6 +10,7 @@ import {
   SkillContentsDialog,
   StackSwitchDialog,
 } from "./dialogs"
+import { ProviderControl } from "./provider-control"
 import { RosterPanel } from "./roster-panel"
 import { SkillCell } from "./skill-cell"
 
@@ -18,6 +19,10 @@ const CONFIGURE_URL = "/"
 const MARKETPLACE_STORAGE_KEY = "agents-inc:marketplace:v1"
 
 const UI_STORAGE_KEY = "agents-inc:ui:v1"
+
+const CONFIG_STORAGE_KEY = "agents-inc:config:v1"
+
+const SAVED_STACK_STORAGE_KEY = "agents-inc:saved-stack:v1"
 
 // The SHAPE this release writes, which the `v1` in the key above is not. Seeded
 // blobs carry it so a slot written by hand is the one the app would have
@@ -145,6 +150,11 @@ export class ConfigurePage {
   readonly adoptionNotice: Locator
 
   readonly roster: RosterPanel
+  // Which coding agent this configuration is being installed onto. LOCAL TO
+  // THIS TAB: it never enters a payload and never enters the saved selection,
+  // so one saved setup installs on either and every existing share id keeps
+  // working. What it changes is the command the app prints.
+  readonly provider: ProviderControl
   // The docked natural-language composer at the foot of the main column, and
   // the one thing still floating there.
   readonly composer: Composer
@@ -204,6 +214,7 @@ export class ConfigurePage {
     this.adoptionNotice = page.locator('[data-slot="adoption-notice"]')
 
     this.roster = new RosterPanel(page)
+    this.provider = new ProviderControl(page)
     this.composer = new Composer(page)
     this.installDialog = new InstallDialog(page)
     this.addSkillDialog = new AddSkillDialog(page)
@@ -268,7 +279,7 @@ export class ConfigurePage {
     await this.page.evaluate(
       ([key, blob]) => window.localStorage.setItem(key!, blob!),
       [
-        "agents-inc:saved-stack:v1",
+        SAVED_STACK_STORAGE_KEY,
         JSON.stringify({ state: { saved: payload }, version: 0 }),
       ]
     )
@@ -326,7 +337,8 @@ export class ConfigurePage {
   // still waiting on its token — so the slot has to be asked directly.
   async storedConfig() {
     return this.page.evaluate(
-      () => window.localStorage.getItem("agents-inc:config:v1") ?? ""
+      (key) => window.localStorage.getItem(key) ?? "",
+      CONFIG_STORAGE_KEY
     )
   }
 

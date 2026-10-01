@@ -14,12 +14,20 @@ import { cn } from "@workspace/ui/lib/utils"
 import { useEffect, useRef, useState, type CSSProperties } from "react"
 
 import {
+  selectInstalledAgents,
   selectRosterGroups,
+  selectUnofferedPlacements,
   summarize,
   type ConfigSummary,
   type RosterAgentRow,
   type RosterSkillRow,
 } from "@/features/configure/lib/derive"
+import {
+  compilesAgent,
+  leftOutOfCodexReason,
+  unofferedPlacementLabel,
+  unofferedPlacementNotice,
+} from "@/features/configure/lib/provider"
 import { toSeedPayload } from "@/features/configure/lib/seed"
 import { useShareLink } from "@/features/configure/lib/use-share-link"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
@@ -41,13 +49,20 @@ import {
   useSavedStackStore,
 } from "@/stores/saved-stack-store"
 import { useUiStore } from "@/stores/ui-store"
+import { ProviderControl } from "./provider-control"
 
 // What would install, under the Install button's own name. `agents · skills`
 // rather than the sentence it used to be: the button shares its footer with a
 // row of three now, and the design sets the pair as a stat line rather than
 // prose — the middot is what keeps two counts legible in a 300px panel that
 // narrows to 250px.
-const installLabel = ({ agentCount, skillCount }: ConfigSummary) =>
+//
+// THE AGENT COUNT IS THE PROVIDER'S, NOT THE CONFIGURATION'S, and it is passed in for
+// that reason rather than read off `ConfigSummary`: a Codex install drops both summoners
+// whatever the configuration says, and every shipped stack staffs both — so the button
+// said `11 agents` over an install that writes nine, beside an output preview that had
+// already dropped them. `selectInstalledAgents` is the one derivation both read.
+const installLabel = (agentCount: number, { skillCount }: ConfigSummary) =>
   `${agentCount} ${agentCount === 1 ? "agent" : "agents"} · ` +
   `${skillCount} ${skillCount === 1 ? "skill" : "skills"}`
 
@@ -97,6 +112,27 @@ const blockedLabel = (count: number) =>
   count === 1
     ? "1 sub-agent needs project scope"
     : `${count} sub-agents need project scope`
+
+/**
+ * WHAT THE INSTALL BUTTON SAYS, which is either how much would install or the one thing stopping it.
+ *
+ * Two refusals now reach it and they are different questions — sub-agents left at global scope
+ * (EDITOR-08) and skills placed where the chosen provider cannot install them — so the label is
+ * resolved in one place rather than nested in the markup. The scope conflict is named first because
+ * it refuses BOTH doors: a share link carrying one fails on the recipient, while a placement is
+ * refused by one provider and installs perfectly on the other.
+ */
+const installButtonLabel = (
+  stats: ConfigSummary,
+  installedAgentCount: number,
+  blocked: boolean,
+  unofferedCount: number
+) => {
+  if (blocked) return blockedLabel(stats.unscopedAgentCount)
+  if (unofferedCount > 0) return unofferedPlacementLabel(unofferedCount)
+
+  return installLabel(installedAgentCount, stats)
+}
 
 // The domain band is exactly this tall, and each pinned header offsets by one
 // band per index — that is what makes them stack while scrolling.
@@ -594,6 +630,20 @@ function AgentOptionsPanel({
 // with matched margins. Nothing cancels now because nothing grows.
 const AGENT_ROW = "-mx-1 my-0.5 w-[calc(100%+0.5rem)] px-1"
 
+/** The name row's fill: the pulse wins over hover, and an open options panel is not a hover. */
+const agentRowFill = (flashed: boolean, optionsOpen: boolean): string => {
+  if (flashed) return "bg-flash"
+  if (optionsOpen) return ""
+  return "hover:bg-roster-hover"
+}
+
+/** The agent's name: brand ink while the pulse lands, full ink while installed, receded otherwise. */
+const agentNameTone = (flashed: boolean, installed: boolean): string => {
+  if (flashed) return "font-medium text-brand-ink"
+  if (installed) return "font-medium text-ink-primary"
+  return "font-normal text-roster-off"
+}
+
 function AgentBlock({
   row,
   domainPrefix,
@@ -621,8 +671,26 @@ function AgentBlock({
 }) {
   const toggleAgentPin = useConfigStore((state) => state.toggleAgentPin)
   const setAgentOption = useConfigStore((state) => state.setAgentOption)
+  const provider = useUiStore((state) => state.provider)
   const { agent, on, model, effort, scope, skills } = row
   const options = { model, effort, scope }
+
+  // WHY THIS ROW IS INERT, or `undefined` while the chosen provider compiles
+  // it. Shown rather than hidden (D18): hiding makes every stack's roster
+  // silently shorter on one provider and leaves a visitor watching two rows
+  // disappear with no explanation.
+  const leftOut = compilesAgent(provider, agent.id)
+    ? undefined
+    : leftOutOfCodexReason()
+
+  // WHETHER THIS SUB-AGENT IS PART OF THE INSTALL THE VISITOR IS LOOKING AT,
+  // which is not the same question as whether they pinned it: on Codex the two
+  // left out are dropped at install whatever the configuration says, so a row
+  // still reading as pinned would have the roster and the install disagreeing
+  // about what is being installed. The configuration itself is untouched —
+  // ruling 3 keeps the payload provider-neutral, so switching back to Claude
+  // shows the same pins it always had.
+  const installed = on && leftOut === undefined
 
   // Picking closes. The value is the whole reason the panel opened, so leaving
   // it up afterwards would ask for a second dismissal for nothing — and one
@@ -669,27 +737,25 @@ function AgentBlock({
           values inside the pin's accessible name. */}
       <div
         data-slot="agent-row"
-        className={`${AGENT_ROW} flex items-baseline transition-colors duration-[250ms] ${
-          flashed ? "bg-flash" : optionsOpen ? "" : "hover:bg-roster-hover"
-        }`}
+        className={`${AGENT_ROW} flex items-baseline transition-colors duration-[250ms] ${agentRowFill(flashed, optionsOpen)}`}
       >
         {/* State is colour only — no checkbox, no bracket. Click pins the
             agent to the opposite of what it currently derives to. */}
+        {/* DISABLED MEANS INERT, not merely dressed as unavailable: a row that
+            still pinned would put a sub-agent into a configuration the install
+            then drops, so the roster and the install would disagree about what
+            is being installed. `aria-disabled` rather than `disabled` for the
+            reason the Install button carries its own: a disabled control
+            suppresses the pointer events its `title` would open on. */}
         <button
           type="button"
-          aria-pressed={on}
-          onClick={() => toggleAgentPin(agent.id)}
+          aria-pressed={installed}
+          aria-disabled={leftOut !== undefined || undefined}
+          title={leftOut}
+          onClick={() => leftOut === undefined && toggleAgentPin(agent.id)}
           className="min-w-0 flex-1 cursor-pointer text-left"
         >
-          <span
-            className={`text-11_5 ${
-              flashed
-                ? "font-medium text-brand-ink"
-                : on
-                  ? "font-medium text-ink-primary"
-                  : "font-normal text-roster-off"
-            }`}
-          >
+          <span className={`text-11_5 ${agentNameTone(flashed, installed)}`}>
             {domainPrefix !== null && (
               // One colour for the whole name row when the agent is off. The
               // prototype recedes the role to #b4b0a2 but targets the prefix
@@ -697,7 +763,9 @@ function AgentBlock({
               // "muted" prefix renders DARKER than the role it prefixes.
               // Inverted, and corrected here: off, the prefix takes no class
               // of its own and inherits the role's one grey.
-              <span className={on ? "font-normal text-faint" : undefined}>
+              <span
+                className={installed ? "font-normal text-faint" : undefined}
+              >
                 {domainPrefix}
               </span>
             )}
@@ -727,7 +795,7 @@ function AgentBlock({
               agentId={agent.id}
               field={field}
               value={options[field]}
-              on={on}
+              on={installed}
               open={optionsOpen}
               onOpen={onToggleOptions}
               // Effort is the one that goes amber, and amber means "not the
@@ -737,7 +805,7 @@ function AgentBlock({
               // per-role with no edit here.
               className={
                 field === "effort" &&
-                on &&
+                installed &&
                 effort !== restingAgentOptions(agent.id).effort
                   ? "text-brand-ink hover:text-brand-ink"
                   : undefined
@@ -760,14 +828,14 @@ function AgentBlock({
         <SkillRow
           key={skill.id}
           skill={skill}
-          agentOn={on}
+          agentOn={installed}
           agentId={agent.id}
           onShowUses={onShowUses}
           onHideUses={onHideUses}
         />
       ))}
 
-      {on && skills.length === 0 && (
+      {installed && skills.length === 0 && (
         <p className="pl-[0.5625rem] text-10 font-normal text-roster-empty">
           no skills — base agent
         </p>
@@ -866,6 +934,33 @@ function PreviewEntryPoint({ disabled }: { disabled: boolean }) {
   )
 }
 
+/**
+ * WHAT THE CHOSEN PROVIDER CANNOT INSTALL, and which skill is asking for it.
+ *
+ * AN ALERT, because this appears in answer to a press — switching provider — and it takes the
+ * Install button away while it is up. A change that removes a button from somebody is a change they
+ * are owed a word about, and `role="alert"` is the only way to give it to a reader who is not
+ * looking at the panel.
+ *
+ * IT CHANGES NOTHING THE VISITOR CHOSE. Ejecting the skill would make the configuration
+ * installable and say nothing, and they would find out their plugin had become a copied directory
+ * when `update` stopped refreshing it. The cell goes on reading what they asked for, and the three
+ * placements Codex does offer are named here so the fix is a click rather than a guess.
+ */
+function PlacementNotice({ skillNames }: { skillNames: readonly string[] }) {
+  if (skillNames.length === 0) return null
+
+  return (
+    <p
+      role="alert"
+      className="mb-2.5 flex items-baseline gap-1.5 font-mono text-8_5 leading-[1.5] font-normal text-brand-ink"
+    >
+      <Glyph name="warning" size={11} className="translate-y-px" />
+      {unofferedPlacementNotice(skillNames)}
+    </p>
+  )
+}
+
 // The right column: every sub-agent there is, grouped under stacking sticky
 // bands — by domain, or by the destination each agent writes into — with each
 // agent's assignments inline. Everything is derived from `assignments` +
@@ -960,8 +1055,16 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
     }
   }, [optionsFor])
 
+  const provider = useUiStore((state) => state.provider)
   const groups = selectRosterGroups(config, rosterGroupBy)
   const stats = summarize(config)
+  // The skills this provider has no way to install. A list rather than a count,
+  // because the notice below has to say which skill is asking — and a fact
+  // about the configuration AND the provider, which is why it is not one of
+  // `summarize`'s numbers.
+  const unoffered = selectUnofferedPlacements(config, provider)
+  // What this provider would actually write, which is what the button states.
+  const installedAgentCount = selectInstalledAgents(config, provider).length
   const {
     state: shareState,
     label: shareLabel,
@@ -1104,6 +1207,12 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
       </div>
 
       <div className="flex-none border-t border-divider pt-3.5 pr-0.5 pl-4">
+        {/* WHICH CODING AGENT ALL OF IT IS FOR, first: it is the one line here
+            that changes what the Install command SAYS rather than what the
+            configuration holds. */}
+        <ProviderControl />
+        <PlacementNotice skillNames={unoffered} />
+
         {/* THREE EQUAL CELLS IN ONE ROW, over the panel's one filled element.
             They were three full-width stacked buttons, which spent four rows of
             a 300px panel on secondary actions and put two outlines directly
@@ -1160,14 +1269,17 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
             pointer events and a tooltip on one never opens. */}
         <Button
           variant="full"
-          disabled={blocked}
+          disabled={blocked || unoffered.length > 0}
           onClick={() => setDialog("install")}
         >
           Install{" "}
           <span className="pl-1 font-normal tracking-[.06em] text-faint">
-            {blocked
-              ? blockedLabel(stats.unscopedAgentCount)
-              : installLabel(stats)}
+            {installButtonLabel(
+              stats,
+              installedAgentCount,
+              blocked,
+              unoffered.length
+            )}
           </span>
         </Button>
       </div>

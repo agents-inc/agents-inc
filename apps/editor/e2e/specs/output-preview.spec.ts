@@ -2,9 +2,9 @@ import {
   EXTERNAL_SKILL,
   SKILL_INDEX,
   XSS_SENTINEL,
+  seedPayload,
 } from "@workspace/api-mocks/fixtures"
 import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus"
-import { SEED_VERSION } from "@workspace/matrix"
 
 import { buildOutputPreview } from "@/features/configure/lib/output-preview"
 import { externalSkillId } from "@/stores/catalog-store"
@@ -57,10 +57,20 @@ const REACHED_AGENTS = [
 const DEVELOPER = "web-developer"
 
 // A root is a BASE directory with two children, which is C5's correction to
-// both the design and the programme README: the config pair lives in
-// `.claude-src/` and everything else in `.claude/`.
+// both the design and the programme README: the config pair lives in the source
+// folder and everything else in `.claude/`.
 const GLOBAL = "~/"
 const PROJECT = "./"
+
+// The source folder, mirrored rather than imported — the rule stated above, and
+// the reason `apps/editor/eslint.config.js` bans this name everywhere but a
+// spec. It is `.agents-inc/<provider>/` and the editor previews Claude.
+//
+// ONE ROW CARRIES BOTH SEGMENTS (D10) and that is what this constant asserts by
+// its shape: drawn nested, the config pair would sit a level deeper and every
+// entry in the level/posinset table below would move. At one row the pair keeps
+// level 3 and this file's expectations stay string-only.
+const SOURCE_DIR = ".agents-inc/claude/"
 
 const CONFIG_TS = "config.ts"
 const CONFIG_TYPES_TS = "config-types.ts"
@@ -91,12 +101,12 @@ const CLEAN_MACHINE_CLAIM =
 // The tree, as a list of row names, for a configuration holding one global
 // plugin skill. Written out rather than counted, because a count cannot tell a
 // swapped row from an unchanged one — and every correction in §0 shows up in
-// this list: `.claude-src/` beside `.claude/`, `config-types.ts` rather than
+// this list: the source folder beside `.claude/`, `config-types.ts` rather than
 // `config.d.ts`, and a plugin skill under a group that is deliberately not a
 // path.
 const GLOBAL_ONLY_TREE = [
   GLOBAL,
-  ".claude-src/",
+  SOURCE_DIR,
   CONFIG_TS,
   CONFIG_TYPES_TS,
   ".claude/",
@@ -112,7 +122,7 @@ const GLOBAL_ONLY_TREE = [
 // breadcrumb: scope separates itself.
 const SPLIT_TREE = [
   GLOBAL,
-  ".claude-src/",
+  SOURCE_DIR,
   CONFIG_TS,
   CONFIG_TYPES_TS,
   ".claude/",
@@ -123,7 +133,7 @@ const SPLIT_TREE = [
   "plugin skills",
   REACT_ID,
   PROJECT,
-  ".claude-src/",
+  SOURCE_DIR,
   CONFIG_TS,
   CONFIG_TYPES_TS,
   ".claude/",
@@ -136,7 +146,7 @@ const SPLIT_TREE = [
 // directory rather than a reference.
 const EJECTED_TREE = [
   GLOBAL,
-  ".claude-src/",
+  SOURCE_DIR,
   CONFIG_TS,
   CONFIG_TYPES_TS,
   ".claude/",
@@ -149,8 +159,8 @@ const EJECTED_TREE = [
 const globalPath = (rest: string) => `${GLOBAL}${rest}`
 const projectPath = (rest: string) => `${PROJECT}${rest}`
 
-const GLOBAL_CONFIG_PATH = globalPath(`.claude-src/${CONFIG_TS}`)
-const PROJECT_CONFIG_PATH = projectPath(`.claude-src/${CONFIG_TS}`)
+const GLOBAL_CONFIG_PATH = globalPath(`${SOURCE_DIR}${CONFIG_TS}`)
+const PROJECT_CONFIG_PATH = projectPath(`${SOURCE_DIR}${CONFIG_TS}`)
 const GLOBAL_DEVELOPER_PATH = globalPath(`.claude/agents/${DEVELOPER}.md`)
 
 // The tree column, which is the INVERSE of `DialogPane`'s default — the
@@ -298,7 +308,7 @@ test.describe("the tree", () => {
   })
 
   /**
-   * Both roots carry the config pair, always. `.claude-src/` is the one
+   * Both roots carry the config pair, always. The source folder is the one
    * directory an emitted root cannot be without, which is what makes "a root
    * holding neither an agent nor a skill is ABSENT, not empty" a rule worth
    * having: an empty root would show two files an install does not write there.
@@ -310,11 +320,11 @@ test.describe("the tree", () => {
     const preview = configure.outputPreviewDialog
     await expect(preview.row(GLOBAL_CONFIG_PATH)).toBeVisible()
     await expect(
-      preview.row(globalPath(`.claude-src/${CONFIG_TYPES_TS}`))
+      preview.row(globalPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`))
     ).toBeVisible()
     await expect(preview.row(PROJECT_CONFIG_PATH)).toBeVisible()
     await expect(
-      preview.row(projectPath(`.claude-src/${CONFIG_TYPES_TS}`))
+      preview.row(projectPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`))
     ).toBeVisible()
   })
 
@@ -425,14 +435,14 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
   const EJECTED_POSITIONS = [
     { path: GLOBAL, level: "1", posinset: "1", setsize: "1" },
     {
-      path: globalPath(".claude-src/"),
+      path: globalPath(SOURCE_DIR),
       level: "2",
       posinset: "1",
       setsize: "2",
     },
     { path: GLOBAL_CONFIG_PATH, level: "3", posinset: "1", setsize: "2" },
     {
-      path: globalPath(`.claude-src/${CONFIG_TYPES_TS}`),
+      path: globalPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`),
       level: "3",
       posinset: "2",
       setsize: "2",
@@ -537,7 +547,7 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
 
     await page.keyboard.press("ArrowDown")
     expect(await preview.focusedRowPath()).toStrictEqual(
-      globalPath(`.claude-src/${CONFIG_TYPES_TS}`)
+      globalPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`)
     )
 
     await page.keyboard.press("ArrowUp")
@@ -682,21 +692,21 @@ test.describe("the content pane", () => {
     configure,
   }) => {
     const preview = configure.outputPreviewDialog
-    const model = await buildOutputPreview({
-      v: SEED_VERSION,
-      matrixVersion: "0.0.0-test",
-      stackId: null,
-      skills: {
-        [REACT_ID]: {
-          install: "plugin",
-          scope: "global",
-          assignments: Object.fromEntries(
-            REACHED_AGENTS.map((agent) => [agent, "preloaded"] as const)
-          ),
+    const model = await buildOutputPreview(
+      seedPayload({
+        skills: {
+          [REACT_ID]: {
+            install: "plugin",
+            scope: "global",
+            assignments: Object.fromEntries(
+              REACHED_AGENTS.map((agent) => [agent, "preloaded"] as const)
+            ),
+          },
         },
-      },
-      agents: {},
-    })
+        agents: {},
+      }),
+      "claude"
+    )
 
     expect(
       model.roots.flatMap((root) => root.nodes.map((node) => node.name)),

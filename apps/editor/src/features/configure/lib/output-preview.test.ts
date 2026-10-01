@@ -1,11 +1,11 @@
 import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_CATALOG,
+  seedPayload,
 } from "@workspace/api-mocks"
 import { generateConfigSource } from "@workspace/compile/config-source"
 import { seatedCatalog } from "@workspace/compile"
 import { provenanceMarker } from "@workspace/compile/agent-source"
-import { SEED_VERSION, type SeedPayload } from "@workspace/matrix"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -15,6 +15,8 @@ import {
 } from "@/stores/catalog-store"
 
 import { buildOutputPreview } from "./output-preview"
+
+import type { SeedPayload } from "@workspace/matrix"
 
 /**
  * WHAT THIS FILE IS FOR, IN ONE SENTENCE: the preview must not invent bytes.
@@ -56,8 +58,8 @@ const ACME_SKILL = "acme-web-widgets"
 const WEB_DEVELOPER = "web-developer"
 
 // Emission order is global first, then project, and a base is the root's own
-// name. `.claude-src/` holds the config pair and `.claude/` everything else —
-// C5's correction, and the reason a root is two directories rather than one.
+// name. The source folder holds the config pair and `.claude/` everything else
+// — C5's correction, and the reason a root is two directories rather than one.
 const GLOBAL_BASE = "~/"
 const PROJECT_BASE = "./"
 
@@ -65,22 +67,17 @@ const CONFIG_TS = "config.ts"
 const CONFIG_TYPES_TS = "config-types.ts"
 
 /**
- * A payload with one skill, on one sub-agent, at a named scope and install
- * mode. Written out here rather than driven through the store, for the reason
- * `seed.test.ts` writes its `config()` out: this file's subject is the bytes a
- * payload produces, and a store in between would put a second thing that can
- * be wrong between the input and the assertion.
+ * A payload holding exactly these skills and sub-agent entries — no sub-agent
+ * entry unless a spec names one. Built on `seedPayload` rather than driven
+ * through the store, for the reason `seed.test.ts` writes its `config()` out:
+ * this file's subject is the bytes a payload produces, and a store in between
+ * would put a second thing that can be wrong between the input and the
+ * assertion.
  */
 const payload = (
   skills: SeedPayload["skills"],
   agents: SeedPayload["agents"] = {}
-): SeedPayload => ({
-  v: SEED_VERSION,
-  matrixVersion: "0.0.0-test",
-  stackId: null,
-  skills,
-  agents,
-})
+): SeedPayload => seedPayload({ skills, agents })
 
 const skill = (
   scope: "global" | "project",
@@ -121,7 +118,8 @@ describe("the bytes the output preview draws", () => {
    */
   it("draws the global root's config.ts with the standalone writer", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const root = rootOf(preview, GLOBAL_BASE)
 
@@ -146,7 +144,8 @@ describe("the bytes the output preview draws", () => {
       payload(
         { [REACT]: skill("global", "plugin") },
         { [WEB_DEVELOPER]: { on: true, scope: "project" } }
-      )
+      ),
+      "claude"
     )
     const globalRoot = rootOf(preview, GLOBAL_BASE)
     const projectRoot = rootOf(preview, PROJECT_BASE)
@@ -179,7 +178,8 @@ describe("the bytes the output preview draws", () => {
       payload(
         { [REACT]: skill("global", "plugin") },
         { [WEB_DEVELOPER]: { on: true, scope: "project" } }
-      )
+      ),
+      "claude"
     )
 
     expect(bodyOf(preview, PROJECT_BASE, CONFIG_TS)).not.toStrictEqual(
@@ -214,10 +214,13 @@ describe("the bytes the output preview draws", () => {
       "the seated catalogue offers no stack, so this assertion has no subject"
     ).toBeDefined()
 
-    const preview = await buildOutputPreview({
-      ...payload({ [REACT]: skill("global", "plugin") }),
-      stackId: stack!.id,
-    })
+    const preview = await buildOutputPreview(
+      {
+        ...payload({ [REACT]: skill("global", "plugin") }),
+        stackId: stack!.id,
+      },
+      "claude"
+    )
     const configTs = bodyOf(preview, GLOBAL_BASE, CONFIG_TS)
 
     expect(configTs, "the preview drew no global config.ts").toBeTruthy()
@@ -236,7 +239,8 @@ describe("the bytes the output preview draws", () => {
    */
   it("writes no description line for a configuration that applied no stack", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const configTs = bodyOf(preview, GLOBAL_BASE, CONFIG_TS)
 
@@ -249,14 +253,17 @@ describe("the one line a browser cannot know", () => {
   /**
    * §B3.5 rule 2, and C2's correction: the machine-specific value that reaches
    * a real file is the project `config-types.ts`'s import specifier, which is
-   * `path.relative(<project>/.claude-src, $HOME/.claude-src)` — and the CLI's
-   * own contract test names it as the one thing deliberately NOT in the shared
-   * package, "because a browser has no disk to probe".
+   * `path.relative(<project source folder>, <global source folder>)` — and the
+   * CLI's own contract test names it as the one thing deliberately NOT in the
+   * shared package, "because a browser has no disk to probe".
    *
-   * So the preview renders a NAMED PLACEHOLDER there. `../../../.claude-src` is
-   * the exact failure the design's constraint names, and it is what a plausible
-   * invented path looks like — hence the second assertion, which is the one
-   * that catches an implementer who guessed.
+   * So the preview renders a NAMED PLACEHOLDER there. A ready-made `../../../…`
+   * is the exact failure the design's constraint names, and it is what a
+   * plausible invented path looks like — hence the second assertion, which is
+   * the one that catches an implementer who guessed. The rename gives that
+   * assertion a second reason to exist: each scope can be on either layout
+   * independently, so even the number of `../` segments is now a fact about the
+   * disk rather than a constant.
    *
    * The placeholder text is written out here rather than imported from the
    * product, the same discipline `e2e/pages` follows: an assertion that reads
@@ -267,7 +274,8 @@ describe("the one line a browser cannot know", () => {
       payload(
         { [REACT]: skill("global", "plugin") },
         { [WEB_DEVELOPER]: { on: true, scope: "project" } }
-      )
+      ),
+      "claude"
     )
     const types = bodyOf(preview, PROJECT_BASE, CONFIG_TYPES_TS)
 
@@ -275,7 +283,7 @@ describe("the one line a browser cannot know", () => {
     expect(types).toContain("<computed at install time>")
     expect(
       types,
-      "the preview invented a relative path to the global .claude-src instead of naming it as computed"
+      "the preview invented a relative path to the global source folder instead of naming it as computed"
     ).not.toContain("../")
   })
 
@@ -291,7 +299,8 @@ describe("the one line a browser cannot know", () => {
       payload(
         { [REACT]: skill("project", "plugin") },
         { [WEB_DEVELOPER]: { on: true, scope: "project" } }
-      )
+      ),
+      "claude"
     )
 
     const types = bodyOf(preview, PROJECT_BASE, CONFIG_TYPES_TS)
@@ -328,7 +337,10 @@ describe("a compiled sub-agent's markdown", () => {
     }))
 
     const { buildOutputPreview: build } = await import("./output-preview")
-    const preview = await build(payload({ [REACT]: skill("global", "plugin") }))
+    const preview = await build(
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
+    )
     const agent = rootOf(preview, GLOBAL_BASE)?.nodes.find((node) =>
       node.id.endsWith(`${WEB_DEVELOPER}.md`)
     )
@@ -366,7 +378,8 @@ describe("a compiled sub-agent's markdown", () => {
    */
   it("carries the provenance marker the CLI writes, byte for byte", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const agent = rootOf(preview, GLOBAL_BASE)?.nodes.find((node) =>
       node.id.endsWith(`${WEB_DEVELOPER}.md`)
@@ -437,7 +450,8 @@ describe("a compiled sub-agent's markdown", () => {
 
       const { buildOutputPreview: build } = await import("./output-preview")
       const preview = await build(
-        payload({ [REACT]: skill("global", "plugin") })
+        payload({ [REACT]: skill("global", "plugin") }),
+        "claude"
       )
       const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
 
@@ -455,7 +469,8 @@ describe("a compiled sub-agent's markdown", () => {
      */
     it("writes no effort line when neither the metadata nor the config names one", async () => {
       const preview = await buildOutputPreview(
-        payload({ [REACT]: skill("global", "plugin") })
+        payload({ [REACT]: skill("global", "plugin") }),
+        "claude"
       )
       const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
 
@@ -492,7 +507,8 @@ describe("a compiled sub-agent's markdown", () => {
 
     it("carries the sentence the catalogue states for the skill", async () => {
       const preview = await buildOutputPreview(
-        payload({ [REACT]: skill("global", "plugin") })
+        payload({ [REACT]: skill("global", "plugin") }),
+        "claude"
       )
       const stated = activeMatrix().skills[REACT]?.usageGuidance
       const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
@@ -520,7 +536,8 @@ describe("a compiled sub-agent's markdown", () => {
         .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
 
       const preview = await buildOutputPreview(
-        payload({ [ACME_SKILL]: skill("global", "plugin") })
+        payload({ [ACME_SKILL]: skill("global", "plugin") }),
+        "claude"
       )
       const seated = activeMatrix().skills[ACME_SKILL]
       const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
@@ -565,7 +582,8 @@ describe("a compiled sub-agent's markdown", () => {
       )
 
       const preview = await buildOutputPreview(
-        payload({ [ACME_SKILL]: skill("global", "plugin") })
+        payload({ [ACME_SKILL]: skill("global", "plugin") }),
+        "claude"
       )
       const body = bodyOf(preview, GLOBAL_BASE, `${WEB_DEVELOPER}.md`)
 
@@ -576,6 +594,69 @@ describe("a compiled sub-agent's markdown", () => {
       ).not.toContain("\n- \n")
       expect(body).toContain(`\n- Use when working with ${acme?.category}.\n`)
     })
+  })
+})
+
+/**
+ * CLI-898, found by Codex's end-to-end run 2026-09-26: the preview's role file
+ * differed from the installed one in exactly the skill descriptions. The
+ * install reads each skill's SKILL.md description; the preview read the
+ * catalogue's `description`, which is the wizard's short `cliDescription`.
+ * The catalogue now carries both, and the preview draws the install's.
+ */
+describe("the description a skill is listed under", () => {
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  const WIZARD_LABEL = "A short wizard label"
+  const SKILL_MD_DESCRIPTION = "What SKILL.md says, and what the install writes"
+
+  const seatAcmeWith = (fields: Record<string, string>) => {
+    const acme = MARKETPLACE_CATALOG.skills[ACME_SKILL]
+    expect(
+      acme,
+      "the marketplace fixture no longer carries the skill this seats"
+    ).toBeDefined()
+    useCatalogStore.getState().load(
+      {
+        ...MARKETPLACE_CATALOG,
+        skills: {
+          ...MARKETPLACE_CATALOG.skills,
+          [ACME_SKILL]: { ...acme!, ...fields },
+        },
+      },
+      MARKETPLACE_CANONICAL_REF
+    )
+  }
+
+  const acmeBody = async () =>
+    bodyOf(
+      await buildOutputPreview(
+        payload({ [ACME_SKILL]: skill("global", "plugin") }),
+        "claude"
+      ),
+      GLOBAL_BASE,
+      `${WEB_DEVELOPER}.md`
+    )
+
+  it("draws the SKILL.md description, never the wizard's label", async () => {
+    seatAcmeWith({
+      description: WIZARD_LABEL,
+      activationDescription: SKILL_MD_DESCRIPTION,
+    })
+
+    const body = await acmeBody()
+
+    expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+    expect(body).toContain(SKILL_MD_DESCRIPTION)
+    expect(body).not.toContain(WIZARD_LABEL)
+  })
+
+  it("draws the label from a catalogue built before it carried the SKILL.md one", async () => {
+    seatAcmeWith({ description: WIZARD_LABEL })
+
+    expect(await acmeBody()).toContain(WIZARD_LABEL)
   })
 })
 
@@ -593,7 +674,8 @@ describe("what the tree says about plugin skills", () => {
    */
   it("labels a plugin skill `plugin` and gives it no path under a root", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const nodes = rootOf(preview, GLOBAL_BASE)?.nodes ?? []
     const react = nodes.filter((node) => node.id.includes(REACT))
@@ -613,7 +695,8 @@ describe("what the tree says about plugin skills", () => {
    */
   it("turns the same skill into a directory under .claude/skills/ once it ejects", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "eject") })
+      payload({ [REACT]: skill("global", "eject") }),
+      "claude"
     )
     const nodes = rootOf(preview, GLOBAL_BASE)?.nodes ?? []
     const react = nodes.filter((node) => node.id.includes(REACT))
@@ -692,7 +775,8 @@ describe("what the tree says about plugin skills", () => {
      */
     it("names the public catalogue by name for a visitor who has seated nothing", async () => {
       const preview = await buildOutputPreview(
-        payload({ [REACT]: skill("global", "eject") })
+        payload({ [REACT]: skill("global", "eject") }),
+        "claude"
       )
       const note = ejectedNote(preview, REACT)
 
@@ -724,7 +808,8 @@ describe("what the tree says about plugin skills", () => {
         .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
 
       const preview = await buildOutputPreview(
-        payload({ [ACME_SKILL]: skill("global", "eject") })
+        payload({ [ACME_SKILL]: skill("global", "eject") }),
+        "claude"
       )
       const note = ejectedNote(preview, ACME_SKILL)
 
@@ -756,10 +841,12 @@ describe("what the tree says about plugin skills", () => {
         .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
 
       const asPlugin = await buildOutputPreview(
-        payload({ [ACME_SKILL]: skill("global", "plugin") })
+        payload({ [ACME_SKILL]: skill("global", "plugin") }),
+        "claude"
       )
       const asEject = await buildOutputPreview(
-        payload({ [ACME_SKILL]: skill("global", "eject") })
+        payload({ [ACME_SKILL]: skill("global", "eject") }),
+        "claude"
       )
 
       const plugin = pluginNote(asPlugin, ACME_SKILL)
@@ -782,7 +869,8 @@ describe("what the tree says about plugin skills", () => {
      */
     it("never names the eject sentinel as a source repository", async () => {
       const preview = await buildOutputPreview(
-        payload({ [REACT]: skill("global", "eject") })
+        payload({ [REACT]: skill("global", "eject") }),
+        "claude"
       )
       const sentinel = rootOf(preview, GLOBAL_BASE)?.config.skills.find(
         (entry) => entry.id === REACT
@@ -810,7 +898,8 @@ describe("what the tree says about plugin skills", () => {
    */
   it("never labels a plugin skill `new`", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const markers = (rootOf(preview, GLOBAL_BASE)?.nodes ?? [])
       .filter((node) => node.id.includes(REACT))
@@ -832,7 +921,8 @@ describe("which roots are emitted", () => {
    */
   it("emits no root for a scope holding neither an agent nor a skill", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
 
     expect(preview.roots.map((root) => root.base)).toStrictEqual([GLOBAL_BASE])
@@ -847,7 +937,8 @@ describe("which roots are emitted", () => {
           [TAILWIND]: skill("project", "plugin"),
         },
         { [WEB_DEVELOPER]: { on: true, scope: "project" } }
-      )
+      ),
+      "claude"
     )
 
     expect(preview.roots.map((root) => root.base)).toStrictEqual([
@@ -873,13 +964,20 @@ describe("the footer's file count", () => {
    */
   it("counts the config pair per root and one file per compiled sub-agent", async () => {
     const preview = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const agents = (rootOf(preview, GLOBAL_BASE)?.nodes ?? []).filter((node) =>
       node.id.endsWith(".md")
     )
     const CONFIG_FILES_PER_ROOT = 2
 
+    // The subject: a preview that compiled no sub-agent at all states a count
+    // that agrees with its own rows for free — the config pair and nothing else.
+    expect(
+      agents,
+      "the preview compiled no sub-agent, so the count below has no subject"
+    ).not.toStrictEqual([])
     expect(preview.fileCount).toStrictEqual(
       CONFIG_FILES_PER_ROOT + agents.length
     )
@@ -893,10 +991,12 @@ describe("the footer's file count", () => {
    */
   it("does not count an ejected catalogue skill's directory", async () => {
     const asPlugin = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "plugin") })
+      payload({ [REACT]: skill("global", "plugin") }),
+      "claude"
     )
     const asEject = await buildOutputPreview(
-      payload({ [REACT]: skill("global", "eject") })
+      payload({ [REACT]: skill("global", "eject") }),
+      "claude"
     )
 
     // Two guards, because an equality between two numbers is satisfied by two

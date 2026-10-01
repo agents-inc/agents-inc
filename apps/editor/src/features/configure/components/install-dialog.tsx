@@ -1,3 +1,4 @@
+import type { Provider } from "@workspace/compile"
 import { DOMAIN_LABELS } from "@workspace/matrix"
 import { Button } from "@workspace/ui/components/button"
 import { CommandBlock } from "@workspace/ui/components/command-block"
@@ -21,14 +22,101 @@ import {
   PUBLIC_MARKETPLACE,
   selectInstallInventory,
   summarize,
+  type InstallInventory,
   type InventoryAgent,
   type InventorySkill,
 } from "@/features/configure/lib/derive"
+import {
+  agentsLeftOutOfCodexNotice,
+  untrustedProjectNote,
+} from "@/features/configure/lib/provider"
 import { useInstallCommand } from "@/features/configure/lib/use-install-command"
 import { track } from "@/lib/analytics/track"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useUiStore } from "@/stores/ui-store"
+
+/**
+ * The three folders step 2 names, per provider: the config pair a fresh install creates, where an
+ * ejected skill lands, and the global root the rest of it goes under.
+ *
+ * ONE TABLE RATHER THAN THREE TERNARIES, so a provider added to the control is a missing key here
+ * rather than three sentences that were each read separately — `satisfies Record<Provider, …>` is
+ * what turns it into a compiler error.
+ *
+ * The Codex row is not a translation of the Claude one. A project skill on Codex is a committed
+ * file at `<repo>/.agents/skills/`, which is Codex's OWN mechanism for a project skill — it reaches
+ * the model in that repo and nowhere else with no plugin, no marketplace and no trust entry — and
+ * the global root is `$CODEX_HOME`, which on a clean machine is `~/.codex` (D14). `~/.agents/skills`
+ * also reaches the model and is deliberately not this: uninstall and doctor have to agree with
+ * where Codex actually reads.
+ *
+ * THIS STEP SAID `agents/config.ts` FROM 2026-08-04 UNTIL THIS CHANGE — a path
+ * under a directory an install creates at neither root, and the one line of the
+ * dialog nothing asserted on. The docs page `editor/install-and-share.md` has
+ * named the config pair's real home the whole time; D11 is the ruling to make
+ * the two agree, taken while the folder itself was being renamed.
+ *
+ * WRITTEN OUT, WHERE `output-preview.ts` IMPORTS THE SAME NAME FROM
+ * `@workspace/compile`, AND THE DIFFERENCE IS MEASURED RATHER THAN A PREFERENCE.
+ * This dialog is on the static graph; the preview is reached through `import()`
+ * and stays off it. A single import of that package from here makes its whole
+ * barrel statically reachable — `packages/compile` has no `sideEffects: false`
+ * to shake it, and `vite.config.ts`'s `compile` chunk group is ranked LAST
+ * precisely so the chunk stays lazy — which `scripts/first-paint-budget.ts`
+ * refuses:
+ *
+ *   First paint is 490.0 KB gzipped, 146.0 KB over the 344.0 KB budget.
+ *     assets/compile-De6xxjYT.js — 124.7 KB
+ *
+ * (`bunx vite build` in apps/editor, 2026-09-20. The build fails there with
+ * spa-fallback-shell's message rather than that one — see the note below.)
+ *
+ * 124.7 KB on every first paint to avoid re-typing one path is the wrong trade,
+ * and the rest of the table is written out for the same reason. What the copy
+ * costs is that it does not move on its own, which is what the two pins are
+ * for: `e2e/specs/install-dialog.spec.ts` holds the Claude row and
+ * `e2e/specs/codex-provider.spec.ts` holds the Codex one, each naming the path
+ * its provider writes AND the other provider's as an absence — a sentence
+ * naming both would satisfy either assertion alone.
+ */
+type InstalledPaths = {
+  /** The config pair's own file, inside the source folder a fresh install creates. */
+  configTs: string
+  /** Where an ejected skill's directory is copied to. */
+  ejectedSkills: string
+  /** The root everything not in the project goes under. */
+  globalRoot: string
+  /**
+   * WHAT A COMPILED SUB-AGENT IS WRITTEN AS, which is not the same file on the two providers.
+   *
+   * It said "sub-agent front-matter" on both until this change, and on Codex that named a file
+   * nothing writes: a Codex sub-agent is an agent role definition in TOML under `.codex/agents/`,
+   * with no frontmatter in it. A reader told to look for frontmatter after a Codex install finds
+   * none and has no way to tell a naming difference from a failed install.
+   *
+   * In the table for the reason the three paths are: a provider added to the control is a missing
+   * key here rather than a fourth sentence somebody has to remember to read.
+   */
+  agentFiles: string
+}
+
+const INSTALLED_PATHS = {
+  claude: {
+    // eslint-disable-next-line no-restricted-syntax -- importing the name from @workspace/compile puts its 124.7 KB chunk on the first-paint path and fails scripts/first-paint-budget.ts at 490.0 KB against 344.0 KB; the docblock above carries the measurement
+    configTs: ".agents-inc/claude/config.ts",
+    ejectedSkills: ".claude/skills/",
+    globalRoot: "~/.claude",
+    agentFiles: "sub-agent front-matter",
+  },
+  codex: {
+    // eslint-disable-next-line no-restricted-syntax -- the same measurement, and the same reason: this file is on the static graph
+    configTs: ".agents-inc/codex/config.ts",
+    ejectedSkills: ".agents/skills/",
+    globalRoot: "~/.codex",
+    agentFiles: "sub-agent role files",
+  },
+} as const satisfies Record<Provider, InstalledPaths>
 
 // A skill's name in the inventory. An added one's is a button, because this is
 // the list of what is about to be written to the reader's disk and an added
@@ -120,7 +208,15 @@ function AgentScopeGroup({
         {label}
       </div>
       {agents.map(({ agent, baseOnly }) => (
-        <div key={agent.id} className="py-0.5 text-11 text-ink-2">
+        <div
+          key={agent.id}
+          // The footer states how many of these there are, so the rows have to
+          // be countable from outside: the two numbers agreeing is the claim,
+          // and a spec that re-derived the count from the configuration would
+          // compare the bug to itself.
+          data-slot="inventory-agent"
+          className="py-0.5 text-11 text-ink-2"
+        >
           {DOMAIN_LABELS[agent.domainId].toLowerCase()} ·{" "}
           {agent.label.toLowerCase()}
           {/* A pinned agent installs as front-matter alone. */}
@@ -131,6 +227,46 @@ function AgentScopeGroup({
           )}
         </div>
       ))}
+    </>
+  )
+}
+
+/**
+ * The sub-agents this provider does not install, named rather than simply absent.
+ *
+ * The roster keeps both rows and disables them (D18). This pane cannot: it is the list of files
+ * about to be written, so a row here for a file that is not written is the disagreement that
+ * disabled row exists to prevent. The rows go and the sentence stays — and nothing is drawn at all
+ * on Claude, or for a configuration that never pinned one, because an install that left nothing out
+ * has nothing to report.
+ */
+function AgentsLeftOut({ agents }: { agents: InstallInventory["leftOut"] }) {
+  if (agents.length === 0) return null
+
+  return (
+    <p className="pt-3 text-11 leading-[1.5] text-muted-foreground italic">
+      {agentsLeftOutOfCodexNotice(
+        agents.map((agent) => agent.label.toLowerCase())
+      )}
+    </p>
+  )
+}
+
+/**
+ * The command with its id picked out in amber — rule 4's "mark what they chose".
+ *
+ * FOUND IN THE LINE rather than assumed to end it. It was the last word until the provider flag
+ * landed after it, and a render that split on the last space then coloured `codex` would have gone
+ * on looking right — one amber word on the line either way.
+ */
+function MarkedId({ text, id }: { text: string; id: string }) {
+  const at = text.indexOf(id)
+
+  return (
+    <>
+      {text.slice(0, at)}
+      <span className="text-brand-ink">{id}</span>
+      {text.slice(at + id.length)}
     </>
   )
 }
@@ -150,8 +286,12 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
   // that is not the one about to happen. Subscribed rather than read once,
   // because the dialog survives a swap underneath it.
   const marketplace = useCatalogStore((state) => state.marketplace)
+  // Which provider's tree the sentence below describes. The command carries the
+  // provider to the CLI; these are the folders that command then writes.
+  const provider = useUiStore((state) => state.provider)
+  const paths = INSTALLED_PATHS[provider]
 
-  const inventory = selectInstallInventory(config)
+  const inventory = selectInstallInventory(config, provider)
   const stats = summarize(config)
   const stack = stacks.find((candidate) => candidate.id === config.stackId)
 
@@ -222,6 +362,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
               first
             />
             <AgentScopeGroup label="Global" agents={agentsByScope.global} />
+            <AgentsLeftOut agents={inventory.leftOut} />
           </DialogPane>
         </DialogPanes>
 
@@ -253,16 +394,16 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                 <p className="pb-1.5 text-11 leading-[1.5] text-ink-3">
                   Run the installer. It writes{" "}
                   <em className="font-mono text-10 text-ink not-italic">
-                    agents/config.ts
+                    {paths.configTs}
                   </em>{" "}
-                  and sub-agent front-matter, ejects {stats.ejectedCount} skills
+                  and {paths.agentFiles}, ejects {stats.ejectedCount} skills
                   into{" "}
                   <em className="font-mono text-10 text-ink not-italic">
-                    .claude/skills/
+                    {paths.ejectedSkills}
                   </em>
                   , and links the rest as plugins. Global skills land in{" "}
                   <em className="font-mono text-10 text-ink not-italic">
-                    ~/.claude
+                    {paths.globalRoot}
                   </em>
                   .
                 </p>
@@ -281,10 +422,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                   onClick={() => void copy()}
                 >
                   {command.status === "ready" ? (
-                    <>
-                      {text.slice(0, text.lastIndexOf(" ") + 1)}
-                      <span className="text-brand-ink">{command.id}</span>
-                    </>
+                    <MarkedId text={text} id={command.id} />
                   ) : (
                     text
                   )}
@@ -302,6 +440,19 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                 >
                   {note}
                 </p>
+                {/* WHAT HAPPENS AFTER THE COMMAND SUCCEEDS, on the one provider
+                    where success is not the whole story. An untrusted Codex
+                    project install is half live — the skills reach the model,
+                    the sub-agents are ignored in total silence — and silence
+                    is the reason this is on screen rather than left to the
+                    install's own output. Drawn only on Codex: Claude has no
+                    trust step and a sentence about one would be a step nobody
+                    has to take. */}
+                {provider === "codex" && (
+                  <p className="pt-1.5 text-11 leading-[1.5] text-muted-foreground italic">
+                    {untrustedProjectNote()}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -309,7 +460,11 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
 
         <DialogFooter>
           <DialogFooterNote>
-            {stats.skillCount} skills · {stats.agentCount} sub-agents ·{" "}
+            {/* The sub-agent count is the INVENTORY's length, not
+                `summarize`'s: the pane above lists what this provider writes,
+                and a footer counting the configuration instead said eleven over
+                a list of nine. One derivation, read twice. */}
+            {stats.skillCount} skills · {inventory.agents.length} sub-agents ·{" "}
             {stats.ejectedCount} ejected · change it later with{" "}
             <em className="text-ink not-italic">npx agents-inc edit</em>
           </DialogFooterNote>

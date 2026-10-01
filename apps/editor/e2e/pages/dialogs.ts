@@ -45,6 +45,20 @@ export class InstallDialog {
     return this.root.locator('[data-slot="command-block"]', { hasText: text })
   }
 
+  /**
+   * One row per sub-agent this install writes.
+   *
+   * COUNTED rather than named, and that is the point: the footer states how
+   * many sub-agents the install writes, and the two agreeing is a claim a spec
+   * can make without hardcoding a number that a nineteenth sub-agent or a
+   * reshuffled stack would falsify. The number itself is derived from the
+   * configuration on screen, so a spec that computed it a second time would be
+   * comparing the derivation to itself.
+   */
+  get agentRows(): Locator {
+    return this.agentsPane.locator('[data-slot="inventory-agent"]')
+  }
+
   // The inventory row for an added skill, which doubles as the way into its
   // contents — a name that is a button only when there is something to read.
   contentsOf(skillName: string): Locator {

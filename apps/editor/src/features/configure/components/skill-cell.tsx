@@ -13,15 +13,52 @@ import { useEffect, useMemo, useRef } from "react"
 
 import { SkillIcon } from "@/components/skill-icon"
 import type { SkillCellView } from "@/features/configure/lib/derive"
+import { placementRefusal } from "@/features/configure/lib/provider"
 import { track } from "@/lib/analytics/track"
 import { freshEntry, isEjectOnly, useConfigStore } from "@/stores/config-store"
-import { SKILL_INSTALL_MODES, SKILL_SCOPES } from "@/stores/persisted-schema"
+import {
+  SKILL_INSTALL_MODES,
+  SKILL_SCOPES,
+  type SkillOptions,
+} from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
 import { SkillOptionsPanel } from "./skill-options-panel"
 
 // The three squares of the ••• control, top to bottom. Named rather than
 // indexed so the keys mean something.
 const DOTS = ["top", "middle", "bottom"] as const
+
+/**
+ * One cell of either butted pair, which may be a value the chosen provider has no mechanism for.
+ *
+ * `aria-disabled` RATHER THAN `disabled`, and the reason is what decides it: a truly disabled
+ * control suppresses pointer events, so the `title` carrying the reason never opens — the same
+ * route the incompatible cell takes, and the note the roster's own Install button carries in as
+ * many words.
+ */
+function PairCell({
+  value,
+  active,
+  refusal,
+  onPick,
+}: {
+  value: string
+  active: boolean
+  /** Why this value is unavailable, and `undefined` when it is not. */
+  refusal: string | undefined
+  onPick: () => void
+}) {
+  return (
+    <ButtonGroupItem
+      active={active}
+      aria-disabled={refusal !== undefined || undefined}
+      title={refusal}
+      onClick={onPick}
+    >
+      {value}
+    </ButtonGroupItem>
+  )
+}
 
 // The whole cell toggles selection — through a `LatticeCellButton` stretched
 // over it, not through the cell itself, because the cell also holds the •••
@@ -43,6 +80,9 @@ export function SkillCell({
   const toggleSkill = useConfigStore((state) => state.toggleSkill)
   const setSkillOption = useConfigStore((state) => state.setSkillOption)
   const openPanelSkillId = useUiStore((state) => state.openPanelSkillId)
+  // Which provider this configuration is for, because two of the four cells
+  // below are a pair one of them has no mechanism for.
+  const provider = useUiStore((state) => state.provider)
   const togglePanel = useUiStore((state) => state.togglePanel)
   const openPanel = useUiStore((state) => state.openPanel)
   const previewSkill = useUiStore((state) => state.previewSkill)
@@ -91,8 +131,18 @@ export function SkillCell({
     if (!incompatible) togglePanel(skill.id)
   }
 
-  const flip = (patch: Parameters<typeof setSkillOption>[1]) => {
-    if (!incompatible) setSkillOption(skill.id, patch)
+  // WHY A CELL IS UNAVAILABLE, or `undefined` when it is not. Asked of the pair
+  // the press would PRODUCE rather than of the value it sets, which is what
+  // covers both ways into the cell Codex does not offer: `plugin` pressed on a
+  // project skill and `project` pressed on a plugin skill produce the same
+  // placement, and a guard on either one alone leaves the other wide open.
+  const refusalFor = (patch: Partial<SkillOptions>) =>
+    placementRefusal(provider, { ...options, ...patch })
+
+  const flip = (patch: Partial<SkillOptions>) => {
+    if (incompatible || refusalFor(patch) !== undefined) return
+
+    setSkillOption(skill.id, patch)
   }
 
   // `pointerdown`, not `click`, so the panel is gone before the press
@@ -249,13 +299,13 @@ export function SkillCell({
             className="pointer-events-auto flex-none"
           >
             {SKILL_INSTALL_MODES.map((mode) => (
-              <ButtonGroupItem
+              <PairCell
                 key={mode}
+                value={mode}
                 active={options.install === mode}
-                onClick={() => flip({ install: mode })}
-              >
-                {mode}
-              </ButtonGroupItem>
+                refusal={refusalFor({ install: mode })}
+                onPick={() => flip({ install: mode })}
+              />
             ))}
           </ButtonGroup>
         )}
@@ -265,13 +315,13 @@ export function SkillCell({
           className="pointer-events-auto flex-none"
         >
           {SKILL_SCOPES.map((scope) => (
-            <ButtonGroupItem
+            <PairCell
               key={scope}
+              value={scope}
               active={options.scope === scope}
-              onClick={() => flip({ scope })}
-            >
-              {scope}
-            </ButtonGroupItem>
+              refusal={refusalFor({ scope })}
+              onPick={() => flip({ scope })}
+            />
           ))}
         </ButtonGroup>
       </div>
