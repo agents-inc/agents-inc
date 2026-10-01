@@ -76,13 +76,23 @@ function templateFileSystem(templates: CompileTemplates): FS {
  * The browser-side twin of the CLI's `createLiquidEngine`. Every option below is
  * that function's, because a render that resolved filters or variables
  * differently would produce a different file from the same data.
+ *
+ * `globals` is that function's too, and it is what carries the install-specific
+ * values an agent's own partials name — the source folder above all, since a
+ * compiled agent tells an agent where to author and the answer is a folder this
+ * product decides. A browser has no installation, so the preview passes the
+ * layout a new one is created in.
  */
-export function createEngineFromTemplates(templates: CompileTemplates): Liquid {
+export function createEngineFromTemplates(
+  templates: CompileTemplates,
+  globals: Readonly<Record<string, string>> = {}
+): Liquid {
   return new Liquid({
     root: "",
     extname: TEMPLATE_EXTENSION,
     strictVariables: false,
     strictFilters: true,
     fs: templateFileSystem(templates),
+    globals,
   })
 }

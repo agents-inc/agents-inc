@@ -12,8 +12,28 @@
 /** Where an installation's compiled agents and ejected skills live, under its base directory. */
 export const CLAUDE_DIR = ".claude"
 
-/** Where an installation's config pair lives, under its base directory. */
-export const CLAUDE_SRC_DIR = ".claude-src"
+/**
+ * The parent every provider's source folder sits under, so that
+ * `.agents-inc/claude/` and `.agents-inc/codex/` are two folders of one product
+ * rather than two products.
+ *
+ * A root on its own rather than one two-segment string per provider: detection,
+ * uninstall's cleanup and a `.gitignore` entry all name the parent with no
+ * provider after it.
+ */
+export const SOURCE_ROOT_DIR = ".agents-inc"
+
+/**
+ * The folder every installation made before the rename carries, and goes on
+ * carrying: it is read AND written in place, indefinitely, and no command moves
+ * one. Moving a folder is a manual step the user takes by hand — the `migrate`
+ * command an earlier draft of the rename carried was deleted whole before
+ * release, and nothing replaced the invocation.
+ *
+ * It is named after one provider, which is the whole reason the rename is
+ * happening, so only a Claude installation is ever found in it.
+ */
+export const LEGACY_SOURCE_DIR = ".claude-src"
 
 /** Source root directory inside a marketplace/source repo (holds skills/, agents/, etc.). */
 export const SOURCE_SRC_DIR = "src"
@@ -59,7 +79,7 @@ export const EJECT_SOURCE = "eject"
 /** Pseudo-category assigned to local skills — not a `Category` union member; category traversals skip it. */
 export const LOCAL_PSEUDO_CATEGORY = "local"
 
-/** Name written into a global-scope config's `name` field (`~/.claude-src/config.ts`). */
+/** Name written into a global-scope config's `name` field. */
 export const GLOBAL_CONFIG_NAME = "global"
 
 export const DIRS = {

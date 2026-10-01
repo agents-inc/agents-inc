@@ -32,8 +32,8 @@ import type {
  * Renders `config-types.ts`; writes nothing. The disk-probing half — deciding
  * whether a project extends a global types file, and computing the relative
  * specifier to it — stayed in the CLI's `config-types-writer.ts`, because a
- * browser has no disk to probe and `path.relative(<project>/.claude-src,
- * $HOME/.claude-src)` is a fact about one machine.
+ * browser has no disk to probe and `path.relative` between two scopes' source
+ * folders is a fact about one machine.
  */
 
 /**
@@ -597,7 +597,7 @@ function formatMaybeSectionedUnion<T extends string>(
 
 export type ProjectConfigTypesOptions = {
   /**
-   * Absolute path to the global .claude-src directory.
+   * Absolute path to the global scope's source folder.
    * When set, generates import statements that extend global types.
    */
   globalTypesImportPath: string

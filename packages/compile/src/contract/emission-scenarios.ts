@@ -60,14 +60,36 @@
  */
 
 import type { AgentName, ProjectConfig } from "../index"
+import { STANDARD_FILES } from "../paths.js"
+import { sourceDirName, type Provider } from "../source-layout.js"
 
 /**
  * Where each emitted file lands, relative to the root it is written under. A
  * root is a base directory — the user's home, or a project directory — and the
- * config pair lives in its `.claude-src/`, never in its `.claude/`.
+ * config pair lives in its source folder, never in its `.claude/`.
+ *
+ * Composed from the declared names rather than spelled out, so the scenarios
+ * cannot go on describing a folder the product has stopped writing — which is
+ * what these two did between the flip and 2026-09-20, keyed off
+ * `LEGACY_SOURCE_DIR` with the sentence above them saying they must not be.
+ *
+ * ONE pair rather than one per layout, because every scenario below is about
+ * the BYTES an install writes and the bytes are the same either way. Which of
+ * the two folders a given install is on is a resolution question, it is decided
+ * by reading the machine, and nothing in this package may do that — the CLI's
+ * `summoner-names-the-folder-the-install-writes.test.ts` is where that claim
+ * lives. A scenario whose subject really were the legacy layout would key its
+ * own destinations off `LEGACY_SOURCE_DIR` and say so in its `why`; there is
+ * none.
+ *
+ * The provider is named here rather than defaulted: every scenario in this file
+ * describes a Claude install's bytes, and `source-layout.ts` hands out no default
+ * for a caller to leave unsaid.
  */
-export const CONFIG_TS = ".claude-src/config.ts"
-export const CONFIG_TYPES_TS = ".claude-src/config-types.ts"
+const SCENARIO_PROVIDER: Provider = "claude"
+
+export const CONFIG_TS = `${sourceDirName(SCENARIO_PROVIDER)}/${STANDARD_FILES.CONFIG_TS}`
+export const CONFIG_TYPES_TS = `${sourceDirName(SCENARIO_PROVIDER)}/${STANDARD_FILES.CONFIG_TYPES_TS}`
 
 export type EmissionScenario = {
   id: string

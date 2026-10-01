@@ -63,8 +63,8 @@ export type ConfigSourceOptions = {
   globalConfig?: ProjectConfig
 
   /**
-   * Absolute path to the global `.claude-src/`, for the spread form that imports
-   * from it rather than inlining it.
+   * Absolute path to the global scope's source folder, for the spread form that
+   * imports from it rather than inlining it.
    *
    * A PARAMETER rather than a read, because the value is `os.homedir()` and this
    * package runs in a browser. `getGlobalConfigImportPath()` in the CLI's

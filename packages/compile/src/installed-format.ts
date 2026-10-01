@@ -1,7 +1,7 @@
 /**
  * The one style the two files an install writes are emitted in.
  *
- * Owner ruling, 2026-08-26: `.claude-src/config.ts` and `.claude-src/config-types.ts`
+ * Owner ruling, 2026-08-26: the `config.ts` and `config-types.ts` an install writes
  * land ALREADY FORMATTED, so running prettier over them changes nothing. The
  * settings they are a fixed point of are a USER's rather than this repository's
  * — `parser: "typescript", semi: false, singleQuote: true, printWidth: 100,
