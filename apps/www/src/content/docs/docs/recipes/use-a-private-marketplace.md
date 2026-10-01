@@ -9,7 +9,7 @@ Every installation reads one marketplace. The default is the public `github:agen
 
 ## Quick start
 
-The `Marketplace` button sits at the foot of the skills column. Open it, type `acme/skills` — the `github:` prefix and a github.com URL are both accepted and normalized — and press Load. The whole grid becomes that catalogue's skills: its domains, its categories, its relationships.
+**Marketplace** sits in the editor's nav rail, on the left. Open it, type `acme/skills` — the `github:` prefix and a github.com URL are both accepted and normalized — and press Load. The whole grid becomes that catalogue's skills: its domains, its categories, its relationships.
 
 If the repository answers with anything a token could change, a credential field appears — paste a personal access token and load again. If the new catalogue doesn't carry something you've already picked, the dialog names what the switch would cost, and a second Load performs it.
 
@@ -45,14 +45,14 @@ The token needs the `repo` scope for a private repository, or `public_repo` for 
 
 The first rung that names one wins:
 
-| Rung                                                    | Reachable by                       |
-| ------------------------------------------------------- | ---------------------------------- |
-| `--marketplace/-m`                                      | `init` alone                       |
-| the ref a shared configuration carries                  | `init --from` alone                |
-| `CC_MARKETPLACE`                                        | `init` alone                       |
-| `marketplace` in this project's `.claude-src/config.ts` | every command                      |
-| `marketplace` in `~/.claude-src/config.ts`              | every command                      |
-| `github:agents-inc/skills`                              | the default when nothing names one |
+| Rung                                                           | Reachable by                       |
+| -------------------------------------------------------------- | ---------------------------------- |
+| `--marketplace/-m`                                             | `init` alone                       |
+| the ref a shared configuration carries                         | `init --from` alone                |
+| `CC_MARKETPLACE`                                               | `init` alone                       |
+| `marketplace` in this project's `.agents-inc/claude/config.ts` | every command                      |
+| `marketplace` in `~/.agents-inc/claude/config.ts`              | every command                      |
+| `github:agents-inc/skills`                                     | the default when nothing names one |
 
 Naming one on the command line outranks the ref a `--from` id carries: the flag is an instruction about this install, while the payload's ref is a record of where the sharer's came from. A value passed to `--marketplace` that can't be a marketplace stops the run — somebody named it, so falling through would install from a place they didn't name. A bad `CC_MARKETPLACE` warns and falls through to the next rung instead, because it was already in the environment rather than typed at this command.
 

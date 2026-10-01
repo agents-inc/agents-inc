@@ -19,7 +19,7 @@ Both write the same thing, and the install command carries it. [Selecting skills
 
 ## The terminal route is a hand edit
 
-**There is no wizard step for this.** `npx agents-inc edit` picks skills and sub-agents; the mapping between them comes from the stack you chose, and nothing in the wizard curates it. So the terminal route isn't the same job done differently — it's editing the file the editor would have written. Open `.claude-src/config.ts`, add the skill under the sub-agent that should have it, and recompile.
+**There is no wizard step for this.** `npx agents-inc edit` picks skills and sub-agents; the mapping between them comes from the stack you chose, and nothing in the wizard curates it. So the terminal route isn't the same job done differently — it's editing the file the editor would have written. Open `.agents-inc/claude/config.ts`, add the skill under the sub-agent that should have it, and recompile.
 
 <!-- prettier-ignore -->
 ```typescript

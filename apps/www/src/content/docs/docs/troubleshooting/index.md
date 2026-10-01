@@ -15,7 +15,7 @@ npx agents-inc doctor
 
 No flags and no arguments — a diagnostic command has no reason to hide detail. It runs against the current directory and describes whichever installation that directory resolves to: this project's, or the global one when the project has none.
 
-**It exits 1 if any row failed, and 0 otherwise.** Warnings are reported and don't change the exit code. One thing to know before wiring that into a script: a directory with nothing installed also exits 1, because `Config Valid` fails with `.claude-src/config.ts not found`. `doctor` answers "is this installation healthy", not "is anything installed here".
+**It exits 1 if any row failed, and 0 otherwise.** Warnings are reported and don't change the exit code. One thing to know before wiring that into a script: a directory with nothing installed also exits 1, because `Config Valid` fails with `config.ts not found`. `doctor` answers "is this installation healthy", not "is anything installed here".
 
 ## What a healthy report looks like
 
@@ -34,17 +34,22 @@ Agents Inc. Doctor
     Agents                  ✓  13 agents validated
 
   Operational checks
-    Config Valid            ✓  .claude-src/config.ts is valid
+    Config Valid            ✓  .agents-inc/claude/config.ts is valid
+    Layout                  ✓  The global installation is on .agents-inc/claude/
+    Placements Offered      ✓  Every configured skill is placeable
     Skills Resolved         ✓  44/44 skills found
     Agents Compiled         ✓  13/13 agents compiled
     No Orphans              ✓  No orphaned agent files
     Skills Installed        ✓  No eject-mode skills configured
     Plugins Installed       ✓  44/44 plugin-mode skills installed
     Marketplace Reachable   ✓  Connected to remote: /home/me/.cache/agents-inc/sources/github-agents-inc-skills-53f27da1d39533ac
+                               239 skills available
                                Fetched github:agents-inc/skills over the network — named by the global configuration
 
-  Summary: 12 passed, 0 warnings, 0 errors
+  Summary: 14 passed, 0 warnings, 0 errors
 ```
+
+`Layout` and `Placements Offered` are not in a release yet, and neither is the `.agents-inc/claude/` folder: 0.164.0 prints neither row and names `.claude-src/config.ts`. From the next release, a scope still on `.claude-src/` makes its `Layout` row a warning — see [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src).
 
 Four glyphs, and they aren't interchangeable: `✓` passed, `✗` failed, `!` warned, `–` stood down without answering. Rows that stood down are **not** counted in the summary, so a report with twelve rows can end on a total of eleven — if the arithmetic doesn't add up, a row skipped.
 
@@ -54,7 +59,7 @@ Tips print under the summary, keyed to the row that earned them rather than matc
 
 **Content checks** run first, and they validate what's on disk file by file: `Config`, `Marketplaces`, `Plugins`, `Skills`, `Agents`. `Config` runs alone and before the rest, because everything else is read against it.
 
-**Operational checks** then ask whether the installation is coherent: `Config Valid`, `Skills Resolved`, `Agents Compiled`, `No Orphans`, `Skills Installed`, `Plugins Installed`, `Marketplace Reachable`.
+**Operational checks** then ask whether the installation is coherent: `Config Valid`, `Layout` (one row per scope), `Placements Offered`, `Skills Resolved`, `Agents Compiled`, `No Orphans`, `Skills Installed`, `Plugins Installed`, `Marketplace Reachable`.
 
 The order is the point. A file that won't parse is one finding, and every row that reads it would report the same fault in its own words — so a row whose inputs are already known broken stands down instead of repeating them. That's what each skip means:
 
@@ -67,19 +72,20 @@ The order is the point. A file that won't parse is one finding, and every row th
 | `Skipped (marketplace unreachable)`                          | `Skills Resolved` had no catalogue to resolve ids against.                                                                                                             |
 | `Skipped (config invalid)`                                   | No config was loaded. **Also printed when the config is merely absent** — that wording is misleading and the row above it (`Config Valid`) is the one that says which. |
 
-Only two findings stand the whole layer down: a config nobody can read, and a marketplace repository with nothing installed. Every other content error is scoped to the rows that read what it's about, and the rest print real verdicts — a broken plugin registry leaves six operational rows answering normally.
+Only two findings stand the whole layer down: a config nobody can read, and a marketplace repository with nothing installed. Every other content error is scoped to the rows that read what it's about, and the rest print real verdicts — a broken plugin registry stands down `Plugins Installed` and nothing else.
 
 ## Configuration, source, or compile
 
 These faults look alike from the outside and have nothing in common as remedies. The row that failed tells you which kind you have.
 
-| Row                                     | What it reads                                         | A failure here is |
-| --------------------------------------- | ----------------------------------------------------- | ----------------- |
-| `Config`, `Config Valid`                | `.claude-src/config.ts`                               | configuration     |
-| `Marketplaces`, `Marketplace Reachable` | registered local marketplaces; the one this run reads | source            |
-| `Skills Resolved`                       | the config's skill ids, against the loaded catalogue  | source, usually   |
-| `Agents Compiled`, `No Orphans`         | `.claude/agents/`                                     | compile           |
-| `Skills Installed`, `Plugins Installed` | `.claude/skills/` and the Claude plugin registry      | install           |
+| Row                                     | What it reads                                                             | A failure here is      |
+| --------------------------------------- | ------------------------------------------------------------------------- | ---------------------- |
+| `Config`, `Config Valid`                | `.agents-inc/claude/config.ts`                                            | configuration          |
+| `Layout`, `Placements Offered`          | which folder each scope is on; what the config asks the provider to place | configuration, usually |
+| `Marketplaces`, `Marketplace Reachable` | registered local marketplaces; the one this run reads                     | source                 |
+| `Skills Resolved`                       | the config's skill ids, against the loaded catalogue                      | source, usually        |
+| `Agents Compiled`, `No Orphans`         | `.claude/agents/`                                                         | compile                |
+| `Skills Installed`, `Plugins Installed` | `.claude/skills/` and the Claude plugin registry                          | install                |
 
 **Configuration faults block everything.** Nothing downstream is trustworthy until `config.ts` loads, and there's no automatic repair — see [a config that will not parse](/docs/troubleshooting/common-problems#a-config-that-will-not-parse).
 
@@ -96,11 +102,11 @@ npx agents-inc list
 ```
 
 ```
-Installation: agents-inc
+Installation: global
   Mode:    Plugin
   Skills:  44
   Agents:  13
-  Config:  /home/me/.claude-src/config.ts
+  Config:  /home/me/.agents-inc/claude/config.ts
   Agents:  /home/me/.claude/agents
 ```
 
@@ -129,9 +135,9 @@ Last, whether the installation is global or project — `list`'s `Config` line a
 
 Reported here rather than left to be rediscovered.
 
-- **`doctor` exits 1 in a directory with nothing installed.** `.claude-src/config.ts not found` is a failed row like any other. If "not installed yet" is an acceptable state for your script, match the message rather than the exit code.
+- **`doctor` exits 1 in a directory with nothing installed.** `config.ts not found` is a failed row like any other. If "not installed yet" is an acceptable state for your script, match the message rather than the exit code.
 - **`Skipped (config invalid)` also prints when the config is merely absent.** Read the `Config Valid` row above it, which distinguishes the two.
 - **`Fetched … over the network` prints for a cache hit too.** The line reports whether the marketplace is local or remote, not whether this run actually downloaded anything.
 - **A multi-line detail breaks the column layout.** Marketplace and loader errors carry newlines; only the first line is indented and the rest sit at the left margin. The text is intact — the alignment isn't.
 - **The summary omits skipped rows,** so its total can be lower than the number of rows printed.
-- **`Config Valid` prints a project-relative path for a file that may be global.** In a project with no config of its own it reports `.claude-src/config.ts is valid` about `~/.claude-src/config.ts`. The `Marketplace Reachable` detail line — `named by the global configuration` — is what tells the two apart, and `npx agents-inc list` prints the absolute path.
+- **`Config Valid` prints a project-relative path for a file that may be global.** In a project with no config of its own it reports `.agents-inc/claude/config.ts is valid` about `~/.agents-inc/claude/config.ts`. The `Marketplace Reachable` detail line — `named by the global configuration` — is what tells the two apart, and `npx agents-inc list` prints the absolute path.

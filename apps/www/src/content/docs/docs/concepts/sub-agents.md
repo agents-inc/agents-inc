@@ -3,7 +3,7 @@ title: Sub-agents
 description: What a sub-agent is, what it is compiled from, and why compiling one beats writing an agent prompt by hand.
 ---
 
-A **sub-agent** is a specialised assistant for Claude Code: a markdown file with frontmatter, sitting in `.claude/agents/`. Claude Code can define these by hand. Agents Inc compiles them instead.
+A **sub-agent** is a specialised assistant for Claude Code: a markdown file with frontmatter, sitting in `.claude/agents/`. Claude Code can define these by hand. Agents Inc compiles them instead. This page describes Claude Code. On Codex, which is not in a release yet, the same sub-agent compiles to a TOML role file in Codex's own `agents/` directory, and two of the shipped ones are not compiled there at all — see [Claude or Codex](/docs/configuration/providers).
 
 The difference matters. A hand-written agent is a long prompt file that duplicates other agent files, goes stale, and cannot be composed. A compiled agent is assembled from parts you can change independently.
 
@@ -26,7 +26,7 @@ Each sub-agent is assembled from two things:
 
 Both layers are ejectable and editable. See [Customizing sub-agents](/docs/guides/customizing-subagents).
 
-Alongside its prose, an agent carries configuration: which model to run on, reasoning effort, which tools it may use, permission mode, and its output format. The compiler renders all of it through LiquidJS into one markdown file per agent. Model and effort are the two you are most likely to want to change. In the [editor](/docs/editor) they are the two words on the agent's row in the roster, and each click steps to the next value. In `config.ts` they are two fields on the agent's entry — see [Models and effort](/docs/configuration/models-and-effort).
+Alongside its prose, an agent carries configuration: which model to run on, reasoning effort, which tools it may use, permission mode, and its output format. The compiler renders all of it through LiquidJS into one markdown file per agent. Model and effort are the two you are most likely to want to change. In the [editor](/docs/editor) they are two of the words on the agent's row in the roster, and clicking either opens a panel listing every value. In `config.ts` they are two fields on the agent's entry — see [Models and effort](/docs/configuration/models-and-effort).
 
 ## Why compile rather than write
 

@@ -47,7 +47,7 @@ Each subagent has five partials that can be customized:
 
 ## Configuration
 
-Skill-to-subagent mappings and load behavior (preloaded vs dynamic) are configured in `.claude-src/config.ts`. Use `npx agents-inc edit` to modify selections interactively, or edit the config file directly.
+Skill-to-subagent mappings and load behavior (preloaded vs dynamic) are configured in `.agents-inc/claude/config.ts`. Use `npx agents-inc edit` to modify selections interactively, or edit the config file directly.
 
 :::note[The parts of a sub-agent the editor does own]
 Which skills a sub-agent carries, whether it carries each one preloaded or dynamically, and its model, effort and scope are all clicks in the [editor](/editor) — that's what the roster's rows are. Model and effort in particular have no wizard control at all, so this file and the roster are the only two places they're set. Bring an installation over with `npx agents-inc edit --ui` and take it back with `edit --from <id>`.

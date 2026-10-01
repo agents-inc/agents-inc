@@ -27,8 +27,8 @@ either way — [Four ways in](/docs/ways-in) compares all four.
 ## Before you start
 
 You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-installed. Everything Agents Inc produces is a Claude Code sub-agent file or a
-Claude Code plugin.
+installed. Codex is not in a release yet, and this page does not walk it —
+[Claude or Codex](/docs/configuration/providers) covers what differs.
 
 Nothing needs to be installed globally. `npx` fetches the CLI for you.
 
@@ -50,8 +50,9 @@ npx agents-inc init --from Ab3xY9_Q
 ```
 
 Run it from your project root — the folder holding `package.json`. Anything
-you set to project scope is written relative to it; anything global lands in
-`~/.claude` wherever you run from. Global is the recommended starting point —
+you set to project scope is written relative to it; anything global lands under
+your home directory, in `~/.claude` and `~/.agents-inc/claude/`, wherever you
+run from. Global is the recommended starting point —
 see [Global-first setup](/docs/guides/global-first-setup).
 
 :::note[Prefer the terminal?]
@@ -84,9 +85,9 @@ with the skills each one carries listed underneath.
    that want them, so you are adjusting a starting point rather than filling a
    blank grid. The first cell is **Start from scratch** if you would rather
    not. See [Stacks](/docs/concepts/stacks).
-2. **Click skill cells** to add or drop them. The search field and the domain
-   chips above the grid narrow what is on screen; they change nothing about
-   what is selected.
+2. **Click skill cells** to add or drop them. The search field above the grid
+   narrows what is on screen, and the domain strip jumps to a domain's section;
+   neither changes what is selected.
 3. **Set the two words on a cell** if the defaults are wrong: its install mode,
    `plugin` or `eject`, and its scope, `project` or `global`. The `•••` button
    opens both as a panel, along with which sub-agents carry the skill. See
@@ -134,14 +135,18 @@ see [Models and effort](/docs/configuration/models-and-effort).
 Take the wording of the summary the CLI prints seriously — it names the exact
 directories it wrote to, and where those are depends on the scope you chose.
 
-**Your configuration**, in `.claude-src/`:
+**Your configuration**, in `.agents-inc/claude/`:
 
 | File              | What it is                                                                                                       |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `config.ts`       | Plain TypeScript, meant to be hand-edited. Your skills, your sub-agents, and the skill-to-agent `stack` mapping. |
 | `config-types.ts` | Generated. Type unions narrowed to what you actually installed, so a mistyped skill id is a type error.          |
 
-At global scope these live at `~/.claude-src/`.
+At global scope these live at `~/.agents-inc/claude/`.
+
+:::note[If your install says `.claude-src/`]
+`.agents-inc/claude/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and no command moves it. Everywhere this documentation writes `.agents-inc/claude/`, read `.claude-src/` if that is what your project holds. From the next release `doctor` warns about it, and [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src) says how to move one by hand.
+:::
 
 **Your compiled sub-agents**, in `.claude/agents/`, or `~/.claude/agents/` at
 global scope — one markdown file per sub-agent. These are build outputs.
@@ -161,7 +166,7 @@ Mode is chosen per skill, so a real installation is often mixed. See
 [Install modes](/docs/concepts/install-modes).
 
 :::note[Seeing this before you run anything]
-**Preview generated code**, above the editor's Install button, draws the same
+**Preview**, beside Share above the editor's Install button, draws the same
 file tree with each file's contents beside it. It is rendered by the same
 package the CLI compiles with, so the paths are the ones you will get rather
 than an illustration of them.
@@ -169,7 +174,7 @@ than an illustration of them.
 
 ## The next command
 
-Open `.claude-src/config.ts`, change something, and run:
+Open `.agents-inc/claude/config.ts`, change something, and run:
 
 ```bash
 npx agents-inc compile
@@ -221,6 +226,6 @@ config and recompiles.
 
 To pull newer skill content from the marketplace, `npx agents-inc update`. It
 refreshes every marketplace your config names through Claude Code's own plugin
-registry, and that is all it does — it asks nothing, and it recompiles nothing,
+commands, and that is all it does — it asks nothing, and it recompiles nothing,
 because a sub-agent references a plugin skill by pointer rather than by copy.
 Ejected skills are copies you own, so it never touches them.

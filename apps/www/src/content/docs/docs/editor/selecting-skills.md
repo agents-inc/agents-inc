@@ -14,8 +14,8 @@ Click a stack first. That selects a coherent set and hands each skill to the sub
 Then adjust:
 
 - Type in the **search skills** field to narrow by name, slug or description.
-- Click a domain chip — **Web**, **API**, **AI**, **Infra** or **Shared** — to narrow to one domain. Clicking the active chip clears it.
-- Click **Selected** to see only what you've chosen, which is the review pass over your own setup.
+- Click a domain in the strip under the field — **Web**, **API**, **AI** and the rest — to jump to its section. It narrows nothing; every domain stays on the page.
+- Once something is selected, click **selected** in the `all | selected` pair above the search field to see only what you've chosen, which is the review pass over your own setup.
 - Click any cell to add or remove a skill.
 
 Watch the right-hand column as you go. That's where a skill actually lands.
@@ -27,7 +27,7 @@ Skills are grouped by **domain** — one heading each, pinned under the filter b
 - **`one of`** — an exclusive category. Picking a skill here evicts its siblings.
 - **`multi`** — pick as many as you like.
 
-There's no accordion and nothing collapses: every skill in a category is on screen. The catalogue carries more domains than the filter bar has chips for; the ones without a chip still render as sections and are still reachable by search.
+There's no accordion and nothing collapses: every skill in a category is on screen. The strip names every domain the catalogue has, whatever the search or the `selected` filter is showing.
 
 **A cell that's dimmed is ruled out by something you already picked.** Hover it and the reason reads `Conflicts with <name>`, `Needs <a> and <b>`, or `Needs one of <a>, <b>`. Clicking does nothing. Incompatibility carries through the chain — picking React rules out Nuxt because Nuxt needs Vue — so the reason names the nearest cause rather than the whole path.
 
@@ -45,6 +45,8 @@ Every cell carries two pairs, and **both values of each are on screen**. The one
 | ------------ | ------------------ | ----------------------------------------------------------------------------------------- |
 | Install mode | `plugin` `eject`   | Whether the skill is registered as a Claude Code plugin or copied into `.claude/skills/`. |
 | Scope        | `project` `global` | Whether it installs into this project or into `~/.claude`.                                |
+
+That table is Claude Code. With the [provider row](/docs/editor/install-and-share#the-provider-row-and-what-moves-with-it) on Codex, which is not in a release yet, an ejected project skill lands in `.agents/skills/`, global means `~/.codex`, and whichever value would make a skill `plugin` + `project` — `plugin` on a project skill, `project` on a plugin one — is disabled, its hover text naming the three placements Codex offers.
 
 [Install modes](/docs/concepts/install-modes) explains both choices. On a skill you added yourself the install mode isn't a pair at all, but a single `eject` statement — there's no plugin form of it, so there's nothing to choose between.
 
@@ -70,7 +72,7 @@ At the foot of the panel, **Source code ↗** opens the skill's own directory on
 
 ## Filters are in the URL
 
-The search text, the domain the strip is on and the **all / selected** filter are all URL search parameters, not component state. A filtered grid therefore has an address: narrow to the AI domain, copy the URL, and whoever opens it sees the same view.
+The search text, the domain the strip last jumped to and the **all / selected** filter are all URL search parameters, not component state. A view therefore has an address: search, jump to the AI domain, copy the URL, and whoever opens it lands on the AI section with the same search applied. Scrolling doesn't rewrite the domain — only a click on the strip does.
 
 That filter sits at the right end of the skills hinge and reads `all 238 | selected 23` — both counts at once, so you can see what narrowing would cost before you press it. It appears only once something is selected.
 
@@ -82,7 +84,7 @@ Filters change what's drawn and never what's selected. Nothing you can't see is 
 
 Staging one puts a row above the search field where you **must** choose a category from a dropdown listing every category of the loaded catalogue as `web · framework`. Nothing is added without one — there's no guess and no "uncategorized" bucket, because where a skill belongs decides which sub-agents it reaches. If the resulting id is already taken you're told which skill holds it and asked to file this one elsewhere.
 
-Confirming fetches each staged skill's whole directory, all or nothing, and seats them as real catalogue entries. From then on they render under a real domain, answer the domain chip, and are judged by the same selection rules as everything else. An added skill always installs by ejecting, and its `added` tag is a button that opens its files so you can read what you're about to install.
+Confirming fetches each staged skill's whole directory, all or nothing, and seats them as real catalogue entries. From then on they render under a real domain, are reached by the search and the strip like their neighbours, and are judged by the same selection rules as everything else. An added skill always installs by ejecting, and its `added` tag is a button that opens its files so you can read what you're about to install.
 
 **An added skill is session-only.** It disappears on reload, and so does any selection that names it. That isn't an oversight: the skill's _bytes_ are resolved when you add it and live in memory or inside a payload, so an id surviving without them would name a skill this browser could neither describe nor install.
 

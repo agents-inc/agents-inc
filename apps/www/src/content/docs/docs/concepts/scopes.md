@@ -9,7 +9,7 @@ Every skill and every sub-agent is installed at one of two scopes: **global**, s
 
 Global is the default on both front doors, and most of the time it's the one you want. Your React + Hono setup is the same in every project, so installing it once at global scope means one thing to maintain instead of one copy per repository.
 
-In the editor, scope is a badge on a skill's cell and a word on a sub-agent's roster row — click either to flip it. Reach for project scope only where a project genuinely differs from your defaults.
+In the editor, scope is the `project | global` pair on a skill's cell — click the one you want — and a word on a sub-agent's roster row, which opens the panel you pick it in. Reach for project scope only where a project genuinely differs from your defaults.
 
 :::note[From the terminal]
 `S` on the focused row flips scope, on the Skills step and the Agents step alike. [Global-first setup](/docs/guides/global-first-setup) walks the whole decision as a task.
@@ -17,12 +17,14 @@ In the editor, scope is a badge on a skill's cell and a word on a sub-agent's ro
 
 ## What each scope means
 
-|                     | Global                             | Project                       |
-| ------------------- | ---------------------------------- | ----------------------------- |
-| Config              | `~/.claude-src/config.ts`          | `.claude-src/config.ts`       |
-| Compiled sub-agents | `~/.claude/agents/`                | `.claude/agents/`             |
-| Who sees it         | every project on the machine       | this directory only           |
-| Good for            | the stack you reach for by default | the one project that deviates |
+|                     | Global                             | Project                        |
+| ------------------- | ---------------------------------- | ------------------------------ |
+| Config              | `~/.agents-inc/claude/config.ts`   | `.agents-inc/claude/config.ts` |
+| Compiled sub-agents | `~/.claude/agents/`                | `.claude/agents/`              |
+| Who sees it         | every project on the machine       | this directory only            |
+| Good for            | the stack you reach for by default | the one project that deviates  |
+
+Those are a Claude Code installation's paths. `.agents-inc/claude/` is not in a release yet — 0.164.0 writes `.claude-src/` at both scopes, and an installation already on it stays there. A Codex installation, also not in a release yet, has its paths in [Claude or Codex](/docs/configuration/providers).
 
 You can mix freely. A common shape is a global base with a project overriding the one thing it does differently — global React everywhere, plus project-scoped Vue in the one app that uses it.
 

@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-The composer is the field at the foot of the roster column. Write a sentence
+The composer is the field docked at the foot of the skills column. Write a sentence
 describing what you are building, and it returns the skills for it — as a
 proposal you read first, not a selection it makes for you.
 
@@ -18,7 +18,7 @@ started in it. For a project that _does_ exist, the better route reads the code:
 
 1. Sign in with GitHub. The composer calls a model, so the cost has to be
    attributable to somebody; the rest of the editor works signed out.
-2. Type a sentence into the field at the foot of the roster —
+2. Type a sentence into the field at the foot of the skills column —
    _"a Next.js app with Postgres and Playwright tests"_ will do.
 3. Press **Send**, or <kbd>⌘</kbd><kbd>↩</kbd> (<kbd>Ctrl</kbd><kbd>↩</kbd> off
    a Mac). A plain <kbd>Enter</kbd> inserts a newline — the field takes prose.

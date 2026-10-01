@@ -32,7 +32,7 @@ npx agents-inc new marketplace acme
 ```
 
 That writes a marketplace the CLI already accepts — its skill ids are namespaced for you, its rules
-file loads, and `doctor` passes in the new directory. You can also build one by hand; four things
+file loads, and `doctor` passes in the new directory. You can also build one by hand; these
 make a directory a marketplace the CLI can read:
 
 ```
@@ -56,7 +56,7 @@ Your marketplace works fully without them: skills install, reach their sub-agent
 you lose is the wizard's incompatibility hints between your own skills. Generating those
 automatically is planned.
 
-Copy the shapes of those four config files from the public marketplace at
+Copy the shapes of those files from the public marketplace at
 [agents-inc/skills](https://github.com/agents-inc/skills), which is the reference implementation of
 every one of them. `npx agents-inc doctor` reads a marketplace and reports what is missing or
 malformed, so run it against your directory before pointing a project at it.

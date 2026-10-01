@@ -3,10 +3,10 @@ title: Agents Inc
 description: Documentation for Agents Inc, an agent composition framework for Claude Code that compiles atomic skills into sub-agents.
 ---
 
-Agents Inc composes Claude Code sub-agents out of atomic, reusable skills. You
-pick the skills matching the stack you actually work in, and they are compiled
-into sub-agent files. Change a skill, recompile, and every sub-agent that uses
-it is updated.
+Agents Inc composes sub-agents for Claude Code — and for Codex, which is
+not in a release yet — out of atomic, reusable skills. You pick the skills
+matching the stack you actually work in, and they are compiled into sub-agent
+files. Change a skill, recompile, and every sub-agent that uses it is updated.
 
 **The editor is the front door and the CLI is the engine.** You pick your
 skills in the browser at [agentsinc.sh/editor](/editor); the CLI is what
@@ -65,10 +65,12 @@ The **Guides** are task-shaped:
 [creating a marketplace](/docs/guides/creating-a-marketplace) and
 [documenting your codebase](/docs/guides/documenting-your-codebase).
 
-**[Configuration](/docs/configuration)** is `.claude-src/config.ts` in full —
+**[Configuration](/docs/configuration)** is `.agents-inc/claude/config.ts` in full —
 the [field reference](/docs/configuration/config-reference),
-[scopes and paths](/docs/configuration/scopes-and-paths), and
-[models and effort](/docs/configuration/models-and-effort).
+[scopes and paths](/docs/configuration/scopes-and-paths),
+[models and effort](/docs/configuration/models-and-effort), and
+[Claude or Codex](/docs/configuration/providers) for the provider an
+installation is for — not in a release yet.
 
 **[The editor](/docs/editor)** is the browser front door:
 [selecting skills](/docs/editor/selecting-skills),

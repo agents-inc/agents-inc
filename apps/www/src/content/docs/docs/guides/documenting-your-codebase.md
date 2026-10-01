@@ -9,24 +9,22 @@ sidebar:
 
 ## Quick start
 
-`codex-keeper` is a [sub-agent](/docs/concepts/sub-agents), so you run it from Claude Code rather than from either front door. It sits in the `meta` domain and belongs at global scope, where one install serves every repository you point it at — see [Global-first setup](/docs/guides/global-first-setup). Click its row in the [editor](/editor)'s roster to pin it on, and the install command writes it to `.claude/agents/codex-keeper.md`. From the terminal, `npx agents-inc edit` adds it and recompiles in the same run. Then ask it to start:
+`codex-keeper` is a [sub-agent](/docs/concepts/sub-agents), so you run it from Claude Code rather than from either front door. It sits in the `meta` domain and belongs at global scope, where one install serves every repository you point it at — see [Global-first setup](/docs/guides/global-first-setup). Click its row in the [editor](/editor)'s roster to pin it on, and the install command writes it to `~/.claude/agents/codex-keeper.md`. From the terminal, `npx agents-inc edit` adds it and recompiles in the same run. Then ask it to start:
 
 ```
 @codex-keeper initialize documentation for this codebase
 ```
 
-It writes to `.ai-docs/` and adds a `## Generated Documentation` section to your `CLAUDE.md`, so your other subagents know where to look. The rest of this page is what it produces and how to keep it fresh.
+It writes to `.ai-docs/` and adds one line to your project's `CLAUDE.md` naming `.ai-docs/DOCUMENTATION_MAP.md` as the documentation index, so your other subagents know where to look. The rest of this page is what it produces and how to keep it fresh.
 
 ## What it produces
 
-`codex-keeper` writes to `.ai-docs/` and updates your project's `CLAUDE.md` with a `## Generated Documentation` section so other subagents know where to find the docs.
+| Output                          | Purpose                                                                                   |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| `.ai-docs/DOCUMENTATION_MAP.md` | The index: which documents exist and what each one covers                                 |
+| `.ai-docs/reference/**/*.md`    | Where things live and how they work — feature maps, store maps, component patterns, flows |
 
-| Output                          | Purpose                                                   |
-| ------------------------------- | --------------------------------------------------------- |
-| `.ai-docs/DOCUMENTATION_MAP.md` | Coverage index with staleness tracking and priority queue |
-| `.ai-docs/reference/*.md`       | Architecture, type system, store maps, etc.               |
-
-For complex codebases it generates a `features/` subfolder with docs by feature. Once they exist, you and your subagents can reference them by name:
+Related documents are grouped in a subdirectory of `reference/`, and each document carries a `last_validated:` date in its frontmatter — the day it was last re-derived from the code. Once they exist, you and your subagents can reference them by name:
 
 ```
 @web-developer see X feature documentation to understand how X works, then implement Y
@@ -47,6 +45,8 @@ Docs drift quickly. Run `codex-keeper` weekly to catch areas that have changed. 
 ```
 @codex-keeper initialize documentation for this codebase
 ```
+
+**Validation**: Re-derives an existing document against the code it describes and reports what has drifted.
 
 **Update**: Refreshes all or specific docs
 

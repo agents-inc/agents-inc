@@ -9,7 +9,7 @@ A skill installs one of two ways: as a Claude Code **plugin**, or **ejected** �
 
 Plugin is the default and needs no action — every skill installs as a Claude Code plugin unless you say otherwise. To own a skill's files instead, set that skill to eject before you install it.
 
-In the editor, click the `plugin` badge on the skill's cell and it flips to `eject`. The same choice sits behind the cell's `•••` control as an **Install mode** pair, and the two stay in step because they write the same field. A skill added from outside the catalogue has no plugin form, so its badge states `eject` rather than flipping.
+In the editor, click `eject` in the `plugin | eject` pair on the skill's cell. The same choice sits behind the cell's `•••` control as an **Install mode** control, and the two stay in step because they write the same field. A skill added from outside the catalogue has no plugin form, so its cell states `eject` rather than offering the pair.
 
 The choice travels in the id the Install dialog mints, so install with the command that dialog hands you and not a bare `init`:
 
@@ -37,9 +37,17 @@ You can switch modes after initial install using `npx agents-inc edit`.
 
 Install mode decides how a skill's files get there. Scope decides who can see them — this project, or every project on the machine. The two are set independently, so a skill can be an ejected copy at global scope, a plugin at project scope, or either of the other two combinations.
 
-In the editor, scope is the second badge on a skill's cell; a sub-agent carries the same word on its roster row. In the wizard it's `S` on the focused row, on the Skills and Agents steps alike.
+In the editor, scope is the second pair on a skill's cell, `project | global`; a sub-agent carries the same word on its roster row. In the wizard it's `S` on the focused row, on the Skills and Agents steps alike.
 
 [Scopes](/docs/concepts/scopes) covers what each one means, why global is the default, and the one pairing the CLI refuses to write.
+
+## On Codex, one of the four cells is not offered
+
+Everything above describes a Claude Code installation, which offers all four combinations of mode and scope. A **Codex** installation, which is not in a release yet, offers three: `plugin + global`, `eject + global` and `eject + project`.
+
+`plugin + project` has no Codex form — Codex installs a plugin for a machine rather than for a repository, and no `plugin` subcommand takes a scope. A configuration asking for that cell is refused before anything is written, naming the skill and the three cells that are offered. It is never quietly turned into an ejected copy.
+
+The ejected project cell also lands somewhere else: `<repo>/.agents/skills/<id>/SKILL.md`, a file you commit, which reaches the model in that repository with no plugin, no marketplace and no trust entry. [Claude or Codex](/docs/configuration/providers) has the placement table for both.
 
 ## Related
 
@@ -48,3 +56,4 @@ In the editor, scope is the second badge on a skill's cell; a sub-agent carries 
 - [Customizing sub-agents](/docs/guides/customizing-subagents) — ejecting is not only for skills; partials and templates eject too.
 - [Config reference](/docs/configuration/config-reference) — `origin` is the field that records the install mode, `scope` the one that records the scope.
 - [Switch a skill to eject](/docs/recipes/switch-a-skill-to-eject) — the change worked end to end, on one skill.
+- [Claude or Codex](/docs/configuration/providers) — which of the four placements each provider offers, and what each one cannot do.

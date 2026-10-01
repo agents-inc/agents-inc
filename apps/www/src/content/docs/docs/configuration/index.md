@@ -1,15 +1,19 @@
 ---
 title: Configuration
-description: What .claude-src/config.ts is, which of the two files beside it you edit by hand, when to reach for the editor or the wizard instead, and what compile does with what you wrote.
+description: What .agents-inc/claude/config.ts is, which of the two files beside it you edit by hand, when to reach for the editor or the wizard instead, and what compile does with what you wrote.
 sidebar:
   order: 1
 ---
 
-Your installation is described by one file: `.claude-src/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. Whichever front door you came through writes it on first run — the editor hands you an `npx agents-inc init --from <id>` command that does it, and `npx agents-inc init` on its own does it from the terminal wizard. Nothing in it is off-limits afterwards.
+Your installation is described by one file: `.agents-inc/claude/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. Whichever front door you came through writes it on first run — the editor hands you an `npx agents-inc init --from <id>` command that does it, and `npx agents-inc init` on its own does it from the terminal wizard. Nothing in it is off-limits afterwards.
+
+:::note[If your install says `.claude-src/`]
+`.agents-inc/claude/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and no command moves it. Everywhere this documentation writes `.agents-inc/claude/`, read `.claude-src/` if that is what your project holds. From the next release `doctor` warns about it, and [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src) says how to move one by hand — and what refuses while both folders are on disk.
+:::
 
 ## Quick start
 
-Open `.claude-src/config.ts` in your editor. The smallest change with a visible result is giving one sub-agent a different model — add two keys to its entry in the `agents` array:
+Open `.agents-inc/claude/config.ts` in your editor. The smallest change with a visible result is giving one sub-agent a different model — add two keys to its entry in the `agents` array:
 
 <!-- prettier-ignore -->
 ```typescript
@@ -31,7 +35,7 @@ Open `.claude/agents/api-developer.md`. Its frontmatter now reads `model: opus` 
 `model`, `effort` and a sub-agent's `scope` each have a control in the editor: they're words on the sub-agent's row in the roster, and clicking one cycles it to the next value. [Models and effort](/docs/configuration/models-and-effort) has the values it offers, and the round trip that gets an installation you already have onto that roster and back.
 :::
 
-## The two files in `.claude-src/`
+## The two files in `.agents-inc/claude/`
 
 | File              | Who writes it                               | Do you edit it?                                                        |
 | ----------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
@@ -84,7 +88,7 @@ All three write the same file. See [Commands](/docs/reference/commands) for what
 
 `npx agents-inc compile` is non-interactive, takes no marketplace flag, and is safe in CI. It reads `config.ts` from disk, resolves each agent's skills through `stack`, and writes one Markdown file per agent into `.claude/agents/`. Agents carrying `excluded: true` are filtered out before anything is resolved.
 
-It also regenerates `config-types.ts` at every scope it compiles, so a skill you added by hand becomes a valid `SkillId` and a removed one becomes a type error. **It never rewrites `config.ts`** — the hand-edit workflow is "edit, then compile", so the file you edited has to survive.
+It also regenerates `config-types.ts` at every scope it compiles, so a skill you added by hand becomes a valid `SkillId` and a removed one becomes a type error. **It never rewrites the `config.ts` it compiles from** — the hand-edit workflow is "edit, then compile", so the file you edited has to survive.
 
 Two things it reports rather than fixes, both of which a hand-edit can create. A `stack` entry naming a skill that isn't installed is dropped, and each one is named: `Skill '<id>' is configured but was not found — agents will be compiled without it.` A project-scoped skill handed to a global-scoped sub-agent is dropped the same way, with `global-scoped sub-agents only carry global-scoped skills` — see [Scopes and paths](/docs/configuration/scopes-and-paths). Neither rewrites the row, so the warning repeats on every run until you fix the config.
 
@@ -95,4 +99,5 @@ Two things it reports rather than fixes, both of which a hand-edit can create. A
 - [Config reference](/docs/configuration/config-reference) — every field of every type, in tables.
 - [Scopes and paths](/docs/configuration/scopes-and-paths) — project versus global, and the five path overrides.
 - [Models and effort](/docs/configuration/models-and-effort) — per-agent tuning, and `branding`.
+- [Claude or Codex](/docs/configuration/providers) — which coding agent an installation is for, and what each can do. Codex is not in a release yet.
 - [Editing your config](/docs/guides/editing-config) — the task-shaped walkthrough of skills, agents and `stack`.

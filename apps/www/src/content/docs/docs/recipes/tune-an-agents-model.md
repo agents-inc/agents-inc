@@ -5,11 +5,11 @@ sidebar:
   order: 6
 ---
 
-Every sub-agent runs on a model, and every shipped one names `opus`. Choosing differently for one of them — a cheaper model on a routine job, a faster one on a job you run constantly — is a click in the editor, or one field on that sub-agent's entry in `.claude-src/config.ts` where `effort` sits beside it.
+Every sub-agent runs on a model, and every shipped one names `opus`. Choosing differently for one of them — a cheaper model on a routine job, a faster one on a job you run constantly — is a click in the editor, or one field on that sub-agent's entry in `.agents-inc/claude/config.ts` where `effort` sits beside it.
 
 ## Quick start
 
-On the roster, each sub-agent's row carries its model and its effort as words you click to cycle. The model cycles `opus → fable → sonnet → haiku` and wraps; the effort cycles `low → medium → high → xhigh → max` and wraps, and turns amber the moment it leaves that sub-agent's resting value. There's no menu — the word is the control.
+On the roster, each sub-agent's row carries its model and its effort as words. Click either and a panel opens over the row with every value in a column — `opus`, `fable`, `sonnet` and `haiku` for the model, `low`, `medium`, `high`, `xhigh` and `max` for the effort — and picking one sets it and closes the panel. The effort word turns amber the moment it leaves that sub-agent's resting value.
 
 The editor offers those four models and no more, so `inherit` isn't reachable there. Effort rests at `medium` for every sub-agent, since the shipped metadata carries none to read, and a sub-agent whose metadata names a model outside the four rests on `sonnet`. See [The editor](/docs/editor).
 
@@ -51,7 +51,7 @@ This installation cannot be shared as it stands — a shared configuration has n
 Sharing it anyway would mint an id that installs something else.
 ```
 
-Drop the field to get the same behaviour back — an entry with no `model` is exactly what "use the sub-agent's own default" means — then share again. [Share a setup with a teammate](/docs/recipes/share-with-a-teammate) covers the other two refusals.
+Drop the field to get the same behaviour back — an entry with no `model` is exactly what "use the sub-agent's own default" means — then share again. [Share a setup with a teammate](/docs/recipes/share-with-a-teammate) covers the other refusals.
 
 ## Deeper customization
 

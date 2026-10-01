@@ -9,7 +9,7 @@ A plugin skill is served by its marketplace and refreshed from it. Ejecting copi
 
 ## Quick start
 
-Every skill's cell in the editor carries a `plugin` / `eject` badge. Click it to read `eject`, and the command the editor hands you copies that skill's files into `.claude/skills/` rather than registering it as a plugin. The same control sits in the skill's `•••` options panel under **Install mode** — [Selecting skills](/docs/editor/selecting-skills) covers the rest of that panel. A skill you added from outside the catalogue has no plugin form at all, so its badge is fixed at `eject` and the panel's `plugin` option is disabled.
+Every skill's cell in the editor carries a `plugin | eject` pair. Click `eject`, and the command the editor hands you copies that skill's files into `.claude/skills/` rather than registering it as a plugin. The same control sits in the skill's `•••` options panel under **Install mode** — [Selecting skills](/docs/editor/selecting-skills) covers the rest of that panel. A skill you added from outside the catalogue has no plugin form at all, so its cell states `eject` rather than offering the pair, and the panel's `plugin` option is disabled.
 
 For a skill that's already installed, the editor is a round trip, and the two commands aren't the same one:
 
@@ -41,7 +41,7 @@ Either way the files land at `.claude/skills/<skill-id>/` — `SKILL.md` and `me
 | Plugin registration | registered with Claude Code                              | dropped, once the copy has landed                  |
 | Compiled sub-agent  | invokes the skill by its plugin ref                      | invokes it by its bare id                          |
 
-The copy also gets a `forkedFrom` block written into its `metadata.yaml`, recording the id, a hash of the source content and the date. That block is what later lets `uninstall` remove the directory and `share` carry its bytes — a skill directory without one is treated as your own work and left alone.
+The copy also gets a `forkedFrom` block written into its `metadata.yaml`, recording the id, a hash of the source content and the date. That block is what later lets `uninstall` remove the directory and `share` include the skill — a skill directory without one is treated as your own work and left alone. `share` carries an ejected catalogue skill as its id, so a teammate gets a fresh copy rather than your edits.
 
 The order matters and it is deliberate: the copy is written first, and the plugin registration is dropped only for skills whose copy landed. A failed copy leaves the plugin install exactly as it was.
 
@@ -57,7 +57,7 @@ So upstream fixes and additions stop arriving for that skill. Merging them back 
 
 ## Switching back deletes the local copy
 
-Going the other way — the badge back to `plugin`, or `Local` back to `Plugin` in the wizard — installs the plugin first and deletes the working copy the moment that skill's plugin registers. Anything you edited is gone. Copy the directory somewhere else first if you want to keep it.
+Going the other way — `plugin` in the cell's pair, or `Local` back to `Plugin` in the wizard — installs the plugin first and deletes the working copy the moment that skill's plugin registers. Anything you edited is gone. Copy the directory somewhere else first if you want to keep it.
 
 ## `eject skills` is a different command
 

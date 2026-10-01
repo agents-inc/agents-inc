@@ -45,7 +45,7 @@ installation.
 
 ## Starting from nothing
 
-**Use the composer.** It is the field at the foot of the editor's roster:
+**Use the composer.** It is the field docked at the foot of the editor's skills column:
 describe the project in a sentence, and it returns the skills for it as a
 proposal you can read before anything is selected.
 
@@ -101,8 +101,8 @@ skills, not a configuration somebody's model invented.
 
 - [Adding to an existing project](/docs/guides/adding-to-an-existing-project) —
   stack detection end to end.
-- [The composer](/docs/editor/composer) — the field, the proposal, and the
-  four ways it can refuse.
+- [The composer](/docs/editor/composer) — the field, the proposal, and each
+  way it can refuse.
 - [Quickstart](/docs/quickstart) — the run itself, and every file it leaves on
   disk.
 - [CLI or web](/docs/cli-or-web) — how a configuration travels between the two

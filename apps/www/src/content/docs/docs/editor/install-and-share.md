@@ -24,20 +24,21 @@ Its subtitle names what you're installing _from_: `marketplace <ref> · stack <n
 
 **Two panes.** On the left, **Skills** — grouped `Project` and `Global` by each skill's own scope, each row the skill's name plus `plugin` or `eject`. A skill you added yourself has its name as a button, so you can read its files from inside the list of what's about to be written to your disk. On the right, **Agents** — the same project/global split, each row reading `web · developer`, with `no skills — base agent` on one you pinned on without assigning anything.
 
-**Two steps.** The first is `cd` to your project root, explained as the folder holding `package.json` because project-scoped skills are written relative to it. The second names what the installer writes — `.claude-src/config.ts` and sub-agent front-matter, the ejected skills into `.claude/skills/`, the rest linked as plugins, and anything global into `~/.claude` — and then gives you the command.
+**Two steps.** The first is `cd` to your project root, explained as the folder holding `package.json` because project-scoped skills are written relative to it. The second names what the installer writes — `.agents-inc/claude/config.ts` and sub-agent front-matter, the ejected skills into `.claude/skills/`, the rest linked as plugins, and global skills into `~/.claude` — and then gives you the command. With the [provider row](#the-provider-row-and-what-moves-with-it) on Codex the same sentence names `.agents-inc/codex/config.ts`, sub-agent role files, `.agents/skills/` and `~/.codex`.
 
 **Click the command block to copy it.** The line beneath it says what just happened, one phrase per ending:
 
-| Line                                                  | Means                                                                                           |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `preparing your id`                                   | The id is still being minted.                                                                   |
-| `click to copy`                                       | Ready.                                                                                          |
-| `copied`                                              | On your clipboard.                                                                              |
-| `out of date — reload the page for an id`             | This tab is running a build older than the service. Reload; re-opening the dialog won't help.   |
-| `id unavailable — this command starts a fresh wizard` | The id couldn't be stored. The command is still valid — it just starts the wizard from nothing. |
-| `offline — this command starts a fresh wizard`        | Same, with the network as the cause.                                                            |
+| Line                                                              | Means                                                                                                             |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `preparing your id`                                               | The id is still being minted.                                                                                     |
+| `click to copy`                                                   | Ready.                                                                                                            |
+| `copied`                                                          | On your clipboard.                                                                                                |
+| `out of date — reload the page for an id`                         | This tab is running a build older than the service. Reload; re-opening the dialog won't help.                     |
+| `id unavailable — this command starts a fresh wizard`             | The id couldn't be stored. The command is still valid — it just starts the wizard from nothing.                   |
+| `offline — this command starts a fresh wizard`                    | Same, with the network as the cause.                                                                              |
+| `a sub-agent needs project scope — close and fix the marked rows` | A project skill is assigned to a sub-agent resting at global. Re-opening won't help; the marked rows are the fix. |
 
-Where no id could be minted the command degrades to a bare `npx agents-inc init` rather than a broken one.
+Where no id could be minted the command degrades to a bare `npx agents-inc init` rather than a broken one. On Codex it stays bare too, because `--provider` needs `--from`, and the line says so: `· a provider needs --from`.
 
 **There's no Install button.** Installing is a CLI action, so the dialog's job is to tell you exactly what you're about to get and hand you the command. The only control is Close. Its footer counts the whole thing — `N skills · M sub-agents · K ejected` — and reminds you that `npx agents-inc edit` changes it later.
 
@@ -52,11 +53,27 @@ An id is the configuration's own content address: a SHA-256 of the serialized pa
 
 [CLI or web](/docs/cli-or-web) carries the rest of the contract — how `--from` behaves headless, what happens to ids the catalogue no longer knows, and why an older payload version fails loudly.
 
+## The provider row, and what moves with it
+
+A **provider** row sits in the roster footer, above the action cells: `claude | codex`, resting on Claude. It says which coding agent this configuration is for. The CLI's Codex support, `--provider` included, is not in a release yet — see [Claude or Codex](/docs/configuration/providers).
+
+**It changes nothing in the configuration.** Set it to Codex and the install dialog hands you `npx agents-inc init --from <id> --provider codex`; the id itself is byte-identical either way.
+
+That is deliberate rather than incidental. **The provider is not saved with a configuration.** It is not in the payload, it is not in the id, and it is not in a saved stack — so one saved setup installs onto either provider, and adding the provider changed no id. It is a fact about the machine you are installing on, made at the moment you copy the command, and a reload puts the row back on Claude.
+
+What moves with it on screen is what the command will write, and what Codex can take:
+
+- **The paths.** The install dialog's second step and the output preview name Codex's places — `.agents-inc/codex/`, `.codex/agents/<name>.toml`, `.agents/skills/` at project scope, `~/.codex` at global.
+
+- **`plugin` + `project` becomes a disabled cell with a reason** on a skill, because Codex has no way to install a plugin for one repository. A skill already sitting in that cell when you switch is not silently changed for you: the roster says which skills need a Codex placement and Install says so too, until you move them or go back to Claude.
+- **`agent-summoner` and `skill-summoner` show disabled, with the reason**, because a Codex install ships neither. They stay in the payload — the CLI drops them at install and says so once — which is what lets a later release re-enable them without a new id.
+- **One note that only Codex needs.** Under the command: Codex reads a project's sub-agents only once the project is trusted — until then the skills still reach the model and the rest is ignored silently.
+
 ## The output preview
 
-**Preview generated code** sits between Share and Install, because you preview and then you install. It opens a dialog called **Output preview** showing every file the install would write, before one of them is.
+**Preview** — its tooltip says _Preview generated code_ — sits between Share and Install, because you preview and then you install. It opens a dialog called **Output preview** showing every file the install would write, before one of them is.
 
-**On the left, a tree.** Up to two roots — `~/` and `./` — and a root nothing is written to isn't drawn at all. Under each, `.claude-src/` with `config.ts` and `config-types.ts`, `.claude/` with `agents/<name>.md` and `skills/<id>/`, and a group called `plugin skills`. That last one is a group rather than a directory, deliberately: a plugin skill has no path under either root, so giving it one would be a lie. Each row carries a marker:
+**On the left, a tree.** Up to two roots — `~/` and `./` — and a root nothing is written to isn't drawn at all. Under each, `.agents-inc/claude/` with `config.ts` and `config-types.ts`, `.claude/` with `agents/<name>.md` and `skills/<id>/`, and a group called `plugin skills` — or, with the provider row on Codex, `.agents-inc/codex/`, `.codex/` with `agents/<name>.toml`, the skills under `.agents/skills/` at project scope and `.codex/skills/` at global, and the same `plugin skills` group. That group is not a directory, deliberately: a plugin skill has no path under either root, so giving it one would be a lie. Each row carries a marker:
 
 | Marker   | Means                                                                       |
 | -------- | --------------------------------------------------------------------------- |
@@ -64,13 +81,13 @@ An id is the configuration's own content address: a SHA-256 of the serialized pa
 | `plugin` | A reference. Nothing is written for it.                                     |
 | `eject`  | A directory copied verbatim, drawn amber because you chose to own the copy. |
 
-Flip a sub-agent's scope word in the roster and reopen the preview: its `.md` has moved from one root to the other.
+Move a sub-agent to the other scope in the roster and reopen the preview: its `.md` has moved from one root to the other.
 
 **On the right, the file's actual bytes**, syntax-highlighted. Every one of them comes out of the same renderers the CLI's write path calls, so this isn't a mock-up of the output — it's the output. A skill you added from somebody else's repository is rendered as plain text with no grammar run over it and no markdown renderer anywhere on the path.
 
 **The footer says what the sheet is a preview of**, and it's specific on purpose: `N files · M ejected · agents-inc v<version>`, then _"what installing this configuration on a machine with no existing agents-inc installation writes. The project directory's name, and its relative import to the global config, are computed on that machine — named here rather than guessed. Drawn against the catalogue on screen, which a machine carrying its own local skills does not have."_
 
-Install onto a machine that already has agents-inc and the existing config is merged rather than replaced — that part happens on your machine, and the preview says so.
+The preview is of a clean machine, and it says so. On a machine that already has an installation in the way, `init --from` refuses rather than writing any of this, and [`edit --from`](#coming-back-the-other-way) is the command that applies a configuration to one.
 
 The button is disabled until something is selected, and a configuration the CLI would refuse — a project skill on a global sub-agent — shows the refusal naming every unwritable pair rather than drawing a quieter configuration than the one on screen.
 
@@ -89,7 +106,7 @@ The button is the only feedback the panel has, so it says which ending happened:
 | `Sharing failed`                   | The service refused it.                                                                                                                                           |
 | `Offline — try again`              | Nothing reached the service.                                                                                                                                      |
 
-**`fromId` is an address, not a one-shot command.** It's read on every load, so reloading a shared link reopens it rather than reverting to your own configuration. Clicking **Configure** in the nav rail clears it and gets you back to your own. A dead or unreadable link says so and leaves whatever you had configured alone.
+**`fromId` is an address, not a one-shot command.** It's read on every load, so reloading a shared link reopens it rather than reverting to your own configuration. Clicking **Editor** in the nav rail clears it and gets you back to your own. A dead or unreadable link says so and leaves whatever you had configured alone.
 
 Share is disabled with nothing selected, and disabled while any sub-agent scope error stands — a link minted from one of those would fail on the recipient, which is worse than no link.
 

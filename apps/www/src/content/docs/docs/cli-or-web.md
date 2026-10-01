@@ -161,7 +161,7 @@ covers what lands on disk once it runs.
 
 After that install, the CLI does things the editor has no answer for at all:
 `compile`, `doctor`, `update`, `eject`, `uninstall`, `search`, and any hand
-edit of `.claude-src/config.ts`. None of it has a browser equivalent — the
+edit of `.agents-inc/claude/config.ts`. None of it has a browser equivalent — the
 editor never touches a filesystem and never runs a command.
 
 For the whole picture rather than the headline,

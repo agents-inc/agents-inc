@@ -1,6 +1,6 @@
 ---
 title: Why Agents Inc
-description: Hand-written Claude Code sub-agents duplicate each other and go stale. Agents Inc breaks expertise into atomic skills and compiles them into sub-agents instead.
+description: Hand-written sub-agents duplicate each other and go stale. Agents Inc breaks expertise into atomic skills and compiles them into sub-agents instead.
 ---
 
 import { AGENT_COUNT, SKILL_COUNT } from "../../../lib/catalog-counts"
@@ -58,8 +58,9 @@ Two consequences follow from that, and they are the entire argument:
   `web-tester` and `reviewer` cannot disagree about React, because none of
   them owns the text.
 
-A skill reaches a sub-agent one of two ways. **Preloaded** embeds the skill
-content directly in the compiled prompt, for things the sub-agent always needs.
+A skill reaches a sub-agent one of two ways. **Preloaded** names the skill in
+the compiled sub-agent's frontmatter, so Claude Code loads it the moment the
+sub-agent starts — for things the sub-agent always needs.
 **Dynamic** (the default) leaves it to be loaded on demand through Claude Code's
 Skill tool, which keeps the prompt lean. You choose per skill, per sub-agent.
 See [Editing your config](/docs/guides/editing-config).
@@ -76,10 +77,10 @@ you has run:
   `reviewer` serving all of them (the reviewer loading its per-domain review
   skills lazily), and a handful of meta agents — and you pick which to
   compile.
-- **A config file** at `.claude-src/config.ts`. Plain TypeScript, meant to be
+- **A config file** at `.agents-inc/claude/config.ts`. Plain TypeScript, meant to be
   edited by hand. It lists your skills, your sub-agents, and the `stack`
   mapping that decides which skills each sub-agent receives.
-- **Generated types** at `.claude-src/config-types.ts`, narrowed to the skills
+- **Generated types** at `.agents-inc/claude/config-types.ts`, narrowed to the skills
   and sub-agents you actually installed, so a typo in a skill id is a type
   error rather than a silent no-op.
 - **The skills themselves**, installed one of two ways. In **plugin** mode
@@ -90,7 +91,7 @@ you has run:
   [Install modes](/docs/concepts/install-modes).
 
 Skills and sub-agents can be installed at **global** scope
-(`~/.claude-src/config.ts`, shared by every project) or **project** scope, and
+(`~/.agents-inc/claude/config.ts`, shared by every project) or **project** scope, and
 you can mix the two. Global is the recommended default — see
 [Global-first setup](/docs/guides/global-first-setup).
 
@@ -123,8 +124,11 @@ at a marketplace of them ([Creating a marketplace](/docs/guides/creating-a-marke
 catalogue as well as using it, and that is a much bigger commitment than this
 page is asking you to make.
 
-**You are not using Claude Code.** The output is Claude Code sub-agent files
-and Claude Code plugins. Nothing here targets another agent runtime.
+**You use neither Claude Code nor Codex.** An installation is for one of those
+two, and nothing here targets any other agent runtime. Everything above
+describes Claude Code. Codex is not in a release yet; on it the same selection
+compiles all but two of the sub-agents into Codex's own files — see
+[Claude or Codex](/docs/configuration/providers).
 
 ## Next
 

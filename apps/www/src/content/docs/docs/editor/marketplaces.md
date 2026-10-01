@@ -9,11 +9,11 @@ By default the editor's grid is the public catalogue at `agents-inc/skills`. Poi
 
 ## Quick start
 
-1. Click the **Marketplace** button floating at the foot of the middle column.
+1. Click **Marketplace** in the nav rail on the left.
 2. Type the repository as `owner/repo`.
 3. Press **Load**.
 
-The button then reads `Marketplace · github:owner/repo`, which is the only place on screen that names the catalogue you're looking at. Clear the field and press Load again to go back to the public one.
+The rail then names the catalogue under the word **Marketplace**, as `github:owner/repo`. The public catalogue has no name there — nothing under the word means you're on it. Clear the field and press Load again to go back to the public one.
 
 ## What the editor reads
 
@@ -57,7 +57,7 @@ There's deliberately no control anywhere that forgets a token. A GitHub personal
 
 ## Switching between saved marketplaces
 
-Every marketplace a load has succeeded against is remembered, along with the token that reached it. Once this browser holds more than one, `Switch to <ref>` buttons appear beside the Marketplace button — with one saved there's nowhere to switch to, and the button already names it.
+Every marketplace a load has succeeded against is remembered, along with the token that reached it. Once this browser holds more than one, the others are listed by their refs under **Marketplace** in the nav rail, one press each — with one saved there's nowhere to switch to, and the rail already names it.
 
 Pressing one opens **Switch marketplace**, which fetches the target in order to describe it in the same words the Load flow uses, and offers **Cancel** or **Switch marketplace**. Reading is not switching: nothing is seated, stored or dropped until you press the CTA, so canceling costs you nothing but the fetch.
 

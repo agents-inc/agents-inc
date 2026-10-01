@@ -9,40 +9,46 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 
 ## Quick start
 
-| Message or symptom                                                         | Likely cause                                                  | Fix                                                                        |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                                     | [Recreate it](#a-config-that-will-not-parse) — there's no repair           |
-| `ConfigLoadError: Config at '…' could not be loaded`                       | the same fault, from `list`, which prints no remedy           | [Recreate it](#a-config-that-will-not-parse)                               |
-| `Repository not found:` / `Network error fetching:`                        | the marketplace can't be reached                              | [Check the ref, the token, the proxy](#a-marketplace-that-will-not-load)   |
-| `Could not reach … — using the cached copy, which may be out of date.`     | offline, and a cached copy was used                           | Nothing — the run succeeded                                                |
-| `0/1 skills found` / `- <id> (not found)`                                  | the catalogue doesn't carry that id                           | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
-| `Skill '<id>' is configured but was not found`                             | the same, at compile time — and `compile` still exits 0       | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
-| `No configuration found for id '…'`                                        | a shared id the store doesn't have                            | [Check the id](#a-shared-id-that-will-not-install)                         |
-| `Configuration '…' is not in a format this version of the CLI can install` | the id predates or postdates this CLI                         |
-| `The configuration on standard input is not one this store accepts`        | a piped configuration the store would refuse                  |
-| `Sharing this configuration failed (HTTP 400). The store said: …`          | the store named what is wrong with it                         |
-| `This CLI is out of date against the configuration store`                  | this CLI writes a contract version the store no longer serves | [Re-share it](#a-shared-id-that-will-not-install)                          |
-| `An installation already exists at …`                                      | `init --from` is greenfield-only                              | [Uninstall first](#a-shared-id-that-will-not-install)                      |
-| A sub-agent doesn't show up in Claude Code                                 | it was never compiled, or compiled at the other scope         | [Compile it](#sub-agents-that-never-appeared-in-claude-code)               |
-| Your edits to `.claude/agents/*.md` keep vanishing                         | compiled agents are build outputs                             | [Edit the partials](#hand-edits-to-a-compiled-sub-agent-keep-disappearing) |
-| `Global skills cannot be changed from project scope`                       | a global install is read-only from inside a project           | [Three ways out](#a-global-skill-you-cannot-remove-from-inside-a-project)  |
-| `Failed to install N plugin skill(s).`                                     | the plugin install didn't happen                              | [Refresh or switch to eject](#a-plugin-install-that-failed)                |
-| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                                 | [Set it to Local](#a-plugin-install-that-failed)                           |
-| `No skills found. Run 'npx agents-inc init' …`                             | `compile` found nothing installed under the config            | [Reinstall the skills](#compile-says-there-are-no-skills)                  |
-| `Raw mode is not supported on the current process.stdin`                   | a wizard command with no terminal                             | [Use the headless flags](#a-wizard-command-in-a-pipeline)                  |
-| `✓ Eject complete!` and nothing was copied                                 | the destination already existed                               | [Pass `--force`](#an-eject-that-reports-success-and-copies-nothing)        |
-| The command prints one line and hangs                                      | the terminal is under 80×20                                   | [Resize it](#a-command-that-hangs-instead-of-starting)                     |
-| `Completed with N failure(s) — the changes above landed, these did not:`   | the run finished and part of it didn't happen                 | [Do what the indented line says](#a-command-that-finished-with-failures)   |
+| Message or symptom                                                         | Likely cause                                                                     | Fix                                                                                                |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                                                        | [Recreate it](#a-config-that-will-not-parse) — there's no repair                                   |
+| `ConfigLoadError: Config at '…' could not be loaded`                       | the same fault, from `list`, which prints no remedy                              | [Recreate it](#a-config-that-will-not-parse)                                                       |
+| `Repository not found:` / `Network error fetching:`                        | the marketplace can't be reached                                                 | [Check the ref, the token, the proxy](#a-marketplace-that-will-not-load)                           |
+| `Could not reach … — using the cached copy, which may be out of date.`     | offline, and a cached copy was used                                              | Nothing — the run succeeded                                                                        |
+| `0/1 skills found` / `- <id> (not found)`                                  | the catalogue doesn't carry that id                                              | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)                                |
+| `Skill '<id>' is configured but was not found`                             | the same, at compile time — and `compile` still exits 0                          | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)                                |
+| `No configuration found for id '…'`                                        | a shared id the store doesn't have                                               | [Check the id](#a-shared-id-that-will-not-install)                                                 |
+| `Configuration '…' is not in a format this version of the CLI can install` | the id predates or postdates this CLI                                            | [Re-share it, or update the CLI](#a-shared-id-that-will-not-install)                               |
+| `The configuration on standard input is not one this store accepts`        | a piped configuration the store would refuse                                     | [Fix the pairs it names](#a-configuration-that-will-not-share)                                     |
+| `Sharing this configuration failed (HTTP 400). The store said: …`          | the store named what is wrong with it                                            | [Read what the store said](#a-configuration-that-will-not-share)                                   |
+| `Refusing to write while two source folders are on disk.`                  | a scope holds `.claude-src/` and `.agents-inc/claude/` (not in a release yet)    | [Keep one](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src)             |
+| `doctor`: `… is on .claude-src/ … move its contents … by hand`             | a supported folder name that is no longer the current one (not in a release yet) | [Move it, or leave it](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src) |
+| `This CLI is out of date against the configuration store`                  | this CLI writes a contract version the store no longer serves                    | [Run it through `agents-inc@latest`](#a-configuration-that-will-not-share)                         |
+| `An installation already exists at …`                                      | `init --from` is greenfield-only                                                 | [Uninstall first](#a-shared-id-that-will-not-install)                                              |
+| A sub-agent doesn't show up in Claude Code                                 | it was never compiled, or compiled at the other scope                            | [Compile it](#sub-agents-that-never-appeared-in-claude-code)                                       |
+| Your edits to `.claude/agents/*.md` keep vanishing                         | compiled agents are build outputs                                                | [Edit the partials](#hand-edits-to-a-compiled-sub-agent-keep-disappearing)                         |
+| `Global skills cannot be changed from project scope`                       | a global install is read-only from inside a project                              | [Three ways out](#a-global-skill-you-cannot-remove-from-inside-a-project)                          |
+| `Failed to install N plugin skill(s).`                                     | the plugin install didn't happen                                                 | [Refresh or switch to eject](#a-plugin-install-that-failed)                                        |
+| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                                                    | [Set it to Local](#a-plugin-install-that-failed)                                                   |
+| `No skills found. Run 'npx agents-inc init' …`                             | `compile` found nothing installed under the config                               | [Reinstall the skills](#compile-says-there-are-no-skills)                                          |
+| `Raw mode is not supported on the current process.stdin`                   | a wizard command with no terminal                                                | [Use the headless flags](#a-wizard-command-in-a-pipeline)                                          |
+| `✓ Eject complete!` and nothing was copied                                 | the destination already existed                                                  | [Pass `--force`](#an-eject-that-reports-success-and-copies-nothing)                                |
+| The command prints one line and hangs                                      | the terminal is under 80×20                                                      | [Resize it](#a-command-that-hangs-instead-of-starting)                                             |
+| `Completed with N failure(s) — the changes above landed, these did not:`   | the run finished and part of it didn't happen                                    | [Do what the indented line says](#a-command-that-finished-with-failures)                           |
 
 ## A config that will not parse
 
-`.claude-src/config.ts` is evaluated, not merely read, so a syntax error stops every command that needs it. What you see depends on which command you ran.
+`.agents-inc/claude/config.ts` is evaluated, not merely read, so a syntax error stops every command that needs it. What you see depends on which command you ran.
+
+:::note[If your install says `.claude-src/`]
+`.agents-inc/claude/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and no command moves it. The messages below name whichever folder your installation is on. From the next release `doctor` warns about the old folder; [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src) says how to move it by hand.
+:::
 
 `init` and `edit` name the file and then the way out:
 
 ```
-Error: Config at '/home/me/project/.claude-src/config.ts' could not be loaded:
-Failed to load config from '/home/me/project/.claude-src/config.ts': ParseError: Unexpected token, expected ","
+Error: Config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded:
+Failed to load config from '/home/me/project/.agents-inc/claude/config.ts': ParseError: Unexpected token, expected ","
 There is no automatic repair for this — recreate the configuration:
 'npx agents-inc uninstall' still works on a config it cannot read, then 'npx agents-inc init'.
 Or build one at https://agentsinc.sh/editor and install it with 'npx agents-inc init --from <id>'.
@@ -115,7 +121,7 @@ Applying a shared configuration reports it as a skip instead — `Skipped 2 skil
 The remedy depends on why the id is missing. If the marketplace has moved on, refresh it and re-pick:
 
 ```bash
-npx agents-inc update   # refreshes each configured marketplace through the Claude CLI
+npx agents-inc update   # refreshes each configured marketplace through the provider's own CLI
 npx agents-inc edit     # re-select against what the catalogue carries now
 ```
 
@@ -188,6 +194,10 @@ npx agents-inc compile
 
 **A file that exists and still doesn't load** is a frontmatter problem, and `doctor`'s `Agents` content row is where it shows: `Missing or invalid YAML frontmatter`, or `name must be kebab-case: "MyAgent"`. That row validates every `.md` in both agents directories, whoever wrote it.
 
+## A completion gate that never runs
+
+A project-scoped sub-agent's frontmatter hooks are registered only in a folder whose trust dialog has been accepted, and they are dropped in silence otherwise — so its [completion gate](/docs/reference/sub-agent-anatomy#the-completion-gate), the `Stop` hook that runs your project's typecheck, works interactively and does nothing under `claude -p`, in CI, or in a fresh checkout. Global-scoped sub-agents are unaffected. Open Claude Code in that folder once and accept the dialog.
+
 ## Hand edits to a compiled sub-agent keep disappearing
 
 They're build outputs. Every file the compiler writes carries a marker on its first body line:
@@ -196,16 +206,16 @@ They're build outputs. Every file the compiler writes carries a marker on its fi
 <!-- Generated by agents-inc — do not edit; compile rewrites this file -->
 ```
 
-The next `compile` rewrites the file under it, and the marker is also how `uninstall` knows which agent files this CLI wrote — an agent without one is left alone.
+The next `compile` rewrites the file under it, and the marker is also how `uninstall` knows which agent files this CLI wrote once no config is left to name them — an unmarked agent the config does not name is left alone.
 
 To change a sub-agent for real, edit the layer it's compiled from:
 
 ```bash
-npx agents-inc eject agent-partials   # every sub-agent's partials, into .claude-src/agents/
+npx agents-inc eject agent-partials   # every sub-agent's partials, into agents/ in your source folder
 npx agents-inc compile                # rebuild from what you edited
 ```
 
-**Two commands, not three.** `eject agent-partials` writes the shared templates alongside the partials, under `.claude-src/agents/_templates/`, so running `npx agents-inc eject templates` after it finds that directory already there and skips with a warning. Run `eject templates` on its own only when the templates are all you want.
+**Two commands, not three.** `eject agent-partials` writes the shared templates alongside the partials, under `agents/_templates/` in the same folder, so running `npx agents-inc eject templates` after it finds that directory already there and skips with a warning. Run `eject templates` on its own only when the templates are all you want.
 
 [Customizing sub-agents](/docs/guides/customizing-subagents) covers what each partial does. To change only which skills a sub-agent receives, edit `stack` in `config.ts` instead — see [Editing your config](/docs/guides/editing-config).
 
@@ -221,7 +231,7 @@ Sub-agents get the matching line, `Global agents cannot be changed from project 
 
 **Three ways out, in increasing order of reach.**
 
-**Don't hand it to this project's agents.** The skill stays installed and isn't part of any prompt here — leave it out of the relevant agent's `stack` entry in `.claude-src/config.ts` and run `npx agents-inc compile`. This is the right answer nearly always.
+**Don't hand it to this project's agents.** The skill stays installed and isn't part of any prompt here — leave it out of the relevant agent's `stack` entry in `.agents-inc/claude/config.ts` and run `npx agents-inc compile`. This is the right answer nearly always.
 
 **Take a project-scoped copy alongside it.** Press `s` on the row in the wizard; it then shows both `[P]` and `[G]`, and the global install is untouched.
 
@@ -245,7 +255,7 @@ Verify the skill id matches the marketplace, run 'npx agents-inc update' to refr
 or switch affected skills to eject mode.
 ```
 
-Work through those three in order. `npx agents-inc update` shells out to the Claude CLI once per configured marketplace, so it needs Claude Code on your path — without it you get `Claude CLI not found — 'npx agents-inc update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`.
+Work through those three in order. `npx agents-inc update` shells out to the Claude CLI once per configured marketplace, so it needs Claude Code on your path — without it you get `Claude CLI not found — 'npx agents-inc update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`. On a Codex installation, which is not in a release yet, it needs `codex` instead, and the same line names the Codex CLI.
 
 **A skill no marketplace carries is refused earlier and differently**, because refreshing a marketplace is impossible advice for a skill you wrote yourself:
 
@@ -309,7 +319,7 @@ npx agents-inc eject skills --force
 
 **The partials skip is narrower than it looks.** It fires only when the destination holds partial directories and no `_templates` beside them — so re-running `npx agents-inc eject agent-partials` after a full one re-copies the partials and warns `Agent templates already exist — skipping templates, only ejecting agent partials.` instead. Hand-edited partials are overwritten by that, and `--force` isn't what caused it.
 
-Each eject type has its own destination — partials to `.claude-src/agents/`, templates to `.claude-src/agents/_templates/`, skills to `.claude/skills/` — and `--output/-o` replaces all three at once, writing directly into the directory you name with no nesting under it.
+Each eject type has its own destination — partials to `agents/` in the source folder the installation is on (`.claude-src/`, or `.agents-inc/claude/` or `.agents-inc/codex/`, which are not in a release yet), templates to `agents/_templates/` under that, skills to `.claude/skills/` — and `--output/-o` replaces all three at once, writing directly into the directory you name with no nesting under it.
 
 ## A command that finished with failures
 

@@ -20,21 +20,21 @@ The id comes from the editor's install dialog, or from `npx agents-inc share` ru
 
 ## What runs headless
 
-| Command                                                 | Headless | Worth knowing                                                                                              |
-| ------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `init --from <id>`                                      | yes      | greenfield-only; every refusal fires with nothing written                                                  |
-| `init --ui`, `edit --ui`                                | yes      | prints the link first; only tries a browser when stdin is a terminal                                       |
-| `compile`                                               | yes      | exits 0 even when a configured skill couldn't be found                                                     |
-| `doctor`                                                | yes      | exits 1 on any failed check; skips the operational ones in a marketplace repository with nothing installed |
-| `list` / `ls`                                           | yes      | falls back to plain text off a TTY                                                                         |
-| `search <query>`                                        | yes      | reaches the marketplace; exits 0 on no matches                                                             |
-| `update`                                                | yes      | needs the `claude` binary only when a marketplace is configured                                            |
-| `share`, `share --stdin`                                | yes      | `--stdin` refuses if standard input is a terminal                                                          |
-| `eject <type>`                                          | yes      | exits 0 even when the whole copy was skipped                                                               |
-| `uninstall --yes`                                       | yes      | prints the plan instead of prompting                                                                       |
-| `new marketplace`, `build plugins`, `build marketplace` | yes      |                                                                                                            |
-| `edit --from <id>`                                      | **no**   | exits **1**, not 4 — match on the message, not the code                                                    |
-| `init`, `edit`, `uninstall` without `--yes`             | **no**   | exits 4 with nothing changed                                                                               |
+| Command                                                 | Headless | Worth knowing                                                                                                  |
+| ------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `init --from <id>`                                      | yes      | greenfield-only; every refusal fires with nothing written                                                      |
+| `init --ui`, `edit --ui`                                | yes      | prints the link first; only tries a browser when stdin is a terminal                                           |
+| `compile`                                               | yes      | exits 0 even when a configured skill couldn't be found                                                         |
+| `doctor`                                                | yes      | exits 1 on any failed check; skips the operational ones in a marketplace repository with nothing installed     |
+| `list` / `ls`                                           | yes      | falls back to plain text off a TTY                                                                             |
+| `search <query>`                                        | yes      | reaches the marketplace; exits 0 on no matches                                                                 |
+| `update`                                                | yes      | needs `claude` only when a plugin skill names a marketplace — `codex` on a Codex install, not in a release yet |
+| `share`, `share --stdin`                                | yes      | `--stdin` refuses if standard input is a terminal                                                              |
+| `eject <type>`                                          | yes      | exits 0 even when the whole copy was skipped                                                                   |
+| `uninstall --yes`                                       | yes      | prints the plan instead of prompting                                                                           |
+| `new marketplace`, `build plugins`, `build marketplace` | yes      |                                                                                                                |
+| `edit --from <id>`                                      | **no**   | exits **1**, not 4 — match on the message, not the code                                                        |
+| `init`, `edit`, `uninstall` without `--yes`             | **no**   | exits 4 with nothing changed                                                                                   |
 
 The terminal-size gate never bites in CI. It reads `process.stdout.columns`, which is undefined when standard output isn't a terminal, so a piped run always clears the minimum.
 
@@ -59,7 +59,7 @@ Completed with 1 failure(s) — the changes above landed, these did not:
 - **`compile` exits 0 with unresolved skills.** Grep standard error for `is configured but was not found`.
 - **`eject` exits 0 when the copy was skipped** and still prints `✓ Eject complete!`. Grep for `already exist at`, or check the destination directory.
 - **`search` exits 0 with no matches** — it's a warning, not a failure. Check standard output for `Found `.
-- **`doctor` exits 1 for a missing config as well as a broken one.** If "not installed yet" is an acceptable state for your job, match on `.claude-src/config.ts not found` rather than on the code. The exception is a marketplace repository with nothing installed — the operational checks stand down, so that message never prints and a clean run exits 0.
+- **`doctor` exits 1 for a missing config as well as a broken one.** If "not installed yet" is an acceptable state for your job, match on `config.ts not found` rather than on the code. The exception is a marketplace repository with nothing installed — the operational checks stand down, so that message never prints and a clean run exits 0.
 
 `doctor` is otherwise the check worth running last: it validates content, then the installation, and exits 1 if any row failed — warnings alone still exit 0. [Commands](/docs/reference/commands) has the full matrix.
 

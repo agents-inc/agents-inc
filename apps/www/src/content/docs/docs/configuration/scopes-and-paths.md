@@ -17,10 +17,23 @@ npx agents-inc list
 
 Skills and sub-agents are printed under `Project` and `Global` headings, so the scope of each is on screen. The roots those headings stand for:
 
-| Scope     | Config                    | Compiled agents     | Ejected skills      | Plugin skills        |
-| --------- | ------------------------- | ------------------- | ------------------- | -------------------- |
-| `global`  | `~/.claude-src/config.ts` | `~/.claude/agents/` | `~/.claude/skills/` | `~/.claude/plugins/` |
-| `project` | `.claude-src/config.ts`   | `.claude/agents/`   | `.claude/skills/`   | `.claude/plugins/`   |
+| Scope     | Config                           | Compiled agents     | Ejected skills      | Plugin skills        |
+| --------- | -------------------------------- | ------------------- | ------------------- | -------------------- |
+| `global`  | `~/.agents-inc/claude/config.ts` | `~/.claude/agents/` | `~/.claude/skills/` | `~/.claude/plugins/` |
+| `project` | `.agents-inc/claude/config.ts`   | `.claude/agents/`   | `.claude/skills/`   | `.claude/plugins/`   |
+
+Those are a **Claude Code** installation's roots. A [Codex](/docs/configuration/providers) installation, which is not in a release yet, reads scope the same way and writes somewhere else entirely:
+
+| Scope     | Config                          | Compiled agents            | Ejected skills        | Plugin skills          |
+| --------- | ------------------------------- | -------------------------- | --------------------- | ---------------------- |
+| `global`  | `~/.agents-inc/codex/config.ts` | `$CODEX_HOME/agents/`      | `$CODEX_HOME/skills/` | `$CODEX_HOME/plugins/` |
+| `project` | `.agents-inc/codex/config.ts`   | `.codex/agents/` _(trust)_ | `.agents/skills/`     | — not offered          |
+
+`$CODEX_HOME` is Codex's own state root, `~/.codex` unless that variable relocates it. _(trust)_ marks the one root whose contents are read only while your global `$CODEX_HOME/config.toml` trusts that exact project directory — the install says so when it is missing.
+
+:::note[If your install says `.claude-src/`]
+`.agents-inc/<provider>/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and **no command moves it**. Everywhere this documentation writes `.agents-inc/claude/`, read `.claude-src/` if that is what your project holds. From the next release, `npx agents-inc doctor` warns about it; [moving it by hand](#moving-an-installation-off-claude-src) is what clears the warning.
+:::
 
 **Changing a `scope` value by hand doesn't move anything.** It edits the manifest, not the disk. Press `s` on the row in `npx agents-inc edit` instead — that runs the install at the new scope.
 
@@ -80,15 +93,39 @@ Nothing in `config.ts` is rewritten, so the row survives and the warning repeats
 
 `projects` is a `string[]` and it appears in the global config only — a project emission strips it. It's the list of project directories the global installation knows about, and it's how a change made at global scope reaches them.
 
-**You don't maintain it.** Installing into a project registers that project's real path, with symlinks resolved, and entries whose `.claude-src/config.ts` no longer exists are dropped on the next write. `uninstall` deregisters.
+**You don't maintain it.** Installing into a project registers that project's real path, with symlinks resolved, and entries whose `.agents-inc/claude/config.ts` no longer exists are dropped on the next write. `uninstall` deregisters.
 
 **What it buys you**: running `npx agents-inc compile` from your home directory rewrites each registered project's `config.ts` and `config-types.ts` so the inlined global half is current, and recompiles them. Without the registry a global change would be invisible to every project until you visited it.
 
 A registered project the fan-out can't reach is warned by name and the run continues. The type unions at the scope you compiled were still written.
 
+## Moving an installation off `.claude-src/`
+
+**Not in a release yet, and not something to do on 0.164.0** — that release reads `.claude-src/` alone, so a folder moved for it is an installation it can no longer find.
+
+From the next release, `doctor` warns on each scope still on the old folder, and says what to do:
+
+```
+    Layout                  !  This project is on .claude-src/, which this CLI goes on reading and writing — move its contents into .agents-inc/claude/ by hand to be on the current layout
+```
+
+The warning is the whole consequence: nothing stops working, and no command moves the folder. To move one, in the scope's own root — the project directory, or your home directory for the global installation:
+
+```bash
+mkdir -p .agents-inc
+mv .claude-src .agents-inc/claude
+npx agents-inc compile
+```
+
+**Move it, don't copy it.** While a scope holds both folders, `init`, `edit`, `compile`, `update` and `eject` refuse with `Refusing to write while two source folders are on disk.`, after a line naming the folder being read and asking you to move what you want to keep into it and delete the other. Nothing merges them. `doctor` still reports, as a failed `Layout` row.
+
+**`compile` is part of the move.** A project's `config-types.ts` imports the global one's by a relative path, which the move changes, and `compile` rewrites it. After moving the global folder, `compile` from your home directory rewrites the projects in [the `projects` registry](#the-projects-registry); any other project with its own config needs its own `compile`.
+
+**Check your `.gitignore` before you commit.** A rule ignoring `.agents-inc/` hides the moved config, and the commit records only the deletion of `.claude-src/`. `git check-ignore -v .agents-inc/claude/config.ts` prints the rule if there is one.
+
 ## The five path overrides
 
-`skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile` are the five fields whose names suggest they configure your installation. **They don't.** Every one of them is read from a _marketplace repository's_ own `.claude-src/config.ts` — the config in the repository the CLI is fetching skills _from_. Setting one in your own project config changes nothing about your project.
+`skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile` are the five fields whose names suggest they configure your installation. **They don't.** Every one of them is read from a _marketplace repository's_ own `.agents-inc/config.ts` — the config in the repository the CLI is fetching skills _from_. Note the missing provider segment: a source repo's config is provider-neutral, because `skillsDir` and `stacksFile` describe that repository's own layout and have nothing to do with which assistant installs from it. Setting one in your own project config changes nothing about your project.
 
 | Field            | What a marketplace declares with it | Default                      | Read?                  |
 | ---------------- | ----------------------------------- | ---------------------------- | ---------------------- |
@@ -106,4 +143,4 @@ A registered project the fan-out can't reach is warned by name and the run conti
 
 Only when you're **authoring a marketplace** whose layout differs from the scaffold. `npx agents-inc new marketplace <name>` writes `src/skills/`, `config/stacks.ts`, `config/skill-categories.ts` and `config/skill-rules.ts` — keep that layout and you never need these fields. Reach for `skillsDir` or `stacksFile` when you're adapting an existing repository whose skills already live somewhere else, rather than moving them to suit the defaults.
 
-They go in the marketplace repository's own `.claude-src/config.ts`, and once committed they apply to everyone who installs from it. **The scaffold deliberately doesn't write that file** — a config manifest in a repository of skills makes `doctor` diagnose an installation that isn't there — so adding one is a decision, and the standard layout is the reason you rarely need to. See [Creating a marketplace](/docs/guides/creating-a-marketplace).
+They go in the marketplace repository's own `.agents-inc/config.ts`, and once committed they apply to everyone who installs from it. That name is not in a release yet — 0.164.0 reads `.claude-src/config.ts` alone. A repository still declaring `.claude-src/config.ts` is read there indefinitely, and there is no plan to stop: the CLI can never move a folder in a repository it only reads, and an author who moved it would break every consumer on an older CLI. **The scaffold deliberately doesn't write that file** — a config manifest in a repository of skills makes `doctor` diagnose an installation that isn't there — so adding one is a decision, and the standard layout is the reason you rarely need to. See [Creating a marketplace](/docs/guides/creating-a-marketplace).

@@ -7,6 +7,10 @@ sidebar:
 
 Other pages here describe compiling a sub-agent. This one shows the result. A compiled sub-agent is one markdown file — YAML frontmatter that Claude Code reads, then a body assembled from a shared Liquid template and the agent's own markdown partials. None of it is hand-written, and `npx agents-inc compile` replaces the whole file each time it runs.
 
+:::note[This page is the Claude Code file]
+A **Codex** installation, which is not in a release yet, compiles the same body into a different container: an agent role definition in TOML, at `$CODEX_HOME/agents/<name>.toml` or `<repo>/.codex/agents/<name>.toml`, where the body becomes the file's `developer_instructions` key. Sixteen of the eighteen sub-agents compile there, and five of the settings below have no Codex expression at all — tool allowlists, `permissionMode`, `isolation`, `experimental` and preloaded skills. [Claude or Codex](/docs/configuration/providers) is the account of both.
+:::
+
 ## Quick start
 
 This is the top of a compiled `web-developer.md`, verbatim:
@@ -97,6 +101,8 @@ out=$(npm run --if-present --silent typecheck 2>&1) \
 
 **Who gets it.** Any agent whose `tools` include `Write` or `Edit`. A hook the agent declares for another event — a `PostToolUse` formatter, say — is added beside the gate; declaring a stop hook of your own (`Stop`, or the `SubagentStop` spelling Claude Code converts it to) replaces the gate, because a project stating its own completion check keeps it. Of the eighteen shipped agents, thirteen qualify; the four researchers and the reviewer read without writing, so their compiled files carry no `hooks` key at all.
 
+**The completion gate is registered only in a folder Claude Code trusts.** Frontmatter hooks under `~/.claude/agents/` always load; under `<project>/.claude/agents/` they load only once that project's trust dialog has been accepted, and they are dropped in silence otherwise. A project-scope gate in a folder nobody has opened interactively — CI, a fresh checkout, `claude -p` — does nothing, and reports nothing.
+
 ## The body
 
 Sections come out in a fixed order, separated by `---` rules, and the XML tags nest.
@@ -108,11 +114,11 @@ Sections come out in a fixed order, separated by `---` rules, and the XML tags n
 | Operating principles  | `<operating_principles>`                    | one shared block, identical in every agent — how to investigate, what to change, what to verify, what to report |
 | Critical requirements | `<critical_requirements>`                   | hard rules for this agent; the section is skipped when the file behind it is empty                              |
 | Playbook              | its own top-level tags, which vary by agent | the step-by-step process this agent follows                                                                     |
-| Output format         | `<output_format>`                           | the shape of the agent's report, one nested tag per section it must carry                                       |
 | Critical reminders    | `<critical_reminders>`                      | repeated emphasis; skipped when empty                                                                           |
+| Output format         | `<output_format>`                           | the shape of the agent's report, one nested tag per section it must carry                                       |
 | Compile-time block    | `<system-reminder>`                         | everything assembled from your configuration rather than from the agent's role — see below                      |
 
-The tags aren't decoration. They're how the prompt is segmented, and the nesting is real — `<role>` wraps `<domain_scope>`, and `<output_format>` wraps one nested tag per section the agent's report has to carry, which differs from agent to agent. The playbook is the one section that brings tags of its own choosing: `<mandatory_investigation>` for the developers and most researchers, `<test_planning>` for the testers, `<retrieval_strategy>` for the reviewer and the pm.
+The tags aren't decoration. They're how the prompt is segmented, and the nesting is real — `<role>` wraps `<domain_scope>`, and `<output_format>` wraps one nested tag per section the agent's report has to carry, which differs from agent to agent. The playbook is the one section that brings tags of its own choosing: `<investigation>` and `<development_workflow>` for the developers, `<retrieval_strategy>` and `<workflow>` for the researchers, `<test_planning>` for the testers, `<review_workflow>` for the reviewer.
 
 ## The trailing block
 
@@ -147,9 +153,9 @@ The block ends in one of three ways, depending on how the agent's skills load:
 
 ## Where each section comes from
 
-Three inputs produce the file: one shared template, one shared partial, and five markdown files belonging to the agent itself.
+Three kinds of input produce the file: the shared templates, one shared partial, and five markdown files belonging to the agent itself.
 
-**The template** is `agent.liquid`, and there's only one of it. It emits the frontmatter shape, the completion gate, the trailing block and the rules between sections, and it decides where everything else lands.
+**The templates** are `agent.liquid` and the `agent-body.liquid` it pulls in. `agent.liquid` emits the frontmatter shape, the completion gate included; `agent-body.liquid` lays out the body, the rules between sections and the trailing block, and decides where everything else lands. The split is not in a release yet — 0.164.0 has both halves in one `agent.liquid` — and it is what lets a Codex role file carry the body without the frontmatter.
 
 **The shared partial** is `methodologies/operating-principles.liquid`, which emits `<operating_principles>`. It's the one block every agent carries identically, so a working principle written once applies to all of them.
 
@@ -161,7 +167,7 @@ Three inputs produce the file: one shared template, one shared partial, and five
 | `playbook.md`              | after the critical requirements, bringing its own top-level tags | yes                                               |
 | `critical-requirements.md` | inside `<critical_requirements>`                                 | no — the section is skipped when it's empty       |
 | `critical-reminders.md`    | inside `<critical_reminders>`                                    | no — skipped when empty                           |
-| `output.md`                | after the playbook, bringing its own top-level tags              | no — falls back to the agent's category directory |
+| `output.md`                | after the critical reminders, bringing its own top-level tags    | no — falls back to the agent's category directory |
 
 `playbook.md` and `output.md` are the two big ones — for every shipped agent they're the largest two of the five. [Customizing sub-agents](/docs/guides/customizing-subagents) covers taking ownership of all five.
 
@@ -204,14 +210,16 @@ Position is part of the claim — only the first line after the frontmatter coun
 **Want a sub-agent to say something different?** Take ownership of the inputs rather than the output.
 
 ```bash
-npx agents-inc eject agent-partials   # every shipped agent's partials, into .claude-src/agents/
-npx agents-inc eject templates        # the Liquid templates, into .claude-src/agents/_templates/
+npx agents-inc eject agent-partials   # every shipped agent's partials, into <source folder>/agents/
+npx agents-inc eject templates        # the Liquid templates, into <source folder>/agents/_templates/
 npx agents-inc compile                # rebuild from what you now own
 ```
 
+`<source folder>` is the one the installation is on: `.claude-src/` on 0.164.0 and on any installation still there, and otherwise `.agents-inc/claude/`, which is not in a release yet.
+
 `eject agent-partials` copies the whole shipped agent tree, not just the agent you're changing — and it brings `_templates/` with it unless you already have those locally.
 
-Ejected templates win. Compile resolves each template by looking in `.claude-src/agents/_templates/` first, then `.claude/templates/`, then its own built-in copy.
+Ejected templates win. Compile resolves each template by looking in `<source folder>/agents/_templates/` first, then `.claude/templates/`, then its own built-in copy.
 
 ## Related
 

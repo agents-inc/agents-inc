@@ -15,7 +15,7 @@ Skills exist so that expertise is not copied into agent prompts by hand. You pic
 
 ## Quick start
 
-Open the [editor](/editor) and type into the **search skills** field above the grid. It matches name, slug and description across the whole catalogue, and it stays whole-catalogue even with a domain chip active — a query outranks the chip rather than narrowing inside it, so a skill is findable by name without knowing which domain holds it. Clear the query and the chip you picked is still there. The chips narrow to one domain at a time when nothing is typed. Clicking a cell selects the skill there and then — [Selecting skills](/docs/editor/selecting-skills) covers the rest of the grid.
+Open the [editor](/editor) and type into the **search skills** field above the grid. It matches name, slug and description across the whole catalogue, so a skill is findable by name without knowing which domain holds it. The domain strip under the field narrows nothing: clicking a domain jumps the grid to that domain's section. Clicking a cell selects the skill there and then — [Selecting skills](/docs/editor/selecting-skills) covers the rest of the grid.
 
 :::note[From the terminal]
 
@@ -55,6 +55,6 @@ The official marketplace at [agents-inc/skills](https://github.com/agents-inc/sk
 Two separate decisions:
 
 - **Install mode** — whether the skill's files live in a Claude Code plugin or are copied into your project. See [Install modes](/docs/concepts/install-modes).
-- **Load behaviour** — whether the skill is named in the compiled agent's frontmatter `skills:` list, which is the key Claude Code loads from when the agent starts (`preloaded: true`), or left for the agent to pull in through Claude Code's Skill tool when the work calls for it. Dynamic is the default and keeps prompts lean. It's set per sub-agent rather than per skill, so one skill can be preloaded on one sub-agent and dynamic on another: in the editor it's the `pre` / `lazy` word on the skill's row under that sub-agent in the roster, and in your config it's the `preloaded` flag on that one assignment. See [Editing your config](/docs/guides/editing-config).
+- **Load behaviour** — whether the skill is named in the compiled agent's frontmatter `skills:` list, which is the key Claude Code loads from when the agent starts (`preloaded: true`), or left for the agent to pull in through Claude Code's Skill tool when the work calls for it. Dynamic is the default and keeps prompts lean. It's set per sub-agent rather than per skill, so one skill can be preloaded on one sub-agent and dynamic on another: in the editor it's the `pre` / `lazy` word on the skill's row under that sub-agent in the roster, and in your config it's the `preloaded` flag on that one assignment. A Codex role file has no way to carry the preloaded form, so on Codex — which is not in a release yet — a skill marked preloaded is not preloaded, and the compile says so. See [Editing your config](/docs/guides/editing-config).
 
 Both decisions show up in the compiled file itself, and [Anatomy of a sub-agent](/docs/reference/sub-agent-anatomy) reads one line by line.

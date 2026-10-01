@@ -7,7 +7,7 @@ sidebar:
 
 The editor is the browser front door onto the same catalogue the CLI reads. Pick a stack, click the skills you want, decide which sub-agents carry them, and it hands you a command to run. [CLI or web](/docs/cli-or-web) has the full comparison — the short of it is that the editor is the one that shows you the whole catalogue at once, and the one you can hand to somebody else.
 
-**You do not have to build the selection yourself.** [The composer](/docs/editor/composer) at the foot of the roster takes a sentence describing your project and proposes the skills for it; for a project that already exists, the [stack-detection skill](/docs/guides/adding-to-an-existing-project) reads the repository and proposes one from the code. Both leave you here, in the grid, with something to correct rather than something to assemble.
+**You do not have to build the selection yourself.** [The composer](/docs/editor/composer), docked at the foot of the skills column, takes a sentence describing your project and proposes the skills for it; for a project that already exists, the [stack-detection skill](/docs/guides/adding-to-an-existing-project) reads the repository and proposes one from the code. Both leave you here, in the grid, with something to correct rather than something to assemble.
 
 ## Quick start
 
@@ -28,11 +28,11 @@ That's the loop. Everything below refines step 2 and step 3.
 
 Three columns. Both outer ones are pinned to the viewport and only the middle one scrolls.
 
-| Column | What it holds                                                                                                                                                                                                                                                                  |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Left   | The nav rail — the `a-i` monogram links home, **Configure** is the screen you're on, **Docs** and **Settings** are routes with nothing behind them yet, **Sign in** sits at the foot — replaced by your name and **Sign out** once you are — and a **Github** link below that. |
-| Middle | The stack grid, the filter bar, and every skill in the catalogue laid out in cells under its domain. The **Marketplace** button floats over its foot.                                                                                                                          |
-| Right  | The roster — every sub-agent there is, with the skills each one carries listed underneath, and the four buttons that do something with all of it.                                                                                                                              |
+| Column | What it holds                                                                                                                                                                                                                                                                                                                 |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Left   | The nav rail — the `a-i` monogram and **Editor** both bring you back to this screen, **About** and **Docs** go to this site, **Marketplace** names the catalogue the grid is showing, **Sign in** sits under it — replaced by your name and **Sign out** once you are — and a theme switch and a GitHub link are at the foot. |
+| Middle | The stack grid, the filter bar, and every skill in the catalogue laid out in cells under its domain. [The composer](/docs/editor/composer) is docked at its foot.                                                                                                                                                             |
+| Right  | The roster — every sub-agent there is, with the skills each one carries listed underneath, and the four buttons that do something with all of it.                                                                                                                                                                             |
 
 Two headings divide the middle column: **choose your stack** over the grid, and **then customise `<stack name>`** — or **then pick your skills** before you've chosen one — over everything else. The `−` button beside the first one folds the grid away. Folding it doesn't unpick anything: the stack stays chosen, the heading below still names it, and Install writes exactly what it would have written.
 
@@ -66,7 +66,7 @@ Under each agent sits one row per skill it carries. Hover or put focus anywhere 
 
 **A project skill on a sub-agent resting at global cannot install.** That row gets a `!` marker whose text is the fix — _"This sub-agent must be set to project scope too"_ — and Install and Share both stay disabled while any of them stand. Both ways out are real: flip each marked sub-agent to project scope, or set the skill back to global. The disabled Install button carries the count as its own label. The CLI refuses that pair outright, so a link minted from one would fail on whoever you sent it to.
 
-The footer holds **Save**, **Share**, **Preview generated code** and **Install**, in that order. The first three are disabled until something is selected. [Installing and sharing](/docs/editor/install-and-share) covers the last three.
+The footer's actions are **Save**, **Share**, **Preview** and **Install**, in that order, under the `provider` row. The first three are disabled until something is selected. [Installing and sharing](/docs/editor/install-and-share) covers the last three and the provider row.
 
 ## What survives a reload
 
@@ -77,9 +77,9 @@ Four slots in this browser's own storage, plus the URL — and, once you sign in
 | Your configuration | the stack, every selected skill with its install mode, scope and sub-agent assignments, the options you set on skills you _haven't_ selected, and every per-agent model, effort, scope and pin |
 | Your saved stack   | the one snapshot Save wrote                                                                                                                                                                    |
 | Your marketplaces  | every marketplace a load has succeeded against, and the token that reached it                                                                                                                  |
-| Arrangement        | which roster bands are collapsed, whether you're grouped by domain or scope, and whether the stack grid is folded                                                                              |
+| Arrangement        | which roster bands are collapsed, whether you're grouped by domain or scope, whether the stack grid is folded, and the theme                                                                   |
 
-The filter state — the search text, the domain chip, the **Selected** chip — lives in the URL along with `fromId`, so a filtered grid is an address you can send.
+The filter state — the search text, the domain the strip last jumped to, and the `all | selected` toggle — lives in the URL along with `fromId`, so a filtered grid is an address you can send.
 
 **What doesn't survive**: a skill you added from GitHub this session, and any selection naming one. Nor do open dialogs, open options panels or pending confirmations. Closing the tab keeps your stack, your skills, their options, every sub-agent decision and your saved marketplaces — but not an added skill, unless you saved it as a stack or shared it first. [Selecting skills](/docs/editor/selecting-skills) says why that one is different.
 
@@ -87,7 +87,7 @@ The configuration slot is versioned and has no migrations. A blob written agains
 
 ## What the editor doesn't do
 
-**It can't write to your disk.** A browser has no access to `.claude/` or `~/.claude-src/`, and that is the whole reason an id exists: the editor publishes your configuration, hands you eight characters, and the CLI does the install. There's deliberately no Install button inside the install dialog — installing is a CLI action, so the only control there is Close.
+**It can't write to your disk.** A browser has no access to `.claude/` or `~/.agents-inc/claude/`, and that is the whole reason an id exists: the editor publishes your configuration, hands you eight characters, and the CLI does the install. There's deliberately no Install button inside the install dialog — installing is a CLI action, so the only control there is Close.
 
 **It doesn't read an installation you already have.** Everything on screen starts from nothing, from a stack, or from an id. To bring an existing installation into the grid, mint it first with `npx agents-inc share` or `npx agents-inc edit --ui` — see [CLI or web](/docs/cli-or-web).
 

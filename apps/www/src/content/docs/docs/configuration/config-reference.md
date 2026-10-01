@@ -1,6 +1,6 @@
 ---
 title: Config reference
-description: Every field of every type that can appear in .claude-src/config.ts — ProjectConfig, SkillConfig, AgentScopeConfig, StackAgentConfig, BrandingConfig and SourceEntry — with what each one actually does.
+description: Every field of every type that can appear in .agents-inc/claude/config.ts — ProjectConfig, SkillConfig, AgentScopeConfig, StackAgentConfig, BrandingConfig and SourceEntry — with what each one actually does.
 sidebar:
   order: 2
 ---
@@ -30,7 +30,7 @@ The default export. Seventeen fields, three of them required.
 
 | Field             | Type                               | Required | What it does                                                                                                                                                               |
 | ----------------- | ---------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`            | `string`                           | Yes      | The installation's name, in kebab-case. The global config's is always the literal `global`, and a project refuses to inherit it.                                           |
+| `name`            | `string`                           | Yes      | The installation's name, which `list` prints. A project config never takes the global config's.                                                                            |
 | `description`     | `string`                           | No       | Free text. Carried into a configuration you `share`; nothing in a compiled agent reads it.                                                                                 |
 | `agents`          | `AgentScopeConfig[]`               | Yes      | The roster — which sub-agents this installation has, and at which scope. See [`AgentScopeConfig`](#agentscopeconfig).                                                      |
 | `skills`          | `SkillConfig[]`                    | Yes      | The install manifest — which skills are installed, where, and how. See [`SkillConfig`](#skillconfig).                                                                      |
@@ -51,6 +51,8 @@ The default export. Seventeen fields, three of them required.
 **The loader is more forgiving than the table.** A config missing `name` gets the directory's name and a warning; one missing `skills` gets an empty array and a warning. A missing `agents` is defaulted to an empty array too, but silently. That leniency exists so a partly-written config still loads — it isn't an invitation to leave them out.
 
 **Two renamed keys are refused rather than migrated.** A top-level `source` (now `marketplace`) or a skill entry's `source` (now `origin`) fails the load with the new name in the message. There's no fallback, and the CLI doesn't read the old key.
+
+**There is no `provider` field, and there will not be one.** Which coding agent an installation is for is recorded by the folder this file sits in — `.agents-inc/claude/` or `.agents-inc/codex/` — and nowhere else. That is what lets one configuration, and one share id, install onto either provider. Copying a folder does not convert an installation, and a copied configuration that asks for a placement Codex does not offer is refused by name by `compile`, `edit`, `update` and `share`. Codex is not in a release yet; see [Claude or Codex](/docs/configuration/providers).
 
 ## `SkillConfig`
 

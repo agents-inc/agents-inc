@@ -9,7 +9,7 @@ A recipe finishes a task. A guide teaches a subject — [Editing your config](/d
 
 Each one links back to the page that explains the machinery rather than explaining it again.
 
-All but the CI one start in the editor, with a command at the end to write the result, so each page leads with that route. What sits underneath varies: sometimes it's the same job done in the wizard, and sometimes — routing a skill to one sub-agent, pinning a model — the wizard has no control for it at all and the terminal route is a hand edit of `.claude-src/config.ts`. Each page says which.
+All but the CI one start in the editor, with a command at the end to write the result, so each page leads with that route. What sits underneath varies: sometimes it's the same job done in the wizard, and sometimes — routing a skill to one sub-agent, pinning a model — the wizard has no control for it at all and the terminal route is a hand edit of `.agents-inc/claude/config.ts`. Each page says which.
 
 ## Quick start
 
