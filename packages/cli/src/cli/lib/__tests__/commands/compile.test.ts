@@ -15,6 +15,7 @@ import {
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { expectValidAgentMarkdown } from "../assertions";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { SKILLS } from "../test-fixtures";
 
 describe("compile command", () => {
   let cleanup: () => Promise<void>;
@@ -286,6 +287,57 @@ describe("compile command", () => {
       ).toBeUndefined();
       const agentPath = path.join(localDirs.projectDir, CLAUDE_DIR, "agents", "web-developer.md");
       expect(await fileExists(agentPath)).toBe(true);
+    });
+  });
+
+  /**
+   * A pass that discovers no skill is two different installations, and only one of them has
+   * nothing to compile. Sub-agents pinned on with no skill — which the editor produces and
+   * `init --from` installs as base agents — compile exactly as `init` compiled them. A config
+   * that DECLARES skills none of which is on disk is a lost installation, and recompiling it would
+   * strip every skill from every sub-agent, so that one is still refused. Pinned together because
+   * either alone is satisfied by a guard that swallowed the other.
+   */
+  describe("a pass that discovers no skills", () => {
+    let localDirs: TestDirs;
+
+    afterEach(async () => {
+      await cleanupTestSource(localDirs);
+    });
+
+    it("compiles the sub-agents of an installation that declares no skills", async () => {
+      localDirs = await createTestSource({
+        skills: [],
+        agents: [],
+        projectConfig: buildTestProjectConfig(["web-developer"], []),
+      });
+      process.chdir(localDirs.projectDir);
+
+      const { stdout, error } = await runCliCommand(["compile"]);
+
+      expect(error, "a skill-less roster is something to compile, not nothing").toBeUndefined();
+      expect(stdout).toContain("compile complete");
+      const agentPath = path.join(localDirs.projectDir, CLAUDE_DIR, "agents", "web-developer.md");
+      expect(await fileExists(agentPath)).toBe(true);
+      expectValidAgentMarkdown(await readFile(agentPath, "utf-8"), "web-developer");
+    });
+
+    it("refuses an installation whose declared skills are all missing from disk", async () => {
+      localDirs = await createTestSource({
+        skills: [],
+        agents: [],
+        projectConfig: buildTestProjectConfig(["web-developer"], [SKILLS.react.id]),
+      });
+      process.chdir(localDirs.projectDir);
+
+      const { error } = await runCliCommand(["compile"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain("No skills found. Run");
+      expect(
+        await directoryExists(path.join(localDirs.projectDir, CLAUDE_DIR, "agents")),
+        "a refused pass must not rewrite a sub-agent without the skills its config names",
+      ).toBe(false);
     });
   });
 
