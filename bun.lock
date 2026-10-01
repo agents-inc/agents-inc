@@ -153,7 +153,7 @@
     },
     "packages/cli": {
       "name": "agents-inc",
-      "version": "0.164.0",
+      "version": "0.165.0",
       "bin": {
         "agents-inc": "dist/index.js",
         "agentsinc": "dist/index.js",

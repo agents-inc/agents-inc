@@ -7,6 +7,54 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.165.0] - 2026-10-01
+
+**A new installation's source folder is `.agents-inc/<provider>/`, a configuration can be installed onto OpenAI Codex, and `edit --from` applies a sub-agent's model and effort**
+
+**The source folder.** No command moves an installation that already exists.
+
+- **New installs write `.agents-inc/claude/`** instead of `.claude-src/`, at both scopes: `<project>/.agents-inc/claude/` and `~/.agents-inc/claude/`. The folder is named for the product and grouped by provider, so a Codex installation is `.agents-inc/codex/` with the same shape. One installation is exactly one provider and the folder is what says which; nothing inside `config.ts` records it.
+- **Nothing in the CLI moves an existing installation.** An installation on `.claude-src/` is read and written where it is, by every command, indefinitely. There is no dual-write, no copy on first run, and no deprecation warning that changes where bytes land. Every message naming the config file names the folder the scope is actually on.
+- **Moving a folder is a manual step, and there is no command for it.** The procedure is in `.ai-docs/reference/concepts/source-folder-layout.md`, along with its two gotchas: `config-types.ts`'s relative import gains a level, and a `.gitignore` with a bare `.agents-inc/` rule hides the moved config, so the next commit records only the deletion. Running `npx agents-inc compile` in the moved scope repairs the first.
+- **`doctor` gains a `Layout` row per scope.** It reports which folder the scope is on, whether both folders are on disk and which one is being read, and any compiled sub-agent whose prompt names the folder this installation does not use. At `$HOME` it also lists the registered projects still on the old name, labelled as the registry rather than an inventory of the machine.
+- **`init`, `edit`, `compile`, `update` and `eject` refuse outright while a scope holds both folders**, because the folder the resolver prefers can be the stale one. The refusal names the folder being read and asks you to merge by hand. `doctor` and `list` keep working in that state. A scope on the old name alone is a supported state, not a fault: no write command prints a line about it, and `doctor`'s `Layout` row reports it as a warning naming the move by hand.
+- **Installed output keeps every path it had.** Claude still installs into `.claude/`, skills into `.claude/skills/` and compiled sub-agents into `.claude/agents/`. A shared payload names no source folder, so the rename reaches no share id.
+- **A marketplace source repository gains no provider segment.** A repo declares itself in `.agents-inc/config.ts`, and one still declaring `.claude-src/config.ts` is read there with no sunset.
+- **`uninstall` removes the `.agents-inc/` parent** once the last provider folder under it is gone, and only when the parent is otherwise empty. If you keep your own files under it, the run says it kept the parent rather than leaving it behind silently.
+- **A compiled `agent-summoner` names the source folder its own installation uses**, substituted at compile time, rather than a literal that is wrong on half of all installs.
+
+**OpenAI Codex as a second provider.** You pick the provider in the web app, and the folder on disk is the only record of which one it is.
+
+- **The provider is chosen in the editor, not in the terminal.** A `provider` row in the roster footer picks it, and the command the Install dialog hands you becomes `npx agents-inc init --from <id> --provider codex`. The terminal wizard gains no step. `--provider` without `--from` exits `INVALID_ARGS`, naming `--from` and the editor.
+- **Where one scope holds an installation of each provider, `--provider` is the disambiguator.** `edit`, `uninstall`, `share`, `eject`, `compile` and `update` refuse rather than guess, naming both. `list --provider` picks one. `doctor` reports the state instead of refusing.
+- **Codex offers three of the four placements**: plugin + global, eject + global, and eject + project. Eject + project lands at `<repo>/.agents/skills/<id>/`, a committed directory that reaches the model with no plugin, no marketplace and no trust entry. `plugin + project` is refused by name before anything is written, never quietly ejected instead. The refusal also fires when a config is read, so a `.agents-inc/claude/` copied to `.agents-inc/codex/` is caught.
+- **Sixteen of the eighteen sub-agents compile, as Codex agent role definitions in TOML.** `agent-summoner` and `skill-summoner` are left out for v1, and every Codex install says so once. A role file carries no `model`, since every model a sub-agent can name is Claude's and Codex refuses to start a role naming one; each sub-agent runs on your Codex session's model. Six settings have no Codex expression, and each compile says so once.
+- **`doctor` gains a `Placements Offered` row.** It reports a placement no host can fill and a scope holding two installations, the states other commands stop on, and never refuses.
+- **`uninstall` counts the plugins it observed being removed**, on either host, rather than the plugins it asked about.
+- **What Codex cannot do**: install a plugin for one project; restrict a sub-agent's tools (`tools` is a configuration struct, not an allowlist, so the read-only sub-agents can still edit files); preload a named list of skills; or carry a sub-agent's `disallowedTools`, which is dropped without a mention (no shipped sub-agent declares one).
+- CLI-893: a Codex project's role files need that project trusted in your global Codex config, so the install writes that entry and prints exactly what it wrote. Any later `compile` does the same. A `trust_level` you already set, `"untrusted"` included, is left as you set it and reported. Each of the four ways that trust fails is silent: no entry, `untrusted`, a trailing slash on the path, or the entry written inside the project.
+- CLI-895: an ejected skill's copy is deleted from the folder Codex reads. Switching it to plugin or deselecting it in `edit` used to leave the copy, so Codex read the skill twice.
+- CLI-896: `uninstall` on Codex removes the role files it compiled (`.codex/agents/*.toml`) and leaves a role you wrote yourself, as it does `.claude/agents/*.md` on Claude. `compile` prunes a deselected Codex role the same way.
+
+**Fixes on either host.**
+
+- CLI-898: the editor's output preview lists each skill with the description the install writes, its `SKILL.md` description, rather than the wizard's short label. `build marketplace` puts it in `catalog.json` as `activationDescription`; a catalogue built before this release still previews the label.
+- CLI-899: the loading spinner's last frame no longer survives into the `init` and `edit` wizards. A frame held by Ink's render throttle was painted after the clear, so the full-height wizard lost its top line.
+- `compile` no longer refuses an installation with sub-agents and no skills, which the editor makes and `init --from` installs. A config that declares skills, none of which are on disk, is still refused.
+- `edit --from` applies a configuration whose only difference is a sub-agent's `model` or `effort`, and reports it as its own line. It used to print `No changes made.` and write nothing. Re-selecting a sub-agent in the wizard no longer reverts its model and effort.
+- A local marketplace directory whose path contains a space, such as `/Users/My Name/…`, now reaches `claude` and `codex` instead of being refused by a pattern written for `owner/repo` references.
+
+**On Claude Code, a project sub-agent's completion gate runs only in a folder you have trusted.**
+
+- Claude Code drops the gate otherwise, without a word anywhere you would look. So `init` and `compile` now say so in one line naming the folder. They print it when a compiled sub-agent in `<project>/.claude/agents/` has at least one hook under `Stop` or `SubagentStop`, and `~/.claude.json` has no record of you accepting that folder's trust dialog. A run from the home directory never prints it. The CLI never accepts the dialog for you.
+
+**Withdrawn before release.**
+
+- **`npx agents-inc migrate`.** An earlier draft of this release carried a command that performed the move, with `--adopt`, `--dry-run`, a forwarding stub at the old path, a registered-project rewrite and a git-visibility probe. It was never requested and is deleted whole; nothing in the CLI hands out the invocation.
+- A per-agent lint and check gate, including the `check:` map and a Codex gate plugin with its hook trust, was reverted before release on the owner's 2026-10-01 ruling, and 0.163.0's typecheck `Stop` hook is unchanged.
+
+See [changelogs/0.165.0.md](./changelogs/0.165.0.md) for full details.
+
 ## [0.164.0] - 2026-09-06
 
 **Every shipped sub-agent moves to the 2026-09-03 doctrine, the web skills say when to reach for them, and the editor takes the 2026-09-05 design refresh**
