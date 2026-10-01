@@ -48,10 +48,10 @@ affected_files:
   - src/cli/lib/configuration/__tests__/config-readers-agree.test.ts
   - src/cli/lib/configuration/config-generator.test.ts
   - src/cli/lib/configuration/config.test.ts
+  - src/cli/lib/hosts/claude-host.test.ts
   - src/cli/lib/loading/source-fetcher.test.ts
   - src/cli/lib/loading/source-loader.test.ts
   - src/cli/lib/matrix/matrix-resolver.test.ts
-  - src/cli/utils/exec.test.ts
   - src/cli/utils/messages.test.ts
 standards_docs:
   - .ai-docs/standards/e2e/README.md
