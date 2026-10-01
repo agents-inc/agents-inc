@@ -8,8 +8,13 @@ const ACTIVATION_KEYS = ["Enter", " "]
 // point, since installing is a CLI action and the dialog deliberately has no
 // Install button.
 //
-// The `$` is decoration, not content: it is marked `aria-hidden` and sits
-// outside the `<code>` so selecting the line copies only the command.
+// The `$` is decoration, not content, and it is drawn by CSS so that it is not
+// content anywhere: a generated `::before` is outside the accessibility tree,
+// outside a text selection and outside `textContent`, where an `aria-hidden`
+// span still put it. That last one is what made it a bug rather than a detail —
+// an assertion reading the whole of a block's text read `$npx agents-inc init`,
+// so the only way to pin a command exactly was to write the decoration into the
+// expectation and call it part of the command.
 function CommandBlock({
   className,
   copyable = false,
@@ -39,15 +44,13 @@ function CommandBlock({
       }}
       className={cn(
         "border border-hairline bg-code px-[0.6875rem] py-[0.5rem] font-mono text-11_5 font-medium text-ink",
+        "before:pr-[0.4375rem] before:text-brand before:content-['$']",
         copyable &&
           "cursor-pointer outline-none hover:border-rule focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}
       {...props}
     >
-      <span aria-hidden className="pr-[0.4375rem] text-brand select-none">
-        $
-      </span>
       <code className="font-mono">{children}</code>
     </div>
   )

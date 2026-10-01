@@ -22,10 +22,24 @@ export const Copyable: Story = {
 }
 
 // The `$` is decoration, not content — a screen reader reading this block out
-// should say the command, not "dollar sign" first.
-export const PromptIsHiddenFromAssistiveTech: Story = {
-  play: async ({ canvas }) => {
-    await expect(canvas.getByText("$")).toHaveAttribute("aria-hidden")
+// should say the command, not "dollar sign" first, and a reader copying the
+// line should get the command and nothing else.
+//
+// ASSERTED AS AN ABSENCE FROM THE BLOCK'S TEXT, because that is what the
+// mechanism became. It was a `<span aria-hidden>$</span>` and this story read
+// `getByText("$")` and checked the attribute; the prompt is a generated
+// `::before` now, so there is no element to find and the story went red naming
+// a missing ELEMENT rather than a missing behaviour. A `::before` is outside
+// the accessibility tree, outside a selection and outside `textContent` alike,
+// so the one honest statement covering all three is that the block's text IS
+// the command — and it is the assertion that still means something if the
+// decoration ever comes back as an element.
+export const PromptIsNotPartOfTheCommand: Story = {
+  play: async ({ canvasElement }) => {
+    const block = canvasElement.querySelector("[data-slot=command-block]")
+
+    await expect(block).toHaveTextContent(INSTALL_COMMAND)
+    await expect(block).not.toHaveTextContent("$")
   },
 }
 
