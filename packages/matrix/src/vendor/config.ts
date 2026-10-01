@@ -73,7 +73,7 @@ export type ValidationResult = {
   warnings: string[];
 };
 
-/** Unified project configuration stored at .claude-src/config.ts */
+/** Unified project configuration stored at the scope's source folder config.ts */
 export type ProjectConfig = {
   /** Project/plugin name (kebab-case) */
   name: string;
