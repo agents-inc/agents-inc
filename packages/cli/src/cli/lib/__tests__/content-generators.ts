@@ -69,16 +69,19 @@ export function renderAgentYaml(
 export function renderAgentMd(
   name: string,
   description?: string,
-  options?: { tools?: string[]; body?: string },
+  options?: { tools?: string[]; body?: string; hooks?: string },
 ): string {
   const desc = description ?? `Test ${name} agent`;
   const tools = (options?.tools ?? ["Read", "Write"]).join(", ");
   const body = options?.body ?? `# ${name}\n\n${desc}`;
+  // A writing sub-agent: compile writes its completion-gate `Stop` hook as one JSON line under
+  // this key.
+  const hooks = options?.hooks === undefined ? "" : `hooks: ${options.hooks}\n`;
   return `---
 name: ${name}
 description: ${desc}
 tools: ${tools}
----
+${hooks}---
 
 ${body}
 `;
