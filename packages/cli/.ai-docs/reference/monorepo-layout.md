@@ -461,13 +461,13 @@ under test. Pinning it means CI tests the floor `packages/cli/package.json` decl
 **Every job carries `timeout-minutes`**, because GitHub's default is six hours and this repository
 has already burned seventy minutes of runner time on one hang.
 
-| Job             | Timeout | Measured                         |
-| --------------- | ------- | -------------------------------- |
-| `check-web`     | 15      | 4–5 minutes (three green runs)   |
-| `check-cli`     | 40      | 25–26 minutes (three green runs) |
-| `visual-ui`     | 15      | not yet run                      |
-| `visual-editor` | 20      | not yet run                      |
-| `deploy`        | 10      | ~30 seconds                      |
+| Job             | Timeout | Measured                                                                                                                                |
+| --------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-web`     | 25      | 4–5 minutes when first measured; a later run spent 12m17s in `test:e2e` alone as the editor suite grew, and was killed by the former 15 |
+| `check-cli`     | 40      | 25–26 minutes (three green runs)                                                                                                        |
+| `visual-ui`     | 15      | not yet run                                                                                                                             |
+| `visual-editor` | 20      | not yet run                                                                                                                             |
+| `deploy`        | 10      | ~30 seconds                                                                                                                             |
 
 The numbers are measured and then given headroom. **The point is to bound a hang, not to police
 duration** — do not tighten one because a run came in fast.

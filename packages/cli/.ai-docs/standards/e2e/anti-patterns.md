@@ -109,6 +109,18 @@ afterEach(async () => {
 
 **Instead:** Use content-aware matchers: `await expect({ dir }).toHaveConfig()`.
 
+### Never assert the ABSENCE of a source folder by one of its names
+
+**What:** `expect(await listFiles(dir)).not.toContain(DIRS.CLAUDE_SRC)`, or `expect(await directoryExists(path.join(dir, DIRS.CLAUDE_SRC))).toBe(false)`.
+
+**Why:** a source folder is spelled more than one way on disk, and an installation made before the rename keeps its old name indefinitely because no command moves it — `.claude-src`, or the `.agents-inc` parent with `.agents-inc/claude` or `.agents-inc/codex` under it — so an assertion naming one of them is answered by the others. All three shapes below are vacuous rather than wrong, which is why none of them reddened when the folder moved:
+
+- `listFiles` is a top-level `readdir`, so it can answer `.agents-inc` and can never answer `.agents-inc/claude`. A `not.toContain` over a two-segment name is true of every directory on the machine.
+- `directoryExists(<dir>/.claude-src)` being `false` is true of every install created after the flip, whatever that install left behind under the other name.
+- either shape after an uninstall stays green with an emptied `.agents-inc/` sitting where the install was — a directory naming this product with nothing in it, which a later `init` and `doctor` both read as a half-built layout.
+
+**Instead:** `await expectNoSourceFolder(dir, reason)` from `e2e/assertions/source-folder-assertions.ts`, which asks after every name and reports the roster it found; or `expectOnlySourceFolder(dir, [DIRS.CLAUDE_SRC], reason)` where a folder is MEANT to be there and which one is the claim. `reason` is your own sentence about the promise being tested, and it leads the failure.
+
 ---
 
 ## Production Imports
@@ -1022,7 +1034,7 @@ The E2E sandbox defaults `HOME` to a sibling temp dir distinct from `projectDir`
 
 **What:** Loading `config.stack` via `loadConfigOrFail(projectDir)` after a default (all-global) init.
 
-**Why:** the config-pair renderers filter the stack to agents matching that config's scope — `splitConfigByScope` in `packages/compile/src/seed-to-config.ts` partitions it by agent scope, and `partitionInlinedConfigEntries` in `packages/compile/src/config-source.ts` keeps a project config's stack to project-scoped agents. A default install's PROJECT config carries the flat skills/agents lists but NO stack for global agents — their stack is written to the GLOBAL config (`HOME/.claude-src/config.ts`).
+**Why:** the config-pair renderers filter the stack to agents matching that config's scope — `splitConfigByScope` in `packages/compile/src/seed-to-config.ts` partitions it by agent scope, and `partitionInlinedConfigEntries` in `packages/compile/src/config-source.ts` keeps a project config's stack to project-scoped agents. A default install's PROJECT config carries the flat skills/agents lists but NO stack for global agents — their stack is written to the GLOBAL config (`HOME/<source folder>/config.ts`, where `<source folder>` is `.agents-inc/claude` or `.claude-src`, per scope — see `DIRS` in `standards/e2e/README.md`).
 
 **Instead:** Read the stack from the global home (`wizard.globalHome`), not `projectDir`. The project config carries only the stack slice for PROJECT-scoped agents. Same finding as above.
 
@@ -1030,7 +1042,7 @@ The E2E sandbox defaults `HOME` to a sibling temp dir distinct from `projectDir`
 
 **What:** Porting an `init → … → cc uninstall` flow (or an edit that runs `claude plugin install`) to `launchInProject` + a redirected shared home.
 
-**Why:** `cc uninstall` and `claude plugin install` act on the content root at cwd/HOME. `detectUninstallTarget` takes `projectDir` and calls `resolveInstallPaths(projectDir)` with **no scope argument**, so every path it probes — the skills dir, the agents dir, the `.claude` and `.claude-src` dirs, the plugin listing — is built from `projectDir` alone and it cannot see out-of-cwd global content whatever HOME says. `claude plugin install` writes `enabledPlugins` into HOME's `settings.json` rather than the project's. A default all-global install under `launchInProject` puts the content at `HOME ≠ projectDir`, so the follow-up silently no-ops ("not installed in this project", or plugin enablement in the wrong `settings.json`) and still exits 0 — which is why the failure lands on a downstream assertion rather than on the command.
+**Why:** `cc uninstall` and `claude plugin install` act on the content root at cwd/HOME. `detectUninstallTarget` takes `projectDir` and calls `resolveInstallPaths(projectDir)` with **no scope argument**, so every path it probes — the skills dir, the agents dir, `.claude/`, the source folder `sourceFolderInUse` resolves under that root, and the plugin listing — is built from `projectDir` alone and it cannot see out-of-cwd global content whatever HOME says. `claude plugin install` writes `enabledPlugins` into HOME's `settings.json` rather than the project's. A default all-global install under `launchInProject` puts the content at `HOME ≠ projectDir`, so the follow-up silently no-ops ("not installed in this project", or plugin enablement in the wrong `settings.json`) and still exits 0 — which is why the failure lands on a downstream assertion rather than on the command.
 
 **Instead:** Model the whole flow as the GLOBAL install with `launchInGlobal` (`HOME === cwd === projectDir`) — every artifact collapses onto `projectDir` and the follow-up finds it. Use `launchInProject` + redirect ONLY when the test merely ASSERTS content; `cc compile` is the one follow-up that IS HOME/scope-aware and can straddle the split.
 

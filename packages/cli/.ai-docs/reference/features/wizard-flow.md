@@ -41,7 +41,7 @@ stack -> domains -> build -> sources -> agents -> confirm
 - `stack`: Select a pre-built stack OR choose "Start from scratch". **Rendered only when the loaded source offers stacks** — an empty `matrix.suggestedStacks` opens the wizard on `domains` instead, prepared as the scratch row prepares it (`hydrateForInit`). A custom marketplace shipping no stacks gets no built-in stand-in, so this is its normal opening; see [built-in-catalogue.md](./built-in-catalogue.md)
 - `domains`: Select which domains to configure (checkboxes)
 - `build`: Per-domain skill selection (CategoryGrid with category sections)
-- `sources`: Choose how each skill is installed — the project's own copy (`Local`) or the one marketplace plugin (`Plugin`). Two cells, not a list of sources
+- `sources`: Choose how each skill is installed — the project's own copy (`Local`) or the one marketplace plugin (`Plugin`). Two cells, not a list of sources. Which cells the grid draws does not depend on the host. On `init`, a cell the installation's host does not offer (Codex has no plugin at project scope) is refused after the wizard and before anything is written, by `refuseUnofferablePlacementsBeforeWriting` in `init.tsx`
 - `agents`: Select which agents to compile
 - `confirm`: Review selections and confirm
 
@@ -144,17 +144,19 @@ Behavior by mode:
 export type WizardResultV2 = {
   skills: SkillConfig[]; // { id, scope, origin } per skill (excluded tombstones appended)
   selectedAgents: AgentName[];
-  agentConfigs: AgentScopeConfig[]; // { name, scope } per agent
+  agentConfigs: AgentScopeConfig[]; // { name, scope, model?, effort? } per agent
+  assignedStack?: Partial<Record<AgentName, StackAgentConfig>>; // shared-config producer only
   selectedStackId: string | null;
+  description?: string; // shared-config producer only
   domainSelections: DomainSelections;
   selectedDomains: Domain[];
   unresolvableSkillIds: SkillId[]; // Saved skill ids the loaded matrix could not resolve — removed from config, named with their reason by `edit`
   cancelled: boolean;
-  validation: SelectionValidation; // { valid; errors: ValidationError[]; warnings: ValidationWarning[] } from types/matrix.ts
+  validation: SelectionValidation; // { valid; errors: ValidationError[] } from types/matrix.ts
 };
 ```
 
-> **`WizardResultV2` has a second producer.** `seedToWizardResult` (`lib/seed/seed-to-wizard.ts`) builds one from a shared seed payload, reached via `init --from`, without ever rendering the wizard. It is also the only producer that sets the optional `assignedStack` field. See [seed-contract.md](./seed-contract.md).
+> **`WizardResultV2` has a second producer.** `seedToWizardResult` (declared in `packages/compile/src/seed-to-config.ts`, re-exported by `lib/seed/seed-to-wizard.ts`) builds one from a shared seed payload, reached via `init --from` and `edit --from`, without ever rendering the wizard. It is also the only producer that sets the optional `assignedStack` and `description` fields. See [seed-contract.md](./seed-contract.md).
 
 ## Wizard Hooks
 
@@ -255,7 +257,7 @@ When `edit` command enters the wizard (see `runEditWizard` in `edit.tsx`):
 5. Global-item locking handled inside store: `toggleAgent`/`toggleTechnology` check `installedSkillConfigs`/`installedAgentConfigs` and show toast if blocked — in every flow, init included.
 6. `isEditingFromGlobalScope` disables scope toggle (S key) when editing from the global install root.
 7. User modifies selections; `goBack` navigates through `history` (empty at start in edit mode, so ESC on build exits via `onCancel`).
-8. On confirm: `detectConfigChanges()` in `edit.tsx` produces `ConfigChanges` (`addedSkills`/`removedSkills`, `addedAgents`/`removedAgents`, `sourceChanges`, `scopeChanges`, `agentScopeChanges`, plus `dualScopeSkillTransitions`/`dualScopeAgentTransitions` sets that steer only the completion summary) and applies migrations, plugin install/uninstall, local-skill copy, config write, and agent recompile in order.
+8. On confirm: `detectConfigChanges()` in `edit.tsx` produces `ConfigChanges` (`addedSkills`/`removedSkills`, `addedAgents`/`removedAgents`, `sourceChanges`, `scopeChanges`, `agentScopeChanges`, `dualScopeSkillTransitions`/`dualScopeAgentTransitions` sets that steer only the completion summary, and `tuningChanges` for a retuned sub-agent) and applies migrations, plugin install/uninstall, local-skill copy, config write, and agent recompile in order.
 
 **Edit mode step order:** `build -> sources -> agents -> confirm` (stack and domains are skipped).
 

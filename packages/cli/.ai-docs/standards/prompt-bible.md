@@ -150,7 +150,7 @@ state. Restating the general discipline in an agent's own prompt duplicates a re
 ```markdown
 <critical_requirements>
 
-**Register the agent in `.claude-src/config.ts`.** One with source files and no config entry
+**Register the agent in the installation's `config.ts`.** One with source files and no config entry
 compiles into nothing.
 
 **Read the wizard's own store before changing a step.** `stores/wizard-store.ts` holds the guards,
@@ -986,19 +986,21 @@ This section covers patterns specific to this repo's sub-agent roster and Ralph-
 
 ### 8.1 Agent Selection
 
-| Agent             | Use for                                                                                                                                         | Leave to                                                                        |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `cli-developer`   | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                       | Test code (use `cli-tester`), standards docs (use `codex-keeper`)               |
-| `cli-tester`      | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                              | Production code in `src/cli/**` (use `cli-developer`)                           |
-| `codex-keeper`    | Standards/docs curation under `.ai-docs/standards/**` only. Bible audits, standards drift, convention docs, agent-findings triage               | Production or test code. Scope is strictly `.ai-docs/standards/` unless widened |
-| `general-purpose` | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks a specialist's conventions would not change | Writing code or tests (delegate to specialist instead)                          |
+| Agent               | Use for                                                                                                                                                                                   | Leave to                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `cli-developer`     | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                                                                 | Test code (use `cli-tester`), docs (use `codex-keeper` or `convention-keeper`) |
+| `cli-tester`        | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                                                                        | Production code in `src/cli/**` (use `cli-developer`)                          |
+| `codex-keeper`      | Reference docs under `.ai-docs/reference/`, re-derived from source, and `DOCUMENTATION_MAP.md`                                                                                            | Standards (use `convention-keeper`), production or test code                   |
+| `convention-keeper` | Standards under `.ai-docs/standards/` — reviewing `agent-findings/` against them and applying the approved change that prevents a recurrence; auditing the code against one standards doc | Reference docs (use `codex-keeper`), production or test code                   |
+| `general-purpose`   | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks a specialist's conventions would not change                                           | Writing code or tests (delegate to specialist instead)                         |
 
 **Tie-breakers:**
 
 - Mixed code + tests → two sequential delegations (developer first, tester second), not one merged prompt.
 - Auditing a standard for drift → a read-only lane that reports with quotes and the command it ran.
-  Repairing what the audit returned → `codex-keeper`, which owns `.ai-docs/**`, in a second
-  dispatch. The verifier is never the fixer, so the two are never one lane.
+  Repairing what the audit returned → the doc's owner, in a second dispatch: `convention-keeper`
+  for `.ai-docs/standards/`, `codex-keeper` for `.ai-docs/reference/`. The verifier is never the
+  fixer, so the two are never one lane.
 - Pure read-and-report → `general-purpose` is cheapest.
 
 ### 8.2 Required Boilerplate for Every Delegation
@@ -1057,7 +1059,7 @@ Ralph-style audits (fixed N iterations, one focus area per iter) have distinct e
 
 **Delegating standards curation to `general-purpose`.**
 
-- ❌ `general-purpose` will read the file and report what's there — it will not enforce project conventions, agent-findings protocol, or write findings. Use `codex-keeper`.
+- ❌ `general-purpose` will read the file and report what's there — it will not enforce project conventions, agent-findings protocol, or write findings. Use `convention-keeper`.
 
 **Re-audit without memory.**
 

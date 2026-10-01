@@ -18,22 +18,28 @@ keywords:
     isolation,
     hooks,
     completion-gate,
+    codexCompileNotices,
+    codex,
+    compileAgentForHost,
+    renderAgentBody,
+    agent-body,
     prompt-cache,
   ]
 related:
   - reference/features/agent-system.md
   - reference/features/operations-layer.md
   - reference/features/plugin-system.md
+  - reference/concepts/source-folder-layout.md
   - reference/config/config-writer.md
   - reference/commands/index.md
-last_validated: 2026-09-03
+last_validated: 2026-09-25
 ---
 
 # Compilation Pipeline
 
 ## Overview
 
-**Purpose:** Compile agent prompt files from partials (identity, playbook, output, etc.) + skill assignments using Liquid templates.
+**Purpose:** Compile agent prompt files from partials (identity, playbook, output, etc.) + skill assignments using Liquid templates, into the file the installation's host reads: a markdown sub-agent for Claude (`<name>.md`), an agent role definition for Codex (`<name>.toml`). The provider is read off the source folder, per scope — see [concepts/source-folder-layout.md](../concepts/source-folder-layout.md).
 
 **Entry Points:**
 
@@ -56,8 +62,9 @@ not here.
    -> detectBothInstallations() (src/cli/lib/operations/project/detect-both-installations.ts)
    -> Returns BothInstallations { global, project, hasBoth } (global/project are
       `Installation | null`, always present — never optional)
-   -> `compile` builds separate passes per scope (global, project); when hasBoth,
-      each pass carries a scopeFilter so a project pass cannot overwrite global agents
+   -> `compile` builds ONE pass: the project's when it has an installation (carrying
+      scopeFilter: "project" when hasBoth), else the global one -- see the `compile`
+      command's step 3 below. init/edit take compileAgentsAllScopes() instead
 
 2. Agent Definitions Discovery
    -> loadAgentDefs() (src/cli/lib/operations/project/load-agent-defs.ts) -- takes no arguments
@@ -70,18 +77,23 @@ not here.
 3. Skill Discovery (4-way merge)
    -> discoverInstalledSkills() (src/cli/lib/operations/skills/discover-skills.ts)
    -> 4-way merge via mergeSkills() (later sources win):
-      a. Global plugins (from ~/.claude/plugins/)
-      b. Global local skills (from ~/.claude/skills/, via globalInstallRoot())
-      c. Project plugins (from <projectDir>/.claude/plugins/)
-      d. Project local skills (from <projectDir>/.claude/skills/, via LOCAL_SKILLS_PATH)
-   -> Project wins on conflict (global-project pairs are skipped when projectDir is home)
+      a. Global plugins
+      b. Global local skills (discoverLocalProjectSkills(projectDir, "global"))
+      c. Project plugins
+      d. Project local skills (discoverLocalProjectSkills(projectDir, "project"))
+   -> Each directory comes from the host role for its scope's provider (skillsDir() in
+      installation/install-layout.ts): ~/.claude/{plugins,skills} and
+      <projectDir>/.claude/{plugins,skills} on Claude; the Codex state root and the
+      repository's .agents/skills on Codex
+   -> Project wins on conflict (a and b are skipped when projectDir is home, and d then
+      asks the global scope)
    -> Returns DiscoveredSkills { allSkills, totalSkillCount, pluginSkillCount,
       localSkillCount, globalPluginSkillCount, globalLocalSkillCount,
       unusableMetadata } -- the last is every installed skill whose metadata.yaml
       exists but describes no skill, from either scope
 
 4. Agent Resolution — recompileAgents() (agent-recompiler.ts)
-   -> loadProjectConfig() reads project config (.claude-src/config.ts); a corrupt
+   -> loadProjectConfig() reads project config (the scope's `config.ts`); a corrupt
       config throws ConfigLoadError rather than reading as absent
    -> filterExcludedEntries() drops excluded skills/agents and excluded stack refs
    -> loadAllAgents() (built-in) + loadProjectAgents() (project overrides) merged
@@ -96,15 +108,25 @@ not here.
 
 5. Liquid Engine Setup
    -> createLiquidEngine() (src/cli/lib/compiler.ts)
+   -> One providerInUse(projectDir) read serves both answers below
    -> Template root hierarchy (first match wins):
-      a. {projectDir}/.claude-src/agents/_templates/
+      a. {projectDir}/<source folder>/agents/_templates/   <- sourceFolderInUse(projectDir, provider),
+         see concepts/source-folder-layout.md
       b. {projectDir}/.claude/templates/ (legacy)
       c. {PROJECT_ROOT}/src/agents/_templates/ (built-in, via DIRS.templates)
-   -> Config: extname=".liquid", strictVariables=false, strictFilters=true
+   -> Config: extname=".liquid", strictVariables=false, strictFilters=true,
+      globals: { sourceFolder: sourceFolderName(projectDir, provider) } -- the folder
+      withSourceFolder() substitutes below
 
 6. Per-Agent Compile + Scope-Routed Write
    -> writeCompiledAgentsByScope() (src/cli/lib/agents/write-compiled-agents.ts)
-   -> For each resolved agent, calls compileAgentForPlugin() (src/cli/lib/compiler.ts):
+   -> Resolves a host per scope, each from its OWN root: provider = providerInUse(root),
+      agentsDir = resolveInstallPaths(os.homedir(), "global").agentsDir for global and
+      projectAgentsDir for project -- a project on Codex under a global on Claude is allowed
+   -> Skips, with no outcome at all, an agent hostCompilesAgent(provider, name) refuses
+      (installation/install-layout.ts): Claude compiles all 18, Codex all but
+      AGENTS_NOT_ON_CODEX (agent-summoner, skill-summoner; @workspace/compile)
+   -> For each remaining agent, calls compileAgentForHost(provider, ...) (src/cli/lib/compiler.ts):
       - readAgentFiles(): identity.md, playbook.md, output.md,
         critical-requirements.md, critical-reminders.md (STANDARD_FILES from consts.ts)
       - buildAgentTemplateContext() appends "Skill" to agent.tools via withSkillTool()
@@ -115,16 +137,27 @@ not here.
         triple (priorLoadState()) wins, and a triple new to the save takes the shared
         preload mapping's default (mappedLoadState() -> resolveLoadState from
         @workspace/matrix) — absent from the mapping means lazy
-      - renderAgent(engine, data, await cliVersion()) (packages/compile/src/agent-source.ts)
-        is the single render primitive. In order it:
-          . sanitizeCompiledAgentData(): strips Liquid syntax from metadata + skill fields +
-            preloaded IDs (content fields pass through unchanged)
-          . engine.renderFile("agent", ...) with two context keys no caller supplies —
-            `generatorVersion` (this CLI's version, itself run through sanitizeLiquidSyntax)
-            and `completionGateCommand` (the module-private COMPLETION_GATE_COMMAND)
-          . stampProvenanceMarker(): the version-less marker on the first body line
-   -> Writes each agent to its scope dir: global agents -> ~/.claude/agents/,
-      project agents -> outputDir (per agentScopeMap; default "project")
+      - Claude: renderAgent(engine, data, await cliVersion()); Codex:
+        renderAgentRoleToml(agent, await renderAgentBody(engine, data, version)). Both
+        renderers are in packages/compile/src/agent-source.ts and share renderFromTemplate,
+        which in order:
+          . prepareForRender(): composes the gate into `agent.hooks` (withCompletionGate —
+            see "The completion gate" below), THEN sanitizeCompiledAgentData() strips
+            Liquid syntax from metadata + skill fields + preloaded IDs (content fields pass
+            through unchanged)
+          . withSourceFolder(): replaces the one opted-in token a partial may carry,
+            `@@SOURCE_FOLDER@@`, with the folder this engine's `sourceFolder` global names —
+            a string substitution over the five partials, NOT a render of them; `\@@SOURCE_FOLDER@@`
+            escapes it and compiles to the token. See "The one token in a partial" in
+            features/agent-system.md
+          . engine.renderFile("agent" | "agent-body", ...) with one context key no caller
+            supplies — `generatorVersion` (this CLI's version, itself run through
+            sanitizeLiquidSyntax)
+        then stampProvenanceMarker(): the version-less marker on the first body line
+      - The Codex role carries no frontmatter, so no `hooks`
+   -> Writes <name> + agentCodec(provider).extension (".md" | ".toml") into the host's
+      agentsDir for the agent's scope (per agentScopeMap; default "project"), skipping the
+      write when holdsExactly() finds the bytes already there
    -> Per-agent failures are collected as AgentWriteOutcome[] (recompile reports &
       continues; install hard-errors on the first failure)
 
@@ -134,6 +167,7 @@ not here.
       (src/cli/lib/operations/project/remove-compiled-agents.ts) -> pruneStaleCompiledAgents(
       agentsDir, keep) (src/cli/lib/agents/list-compiled-agents.ts) deletes every `*.md`
       whose basename `isAgentName()` and is NOT in `keep` = compiled ∪ failed for that pass
+      (it globs `*.md` only, so a Codex `.toml` role is never pruned here)
    -> Hand-authored agents are PRESERVED: a basename outside the AgentName union
       never matches the predicate (the built-in-name check is a guard, not the
       removal criterion)
@@ -142,28 +176,34 @@ not here.
 ### Compiled Output Is Not Validated
 
 `writeCompiledAgentsByScope()` writes each rendered agent straight to disk with no structural
-check — no XML tag-balance pass, no template-artifact scan, no frontmatter validation. Nothing in
-the CLI inspects what it writes, and there is no module to call: the validators that once did this
+check — no XML tag-balance pass, no template-artifact scan, no frontmatter validation. The
+refusals on the way are at render time: `substituteSourceFolder` throws `NO_SOURCE_FOLDER` on a
+partial asking for `@@SOURCE_FOLDER@@` under an engine naming no folder, and `renderAgentRoleToml`
+throws on a blank Codex body (`refuseBlankInstructions`). Nothing
+in the CLI inspects what it writes, and there is no module to call: the validators that once did this
 for no caller were reaped, so `grep -rn 'validateCompiledAgent' src` is the check and it returns
 nothing.
 
 ## Key Files
 
-| File                                                         | Purpose                                                                                                                                                                                                                                                                                                           |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/cli/lib/compiler.ts`                                    | The disk half of a compile: Liquid engine, template roots, agent partial reads. Re-exports the renderers from `@workspace/compile/agent-source`, which is where the template context, the sanitizer and `renderAgent` are declared                                                                                |
-| `src/cli/lib/compile-seat.ts`                                | Side-effect module handing `@workspace/compile` this CLI's console (`seatDiagnostics({ warn, verbose })`). Imported by `compiler.ts` and `configuration/config-generator.ts` — the two modules owning the seated functions. The package's default sink discards, which is the honest answer for a browser preview |
-| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                                                                                                                                                                                                                                                   |
-| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path)                                                                                                                                                                                                                                                                 |
-| `src/cli/lib/agents/agent-provenance.ts`                     | `cliVersion` — this CLI's own manifest version, which a browser has no equivalent of. The three marker functions (`provenanceMarker`, `hasProvenanceMarker`, `stampProvenanceMarker`) are declared in `@workspace/compile/agent-source` and re-exported here                                                      |
-| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `splitAgentsByProvenance` / `pruneStaleCompiledAgents`                                                                                                                                                                                                            |
-| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                                                                                                                                                                                                                                                       |
-| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                                                                                                                                                                                                                                                          |
-| `src/cli/lib/resolver.ts`                                    | Resolves skill references and agent configs                                                                                                                                                                                                                                                                       |
-| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                                                                                                                                                                                                                                                      |
-| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation                                                                                                                                                                                                                                                      |
-| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                                                                                                                                                                                                                                                     |
-| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                                                                                                                                                                                                                                                   |
+| File                                                         | Purpose                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/lib/compiler.ts`                                    | The disk half of a compile: Liquid engine, template roots, agent partial reads, and `compileAgentForHost` — the per-provider switch between `renderAgent` and `renderAgentRoleToml(agent, renderAgentBody(...))`. Re-exports `buildAgentTemplateContext`, `sanitizeCompiledAgentData` and `sanitizeLiquidSyntax` from `@workspace/compile/agent-source`, which is where the renderers are declared |
+| `packages/compile/src/providers/codex/agent-role-toml.ts`    | `renderAgentRoleToml` — the Codex role file: `name`, `description`, `model_reasoning_effort` (from `effort`), `developer_instructions` — never `model`, every value of which is a Claude model Codex refuses to spawn — and `[features] shell_tool = false` for an agent without `Bash`. Re-exported by `agent-source.ts`                                                                          |
+| `packages/compile/src/providers/codex/roster.ts`             | `AGENTS_NOT_ON_CODEX`, `compilesForCodex`, and the two once-per-compile lines a Codex compile prints (`agentsLeftOutOfCodexMessage`, `unexpressibleOnCodexMessage`)                                                                                                                                                                                                                                |
+| `src/cli/lib/compile-seat.ts`                                | Side-effect module handing `@workspace/compile` this CLI's console (`seatDiagnostics({ warn, verbose })`). Imported by `compiler.ts` and `configuration/config-generator.ts` — the two modules owning the seated functions. The package's default sink discards, which is the honest answer for a browser preview                                                                                  |
+| `src/cli/lib/agents/agent-recompiler.ts`                     | Orchestrates recompilation flow                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/cli/lib/agents/write-compiled-agents.ts`                | Per-agent render + scope-routed write (live path); resolves each scope's provider and skips an agent `hostCompilesAgent` refuses                                                                                                                                                                                                                                                                   |
+| `src/cli/lib/installation/install-layout.ts`                 | The host roles the write reads: `providerInUse`, `sourceFolderInUse`, `agentsDir`, `agentCodec` (extension + marker reader per provider), `hostCompilesAgent`                                                                                                                                                                                                                                      |
+| `src/cli/lib/agents/agent-provenance.ts`                     | `cliVersion` — this CLI's own manifest version, which a browser has no equivalent of. The three marker functions (`provenanceMarker`, `hasProvenanceMarker`, `stampProvenanceMarker`) are declared in `@workspace/compile/agent-source` and re-exported here                                                                                                                                       |
+| `src/cli/lib/agents/list-compiled-agents.ts`                 | `listAgentMdFiles` / `listCompiledAgentNames` / `splitAgentsByProvenance` / `pruneStaleCompiledAgents`                                                                                                                                                                                                                                                                                             |
+| `src/cli/lib/agents/agent-fetcher.ts`                        | Fetches agent definitions (local or remote)                                                                                                                                                                                                                                                                                                                                                        |
+| `src/cli/lib/agents/agent-plugin-compiler.ts`                | Plugin-mode agent compilation (individual agent plugins)                                                                                                                                                                                                                                                                                                                                           |
+| `src/cli/lib/resolver.ts`                                    | Resolves skill references and agent configs                                                                                                                                                                                                                                                                                                                                                        |
+| `src/cli/lib/operations/project/compile-agents.ts`           | Operations layer wrapper for compilation + stale-agent prune                                                                                                                                                                                                                                                                                                                                       |
+| `src/cli/lib/operations/project/recompile-project-agents.ts` | Registered-project recompile + per-project failure isolation                                                                                                                                                                                                                                                                                                                                       |
+| `src/cli/lib/operations/project/load-agent-defs.ts`          | Operations layer for agent definition loading                                                                                                                                                                                                                                                                                                                                                      |
+| `src/cli/lib/operations/skills/discover-skills.ts`           | 4-way skill discovery and merge                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## The Provenance Marker
 
@@ -171,16 +211,23 @@ nothing.
 generator and the fact that the file is rewritten rather than edited. **The line carries no version**
 — its bytes are the same in every release:
 
-```markdown
+```text
 ---
 name: web-developer
 ---
-
 <!-- Generated by agents-inc — do not edit; compile rewrites this file -->
+
+# Web Developer Agent
 ```
 
 `MARKER_OPEN` interpolates `DEFAULT_PLUGIN_NAME` (`"agents-inc"`, `packages/compile/src/paths.ts`);
 `MARKER_NOTICE` and `MARKER_CLOSE` supply the rest. All three are module-private.
+
+**A Codex role carries the same line, in a different position.** `renderAgentBody` stamps it on
+line one of the frontmatter-free body, and that body becomes `developer_instructions` whole, so the
+marker is the line immediately after `developer_instructions = """`
+(`CODEX_DEVELOPER_INSTRUCTIONS_OPENER`). `hasCodexRoleMarker` reads it there; `agentCodec(provider)`
+in `src/cli/lib/installation/install-layout.ts` pairs each host's extension with its reader.
 
 `src/cli/lib/agents/agent-provenance.ts` is the one address a CLI caller reads it at, and it is a
 facade over two halves. The three marker functions are declared in
@@ -231,10 +278,11 @@ that replacement is a no-op on anything the current release wrote — what it st
 agent stamped by a release that spelled the version into the line.
 
 **One render path, so there is no unmarked output.** Both compile entry points render through
-`renderAgent` in `packages/compile/src/agent-source.ts`, whose last statement is the stamp. A
-template that emits the marker itself still produces exactly one. The renderer moved out of
-`src/cli/lib/compiler.ts` with the extraction and is not re-exported by it; `compiler.ts` imports
-it, and so does the editor's output preview, which is what puts both behind the same stamp.
+`renderAgent` (Claude) or `renderAgentBody` (Codex) in `packages/compile/src/agent-source.ts`, and
+each ends with the stamp. A template that emits the marker itself still produces exactly one.
+Neither is re-exported by `src/cli/lib/compiler.ts`; `compiler.ts` imports them, and so does the
+editor's output preview (`packages/compile/src/preview.ts`), which is what puts both behind the same
+stamp.
 
 **Who reads it back.** `splitAgentsByProvenance(agentsDir)`
 (`src/cli/lib/agents/list-compiled-agents.ts`) partitions a directory's `*.md` into `marked` and
@@ -250,6 +298,8 @@ grep -rn 'splitAgentsByProvenance(' src --include='*.ts' --include='*.tsx' --exc
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/cli/commands/uninstall.tsx`                                        | Identify this CLI's own output once the configuration naming the agents is gone — see [`reference/commands/index.md`](../commands/index.md)        |
 | `listAgentFilesWithOurProvenance` in `src/cli/lib/content-validator.ts` | List, for `doctor`, the agent files `uninstall` would actually remove — a listing built any other way could offer a file the remover then declines |
+
+`splitAgentsByProvenance` globs `*.md` and reads only the Claude position.
 
 ## Agent File Structure
 
@@ -272,7 +322,8 @@ Agent directories are organized by category:
 ```
 src/agents/
   _templates/                 # Liquid templates
-    agent.liquid              # Main agent template
+    agent.liquid              # Frontmatter, then {% include "agent-body" %}
+    agent-body.liquid         # Everything after the frontmatter fence
     methodologies/            # Shared methodology partials
       operating-principles.liquid
   developer/
@@ -289,17 +340,25 @@ src/agents/
 
 ## Agent Template Structure
 
-**Main template:** `src/agents/_templates/agent.liquid`
+**Main template:** `src/agents/_templates/agent.liquid` — the frontmatter, then
+`{% include "agent-body" -%}` as its last line.
 
-**Only partial it renders:** `src/agents/_templates/methodologies/operating-principles.liquid`
+**Body template:** `src/agents/_templates/agent-body.liquid` — everything after the frontmatter
+fence. `renderAgentBody` renders it alone for a Codex role, so a Codex role's
+`developer_instructions` is the tail of its Claude twin byte for byte;
+`packages/compile/src/agent-body-split.test.ts` asserts that suffix relation. `include` shares the
+parent's scope, so the body reads `agent`, `identity` and the rest as before.
+
+**Only partial either renders:** `src/agents/_templates/methodologies/operating-principles.liquid`
 
 ### Rendered Body Order
 
-Rows are in rendered order, top of file to bottom.
+Rows are in rendered order, top of file to bottom. Every row after the first comes from
+`agent-body.liquid`.
 
 | Block                     | Source                                              | Emitted when                                  |
 | ------------------------- | --------------------------------------------------- | --------------------------------------------- |
-| YAML frontmatter          | `metadata.yaml` + compile-time grants (below)       | always                                        |
+| YAML frontmatter          | `metadata.yaml` + compile-time grants (below)       | Claude only — `agent.liquid`                  |
 | Provenance marker         | `stampProvenanceMarker()` after the render          | always                                        |
 | `# {{ agent.title }}`     | `metadata.yaml`                                     | always                                        |
 | `<role>`                  | `identity.md`                                       | always                                        |
@@ -311,24 +370,24 @@ Rows are in rendered order, top of file to bottom.
 | `<system-reminder>`       | the template, plus `generatorVersion` and skills    | always — and it is the LAST block in the file |
 
 The partial's own tag pair is `<operating_principles>`, so the template contributes no wrapper of
-its own around it. **The table is the whole of the template's own structure** — it emits no block
+its own around it. **The table is the whole of the templates' own structure** — they emit no block
 the table does not name, and nothing follows `</system-reminder>`. Compiled agents written by releases
-still on disk may carry blocks this template does not emit; the template itself is the answer:
+still on disk may carry blocks these templates do not emit; the templates themselves are the answer:
 
 ```
-grep -oE '<[a-z][a-z_-]*>|^# \{\{[^}]*\}\}|\{% render "[^"]*" %\}' src/agents/_templates/agent.liquid \
-  | grep -v '^</'
+grep -ohE '<[a-z][a-z_-]*>|^# \{\{[^}]*\}\}|\{% (render|include) "[^"]*" -?%\}' \
+  src/agents/_templates/agent.liquid src/agents/_templates/agent-body.liquid | grep -v '^</'
 ```
 
-That lists every opening tag, heading and render tag the template writes, including the three
-mutually exclusive branches nested inside `<system-reminder>`.
+That lists the include, and every opening tag, heading and render tag the body writes, including
+the three mutually exclusive branches nested inside `<system-reminder>`.
 
 **What binds this order:** `SHIPPED_TEMPLATE_SECTIONS` in `src/cli/lib/compiler.test.ts`, asserted
 with `toStrictEqual` against `parseCompiledAgentSections(...).sectionOrder`
 (`src/cli/lib/__tests__/helpers/compiled-agent-sections.ts`). **What binds the partial roster:**
 `RENDERED_METHODOLOGY_PARTIALS` / `UNRENDERED_METHODOLOGY_PARTIALS` in
 `src/cli/lib/__tests__/agent-template-renders-its-partials.test.ts`, which holds the `{% render %}`
-tags the template writes against the files the directory holds — nothing else can catch a partial
+tags both templates write against the files the directory holds — nothing else can catch a partial
 going unrendered, because `tsc` does not open a `.liquid` file, ESLint does not lint one, the engine
 runs `strictVariables: false`, and a vanished `{% render %}` leaves no residue in the output.
 
@@ -357,8 +416,14 @@ top-level blocks will not find it beside `<role>`.
 
 ### Frontmatter Keys
 
-Emitted in this order, with `withSkillTool` and the completion gate applied at compile time rather
-than declared in any `metadata.yaml`:
+Emitted in this order by `agent.liquid`, with `withSkillTool` and the completion gate applied at
+compile time rather than declared in any `metadata.yaml`. Claude only: a Codex role writes `name`,
+`description` and `model_reasoning_effort` as TOML keys and carries none of the rest,
+except that a `tools` list without `Bash` becomes `[features] shell_tool = false` —
+`UNEXPRESSIBLE_ON_CODEX` (`packages/compile/src/providers/codex/roster.ts`) is what a Codex compile
+says it cannot express (Claude models, tool allowlists, `permissionMode`, `isolation`, `experimental`, preloaded
+skills); a declared `disallowedTools` or `hooks` is dropped with no mention, and no bundled agent
+declares either.
 
 | Key               | Emitted when                                        | Note                                                                                                                                                                     |
 | ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -451,7 +516,7 @@ on the sub-agent path the two ARE one event, so emitting a `Stop` gate beside a 
 Same source, same caveat: observed in the shipped Claude Code binary at version **2.1.259** on
 **2026-09-03**, by reading it rather than from published documentation.
 
-**Frontmatter hooks are gated on the trust dialog, and the compile has no way to know.** Before
+**Frontmatter hooks are gated on the trust dialog.** Before
 registering an agent's frontmatter hooks, Claude Code asks whether the folder the definition file
 came from is trusted. The answer depends entirely on which SCOPE the agent was installed at:
 
@@ -465,13 +530,18 @@ The project-scope check walks `<project>/.claude/agents` up to `<project>` — t
 then reads `projects[<project>].hasTrustDialogAccepted` from `~/.claude.json`. A `false` or absent
 entry means the agent loads, its prompt loads, its tools load, and **its hooks are dropped**.
 
-**The skip is silent from this CLI's side.** Claude Code logs it to its own diagnostics
-(`Skipping frontmatter hooks for agent '<name>': the folder its definition file came from is not
-trusted`) and offers the remedy — run Claude Code in that folder once and accept the trust dialog,
-or set `projects[<path>].hasTrustDialogAccepted: true`. Nothing reaches `agents-inc`: `compile`
-reports the agent written, the `hooks:` key is in the file, and the gate never runs. There is no
-check here that can detect it, because the condition lives in the consumer's state rather than in
-anything the compile can read.
+**The skip is silent on Claude Code's side.** It logs it to its own diagnostics (`Skipping
+frontmatter hooks for agent '<name>': the folder its definition file came from is not trusted`) and
+offers the remedy — run Claude Code in that folder once and accept the trust dialog, or set
+`projects[<path>].hasTrustDialogAccepted: true`. **So `init` and `compile` say it instead**: while
+`<project>/.claude/agents/` holds a sub-agent whose `hooks:` record has at least one hook under
+`Stop` or `SubagentStop` — the completion gate — and `~/.claude.json` does not record that
+project's dialog as accepted, they print one line naming the folder (`claudeCompileNotices` in
+`src/cli/lib/hosts/claude-project-trust.ts`, via `hostCompileNotices`). A run from the home
+directory prints nothing: its project agents directory is `~/.claude/agents/`, which Claude Code
+always trusts. The CLI reads that file and never writes it. _Corrected 2026-09-26:_ this said the
+compile had no way to detect it, because the condition lives in the consumer's state — the state is
+a file the CLI can read, and the owner ruled that the install should say so.
 
 **So the completion gate is a guarantee at global scope and a best-effort at project scope.** That
 is worth knowing before leaning on it: the gate is the mechanism that stands in place of asking an
@@ -513,10 +583,10 @@ keeps its gate either way.
 
 ## Skill Types in Compilation
 
-| Type      | In Compiled Agent                                                                                                       | Loaded How                       |
-| --------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| Preloaded | Content embedded directly in .md file                                                                                   | Listed in frontmatter `skills:`  |
-| Dynamic   | Metadata only (id, description, usage), listed in `<skill_activation_protocol>` INSIDE the trailing `<system-reminder>` | Loaded via Skill tool at runtime |
+| Type      | In Compiled Agent                                                                                                                                 | Loaded How                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Preloaded | Id only (`pluginRef ?? id`) under frontmatter `skills:` — no skill content. Codex drops it: no frontmatter, and `UNEXPRESSIBLE_ON_CODEX` names it | Claude Code loads it at agent start |
+| Dynamic   | Metadata only (id, description, usage), listed in `<skill_activation_protocol>` INSIDE the trailing `<system-reminder>`                           | Loaded via Skill tool at runtime    |
 
 **A skill's `usage` line is the catalogue's own words, not a generated sentence.**
 `resolveAgentConfigToSkills` (`src/cli/lib/stacks/stacks-loader.ts`) fills each `SkillReference.usage`
@@ -529,10 +599,13 @@ bullet is a row of the activation protocol saying nothing. The placeholder is
 what remains when there is nothing to read: an id the matrix does not carry (local, marketplace,
 withdrawn) or one it carries that states no guidance, which is ordinary rather than malformed since
 `usageGuidance` is optional on `SkillCore` and on `matrixRawMetadataSchema`. It is a whole sentence
-because `agent.liquid` renders it verbatim as a bullet of its own. `defaultUsageGuidance` is
+because `agent-body.liquid` renders it verbatim as a bullet of its own. `defaultUsageGuidance` is
 exported from `src/cli/lib/stacks/stacks-loader.ts` for exactly one reason — `externalSkillMetadata`
 (`src/cli/lib/seed/external-skills.ts`) CALLS it for a carried skill's default rather than spelling
-the sentence a second time, so the two routes to one skill's cue cannot disagree. **Which
+the sentence a second time, so the two routes to one skill's cue cannot disagree. **The DESCRIPTION beside it comes from SKILL.md, not from the matrix**: compile reads each skill's
+own frontmatter (`readSkillDefinition` in `src/cli/lib/loading/loader.ts`), while the matrix's
+`description` is the wizard's short `cliDescription`. The catalogue carries the SKILL.md one as
+`activationDescription`, and the editor's preview draws that — it drew the label until CLI-898. **Which
 matrix is seated therefore decides the bytes** — see the `seatMatrixForPass` note under
 [`compile` Regenerates `config-types.ts`](#compile-regenerates-config-typests).
 
@@ -555,6 +628,8 @@ rule.
 
 ## Output Structure
 
+A Claude installation, under the scope root (the project, or `~` at global scope):
+
 ```
 .claude/
   agents/
@@ -570,10 +645,21 @@ rule.
     ...
 ```
 
-The live `compile` command writes only `agents/` (agents-only recompile). `skills/` is
-produced by the install/eject flow and the skill/agent plugin-build flows
-(`compileSkillPlugin()`, `compileAgentPlugin()`), not by `compile`. Nothing in the CLI
-writes a `commands/` directory or a stack `CLAUDE.md` into the output.
+A Codex installation writes the same roster into the host's own directories — each path is a host
+role in `src/cli/lib/installation/install-layout.ts`, and a Codex compile carries 16 of the 18:
+
+```
+<project>/.codex/                  # project scope; $CODEX_HOME (default ~/.codex) at global scope
+  agents/
+    web-developer.toml             # agent role definition — agentCodec("codex").extension
+<project>/.agents/skills/          # project-scope skills; $CODEX_HOME/skills at global scope
+```
+
+Per scope the live `compile` command writes the compiled agents and a refreshed `config-types.ts`
+beside `config.ts`. `skills/` is produced by the
+install/eject flow and the skill/agent plugin-build flows (`compileSkillPlugin()`,
+`compileAgentPlugin()`), not by `compile`. Nothing in the CLI writes a `commands/` directory or a
+stack `CLAUDE.md` into the output.
 
 ## Security: Liquid Injection Prevention
 
@@ -592,14 +678,15 @@ removed and a browser preview silently discards.
 - Skill metadata: id, description, usage, pluginRef — via `sanitizeSkills()`, applied to `skills`, `preloadedSkills`, and `dynamicSkills`
 - Preloaded skill IDs (`preloadedSkillIds`)
 
-`renderAgent()` additionally runs the `generatorVersion` argument through `sanitizeLiquidSyntax()`
-before handing it to the engine; `completionGateCommand` is a module-private constant and is not
-user-controlled, so it is passed as-is.
+`renderAgent()` and `renderAgentBody()` additionally run the `generatorVersion` argument through
+`sanitizeLiquidSyntax()` before handing it to the engine. The completion gate is not a context key:
+`prepareForRender` composes it into `agent.hooks` (`withCompletionGate`) before the sanitiser walks
+them, so it is sanitised like any other hook.
 
 **Hooks get their own sanitiser.** `sanitizeHooks()` — module-private in
 `packages/compile/src/agent-source.ts` — walks the `Record<string, AgentHookDefinition[]>` and strips
-the event key, each definition's `matcher`, and each action's `command`, `script` and `prompt`. These
-are the only fields on an agent that render as an EXECUTABLE: a `SubagentStop` hook's `command` is a
+the event key, each definition's `matcher`, and each action's `type`, `command`, `script` and
+`prompt`. These are the only fields on an agent that render as an EXECUTABLE: a `Stop` hook's `command` is a
 shell line Claude Code runs when the sub-agent finishes, and an agent definition can arrive from a
 marketplace, so those strings are as author-controlled as `agent.name` beside them. Sanitising is not
 a substitute for trusting the source — a marketplace whose agents you compile can name any command it
@@ -613,23 +700,26 @@ This prevents user-controlled metadata (from YAML/TS config files) from executin
 
 ### compiler.ts
 
-| Function                      | Signature                                                                                                      | Purpose                                                                                                                                  |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `sanitizeLiquidSyntax()`      | `<T extends string>(value: T, fieldName: string): T`                                                           | Strip Liquid syntax from a string                                                                                                        |
-| `sanitizeCompiledAgentData()` | `(data: CompiledAgentData): CompiledAgentData`                                                                 | Sanitize all fields before template render                                                                                               |
-| `buildAgentTemplateContext()` | `(name: string, agent: AgentConfig, files: AgentFiles, mapSkill?: (skill: Skill) => Skill): CompiledAgentData` | Build template data; appends `Skill` to `agent.tools` via `withSkillTool`; `mapSkill` transforms each skill (used to attach `pluginRef`) |
-| `compileAgentForPlugin()`     | `(name: AgentName, agent: AgentConfig, fallbackRoot: string, engine: Liquid): Promise<string>`                 | Per-skill-`pluginRef` agent render used by the live recompile + plugin paths                                                             |
-| `createLiquidEngine()`        | `(projectDir?: string): Promise<Liquid>`                                                                       | Create Liquid engine with layered roots                                                                                                  |
+| Function                      | Signature                                                                                                          | Purpose                                                                                                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sanitizeLiquidSyntax()`      | `<T extends string>(value: T, fieldName: string): T`                                                               | Strip Liquid syntax from a string                                                                                                                                                                                                    |
+| `sanitizeCompiledAgentData()` | `(data: CompiledAgentData): CompiledAgentData`                                                                     | Sanitize all fields before template render                                                                                                                                                                                           |
+| `buildAgentTemplateContext()` | `(name: string, agent: AgentConfig, files: AgentFiles, mapSkill?: (skill: Skill) => Skill): CompiledAgentData`     | Build template data; appends `Skill` to `agent.tools` via `withSkillTool`; `mapSkill` transforms each skill (used to attach `pluginRef`)                                                                                             |
+| `compileAgentForHost()`       | `(provider: Provider, name: AgentName, agent: AgentConfig, fallbackRoot: string, engine: Liquid): Promise<string>` | The one single-agent render: reads the partials, builds the context with per-skill `pluginRef`, then `renderAgent` (Claude) or `renderAgentRoleToml` over `renderAgentBody` (Codex). Its only caller is `writeCompiledAgentsByScope` |
+| `createLiquidEngine()`        | `(projectDir?: string): Promise<Liquid>`                                                                           | Create Liquid engine with layered roots and the `sourceFolder` global                                                                                                                                                                |
 
-### agent-source.ts (imported by `compiler.ts`, NOT re-exported by it)
+### agent-source.ts (`@workspace/compile/agent-source`, none of these re-exported by `compiler.ts`)
 
-| Function                  | Signature                                                                     | Purpose                                                                                                                                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `renderAgent()`           | `(engine: Liquid, data: CompiledAgentData, version: string): Promise<string>` | Sanitize -> render the `"agent"` template with `generatorVersion` and `completionGateCommand` added to the context -> stamp the provenance marker. Every compile entry point goes through it |
-| `pluginRefFor()`          | `(skill: Skill): { pluginRef?: PluginSkillRef }`                              | Spreadable partial deciding the per-skill reference format                                                                                                                                   |
-| `provenanceMarker()`      | `(): string`                                                                  | See [The Provenance Marker](#the-provenance-marker)                                                                                                                                          |
-| `hasProvenanceMarker()`   | `(content: string): boolean`                                                  | Same                                                                                                                                                                                         |
-| `stampProvenanceMarker()` | `(content: string): string`                                                   | Same                                                                                                                                                                                         |
+| Function                  | Signature                                                                     | Purpose                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `renderAgent()`           | `(engine: Liquid, data: CompiledAgentData, version: string): Promise<string>` | Compose the gate into `hooks` and sanitize (`prepareForRender`) -> substitute the source folder -> render the `"agent"` template with `generatorVersion` added to the context -> stamp the provenance marker |
+| `renderAgentBody()`       | `(engine: Liquid, data: CompiledAgentData, version: string): Promise<string>` | The same, against `"agent-body"`: the prose with no frontmatter, marker on line one. Codex's input                                                                                                           |
+| `renderAgentRoleToml()`   | `(agent: AgentConfig, body: string): string`                                  | Re-exported from `providers/codex/agent-role-toml.ts`; refuses a blank body rather than writing a role Codex would drop                                                                                      |
+| `pluginRefFor()`          | `(skill: Skill): { pluginRef?: PluginSkillRef }`                              | Spreadable partial deciding the per-skill reference format                                                                                                                                                   |
+| `provenanceMarker()`      | `(): string`                                                                  | See [The Provenance Marker](#the-provenance-marker)                                                                                                                                                          |
+| `hasProvenanceMarker()`   | `(content: string): boolean`                                                  | Same                                                                                                                                                                                                         |
+| `hasCodexRoleMarker()`    | `(content: string): boolean`                                                  | Same, at the Codex position                                                                                                                                                                                  |
+| `stampProvenanceMarker()` | `(content: string): string`                                                   | Same                                                                                                                                                                                                         |
 
 `version` is an argument because the CLI reads it from its own `package.json` and a browser has no
 manifest to read: the CLI passes `await cliVersion()`, the editor's output preview passes
@@ -645,7 +735,6 @@ For native Claude Code plugin distribution:
 | `compileAllSkillPlugins()` | `src/cli/lib/skills/skill-plugin-compiler.ts` | Batch: every `SKILL.md` under a dir; returns `SkillCompilationRun { compiled, failed }`                                                      |
 | `compileAgentPlugin()`     | `src/cli/lib/agents/agent-plugin-compiler.ts` | One agent plugin dir (singular). `AgentPluginOptions` shape and its single internal construction site: [leaf-exports.md](../leaf-exports.md) |
 | `compileAllAgentPlugins()` | `src/cli/lib/agents/agent-plugin-compiler.ts` | Batch: every agent `.md` under a dir; returns `CompiledAgentPlugin[]`                                                                        |
-| `compileAgentForPlugin()`  | `src/cli/lib/compiler.ts`                     | Single agent render with per-skill `pluginRef`; the live recompile path's single-agent primitive                                             |
 
 ### Batch Skill-Plugin Compilation & Command Drivers
 
@@ -657,7 +746,7 @@ For native Claude Code plugin distribution:
 
 `build marketplace` (`src/cli/commands/build/marketplace.ts`) does NOT compile — it scans already-built plugin dirs and generates `marketplace.json` via `generateMarketplace()` (identity read from `package.json`).
 
-**`compileAgentForPlugin()` (`src/cli/lib/compiler.ts`) is the only single-agent render**, shared by the live recompile path and the plugin-build path. There is no second agent-render entry point — do not look for a plain `compileAgent()`.
+**`compileAgentForHost()` (`src/cli/lib/compiler.ts`) is the only single-agent render**, and the live recompile path is its only caller. The plugin-build path renders nothing: `compileAgentPlugin()` reads an already-compiled `.md`, validates its frontmatter against `agentFrontmatterValidationSchema`, and copies it into `agent-<name>/agents/`. There is no second agent-render entry point — do not look for a plain `compileAgent()`.
 
 - It decides `pluginRef` **per-skill** via `pluginRefFor(skill)` based on each skill's own `source` field. No agent-wide `installMode` parameter.
 - Preloaded skill IDs render with `pluginRef` when attached, otherwise bare skill IDs (`buildAgentTemplateContext()`: `preloadedSkillIds = preloadedSkills.map((s) => s.pluginRef ?? s.id)`).
@@ -684,8 +773,8 @@ Rule (mirrors the helper body):
 
 - `SkillReference.source?: string` (`src/cli/types/skills.ts`) -- carried alongside `id`, `usage`, `preloaded`.
 - `Skill.source?: string` (same file) -- propagated from `SkillReference.source` by `resolveSkillReference()` in `resolver.ts`.
-- `buildCompileAgents()` in `src/cli/lib/installation/local-installer.ts` attaches each skill's `source` to its `SkillReference` from a `Map<SkillId, string>` (`sourceById`) built from `config.skills`, so downstream `resolveSkillReference` can propagate it onto the fully-resolved `Skill` consumed by `compileAgentForPlugin`.
-- `compileAgentForPlugin` (in `src/cli/lib/compiler.ts`) reads `skill.source` via `pluginRefFor(skill)` -- no `installMode` parameter.
+- `buildCompileAgents()` in `src/cli/lib/installation/local-installer.ts` attaches each skill's `source` to its `SkillReference` from a `Map<SkillId, string>` (`sourceById`) built from `config.skills`, so downstream `resolveSkillReference` can propagate it onto the fully-resolved `Skill` consumed by `compileAgentForHost`.
+- `compileAgentForHost` (in `src/cli/lib/compiler.ts`) reads `skill.source` via `pluginRefFor(skill)` -- no `installMode` parameter. On Codex the `pluginRef` survives only in the `Invoke:` line of `<skill_activation_protocol>`, because a role file has no `skills:` key.
 
 ### `installMode` Is Not An Input To The Compile Path
 
@@ -720,10 +809,16 @@ The compilation pipeline is wrapped by the operations layer for use by commands:
 
 The `compile` command (`src/cli/commands/compile.ts`) uses these operations to:
 
+0. Refuse before reading anything: `refuseAnAmbiguousInstallation` exits with
+   `EXIT_CODES.INVALID_ARGS` when a scope holds a live installation of each provider and no
+   `--provider` names one; `settleSourceLayoutBeforeWriting` (`BaseCommand`) refuses a scope holding
+   both `.claude-src/` and `.agents-inc/claude/`.
 1. `detectInstallations()` — `detectBothInstallations()` wrapped in a `ConfigLoadError`
    catch. A config file that exists but cannot be parsed hard-errors with
    `EXIT_CODES.ERROR` naming the path, BEFORE any compilation or write.
-   Zero installations is also a hard error (`ERROR_MESSAGES.NO_INSTALLATION`).
+   Zero installations is also a hard error (`ERROR_MESSAGES.NO_INSTALLATION`). Then
+   `refuseUnofferablePlacements()` hard-errors on a configuration asking for a mode/scope cell its
+   own host does not offer.
 2. `resolveAndLogSource()` then `loadAgentDefsOrFail()`
 3. `buildCompilePasses()` — the ONE pass this invocation owns. A project
    installation at `cwd` makes the run project-scope: the project pass alone,
@@ -744,8 +839,17 @@ The `compile` command (`src/cli/commands/compile.ts`) uses these operations to:
    (`warnUnresolvedStackSkills()`) and scope-dropped stack pairs
    (`warnScopeDroppedStackPairs()`) -> compile agents via `compileAgents()` ->
    `refreshConfigTypes(pass, cwd, seatedMatrix)`
-5. Zero passes with skills is a hard error (`ERROR_MESSAGES.NO_SKILLS_TO_COMPILE`).
+5. Zero passes compiled is a hard error (`ERROR_MESSAGES.NO_SKILLS_TO_COMPILE`). A pass with no skills on disk
+   still compiles when its config declares no skill and pins an agent on (`declaresOnlyBaseAgents`); one whose
+   config declares skills that are all missing is skipped, so compile never strips them.
    The pass list itself comes from the module-private `buildCompilePasses()`.
+6. After the passes, for the provider of the root the pass list picked (the project when it has an
+   installation, `os.homedir()` otherwise): `reportWhatThisHostCannotCarry` logs
+   `hostCompileNotices` (`src/cli/lib/hosts/host-compile-notices.ts`). On Codex that is
+   `codexCompileNotices` — the sub-agents Codex leaves out, the settings it cannot express, and the
+   project trust it wrote for project roles (`trustCodexProject`, CLI-893). On Claude it is
+   `claudeCompileNotices` — the trust dialog, while project sub-agents carrying the completion gate
+   sit in a folder Claude Code has not trusted.
 
 A stack-referenced skill absent from disk is dropped from the recompiled agent.
 `warnUnresolvedStackSkills()` surfaces each dropped skill as a `this.warn()`, so the default output
@@ -826,7 +930,7 @@ which reads as a silent no-op after a global stack change.
 - **Home context** (`isHomeDirectory(projectDir)`): a single `compileAgents()` pass writing to the home agents dir — no scope filter.
 - **Project context**: a global pass (`projectDir: os.homedir()`, `scopeFilter: "global"`) followed by a project pass (`scopeFilter: "project"`), each writing only its own scope so the project pass cannot overwrite global agents with zero-skill versions.
 
-The two project-context passes are combined by the private `mergeCompilationResults(...results)` helper, which `flatMap`s all four `CompilationResult` fields — `compiled`, `rewritten`, `failed`, `warnings` — across results **in pass order** (global then project). The home branch returns its single `CompilationResult` directly.
+The two project-context passes are combined by the private `mergeCompilationResults(...results)` helper, which `flatMap`s every `CompilationResult` field — `compiled`, `rewritten`, `failed`, `warnings` — across results **in pass order** (global then project). The home branch returns its single `CompilationResult` directly.
 
 **Pruning consequence:** only the home branch is scope-UNfiltered, so only the home branch prunes stale compiled agents from its `outputDir`. Both project-context passes carry a `scopeFilter` and therefore skip pruning — see `pruneStaleAgentsForPass()` in `src/cli/lib/operations/project/compile-agents.ts`.
 
@@ -834,7 +938,7 @@ The two project-context passes are combined by the private `mergeCompilationResu
 
 `recompileAgents()` in `agent-recompiler.ts` orchestrates the full recompilation:
 
-1. Load project config via `loadProjectConfig()` (from `.claude-src/config.ts`), then `filterExcludedEntries()` drops excluded skills/agents and excluded stack refs
+1. Load project config via `loadProjectConfig()` (from the project's own `config.ts`), then `filterExcludedEntries()` drops excluded skills/agents and excluded stack refs
 2. Load agent definitions: `loadAllAgents()` for built-in + `loadProjectAgents()` for project overrides
 3. Merge: project agents override built-in agents
 4. Resolve agent names via `resolveAgentNames()` — priority: explicit `options.agents` -> a PRESENT config's `agents[]` -> all source agents when `outputDir` is set -> existing compiled agents on disk. The config branch keys on **presence, not length**, so `agents: []` compiles zero agents instead of falling through to the all-agents branch
@@ -842,48 +946,57 @@ The two project-context passes are combined by the private `mergeCompilationResu
 6. Build compile config: `buildCompileAgents()` maps config entries to `CompileAgentConfig` per agent (partitioning known vs missing agents), then `CompileConfig` is constructed inline
 7. Create Liquid engine: `createLiquidEngine()` with project template overrides
 8. Resolve agents: `resolveAgents()` materializes skill references into full `AgentConfig` objects
-9. Compile and write: `writeCompiledAgentsByScope()` (in `src/cli/lib/agents/write-compiled-agents.ts`) renders each agent through `compileAgentForPlugin()` and routes output by agent scope -- global agents to `~/.claude/agents/`, project agents to `outputDir`
+9. Compile and write: `writeCompiledAgentsByScope()` (in `src/cli/lib/agents/write-compiled-agents.ts`) renders each agent the scope's host compiles through `compileAgentForHost()` and routes output by agent scope -- global agents to `resolveInstallPaths(os.homedir(), "global").agentsDir` (`~/.claude/agents/` on Claude), project agents to `outputDir`
 
 ## Propagated-Project Recompile
 
 `propagateGlobalChangesToProjects()` (`src/cli/lib/config-gate/propagate.ts`) rewrites each
 registered project's `config.ts` / `config-types.ts` when a global-scope config change lands, but
-it does not itself re-render those projects' compiled `.claude/agents/<name>.md` files. **Its caller
+it does not itself re-render those projects' compiled agent files (`.claude/agents/<name>.md` on
+Claude, `.codex/agents/<name>.toml` on Codex). **Its caller
 inside the gate does** — this is part of the write, not a stage the command drives:
 
 ```
-writeScopedFromWizard(...) | mutateGlobal(...) | reconcileTypesFromDisk(~) | propagateGlobalRemoval(...)
-  -> applyConsequences(...)                    (config-gate/index.ts)
+writeScopedFromWizard(...) | mutateGlobal(...)   (config-gate/index.ts)
+  -> applyConsequences(...)                      (T1 or T2 propagates)
        -> propagateGlobalChangesToProjects(...)
-       -> recompilePropagated(updated)         (config-gate/recompile.ts, T1 only)
-  -> returns GateReport { globalWritten, changes, propagated, recompile }
-       |
-writeProjectConfig(...)                       (operations/project/write-project-config.ts)
-  -> ConfigWriteResult.propagation
-       |
-init.tsx / edit.tsx / compile.ts / uninstall.tsx  (RENDER GateReport.recompile — they call nothing)
+       -> recompilePropagated(updated)           (config-gate/recompile.ts, T1 only)
+reconcileTypesFromDisk(~)                        (the `compile` path: at $HOME, no tier check)
+  -> propagateGlobalChangesToProjects(...) -> recompilePropagated(updated)
+propagateGlobalRemoval(...)                      (uninstall's global half)
+  -> pruneGlobalEntriesFromRegisteredProjects(...) -> recompilePropagated(updated)
+
+each returns GateReport { globalWritten, changes, propagated, recompile }; a command that
+holds one RENDERS GateReport.recompile (BaseCommand.reportPropagatedRecompile) and calls nothing:
+  writeScopedFromWizard  <- writeProjectConfig(...)  (operations/project/write-project-config.ts)
+                              -> ConfigWriteResult.propagation, rendered by init.tsx and edit.tsx
+  mutateGlobal           <- edit.tsx (migrate-skill-sources) renders it; eject.ts (set-source)
+                              and uninstall.tsx (deregister-project) discard it
+  reconcileTypesFromDisk <- compile.ts refreshConfigTypes, rendered by its reportPropagation
+  propagateGlobalRemoval <- uninstall.tsx updateRegisteredProjects, rendered there
 
 ... and the loop the gate already ran, expanded:
 recompilePropagated(updated)                  (config-gate/recompile.ts, lazy import)
   -> recompilePropagatedProjectAgents(dirs)   (operations/project/recompile-project-agents.ts)
        for each dir (sequential):
          recompileRegisteredProjectAgents(dir)
-           -> discoverInstalledSkills(dir)    // explicit: without it recompileAgents falls back
-           -> loadAgentDefs()                 //   to discoverAllPluginSkills and strips every
-           -> compileAgents({                 //   global-local and project-local skill
-                projectDir: dir,
-                sourcePath,
-                skills: allSkills,
-                scopeFilter: "project",
-                outputDir: resolveInstallPaths(dir, "project").agentsDir,
-              })
+           withCatalogueSeatedFor(dir, ...)   // that project's OWN catalogue seated for the pass
+             -> discoverInstalledSkills(dir)  // explicit: without it recompileAgents falls back
+             -> loadAgentDefs()               //   to discoverAllPluginSkills and strips every
+             -> compileAgents({               //   global-local and project-local skill
+                  projectDir: dir,
+                  sourcePath,
+                  skills: allSkills,
+                  scopeFilter: "project",
+                  outputDir: resolveInstallPaths(dir, "project").agentsDir,
+                })
 ```
 
 Contract points:
 
 - **Project scope only.** The global agents were already recompiled by the triggering operation's
-  own pass; repeating a global pass per registered project would rewrite `~/.claude/agents` once
-  per project for no gain.
+  own pass; repeating a global pass per registered project would rewrite the global agents
+  directory once per project for no gain.
 - **`scopeFilter: "project"` therefore also disables pruning** (see the pruning stage above) — this
   pass sees only one scope's roster and must not delete another scope's files.
 - **Per-project failure isolation.** `recompilePropagatedProjectAgents` wraps each project in
@@ -898,18 +1011,18 @@ Contract points:
   recompiled and the one a single count could not tell apart. There is no `recompiledCount`.
 - **The commands do not drive this loop.** Its only production caller is `recompilePropagated` in
   `src/cli/lib/config-gate/recompile.ts`, which the gate runs inside `applyConsequences` on a T1
-  tier. `init`, `edit`, `compile` and `uninstall` render the summary the gate hands back; the
-  earlier contract, where the write returned directories for the caller to recompile, is what
-  left `edit`'s source migration and the global `uninstall` behind.
+  tier and after the fan-outs of `reconcileTypesFromDisk` (at `$HOME`) and
+  `propagateGlobalRemoval`. `init`, `edit`, `compile` and `uninstall` render the summary the gate
+  hands back.
 - **Agent partials always come from the CLI** (`getLocalAgentDefinitions()` returns
   `sourcePath: PROJECT_ROOT`), so no per-project marketplace source resolution is needed.
-- All four fan-out commands (`init`, `edit`, `compile`, `uninstall`) surface each warning via
-  `this.warn()` and then log `Recompiled agents in N registered projects, M unchanged` with a
+- The four commands that render it (`init`, `edit`, `compile`, `uninstall`) print nothing when no
+  project was updated, and otherwise surface each warning via `this.warn()` and then log `Recompiled agents in N registered projects, M unchanged` with a
   ` (K failed)` suffix when `failedCount > 0` — one `BaseCommand.reportPropagatedRecompile`, not a
   copy per command.
 
-Without this fan-out a registered project's compiled `.claude/agents/<name>.md` keeps the roster it
-was last compiled with until someone runs a command inside that project — including a stale
+Without this fan-out a registered project's compiled agent files keep the roster they were
+last compiled with until someone runs a command inside that project — including a stale
 `name:name` plugin reference after a global plugin→eject switch, whose `config.ts` is already
 correct while the compiled agent is not. The same stage is documented from the config-write angle
 in `reference/config/config-writer.md` and the agent-recompile angle in

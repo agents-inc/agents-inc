@@ -11,6 +11,9 @@ keywords:
     project-config,
     tombstone,
     excluded,
+    loadInstalledConfig,
+    loadSourceRepoConfig,
+    source-folder,
   ]
 related:
   - reference/architecture-overview.md
@@ -20,6 +23,8 @@ related:
   - reference/config/scope-split.md
   - reference/config/config-writer.md
   - reference/config/config-merger.md
+  - reference/concepts/source-folder-layout.md
+  - reference/features/seed-contract.md
 last_validated: 2026-08-30
 ---
 
@@ -51,7 +56,7 @@ last_validated: 2026-08-30
 | `skill-audit.ts`         | `src/cli/lib/configuration/skill-audit.ts`         | The `skillAudit` worksheet: per-skill `AuditVerdict` / `SkillClass` / `BatchId` provenance. Data only, no logic                                                                                                                                          |
 | `index.ts`               | `src/cli/lib/configuration/index.ts`               | Barrel exports                                                                                                                                                                                                                                           |
 
-**Barrel surface (`index.ts`)** — value exports only, grouped by the module each re-export block names, exhaustively and in source order: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `isPublicCatalogueCheckout`, `offersBuiltInStacks`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty` (`config-generator.ts`); `mergeConfigs`, `mergeWithExistingConfig` (`config-merger.ts`); `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` (`scope-predicates.ts`); **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig` (`project-config.ts`); `defineConfig`; `defaultCategories`; `defaultRules`; `defaultStacks`; **`ConfigDefaultExportError`**, `loadConfig` (`config-loader.ts`); `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath` (`config-types-writer.ts`).
+**Barrel surface (`index.ts`)** — value exports only, grouped by the module each re-export block names, exhaustively and in source order: `DEFAULT_SOURCE`, `SOURCE_ENV_VAR`, `getProjectConfigPath`, `loadProjectSourceConfig`, `loadGlobalSourceConfig`, `loadSourceRepoConfig`, `resolveSource`, `resolveAuthor`, `resolveBranding`, `resolvePrimarySourceEntry`, `isDefaultSource`, `isLocalSource`, `isPublicCatalogueCheckout`, `offersBuiltInStacks`, `validateSourceFormat` (from `config.ts`); `generateProjectConfigFromSkills`, `buildStackProperty` (`config-generator.ts`); `mergeConfigs`, `mergeWithExistingConfig` (`config-merger.ts`); `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds` (`scope-predicates.ts`); **`ConfigLoadError`**, `configDirsInPlay`, `findConfigLoadFailures`, `loadInstalledConfig`, `loadProjectConfig`, `loadProjectConfigFromDir`, `validateProjectConfig` (`project-config.ts`); `defineConfig`; `defaultCategories`; `defaultRules`; `defaultStacks`; **`ConfigDefaultExportError`**, `loadConfig` (`config-loader.ts`); `generateProjectConfigTypesSource`, `getGlobalConfigTypesPath` (`config-types-writer.ts`).
 
 `ConfigSchemaError` is the sibling of `ConfigDefaultExportError` and is **not** on the barrel — `configuration/config.ts` imports it by path.
 
@@ -65,12 +70,23 @@ Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`,
 
 ## Config File Locations
 
-| File                 | Path                            | Purpose                                      |
-| -------------------- | ------------------------------- | -------------------------------------------- |
-| Project config       | `.claude-src/config.ts`         | Skills, agents, stack, marketplace, branding |
-| Project config types | `.claude-src/config-types.ts`   | Auto-generated type unions for config        |
-| Global config        | `~/.claude-src/config.ts`       | Global-scope skills, agents, stack           |
-| Global config types  | `~/.claude-src/config-types.ts` | Auto-generated global type unions            |
+`<source folder>` is the folder that scope keeps one provider's installation in —
+`.agents-inc/<provider>` (`.agents-inc/claude` or `.agents-inc/codex`) for a new installation, and
+`.claude-src` for a Claude installation made before the rename, which is read and written where it
+is indefinitely; no command moves one. Resolved, never composed: `sourceFolderInUse(root, provider)`
+in `src/cli/lib/installation/install-layout.ts` takes the folder already on disk and falls back to
+the new-installation folder only when there is none —
+[concepts/source-folder-layout.md](../concepts/source-folder-layout.md) owns the layout. Every
+user-facing message naming the file builds it with `relativeConfigPath(root, provider)` so it names
+the folder that scope is actually on. `config.ts` carries no provider field; the folder is the
+record.
+
+| File                 | Path                                | Purpose                                      |
+| -------------------- | ----------------------------------- | -------------------------------------------- |
+| Project config       | `<source folder>/config.ts`         | Skills, agents, stack, marketplace, branding |
+| Project config types | `<source folder>/config-types.ts`   | Auto-generated type unions for config        |
+| Global config        | `~/<source folder>/config.ts`       | Global-scope skills, agents, stack           |
+| Global config types  | `~/<source folder>/config-types.ts` | Auto-generated global type unions            |
 
 Config uses a unified `ProjectConfig` type for both marketplace-level settings (`marketplace`, `marketplaceName`, `agentsSource`, `branding`, the five directory overrides) and installation settings (`skills`, `agents`, `stack`, `selectedDomains`). Files are TypeScript (loaded via jiti), not YAML.
 
@@ -78,15 +94,15 @@ Config uses a unified `ProjectConfig` type for both marketplace-level settings (
 
 **File:** `src/cli/lib/configuration/project-config.ts`
 
-`loadProjectConfigFromDir(projectDir)` distinguishes THREE outcomes. **Do not collapse the last two into `null`:** a corrupt `.claude-src/config.ts` then reads as "no config", `compile` treats the project as config-less, and every built-in agent is rebuilt.
+`loadProjectConfigFromDir(projectDir, provider)` distinguishes THREE outcomes. **Do not collapse the last two into `null`:** a corrupt `config.ts` then reads as "no config", `compile` treats the project as config-less, and every built-in agent is rebuilt. `loadInstalledConfig(dir)` is the same read with the provider taken off the folder (`providerInUse(dir)`), for a caller that holds a directory and no provider.
 
-| On disk                                                           | Outcome                                          | Signal                                                |
-| ----------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
-| No file at `<dir>/.claude-src/config.ts`                          | `null`                                           | `verbose("Project config not found at ...")`          |
-| File loads, exports an object, passes `projectConfigLoaderSchema` | `LoadedProjectConfig` (`{ config, configPath }`) | —                                                     |
-| `loadConfig()` throws (syntax/evaluation error)                   | **throws `ConfigLoadError`**                     | `reason` = `getErrorMessage(error)`                   |
-| Loaded value is falsy or not an object (no usable default export) | **throws `ConfigLoadError`**                     | `reason` = `"the file has no valid default export"`   |
-| `projectConfigLoaderSchema.safeParse` fails                       | **throws `ConfigLoadError`**                     | `reason` = `formatZodErrors(result.error).join("; ")` |
+| On disk                                                           | Outcome                                                    | Signal                                                                   |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| No file at `<dir>/<source folder>/config.ts`                      | `null`                                                     | `verbose("Project config not found at ...")` (`Global` at the home root) |
+| File loads, exports an object, passes `projectConfigLoaderSchema` | `LoadedProjectConfig` (`{ config, configPath, provider }`) | —                                                                        |
+| `loadConfig()` throws (syntax/evaluation error)                   | **throws `ConfigLoadError`**                               | `reason` = `getErrorMessage(error)`                                      |
+| Loaded value is falsy or not an object (no usable default export) | **throws `ConfigLoadError`**                               | `reason` = `"the file has no valid default export"`                      |
+| `projectConfigLoaderSchema.safeParse` fails                       | **throws `ConfigLoadError`**                               | `reason` = `formatZodErrors(result.error).join("; ")`                    |
 
 **`ConfigLoadError`** (exported from `project-config.ts` and re-exported by `src/cli/lib/configuration/index.ts`) carries `configPath` and `reason` as readonly fields; its message is `` `Config at '${configPath}' could not be loaded: ${reason}` ``.
 
@@ -117,13 +133,19 @@ names a field the author can go and correct; a module that exports `export const
 has nothing wrong with its contents at all, and validating the module NAMESPACE against the schema
 is what once told such an author a field was missing from a file they could see it in.
 
-### `loadSourceConfig` raises every load failure — only a MISSING file is `null`
+### The source-config readers raise every load failure — only a MISSING file is `null`
 
-`loadSourceConfig(dir, scope)` (private in `configuration/config.ts`, reached via
-`loadProjectSourceConfig` / `loadGlobalSourceConfig`) answers `null` for exactly two states: no file
-on disk, and a file that evaluated and declared nothing. **Every way of failing raises** (owner
-ruling 2026-08-20). Its `catch` — factored out as `readSourceConfigOrRefuse` — hands on a
-self-describing refusal as itself and wraps everything else:
+Two readers in `configuration/config.ts` read a config's scalar settings, and both end in the private
+`readSourceConfigOrRefuse`:
+
+| Reader                                                                                             | Reads                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loadSourceConfig(dir, scope)` (private), via `loadProjectSourceConfig` / `loadGlobalSourceConfig` | An INSTALLATION's own config, at `getInstalledConfigPath(dir)` — inside the provider folder the directory holds                                                                                                                                                         |
+| `loadSourceRepoConfig(basePath)`                                                                   | A MARKETPLACE REPOSITORY's config about itself, which is provider-neutral: `<base>/.agents-inc/config.ts`, else `<base>/.claude-src/config.ts`, the first found winning. The old name has no sunset, because the CLI cannot move a folder in a repository it only reads |
+
+Each answers `null` for exactly two states: no file on disk, and a file that evaluated and declared
+nothing. **Every way of failing raises** (owner ruling 2026-08-20). `readSourceConfigOrRefuse` hands
+on a self-describing refusal as itself and wraps everything else:
 
 ```ts
 if (describesItsOwnFault(error)) throw error;
@@ -142,25 +164,29 @@ The third state used to return `null`, and `resolveSource` reads the return valu
 walked past that rung to `DEFAULT_SOURCE` and installed from a marketplace nobody named while a
 config naming a private one sat unread on disk. `compile` never showed it because
 `detectInstallation` refuses first; the commands that run no detection and no `ensureConfigReadable`
-did, `search` among them. **Do not restore a `return null` in that catch**, and do not add a fourth
-reader of this file without giving it the same posture —
-`src/cli/lib/configuration/__tests__/config-readers-agree.test.ts` holds all four to the contract
-and asserts the roster, so a fifth reddens it.
+did, `search` among them. **Do not restore a `return null` in that catch**, and do not add another
+reader of a `config.ts` without giving it the same posture —
+`src/cli/lib/configuration/__tests__/config-readers-agree.test.ts` holds every reader, from
+`config.ts` and `project-config.ts` alike, to the contract and asserts its roster against what the
+two modules export, so a reader added without a row reddens it.
 
 **Every call site chose abort or degrade**, and each says which in a comment where it stands:
 
-| Call site                                                     | Posture                                                                                 |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `loadSkillsMatrixFromSource` (`loading/source-loader.ts`)     | ABORT — the marketplace every returned skill resolves against                           |
-| `loadAndMergeFromBasePath` (`loading/source-loader.ts`)       | ABORT — the marketplace's own `skillsDir` / `stacksFile`                                |
-| `fetchAgentDefinitionsFromRemote` (`agents/agent-fetcher.ts`) | ABORT — the fetched repository's `agentsDir`                                            |
-| `isSourceRepo` (`source-validator.ts`)                        | ABORT, caught — `doctor`'s `safeCheck`; its other caller asks only where no file exists |
-| `validateSource` (`source-validator.ts`)                      | ABORT, caught — `validateOneSource` turns it into an issue against that marketplace     |
-| `validateRegisteredSources` (`content-validator.ts`)          | **DEGRADE** — `readsConfig: true` stands the row down; `safeCheck` backstops            |
-| `resolveAndLogSource` (`commands/compile.ts`)                 | ABORT, unreachable — `detectInstallation` refuses the same file first                   |
-| `ensureMinimalConfig` (`commands/eject.ts`)                   | ABORT on the global half; the project half is unreachable behind a `fileExists` guard   |
-| `recordSource` (`commands/eject.ts`)                          | ABORT — see the note below                                                              |
-| `mergeWithExistingConfig` (`configuration/config-merger.ts`)  | ABORT, unreachable — `loadProjectConfig` reads the same file and throws first           |
+| Call site                                                     | Reader                                         | Posture                                                                                 |
+| ------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `loadSkillsMatrixFromSource` (`loading/source-loader.ts`)     | `resolveSource`                                | ABORT — the marketplace every returned skill resolves against                           |
+| `loadAndMergeFromBasePath` (`loading/source-loader.ts`)       | `loadSourceRepoConfig`                         | ABORT — the marketplace's own `skillsDir` / `stacksFile`                                |
+| `fetchAgentDefinitionsFromRemote` (`agents/agent-fetcher.ts`) | `loadSourceRepoConfig`                         | ABORT — the fetched repository's `agentsDir`                                            |
+| `isSourceRepo` (`source-validator.ts`)                        | `loadSourceRepoConfig`                         | ABORT, caught — `doctor`'s `safeCheck`; its other caller asks only where no file exists |
+| `validateSource` (`source-validator.ts`)                      | `loadSourceRepoConfig`                         | ABORT, caught — `validateOneSource` turns it into an issue against that marketplace     |
+| `validateRegisteredSources` (`content-validator.ts`)          | `resolvePrimarySourceEntry` -> `resolveSource` | **DEGRADE** — `readsConfig: true` stands the row down; `safeCheck` backstops            |
+| `resolveAndLogSource` (`commands/compile.ts`)                 | `resolveSource`                                | ABORT, unreachable — `detectInstallation` refuses the same file first                   |
+| `ensureMinimalConfig` (`commands/eject.ts`)                   | `resolveSource`, `loadProjectSourceConfig`     | ABORT on the global half; the project half is unreachable behind a `fileExists` guard   |
+| `recordSource` (`commands/eject.ts`)                          | `loadProjectSourceConfig`                      | ABORT — see the note below                                                              |
+| `mergeWithExistingConfig` (`configuration/config-merger.ts`)  | `loadProjectSourceConfig`                      | ABORT, unreachable — `loadProjectConfig` reads the same file and throws first           |
+
+`resolveSource` reaches `loadSourceConfig` through `loadEffectiveSourceConfig` — the project's own
+config, then the global one.
 
 `recordSource` is the site the posture cost something real. It reads the existing config, overlays
 one scalar and hands the partial to `writeProjectPartial`. The `?? {}` on that read is still there
@@ -181,31 +207,32 @@ root, so `loadEffectiveSourceConfig` cannot label one file both `origin: "projec
 
 ### A fourth state one layer up — the config that loads and declares nothing
 
-`detectInstallationInDir` (`installation/installation.ts`) adds a `null` of its own on top of the three above: a config that loads cleanly and declares neither skills nor agents is **content-less** and is not an installation, so `init` routes to the setup wizard instead of the dashboard. The predicate is `declaresNoContent(config)`, exported for exactly one reason — `doctor` has to ask the same question, and two surfaces answering it differently is what put `1 config validated` and `.claude-src/config.ts not found` on one screen four lines apart.
+`detectInstallationInDir` (`installation/installation.ts`) adds a `null` of its own on top of the three above: a config that loads cleanly and declares neither skills nor agents is **content-less** and is not an installation, so `init` routes to the setup wizard instead of the dashboard. The predicate is `declaresNoContent(config)`, exported for exactly one reason — `doctor` has to ask the same question, and two surfaces answering it differently is what put `1 config validated` and `<source folder>/config.ts not found` on one screen four lines apart.
 
-**A caller that maps a config to `null` for a reason of its own owes its consumers the reason alongside the `null`.** `detectInstallation` answers "is there an installation here", not "is there a config here"; a reporting surface that reads its `null` as the second question prints a falsehood every time the two answers differ. `doctor` therefore re-asks `loadProjectConfigFromDir(cwd)` when detection says no, and reports three distinct rows:
+**A caller that maps a config to `null` for a reason of its own owes its consumers the reason alongside the `null`.** `detectInstallation` answers "is there an installation here", not "is there a config here"; a reporting surface that reads its `null` as the second question prints a falsehood every time the two answers differ. `doctor` therefore re-asks `loadInstalledConfig(cwd)` when detection says no, and reports three distinct rows:
 
-| State                                   | `Config Valid` row                                                    | Status |
-| --------------------------------------- | --------------------------------------------------------------------- | ------ |
-| No config in the cwd                    | `.claude-src/config.ts not found`                                     | fail   |
-| Loads, declares no skills and no agents | `.claude-src/config.ts is valid but declares no skills and no agents` | warn   |
-| Loads with content                      | `.claude-src/config.ts is valid`                                      | pass   |
+| State                                   | `Config Valid` row                                                        | Status |
+| --------------------------------------- | ------------------------------------------------------------------------- | ------ |
+| No config in the cwd                    | `<source folder>/config.ts not found`                                     | fail   |
+| Loads, declares no skills and no agents | `<source folder>/config.ts is valid but declares no skills and no agents` | warn   |
+| Loads with content                      | `<source folder>/config.ts is valid`                                      | pass   |
 
 The middle row is a **warning, not an error**: the file is valid and nothing needs repairing. `init` writes exactly that shape as the blank global pair (`ensureBlankPair` → `generateBlankGlobalConfigSource`) on every project setup, so the state has a legitimate producer; `init` also refuses to create one as a _project_ config, hard-erroring on a selection with no skills and no agents. An unreadable config never reaches this row — the content layer reports it and the operational layer is skipped. Pinned by `e2e/commands/doctor-corrupt-config.e2e.test.ts`.
 
-Two lenient repairs happen only on the success path, both with a `warn()`: a missing `name` defaults to `path.basename(projectDir)`, and a missing `skills` array defaults to `[]`. `agents` is NOT defaulted by the loader.
+Three lenient repairs happen only on the success path: a missing `name` defaults to `path.basename(projectDir)` and a missing `skills` array to `[]`, each with a `warn()`, and a missing `agents` array defaults to `[]` silently — the loader schema admits its absence and `ProjectConfig` declares it required.
 
 ### Who handles the throw
 
-| Caller                                                                                         | Behaviour on `ConfigLoadError`                                                                     |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `ensureConfigReadable` (`src/cli/base-command.ts`, run by `edit` + `init` as their first step) | Catches, hard-errors with `configUnreadableError(error.message)` before anything renders           |
-| `compile` (`src/cli/commands/compile.ts` → `detectInstallations`)                              | Catches, hard-errors with `this.error(error.message, { exit: EXIT_CODES.ERROR })` before any write |
-| `detectProject` (`src/cli/lib/operations/project/detect-project.ts`)                           | Catches, returns `null` so `doctor` reports a config problem instead of crashing                   |
-| `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`)                         | Does NOT catch — propagates, so no phantom eject installation is fabricated                        |
-| `uninstall` — GLOBAL config (`src/cli/commands/uninstall.tsx`)                                 | A corrupt global config during deregistration is warned, never fatal                               |
-| `uninstall` — PROJECT config (`loadUninstallConfig`, same file)                                | Catches `ConfigLoadError` **only**, warns, returns `null`; the uninstall proceeds and exits 0      |
-| `mergeWithExistingConfig` (`config-merger.ts`)                                                 | Does NOT catch — `loadProjectConfig` throws straight through to the wizard save path               |
+| Caller                                                                                                    | Behaviour on `ConfigLoadError`                                                                                                             |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ensureConfigReadable` (`src/cli/base-command.ts`, run by `edit` + `init` before anything loads a config) | Catches, hard-errors with `configUnreadableError(error.message)` before anything renders                                                   |
+| `configuredSkillsAt` (`src/cli/lib/hosts/configured-placements.ts`, under `unofferablePlacementsFound`)   | Catches `ConfigLoadError` **only** and contributes no finding — `ensureConfigReadable` and `doctor`'s Config row report that fault by name |
+| `compile` (`src/cli/commands/compile.ts` → `detectInstallations`)                                         | Catches, hard-errors with `this.error(error.message, { exit: EXIT_CODES.ERROR })` before any write                                         |
+| `detectProject` (`src/cli/lib/operations/project/detect-project.ts`)                                      | Catches, returns `null` so `doctor` reports a config problem instead of crashing                                                           |
+| `detectInstallationInDir` (`src/cli/lib/installation/installation.ts`)                                    | Does NOT catch — propagates, so no phantom eject installation is fabricated                                                                |
+| `uninstall` — GLOBAL config (`src/cli/commands/uninstall.tsx`)                                            | A corrupt global config during deregistration is warned, never fatal                                                                       |
+| `uninstall` — PROJECT config (`loadUninstallConfig`, same file)                                           | Catches `ConfigLoadError` **only**, warns, returns `null`; the uninstall proceeds and exits 0                                              |
+| `mergeWithExistingConfig` (`config-merger.ts`)                                                            | Does NOT catch — `loadProjectConfig` throws straight through to the wizard save path                                                       |
 
 The two `uninstall` rows are the same posture applied at both ends, and the second one is newer. `loadUninstallConfig` narrows before swallowing:
 
@@ -213,19 +240,19 @@ The two `uninstall` rows are the same posture applied at both ends, and the seco
 if (!(error instanceof ConfigLoadError)) throw error;
 ```
 
-so a genuine fault still propagates. Its warn text is `Could not read the project config — plugins and compiled agents it lists may be left behind: <reason>`. An unreadable config is then treated exactly like a **missing** one, because an unreadable config is precisely when a user needs to uninstall; before this, a `ConfigLoadError` escaped `run()` and the only way out was to hand-delete `.claude-src/`. Only the removal _plan_ degrades — the plugins and compiled agents the config named can no longer be identified, while file removal proceeds. Full flow in `reference/commands/index.md` → `uninstall`.
+so a genuine fault still propagates. Its warn text is `Could not read the project config — plugins and compiled agents it lists may be left behind: <reason>`. An unreadable config is then treated exactly like a **missing** one, because an unreadable config is precisely when a user needs to uninstall; before this, a `ConfigLoadError` escaped `run()` and the only way out was to hand-delete the source folder. Only the removal _plan_ degrades — the plugins and compiled agents the config named can no longer be identified, while file removal proceeds. Full flow in `reference/commands/index.md` → `uninstall`.
 
-**Exhaustiveness.** Four call sites in non-test `src/` narrow on the error explicitly (`error instanceof ConfigLoadError`): `configLoadFailure` in `configuration/project-config.ts` (which `BaseCommand.ensureConfigReadable` reaches through `findConfigLoadFailures`), `compile.ts`, `detect-project.ts`, and `uninstall.tsx`'s `loadUninstallConfig`. The `uninstall` GLOBAL row is a **bare** `catch (error)` that warns on anything, so it handles a `ConfigLoadError` without naming the class. The remaining two rows (`detectInstallationInDir`, `mergeWithExistingConfig`) are statements about _absence_ of a catch and so are invisible to a grep — they are listed because propagating is itself the documented posture.
+**Exhaustiveness.** Five call sites in non-test `src/` narrow on the error explicitly (`error instanceof ConfigLoadError`): `configLoadFailure` in `configuration/project-config.ts` (which `BaseCommand.ensureConfigReadable` reaches through `findConfigLoadFailures`), `compile.ts`, `detect-project.ts`, `configuredSkillsAt` in `hosts/configured-placements.ts`, and `uninstall.tsx`'s `loadUninstallConfig`. The `uninstall` GLOBAL row is a **bare** `catch (error)` that warns on anything, so it handles a `ConfigLoadError` without naming the class. The remaining two rows (`detectInstallationInDir`, `mergeWithExistingConfig`) are statements about _absence_ of a catch and so are invisible to a grep — they are listed because propagating is itself the documented posture.
 
 ```
 grep -rn 'ConfigLoadError' src --include='*.ts' --include='*.tsx' | grep -v '\.test\.' | grep -v '__tests__'
 ```
 
-The rest of that output holds no fifth posture: the class definition and its three throw sites plus `findConfigLoadFailures` (`configuration/project-config.ts`), the barrel re-export (`configuration/index.ts`), `toUnreadableConfigIssue` in `lib/content-validator.ts` — a type-only use that renders an already-collected failure as `doctor`'s content-layer row rather than catching one — and three explanatory comments, in `installation.ts`, `configuration/config-merger.ts` and `utils/messages.ts`.
+The rest of that output holds no other posture: the class definition and its three throw sites plus `findConfigLoadFailures` (`configuration/project-config.ts`), the barrel re-export (`configuration/index.ts`), `toUnreadableConfigIssue` in `lib/content-validator.ts` — a type-only use that renders an already-collected failure as `doctor`'s content-layer row rather than catching one — and three explanatory comments, in `installation.ts`, `configuration/config-merger.ts` and `utils/messages.ts`.
 
-**`edit` and `init` never reach the rows below them.** `ensureConfigReadable` runs first in both commands and refuses an unreadable config outright, so `detectProject`'s `null` no longer stands in for one there (it still does for `doctor`), and `mergeWithExistingConfig`'s propagation is unreachable from a wizard save. Both configs a run reads are checked — the project's own and, from a project, the global one every project write inlines — because a corrupt GLOBAL config with an intact project config otherwise carried the whole wizard before failing at the write. There are no versioned migrations: the message says to recreate the configuration, names `uninstall` (which deliberately tolerates the same corruption, two rows below) and the editor URL. Full wording contract: `reference/commands/index.md` → "Unreadable configs are recreated, not edited".
+**`edit` and `init` never reach the rows below them.** `ensureConfigReadable` runs in both commands before anything loads a config — what precedes it (`init`'s provider settling, `edit`'s ambiguous-installation refusal, which only asks which config files exist, and the `--ui` routes that only open the editor) loads none — and refuses an unreadable config outright, so `detectProject`'s `null` no longer stands in for one there (it still does for `doctor`), and `mergeWithExistingConfig`'s propagation is unreachable from a wizard save. Both configs a run reads are checked — the project's own and, from a project, the global one every project write inlines — because a corrupt GLOBAL config with an intact project config otherwise carried the whole wizard before failing at the write. There are no versioned migrations: the message says to recreate the configuration, names `uninstall` (which deliberately tolerates the same corruption, two rows below) and the editor URL. Full wording contract: `reference/commands/index.md` → "Unreadable configs are recreated, not edited".
 
-`loadProjectConfig(projectDir)` layers a home-directory fallback on top: project dir first, then `os.homedir()` when `projectDir` is not already home. Both legs can throw `ConfigLoadError`.
+`loadProjectConfig(projectDir)` layers a home-directory fallback on top: project dir first, then `os.homedir()` when `projectDir` is not already home. **The fallback stays inside one provider**, read off the project with `providerInUse(projectDir)` — a Codex project under a Claude global inherits nothing, exactly as if the global were absent. Both legs can throw `ConfigLoadError`.
 
 ### Content-less config is not an installation
 
@@ -443,7 +470,7 @@ block by calling it. The pair is a **trust** distinction, not a scope one:
 
 **Authored data is read as written; persisted data is reconciled against the live catalogue.** A
 source's `stacks.ts` ships alongside the catalogue it references, so there is no drift to reconcile
-and nothing to overrule. A user's `.claude-src/config.ts` was written by an older version of
+and nothing to overrule. A user's `config.ts` was written by an older version of
 the catalogue and the user cannot be asked to migrate it, so `rekeyToLiveCategories` — applied inside
 `normalizeStackRecord` and nowhere else — re-keys each entry under the category the catalogue names
 today.
@@ -527,8 +554,8 @@ Eight exported functions, exhaustively — bound to the module by `scripts/check
 
 1. `--marketplace` flag value (`request.flag`)
 2. `CC_MARKETPLACE` environment variable (`SOURCE_ENV_VAR`) — **`init` only**
-3. `.claude-src/config.ts` **`marketplace`** field (project-level)
-4. `~/.claude-src/config.ts` **`marketplace`** field (global-level)
+3. The project's `config.ts` **`marketplace`** field (project-level)
+4. The global `config.ts` **`marketplace`** field (global-level)
 5. `DEFAULT_SOURCE` — `github:agents-inc/skills`, composed from `GITHUB_SOURCE.GITHUB_PREFIX`
 
 **The flag is `--marketplace` and the variable is `CC_MARKETPLACE`.** Neither `--source` nor
@@ -685,20 +712,22 @@ Falls back to `scope: saved?.scope ?? "global"` and `origin: saved?.origin ?? de
 
 ## Config I/O
 
-| Function                      | Purpose                                                                                                                                   | File                                               |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `loadProjectSourceConfig()`   | Load .claude-src/config.ts (partial)                                                                                                      | `config.ts`                                        |
-| `loadGlobalSourceConfig()`    | Load ~/.claude-src/config.ts (partial)                                                                                                    | `config.ts`                                        |
-| `loadProjectConfig()`         | Load + validate with global fallback; **throws `ConfigLoadError`** on a corrupt file at either leg                                        | `project-config.ts`                                |
-| `loadProjectConfigFromDir()`  | Load + validate from specific dir only; `null` only when the file is MISSING, **throws `ConfigLoadError`** when it exists but is unusable | `project-config.ts`                                |
-| `validateProjectConfig()`     | Validate an already-loaded value: `projectConfigLoaderSchema` plus required `name` and `agents`                                           | `project-config.ts`                                |
-| `generateConfigSource()`      | Generate TypeScript source string                                                                                                         | `config-writer.ts`                                 |
-| `loadConfig()`                | Generic TypeScript config loader (jiti)                                                                                                   | `config-loader.ts`                                 |
-| `defineConfig()`              | Type-safe config helper (identity fn)                                                                                                     | `define-config.ts`                                 |
-| `getProjectConfigPath()`      | Build absolute path to project config                                                                                                     | `install-base-dir.ts` (re-exported by `config.ts`) |
-| `resolvePrimarySourceEntry()` | The one marketplace as a `SourceEntry` — the shape `search` and `doctor` list sources in                                                  | `config.ts`                                        |
-| `resolveAuthor()`             | Resolve author from effective config                                                                                                      | `config.ts`                                        |
-| `writeProjectPartial()`       | Write a partial PROJECT config, filling defaults; refuses `$HOME`                                                                         | `config-gate/index.ts`                             |
+| Function                      | Purpose                                                                                                                                                | File                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `loadProjectSourceConfig()`   | Load the project's own source-folder `config.ts` (partial)                                                                                             | `config.ts`                                        |
+| `loadGlobalSourceConfig()`    | Load the global home's source-folder `config.ts` (partial)                                                                                             | `config.ts`                                        |
+| `loadSourceRepoConfig()`      | Load a marketplace repository's own provider-neutral `config.ts` (partial)                                                                             | `config.ts`                                        |
+| `loadProjectConfig()`         | Load + validate with global fallback within one provider; **throws `ConfigLoadError`** on a corrupt file at either leg                                 | `project-config.ts`                                |
+| `loadProjectConfigFromDir()`  | Load + validate from one dir and one named provider; `null` only when the file is MISSING, **throws `ConfigLoadError`** when it exists but is unusable | `project-config.ts`                                |
+| `loadInstalledConfig()`       | `loadProjectConfigFromDir` with the provider read off the folder                                                                                       | `project-config.ts`                                |
+| `validateProjectConfig()`     | Validate an already-loaded value: `projectConfigLoaderSchema` plus required `name` and `agents`                                                        | `project-config.ts`                                |
+| `generateConfigSource()`      | Generate TypeScript source string                                                                                                                      | `config-writer.ts`                                 |
+| `loadConfig()`                | Generic TypeScript config loader (jiti)                                                                                                                | `config-loader.ts`                                 |
+| `defineConfig()`              | Type-safe config helper (identity fn)                                                                                                                  | `define-config.ts`                                 |
+| `getProjectConfigPath()`      | Build absolute path to project config                                                                                                                  | `install-base-dir.ts` (re-exported by `config.ts`) |
+| `resolvePrimarySourceEntry()` | The one marketplace as a `SourceEntry` — the shape `search` and `doctor` list sources in                                                               | `config.ts`                                        |
+| `resolveAuthor()`             | Resolve author from effective config                                                                                                                   | `config.ts`                                        |
+| `writeProjectPartial()`       | Write a partial PROJECT config, filling defaults; refuses `$HOME`                                                                                      | `config-gate/index.ts`                             |
 
 ## Config Writer
 
@@ -715,7 +744,7 @@ so the editor's output preview draws the bytes an install writes:
 | `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)            |
 
 `generateBlankGlobalConfigTypesSource()` moved with the types-half renderers. One function still
-lives in `config-writer.ts`: `getGlobalConfigImportPath()`, the absolute path to `~/.claude-src/`,
+lives in `config-writer.ts`: `getGlobalConfigImportPath()`, the absolute path to the global scope's own source folder,
 which is `os.homedir()` and so the one thing the package cannot hold.
 
 The `generateConfigSource()` function accepts an optional `ConfigSourceOptions` parameter:
@@ -750,7 +779,7 @@ When a global installation exists, project `config-types.ts` imports from global
 
 ### Writer selection rule
 
-When writing a PROJECT `config-types.ts` (`<projectDir>/.claude-src/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/.claude-src/config-types.ts`), the standalone unions apply — emitted only by `config-gate/pair-writer.ts`. The rule is structural: `regenerateConfigTypes` throws `GlobalPairWriteViolation` at `$HOME`, and the standalone renderer is private to the gate.
+When writing a PROJECT `config-types.ts` (`<projectDir>/<source folder>/config-types.ts` where `projectDir` is not the global install root), the import-from-global writer `regenerateConfigTypes` applies. When writing the GLOBAL `config-types.ts` (`~/<source folder>/config-types.ts`), the standalone unions apply — emitted only by `config-gate/pair-writer.ts`. The rule is structural: `regenerateConfigTypes` throws `GlobalPairWriteViolation` at `$HOME`, and the standalone renderer is private to the gate.
 
 In `config-gate/`:
 
@@ -766,7 +795,7 @@ Helpers `buildConfigTypesBackgroundData(matrix, agents)` (beside the type, in `c
 The documented workflow is "hand-edit `config.ts`, then run `compile`", so a compile pass that leaves the unions untouched strands them. `Compile.refreshConfigTypes(pass, cwd, seatedMatrix)` (`src/cli/commands/compile.ts`) runs once per compile pass:
 
 0. `seatedMatrix === null` (the pass's catalogue load failed) returns immediately with `this.warn(configTypesRefreshFailed("no skills catalogue could be loaded for <projectDir>"))` — no config is loaded, no `config-types.ts` is written, and at home nothing is fanned out.
-1. `loadProjectConfigFromDir(pass.projectDir)` — a `null` (no config) skips the refresh with a `verbose()` line.
+1. `loadInstalledConfig(pass.projectDir)` — a `null` (no config) skips the refresh with a `verbose()` line.
 2. `reconcileTypesFromDisk(pass.projectDir, loaded.config, { matrix: seatedMatrix, agents: pass.agents }, { currentProjectDir: cwd })`.
 
 `seatedMatrix` is the VALUE `Compile.seatMatrixForPass(projectDir)` returned (`MergedSkillsMatrix | null`), threaded down from `runCompilePass` rather than read back off the module-level singleton — so this refresh cannot run against a seat other than the one its own pass asked for. That call is the pass's FIRST act, `loadSkillsMatrixFromSource({ projectDir, skipExtraSources: true, matrixOnly: true })`, and it seats the singleton in `src/cli/lib/matrix/matrix-provider.ts` on the way; `matrixOnly` skips the source clone for the default source so compile stays offline on a cold cache. The order matters beyond avoiding a second load: `compileAgents` renders through `statedUsageFor` and `liveCategoryOf` (`src/cli/lib/stacks/stacks-loader.ts`), which read that singleton directly, so an unseated pass renders every locally-installed skill's usage line off the generic per-category placeholder rather than its stated `usageGuidance`.
@@ -785,7 +814,7 @@ The unions follow the **config**, not the discovered skills: `runCompilePass` ca
 
 **Neither function takes a catalogue.** Each project's own is seated per project by `withCatalogueSeatedFor` (`src/cli/lib/loading/catalogue-seat.ts`), and this is the path that needs it most: the standalone form these projects fall back to declares its unions from the catalogue outright rather than extending an imported one, so the project's own skills are the only thing keeping their categories in the file. Derived from the uninstalling command's catalogue, a global uninstall would take each project's own taxonomy with it.
 
-`uninstall.tsx` calls `propagateGlobalRemoval` from `updateRegisteredProjects`, AFTER the global `.claude-src` manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`. `prepareGlobalPropagation` captures `GlobalPropagationData { globalConfig, matrix, agents }` BEFORE the removal, since source resolution reads the config being deleted. Only `globalConfig` and `agents` are read downstream: `propagateGlobalRemoval` takes the pair as a `LoadedGateDeps` and hands the prune `deps.agents` alone, the catalogue having become a per-project seat. Unreachable projects are warned (`registeredProjectUpdateSkipped`) and never abort the uninstall. **The prune now also recompiles the pruned projects' agents** — they were compiled against the global rows this uninstall just removed — and `uninstall.tsx` renders `GateReport.recompile` after the `registeredProjectsUpdated` line. `propagateGlobalRemoval` writes no pair: the pair it would derive from has just been deleted, which is why it is its own entry point rather than a flag on a writing one.
+`uninstall.tsx` calls `propagateGlobalRemoval` from `updateRegisteredProjects`, AFTER the global manifest is removed, so the regenerated project types fall back to the standalone form instead of importing a deleted global `config-types.ts`. `prepareGlobalPropagation` captures `GlobalPropagationData { globalConfig, matrix, agents }` BEFORE the removal, since source resolution reads the config being deleted. Only `globalConfig` and `agents` are read downstream: `propagateGlobalRemoval` takes the pair as a `LoadedGateDeps` and hands the prune `deps.agents` alone, the catalogue having become a per-project seat. Unreachable projects are warned (`registeredProjectUpdateSkipped`) and never abort the uninstall. **The prune now also recompiles the pruned projects' agents** — they were compiled against the global rows this uninstall just removed — and `uninstall.tsx` renders `GateReport.recompile` after the `registeredProjectsUpdated` line. `propagateGlobalRemoval` writes no pair: the pair it would derive from has just been deleted, which is why it is its own entry point rather than a flag on a writing one.
 
 ## Scope-Aware Config Splitting
 
@@ -795,8 +824,8 @@ Config supports `"project"` and `"global"` scopes on both skills and agents. Dur
 
 1. `splitConfigByScope()` partitions the merged config into global and project parts
 2. `writeScopedFromWizard()` in `config-gate/index.ts` writes:
-   - Global config to `~/.claude-src/config.ts` (standalone)
-   - Project config to `{projectDir}/.claude-src/config.ts` (imports from global)
+   - Global config to `~/<source folder>/config.ts` (standalone)
+   - Project config to `{projectDir}/<source folder>/config.ts` (imports from global)
 3. Config-types files are split similarly: global gets standalone types, project extends global
 
 `writeScopedFromWizard` returns a `GateReport` = `{ globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a record of completed work, not a to-do list: the registered projects a global change fanned out into have **already** had their agents recompiled by the time it resolves (see "Propagated-project recompilation" below).
@@ -824,7 +853,7 @@ One shared step now runs immediately before BOTH writes:
 - **Idempotent** — an id the project already tombstones is skipped.
 - Reads `exclusive` from the **merged matrix** (`isExclusiveCategory`), so a source repo's category override is honoured. An **undeclared** flag is treated as non-exclusive.
 - **Never throws** on a custom skill absent from the matrix: `categoryOfSkill` returns `undefined` for a missing entry and for `LOCAL_PSEUDO_CATEGORY`, and neither participates in category rules.
-- **Project-local only.** The global config passed in is read, never rewritten — a tombstone is never written into `~/.claude-src/config.ts`.
+- **Project-local only.** The global config passed in is read, never rewritten — a tombstone is never written into `~/<source folder>/config.ts`.
 
 **The project's own skill wins locally.** This is deliberately asymmetric with `toggleTechnology`'s exclusive-swap guard, which refuses a user-initiated swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install landed on top of pre-existing project state and letting it win would silently uninstall the user's own skill.
 
@@ -832,7 +861,7 @@ One shared step now runs immediately before BOTH writes:
 
 ## Propagated-Project Recompilation
 
-Propagation itself rewrites a registered project's `config.ts` / `config-types.ts` but never its compiled `.claude/agents/*.md`. **The gate does that step, not the caller**: `config-gate/recompile.ts` runs `recompilePropagatedProjectAgents(projectDirs)` (`src/cli/lib/operations/project/recompile-project-agents.ts`, imported lazily to avoid the lib → operations cycle) over `propagated.updated`, and the result lands on `GateReport.recompile` for the command to render. The earlier contract returned the directories for the caller to recompile — which only `init` and `edit`'s wizard tail ever did, leaving `edit`'s source migration and the global `uninstall` behind.
+Propagation itself rewrites a registered project's `config.ts` / `config-types.ts` but never its compiled sub-agents. **The gate does that step, not the caller**: `config-gate/recompile.ts` runs `recompilePropagatedProjectAgents(projectDirs)` (`src/cli/lib/operations/project/recompile-project-agents.ts`, imported lazily to avoid the lib → operations cycle) over `propagated.updated`, and the result lands on `GateReport.recompile` for the command to render. The earlier contract returned the directories for the caller to recompile — which only `init` and `edit`'s wizard tail ever did, leaving `edit`'s source migration and the global `uninstall` behind.
 
 `recompileRegisteredProjectAgents(projectDir)` recompiles **project scope only** (`scopeFilter: "project"`) — the global agents were already recompiled by the triggering operation's own pass. It passes `discoverInstalledSkills(projectDir).allSkills` explicitly so global-local and project-local skills are not stripped. `recompilePropagatedProjectAgents` loops sequentially with per-project failure isolation, returning `PropagatedRecompileSummary = { rewrittenCount, unchangedCount, failedCount, warnings }`. A project whose agents all came back byte-identical counts as `unchangedCount`, not as a recompile — there is no `recompiledCount` field.
 
@@ -840,7 +869,7 @@ Propagation itself rewrites a registered project's `config.ts` / `config-types.t
 
 **Function:** `resolveBranding()` in `src/cli/lib/configuration/config.ts`
 
-Supports custom branding via `.claude-src/config.ts`:
+Supports custom branding via the scope's `config.ts`:
 
 <!-- prettier-ignore -->
 ```typescript
@@ -860,10 +889,8 @@ in arrival order after every field `CANONICAL_FIELD_ORDER` names — which is al
 precedes `skills` above however the config was assembled. See
 [config/config-writer.md](../config/config-writer.md) → "The emitted pair is already formatted".
 
-Falls back to `DEFAULT_BRANDING` from `src/cli/consts.ts`:
-
-- Name: "Agents Inc."
-- Tagline: "AI-powered development tools"
+Falls back to `DEFAULT_BRANDING` from `src/cli/consts.ts`, whose one field is `NAME: "Agents Inc."` —
+branding configures a name and nothing else (`BrandingConfig` is `{ name?: string }`).
 
 **The fallback is per-FIELD**, and branding is the one thing resolved that way. Every other field
 comes through `loadEffectiveSourceConfig`, which answers with the project's OWN config where it has
@@ -951,14 +978,14 @@ Schema URLs defined in `SCHEMA_PATHS` in `src/cli/consts.ts`.
 
 The operations layer provides `writeProjectConfig()` as a high-level orchestrator that runs the full config pipeline:
 
-1. `buildAndMergeConfig()` -- generates config from wizard result, merges with existing (threads `authoritativeScope` and `wizardResult.unresolvableSkillIds` into `mergeWithExistingConfig`)
-2. Agent load -- uses pre-loaded `options.agents` when provided, otherwise `loadMergedAgents(sourceResult.sourcePath)` for config-types generation
-3. `config-gate::ensureBlankPair()` -- ensures the global config pair exists (when in project context)
+1. Agent load -- `options.agentDefs ?? (await loadAgentDefs())` (`load-agent-defs.ts`), the CLI's own sub-agent definitions for config-types generation; the marketplace is deliberately not consulted
+2. `buildAndMergeConfig()` -- generates config from wizard result, merges with existing (threads `authoritativeScope` and `wizardResult.unresolvableSkillIds` into `mergeWithExistingConfig`)
+3. `config-gate::ensureBlankPair(providerInUse(projectDir))` -- ensures the global config pair of the provider this project is on exists (when in project context)
 4. `config-gate::writeScopedFromWizard()` -- writes config.ts and config-types.ts split by scope, fans global changes out to registered projects and recompiles their agents
 
 | Type                   | Name                  | Purpose                                                                                                    |
 | ---------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `ConfigWriteOptions`   | Input options type    | wizardResult, sourceResult, projectDir, sourceFlag, agents, authoritativeScope                             |
+| `ConfigWriteOptions`   | Input options type    | wizardResult, sourceResult, projectDir, sourceFlag, agentDefs, authoritativeScope                          |
 | `ConfigWriteResult`    | Return type           | config, configPath, wasMerged, existingConfigPath, filesWritten, **propagation: GateReport**               |
 | `writeProjectConfig()` | Orchestrator function | Builds, merges, and writes project config (init/edit); `filesWritten` is 4 in a project context, 2 at home |
 
@@ -970,8 +997,8 @@ Used by `init.tsx` and `edit.tsx` commands. Replaces inlined config writing logi
 
 ## Plugin Install Failure Semantics
 
-Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::handleInstallation` and `edit.tsx::applyPluginChanges` reach `BaseCommand.reportPluginInstalls`, which emits per-skill warnings and then hard-errors via `this.error(..., { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when `claude plugin install` rejected them.
+Plugin install intent is inviolable: when `installPluginSkills` returns a non-empty `failed` array, both `init.tsx::handleInstallation` and `edit.tsx::applyPluginChanges` reach `BaseCommand.reportPluginInstalls`, which emits per-skill warnings and then hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` BEFORE `writeConfigAndCompile` runs. This prevents `config.ts` from being written with orphan entries that claim skills are installed when the host rejected them. Both reach it through `BaseCommand.installPluginSkillsReported`, which first refuses by name any skill no marketplace carries (`unbackedPluginSkillIds`, `unbackedPluginInstallError`) before the host is asked at all.
 
-The same guard covers the eject→plugin scope-migration path: `edit.tsx::applyScopeChanges` runs `executeMigration()` (`mode-migrator.ts`), which returns `pluginInstalls.failed` for any skill whose plugin install failed mid-migration; when that array is non-empty, `edit.tsx` hard-errors via `this.error(pluginInstallFailureError(...), { exit: EXIT_CODES.ERROR })` before `writeConfigAndCompile`, matching the added-skill path. `ejectCopies.failed` is the plugin→eject mirror and refuses on the same terms, through `reportEjectCopies` and `ejectCopyFailureError(...)` — a different sentence for a different remedy, but the same rule: an intent this run could not honour stops it before any config records the intent.
+The same guard covers the eject→plugin source-migration path: `edit.tsx::applyMigrations` runs `executeMigration()` (`mode-migrator.ts`), which returns `pluginInstalls.failed` for any skill whose plugin install failed mid-migration, and hands it to the same `BaseCommand.reportPluginInstalls` before `writeConfigAndCompile`, matching the added-skill path. `ejectCopies.failed` is the plugin→eject mirror and refuses on the same terms, through `reportEjectCopies` and `ejectCopyFailureError(...)` — a different sentence for a different remedy, but the same rule: an intent this run could not honour stops it before any config records the intent.
 
 Uninstall failures are diagnostic-only — they do not produce orphan state and do not trigger a hard-error. This is the "No Plugin-to-Eject Fallback" / orphan-config invariant codified in CLAUDE.md (Data Integrity).

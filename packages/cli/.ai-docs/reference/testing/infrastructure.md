@@ -47,7 +47,11 @@ Vitest is configured with 3 test projects:
 `runCliCommand` (`src/cli/lib/__tests__/helpers/cli-runner.ts`) calls oclif's
 `run(args, { root: CLI_ROOT })`, and oclif resolves that root through `package.json`'s
 `oclif.commands.target`, which is `"./dist/commands"`. Every spec in this project therefore runs
-**the last build**.
+**the last build** — and so does a spec in either other project that calls `runCliCommand`:
+
+```
+grep -rl 'runCliCommand' src --include='*.test.ts' | grep -v '__tests__/commands/'
+```
 
 **A commands-project result is a statement about the last build.** You no longer have
 to remember that, because two layers enforce it:
@@ -68,28 +72,35 @@ editor SAVE is one of them — mainstream editors write the new contents beside 
 rename over it. So a directory holding something ignored that has ITSELF moved since the build has
 an account of its mtime the build does not care about, and `directoriesAnIgnoredChangeAccountsFor`
 drops that directory out of the comparison. **That is what makes editing or adding a spec never
-trip it**, in either tree.
+trip it.**
 
 **What that gives up, exactly:** a build input **deleted** from a directory where a spec, a
 `__tests__` or a `__mocks__` entry was **also** written since the build. Those two events leave one
-reading between them and nothing in it says which of them moved it. Nothing else is given up — a
-build input added or edited carries an mtime of its own and still refuses, and a deletion from a
+reading between them and nothing in it says which of them moved it. The accounting gives up nothing
+else — a build input added or edited carries an mtime of its own and still refuses, and a deletion from a
 directory whose ignored entries all predate the build is still the only account of that directory's
 mtime there is.
 
-**Two trees, not one.** `BUILD_INPUT_TREES` names `packages/cli/src` and
-`packages/matrix/src`, because tsup inlines `@workspace/matrix` into the bundle (`noExternal`) —
-matrix source is compiled into this package's `dist/` exactly as `src/` is, and matrix has no build
-output of its own to go stale instead. Before that, touching a matrix file and running
-`npx vitest run` on a commands spec was a **false green**: 18 tests passed against a `dist/` older
-than every matrix source file. The message names whichever tree moved and, for matrix, why it
-counts. Cost of the second tree: 28 entries, **+0.3 ms** median on a ~25 ms scan (the two trees are
-scanned in parallel; matrix alone measures 0.5 ms). Two behaviours worth knowing: a **deleted**
-matrix source trips it (the parent directory's mtime moves), and so does a **deleted** matrix spec.
-That is a refusal you did not need, never a green you should not have had.
+**Every tree compiled into `dist/`, not only `src/`.** `BUILD_INPUT_TREES` names
+`packages/cli/src` and the three workspace packages tsup inlines into the bundle rather than
+importing (`noExternal` in `tsup.config.ts`): `packages/matrix/src`, `packages/compile/src` and
+`packages/api/src`. Their source is compiled into this package's `dist/` exactly as `src/` is, and
+none has a build output of its own to go stale instead. Before matrix was added, touching a matrix
+file and running `npx vitest run` on a commands spec was a **false green**: 18 tests passed against
+a `dist/` older than every matrix source file. The message names whichever tree moved and, for each
+inlined package, why it counts (`WHY_MATRIX_COUNTS`, `WHY_COMPILE_COUNTS`, `WHY_API_COUNTS`).
 
-A third tree is not needed for `turbo test`: turbo already hashes matrix into the CLI's build task
-even though matrix has no `build` script — see
+**A deletion is seen only below a tree's top level.** There, a **deleted** source trips it (the
+parent directory's mtime moves), and so does a **deleted** spec that sat beside its code rather than
+under `__tests__/`, since the deletion leaves nothing ignored to account for that directory's mtime
+— a refusal you did not need, never a green you should not have had. A file deleted from a tree's
+TOP level is not seen at all: `readEntries` globs `**`, which never returns the tree root itself, so
+the one mtime that deletion moves is never read, and the guard lets the run go ahead over a `dist/`
+that still carries the file. `packages/cli/src` holds no top-level files; the three workspace trees do
+(`find ../matrix/src ../compile/src ../api/src -maxdepth 1 -type f`).
+
+`turbo test` needs none of this: turbo already hashes a workspace dependency into the CLI's build
+task even when that package has no `build` script — see
 [build-and-packaging.md](../build-and-packaging.md#what-turbo-hashes-as-build-input).
 
 Both failure directions were live before that, and both are what the layers exist to stop:
@@ -102,6 +113,29 @@ Both failure directions were live before that, and both are what the layers exis
 Reading a commands-project failure as "my change broke this" before checking the build date is the
 first wrong turn.
 
+### Running the suites
+
+Run them the way CI's `check-cli` job does, from the repository root:
+
+```
+bun run test --filter=agents-inc        # turbo test — the three projects above
+bun run test:e2e --filter=agents-inc    # turbo test:e2e — see e2e-infrastructure.md
+```
+
+The root scripts are `turbo test` and `turbo test:e2e`, and `packages/cli/turbo.json` makes this
+package's own `build` a dependency of both, so `dist/` is rebuilt before either runs. Nothing else
+builds: `npm test` inside `packages/cli` is `vitest run` alone — `package.json`'s `//test` note says
+why there is no `pretest` hook — so it is no substitute for the turbo run. A direct
+`npx vitest run <file>` meets the `globalSetup` refusal below when `dist/` is stale.
+
+**One build at a time.** tsup empties `dist/` at the start of every build (`clean` in
+`tsup.config.ts`), so any second build — another agent's
+`bun run build`, or a second turbo run that rebuilds this package — empties `dist/` under a suite
+that is running from it. `guardAgainstDistReplacement` (below) fails the test in flight with
+`dist/ was replaced while this run was in flight.` rather than an ordinary assertion, and that run is
+evidence of nothing: re-run it with no other build in flight. When several agents share one checkout,
+only one of them may build.
+
 ## Configuration
 
 ```typescript
@@ -112,7 +146,7 @@ first wrong turn.
   disableConsoleIntercept: true,    // Required for @oclif/test + ink-testing-library
   clearMocks: true,
   setupFiles: ["./vitest.setup.ts"],
-  globalSetup: ["./vitest.global-setup.ts"],  // Calls assertDistIsFresh: refuses the run when dist/ predates src/ or matrix/src/
+  globalSetup: ["./vitest.global-setup.ts"],  // Calls assertDistIsFresh: refuses the run when dist/ predates a tree compiled into it
   testTimeout: 10000,
   hookTimeout: 10000,
   coverage: {
@@ -133,14 +167,18 @@ Runs for every test across all projects:
 - **Module scope:** `process.env.AGENTS_INC_API_URL = WORKER_ORIGIN` (`@workspace/api-mocks/fixtures`). `SEED_API_URL` in `src/cli/lib/seed/fetch-seed.ts` is `process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh"`, **read once at module load**, so a spec setting the variable in a `beforeEach` has already imported the production URL and any request it fails to intercept leaves the machine. Setup files run before a test file's imports, which is what makes this the only place the substitution can be made. The value is the mock's own origin because every handler in `@workspace/api-mocks` is anchored on it — see `useMockWorker()` in [`factories.md`](./factories.md).
 - **Module scope:** `process.env.AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1"`. `@oclif/plugin-warn-if-update-available`'s init hook ends by spawning a DETACHED, `unref`'d child that GETs the npm registry and writes `<home>/.cache/agents-inc/version`. Nothing awaits it, so the write lands after the test that started it has finished — inside a fake home `cleanup` has already removed, which is the other side of the `ENOTEMPTY: rmdir` this suite sees. **Per-home placement was never enough on its own**: `helpers/isolated-home.ts` sets the same variable for the life of each fake home, so the specs it covers were never the ones that leaked — the variable is process-wide and names no home, and a spec that runs a command without asking for a home is every bit as much a door. No in-process mock substitutes for it, because a different PROCESS makes the request: neither a `globalThis.fetch` stub nor the MSW worker is anywhere on its path. `src/cli/lib/__tests__/update-check-door-closed-process-wide.test.ts` holds it, and holds it through oclif's own `scopedEnvVarTrue` rather than by spelling — the name is composed from `oclif.bin`, so a spelling assertion reads green over a variable the plugin has stopped consulting. It pairs the closed door with `doorWithoutThePin`, which withdraws the pin and asserts the predicate answers `false`, so the closed state cannot hold vacuously.
 - **`beforeAll`:** Creates the per-run temp home dir (`vitest-home-*`).
-- **`beforeEach`:** Mocks `os.homedir()` to that temp dir, preventing `loadProjectConfig()`'s global fallback from hitting the developer's real `~/.claude-src/config.yaml`; tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override. **Installed per TEST rather than once per file**, because a single `vi.restoreAllMocks()` in a spec's own `afterEach` withdrew the spy for every later test in that file, after which `os.homedir()` answered from the developer's machine — `home-dir-read-at-call-time.test.ts` pins the re-installation. Also calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`).
-- **`beforeEach` and `afterEach`:** `guardAgainstDistReplacement(CLI_ROOT)` — both hooks, one check. A second agent's `bun run build` empties `dist/` mid-run (tsup has `clean: true`), and the `commands` project resolves oclif through `./dist/commands`, so a spec running inside that window fails as an ordinary assertion with no mention of a build. `beforeEach` refuses a test that would run over a replaced build; `afterEach` names the cause on the test that was in flight when the rebuild landed.
+- **`beforeEach`:** Mocks `os.homedir()` to that temp dir, preventing `loadProjectConfig()`'s global fallback from hitting the developer's real global `config.ts`; tests that explicitly override `process.env.HOME` (via `setupIsolatedHome()`) keep their override. **Installed per TEST rather than once per file**, because a single `vi.restoreAllMocks()` in a spec's own `afterEach` withdrew the spy for every later test in that file, after which `os.homedir()` answered from the developer's machine — `home-dir-read-at-call-time.test.ts` pins the re-installation. Also calls `initializeMatrix(BUILT_IN_MATRIX)` and resets the Zustand wizard store (`useWizardStore.getState().reset()`).
+- **`beforeEach` and `afterEach`:** `guardAgainstDistReplacement(CLI_ROOT)` — both hooks, one check. A second agent's `bun run build` empties `dist/` mid-run (tsup's `clean`), and the `commands` project resolves oclif through `./dist/commands`, so a spec running inside that window fails as an ordinary assertion with no mention of a build. `beforeEach` refuses a test that would run over a replaced build; `afterEach` names the cause on the test that was in flight when the rebuild landed.
 - **`afterAll`:** Restores all mocks and removes the temp home dir.
 
 ### Global Setup File (`vitest.global-setup.ts`) and `dist-staleness.ts`
 
-Runs **once per run**, before any spec is collected, and does one thing: throws when `dist/` is
-older than a tree compiled into it (`packages/cli/src` or `packages/matrix/src`). It also throws
+Runs **once per run**, before any spec is collected. Its `setup` does two things, in this order:
+it throws when `dist/` is older than any tree compiled into it (`BUILD_INPUT_TREES`:
+`packages/cli/src` and the `src/` of `packages/matrix`, `packages/compile` and `packages/api`), and
+it then publishes the shared checkout of the default marketplace every isolated home borrows
+(`ensureSharedMarketplaceCheckout` in `helpers/shared-marketplace-checkout.ts`, at a fixed
+`os.tmpdir()` path — see [factories.md](./factories.md)). The freshness check also throws
 when one of those trees scans to nothing, because an empty scan and an unchanged one are
 indistinguishable — a package that moved would take its tree out of the comparison silently, which
 is the exact failure this guard exists to prevent. It is the un-bypassable half of the freshness
@@ -152,17 +190,15 @@ that section for what it ignores and why it refuses instead of rebuilding. Rule
 **It is two files, and which half is where is the point.** The scan, the comparison, the
 `BUILD_INPUT_TREES` list and every message live in `src/cli/lib/testing/dist-staleness.ts`, which
 exports `assertDistIsFresh(cliRoot)` for the global hook, `assertDistIsPresent` and
-`guardAgainstDistReplacement(cliRoot)` for the per-test guard in `vitest.setup.ts`. `vitest.global-setup.ts` holds three statements: it
-resolves its own directory as the CLI package root, exports `setup`, and calls that function.
-Package-root files sit in no tsconfig of this package (`tsconfig.json` includes `src/**/*` only) and
-match no `files` block in `eslint.config.js` — `npx eslint vitest.global-setup.ts` still reports
-_"File ignored because no matching configuration was supplied"_ — so for as long as the logic lived
-there, the one file whose job is to stop a meaningless green was type-checked and linted by nothing
-(finding `2026-08-09-the-guard-that-polices-every-suite-is-checked-by-no-tsc-program-and-no-eslint-config.md`).
-Under `src/` it is inside `tsc --noEmit`, inside `eslint .` including the type-aware layer, and
-covered by `dist-staleness.test.ts` beside it — which drives the real refusals over a fixture tree
-laid out like the repository (`<root>/packages/cli` and `<root>/packages/matrix/src`), so the
-relative matrix hop is asserted rather than assumed.
+`guardAgainstDistReplacement(cliRoot)` for the per-test guard in `vitest.setup.ts`. `vitest.global-setup.ts`
+resolves its own directory as the CLI package root and exports `setup`, which calls
+`assertDistIsFresh` and then `ensureSharedMarketplaceCheckout`.
+The logic stays under `src/` because that is where it has tests. The package-root tool files are
+checked too — `tsconfig.json`'s `include` names them and `ROOT_TOOL_CONFIGS` in `eslint.config.js`
+puts them under the type-aware rules — but a package-root module has no spec beside it. Under `src/`
+it is covered by `dist-staleness.test.ts` — which drives the real refusals over a fixture tree
+laid out like the repository (`<root>/packages/cli` beside the `src/` of `matrix`, `compile` and
+`api`), so each relative hop out of the CLI package is asserted rather than assumed.
 
 Two consequences worth knowing. The module stays **dependency-free beyond node builtins and
 fast-glob**: `globalSetup` is transpiled and evaluated before dist freshness is known, and a module
@@ -171,7 +207,7 @@ specifier in the hook resolves to the `.ts` source through Vitest's own transfor
 involved. And the module is itself inside the tree it scans, so **editing the guard asks for a
 rebuild** before the suite will run. tsup never compiles it (no entry reaches it, so it ships
 nothing), which makes that refusal one you did not need rather than a green you should not have
-had — the same trade the matrix-spec caveat above describes.
+had.
 
 ## Test Directory Structure
 
@@ -179,16 +215,22 @@ had — the same trade the matrix-spec caveat above describes.
 src/cli/lib/__tests__/
   <top-level files>                  # Support modules and whole-suite gate specs — not enumerated here, see below
   factories/                         # Object creation factories
-    index.ts                         # Barrel re-export of all factories
+    index.ts                         # Barrel — re-exports a strict subset of this directory; factories.md holds the roster
     agent-factories.ts               # createMockAgent, createMockAgentConfig, createMockCompiledAgentData
     category-factories.ts            # createMockCategory
+    claude-settings-factories.ts     # buildClaudeSettings
     config-factories.ts              # buildSourceConfig, buildProjectConfig, buildWizardResult, buildGateReport, ...
+    installation-factories.ts        # buildInstallation, buildPluginInstallation
     matrix-factories.ts              # createMockMatrix, createComprehensiveMatrix, createBasicMatrix, ...
+    operation-result-factories.ts    # buildLoadedSource, buildDiscoveredSkills, buildCompilationResult, buildSkillCopyResult
     plugin-factories.ts              # createMockCompileConfig, createMockMarketplace, createMockMarketplacePlugin
+    plugin-registry-factories.ts     # buildUserPluginInstallation, renderInstalledPluginsRegistry, ...
+    recompile-factories.ts           # buildRecompileAgentsResult
     seed-factories.ts                # buildSeedSkill, buildSeedPayload, buildSeedExternalSkill, UPSTREAM_SKILL_NAME
     skill-factories.ts               # createMockSkill, createMockExtractedSkill, createMockSkillEntry, ...
     skill-factories.test.ts          # Tests for the taxonomy contract those factories enforce
     stack-factories.ts               # createMockResolvedStack, createMockStack, createMockRawStacksConfig, ...
+    unloadable-config-factories.ts   # renderUnparseableConfigTs, renderConfigTsWithoutDefaultExport, renderSchemaViolatingConfigTs
   helpers/                           # Test utility functions — not enumerated here, see below
   assertions/                        # Test assertion helpers — exports live in factories.md
     index.ts                         # Barrel re-export of all assertions
@@ -351,7 +393,7 @@ afterEach(async () => {
 });
 ```
 
-`setupIsolatedHome(prefix)` returns `{ tempDir, projectDir, fakeHome, cleanup }`. It creates a temp dir, `chdir`s to `<tempDir>/project`, and sets `process.env.HOME` to `<tempDir>/fakehome`. The global `os.homedir()` mock in `vitest.setup.ts` respects this override.
+`setupIsolatedHome(prefix)` returns `{ tempDir, projectDir, fakeHome, cleanup }`. It creates a temp dir, `chdir`s to `<tempDir>/project`, sets `process.env.HOME` to `<tempDir>/fakehome`, and symlinks that home's `.cache` at the run's shared marketplace checkout (`linkSharedCache`), so a command falling through to the default marketplace reads it instead of downloading one. The global `os.homedir()` mock in `vitest.setup.ts` respects this override.
 
 **Isolation mechanism — `process.env.HOME` vs `os.homedir()`:** `setupIsolatedHome` and `useFakeHome` isolate production code that reads the home directory via `process.env.HOME`. They do NOT isolate code that calls `os.homedir()` — that path reads the OS-level home and ignores `process.env.HOME`. `os.homedir()` callers are covered instead by the global spy in `vitest.setup.ts` (`vi.spyOn(os, "homedir")`), which returns the per-run test home dir UNLESS a test has pointed `process.env.HOME` at a value other than the real home (then it echoes that value). The two mechanisms are NOT interchangeable: a test asserting on `os.homedir()`-based resolution that must diverge from `process.env.HOME` needs its own `vi.spyOn(os, "homedir")`.
 
@@ -361,7 +403,7 @@ Hook-registering sibling of `setupIsolatedHome` (both in `src/cli/lib/__tests__/
 
 Signature: `useFakeHome(getTempDir: () => string, options?: { setHome?: boolean }): { readonly dir: string }`.
 
-- Registers a `beforeEach` that points `process.env.HOME` at `<tempDir>/fake-home` (created fresh per test) and an `afterEach` that restores the original HOME — or unsets it when it was originally undefined.
+- Registers a `beforeEach` that points `process.env.HOME` at `<tempDir>/fake-home` (created fresh per test, its `.cache` linked at the shared marketplace checkout like `setupIsolatedHome`'s) and an `afterEach` that restores the original HOME — or unsets it when it was originally undefined.
 - `getTempDir` — lazy accessor for the owning temp dir. Evaluated inside `beforeEach`, so it can reference a `let` assigned by an outer hook.
 - `options.setHome` — defaults to `true`. Pass `setHome: false` when the test itself decides when to point HOME at the fake home: the hook still creates the dir and exposes `.dir`, but leaves `process.env.HOME` untouched until the test sets it.
 - Returns a live view `{ readonly dir }` of the fake home directory (getter, so `.dir` reflects the per-test path).
@@ -506,29 +548,31 @@ The flat branch must be the grouped one shifted left by exactly `SCOPE_COL_WIDTH
 
 ### Utility
 
-| Export            | Purpose                                           |
-| ----------------- | ------------------------------------------------- |
-| `delay(ms)`       | Promise-based delay helper for test timing        |
-| `TEST_SOURCE_URL` | Canonical source URL (`github:agents-inc/skills`) |
+| Export                   | Purpose                                                                 |
+| ------------------------ | ----------------------------------------------------------------------- |
+| `delay(ms)`              | Promise-based delay helper for test timing                              |
+| `TEST_SOURCE_URL`        | Canonical source URL (`github:agents-inc/skills`)                       |
+| `TEST_CUSTOM_SOURCE_URL` | A marketplace that is NOT the default public one (`github:acme/skills`) |
 
 ## Error Handling in Tests
 
-All `try/catch/finally` blocks have been removed from unit and integration test files. The standard patterns are:
+The rule for unit and integration test files across `src/cli/` and `scripts/`:
 
-- **Cleanup:** Lifted to `afterEach` hooks (runs even on test failure)
+- **Cleanup:** in `afterEach` hooks (runs even on test failure) — no `try/finally` for cleanup in a test body
 - **Expected rejections:** `await expect(fn()).rejects.toThrow("message")`
 - **Fire-and-forget with expected errors:** `await Command.run(args).catch(() => {})`
-- **No `try/finally` for cleanup in test bodies** -- `afterEach` is sufficient
 
-This applies to unit and integration test files across `src/cli/` and `scripts/`. Four files retain a
-local `try` block, each for a reason cleanup-in-`afterEach` does not cover:
+A local `try` belongs only where `afterEach` cannot do the job: capturing a thrown value to assert
+on it (the oclif `CLIError` in `__tests__/commands/edit.test.ts`), or restoring something the call
+under test changed whichever way it exits (`enableBuffering()` in
+`lib/loading/source-loader.test.ts`). This lists every test file that still carries one:
 
-| File                                          | Why the block stays                                                                                                       |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `__tests__/commands/edit.test.ts`             | Captures a thrown oclif `CLIError` to assert on `oclif.exit` and the message                                              |
-| `__tests__/commands/search.test.ts`           | Same shape                                                                                                                |
-| `lib/loading/source-loader.test.ts`           | `try/finally` around `enableBuffering()` in two file-local helpers, so the buffer is drained whichever way the load exits |
-| `lib/skills/unresolved-skill-entries.test.ts` | Scoped `os.homedir()` spy that must be restored even when the call under test throws                                      |
+```
+grep -rlE '^\s*try \{' src scripts | grep -E '\.test\.tsx?$'
+```
+
+Not every hit meets that bar: a `finally` whose only job is removing a temp tree the test created is
+the cleanup `afterEach` exists for. Judge each hit by what its `finally` does.
 
 ### Config Section Extractors
 
@@ -541,20 +585,29 @@ Used by `src/cli/lib/configuration/__tests__/config-writer.test.ts`. A separate 
 
 ## Spec Gates (`src/cli/lib/__tests__/spec-gates.test.ts`)
 
-Eight gates in the `unit` project, over the suite and its config rather than over the product. They
-exist because each answers a question nothing else in the repository asks, and every one of them was
-written after the silence it closes had already cost something.
+Gates in the `unit` project, over the suite and its config rather than over the product. They exist
+because each answers a question nothing else in the repository asks, and every one of them was
+written after the silence it closes had already cost something. The table is by gate; the file's
+`describe` and `it` names are the roster:
+
+```
+grep -nE '^\s*(describe|it)\(' src/cli/lib/__tests__/spec-gates.test.ts
+```
 
 | Gate                                                       | What it asserts                                                                                                                                                                                                                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | every spec belongs to a configured project                 | Every `e2e/**/*.test.ts` on disk is claimed by a project's `include` in `e2e/vitest.config.ts`. `e2e/smoke/` sat outside every include for months and rotted                                                                         |
 | every configured project is opened by a package script     | Each project name appears as `--project <name>` in some `package.json` script. A project no script names runs only when the OTHER project is asked for, and never otherwise                                                          |
 | every spec it collects is a spec that runs                 | No `e2e/**` file carries an unconditional skip form. A file both a config and a script reach is as unrun as one neither reaches when its own `describe` is skipped, and it reads exactly like a passing file until somebody opens it |
+| the reader sees every row the journey tables number        | `journeyNumbersIn` and the journey-row reader return the same row numbers, compared by members — an unescaped `\|` in a code span splits a row, the reader drops it, and every gate below then skips it in silence                   |
+| the from-scratch classifier has a word for each shape      | Three source fragments — seeds and never installs, seeds then installs from nothing, seeds and only edits — each classified, the third as a variant                                                                                  |
 | a journey's from-scratch specs are from scratch            | A row of `standards/e2e/user-journeys.md` whose every named spec opens from a fixture-written config must carry the `TO TEST` marker                                                                                                 |
 | every named spec carries the directory it lives in         | A name a run cannot be pointed at is not proof                                                                                                                                                                                       |
 | every non-spec name is one the gate has been told about    | Anything the From-scratch column names that no spec answers to must appear in `RECOGNISED_NON_SPEC_NAMES` with its reason                                                                                                            |
+| every spec the e2e project collects belongs to a journey   | Every spec is named somewhere on `standards/e2e/user-journeys.md`, bar `SPECS_BELONGING_TO_NO_JOURNEY`, the backlog rostered when the gate landed, which may only shrink                                                             |
 | a verdict that cannot fail is refused before it is trusted | Lints one real file per separately-ruled `no-restricted-syntax` zone against the LOADED `eslint.config.js`, for every shape in `ESCAPE_SHAPES`                                                                                       |
 | the shared base refuses a value compared against itself    | Lints under `packages/eslint-config/base.js` ALONE, which is the only way to tell a rule the base carries from one this package adds on top                                                                                          |
+| the dist door is the harness's, not each spec's            | `e2e/setup.ts` calls `assertDistIsPresent` in a `beforeAll` and stands the replacement guard at `afterAll` too, and no spec calls a door of its own                                                                                  |
 
 Both halves of the config are **loaded, never restated**: `e2eProjects()` imports
 `e2e/vitest.config.ts` and reads its `projects`, and the ESLint gates construct an `ESLint` instance
@@ -563,7 +616,7 @@ that stopped matching a file from one that never did.
 
 ### `spec-filenames.test.ts` — the one ban no ESLint selector can reach
 
-A ninth gate, in its own file because its subject is not the config. Task IDs are banned from a
+Another gate, in its own file because its subject is not the config. Task IDs are banned from a
 `describe`, an `it` and an assertion message, and each of those is a string a `no-restricted-syntax`
 selector can match; a FILENAME is not — no rule sees the path it is linting as text — so the one
 place the ban was unenforceable is the one place it was broken. `d227-same-scope-tombstone-duplicate.test.ts`
@@ -603,15 +656,17 @@ workspace accepting `x === x`. The selectors cannot follow it there, because
 TYPE, and `number >= 0` is a `boolean` the type `number` leaves open. The shape is only reachable
 syntactically, which is why the rules that close it are too.
 
-`LINT_ZONES` names one REAL file per zone `eslint.config.js` configures `no-restricted-syntax`
-separately in — `e2e/assertions/four-surfaces.ts` (the whole E2E tree, including its helpers),
-`src/cli/lib/content-validator.ts` (an ordinary type-checked source, and the config-gate import-ban
-zone), and `src/cli/lib/config-gate/index.ts` (which every block above excludes, so it inherits
-nothing). The paths must EXIST: `lintText` needs a path the TypeScript project service can resolve,
-and an unresolvable one fails as a parse error rather than as a missing rule. The gate throws on a
-fixture that failed to parse rather than counting it, because a parse failure produces a `fatal`
-message with a null `ruleId` and "eslint said something" is exactly the coarse verdict this gate
-exists to refuse.
+`LINT_ZONES` holds one REAL file per zone `eslint.config.js` configures `no-restricted-syntax`
+separately in, and it is **derived from the config by `helpers/lint-zones.ts`** rather than listed
+— see that helper below for why. The subjects it answers with are on disk by construction, which
+matters: `lintText` needs a path the TypeScript project service can resolve, and an unresolvable
+one fails as a parse error rather than as a missing rule. The gate throws on a fixture that failed
+to parse rather than counting it, because a parse failure produces a `fatal` message with a null
+`ruleId` and "eslint said something" is exactly the coarse verdict this gate exists to refuse.
+
+A zone the derivation finds no file for — a block matching nothing on disk, or one whose every file
+a later block has taken — comes back with a `null` subject and reddens its own gate beside the
+loop. Skipping it would restore what the roster did.
 
 ### `helpers/journey-page.ts` — the journey-page reader
 
@@ -650,6 +705,53 @@ classification is tested against a three-element spec list rather than a fixture
 (`helpers/journey-page.test.ts`). Its exports are inventoried in
 [factories.md](./factories.md#helper-functions-srcclilib__tests__helpers).
 
+### `helpers/lint-zones.ts` — the zones, read off the ESLint config
+
+`no-restricted-syntax` and `no-restricted-imports` take options, and a rule's options are **not**
+merged across flat-config blocks: the last block naming the rule for a file owns all of them. So a
+block declaring the rule for a reason of its own silently drops every selector it does not restate,
+and only a lint run over a real file IN THAT ZONE can tell a restated selector from a dropped one.
+
+`lintZonesIn(config, rule, cwd)` answers one zone per declaring block, each with a file that block
+**owns** — one it matches that no later declaring block matches, since a later block would own the
+rule's options for it. A block owning none answers `null`, which the caller fails on; it is never
+dropped, because a dropped zone and a passing one read identically.
+
+**This was a hand-written list until 2026-09-20, and it stood short of the config three waves
+running** — three zones, then five, then the seven the config actually declares. A list extended by
+whoever remembers to extend it records the blocks somebody remembered. The derivation was proved by
+mutation the same day: a scratch config carrying an eighth declaring block that restates nothing
+left all five hand-rostered paths reporting, and reddened `spec-gates.test.ts` on the new zone with
+nothing edited.
+
+`helpers/lint-zones.test.ts` drives it over a five-file temp tree rather than this package, so the
+cases — a later block taking a zone's only file, a global ignore written as a bare directory name,
+ESLint's nested-array AND, a block with no `files` — are stated rather than inherited from whatever
+the repository currently holds.
+
+**Every ban spec reads the zones through it, and the roster is not written here** — it is the
+callers, so re-derive rather than trusting a list that was correct when typed:
+
+```
+grep -rln 'lintZonesIn' packages/cli/src --include='*.ts' | grep -v 'helpers/lint-zones'
+```
+
+This sentence said "three specs" and named three until 2026-09-22, while the answer was already
+four — `claude-plugin-imports-are-funnelled.test.ts` derives too and was never added — and it is
+five now that the host-path SYMBOL ban has a spec of its own. (It said until 2026-09-21 that
+`source-folder-literals-are-funnelled.test.ts` "keeps its own hand-written zone rosters and is not
+derived yet", which that file's own docblock already contradicted.) What each hand-writes is only
+its EXEMPTIONS — the zones where its ban is deliberately lifted, each named by the patterns its
+block selects and each with the reason. That list is asserted in both directions, so an exemption
+that stopped existing reddens rather than quietly handing every zone to the reported half.
+
+**Two rules, two rosters, never shared.** A ban written under `no-restricted-syntax` and its twin
+under `no-restricted-imports` are declared in different sets of blocks, and neither rule merges its
+options across them — so a spec covering both halves derives a roster per rule. The host-path ban
+is the pair: `host-path-literals-are-funnelled.test.ts` holds the literal spellings and
+`host-path-symbols-are-funnelled.test.ts` holds the `CLAUDE_DIR` / `LOCAL_SKILLS_PATH` import
+group, which is the half no selector over literals can see.
+
 ## Repository Checks (`scripts/*.test.ts`)
 
 Each is a plain module with **nothing at module scope** — the spec beside it is the enforcement, and
@@ -666,6 +768,8 @@ already made more than once against this very table.
 
 | Check                           | What it asserts                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-boundary-union-casts.ts` | No cast widens a boundary `string` straight into a generated union outside the directories where reading an unvalidated string is the job — judged by the compiler, since a grep cannot tell a literal from a `path.basename(...)`                                                                                                                                                          |
+| `check-symbol-file-pairs.ts`    | Every `symbol \| file` pairing `factories.md` states names a module that DECLARES the symbol, asked of the program rather than grepped, since a file merely using a moved name satisfies a grep                                                                                                                                                                                             |
 | `check-enumeration-drift.ts`    | Every document claiming to enumerate a source symbol exhaustively still names what that symbol holds — see below                                                                                                                                                                                                                                                                            |
 | `check-findings-frontmatter.ts` | Every `agent-findings/` file carries frontmatter a YAML parser can read, against `agent-findings/TEMPLATE.md`'s schema                                                                                                                                                                                                                                                                      |
 | `check-finding-citations.ts`    | Every finding cited by basename from OUTSIDE `.ai-docs/` still exists — `todo/` for all citations, `changelogs/` for bracketed links only                                                                                                                                                                                                                                                   |
@@ -679,14 +783,16 @@ already made more than once against this very table.
 | `check-shared-eslint-config.ts` | Every workspace extends `@workspace/eslint-config` rather than restating its rules                                                                                                                                                                                                                                                                                                          |
 | `check-shared-tsconfig.ts`      | Every workspace extends `@workspace/typescript-config`, or declares it holds no TypeScript                                                                                                                                                                                                                                                                                                  |
 | `check-shared-vitest-config.ts` | Every workspace extends `@workspace/vitest-config`, or states in its manifest why it does not — which `packages/cli` does, in `package.json`'s `//no-shared-vitest-config` note                                                                                                                                                                                                             |
+| `generate-compile-package.ts`   | The agent-corpus vendoring generator for `packages/compile` — its spec compares a corpus render against a disk render byte for byte                                                                                                                                                                                                                                                         |
 | `generate-json-schemas.ts`      | The JSON Schema generator — `check` names every file in `src/schemas/` that differs from what it emits                                                                                                                                                                                                                                                                                      |
 | `generate-matrix-package.ts`    | The matrix package generator                                                                                                                                                                                                                                                                                                                                                                |
 | `generate-source-types.ts`      | The union type code generator                                                                                                                                                                                                                                                                                                                                                               |
 
-### `check-symbol-citations.ts` — the only check here that builds a TypeScript program
+### `check-symbol-citations.ts` — a check that builds a TypeScript program
 
-Every other check in this directory reads source with `ts.createSourceFile`, which is syntax alone.
-This one resolves `PROJECTS` with `ts.getParsedCommandLineOfConfigFile`, builds a `ts.Program` per
+Most checks in this directory read source with `ts.createSourceFile`, which is syntax alone; this
+one, `check-boundary-union-casts.ts` and `check-symbol-file-pairs.ts` build a program
+(`grep -l createProgram scripts/*.ts`). This one resolves `PROJECTS` with `ts.getParsedCommandLineOfConfigFile`, builds a `ts.Program` per
 project and asks `checker.getSymbolAtLocation` of every `JSDocLink` node — the same symbol table an
 editor answers Go-to-Definition from. That is why it costs seconds rather than milliseconds, and why
 it is the only instrument that sees a citation whose contents are not an entity name at all.

@@ -20,6 +20,7 @@ keywords:
     ClaudePluginScope,
     SourceEntry,
     BrandingConfig,
+    AgentScopeConfig,
     CompileAgentConfig,
     SourceRowContext,
     SkillCore,
@@ -55,7 +56,7 @@ All types are defined in `src/cli/types/` and re-exported through `src/cli/types
 | Skills    | `src/cli/types/skills.ts`                 | SkillId (re-export), SkillFrontmatter, SkillAssignment, CategoryPath        |
 | Agents    | `src/cli/types/agents.ts`                 | AgentName (re-export), AgentConfig, CompiledAgentData                       |
 | Matrix    | `src/cli/types/matrix.ts`                 | Domain (re-export), Category (re-export), ResolvedSkill, MergedSkillsMatrix |
-| Config    | `src/cli/types/config.ts`                 | ProjectConfig, CompileConfig, ValidationResult                              |
+| Config    | `src/cli/types/config.ts`                 | ProjectConfig, AgentScopeConfig, CompileConfig, ValidationResult            |
 | Stacks    | `src/cli/types/stacks.ts`                 | Stack, StackAgentConfig, StacksConfig                                       |
 | Plugins   | `src/cli/types/plugins.ts`                | PluginManifest, Marketplace, MarketplacePlugin                              |
 
@@ -251,37 +252,38 @@ declares it and never defaulted — the source docblock carries the billing reas
 
 ## Named Aliases (Composite Types)
 
-| Alias                    | Definition                                                                                         | File         |
-| ------------------------ | -------------------------------------------------------------------------------------------------- | ------------ |
-| `CategorySelections`     | `Partial<Record<Category, SkillId[]>>`                                                             | `skills.ts`  |
-| `ResolvedCategorySkills` | `Partial<Record<Category, SkillId>>`                                                               | `skills.ts`  |
-| `DomainSelections`       | `Partial<Record<Domain, Partial<Record<Category, SkillId[]>>>>`                                    | `matrix.ts`  |
-| `CategoryMap`            | `Partial<Record<Category, CategoryDefinition>>`                                                    | `matrix.ts`  |
-| `SkillSlugMap`           | `{ slugToId: Partial<Record<SkillSlug, SkillId>>; idToSlug: Partial<Record<SkillId, SkillSlug>> }` | `matrix.ts`  |
-| `StackAgentConfig`       | `Partial<Record<Category, SkillAssignment[]>>`                                                     | `stacks.ts`  |
-| `PluginSkillRef`         | `` `${SkillId}:${SkillId}` ``                                                                      | `skills.ts`  |
-| `SkillDefinitionMap`     | `Partial<Record<SkillId, SkillDefinition>>`                                                        | `skills.ts`  |
-| `SkillAlias`             | `string`                                                                                           | `matrix.ts`  |
-| `MarketplaceOwner`       | `PluginAuthor` — the same shape under the name `marketplace.json` spells it                        | `plugins.ts` |
-| `MarketplaceMetadata`    | `{ pluginRoot?: string }` — the directory a `marketplace.json` resolves plugin sources against     | `plugins.ts` |
+| Alias                    | Definition                                                                                     | File         |
+| ------------------------ | ---------------------------------------------------------------------------------------------- | ------------ |
+| `CategorySelections`     | `Partial<Record<Category, SkillId[]>>`                                                         | `skills.ts`  |
+| `ResolvedCategorySkills` | `Partial<Record<Category, SkillId>>`                                                           | `skills.ts`  |
+| `DomainSelections`       | `Partial<Record<Domain, Partial<Record<Category, SkillId[]>>>>`                                | `matrix.ts`  |
+| `CategoryMap`            | `Partial<Record<Category, CategoryDefinition>>`                                                | `matrix.ts`  |
+| `SkillSlugMap`           | `{ slugToId: Partial<Record<SkillSlug, SkillId>> }`                                            | `matrix.ts`  |
+| `StackAgentConfig`       | `Partial<Record<Category, SkillAssignment[]>>`                                                 | `stacks.ts`  |
+| `PluginSkillRef`         | `` `${SkillId}:${SkillId}` ``                                                                  | `skills.ts`  |
+| `SkillDefinitionMap`     | `Partial<Record<SkillId, SkillDefinition>>`                                                    | `skills.ts`  |
+| `SkillAlias`             | `string`                                                                                       | `matrix.ts`  |
+| `MarketplaceOwner`       | `PluginAuthor` — the same shape under the name `marketplace.json` spells it                    | `plugins.ts` |
+| `MarketplaceMetadata`    | `{ pluginRoot?: string }` — the directory a `marketplace.json` resolves plugin sources against | `plugins.ts` |
 
 Note: There is no `SkillRef` type alias. The type in `skills.ts` is `SkillReference` (an object type, not an alias).
 
 ## Shared Base Types (intersection bases)
 
-Three types exist purely as intersection bases. Each is `export`ed, and its derivatives are written `Base & { extras }` rather than repeating the fields. They are structural only — no runtime shape change.
+Three types exist purely as bases. Each is `export`ed; the derivatives of the first two are written `Base & { extras }` rather than repeating the fields, and `SkillGroupRule`'s are plain aliases of it. They are structural only — no runtime shape change.
 
 | Base              | File                      | Derived by                                                         |
 | ----------------- | ------------------------- | ------------------------------------------------------------------ |
 | `SkillCore`       | `src/cli/types/matrix.ts` | `ResolvedSkill` (post-merge), `ExtractedSkillMetadata` (pre-merge) |
 | `BaseAgentFields` | `src/cli/types/agents.ts` | `AgentDefinition` (→ `AgentConfig`), `AgentYamlConfig`             |
-| `SkillGroupRule`  | `src/cli/types/matrix.ts` | `ConflictRule`, `DiscourageRule`, `CompatibilityGroup`             |
+| `SkillGroupRule`  | `src/cli/types/matrix.ts` | `ConflictRule`, `DiscourageRule`                                   |
 
 ### SkillCore (`src/cli/types/matrix.ts`)
 
 Identity/description fields shared by the pre-merge and post-merge skill surfaces:
 
-- `id: SkillId`, `slug: SkillSlug`, `displayName: string`, `description: string`
+- `id: SkillId`, `slug: SkillSlug`, `displayName: string`, `description: string` — the wizard's short label (`cliDescription` when stated)
+- `activationDescription?: string` — the SKILL.md frontmatter description, which compile writes into a sub-agent's activation table; the editor's preview draws it (CLI-898)
 - `usageGuidance?: string`
 - `category: CategoryPath` — matches a key in `matrix.categories`; determines the wizard category grid
 - `author: string`, `path: string`
@@ -301,10 +303,9 @@ Identity/description fields shared by the pre-merge and post-merge skill surface
 export type SkillGroupRule = { skills: SkillSlug[]; reason: string };
 export type ConflictRule = SkillGroupRule; // selecting one disables ALL others
 export type DiscourageRule = SkillGroupRule; // selecting one warns for ALL others
-export type CompatibilityGroup = SkillGroupRule; // all skills in the group work together
 ```
 
-The three aliases are distinct names for the identical shape — they carry intent, not structure. `RequireRule` and `AlternativeGroup` are **not** aliases of it (different shapes; see source).
+The two aliases are distinct names for the identical shape — they carry intent, not structure. `RequireRule` and `AlternativeGroup` are **not** aliases of it (different shapes; see source).
 
 ## Core Data Structures
 
@@ -312,7 +313,7 @@ The three aliases are distinct names for the identical shape — they carry inte
 
 The primary skill representation after matrix merge. Defined as `SkillCore & { … }`:
 
-- Everything in [`SkillCore`](#skillcore-srcclitypesmatrixts): `id`, `slug`, `displayName`, `description`, `usageGuidance`, `category`, `author`, `path`, `local`, `localPath`, `custom`
+- Everything in [`SkillCore`](#skillcore-srcclitypesmatrixts): `id`, `slug`, `displayName`, `description`, `activationDescription`, `usageGuidance`, `category`, `author`, `path`, `local`, `localPath`, `custom`
 - Relationships: `conflictsWith`, `requires`, `alternatives`, `discourages`
 - Sources: `availableSources`, `activeSource`
 
@@ -324,23 +325,20 @@ The primary read model for the wizard and CLI commands:
 - `categories: CategoryMap` - Category definitions
 - `skills: Partial<Record<SkillId, ResolvedSkill>>` - All resolved skills
 - `suggestedStacks: ResolvedStack[]` - Pre-configured stacks
-- `slugMap: SkillSlugMap` - Bidirectional slug-to-ID mapping
+- `slugMap: SkillSlugMap` - Slug-to-ID mapping, one direction
 - `agentDefinedDomains` - Domain overrides from agent metadata
 - `generatedAt: string` - ISO timestamp
 
 ### ProjectConfig (`src/cli/types/config.ts`)
 
-Unified project configuration stored at `.claude-src/config.ts`. No `version` field (removed; `config.ts` is a TypeScript module, not a versioned schema).
+Unified project configuration stored at the scope's `<source folder>/config.ts`. No `version` field (removed; `config.ts` is a TypeScript module, not a versioned schema).
 
-- `name`, `description?`, `author?`
-- `agents: AgentScopeConfig[]` - Per-agent scope config (`{ name, scope, model?, effort?, excluded? }`)
-- `skills: SkillConfig[]` - Per-skill scope+provenance config (`{ id, scope, origin, excluded? }`)
-- `stack?: Record<string, StackAgentConfig>`
-- `marketplace?`, `marketplaceName?`, `agentsSource?`
-- `selectedDomains?: Domain[]` - Selected wizard domains, omitted when empty (sparse output). There is no `selectedAgents` field — the selected-agent set is derived from non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`
-- `branding?: BrandingConfig` - White-label overrides
-- Directory overrides: `skillsDir?`, `agentsDir?`, `stacksFile?`, `categoriesFile?`, `rulesFile?`
-- `projects?: string[]` - Tracked project installation paths (global config only)
+**The field list lives in [features/configuration.md](../features/configuration.md) → "ProjectConfig", which declares itself its owner, and is not restated here** — a second copy of a list introduced as exhaustive can only drift from the first. The two fields below are named because the types they hold are documented in this file; everything else about the shape is one hop away.
+
+- `agents: AgentScopeConfig[]` — see [AgentScopeConfig](#agentscopeconfig-srcclitypesconfigts) below
+- `skills: SkillConfig[]` — see [SkillConfig](#skillconfig-srcclitypesconfigts) below
+
+There is no `selectedAgents` field: the selected-agent set is derived from the non-excluded `agents` rows via `activeAgentNames` in `src/cli/lib/configuration/scope-predicates.ts`.
 
 ### SkillConfig (`src/cli/types/config.ts`)
 
@@ -372,8 +370,8 @@ export type SkillScope = "project" | "global"; // cc-side install target
 export type ClaudePluginScope = "project" | "user"; // Claude CLI --project/--user flag
 ```
 
-- `SkillScope` — the cc scope stored on every `SkillConfig.scope` / `AgentScopeConfig.scope` / `ScopedEntry.scope`. `"global"` installs live under `~/.claude/`; `"project"` under `<projectDir>/.claude/`. Used throughout scope-splitting (`filter(s => s.scope === "global")`) before any path-dependent op.
-- `ClaudePluginScope` — the value passed to the underlying `claude plugin install/uninstall --project|--user` command. Converted from a `SkillScope` by `toClaudePluginScope(scope)` in `src/cli/lib/plugins/plugin-ref.ts`: `"global"` → `"user"`, everything else (including `undefined`) → `"project"`. Consumed at the exec boundary in `src/cli/utils/exec.ts` and by the plugin install/uninstall operations.
+- `SkillScope` — the cc scope stored on every `SkillConfig.scope` / `AgentScopeConfig.scope` / `ScopedEntry.scope`. `"global"` installs live under the home directory's host folders, `"project"` under the project's — which folders, per provider, is [concepts/scope-system.md](../concepts/scope-system.md) → "File Paths by Scope". Used throughout scope-splitting (`filter(s => s.scope === "global")`) before any path-dependent op.
+- `ClaudePluginScope` — the value passed to the underlying `claude plugin install/uninstall --project|--user` command. Converted from a `SkillScope` by `toClaudePluginScope(scope)` in `src/cli/lib/hosts/claude-host.ts`: `"global"` → `"user"`, everything else (including `undefined`) → `"project"`. It is the Claude host's private business and nothing outside `src/cli/lib/hosts/` sees it: the `PluginHost` seam takes `SkillScope`, and each host translates at its own edge — see [../concepts/plugin-hosts.md](../concepts/plugin-hosts.md).
 
 ### SourceEntry (`src/cli/types/config.ts`)
 
@@ -401,7 +399,7 @@ Skill reference used in agent config (stack → agent → skills mapping):
 - `id: SkillId`
 - `usage: string` — context-specific description of when to use this skill (required)
 - `preloaded?: boolean`
-- `source?: string` — install source propagated from `SkillConfig.origin` by `buildCompileAgents`. The config field is `origin` and the compile-side field is `source`; both hold the same value. Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means ejected to `.claude/skills/`; any other value (e.g., marketplace name) means plugin-installed.
+- `source?: string` — install source propagated from `SkillConfig.origin` by `buildCompileAgents`. The config field is `origin` and the compile-side field is `source`; both hold the same value. Absent when no `SkillConfig` entry exists (e.g., user-authored local skills). `"eject"` means copied into the scope's skills directory; any other value (e.g., marketplace name) means plugin-installed.
 
 ### Skill (`src/cli/types/skills.ts`)
 
@@ -507,12 +505,13 @@ Distinct from `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`), which i
 export type LoadedProjectConfig = {
   config: ProjectConfig;
   configPath: string;
+  provider: Provider; // the installation the config was read out of — a pre-rename `.claude-src/` answers `claude`
 };
 ```
 
 ### ConfigLoadError (`src/cli/lib/configuration/project-config.ts`)
 
-A named `Error` subclass — the only such class in the config layer — introduced.
+A named `Error` subclass. Its siblings one layer down, `ConfigSchemaError` and `ConfigDefaultExportError` in `src/cli/lib/configuration/config-loader.ts`, are what `loadConfig` throws; see [features/configuration.md](../features/configuration.md) → "Config Load Outcomes".
 
 ```typescript
 export class ConfigLoadError extends Error {
@@ -526,7 +525,7 @@ export class ConfigLoadError extends Error {
 }
 ```
 
-**Three-way outcome of `loadProjectConfigFromDir(projectDir)`.** **Do not collapse the first two into a single `null`:** a corrupt `.claude-src/config.ts` is then detected as a phantom eject installation and `compile` rebuilds every built-in agent:
+**Three-way outcome of `loadProjectConfigFromDir(projectDir, provider)`.** **Do not collapse the first two into a single `null`:** a corrupt `config.ts` is then detected as a phantom eject installation and `compile` rebuilds every built-in agent:
 
 | On disk                                                                                     | Result                        | Meaning                                            |
 | ------------------------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------- |
@@ -536,16 +535,18 @@ export class ConfigLoadError extends Error {
 
 The three `ConfigLoadError` throw sites carry distinct `reason` values: `getErrorMessage(error)` from the loader, the literal `"the file has no valid default export"`, and `formatZodErrors(result.error).join("; ")` from `projectConfigLoaderSchema`.
 
-**Content-less is a separate axis.** `loadProjectConfigFromDir` returns a valid `LoadedProjectConfig` for a config with `skills: []` and no `agents`; it is `detectInstallationInDir` (`installation.ts`) that returns `null` for it, so `init` routes to the setup wizard instead of the dashboard. That check reads `loaded.config.skills.length === 0 && (loaded.config.agents ?? []).length === 0` — `skills` is asserted directly because the loader defaults it to `[]`, `agents` is not defaulted and is guarded.
+**Content-less is a separate axis.** `loadProjectConfigFromDir` returns a valid `LoadedProjectConfig` for a config with `skills: []` and no `agents`; it is `detectInstallationInDir` (`installation.ts`) that returns `null` for it, so `init` routes to the setup wizard instead of the dashboard. That check is `declaresNoContent` in the same file — `config.skills.length === 0 && config.agents.length === 0`, both defaulted to `[]` by the loader — and `doctor` asks the same function, so the two surfaces cannot disagree about which configs are content-less.
 
 **Consumers (exhaustive):**
 
-| File                                               | Handling                                                                                       |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `src/cli/commands/compile.ts`                      | `instanceof ConfigLoadError` → hard-errors **before any write**                                |
-| `src/cli/lib/operations/project/detect-project.ts` | `instanceof ConfigLoadError` → converts to `null` so `doctor` / `edit` report a config problem |
-| `src/cli/lib/installation/installation.ts`         | Lets it propagate — `detectInstallationInDir` no longer fabricates an installation             |
-| `src/cli/commands/uninstall.tsx`                   | A corrupt global config must never fail the uninstall (diagnostic only)                        |
+| File                                               | Handling                                                                                           |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `src/cli/commands/compile.ts`                      | `instanceof ConfigLoadError` → hard-errors **before any write**                                    |
+| `src/cli/lib/operations/project/detect-project.ts` | `instanceof ConfigLoadError` → converts to `null` so `doctor` / `edit` report a config problem     |
+| `src/cli/lib/installation/installation.ts`         | Lets it propagate — `detectInstallationInDir` no longer fabricates an installation                 |
+| `src/cli/commands/uninstall.tsx`                   | A corrupt global config must never fail the uninstall (diagnostic only)                            |
+| `src/cli/lib/hosts/configured-placements.ts`       | `instanceof ConfigLoadError` → contributes no placement finding; the fault is reported elsewhere   |
+| `src/cli/lib/content-validator.ts`                 | `toUnreadableConfigIssue` turns each failure `findConfigLoadFailures` answers into a content issue |
 
 Exported from `src/cli/lib/configuration/index.ts`.
 
@@ -554,7 +555,7 @@ Exported from `src/cli/lib/configuration/index.ts`.
 | Type                  | Purpose                                                                                               |
 | --------------------- | ----------------------------------------------------------------------------------------------------- |
 | `OptionState`         | Discriminated union for skill advisory state (normal/discouraged/incompatible)                        |
-| `SkillOption`         | Skill as displayed in wizard (advisoryState/selected/unmetRequirements state)                         |
+| `SkillOption`         | Skill as displayed in wizard (id, selected, hasUnmetRequirements, unmetRequirementsReason?)           |
 | `SelectionValidation` | Result of validating skill selections                                                                 |
 | `ValidationError`     | Advisory validation error (non-blocking); `type: conflict \| missingRequirement \| categoryExclusive` |
 | `SkillSource`         | Source from which a skill can be obtained                                                             |
@@ -570,7 +571,7 @@ type SourceRowContext = {
   configEntry: SkillConfig | undefined; // saved config entry (scope/source/excluded probe)
   installedSkillConfigs: SkillConfig[] | null; // on-disk installed configs, used to detect a locked global row
   isEditingFromGlobalScope: boolean; // true when the edit session targets the global roster
-  installedSkillSlots: ReadonlySet<string> | null; // `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from
+  installedSkillSlots: ReadonlySet<string>; // `(id, scope)` slots the snapshot occupies — the baseline each row's `+` derives from
 };
 ```
 
@@ -580,28 +581,28 @@ Steers whether a skill renders as a single editable `SourceRow`, a locked global
 
 ## Types Documented Elsewhere (cross-references, not duplicated here)
 
-| Type / area                                                   | Lives in                                                     | Documented in                                                               |
-| ------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `CompilationResult`, `PropagatedRecompileSummary` (recompile) | `src/cli/lib/operations/project/recompile-project-agents.ts` | [operations-types.md](./operations-types.md)                                |
-| `LoadedSource`, `PluginInstallResult`, `ConfigChanges`        | `src/cli/lib/operations/**`                                  | [operations-types.md](./operations-types.md)                                |
-| `WizardState` and every store action signature                | `src/cli/stores/wizard-store.ts`                             | [store-map.md](../store-map.md)                                             |
-| `InstallationInfo`, `PluginInfo`                              | `src/cli/lib/plugins/plugin-info.ts`                         | [features/plugin-system.md](../features/plugin-system.md)                   |
-| `Marketplace`, `MarketplacePlugin`, `PluginManifest`          | `src/cli/types/plugins.ts`                                   | [features/plugin-system.md](../features/plugin-system.md)                   |
-| `MarketplaceFetchResult`                                      | `src/cli/types/plugins.ts`                                   | [features/source-fetch-and-cache.md](../features/source-fetch-and-cache.md) |
-| `MarketplaceRemoteSource`                                     | `src/cli/types/plugins.ts`                                   | [leaf-exports.md](../leaf-exports.md) § 3                                   |
-| `PluginAuthor`, `AgentHookAction`                             | `src/cli/types/plugins.ts`, `src/cli/types/agents.ts`        | [zod-schemas.md](./zod-schemas.md) — each has a bridge schema row           |
-| `AgentFrontmatter`                                            | `src/cli/types/agents.ts`                                    | [features/agent-system.md](../features/agent-system.md)                     |
-| `RelationshipDefinitions`, `SkillRulesConfig`                 | `src/cli/types/matrix.ts`                                    | [features/skills-and-matrix.md](../features/skills-and-matrix.md)           |
-| `SkillAlternative`                                            | `src/cli/types/matrix.ts`                                    | [features/built-in-catalogue.md](../features/built-in-catalogue.md)         |
-| `SkillRelation`, `SkillRequirement`                           | `src/cli/types/matrix.ts`                                    | [leaf-exports.md](../leaf-exports.md) § 2                                   |
-| `ScopedEntry` and the scope predicates                        | `src/cli/lib/configuration/scope-predicates.ts`              | [concepts/scope-system.md](../concepts/scope-system.md)                     |
+| Type / area                                                   | Lives in                                                                                                         | Documented in                                                               |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `CompilationResult`, `PropagatedRecompileSummary` (recompile) | `src/cli/lib/operations/project/compile-agents.ts`, `src/cli/lib/operations/project/recompile-project-agents.ts` | [operations-types.md](./operations-types.md)                                |
+| `LoadedSource`, `PluginInstallResult`, `ConfigChanges`        | `src/cli/lib/operations/**`                                                                                      | [operations-types.md](./operations-types.md)                                |
+| `WizardState` and every store action signature                | `src/cli/stores/wizard-store.ts`                                                                                 | [store-map.md](../store-map.md)                                             |
+| `InstallationInfo`                                            | `src/cli/lib/plugins/plugin-info.ts`                                                                             | [features/plugin-system.md](../features/plugin-system.md)                   |
+| `Marketplace`, `MarketplacePlugin`, `PluginManifest`          | `src/cli/types/plugins.ts`                                                                                       | [features/plugin-system.md](../features/plugin-system.md)                   |
+| `MarketplaceFetchResult`                                      | `src/cli/types/plugins.ts`                                                                                       | [features/source-fetch-and-cache.md](../features/source-fetch-and-cache.md) |
+| `MarketplaceRemoteSource`                                     | `src/cli/types/plugins.ts`                                                                                       | [leaf-exports.md](../leaf-exports.md) § 3                                   |
+| `PluginAuthor`, `AgentHookAction`                             | `src/cli/types/plugins.ts`, `src/cli/types/agents.ts`                                                            | [zod-schemas.md](./zod-schemas.md) — each has a bridge schema row           |
+| `AgentFrontmatter`                                            | `src/cli/types/agents.ts`                                                                                        | [features/agent-system.md](../features/agent-system.md)                     |
+| `RelationshipDefinitions`, `SkillRulesConfig`                 | `src/cli/types/matrix.ts`                                                                                        | [features/skills-and-matrix.md](../features/skills-and-matrix.md)           |
+| `SkillAlternative`                                            | `src/cli/types/matrix.ts`                                                                                        | [features/built-in-catalogue.md](../features/built-in-catalogue.md)         |
+| `SkillRelation`, `SkillRequirement`                           | `src/cli/types/matrix.ts`                                                                                        | [leaf-exports.md](../leaf-exports.md) § 2                                   |
+| `ScopedEntry` and the scope predicates                        | `src/cli/lib/configuration/scope-predicates.ts`                                                                  | [concepts/scope-system.md](../concepts/scope-system.md)                     |
 
 ## Type Narrowing Rules
 
 **From CLAUDE.md and memory:**
 
 1. Union types are generated from source (`bun run generate:types`) for finite sets
-2. `SkillId`, `Domain`, `Category`, and `AgentName` have NO standalone Zod schema in `schemas.ts` — they are accepted as lenient `z.string() as z.ZodType<...>` casts at parse boundaries, and narrowed at runtime with the `isSkillId()`/`isCategory()`/`isDomain()`/`isAgentName()` type guards. Only `SkillSlug`, `ModelName`, `EffortLevel`, and `PermissionMode` have `z.enum(...)` bridge schemas; `CategoryPath` uses a `z.string().refine()`
+2. `SkillId`, `Domain`, `Category`, and `AgentName` have NO standalone Zod schema in `schemas.ts` — they are accepted as lenient `z.string() as z.ZodType<...>` casts at parse boundaries, and narrowed at runtime with the `isSkillId()`/`isCategory()`/`isDomain()`/`isAgentName()` type guards. Only `SkillSlug`, `ModelName`, `EffortLevel`, `PermissionMode` and `AgentIsolation` have standalone `z.enum(...)` bridge schemas; `CategoryPath` uses a `z.string().refine()`
 3. Boundary casts only at data entry points (YAML parse, JSON parse, CLI args) with comments
 4. Use `typedEntries()` / `typedKeys()` from `src/cli/utils/typed-object.ts` instead of raw `Object.entries()`/`Object.keys()`
 5. Zod schemas at parse boundaries; post-safeParse `as T` casts are intentional (`.passthrough()` widens type)

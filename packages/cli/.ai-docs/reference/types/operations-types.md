@@ -32,7 +32,7 @@ Two barrels expose operation types, and they are **not** equivalent:
 | `src/cli/lib/operations/index.ts` | Every operation function plus every publicly consumed type. This is what commands import.                  |
 | `src/cli/lib/operations/types.ts` | Type-only convenience re-exports — a NON-exhaustive subset. Nothing imports it that cannot use `index.js`. |
 
-Types reachable only through `index.js` (absent from `types.ts`): `MarketplaceRequirement`, `CompileAllScopesOptions`, `PropagatedRecompileSummary`.
+Types reachable only through `index.js` (absent from `types.ts`): `MarketplaceRequirement`, `CompileAllScopesOptions`, `PropagatedRecompileSummary`, and the three compiled-agent removal types in `operations/project/remove-compiled-agents.ts` — `RemoveCompiledAgentsOptions`, `RemoveCompiledAgentsResult`, `PruneCompiledAgentsOptions` (documented in [features/operations-layer.md](../features/operations-layer.md)).
 
 ## Operations Layer Types
 
@@ -81,7 +81,7 @@ type PluginInstallResult = {
 };
 ```
 
-`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills that `claude plugin install` rejected produces orphan entries. Enforced by `installPluginSkillsReported` (`BaseCommand`, called by both `init` and `edit`) and `applyPluginChanges` (edit).
+`failed` entries MUST cause a hard-error before `writeConfigAndCompile` runs — persisting config for skills the host's plugin install rejected (`claude plugin install`, or `codex plugin add` on Codex — both behind the `PluginHost` seam) produces orphan entries. Enforced by `installPluginSkillsReported` (`BaseCommand`, called by both `init` and `edit`) and `applyPluginChanges` (edit).
 
 ### `PluginUninstallResult`
 
@@ -110,6 +110,7 @@ type MarketplaceResult = {
 ```typescript
 type CompilationResult = {
   compiled: AgentName[];
+  rewritten: AgentName[]; // the subset of `compiled` whose file this pass actually wrote
   failed: AgentName[];
   warnings: string[];
 };
@@ -190,7 +191,7 @@ Returned by `recompilePropagatedProjectAgents(projectDirs)`, which loops `recomp
 
 Nothing here throws or short-circuits: one project's unreadable config must not abort the loop or leave the remaining projects stale. Projects are processed **sequentially** so `warnings` keeps a deterministic per-project order. Rendering is not per-command: `reportPropagatedRecompile(report)` on `BaseCommand` `warn()`s every entry and then logs `propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount)` uncoloured, returning early when `report.propagated.updated` is empty. All four fan-out commands reach it — `init`, `edit`, `compile`, `uninstall`.
 
-`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes and writes no agent into `~/.claude/agents`, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` creates neither target directory up front — `writeFile` makes a target's parent on the way past, so `~/.claude/agents/` appears only when an agent actually routes into it.)
+`recompileRegisteredProjectAgents(projectDir): Promise<CompilationResult>` always compiles with `scopeFilter: "project"` — so it never prunes and writes no agent into the global agents directory, which the triggering operation's own global pass already rewrote. (`writeCompiledAgentsByScope` creates neither target directory up front — `writeFile` makes a target's parent on the way past, so the global agents directory appears only when an agent actually routes into it.)
 
 ### `LoadedSource`
 
@@ -235,7 +236,7 @@ type ConfigWriteOptions = {
 
 `agentDefs` takes the WHOLE `AgentDefs` value rather than the roster map inside it, so the only thing a caller can hand over is what `loadAgentDefs()` produced — this function emits the `AgentName` / `SelectedAgentName` unions from whatever roster it is given, and a bare `Partial<Record<AgentName, AgentDefinition>>` made a roster different from the CLI's own a representable argument. Deleting the option instead would cost `edit` a second uncached walk-and-parse of `src/agents/` per run, because it needs `sourcePath` off the same value for its compile pass. `edit` is the only production caller that passes it.
 
-`authoritativeScope` (type `AuthoritativeScope = "all" | "owned"`, from `src/cli/lib/configuration/config-merger.ts`) governs how `cc edit`'s new config treats absent entries: `"all"` (global edit) drops any deselected entry, `"owned"` (project edit) drops deselected project-owned entries only, `undefined` (init) keeps the additive union-preserve merge. Threaded into `buildAndMergeConfig()` by `writeProjectConfig`.
+`authoritativeScope` (type `AuthoritativeScope = "all" | "owned"`, from `src/cli/lib/configuration/config-merger.ts`) governs how `cc edit`'s new config treats absent entries: `"all"` (an edit of the global installation, or a confirmed `edit --from` in a project — `applyAuthority` in `edit.tsx`) drops any absent entry, `"owned"` (a wizard edit of a project) drops absent project-owned entries only, `undefined` (init) keeps the additive union-preserve merge. Threaded into `buildAndMergeConfig()` by `writeProjectConfig`.
 
 ### `ConfigWriteResult`
 
@@ -262,7 +263,7 @@ type ConfigWriteResult = {
 
 No command calls `recompilePropagatedProjectAgents` — the gate already did, through the lazy import in `src/cli/lib/config-gate/recompile.ts`. `init.tsx` and `edit.tsx` each pass `configResult.propagation` to `reportPropagatedRecompile` on `BaseCommand`, which returns without printing when `propagated.updated` is empty.
 
-**There is no `globalConfigPath` on this result.** It was declared optional, never assigned by `writeProjectConfig` and never read by any caller, so it was deleted. The global config path is derived at the write site via `getProjectConfigPath(os.homedir())` inside `writeScopedFromWizard`.
+**There is no `globalConfigPath` on this result.** It was declared optional, never assigned by `writeProjectConfig` and never read by any caller, so it was deleted. The global config path is derived at the write site via `getProjectConfigPath(homeDir, provider)` inside `writeScopedFromWizard`.
 
 ### `DiscoveredSkills`
 
@@ -274,6 +275,7 @@ type DiscoveredSkills = {
   localSkillCount: number; // project + global local combined
   globalPluginSkillCount: number;
   globalLocalSkillCount: number;
+  unusableMetadata: UnusableSkillMetadata[]; // metadata.yaml present but describing no skill; compile refuses the run over any
 };
 ```
 
@@ -349,7 +351,13 @@ type ConfigChanges = {
   // disk-side scope work still flows through scopeChanges / agentScopeChanges.
   dualScopeSkillTransitions: Set<SkillId>;
   dualScopeAgentTransitions: Set<AgentName>;
+  // A sub-agent's tuning — the model it runs on and the effort it reasons at — where the roster
+  // itself is unchanged. Nothing downstream acts on it; it decides whether the run believes it
+  // has anything to do at all.
+  tuningChanges: Map<AgentName, ValueChange>;
 };
+
+type ValueChange = { from: string; to: string };
 ```
 
 ### FullScopeEntries (`src/cli/commands/edit.tsx`)
@@ -391,10 +399,10 @@ type PluginScopeMigrationResult = {
 ```typescript
 async function migratePluginSkillScopes(
   scopeChanges: Map<SkillId, ScopeChange>,
-  skills: Pick<SkillConfig, "id" | "source">[],
+  skills: Pick<SkillConfig, "id" | "origin">[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult>;
 ```
 
-Handles plugin-mode skill scope migrations. Skips `source === "eject"` skills (handled separately by `migrateLocalSkillScope`). For project-to-global: uninstalls project-scope, installs global-scope. For global-to-project: adds project-scope registration (keeps global for other projects).
+Handles plugin-mode skill scope migrations through `hostAt(projectDir)`. Skips `origin === EJECT_SOURCE` skills (handled separately by `migrateLocalSkillScope`). For project-to-global: uninstalls project-scope, installs global-scope. For global-to-project: adds project-scope registration (keeps global for other projects).

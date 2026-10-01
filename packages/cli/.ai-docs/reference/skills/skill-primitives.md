@@ -551,9 +551,9 @@ deliberately, since routing through the barrel would pull the copier and the plu
 
 ## Test surface
 
-`npx vitest run src/cli/lib/skills/`. Run it rather than reading a total off this page — a per-file
-count is wrong within a fortnight, and `npm test` builds `dist/` first, which a bare `vitest run`
-refuses to do.
+`npx vitest run src/cli/lib/skills/`, after `bun run build`. Run it rather than reading a total off
+this page — a per-file count is wrong within a fortnight. `npm test` is `vitest run` and builds
+nothing, and `assertDistIsFresh`, run from `vitest.global-setup.ts`, refuses a stale `dist/`.
 
 One `*.test.ts` sits beside each module. Read the `describe` openers off the files rather than off a
 table here — `ls src/cli/lib/skills/*.test.ts`, then `grep -nP '^describe' <file>`.

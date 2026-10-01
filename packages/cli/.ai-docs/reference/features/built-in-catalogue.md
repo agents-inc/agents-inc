@@ -69,8 +69,8 @@ source's** base path. Naming that distinction is this document's main job:
 - `package.json`'s `files` array no longer lists `"config/"` — it publishes `dist/`, `assets/`,
   `src/agents/`, `src/schemas/` and the three top-level files. Nothing in this package's manifest
   implies a `config/` directory any more.
-- The error thrown when a stack lookup fails no longer names `config/stacks.ts` at all. Both
-  callers throw `stackNotOfferedMessage(stackId, source)` — _"Stack '\<id\>' is not a stack the
+- The error thrown when a stack lookup fails no longer names `config/stacks.ts` at all. The one
+  caller, `buildInstallConfig` in `local-installer.ts`, throws `stackNotOfferedMessage(stackId, source)` — _"Stack '\<id\>' is not a stack the
   source '\<source\>' offers"_ — which names the id asked for and the source asked, and says the
   built-ins belong to the default public marketplace alone. See
   [Two stack lookups, one fallback rule](#two-stack-lookups-one-fallback-rule).
@@ -148,8 +148,9 @@ Listed rather than counted, so the claim self-checks against `grep '^    id: "'`
 | 17  | `cli-ink-oclif`              | Only CLI-shaped stack; 9 agents              |
 
 **17 stacks.** `default-stacks.test.ts` pins that number in `EXPECTED_STACK_COUNT`, so adding or
-removing a stack fails the unit suite (and therefore the `pre-commit` hook, which runs
-`bun run test`) until the constant is updated deliberately.
+removing a stack fails the unit suite (and therefore the `pre-commit` hook, whose
+`bunx turbo run lint typecheck test --filter='...[HEAD]'` runs it for a commit touching this
+package) until the constant is updated deliberately.
 
 **The two agent counts in the Notes column are held**, along with the other fifteen and the id
 column itself: `EXPECTED_AGENT_COUNT_PER_STACK` in `default-stacks.test.ts` is keyed by stack id and
@@ -361,12 +362,13 @@ All three decisions are made in `loadAndMergeFromBasePath` (`src/cli/lib/loading
 | ------------------- | ---------------------------- | --------------------------------------------------------------------------------- | --------------------------------- |
 | `defaultCategories` | `config/skill-categories.ts` | `{ ...defaultCategories, ...sourceCategories }` — per-key override                | Only by redefining the key        |
 | `defaultRules`      | `config/skill-rules.ts`      | `mergeRelationships(source, narrowed defaults)` — **concatenation**, source first | **No**                            |
-| `defaultStacks`     | `config/stacks.ts`           | `resolveOfferedStacks` — **all-or-nothing, and only for the default source**      | **Yes — all of them, at once**    |
+| `defaultStacks`     | `config/stacks.ts`           | `resolveOfferedStacks` — **all-or-nothing, and only for the public catalogue**    | **Yes — all of them, at once**    |
 
 ### The built-in rules are narrowed to the slugs the source ships
 
-`relationshipsForSource` (`source-loader.ts`) filters `defaultRules.relationships` against the
-slugs of the skills the source actually extracted, BEFORE any merge: group rules
+`relationshipsForSource` (`lib/matrix/skill-resolution.ts`, called by `loadAndMergeFromBasePath`
+and by the generator) filters `defaultRules.relationships` against the slugs of the skills the source
+actually extracted, BEFORE any merge: group rules
 (`conflicts`, `discourages`, `alternatives`) keep only present members and are dropped below two of
 them, and a `requires` rule survives only if its `skill` is present and at least one of its `needs`
 is. **The source's own rules are never narrowed.**
@@ -411,21 +413,23 @@ source rule makes the union stricter, never looser.
 ### Which source the stand-in is for
 
 `resolveOfferedStacks` (`source-loader.ts`) answers "what stacks does this source offer the
-wizard", and the built-in catalogue stands in for **the default public marketplace only**:
+wizard", and the built-in catalogue stands in for **the public catalogue only**:
 
 | Source                                                          | Ships `config/stacks.ts` | What the wizard is offered                                                  |
 | --------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
-| Default public marketplace                                      | —                        | Its own stacks, else all 17 built-ins                                       |
+| Default public marketplace, or a checkout of it read off a path | —                        | Its own stacks, else all 17 built-ins                                       |
 | Custom (`init --marketplace`, `CC_MARKETPLACE` at init, config) | Yes                      | Its own stacks, and only those                                              |
 | Custom                                                          | No                       | **Nothing** — `suggestedStacks` is `[]` and the wizard skips its stack step |
 
-The identity is `isDefaultSource(source)` in `lib/configuration/config.ts` — one exported predicate
-over `DEFAULT_SOURCE`, shared with `multi-source-loader.ts`'s public/private marketplace labelling
-so the two surfaces cannot disagree. It is a question about the source STRING: a local checkout of
-the public marketplace passed as `--marketplace /path/to/skills` is a custom source, because nothing in a
-path says which repository it holds. Both install-time spellings belong to `init` alone
-(`--marketplace` is its flag, `CC_MARKETPLACE` is read only for `caller: "init"`); a later command reads the
-source the install recorded, so the row above is the same row for it.
+The identity is `offersBuiltInStacks(basePath, source)` in `lib/configuration/config.ts`, and it has
+two halves. `isDefaultSource(source)` asks the source STRING whether it spells `DEFAULT_SOURCE`; it
+is shared with `multi-source-loader.ts`'s public/private marketplace labelling so the two surfaces
+cannot disagree. `isPublicCatalogueCheckout(basePath)` asks the DIRECTORY, by the `name` in its
+`package.json`, because nothing in a path says which repository it holds — so a local checkout of the
+public marketplace passed as `--marketplace /path/to/skills` gets the built-ins too. Both
+install-time spellings belong to `init` alone (`--marketplace` is its flag, `CC_MARKETPLACE` is read
+only for `caller: "init"`); a later command reads the source the install recorded, so the row above
+is the same row for it.
 
 `hydrateForInit` in `stores/wizard-store.ts` is what "skips its stack step" means: an empty
 `matrix.suggestedStacks` opens the wizard on `domains`, prepared exactly as the stack step's own
@@ -435,12 +439,12 @@ source the install recorded, so the row above is the same row for it.
 ### Two stack lookups, one fallback rule
 
 `defaultStacks` is consulted from two places, and both scope the stand-in the same
-way — to the default public marketplace:
+way — through `offersBuiltInStacks`, to the public catalogue:
 
-| Entry point                                                      | Rule                                                                                      | Effect                                                                                      |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `loadAndMergeFromBasePath` (`source-loader.ts`)                  | `resolveOfferedStacks` — default source only                                              | **Whole-catalogue swap.** One stack in the source hides all 17 built-ins from the wizard    |
-| `loadStackById(stackId, configDir, source)` (`stacks-loader.ts`) | source `loadStacks` first, then `defaultStacks` — but only when `isDefaultSource(source)` | **Per-id fallback, same scope.** A built-in id resolves under the default marketplace alone |
+| Entry point                                                      | Rule                                                                                                     | Effect                                                                                   |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `loadAndMergeFromBasePath` (`source-loader.ts`)                  | `resolveOfferedStacks` — public catalogue only                                                           | **Whole-catalogue swap.** One stack in the source hides all 17 built-ins from the wizard |
+| `loadStackById(stackId, configDir, source)` (`stacks-loader.ts`) | source `loadStacks` first, then `defaultStacks` — but only when `offersBuiltInStacks(configDir, source)` | **Per-id fallback, same scope.** A built-in id resolves under the public catalogue alone |
 
 Under any other source a built-in id resolves to `null`, whoever named it — an installed config or
 an `init --from` payload included. That is the honest answer: the wizard could not have offered
@@ -461,7 +465,7 @@ same identity and then deleted whole — it had no user-reachable caller.
 scripts/generate-source-types.ts
   Phase 1 -> src/cli/types/generated/source-types.ts   (SkillId, SkillSlug, Category, Domain, AgentName + skillIdSet)
   Phase 2 -> src/cli/types/generated/matrix.ts         (BUILT_IN_MATRIX)
-       mergeMatrixWithSkills(defaultCategories, defaultRules.relationships, skills)
+       mergeMatrixWithSkills(defaultCategories, relationshipsForSource(sortedSkills), sortedSkills)
        matrix.suggestedStacks = defaultStacks.map(stack => resolveStack(stack, skillIdSet))
 ```
 
@@ -469,11 +473,12 @@ Run by `npm run generate:types` (`bun scripts/run-generate-source-types.ts`).
 
 `source-loader.ts::resolveBaseResult` short-circuits to `BUILT_IN_MATRIX` whenever
 `isDefaultSource(source) && !devMode`. **`devMode` has no production writer** — grep finds it only
-inside `source-loader.ts` itself and in two unit specs, and it defaults to `false`. So for the
+inside `source-loader.ts` itself and in its spec, `source-loader.test.ts`, and it defaults to `false`. So for the
 default marketplace, which is the overwhelmingly common case, the user gets the **baked** matrix and
-`defaultStacks` / `defaultRules` are never executed at runtime at all. Dev mode is consequently the
-one runtime path on which the built-in stand-in itself is observable, which is where
-`source-loader.test.ts` pins it.
+`defaultStacks` / `defaultRules` are never executed at runtime at all. The built-in stand-in is
+observable at runtime only on a source read from disk that `offersBuiltInStacks` accepts — dev mode,
+or a checkout of the public catalogue passed as a path — and `source-loader.test.ts` pins it in dev
+mode.
 
 > **This is the most important operational fact in this document.** Editing `default-stacks.ts` or
 > `default-rules.ts` has **no effect on a default-source user** until `generate:types` is re-run and
@@ -492,7 +497,7 @@ loadAndMergeFromBasePath(basePath, source)
   relationships  = sourceRules ? mergeRelationships(source, builtIn) : builtIn
   mergeMatrixWithSkills(categories, relationships, skills)     -- rules DISSOLVE here
   stacks         = resolveOfferedStacks(basePath, stacksFile, source)
-                     source's own stacks, else defaultStacks for the DEFAULT source, else []
+                     source's own stacks, else defaultStacks for the public catalogue, else []
   matrix.suggestedStacks = stacks.map(convertStackToResolvedStack)
 ```
 
@@ -541,17 +546,17 @@ for the stack-defaults branch. On the generated path the two fields agree by con
 
 ## Consumers
 
-| Consumer                                                 | Reads               | Purpose                                                                    |
-| -------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------- |
-| `scripts/generate-source-types.ts`                       | both                | Bakes `BUILT_IN_MATRIX` (relations + `suggestedStacks`)                    |
-| `lib/loading/source-loader.ts`                           | both                | Runtime merge for sources read from disk (stacks: dev mode only)           |
-| `lib/stacks/stacks-loader.ts::loadStackById`             | `defaultStacks`     | Per-id fallback after the source's `config/stacks.ts`, default source only |
-| `lib/configuration/index.ts` barrel, `config-exports.ts` | both                | Internal and public re-export                                              |
-| `components/wizard/stack-selection.tsx`                  | via matrix          | Renders `matrix.suggestedStacks`; seeds selections from `allSkillIds`      |
-| `components/wizard/wizard.tsx`                           | via matrix          | `resolveSelectedSkillIds` under stack-defaults                             |
-| `components/wizard/step-agents.tsx`                      | via matrix          | Derives custom-agent ids from `stack.skills` keys                          |
-| `lib/matrix/matrix-provider.ts::findStack`               | via matrix          | `suggestedStacks.find(s => s.id === stackId)`                              |
-| `lib/installation/local-installer.ts`                    | via `loadStackById` | Eject-config build; throws `stackNotOfferedMessage(id, source)`            |
+| Consumer                                                 | Reads               | Purpose                                                                             |
+| -------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------- |
+| `scripts/generate-source-types.ts`                       | both                | Bakes `BUILT_IN_MATRIX` (relations + `suggestedStacks`)                             |
+| `lib/loading/source-loader.ts`                           | both                | Runtime merge for sources read from disk (stacks: only where `offersBuiltInStacks`) |
+| `lib/stacks/stacks-loader.ts::loadStackById`             | `defaultStacks`     | Per-id fallback after the source's `config/stacks.ts`, public catalogue only        |
+| `lib/configuration/index.ts` barrel, `config-exports.ts` | both                | Internal and public re-export                                                       |
+| `components/wizard/stack-selection.tsx`                  | via matrix          | Renders `matrix.suggestedStacks`; seeds selections from `allSkillIds`               |
+| `components/wizard/wizard.tsx`                           | via matrix          | `resolveSelectedSkillIds` under stack-defaults                                      |
+| `components/wizard/step-agents.tsx`                      | via matrix          | Derives custom-agent ids from `stack.skills` keys                                   |
+| `lib/matrix/matrix-provider.ts::findStack`               | via matrix          | `suggestedStacks.find(s => s.id === stackId)`                                       |
+| `lib/installation/local-installer.ts`                    | via `loadStackById` | Eject-config build; throws `stackNotOfferedMessage(id, source)`                     |
 
 ## Test surface
 

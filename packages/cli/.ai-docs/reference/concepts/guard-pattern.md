@@ -45,9 +45,9 @@ No guard inside the wizard throws. Throws in the wizard (`handleComplete` stack 
 
 The three global-item guards in `toggleTechnology` / `toggleAgent` share a single bypass precondition:
 
-| Field                      | Bypass When | Purpose                                             |
-| -------------------------- | ----------- | --------------------------------------------------- |
-| `isEditingFromGlobalScope` | `true`      | Editing from `~/.claude/` — guard is not meaningful |
+| Field                      | Bypass When | Purpose                                                   |
+| -------------------------- | ----------- | --------------------------------------------------------- |
+| `isEditingFromGlobalScope` | `true`      | Editing from the home directory — guard is not meaningful |
 
 **`isInitMode` is no longer a bypass.** Every global-item guard, and the scope-toggle guards (`toggleSkillScope`, `toggleAgentScope`), now gate on `isEditingFromGlobalScope` alone: a globally-installed skill or agent is immutable from project scope in every flow. Removing the init arm was a production no-op — a real `cc init` can never see a global preselection (`Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds one, so `isInitMode === true` implies `installedSkillConfigs === null`) — but it closes the bypass at store level so no future caller can reach through it.
 
@@ -198,7 +198,7 @@ Two rules in this codebase resolve the _same shape_ of conflict — one exclusiv
 - In the guard case the **user is the aggressor**: the keypress is an attempt to displace a shared install that every project reads. Refusing upholds the rule that a globally installed item is immutable from project scope, in every flow including `init`.
 - In the masking case the conflict is **pushed in**: a global install has landed on top of pre-existing project state, without the project asking. Letting global win there would silently uninstall the user's own skill — a strictly worse failure than hiding a global entry the user never chose to receive.
 
-**The mask is not an exception to immutability.** Masking never removes the global entry and never writes into `~/.claude-src/config.ts`; it only records, in the project's own config, that this project cannot show that global install. The global install stays intact for every other project, and the mask is dropped automatically once the collision clears (`dropOrphanedDerivedMasks`).
+**The mask is not an exception to immutability.** Masking never removes the global entry and never writes into `~/<source folder>/config.ts`; it only records, in the project's own config, that this project cannot show that global install. The global install stays intact for every other project, and the mask is dropped automatically once the collision clears (`dropOrphanedDerivedMasks`).
 
 > See [tombstone-pattern.md](./tombstone-pattern.md) "Mask vs. Tombstone" for the persisted shape and the provenance argument, and "Creation outside the wizard — derived conflict masks" for the full predicate table.
 

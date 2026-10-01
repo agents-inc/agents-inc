@@ -41,7 +41,7 @@ Exactly two routes emit it, and they emit the same byte-identical shape: the glo
 A tombstone is always:
 
 - At **`scope: "global"`** — project-scoped entries never need tombstones (they are just removed).
-- Stored in the **project** config (`<projectDir>/.claude-src/config.ts`), never in `~/.claude-src/config.ts`. See [scope-split.md](../config/scope-split.md).
+- Stored in the **project** config (`<projectDir>/<source folder>/config.ts`), never in `~/<source folder>/config.ts`. See [scope-split.md](../config/scope-split.md).
 - A **slot occupant**: it holds the `(id, "global")` or `(name, "global")` slot in the config so the renderer and merger can distinguish "still installed globally, suppressed locally" from "removed entirely".
 
 ## Mask vs. Tombstone — Terminology
@@ -54,7 +54,7 @@ Two senses of the same persisted shape. **They are byte-identical on disk.** Use
 | **Dual-scope half**       | The global half of a `[P][G]` pair. Always accompanied by an **active project entry of the same id**.           | The wizard store, via the `s` scope toggle (G→P) — `toggleSkillScope` / `toggleAgentScope`. | Project config only |
 | **Derived conflict mask** | A hide-this-global directive synthesized at write time because a live global entry collides with project state. | `reconcileProjectSplitAgainstGlobal` in `src/cli/lib/config-gate/propagate.ts`.             | Project config only |
 
-**Neither ever appears in `~/.claude-src/config.ts`.** Masking is applied to the project split only; the global config passed into reconciliation is read, never rewritten.
+**Neither ever appears in `~/<source folder>/config.ts`.** Masking is applied to the project split only; the global config passed into reconciliation is read, never rewritten.
 
 **Provenance is not recorded on disk — it is _inferred from the collision_.** There is no marker field. What makes the inference sound is a construction argument rather than data:
 
@@ -66,7 +66,7 @@ Two senses of the same persisted shape. **They are byte-identical on disk.** Use
 
 > **Consequence for tests:** a fixture asserting that an `excluded: true` entry survives a write must set up the thing that justifies it — an active project-scoped entry for the same id/name (identity), or an active project skill in the same matrix-declared `exclusive` category. A bare tombstone with no collision is by definition orphaned and the self-heal drops it.
 
-**Tombstones are only created when editing FROM project scope** (`isEditingFromGlobalScope === false`). Because a tombstone is project-local state that shadows a global install for _this_ project, it is meaningless when the config being edited IS the global config. When editing FROM global scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`), there is no project overlay, so a deselect is a **genuine removal** — the skill/agent is dropped entirely, never tombstoned. This keeps the invariant "tombstones never appear in `~/.claude-src/config.ts`" true even during a global-context edit. `applySkillRemoval` receives `null` for its installed-configs argument when editing from global scope (via `reconcileSkillConfigs` / `toggleDomain`), which makes every removed id droppable; at project scope the same argument identifies what the project merely inherits and may not touch.
+**Tombstones are only created when editing FROM project scope** (`isEditingFromGlobalScope === false`). Because a tombstone is project-local state that shadows a global install for _this_ project, it is meaningless when the config being edited IS the global config. When editing FROM global scope (`cc edit` at `~/`, `isEditingFromGlobalScope === true`), there is no project overlay, so a deselect is a **genuine removal** — the skill/agent is dropped entirely, never tombstoned. This keeps the invariant "tombstones never appear in `~/<source folder>/config.ts`" true even during a global-context edit. `applySkillRemoval` receives `null` for its installed-configs argument when editing from global scope (via `reconcileSkillConfigs` / `toggleDomain`), which makes every removed id droppable; at project scope the same argument identifies what the project merely inherits and may not touch.
 
 ## Type Definitions
 
@@ -183,28 +183,26 @@ Tombstones must survive every hop from wizard-store to disk:
 
 ```ts
 const prevSkillKeySet = installedSkillConfigs
-  ? new Set(installedSkillConfigs.map((s) => `${s.id}:${s.scope}`))
+  ? new Set(installedSkillConfigs.map((s) => skillSlotKey(s.id, s.scope)))
   : null;
 ```
 
-**Slot-occupancy match for `removedSkills`.** A baseline entry is considered removed only if **nothing** — active OR tombstone — occupies that slot in current:
+**Slot-occupancy match for `removedSkills`, over the ACTIVE baseline.** A baseline install is considered removed only if **nothing** — active OR tombstone — occupies that slot in current:
 
 ```ts
-const removedSkills = installedSkillConfigs
-  ? installedSkillConfigs.filter(
-      (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
-    )
-  : [];
+const removedSkills = activeSkillBaseline.filter(
+  (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
+);
 ```
 
-A current tombstone at the same `(id, scope)` keeps the slot occupied — dual-scope indicator, not a removal.
+`activeSkillBaseline` is `installedSkillConfigs` filtered to `!s.excluded`, so a baseline TOMBSTONE is never a removal candidate: it masks a global install rather than being one, and dropping it deletes nothing. A current tombstone at the same `(id, scope)` keeps the slot occupied — dual-scope indicator, not a removal.
 
 **Why it matters:**
 
 - **G→P toggle on a pre-existing global install** emits `[{X, project}, {X, global, excluded: true}]`. Without slot-occupancy the baseline global slot reads empty (tombstone ignored) and the renderer flags the global as removed → spurious `- React` in the Global section. With it, the tombstone occupies the slot → `• React` (unchanged global install, silenced locally).
 - **On reopen**, saved config carries the same dual-scope shape. Without slot-occupancy `prevSkillKeySet` lacks the `X:global` key (a baseline pre-filter strips the tombstone) → the tombstone renders via `uniqueExcludedGlobalSkills` with `isNew=true` → spurious `+ React` on a long-installed global. With it, the baseline keeps the tombstone → key present → no `+`.
 
-**So: never pre-filter the diff baseline on `!excluded`.**
+**So: never pre-filter `prevSkillKeySet` on `!excluded`.** The removal match and `inheritedGlobalSkills` read the active baseline instead, deliberately.
 
 **Supporting collections:**
 
@@ -260,7 +258,7 @@ Two related behaviors, now implemented in `applySkillRemoval` / `reconcileSkillC
 
 1. **Dual-scope removal branch.** `applySkillRemoval` recognises a `[P][G]` pair: with `configs = [{X, project}, {X, global, excluded: true}]` and `removed = {X}`, it drops **both** the active project entry and the stale tombstone, then re-surfaces a single inherited-global entry `{X, global}` so the row collapses to a read-only `[G]`. Every path that routes through `applySkillRemoval` reaches it — domain-deselect (`toggleDomain`) and spacebar on the pair's own row, which the deselect lock no longer refuses. `s` (`toggleSkillScope` dropping the tombstone) reaches the same collapsed shape by its own route. The `reconcileSkillConfigs` restore branch re-creates both the project entry and the tombstone when a globally-tombstoned skill is re-added, restoring `[P][G]`.
 
-2. **Scope-aware removal (no tombstone at global scope).** When editing FROM global scope, `reconcileSkillConfigs` and `toggleDomain` pass `null` for the installed configs into `applySkillRemoval`, so a deselect (or domain-deselect) removes the global skill outright. At project scope the same argument is the ownership test rather than a tombstone trigger: an entry present in the snapshot that the project does not own survives untouched. Either way, tombstones never reach `~/.claude-src/config.ts`.
+2. **Scope-aware removal (no tombstone at global scope).** When editing FROM global scope, `reconcileSkillConfigs` and `toggleDomain` pass `null` for the installed configs into `applySkillRemoval`, so a deselect (or domain-deselect) removes the global skill outright. At project scope the same argument is the ownership test rather than a tombstone trigger: an entry present in the snapshot that the project does not own survives untouched. Either way, tombstones never reach `~/<source folder>/config.ts`.
 
 The merge layer needs no tombstone-specific handling for either behavior: a fully-absent skill is dropped by `mergeConfigs`'s presence/absence + authoritative-scope logic (`"all"` for a global-context edit, `"owned"` for a project-context edit).
 

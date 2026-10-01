@@ -294,12 +294,12 @@ this module's module-level regexes are **verbatim copies** of giget's:
 `node_modules/giget/dist/shared/giget.BgKdRmJH.mjs`; **the chunk filename is content-hashed and will
 change on any reinstall** — re-locate it by grepping for `cacheDirectory` under `node_modules/giget/dist/`.
 
-| Step                          | giget                                                                                              | Our replica                                                  |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| cache root                    | `:68-69` `XDG_CACHE_HOME ? resolve($XDG_CACHE_HOME, "giget") : resolve(homedir(), ".cache/giget")` | `gigetCacheRoot` — same, `path.resolve` both ways            |
-| provider name                 | `:262-265` from `sourceProtoRe`; `:266-268` `http`/`https` keep the whole input as source          | `protoMatch` / `providerName`                                |
-| template name (git providers) | `:158`, `:174`, `:189` `parsed.repo.replace("/", "-")`, then `:282` `.replace(/[^\da-z-]/gi, "-")` | `templateName` — both steps, one expression                  |
-| final path                    | `:287-290` `resolve(cacheDirectory(), providerName, template.name)`                                | the `return` — `path.join(root, providerName, templateName)` |
+| Step                          | giget                                                                                                                                             | Our replica                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| cache root                    | `:68-69` `XDG_CACHE_HOME ? resolve($XDG_CACHE_HOME, "giget") : resolve(homedir(), ".cache/giget")`                                                | `gigetCacheRoot` — same, `path.resolve` both ways            |
+| provider name                 | `:262-265` from `sourceProtoRe`; `:266-268` `http`/`https` keep the whole input as source                                                         | `protoMatch` / `providerName`                                |
+| template name (git providers) | `:158`, `:174`, `:189`, `:202` `parsed.repo.replace("/", "-")` (github, gitlab, bitbucket, sourcehut), then `:282` `.replace(/[^\da-z-]/gi, "-")` | `templateName` — both steps, one expression                  |
+| final path                    | `:287-290` `resolve(cacheDirectory(), providerName, template.name)`                                                                               | the `return` — `path.join(root, providerName, templateName)` |
 
 **Why `undefined` for `http`/`https`** — the `protoMatch[1]` guard at the top of
 `getGigetCacheDir`. giget's `http` provider derives `template.name`
@@ -369,7 +369,7 @@ Read the line as belonging to the classification, not to the fetch.
 **Where the warning is read.** `warn()` writes to stderr for a plain command, but a
 load that opens a wizard buffers instead — `init` and `edit` pass `captureStartupMessages` — because
 the wizard clears the terminal on its way in. Those runs show the same line in the wizard's
-startup-message band; see [component-patterns.md](../component-patterns.md#wizardlayout-startup-message-band).
+startup-message band; see [component-patterns.md](../component-patterns.md#wizardlayout-startup-message-band-srcclicomponentswizardwizard-layouttsx).
 
 `current` covers two states deliberately: an ETag that matched, and an ETag that cannot be had at
 all (the record carries none, or the host answered without one). Both mean "keep the copy and say
@@ -559,10 +559,10 @@ constructed.
 
 ### `loadSkillsFromDir`
 
-| Callee                                       | Caller                                                                    | Purpose                                                   |
-| -------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `loadSkillsFromDir`                          | `discoverLocalProjectSkills` (`lib/operations/skills/discover-skills.ts`) | local `.claude/skills` discovery, `requireMetadata: true` |
-| `loadSkillsFromDir` (via `loadPluginSkills`) | `discoverAllPluginSkills` (`lib/plugins/plugin-discovery.ts`)             | plugin skill discovery                                    |
+| Callee                                       | Caller                                                                    | Purpose                                                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loadSkillsFromDir`                          | `discoverLocalProjectSkills` (`lib/operations/skills/discover-skills.ts`) | copied-in skill discovery at one scope, from `skillsDir(provider, scope, projectDir)` rather than a `.claude/skills` literal, `requireMetadata: true` |
+| `loadSkillsFromDir` (via `loadPluginSkills`) | `discoverAllPluginSkills` (`lib/plugins/plugin-discovery.ts`)             | plugin skill discovery                                                                                                                                |
 
 ## Invariants
 
@@ -617,9 +617,9 @@ throws "Local marketplace not found". Sources must carry `github:` / `gh:` / `ht
 
 ## Test surface
 
-Four files. Run them rather than reading a total off this page: `npm test` builds `dist/` first,
-which a bare `vitest run` refuses to do against a stale build, and a per-file count is wrong within
-a fortnight.
+Four files. Run them rather than reading a total off this page — after `bun run build`, because
+`npm test` is `vitest run` and builds nothing, and the suite refuses a stale `dist/`. A per-file count
+is wrong within a fortnight.
 
 | File                                                        | Covers (by describe block)                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

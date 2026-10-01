@@ -12,7 +12,7 @@ How to verify outcomes after a test runs.
 
 All file-based assertions go through custom Vitest matchers. Tests never call `readFile`, `readdir`, or `fileExists` directly in `it()` blocks. The matcher encapsulates the file reading.
 
-**Why:** If the config file format changes from `config.ts` to `config.yaml`, a matcher-based test needs zero changes -- only the matcher implementation updates. A test that calls `readFile(path.join(dir, ".claude-src", "config.ts"))` breaks everywhere.
+**Why:** If the config file format changes from `config.ts` to `config.yaml`, a matcher-based test needs zero changes -- only the matcher implementation updates. A test that calls `readFile(path.join(dir, ".claude-src", "config.ts"))` breaks everywhere — and the source-folder rename is the worked example: the folder's own name moved, and every spec that had written it out had to be edited by hand.
 
 ---
 
@@ -34,7 +34,9 @@ All matchers accept a `ProjectHandle` (`{ dir: string }`) as the first argument 
 
 ### `toHaveConfig(expectations?)`
 
-Checks that `.claude-src/config.ts` exists. Optionally validates content.
+Checks that `config.ts` exists under whichever source folder the install is on, and optionally validates its content.
+
+**The folder is RESOLVED, never named**: the matcher takes its path from `configTsPath` in `e2e/helpers/test-utils.ts`, which goes through `sourceFolderInUse`, so one call describes an install this release created and one made before the rename alike. A fixture whose SUBJECT is a layout names the folder itself instead — that is the rule `sourceFolderIn`'s own docblock states, and a resolver-routed matcher cannot seed or pin a layout.
 
 ```typescript
 // DISCOURAGED: bare call only checks file exists, not content
@@ -129,7 +131,7 @@ await expect(project).toHaveNoPlugins();
 
 ### `toHaveEjectedTemplate()`
 
-Checks that the ejected `agent.liquid` template exists at `.claude-src/agents/_templates/agent.liquid`.
+Checks that the ejected `agent.liquid` template exists at `<source folder>/agents/_templates/agent.liquid`, the folder resolved through `sourceFolderIn` exactly as `toHaveConfig` above resolves it.
 
 ```typescript
 await expect(project).toHaveEjectedTemplate();
@@ -201,6 +203,31 @@ await expectDualScopeInstallation(fakeHome, projectDir, {
   global: { skillIds: ["web-framework-react"], agents: ["web-developer"] },
   project: { skillIds: ["api-framework-hono"], agents: ["api-developer"] },
 });
+```
+
+### `expectNoSourceFolder(dir, reason)` and `expectOnlySourceFolder(dir, expected, reason)`
+
+In `e2e/assertions/source-folder-assertions.ts`. "No source folder here" asked of `DIRS.CLAUDE_SRC`, `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` — `SOURCE_FOLDER_NAMES` — and reported as the roster of names actually found, not as a boolean. A Codex folder, `DIRS.SOURCE_CODEX`, is not on the roster: it is caught through its parent, `DIRS.SOURCE_ROOT`, which is also all a Codex installation reads as to `expectOnlySourceFolder` — the same roster as a parent kept after its provider folder was removed.
+
+**Use these rather than a hand-written absence, because three hand-written shapes in this suite stopped being able to fail and none of them changed:** `expect(await listFiles(dir)).not.toContain(DIRS.CLAUDE_SRC)` cannot see a two-segment name at all, since `listFiles` is a top-level `readdir`; `directoryExists(path.join(dir, DIRS.CLAUDE_SRC))` returning `false` is true of every install created after the flip whatever it left under the other name; and either of them after an uninstall stays green over an emptied `.agents-inc/` sitting where the install was.
+
+`expectOnlySourceFolder` is the counterpart for a directory that is MEANT to hold one: it pins WHICH names are there and refuses every other, so an install that grew a second folder beside its first fails here instead of satisfying two separate assertions — one for the name that should be present, one for the name that should not — neither of which can see a THIRD name appear. The parent counts as one of the names: a new-layout install holds `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` both, and a scope uninstalled from under a kept parent holds `DIRS.SOURCE_ROOT` alone — which is `commands/uninstall-manifest-removal`'s live call. `reason` is the caller's own sentence about the promise being tested, and it is what the failure leads with.
+
+```typescript
+import {
+  expectNoSourceFolder,
+  expectOnlySourceFolder,
+} from "../assertions/source-folder-assertions.js";
+
+await expectNoSourceFolder(
+  tempDir,
+  "opening the editor is not a setup, so init --ui installs nothing",
+);
+await expectOnlySourceFolder(
+  projectDir,
+  [DIRS.SOURCE_ROOT],
+  "uninstall kept .agents-inc/ for the file it does not own, and must have left no source folder under it",
+);
 ```
 
 ### `expectNoDuplicates(arr, label, context?)`
@@ -326,7 +353,7 @@ await expect(project).toHaveAgentDynamicSkills("web-developer", {
 
 **A `skillIds` hit is a claim about the protocol alone, so a laziness claim still needs the preload side named.** `skillIds` says an id IS activated dynamically and says nothing about what the frontmatter preloads, so put `toHaveAgentFrontmatter({ exactSkills })` or `{ noSkills: true }` beside it to pin the surface Claude Code actually reads. Reading off the parsed section is what closed the older hazard: a bare `body.includes(id)` was satisfied by an id sitting inside a longer id, inside a preload's `id:id` ref, and inside the agent's own prose — and every compiled body in this tree carries prose naming skills.
 
-**Preloaded vs dynamic in the fixture:** the stack decides. `createMockSkillAssignment(id, true)` in `e2e/helpers/create-e2e-source.ts` means preloaded, `createMockSkillAssignment(id)` means dynamic. Note that the `AGENT_TEMPLATE` in that same file is NOT what fixture agents compile from — `createLiquidEngine` (`src/cli/lib/compiler.ts`) resolves `agent.liquid` from the project's own `.claude-src/agents/_templates`, then `.claude/templates`, then the CLI's `src/agents/_templates`, and a marketplace source's template directory is never one of those roots.
+**Preloaded vs dynamic in the fixture:** the stack decides. `createMockSkillAssignment(id, true)` in `e2e/helpers/create-e2e-source.ts` means preloaded, `createMockSkillAssignment(id)` means dynamic. Note that the `AGENT_TEMPLATE` in that same file is NOT what fixture agents compile from — `createLiquidEngine` (`src/cli/lib/compiler.ts`) resolves `agent.liquid` from the project's own source folder — `sourceFolderInUse(projectDir, providerInUse(projectDir)).dir` + `agents/_templates` — then `.claude/templates`, then the CLI's `src/agents/_templates`, and a marketplace source's template directory is never one of those roots.
 
 ---
 
@@ -470,7 +497,7 @@ expect(frame).not.toContain("~ React");
 
 This is strictly stronger than `toStrictEqual({ project: "•", global: "•" })` on a parsed struct, because it pins the entire rendered frame rather than only the two slots a parser happened to look at. Parsed-struct assertions implicitly negate only at the scopes the helper inspects — they let bugs at other scopes ship silently.
 
-**Never define parser/extractor helpers inside a test file** — loops, regex scans, and state-machine `currentScope` variables that pluck prefixes out of rendered output. An uninstrumented parser silently produces wrong answers when layout changes and obscures the rendered contract (the substring IS the contract). Assert directly on the frame with `toContain` + exhaustive negation. If genuinely reusable across tests, live it in `src/cli/lib/__tests__/helpers/` WITH its own tests — the only home a tested helper has, because no vitest project collects a `*.test.ts` under `e2e/helpers/`, so a test written there never runs while reading as coverage. Specs reach it through `e2e/helpers/test-utils.ts`. Full rule: [README.md § No parser/extractor helpers in test files](./README.md).
+**Never define parser/extractor helpers inside a test file** — loops, regex scans, and state-machine `currentScope` variables that pluck prefixes out of rendered output. An uninstrumented parser silently produces wrong answers when layout changes and obscures the rendered contract (the substring IS the contract). Assert directly on the frame with `toContain` + exhaustive negation. If genuinely reusable across tests, live it in `src/cli/lib/__tests__/helpers/` WITH its own tests — that or a `__tests__/helpers/` beside the code it serves, whichever a vitest project collects, and never under `e2e/helpers/`, where no project collects a `*.test.ts` at all, so a test written there never runs while reading as coverage. Specs reach it through `e2e/helpers/test-utils.ts`. Full rule: [README.md § No parser/extractor helpers in test files](./README.md).
 
 ---
 
@@ -630,7 +657,7 @@ The CLI half of this rule already exists as [README.md § State-change verificat
 `e2e/lifecycle/edit-noop-leaves-compiled-agents-untouched.e2e.test.ts` is the worked case. The edit wizard is walked end to end with no key that selects, deselects or rescopes anything, over an installation a real `init` wrote:
 
 - **Reached the decision:** `STEP_TEXT.EDIT_UNCHANGED` in the run's output. Without it, a run that crashed before writing satisfies every unchanged-state assertion below for free.
-- **Acted on it:** `readTreeSnapshot` equality over `.claude/agents/` and over `.claude-src/`, against snapshots taken after the install. **The mtime half is what separates "not rewritten" from "rewritten identically"** — a recompile of an unchanged config produces the same bytes, so content alone cannot see it, and the write is invisible in a diff while being plainly a write.
+- **Acted on it:** `readTreeSnapshot` equality over `.claude/agents/` and over the scope's source folder, against snapshots taken after the install. **The mtime half is what separates "not rewritten" from "rewritten identically"** — a recompile of an unchanged config produces the same bytes, so content alone cannot see it, and the write is invisible in a diff while being plainly a write.
 
 The counter-example is why the rule exists. Five specs used to assert `toHaveCompiledAgents()` and a substring of the emitted config after a passthrough edit, and all five held only because `edit` had a phantom write: it hydrated its agent roster from a field most configs did not carry, fell back to the wizard's default roster, and `detectConfigChanges` (`src/cli/commands/edit.tsx`) then found a diff nobody had made. `toHaveCompiledAgents()` is wrong here twice over — it reads presence (`readdir` for any `.md`), so the install alone satisfies it and it says nothing at all about the run; and read as a proof of execution it claims the run recompiled, which a correct passthrough must not do. Retargeting those five at their real subjects removed the last assertion touching this behaviour and left it stated nowhere, which is what the named spec now holds.
 

@@ -44,7 +44,7 @@ related:
   - reference/utilities.md
   - reference/features/skills-and-matrix.md
   - reference/testing/infrastructure.md
-last_validated: 2026-08-30
+last_validated: 2026-09-25
 ---
 
 # Code Generation Pipeline and Generated Artefacts
@@ -130,12 +130,12 @@ first two disagreeing is the load-bearing invariant below. Union sizes (`SkillId
 
 ## The four generators
 
-| Generator                             | npm script                                                          | Runtime | Writes to                                  | Reads                                                                                                                                                                                                                                                |
-| ------------------------------------- | ------------------------------------------------------------------- | ------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/generate-source-types.ts`    | `generate:types` -> `bun scripts/run-generate-source-types.ts`      | `bun`   | `src/cli/types/generated/`                 | The skills repo sibling to the monorepo root (`../skills` relative to the repo root — i.e. `packages/cli/../../../skills` — by default, overridable as `argv[2]`), `src/agents/**/metadata.yaml`, and three `lib/configuration/default-*.ts` modules |
-| `scripts/generate-json-schemas.ts`    | `generate:schemas` -> `bun scripts/run-generate-json-schemas.ts`    | `bun`   | `src/schemas/`                             | Ten named exports from `src/cli/lib/schemas.ts`, plus `CATEGORIES` from `src/cli/types/generated/source-types.ts`                                                                                                                                    |
-| `scripts/generate-matrix-package.ts`  | `generate:matrix` -> `bun scripts/run-generate-matrix-package.ts`   | `bun`   | `packages/matrix/src/` (8 files)           | Seven files under `src/cli/types/`, `src/agents/*/*/metadata.yaml`, and this package's own `defaultStacks`                                                                                                                                           |
-| `scripts/generate-compile-package.ts` | `generate:compile` -> `bun scripts/run-generate-compile-package.ts` | `bun`   | `packages/compile/src/generated/corpus.ts` | `src/agents/**` — every markdown partial a sub-agent is assembled from, and every Liquid template under `DIRS.templates` — plus each agent's `metadata.yaml`                                                                                         |
+| Generator                             | npm script                                                          | Runtime | Writes to                                  | Reads                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------- | ------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/generate-source-types.ts`    | `generate:types` -> `bun scripts/run-generate-source-types.ts`      | `bun`   | `src/cli/types/generated/`                 | The skills repo sibling to the monorepo root (`../skills` relative to the repo root — i.e. `packages/cli/../../../skills` — by default, overridable as `argv[2]`), `src/agents/**/metadata.yaml`, and `lib/configuration/default-categories.ts` and `default-stacks.ts` (`default-rules.ts` through `matrix/skill-resolution`) |
+| `scripts/generate-json-schemas.ts`    | `generate:schemas` -> `bun scripts/run-generate-json-schemas.ts`    | `bun`   | `src/schemas/`                             | Ten named exports from `src/cli/lib/schemas.ts`, plus `CATEGORIES` from `src/cli/types/generated/source-types.ts`                                                                                                                                                                                                              |
+| `scripts/generate-matrix-package.ts`  | `generate:matrix` -> `bun scripts/run-generate-matrix-package.ts`   | `bun`   | `packages/matrix/src/` (8 files)           | Seven files under `src/cli/types/` and `src/agents/*/*/metadata.yaml`; its runner also parses `BUILT_IN_MATRIX` against `matrixSchema` (`@workspace/matrix/matrix-schema`)                                                                                                                                                     |
+| `scripts/generate-compile-package.ts` | `generate:compile` -> `bun scripts/run-generate-compile-package.ts` | `bun`   | `packages/compile/src/generated/corpus.ts` | `src/agents/**` — every markdown partial a sub-agent is assembled from, and every `.liquid` file under `src/agents/` (keyed with the `_templates/` prefix stripped) — plus each agent's `metadata.yaml` and this package's `version`                                                                                           |
 
 **All four run under `bun`, and `bun` is undeclared.** It is in neither `dependencies`,
 `devDependencies` nor `engines` (which names only `node >=22`) — it is assumed present, as it is on
@@ -157,10 +157,10 @@ shipped `metadata.schema.json` has drifted this way before, its `slug` and `cate
 `source-types.ts` far enough behind to reject legitimate slugs and categories outright.
 
 The dependency does **not** run the other way at runtime. `generate-source-types.ts` reaches
-`src/cli/types` only through `import type`, and its five value imports
-(`GENERATED_AT_BUILD` from `consts.ts`, `default-categories`, `default-rules`, `default-stacks`,
-and `mergeMatrixWithSkills` from `matrix/skill-resolution`) transitively reach `consts.ts` and
-`utils/logger.ts`, neither of which imports a generated file. So the type
+`src/cli/types` only through `import type`, and its value imports — `GENERATED_AT_BUILD` from
+`consts.ts`, `defaultCategories`, `defaultStacks`, `mergeMatrixWithSkills` and
+`relationshipsForSource` from `matrix/skill-resolution` (which brings in `default-rules`), and
+`bytewise` from `utils/string` — reach no file under `src/cli/types/generated/`. So the type
 generator bootstraps from an empty `src/cli/types/generated/` — but `tsc -p tsconfig.scripts.json`
 does **not**, because type-only imports still have to resolve.
 
@@ -191,10 +191,11 @@ call this instead; nothing in this repository is broken by it not doing so yet.
 same name.** `packages/matrix`'s own `generate` script is `cd ../cli && bun run generate:matrix`,
 and `packages/compile`'s is `cd ../cli && bun run generate:compile` — one-line delegations to a
 single generator each, not second writers and not this package's composite. Both are kept alive
-because the files their generators emit carry a header line naming them: ``Do not edit manually —
-run `bun run generate` in packages/matrix.`` and the same sentence for `packages/compile`. Deleting
-either script would make every emitted file instruct the reader to run something that does not
-exist. Each `package.json` records the reason in its own `"//generate"` field. **A generator whose
+because the files their generators WRITE carry a header line naming them — `src/generated/agents.ts`
+in `packages/matrix` and `src/generated/corpus.ts` in `packages/compile`: ``Do not edit manually —
+run `bun run generate` in packages/matrix.`` and the same sentence for `packages/compile`. (The
+vendored type files are byte-for-byte copies and carry their source's own header.) Deleting either
+script would make those files instruct the reader to run something that does not exist. Each `package.json` records the reason in its own `"//generate"` field. **A generator whose
 output embeds its own invocation command is coupled to that command** — moving one means keeping an
 entry point at the old name or rewriting every header. Read the header's workspace name as
 load-bearing: the same words in `packages/cli` run all four.
@@ -220,8 +221,9 @@ does see the staged set, because a one-ended range makes turbo ask `git diff --c
 `diff-tree`. `typecheck` joined that line on 2026-08-08; until then no hook had ever run it.
 `pre-push` is the coarse one: it reads the paths in `'@{push}..HEAD'` and decides which **side** of
 the monorepo moved — a path under `packages/cli/`, `packages/matrix/`, `packages/compile/`,
-`packages/api/` or `packages/api-mocks/` sets the CLI side; any other
-path under `apps/` or `packages/` sets the web side; a root tooling file (`package.json`,
+`packages/api/` or `packages/api-mocks/` sets the CLI side; any path under `apps/` or `packages/`
+other than `packages/cli/` sets the web side, so the four shared packages set both; a root tooling
+file (`package.json`,
 `bun.lock`, `turbo.json`, `tsconfig.json`, or anything under `.husky/` or `.github/`) sets **both**,
 because it changes how both sides install, build and run — and then runs that side's `lint` through
 turbo, `--filter=agents-inc` for the CLI and `--filter='!agents-inc'` for the web, followed by that
@@ -308,16 +310,19 @@ overwrite them. The consequence is a **silently asymmetric edit rule**:
   schema in `src/cli/lib/schemas.ts` instead, or add a `postProcess` hook.
 - Hand-editing one of the two is **correct and required** — there is no other way to change them.
 
-Nothing in the files themselves marks the difference: all twelve carry the same `$schema`, `$id`,
-`title`, `description` header shape, and none carries an "AUTO-GENERATED" banner (unlike the two
-files in `src/cli/types/generated/`, which do). The only on-disk tell is mtime — the ten generated
-files share one timestamp from their last regeneration run, the two hand-written ones are months
-older. **Verify against `SCHEMA_ENTRIES`, never against the file header.**
+The files barely mark the difference: all twelve carry the same `$schema`, `$id`, `title`,
+`description` header shape, and none carries an "AUTO-GENERATED" banner (unlike the two files in
+`src/cli/types/generated/`, which do). Only `project-config.schema.json` says what it is — a
+`$comment` opening "HAND-MAINTAINED" — and `project-source-config.schema.json` carries no such key.
+**Verify against `SCHEMA_ENTRIES`, never against the file header.**
 
 Lineage, so this reads as a deliberate state rather than an oversight: release 0.24.3 introduced the
 generator, moved ten schemas to `z.toJSONSchema()` and removed the rest of the hand-maintained set.
 These two were not migrated, because no Zod schema in `schemas.ts` describes the consumer-facing
-`.claude-src/config.yaml` shapes they validate.
+config shapes they validate. Both files' `description` fields name those shapes —
+`.agents-inc/<provider>/config.ts` for an installation and the provider-neutral
+`.agents-inc/config.ts` for a source repo — and both are hand-maintained, so nothing re-derives
+either sentence.
 
 ## How a schema is emitted
 
@@ -444,7 +449,7 @@ Both render the file's source and return it; neither writes. The phase order is 
 list — so `emittedFiles` calls them in that order and says so.
 
 Union sizes are owned by `reference/type-system.md`; the `BUILT_IN_MATRIX` composition (via
-`mergeMatrixWithSkills(defaultCategories, defaultRules.relationships, skills)`) is documented in
+`mergeMatrixWithSkills(defaultCategories, relationshipsForSource(sortedSkills), sortedSkills)`) is documented in
 `reference/features/skills-and-matrix.md`.
 
 **Determinism is engineered, not incidental.** Every emitted list is sorted (`SKILL_MAP` and
@@ -456,8 +461,9 @@ worthless and every check that reads what this generator emits goes permanently 
 
 **Skips are warnings; contract violations are throws.** A skill directory missing `metadata.yaml` or
 `SKILL.md`, or missing SKILL.md frontmatter, logs `⚠ Skipping` and continues; a skill carrying
-`custom: true` is skipped silently (custom skills register at runtime). But a missing
-`cliDescription` or `displayName` **throws**, as does a duplicate slug or duplicate skill ID in
+`custom: true` is skipped silently (custom skills register at runtime). But a `metadata.yaml` or
+SKILL.md frontmatter that fails its schema **throws** (`parseMetadata`, naming the file), and so
+does a missing `cliDescription` or `displayName`, or a duplicate slug or duplicate skill ID in
 `renderSourceTypes`. Uniqueness of both keys is a hard precondition of `SKILL_MAP`, which is the
 basis for the `SkillSlug`/`SkillId` unions.
 
@@ -513,8 +519,8 @@ every mtime in its output directory untouched.
 
 `packages/matrix` is a private workspace holding browser- and Worker-safe data for `apps/editor` and
 `apps/server`. Everything under its `src/vendor/` and `src/generated/` is emitted by this script and
-nothing else; `src/read-model/`, `src/schema.ts` and `src/seed.ts` are hand-written code with their
-own tests and are **not** touched.
+nothing else; everything else under its `src/` — `read-model/`, `seed.ts`,
+`matrix-schema.ts` and the rest — is hand-written code with its own tests and is **not** touched.
 
 **The eight emitted files, in emission order** (paths relative to `packages/matrix/`, and this
 document owns the count):
@@ -555,7 +561,14 @@ flattening lost it, and nothing left for the generator to write.
 `generate({ matrixRoot, cliRoot? })` and `check({ matrixRoot, cliRoot? })` and **runs nothing at
 module scope**, so importing it writes no files. `scripts/run-generate-matrix-package.ts` owns
 `process.argv`, the console output and the exit code (`EXIT_CODES.ERROR` on drift). That split is
-what makes the generator testable — the failure mode `generate-json-schemas.ts` is stuck with.
+what makes the generator testable.
+
+**The runner refuses a catalogue that is no longer a matrix, on both branches.** Before either the
+write or `--check`, `refuseMalformedMatrix` runs the generator's exported `matrixShapeIssues` over
+`BUILT_IN_MATRIX` — `matrixSchema` from `@workspace/matrix/matrix-schema`, the wire contract the
+vendored copy answers to — and exits `EXIT_CODES.ERROR` naming each `path: message`. A byte
+comparison cannot catch a type generator that emitted a differently-shaped catalogue; this does,
+in the job that vendors it rather than at `packages/matrix`'s import time.
 
 `cliRoot` defaults to the package root and is a parameter so the suite can drive the generator
 against a fixture checkout; `matrixRoot` is resolved by the wrapper as `../../matrix`.
@@ -585,10 +598,17 @@ whatever the branch holds — not against the schemas that shipped in its own ta
 
 ### `src/cli/types/generated/*.ts`
 
-| Artefact                                  | Importers                                                                                                                                                                    |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generated/source-types.ts`               | `types/skills.ts`, `types/matrix.ts`, `types/agents.ts`, `lib/schemas.ts`, `utils/type-guards.ts`, `e2e/fixtures/project-builder.ts`, and `scripts/generate-json-schemas.ts` |
-| `generated/matrix.ts` (`BUILT_IN_MATRIX`) | `lib/loading/source-loader.ts`, `lib/matrix/matrix-provider.ts`, plus four test files                                                                                        |
+| Artefact                                  | Importers outside test files                                                                                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `generated/source-types.ts`               | `types/skills.ts`, `types/matrix.ts`, `types/agents.ts`, `lib/schemas.ts`, `utils/type-guards.ts`, and `scripts/generate-json-schemas.ts`                                            |
+| `generated/matrix.ts` (`BUILT_IN_MATRIX`) | `lib/loading/source-loader.ts`, `lib/matrix/matrix-provider.ts`, `lib/seed/external-skills.ts`, `e2e/fixtures/default-source-cache.ts`, and `scripts/run-generate-matrix-package.ts` |
+
+Test files import both as well. Every importer, tests included — the `(types|\.)/` keeps out the
+`../vendor/generated/` import that `generate-matrix-package.ts` writes into its output:
+
+```
+grep -rlE "from ['\"][^'\"]*(types|\.)/generated/(matrix|source-types)(\.js|\.ts)?['\"]" src e2e scripts
+```
 
 **There is a consumer outside this package.** Both files are copied verbatim into
 `packages/matrix/src/vendor/generated/` by `generate:matrix` (above), which is what lets
@@ -603,26 +623,20 @@ So **regenerating `src/cli/types/generated/` has consequences beyond this packag
 
 ## Test surface
 
-All four generators are covered, which is new — the schema generator had no suite at all until it
-stopped running at module scope.
+All four generators are covered — the schema generator had no suite at all until it stopped
+running at module scope. The suites are `scripts/generate-source-types.test.ts`,
+`scripts/generate-matrix-package.test.ts`, `scripts/generate-json-schemas.test.ts` and
+`scripts/generate-compile-package.test.ts`.
 
-| Suite                                      | Tests  |
-| ------------------------------------------ | ------ |
-| `scripts/generate-source-types.test.ts`    | **41** |
-| `scripts/generate-matrix-package.test.ts`  | **22** |
-| `scripts/generate-json-schemas.test.ts`    | **9**  |
-| `scripts/generate-compile-package.test.ts` | **17** |
-
-Re-derive each by running the file (`npx vitest run --project unit scripts/<name>.test.ts`), never
-by counting `it(`. **This document states no `scripts/` test total and no file count**, because the
-checker suites grow whenever a claim is bound and the four counts above are the only ones a
-generator change moves — re-derive the whole-directory figure with
-`npx vitest run --project unit scripts/` at the moment you need it, and the file inventory with
+**This document states no test count.** Count a suite by running it
+(`npx vitest run --project unit scripts/<name>.test.ts`), never by counting `it(`; the
+whole-directory figure is `npx vitest run --project unit scripts/`, and the file inventory
 `ls scripts/*.test.ts`. [testing/infrastructure.md](../testing/infrastructure.md) owns that
 inventory. The checkers split two ways and the split is worth holding: the `check-shared-*` set
-walks every workspace in the monorepo and each has a `run-*` entry point in `package.json`, while
-the rest have a subject inside this package, no runner and no `package.json` entry at all — their
-suite IS how they run. Re-derive the two sides with `ls scripts/run-check-*.ts`.
+walks every workspace in the monorepo and each has a `run-*` entry point, which the repository
+root's `deps:check` script runs, while the rest have a subject inside this package, no runner and
+no `package.json` entry at all — their suite IS how they run. Re-derive the two sides with
+`ls scripts/run-check-*.ts`.
 
 The matrix-package suite runs `generate` and `check` against the **real** `packages/matrix` as well
 as against a fixture `cliRoot` in a temp directory. It pins: that importing the module writes

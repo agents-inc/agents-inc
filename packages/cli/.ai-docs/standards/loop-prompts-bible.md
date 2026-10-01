@@ -18,18 +18,18 @@ A loop agent orchestrates: select the right sub-agent, provide clear context, ve
 
 ### Available Agents
 
-| Agent            | Use For                                                        |
-| ---------------- | -------------------------------------------------------------- |
-| `cli-developer`  | All production code changes (commands, lib, utils, components) |
-| `cli-tester`     | All test creation and refactoring                              |
-| `web-developer`  | React/Ink components, frontend logic                           |
-| `pm`             | Feature planning, specs, architecture decisions                |
-| `cli-reviewer`   | Post-implementation CLI code review                            |
-| `api-developer`  | API routes, database, server logic                             |
-| `api-reviewer`   | Post-implementation API code review                            |
-| `codex-keeper`   | AI-focused documentation generation                            |
-| `agent-summoner` | Creating new agent definitions                                 |
-| `skill-summoner` | Creating new skill definitions                                 |
+| Agent               | Use For                                                               |
+| ------------------- | --------------------------------------------------------------------- |
+| `cli-developer`     | All production code changes (commands, lib, utils, components)        |
+| `cli-tester`        | All test creation and refactoring                                     |
+| `web-developer`     | React/Ink components, frontend logic                                  |
+| `pm`                | Feature planning, specs, architecture decisions                       |
+| `reviewer`          | Post-implementation code review                                       |
+| `api-developer`     | API routes, database, server logic                                    |
+| `codex-keeper`      | Reference docs under `.ai-docs/reference/`, re-derived from source    |
+| `convention-keeper` | Standards under `.ai-docs/standards/`, from agent-findings and audits |
+| `agent-summoner`    | Creating new agent definitions                                        |
+| `skill-summoner`    | Creating new skill definitions                                        |
 
 ### Selection Decision Tree
 
@@ -41,9 +41,10 @@ What needs to happen?
 |   |- API/backend -> api-developer
 |   |- Agent/skill definitions -> agent-summoner / skill-summoner
 |- Write/modify tests? -> cli-tester
-|- Review code? -> cli-reviewer / api-reviewer
+|- Review code? -> reviewer
 |- Plan a feature? -> pm
-|- Generate docs? -> codex-keeper
+|- Reference docs? -> codex-keeper
+|- Standards docs? -> convention-keeper
 |- Research/investigate? -> Spawn a Task agent
 ```
 
@@ -182,12 +183,13 @@ After a sub-agent completes, capture: what changed (files + lines), key decision
 
 **Run the gate, then report what it returned.** A check that runs happens whether or not the lane
 decided to; a checklist asking the lane to confirm its own work is advice. `prompt-bible.md`
-Technique #1 carries the `SubagentStop` hook that runs one on every completion attempt.
+Technique #1 carries the `Stop` hook — registered as `SubagentStop` for a sub-agent — that runs one
+on every completion attempt.
 
 ```
 |- [ ] All acceptance criteria checked off
-|- [ ] Tests pass (npm test)
-|- [ ] No TypeScript errors (tsc --noEmit)
+|- [ ] Tests pass (bun run test --filter=agents-inc, from the repository root)
+|- [ ] No TypeScript errors (bun run typecheck, from packages/cli)
 |- [ ] Files actually changed (verify with git diff or re-read)
 |- [ ] No unintended side effects (check git status)
 |- [ ] Sub-agent reported success with evidence
@@ -210,14 +212,14 @@ Technique #1 carries the `SubagentStop` hook that runs one on every completion a
 
 ### Compliance Checks
 
-| Check           | How                                    |
-| --------------- | -------------------------------------- |
-| TypeScript      | `tsc --noEmit`                         |
-| Tests           | `npm test`                             |
-| Named constants | grep for magic numbers                 |
-| Exit codes      | grep for `process.exit(` with literals |
-| Named exports   | grep for `export default`              |
-| File naming     | verify kebab-case                      |
+| Check           | How                                                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TypeScript      | `bun run typecheck` in `packages/cli` — all three `tsc` programs, where a bare `tsc --noEmit` reads `tsconfig.json` alone and covers neither `scripts/` nor `e2e/` |
+| Tests           | `bun run test --filter=agents-inc` from the repository root — turbo builds `dist/` first                                                                           |
+| Named constants | grep for magic numbers                                                                                                                                             |
+| Exit codes      | grep for `process.exit(` with literals                                                                                                                             |
+| Named exports   | grep for `export default`                                                                                                                                          |
+| File naming     | verify kebab-case                                                                                                                                                  |
 
 ---
 

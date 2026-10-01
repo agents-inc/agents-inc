@@ -42,6 +42,13 @@ last_validated: 2026-08-30
 | Test Runner | Vitest (`vitest.config.ts`) with 3 projects: unit, integration, commands                                                                                                                                                                                                                                                                                                 |
 | Runtime     | Node.js, floor `>=22` in `engines` (Ink 7 requires it — CI pins Node 22 in every job, and the E2E harness spawns the CLI with the runner's Node). Also Bun-compatible based on test helpers                                                                                                                                                                              |
 
+**`<source folder>` throughout this document** is the folder that scope keeps its agents-inc source
+in: `.agents-inc/<provider>` for anything installed since the rename, `.claude-src` for anything older,
+which is read and written where it is indefinitely — no command moves one. One installation is exactly one
+provider and the folder is what says which — nothing inside `config.ts` records it. The name is
+resolved rather than composed, and [concepts/scope-system.md](./concepts/scope-system.md) owns the
+resolution.
+
 ## Technology Stack
 
 Ranges are `packages/cli/package.json`'s and are not copied here; the shared-tool majors every
@@ -119,7 +126,7 @@ src/cli/
   lib/                      # Core business logic (no UI)
     agents/                 # Agent fetching, compilation, recompilation
       list-compiled-agents.ts # listAgentMdFiles() — on-disk compiled-agent enumeration
-    config-gate/            # The ONLY code allowed to write ~/.claude-src/{config,config-types}.ts (index.ts is its whole public surface)
+    config-gate/            # The ONLY code allowed to write ~/<source folder>/{config,config-types}.ts (index.ts is its whole public surface)
       index.ts              # writeScopedFromWizard(), writeScopeConfigTypes(), reconcileTypesFromDisk(),
                             #   mutateGlobal(), propagateGlobalRemoval(), ensureBlankPair()
                             #   — the SIX entries that mint the gate token, each around its whole flow.
@@ -143,7 +150,11 @@ src/cli/
       default-categories.ts # defaultCategories — category definitions, pinned 1:1 against the generated `Category` union
     installation/           # Install mode detection, local installer, mode migrator
       installation.ts       # detectInstallation(), detectProjectInstallation(), detectGlobalInstallation(), deriveInstallMode()
-      install-base-dir.ts   # resolveInstallPaths(projectDir, scope), installBaseDir() — scope-aware base dir
+      install-base-dir.ts   # resolveInstallPaths(projectDir, scope), getProjectConfigPath(dir, provider)
+      install-layout.ts     # sourceFolderInUse(), providerInUse(), installBaseDir(), skillsDir()/agentsDir()
+                            #   — the one funnel for every path under a source folder or a host folder
+      provider-flag.ts      # --provider, and the refusal when two providers' installations share a scope
+      detect-installations.ts # detectInstallations() — every installation a run from cwd can see, global first
       is-home-directory.ts  # isHomeDirectory() — symlink-safe global-install-root check
       local-installer.ts    # buildAndMergeConfig(), setConfigMetadata(), buildCompileAgents(),
                             #   buildAgentScopeMap() — every config-pair writer lives in config-gate/
@@ -159,8 +170,17 @@ src/cli/
       skills/               # discoverInstalledSkills(), copyLocalSkills(), installPluginSkills(), uninstallPluginSkills(), pluginInstallFailureError()
       project/              # detectProject(), detectBothInstallations(), writeProjectConfig(), compileAgents(), compileAgentsAllScopes(), loadAgentDefs()
         recompile-project-agents.ts # recompileRegisteredProjectAgents(), recompilePropagatedProjectAgents()
+    hosts/                  # The seam between this CLI and a host's plugin machinery
+      plugin-host.ts        # PluginHost + HostPlugin, HostCallOptions, InstallPlacement, PluginRemovalOutcome
+      claude-host.ts        # Claude Code behind it — every `claude plugin` invocation the CLI makes
+      codex-host.ts         # Codex behind it (codexHost) — every `codex plugin` invocation
+      host-for.ts           # hostFor(provider), hostAt(root) — the two doors
+      offered-placements.ts # bindsItsOfferedPlacements(), refuseUnofferedPlacement(s)()
+      configured-placements.ts # unofferablePlacementsFound() — the same refusal over a loaded config
+      codex-project-trust.ts # Detects (never writes) a project's [projects."<dir>"] trust entry
     plugins/                # Plugin discovery, validation, manifest, settings
-      plugin-settings.ts    # getEnabledPluginKeys(), getInstalledPluginsRegistryPath(), listRegisteredPluginInstalls(), resolvePluginInstallPaths(), getVerifiedPluginInstallPaths()
+      plugin-settings.ts    # getEnabledPluginKeys(), getInstalledPluginsRegistryPath(), listRegisteredPluginInstalls(), listPluginInstallsForProject()
+      plugin-discovery.ts   # discoverAllPluginSkills(), listPluginNames(), getVerifiedPluginInstallPaths() — the READ path, through hostAt()
     skills/                 # Skill fetching, copying, metadata, source switching, local loader, plugin compiler
     stacks/                 # Stack loading, installing, plugin compilation
     testing/                # Support for the test infrastructure itself, not for any command
@@ -223,7 +243,8 @@ User runs command (e.g., `agents-inc init`)
   |
   v
 oclif init hook (hooks/init.ts)
-  -> resolveSource() -> ResolvedConfig attached to oclif config
+  -> a bare invocation (no command id) goes to runDashboardFlow() and nothing else;
+     a named command passes straight through -- the hook resolves no marketplace
   |
   v
 Command.run() (commands/init.tsx)
@@ -268,7 +289,8 @@ Compilation (lib/compiler.ts)
   -> buildAgentTemplateContext() -> CompiledAgentData
   -> sanitizeCompiledAgentData() -> prevent Liquid injection
   -> Liquid engine renders agent.liquid template
-  -> Output: .claude/agents/{name}.md
+  -> Output: the scope's agents directory, in that host's codec (agentCodec in install-layout.ts):
+     .claude/agents/{name}.md on Claude, .codex/agents/{name}.toml on Codex
 ```
 
 ## Key Architectural Patterns
@@ -320,7 +342,7 @@ The caller identity `resolveSource` reads is passed by the command instead: `ini
 ### 3. Source Resolution Precedence
 
 ```
---marketplace flag > CC_MARKETPLACE env var > .claude-src/config.ts (project) > ~/.claude-src/config.ts (global) > default (github:agents-inc/skills)
+--marketplace flag > CC_MARKETPLACE env var > <source folder>/config.ts (project) > ~/<source folder>/config.ts (global) > default (github:agents-inc/skills)
 \_________________________________________/
         init only — the flag is declared by `init` and nothing else, and the env
         var is read only for `caller: "init"`. Every later command starts at the
@@ -334,11 +356,13 @@ marketplace answered without re-reading the config.
 
 ### 4. Install Modes
 
-| Mode   | Skills Location                                   | Agents Location   | Config Location         |
-| ------ | ------------------------------------------------- | ----------------- | ----------------------- |
-| eject  | `.claude/skills/`                                 | `.claude/agents/` | `.claude-src/config.ts` |
-| plugin | Claude plugin cache                               | `.claude/agents/` | `.claude-src/config.ts` |
-| mixed  | `.claude/skills/` (eject) + plugin cache (plugin) | `.claude/agents/` | `.claude-src/config.ts` |
+| Mode   | Skills Location                                   | Agents Location   | Config Location             |
+| ------ | ------------------------------------------------- | ----------------- | --------------------------- |
+| eject  | `.claude/skills/`                                 | `.claude/agents/` | `<source folder>/config.ts` |
+| plugin | Claude plugin cache                               | `.claude/agents/` | `<source folder>/config.ts` |
+| mixed  | `.claude/skills/` (eject) + plugin cache (plugin) | `.claude/agents/` | `<source folder>/config.ts` |
+
+The paths above are Claude's. A Codex installation keeps skills in `.agents/skills/` (project) or `$CODEX_HOME/skills/` (global) and agents in `.codex/agents/` or `$CODEX_HOME/agents/`, and offers no plugin install at project scope — see [concepts/scope-system.md](./concepts/scope-system.md) and [concepts/plugin-hosts.md](./concepts/plugin-hosts.md).
 
 Detection: `src/cli/lib/installation/installation.ts` — `detectInstallation()`, `detectProjectInstallation()`
 
@@ -350,9 +374,9 @@ Agent prompts are compiled from partials using LiquidJS.
 
 Template root resolution order (first match wins):
 
-1. `{project}/.claude-src/agents/_templates/`
+1. `{project}/<source folder>/agents/_templates/`
 2. `{project}/.claude/templates/` (legacy)
-3. `{CLI_ROOT}/templates/` (built-in)
+3. `{PROJECT_ROOT}/src/agents/_templates/` (built-in — `DIRS.templates`)
 
 Implemented in: `src/cli/lib/compiler.ts` (`createLiquidEngine()`)
 
@@ -392,16 +416,16 @@ The `src/cli/types/generated/matrix.ts` file contains the full `BUILT_IN_MATRIX`
 
 ### 10. Config Writer
 
-`generateConfigSource()` generates TypeScript config files from `ProjectConfig` objects. It is declared in `packages/compile/src/config-source.ts` and re-exported by `src/cli/lib/configuration/config-writer.ts`, which itself declares only `getGlobalConfigImportPath()` — the one thing the shared package cannot hold, being derived from `os.homedir()`.
+`generateConfigSource()` generates TypeScript config files from `ProjectConfig` objects. It is declared in `packages/compile/src/config-source.ts` and re-exported by `src/cli/lib/configuration/config-writer.ts`, which itself declares only `getGlobalConfigImportPath(provider)` — the one thing the shared package cannot hold, being derived from `os.homedir()`.
 
 Key function: `generateConfigSource(config, catalog, options?)`. The catalogue is a parameter rather than a module the renderer reaches, because the emitted bytes depend on which categories are exclusive and on the order the catalogue declares them — a renderer reading a singleton would answer differently in the CLI, which merges the machine's local skills in, and in the editor.
 
-Without `options.isProjectConfig` it emits the standalone form. With it, there are three outcomes and only two of them emit: `options.globalConfig` inlines the global config's entries, `options.globalImportPath` imports from the global `~/.claude-src/config` and spreads its arrays, and **neither throws**. [config/config-writer.md](./config/config-writer.md) owns the reason — the fall-through this replaced answered a project request with a global-shaped file carrying the `projects` tracking array a project root must never hold.
+Without `options.isProjectConfig` it emits the standalone form. With it, there are three outcomes and only two of them emit: `options.globalConfig` inlines the global config's entries, `options.globalImportPath` imports from the global `~/<source folder>/config` and spreads its arrays, and **neither throws**. [config/config-writer.md](./config/config-writer.md) owns the reason — the fall-through this replaced answered a project request with a global-shaped file carrying the `projects` tracking array a project root must never hold.
 
 **Config-types writer selection rule:** There are two writers for `config-types.ts`:
 
-- `pair-writer.ts`'s `writeGlobalTypesHalf()` (over `generateConfigTypesSource()`) — standalone unions, narrowed to the config being written. ONLY for the GLOBAL `~/.claude-src/config-types.ts`, and reachable only from inside `config-gate/`.
-- `regenerateConfigTypes()` in `config-types-writer.ts` — emits the global-aware branch (imports `GlobalSkillId`/`GlobalAgentName`/`GlobalDomain`/`GlobalCategory` from the global types, extends them with every literal the sibling `config.ts` holds — see `buildProjectTypesExtras`). ALWAYS use this for any PROJECT `<projectDir>/.claude-src/config-types.ts`.
+- `pair-writer.ts`'s `writeGlobalTypesHalf()` (over `generateConfigTypesSource()`) — standalone unions, narrowed to the config being written. ONLY for the GLOBAL `~/<source folder>/config-types.ts`, and reachable only from inside `config-gate/`.
+- `regenerateConfigTypes()` in `config-types-writer.ts` — emits the global-aware branch (imports `GlobalSkillId`/`GlobalAgentName`/`GlobalDomain`/`GlobalCategory` from the global types, extends them with every literal the sibling `config.ts` holds — see `buildProjectTypesExtras`). ALWAYS use this for any PROJECT `<projectDir>/<source folder>/config-types.ts`.
 
 The rule is now structural rather than advisory: `regenerateConfigTypes` throws `GlobalPairWriteViolation` if handed the home directory, and the standalone renderer is private to `pair-writer.ts`.
 
@@ -413,14 +437,16 @@ The rule is now structural rather than advisory: `regenerateConfigTypes` throws 
 
 Skills and agents can exist at two scopes:
 
-| Scope     | Skills Path                    | Agents Path                    | Config Path                          |
-| --------- | ------------------------------ | ------------------------------ | ------------------------------------ |
-| `project` | `{projectDir}/.claude/skills/` | `{projectDir}/.claude/agents/` | `{projectDir}/.claude-src/config.ts` |
-| `global`  | `~/.claude/skills/`            | `~/.claude/agents/`            | `~/.claude-src/config.ts`            |
+| Scope     | Skills Path                    | Agents Path                    | Config Path                              |
+| --------- | ------------------------------ | ------------------------------ | ---------------------------------------- |
+| `project` | `{projectDir}/.claude/skills/` | `{projectDir}/.claude/agents/` | `{projectDir}/<source folder>/config.ts` |
+| `global`  | `~/.claude/skills/`            | `~/.claude/agents/`            | `~/<source folder>/config.ts`            |
 
 **Path resolution:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/install-base-dir.ts` returns the correct base directory (`os.homedir()` for global, `projectDir` for project).
 
-**Config splitting:** `writeScopedFromWizard()` in `src/cli/lib/config-gate/index.ts` splits a unified `ProjectConfig` into separate global and project config files. Project config imports from and extends the global config.
+The table is Claude's; the Codex rows are in [concepts/scope-system.md](./concepts/scope-system.md) → "File Paths by Scope".
+
+**Config splitting:** `writeScopedFromWizard()` in `src/cli/lib/config-gate/index.ts` splits a unified `ProjectConfig` into separate global and project config files. The project config inlines a snapshot of the global config (`generateProjectConfigWithInlinedGlobal`) rather than importing it; its `config-types.ts` is the half that imports and extends the global one.
 
 **Skill/agent scope:** Each `SkillConfig` and `AgentScopeConfig` carries a `scope: "project" | "global"` field (in `src/cli/types/config.ts`). During installation, skills are split by scope before path-dependent operations (copy, delete, install).
 
@@ -438,7 +464,7 @@ When a project needs to override (disable) a globally-installed skill or agent w
 
 | Producer                                                              | File                       | When                                                                                                                                                                                           |
 | --------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toggleSkillScope()` (G→P)                                            | `stores/wizard-store.ts`   | Moving a globally-installed skill to project scope adds `{ id, scope: "global", excluded: true, source }`, gated on `wasInstalledGlobally` so a fresh init toggle mints no spurious tombstone. |
+| `toggleSkillScope()` (G→P)                                            | `stores/wizard-store.ts`   | Moving a globally-installed skill to project scope adds `{ id, scope: "global", excluded: true, origin }`, gated on `wasInstalledGlobally` so a fresh init toggle mints no spurious tombstone. |
 | `toggleAgentScope()` (G→P)                                            | `stores/wizard-store.ts`   | Agent mirror of the above.                                                                                                                                                                     |
 | dual-scope restore (`reconcileSkillConfigs`, `restoreDualScopeAgent`) | `stores/wizard-store.ts`   | Re-selecting an inherited-global row whose snapshot holds a tombstone re-creates BOTH the project entry and the global tombstone, so the row renders `[P][G]` again (Scenario B).              |
 | `maskCollidingGlobalSkills()` / `maskCollidingGlobalAgents()`         | `config-gate/propagate.ts` | System-derived masks written at project-config write time (see section 16).                                                                                                                    |
@@ -473,10 +499,10 @@ The authoritative plugin-reference format is **per-skill**, not per-agent.
 
 `ProjectConfig.projects?: string[]` in `src/cli/types/config.ts` tracks per-project install paths registered against the global config.
 
-- Only meaningful in the GLOBAL config (`~/.claude-src/config.ts`). Project configs never carry `projects`.
+- Only meaningful in the GLOBAL config (`~/<source folder>/config.ts`). Project configs never carry `projects`.
 - A project init appends the project directory (`registerProjectPath()`, internal to `config-gate/propagate.ts`); a project uninstall always removes it (`config-gate::mutateGlobal({ kind: "deregister-project" })`, called unconditionally by `commands/uninstall.tsx` — a failure warns, never aborts).
 - `propagateGlobalChangesToProjects()` in `config-gate/propagate.ts` iterates `projects` to rewrite each registered project's pair through the shared `writeProjectConfigPair()` (`writeConfigFile` + `regenerateConfigTypes`, per the writer-selection rule above) when the global unions change. It takes **no catalogue parameter**: `propagateToProject()` runs each project inside `withCatalogueSeatedFor()` (`lib/loading/catalogue-seat.ts`), so the categories a project's entries are judged by, the unions derived from them, and the config half's writer are all reading that project's own catalogue rather than the triggering command's.
-- `pruneGlobalEntriesFromRegisteredProjects()` in `config-gate/propagate.ts` is the GLOBAL-uninstall path: it re-enters `propagateGlobalChangesToProjects()` with an emptied global config (`skills: []`, `agents: []`) so every inlined global row, tombstone and per-agent stack ref is pruned from each registered project, and each project's `config-types.ts` is regenerated. It must run AFTER the global `.claude-src` manifest is removed so the regenerated project types fall back to the standalone form instead of importing from a deleted global `config-types.ts`. Unreachable projects come back in `skipped`, never thrown.
+- `pruneGlobalEntriesFromRegisteredProjects()` in `config-gate/propagate.ts` is the GLOBAL-uninstall path: it re-enters `propagateGlobalChangesToProjects()` with an emptied global config (`skills: []`, `agents: []`) so every inlined global row, tombstone and per-agent stack ref is pruned from each registered project, and each project's `config-types.ts` is regenerated. It must run AFTER the global manifest is removed so the regenerated project types fall back to the standalone form instead of importing from a deleted global `config-types.ts`. Unreachable projects come back in `skipped`, never thrown.
 
 **A write that propagates recompiles the propagated projects itself**, inside `config-gate`, and returns a `GateReport` whose `recompile` field the command renders. Callers cannot forget it, because there is nothing left for them to do — a config-only propagation would leave each registered project's compiled `.claude/agents/<name>.md` referencing a removed or re-scoped global skill.
 
@@ -526,7 +552,7 @@ Two production call sites write a project `config.ts` with the global config inl
 
 - `isExclusiveCategory()` reads `exclusive` from the **merged matrix** passed in (not `defaultCategories`), so a source repo's category overrides are honoured. A category the matrix does not carry is treated as non-exclusive — deliberately unlike the wizard toggle handler's `matrix.categories[categoryId]?.exclusive ?? true` default in `components/hooks/use-build-step-props.ts`, because a rule that masks persisted entries must only fire on a category the data actually carries. Both read an absent **category**, not an absent **field**: `exclusive` is a non-optional `boolean` at every producer and at both parse boundaries.
 - `categoryOfSkill()` returns `undefined` for a skill absent from the matrix or sitting in the `local` pseudo-category — a custom skill never throws and never participates in category rules.
-- Masking is **project-local**: the global config passed in is read, never rewritten. A tombstone never lands in `~/.claude-src/config.ts`.
+- Masking is **project-local**: the global config passed in is read, never rewritten. A tombstone never lands in `~/<source folder>/config.ts`.
 - Idempotent: a skill the project already tombstones is skipped.
 - The project's own skill **wins locally**. This is deliberately asymmetric with the guard that refuses a user-initiated exclusive swap over a globally-locked skill: there the user is displacing a shared install, whereas here a global install has landed on top of existing project state, and letting global win would silently uninstall the user's own skill.
 
@@ -554,7 +580,7 @@ A content-less config (no skills and no agents) reads as **not installed**, so `
 
 **The SETTINGS reader of the same file holds the same line.** `loadSourceConfig` (private in
 `configuration/config.ts`, behind `loadProjectSourceConfig` / `loadGlobalSourceConfig`) reads
-`.claude-src/config.ts` for the marketplace, `skillsDir`, `agentsDir` and the rest; a file that is
+the scope's own `config.ts` — `getInstalledConfigPath(dir)`, so whichever installation and source folder that scope is on — for the marketplace, `skillsDir`, `agentsDir` and the rest; a file that is
 not there answers `null`, and every way of failing to load one that IS there raises. It does not
 throw `ConfigLoadError` — it hands on `ConfigSchemaError` / `ConfigDefaultExportError` as themselves
 and wraps everything else in `configUnreadableError(...)`, the same message `BaseCommand`'s

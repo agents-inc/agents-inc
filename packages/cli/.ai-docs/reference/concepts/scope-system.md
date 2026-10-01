@@ -28,7 +28,6 @@ keywords:
     toggleSkillScope,
     toggleAgentScope,
     createDefaultSkillConfig,
-    toClaudePluginScope,
     authoritativeScope,
     isWithinSessionAuthority,
     reconcileSharedConfig,
@@ -60,22 +59,28 @@ Skills and agents can exist at two scopes: `"project"` and `"global"`. This affe
 
 ## File Paths by Scope
 
-| Scope     | Skills Path                    | Agents Path                    | Config Path                          |
-| --------- | ------------------------------ | ------------------------------ | ------------------------------------ |
-| `project` | `{projectDir}/.claude/skills/` | `{projectDir}/.claude/agents/` | `{projectDir}/.claude-src/config.ts` |
-| `global`  | `~/.claude/skills/`            | `~/.claude/agents/`            | `~/.claude-src/config.ts`            |
+| Scope     | Provider | Skills Path                    | Agents Path                    | Config Path                                |
+| --------- | -------- | ------------------------------ | ------------------------------ | ------------------------------------------ |
+| `project` | `claude` | `{projectDir}/.claude/skills/` | `{projectDir}/.claude/agents/` | `{projectDir}/<source folder>/config.ts`   |
+| `project` | `codex`  | `{projectDir}/.agents/skills/` | `{projectDir}/.codex/agents/`  | `{projectDir}/.agents-inc/codex/config.ts` |
+| `global`  | `claude` | `~/.claude/skills/`            | `~/.claude/agents/`            | `~/<source folder>/config.ts`              |
+| `global`  | `codex`  | `$CODEX_HOME/skills/`          | `$CODEX_HOME/agents/`          | `~/.agents-inc/codex/config.ts`            |
+
+`skillsDir(provider, scope, projectDir)` and `agentsDir(provider, scope, projectDir)` in `src/cli/lib/installation/install-layout.ts` answer the skills and agents columns, both off the module-private `hostRoles`; `$CODEX_HOME` is `~/.codex` where the variable is unset or empty. A Claude `<source folder>` is `.claude-src` or `.agents-inc/claude`, per scope, and is resolved rather than composed — see Path Resolution below. Every installation made before the rename is on the first; the CLI reads both and creates every new installation in `.agents-inc/<provider>/`. See [source-folder-layout.md](./source-folder-layout.md).
 
 ## Path Resolution
 
 **Function:** `resolveInstallPaths(projectDir, scope)` in `src/cli/lib/installation/install-base-dir.ts`
 
-Delegates to `installBaseDir(projectDir, scope)` (same file): uses `os.homedir()` for `"global"`, `projectDir` for `"project"`. Defaults to `"project"` when `scope` is omitted. `os.homedir()` is called at runtime so the path agrees with mocked home directories in tests — as `globalInstallRoot()` in `consts.ts` now does too, having been an import-time constant.
+Delegates to `installBaseDir(projectDir, scope)` (declared in `install-layout.ts`, re-exported by `install-base-dir.ts`): uses `os.homedir()` for `"global"`, `projectDir` for `"project"`. Defaults to `"project"` when `scope` is omitted. `os.homedir()` is called at runtime so the path agrees with mocked home directories in tests — as `globalInstallRoot()` in `consts.ts` now does too, having been an import-time constant.
 
-**Returned paths** (`InstallPaths` type, `install-base-dir.ts`):
+**Returned paths** (`InstallPaths` type, `install-base-dir.ts`). The provider is read ONCE, with `providerInUse(base)`, and handed to all three, so they cannot name two different installations:
 
-- `skillsDir` = `{base}/{LOCAL_SKILLS_PATH}`
-- `agentsDir` = `{base}/{CLAUDE_DIR}/{STANDARD_DIRS.AGENTS}`
-- `configPath` = `getProjectConfigPath(base)` = `{base}/{CLAUDE_SRC_DIR}/{STANDARD_FILES.CONFIG_TS}`
+- `skillsDir` = `skillsDir(provider, scope, projectDir)` from `install-layout.ts`
+- `agentsDir` = `agentsDir(provider, scope, projectDir)` from `install-layout.ts`
+- `configPath` = `getProjectConfigPath(base, provider)` = `sourceFolderInUse(base, provider).dir` + `STANDARD_FILES.CONFIG_TS` — whichever source folder that scope is actually on, and total for every directory
+
+`sourceFolderInUse(root, provider)` in `src/cli/lib/installation/install-layout.ts` is the single funnel that answers which folder a scope is on, and every path built under a source folder comes from it. A scope with neither folder is named under `.agents-inc/<provider>/`, the folder a new installation is created in, so the path is defined for a directory that holds nothing. Its probes are deliberately total — an unlistable directory answers "not empty" rather than "absent", so a live installation keeps its own folder instead of being half-routed to a new one. `relativeConfigPath(root, provider)` in the same module is the form a user-facing message uses, because a message assembled from a constant tells a user on the old name to edit a file that is not there.
 
 ## Type Definitions
 
@@ -113,11 +118,11 @@ type AgentScopeConfig = {
 };
 ```
 
-A shared seed payload carries **per-agent scope independently of skill scope**; `seedAgentScope` in `src/cli/lib/seed/seed-to-wizard.ts` resolves an absent scope to `DEFAULT_SELECTION_OPTIONS.scope` (`packages/matrix/src/read-model/selection-defaults.ts`), which is `"global"` — the shared spelling of what an untouched pick does, so a decode never disagrees with the app that built the payload. See [features/seed-contract.md](../features/seed-contract.md). The `model` / `effort` pair is documented in [features/model-and-effort.md](../features/model-and-effort.md).
+A shared seed payload carries **per-agent scope independently of skill scope**; `seedAgentScope` in `packages/matrix/src/seed.ts` resolves an absent scope to `DEFAULT_SELECTION_OPTIONS.scope` (`packages/matrix/src/read-model/selection-defaults.ts`), which is `"global"` — the shared spelling of what an untouched pick does, so a decode never disagrees with the app that built the payload. See [features/seed-contract.md](../features/seed-contract.md). The `model` / `effort` pair is documented in [features/model-and-effort.md](../features/model-and-effort.md).
 
 ## Scope Predicates
 
-**Module:** `src/cli/lib/configuration/scope-predicates.ts` — the source of truth for classifying scoped config entries. Partitioning, tombstone routing, and prior-vs-next delta computation all funnel through these pure predicates instead of re-deriving `scope`/`excluded` comparisons inline.
+**Module:** declared in `packages/compile/src/scope-predicates.ts` and re-exported unchanged by `src/cli/lib/configuration/scope-predicates.ts` — the source of truth for classifying scoped config entries. Partitioning, tombstone routing, and prior-vs-next delta computation all funnel through these pure predicates instead of re-deriving `scope`/`excluded` comparisons inline.
 
 **`ScopedEntry`** is the shared shape every predicate accepts (both `SkillConfig` and `AgentScopeConfig` structurally satisfy it):
 
@@ -142,22 +147,23 @@ and `scripts/check-enumeration-drift.ts` diffs **both** against this module row 
 registry row per document, because each copy is separately wrong. So a ninth export cannot land
 without reddening this table as well as the owner's.
 
-**Consumers — every non-test importer, not a selection.** Re-derive with
-`grep -rln scope-predicates src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'`:
+**Consumers — every non-test importer, not a selection.** Re-derive from `packages/cli` with
+`grep -rln scope-predicates src ../compile/src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'`
+(`../compile/src/index.ts` is that package's own barrel and is left out):
 
-| File                                               | Predicates used                                                                                                                                                            |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/cli/base-command.ts`                          | `isActiveAt`                                                                                                                                                               |
-| `src/cli/commands/init.tsx`                        | `activeAgentNames`                                                                                                                                                         |
-| `src/cli/commands/edit.tsx`                        | `activeAgentNames`, `activeAgentScopeMap`, `isActiveAt`                                                                                                                    |
-| `src/cli/stores/wizard-store.ts`                   | `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`                                                                                                                        |
-| `src/cli/lib/config-gate/index.ts`                 | `isActiveAt`                                                                                                                                                               |
-| `src/cli/lib/config-gate/propagate.ts`             | `isActiveAt`, `isGlobalTombstone`, `activeProjectAgentNames`, `ScopedEntry`                                                                                                |
-| `packages/compile/src/seed-to-config.ts`           | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`                                                             |
-| `src/cli/lib/configuration/config-merger.ts`       | `isGlobalTombstone`, `isProjectOwned`, `ScopedEntry`                                                                                                                       |
-| `src/cli/lib/configuration/config-types-writer.ts` | `activeAgentNames`, `activeProjectAgentNames`                                                                                                                              |
-| `src/cli/lib/installation/local-installer.ts`      | `isActiveAt`, `activeSkillScopeMap`, `activeAgentScopeMap`, `effectivelyExcludedSkillIds` (prior-vs-next delta)                                                            |
-| `src/cli/lib/configuration/index.ts`               | Barrel — re-exports `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds`. The other three are import-by-path only |
+| File                                           | Predicates used                                                                                                                                                            |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli/base-command.ts`                      | `isActiveAt`                                                                                                                                                               |
+| `src/cli/commands/edit.tsx`                    | `activeAgentNames`, `activeAgentScopeMap`, `isActiveAt`                                                                                                                    |
+| `src/cli/stores/wizard-store.ts`               | `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`                                                                                                                        |
+| `src/cli/lib/config-gate/index.ts`             | `isActiveAt`                                                                                                                                                               |
+| `src/cli/lib/config-gate/propagate.ts`         | `isActiveAt`, `isGlobalTombstone`, `activeProjectAgentNames`, `ScopedEntry`                                                                                                |
+| `packages/compile/src/seed-to-config.ts`       | `isActiveAt` (drives the `splitConfigByScope` partition), `activeAgentScopeMap`, `effectivelyExcludedSkillIds`                                                             |
+| `packages/compile/src/config-types-source.ts`  | `activeAgentNames`, `activeProjectAgentNames`                                                                                                                              |
+| `src/cli/lib/configuration/config-merger.ts`   | `isGlobalTombstone`, `isProjectOwned`, `ScopedEntry`                                                                                                                       |
+| `src/cli/lib/configuration/config-types-io.ts` | `activeAgentNames`, `activeProjectAgentNames`                                                                                                                              |
+| `src/cli/lib/installation/local-installer.ts`  | `isActiveAt`, `activeSkillScopeMap`, `activeAgentScopeMap`, `effectivelyExcludedSkillIds` (prior-vs-next delta)                                                            |
+| `src/cli/lib/configuration/index.ts`           | Barrel — re-exports `isActiveAt`, `isGlobalTombstone`, `isProjectOwned`, `activeProjectAgentNames`, `effectivelyExcludedSkillIds`. The other three are import-by-path only |
 
 Specs, `e2e/fixtures/dual-scope-helpers.ts` and `scripts/check-enumeration-drift.ts` also name the
 module and are deliberately outside the table — the drift script names it as a SOURCE to diff, not
@@ -175,8 +181,8 @@ Splits a `ProjectConfig` into global and project partitions by skill/agent scope
 
 Writes:
 
-1. Global config to `~/.claude-src/config.ts` (standalone) — merged into any existing global config via `mergeGlobalConfigs()`, then written only when `resolveEffectiveGlobalConfig()` reports a change
-2. Project config to `{projectDir}/.claude-src/config.ts` (self-contained snapshot via `generateProjectConfigWithInlinedGlobal()` -- both global and project entries inlined, no import/spread). The split is passed through `reconcileProjectSplitAgainstGlobal()` **first** -- see [Cross-Scope Reconciliation](#cross-scope-reconciliation-before-project-writes) below.
+1. Global config to `~/<source folder>/config.ts` (standalone) — merged into any existing global config via `mergeGlobalConfigs()` (or `mergeConfigs()` under `authoritativeScope: "all"`, a confirmed `edit --from` — see [config/config-merger.md](../config/config-merger.md)), then written only when `resolveEffectiveGlobalConfig()` reports a change
+2. Project config to `{projectDir}/<source folder>/config.ts` (self-contained snapshot via `generateProjectConfigWithInlinedGlobal()` -- both global and project entries inlined, no import/spread). The split is passed through `reconcileProjectSplitAgainstGlobal()` **first** -- see [Cross-Scope Reconciliation](#cross-scope-reconciliation-before-project-writes) below.
 3. Config-types files: the global config-types is standalone (emitted only by `config-gate/pair-writer.ts`); the project config-types is written via `regenerateConfigTypes`, whose global-aware branch imports `GlobalSkillId`/`GlobalAgentName` from the global types and extends them with every entry its own `config.ts` names — the inlined global rows included, so the pair stays valid when a later global-scope run narrows those unions (falls back to standalone when no global install exists)
 
 When installing from the home directory (detected via `isHomeDirectory(projectDir)` in `src/cli/lib/installation/is-home-directory.ts`, which compares `fs.realpathSync` of the dir and `os.homedir()`), scope splitting is skipped: a single standalone global config pair is written via `writeGlobalPair` (both halves from one config, each skipped when unchanged), and changes propagate to all registered projects via `propagateGlobalChangesToProjects` — which also recompiles those projects' agents.
@@ -203,14 +209,14 @@ Either path alone can produce the malformed shape, so both must run the reconcil
 
 **Collision kinds:** identity (the project owns the same id/name active at project scope — skills _and_ agents), or a different active project skill in the same **matrix-declared exclusive** category (skills only; agents have no categories).
 
-**Scope invariant:** reconciliation is applied to the **project split only**. `globalConfig` is a read-only input — masks never reach `~/.claude-src/config.ts`. This is the same invariant `splitConfigByScope` enforces for tombstones.
+**Scope invariant:** reconciliation is applied to the **project split only**. `globalConfig` is a read-only input — masks never reach `~/<source folder>/config.ts`. This is the same invariant `splitConfigByScope` enforces for tombstones.
 
 ## Config Writer Scope Handling
 
 `generateConfigSource()`, declared in `packages/compile/src/config-source.ts` and re-exported by `src/cli/lib/configuration/config-writer.ts`:
 
 - When `isProjectConfig: true` with `globalConfig` provided (the standard path used by `writeProjectConfigPair`): generates a self-contained config snapshot via `generateProjectConfigWithInlinedGlobal()`. Both global and project entries for the same skill ID are preserved (no deduplication). Global entries appear under a `// global` comment, project entries under `// project`. Excluded global entries (tombstones) replace their active global counterparts.
-- When `isProjectConfig: true` without `globalConfig` (fallback path): generates a config that imports from the global config and spreads global arrays into skills, agents, and domains.
+- When `isProjectConfig: true` with `globalImportPath` instead: generates a config that imports from the global config and spreads global arrays into skills, agents, and domains. Naming neither throws.
 
 ## Wizard Scope Guards
 
@@ -232,7 +238,7 @@ Guards prevent project-scope edits from modifying globally-installed skills/agen
 - Both `init.tsx` and `edit.tsx` use the shared `isHomeDirectory(dir)` helper (`src/cli/lib/installation/is-home-directory.ts`), which compares `fs.realpathSync(dir)` against `fs.realpathSync(os.homedir())` (falling back to plain string equality when a path cannot be resolved). This resolves symlinks on both sides, so the earlier init-vs-edit asymmetry is gone.
   - `init.tsx`: `isEditingFromGlobalScope: isGlobalRoot`, which is `isHomeDirectory(projectDir)` — `init` is TOLD which directory to install into, so that directory is the subject.
   - `edit.tsx`: `isEditingFromGlobalScope: editRoot.isGlobal`. `edit` is told nothing: `resolveEditRoot(installation, cwd, setupRequested)` answers which installation the run is editing, and `isGlobal` is `isHomeDirectory` of THAT root. The root is `installation.projectDir` — the installation `detectProject` found, which is the only root with a config to edit — except under `--project-setup`, where `cc init` run in a directory declares that directory the installation being set up and the root is `cwd`.
-- **The question is asked once per `edit` run and every layer reads the answer.** It used to be asked six times, three of them off `process.cwd()`, and a run started in a directory holding no installation disagreed with itself: the wizard offered the scope toggle for a project that did not exist while `writeProjectConfig` saw a project context and wrote a `.claude-src/` pair beside an unrelated checkout. See [commands/edit.md](../commands/edit.md) -> Invariants -> "One directory, decided once".
+- **The question is asked once per `edit` run and every layer reads the answer.** It used to be asked six times, three of them off `process.cwd()`, and a run started in a directory holding no installation disagreed with itself: the wizard offered the scope toggle for a project that did not exist while `writeProjectConfig` saw a project context and wrote a source-folder pair beside an unrelated checkout. See [commands/edit.md](../commands/edit.md) -> Invariants -> "One directory, decided once".
 - Nothing derives the home directory at import time. `globalInstallRoot()` and `cacheRoot()` in `src/cli/consts.ts` are functions, and every other caller reaches `os.homedir()` directly (or `isHomeDirectory`), so test home-dir mocks apply everywhere. Both were `export const … = os.homedir()`; `src/cli/lib/__tests__/home-dir-read-at-call-time.test.ts` refuses that declaration shape across `src/cli/`, and `reference/utilities.md` carries why.
 
 **Actions with guards:**
@@ -304,7 +310,7 @@ Conflating them is how a project-scope run deletes a global install while its co
 | The **writer**       | `authoritativeScope: "owned"` -> `isWithinSessionAuthority(entry, scope)` -> `isProjectOwned` in `src/cli/lib/configuration/config-merger.ts` | The config ROW. An inherited global-active entry absent from the config being written is preserved rather than dropped |
 | The **removal diff** | `ConfigChanges.removedSkills` / `removedAgents`, built by `detectConfigChanges` in `src/cli/commands/edit.tsx`                                | Nothing — it is what DRIVES `uninstallPluginSkills`, `deleteLocalSkill` and `removeCompiledAgents`                     |
 
-**The merger's authority does not reach the disk.** An entry left in the removal set is uninstalled from the plugin registry and deleted from `~/.claude/skills/` or `~/.claude/agents/` whatever the merger later does with its row.
+**The merger's authority does not reach the disk.** An entry left in the removal set is uninstalled from the plugin registry and deleted from the global skills or agents directory whatever the merger later does with its row.
 
 Every keystroke-driven caller reaches the writer through the wizard store, and the store refuses to deselect a live global entry at all — so a wizard-produced `removedSkills` / `removedAgents` never carries one, and on that path the store is the whole of the protection. **`edit --from <id>` bypasses the store**: a payload states a roster directly, and the apply is destructive. `reconcileSharedConfig` (`src/cli/lib/seed/seed-apply.ts`) therefore puts back what the run may not remove **into the result, before the diff is taken**, which is the only place the diff can see it. Two reasons, separately remedied and separately disclosed in the confirm:
 
@@ -328,7 +334,7 @@ Four paths reach a removal, and each is scoped to what the project owns:
 
 **The store-level guarantee holds independently of whether a keypress path can reach it, and no keypress path can.** `Init.run` routes to the dashboard → `edit` whenever `detectInstallation` / `detectGlobalInstallation` finds an install, so `isInitMode === true` implies `installedSkillConfigs === null` — a real `cc init` never sees a global preselection. `toggleDomain` has exactly one component caller, `domain-selection.tsx` (the DOMAINS step); its only other caller is the store's own `startFromScratch`, which seeds `DEFAULT_SCRATCH_DOMAINS` and is reached solely from the init-only "start from scratch" branch of `stack-selection.tsx`. And `cc edit` hydrates with `initialStep: "build"` and `history: []`, so ESC cannot walk backwards into the DOMAINS step. The guarantee is pinned at unit level in `wizard-store.test.ts`, not by an E2E, precisely because it has no reachable UI surface — a spec driving the flow would have to invent a path no user can perform.
 
-**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `docs/guides/editing-config.md`). To uninstall it outright, edit at global scope — `npx agents-inc edit` from the home directory.
+**Escape hatches for the user:** to keep a global skill out of a project, leave it out of that project's agent stacks (see `apps/www/src/content/docs/docs/guides/editing-config.md`, repository-root-relative). To uninstall it outright, edit at global scope — `npx agents-inc edit` from the home directory.
 
 **Agent-roster rebuilds merge rather than replace.** `preselectAgentsFromDomains` retains all tombstones plus every non-project-owned entry outside the selected domains' roster, so a globally installed agent outside that roster is no longer silently uninstalled.
 
@@ -357,28 +363,27 @@ During installation, skills and agents are split by scope before path-dependent 
 split above has nothing to split there — `resolveInstallPaths` sends both scopes to the same
 directory, and the config gate writes one config rather than two — so a `scope: "project"` entry
 does not land somewhere else. It lands in the global config carrying a label that contradicts the
-file it is in, and `toClaudePluginScope` maps that declared scope onward, registering the skill
-against `$HOME` as a project. No layer below the install boundary reads the scope again.
+file it is in, and the Claude host's scope translation maps that declared scope onward, registering
+the skill against `$HOME` as a project. No layer below the install boundary reads the scope again.
 
 **Every producer of an installation enforces this, at its own boundary:**
 
-| Producer               | Enforcement point                                                                                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init` wizard          | `isHomeDirectory(projectDir)` becomes `isGlobalRoot` in `init.tsx` and hydrates the session as `isEditingFromGlobalScope`                                                  |
-| `edit` wizard          | The same session flag, set from the directory `edit` runs in                                                                                                               |
-| Wizard scope toggles   | `toggleSkillScope` / `toggleAgentScope` return `state` unchanged on the first line when `isEditingFromGlobalScope` is true                                                 |
-| New wizard skill entry | `createDefaultSkillConfig` mints `scope: "global"`, so an untouched pick is already correct at the root                                                                    |
-| `init --from <id>`     | `refuseProjectScopedContentAtHome(result, projectDir)`, inherited from `BaseCommand` — a hard refusal, `EXIT_CODES.ERROR`, after the decode and before anything is written |
-| `edit --from <id>`     | The same inherited method, called with `cwd` at the same point of the same value — one implementation, so the destructive door refuses what the greenfield one refuses     |
+| Producer               | Enforcement point                                                                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init` wizard          | `isHomeDirectory(projectDir)` becomes `isGlobalRoot` in `init.tsx` and hydrates the session as `isEditingFromGlobalScope`                                                       |
+| `edit` wizard          | The same session flag, set from `editRoot.isGlobal` — the root of the installation `edit` found, not the directory it runs in                                                   |
+| Wizard scope toggles   | `toggleSkillScope` / `toggleAgentScope` return `state` unchanged on the first line when `isEditingFromGlobalScope` is true                                                      |
+| New wizard skill entry | `createDefaultSkillConfig` mints `scope: "global"`, so an untouched pick is already correct at the root                                                                         |
+| `init --from <id>`     | `refuseProjectScopedContentAtHome(result, projectDir)`, inherited from `BaseCommand` — a hard refusal, `EXIT_CODES.ERROR`, after the decode and before anything is written      |
+| `edit --from <id>`     | The same inherited method, called with `editRoot.dir` at the same point of the same value — one implementation, so the destructive door refuses what the greenfield one refuses |
 
 **Both `--from` producers reach the rule through the one method, and that is why it lives on
 `BaseCommand`.** It is a fact about the payload and the directory, identical whichever command
 asked, and an invariant enforced on one producer and not the other is enforced nowhere — it matters
-most on `edit --from`, which is destructive and can remove global entries on the way in. The other
-thing `isHomeDirectory(cwd)` decides on that path is separate and stays separate: the
-`authority: "all" | "owned"` word handed to `reconcileSharedConfig` (see
-[Two enforcement points](#two-enforcement-points-protecting-different-things)) and to
-`writeProjectConfig`, which is about what a run may REMOVE rather than about where it may write. The
+most on `edit --from`, which is destructive and can remove global entries on the way in. What a
+run may REMOVE is a separate word: `applyAuthority` in `edit.tsx` hands `writeProjectConfig` `"all"`
+for every confirmed `edit --from`, wherever it runs, and `reconcileSharedConfig` takes no authority
+word (see [Two enforcement points](#two-enforcement-points-protecting-different-things)). The
 wizard producer of `edit` is covered by the session flag as the table's second row says.
 
 **`--from` refuses rather than coerces**, and it is the path where the difference is

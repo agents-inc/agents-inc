@@ -1,11 +1,24 @@
 ---
 scope: reference
 area: architecture
-keywords: [boundaries, input, parse, write, exec, security, config-gate, privileged-zone]
+keywords:
+  [
+    boundaries,
+    input,
+    parse,
+    write,
+    exec,
+    security,
+    config-gate,
+    privileged-zone,
+    codex,
+    config.toml,
+  ]
 related:
   - reference/architecture-overview.md
   - reference/type-system.md
   - reference/features/configuration.md
+  - reference/concepts/plugin-hosts.md
 last_validated: 2026-07-30
 ---
 
@@ -15,6 +28,14 @@ last_validated: 2026-07-30
 
 **Purpose:** Identifies all system boundaries where external data enters or leaves the CLI, and documents what validation/sanitization exists at each boundary.
 
+`<source folder>` throughout is the folder that scope keeps its source in — `.agents-inc/<provider>`
+for anything installed since the rename, `.claude-src` for anything older, which is read and
+written where it is indefinitely; no command moves one. It is resolved, never composed;
+[concepts/scope-system.md](./concepts/scope-system.md) owns the resolution. A SOURCE repo is the
+other way round and has no provider segment: `loadSourceRepoConfig` tries `.agents-inc/config.ts`
+then `.claude-src/config.ts`, and the second has no sunset, because the CLI can never move a folder
+in a repository it only reads.
+
 **Key Files:**
 
 | File                                               | Purpose                                                                                                                                                                     |
@@ -23,13 +44,14 @@ last_validated: 2026-07-30
 | `src/cli/commands/init.tsx`                        | `--marketplace` flag definition — the one command that carries it                                                                                                           |
 | `src/cli/hooks/init.ts`                            | The bare-invocation dashboard, and nothing else — it parses no argv and resolves no marketplace (section 1.2)                                                               |
 | `src/cli/utils/terminal.ts`                        | Terminal-geometry predicate + message shared by both size gates (section 1.4)                                                                                               |
-| `src/cli/utils/exec.ts`                            | Shell execution boundary, input validation                                                                                                                                  |
+| `src/cli/utils/exec.ts`                            | Shell execution boundary (`execCommand`), input validation — every host's, not one host's                                                                                   |
+| `src/cli/lib/hosts/`                               | The plugin-host seam: `plugin-host.ts` declares it, `claude-host.ts` spawns `claude`, `codex-host.ts` spawns `codex`, `host-for.ts` is the door (section 4.2).              |
 | `src/cli/utils/fs.ts`                              | `readFileSafe()` with size limits; `writeFile()` holds the runtime tripwire on the global config pair (section 3.4a)                                                        |
-| `src/cli/lib/config-gate/`                         | The only code permitted to write `~/.claude-src/config.ts` + `config-types.ts` — `index.ts` is its whole public surface (section 3.4a)                                      |
+| `src/cli/lib/config-gate/`                         | The only code permitted to write `~/<source folder>/config.ts` + `config-types.ts` — `index.ts` is its whole public surface (section 3.4a)                                  |
 | `src/cli/lib/schemas.ts`                           | All Zod schemas for parse boundaries + metadata issue splitting (schema count lives in `reference/types/zod-schemas.md`, which owns it)                                     |
-| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`); `.claude-src/config.ts` SETTINGS load boundary — raises for a corrupt-but-present config                                        |
+| `src/cli/lib/configuration/config.ts`              | Source validation (`validateSourceFormat`); The scope's `config.ts` SETTINGS load boundary — raises for a corrupt-but-present config                                        |
 | `src/cli/lib/configuration/config-loader.ts`       | jiti TypeScript config loading                                                                                                                                              |
-| `src/cli/lib/configuration/project-config.ts`      | `.claude-src/config.ts` ROSTER load boundary; `ConfigLoadError` for corrupt-but-present configs                                                                             |
+| `src/cli/lib/configuration/project-config.ts`      | The scope's `config.ts` ROSTER load boundary; `ConfigLoadError` for corrupt-but-present configs                                                                             |
 | `src/cli/lib/configuration/config-writer.ts`       | Config file generation                                                                                                                                                      |
 | `src/cli/lib/configuration/config-types-writer.ts` | A re-export barrel: the renderers from `@workspace/compile/config-types-source`, the disk half from `config-types-io.ts`. It declares nothing of its own                    |
 | `src/cli/lib/installation/local-installer.ts`      | Config build/merge + agent compilation; writes no config file                                                                                                               |
@@ -178,7 +200,7 @@ Default size limit: `MAX_CONFIG_FILE_SIZE` (1 MB, in `consts.ts`).
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Location**   | `src/cli/lib/configuration/config-loader.ts`                                                                                                                                                                                                                                                                                                                   |
 | **Direction**  | IN                                                                                                                                                                                                                                                                                                                                                             |
-| **Data**       | `.claude-src/config.ts`, plus `config/stacks.ts`, `config/skill-categories.ts`, `config/skill-rules.ts` — **paths in a skills-source / marketplace repo, not in this repository** (this repo has no `config/` directory; the CLI's own fallbacks are `lib/configuration/default-*.ts`, see [features/built-in-catalogue.md](./features/built-in-catalogue.md)) |
+| **Data**       | the scope's `config.ts`, plus `config/stacks.ts`, `config/skill-categories.ts`, `config/skill-rules.ts` — **paths in a skills-source / marketplace repo, not in this repository** (this repo has no `config/` directory; the CLI's own fallbacks are `lib/configuration/default-*.ts`, see [features/built-in-catalogue.md](./features/built-in-catalogue.md)) |
 | **Validation** | Optional Zod schema via `schema.safeParse()`                                                                                                                                                                                                                                                                                                                   |
 | **Mechanism**  | jiti dynamic import with module cache disabled, alias for `agents-inc/config`                                                                                                                                                                                                                                                                                  |
 
@@ -198,7 +220,7 @@ the table:
 AUTHOR wrote is read as written; data the CLI PERSISTED is reconciled against the live catalogue
 before any consumer sees it. A source repo's `config/*.ts` ships alongside the catalogue it
 references, so a stack author who groups cross-category skills under one heading meant that heading;
-a user's `.claude-src/config.ts` was written by an older catalogue and cannot be asked to migrate, so
+a user's `config.ts` was written by an older catalogue and cannot be asked to migrate, so
 its category keys are re-keyed to what the catalogue names today. Treating the two alike is not a
 type error and not a test failure — it compiles, and it silently rewrites every stack author's
 grouping.
@@ -241,30 +263,30 @@ Caller handling of `ConfigLoadError` is tabulated in `architecture-overview.md` 
 
 ### 2.4 JSON Parse Boundaries (Production)
 
-Re-derive the roster rather than reading the rows — one grep answers it, and the list has gained
-four sites and lost two since it was last written:
+Re-derive the roster rather than reading the rows — one grep answers it:
 
 ```
 grep -rn 'JSON.parse(' src/cli --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude-dir=__tests__
 ```
 
-| File                            | What Is Parsed                                       | Validation After Parse                                                                                            |
-| ------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `utils/exec.ts`                 | Claude CLI JSON stdout (`marketplace list --json`)   | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure)                                            |
-| `plugins/plugin-finder.ts`      | `plugin.json` manifest                               | `pluginManifestSchema.parse()` (throws on failure)                                                                |
-| `plugins/plugin-validator.ts`   | `plugin.json` for validation                         | `pluginManifestValidationSchema.safeParse()`                                                                      |
-| `plugins/plugin-validator.ts`   | `plugin.json` as raw Record                          | Type assertion only (`loadManifestForValidation()`)                                                               |
-| `plugins/plugin-settings.ts`    | `<pluginsDir>/installed_plugins.json` (registry)     | `installedPluginsSchema.safeParse()` — throws, see 2.6                                                            |
-| `plugins/plugin-settings.ts`    | `.claude/settings.json`                              | `pluginSettingsSchema.safeParse()`                                                                                |
-| `plugins/plugin-settings.ts`    | `~/.claude/plugins/installed_plugins.json`           | `installedPluginsSchema.safeParse()` — degrades to `[]`, see 2.6                                                  |
-| `permission-checker.tsx`        | `.claude/settings.json` permissions block            | `settingsFileSchema.safeParse()`; a malformed file warns and is skipped                                           |
-| `agents/agent-provenance.ts`    | this CLI's OWN `package.json`, for its version       | `ownPackageJsonSchema.safeParse()`; throws when it cannot be read                                                 |
-| `configuration/config.ts`       | a source repo's `package.json`, for its `name`       | `packageIdentitySchema.safeParse()`; unparseable answers `null`                                                   |
-| `commands/build/marketplace.ts` | the project `package.json`, for marketplace identity | `packageJsonSchema.safeParse()`; a parse failure exits with the cause                                             |
-| `versioning.ts`                 | `plugin.json` for version check                      | `pluginManifestSchema.parse()`                                                                                    |
-| `loading/source-fetcher.ts`     | `marketplace.json` from fetched source               | `validateNestingDepth()` + `marketplaceSchema.safeParse()`                                                        |
-| `loading/source-fetcher.ts`     | the cached revalidation record                       | `parseJsonOrUndefined()` — a corrupt record re-fetches rather than failing                                        |
-| `seed/read-piped-payload.ts`    | a `SeedPayload` off stdin                            | `installableSeedPayloadSchema.safeParse()` behind a `JsonRead` verdict — the WRITE schema, not the base one (1.5) |
+| File                            | What Is Parsed                                                                                              | Validation After Parse                                                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/hosts/claude-host.ts`      | Claude CLI JSON stdout (`marketplace list --json`)                                                          | `marketplaceInfoListSchema.safeParse()` (Zod; returns `[]` on failure)                                                                               |
+| `lib/hosts/codex-host.ts`       | Codex CLI JSON stdout (`plugin marketplace list --json`, `plugin list --json`), through `readJsonFromCodex` | `marketplaceRegistrySchema` / `pluginListingSchema` `.safeParse()` — **throws** on no JSON or an unmatched shape, where Claude's reader answers `[]` |
+| `plugins/plugin-finder.ts`      | `plugin.json` manifest                                                                                      | `pluginManifestSchema.parse()` (throws on failure)                                                                                                   |
+| `plugins/plugin-validator.ts`   | `plugin.json` for validation                                                                                | `pluginManifestValidationSchema.safeParse()`                                                                                                         |
+| `plugins/plugin-validator.ts`   | `plugin.json` as raw Record                                                                                 | Type assertion only (`loadManifestForValidation()`)                                                                                                  |
+| `plugins/plugin-settings.ts`    | `<pluginsDir>/installed_plugins.json` (registry), in `readRegisteredInstallations`                          | `installedPluginsSchema.safeParse()` — throws; the one degrade-to-`[]` is a caller's, see 2.6                                                        |
+| `plugins/plugin-settings.ts`    | `.claude/settings.json`                                                                                     | `pluginSettingsSchema.safeParse()`                                                                                                                   |
+| `permission-checker.tsx`        | `.claude/settings.json` permissions block                                                                   | `settingsFileSchema.safeParse()`; a malformed file warns and is skipped                                                                              |
+| `agents/agent-provenance.ts`    | this CLI's OWN `package.json`, for its version                                                              | `ownPackageJsonSchema.safeParse()`; throws when it cannot be read                                                                                    |
+| `configuration/config.ts`       | a source repo's `package.json`, for its `name`                                                              | `packageIdentitySchema.safeParse()`; unparseable answers `null`                                                                                      |
+| `commands/build/marketplace.ts` | the project `package.json`, for marketplace identity                                                        | `packageJsonSchema.safeParse()`; a parse failure exits with the cause                                                                                |
+| `versioning.ts`                 | `plugin.json` for version check                                                                             | `pluginManifestSchema.parse()`                                                                                                                       |
+| `loading/source-fetcher.ts`     | `marketplace.json` from fetched source                                                                      | `validateNestingDepth()` + `marketplaceSchema.safeParse()`                                                                                           |
+| `loading/source-fetcher.ts`     | the cached revalidation record                                                                              | `parseJsonOrUndefined()` — a corrupt record re-fetches rather than failing                                                                           |
+| `seed/read-piped-payload.ts`    | a `SeedPayload` off stdin                                                                                   | `installableSeedPayloadSchema.safeParse()` behind a `JsonRead` verdict — the WRITE schema, not the base one (1.5)                                    |
+| `seed/publish-seed.ts`          | a `POST /configs` refusal body, in `jsonOf`                                                                 | `refusalSchema.safeParse()`; a body that is not JSON is `undefined` and falls to the prose arm (6.5)                                                 |
 
 `marketplace-generator.ts` and `schema-validator.ts` were rows here and are not parse sites: the
 generator reaches `plugin.json` through `readPluginManifest()` in `plugins/plugin-finder.ts`, and
@@ -286,14 +308,16 @@ All enforced via `readFileSafe()` in `utils/fs.ts` which checks `stats.size` bef
 
 ### 2.6 Claude CLI Plugin Registry (`installed_plugins.json`)
 
-The claude CLI (>= 2.1.220) records installs in `<pluginsDir>/installed_plugins.json` and lays plugins out under `cache/<marketplace>/<plugin>/<version>/` rather than as direct children of the plugins directory. Two readers with **deliberately different failure contracts** exist in `src/cli/lib/plugins/plugin-settings.ts`:
+The claude CLI (>= 2.1.220) records installs in `<pluginsDir>/installed_plugins.json` and lays plugins out under `cache/<marketplace>/<plugin>/<version>/` rather than as direct children of the plugins directory. Two readers exist in `src/cli/lib/plugins/plugin-settings.ts`, differing in WHAT they answer rather than in how they fail:
 
-| Function                         | Path                                                   | On unreadable / schema-invalid registry                                | Consumers                         |
-| -------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- | --------------------------------- |
-| `listRegisteredPluginInstalls()` | `getInstalledPluginsRegistryPath(pluginsDir)`          | **Throws** — the registry is the source of truth for what is installed | `lib/content-validator.ts`        |
-| `resolvePluginInstallPaths()`    | `getInstalledPluginsRegistryPath(getUserPluginsDir())` | `verbose()` + returns `[]` (best-effort resolution)                    | `getVerifiedPluginInstallPaths()` |
+| Function                         | Path                                          | On unreadable / schema-invalid registry                                | Consumers                                       |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| `listRegisteredPluginInstalls()` | `getInstalledPluginsRegistryPath(pluginsDir)` | **Throws** — the registry is the source of truth for what is installed | `lib/content-validator.ts`                      |
+| `listPluginInstallsForProject()` | `getInstalledPluginsRegistryPath(pluginsDir)` | **Throws**, for its sibling's reason                                   | `claudeListPlugins()` in `hosts/claude-host.ts` |
 
-Both use `readFileSafe(MAX_CONFIG_FILE_SIZE)` -> `JSON.parse()` -> `installedPluginsSchema.safeParse()`. `listRegisteredPluginInstalls()` flattens `plugins[key][]` to unique `(pluginKey, installPath)` pairs across all scopes; `resolvePluginInstallPaths()` picks one installation per key via `pickInstallation()` (this project's `scope: "project"` entry wins, else the `scope: "user"` entry).
+Both use `readFileSafe(MAX_CONFIG_FILE_SIZE)` -> `JSON.parse()` -> `installedPluginsSchema.safeParse()`. `listRegisteredPluginInstalls()` flattens `plugins[key][]` to unique `(pluginKey, installPath)` pairs across all scopes; `listPluginInstallsForProject()` picks one installation per key via `pickInstallation()` (this project's `scope: "project"` entry wins, else the `scope: "user"` entry).
+
+**The degrade-to-`[]` moved out of this module on 2026-09-22 and is now one layer up.** It used to be `resolvePluginInstallPaths()`'s, which also chose the registry directory itself (`getUserPluginsDir()`) rather than taking one. Both are now the caller's: the Claude host chooses the directory — `pluginsDir("claude", "global", projectDir)`, or the `.claude` tree a `HostCallOptions.configDir` pins — and `getVerifiedPluginInstallPaths()` in `plugins/plugin-discovery.ts` is the one reader that has decided advisory discovery must survive an unreadable registry.
 
 **Fallback ladder for `doctor`'s plugins content check** (`validateRegistryPlugins()` in `src/cli/lib/content-validator.ts`, reached through `validateInstalledPlugins()`):
 
@@ -329,6 +353,15 @@ together:
 
 Both combinations are byte-identical to the wizard's fully-tagged load for config-types purposes — neither the config-types writer nor the agent render path reads the extra-source annotations. Pinned by the `skipExtraSources` parity test in `src/cli/lib/installation/local-installer.test.ts`.
 
+### 2.8 Codex's Configuration (`$CODEX_HOME/config.toml`), Read by Hand
+
+The package declares no TOML reader, so every read of the user's own Codex configuration is a line
+scan rather than a parse. The path is `codexGlobalConfigFile()` in `lib/installation/install-layout.ts`.
+
+| Reader                                         | File                           | What it looks for                                                                                                      | On absence                                                                                                                       |
+| ---------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `trustCodexProject()` (reads before it writes) | `hosts/codex-project-trust.ts` | `[projects."<exact dir>"]` with `trust_level` under it, or the dotted one-line form (`declaresTrust`, `declaredLevel`) | writes the entry and `codexCompileNotices` prints what it wrote; a level the user set is left and reported (CLI-893, 2026-09-26) |
+
 ---
 
 ## 3. File System Write Boundaries (Data OUT)
@@ -342,9 +375,9 @@ Both combinations are byte-identical to the wizard's fully-tagged load for confi
 | `generateConfigSource()`                 | `@workspace/compile/config-source`       | `configuration/config-writer.ts`       | Returns a string |
 | `generateBlankGlobalConfigSource()`      | `@workspace/compile/config-source`       | `configuration/config-writer.ts`       | Returns a string |
 | `generateBlankGlobalConfigTypesSource()` | `@workspace/compile/config-types-source` | `configuration/config-types-writer.ts` | Returns a string |
-| `getGlobalConfigImportPath()`            | `configuration/config-writer.ts`         | itself                                 | Returns a path   |
+| `getGlobalConfigImportPath(provider)`    | `configuration/config-writer.ts`         | itself                                 | Returns a path   |
 
-**`config-writer.ts` declares exactly one function of its own** — `getGlobalConfigImportPath()`,
+**`config-writer.ts` declares exactly one function of its own** — `getGlobalConfigImportPath(provider)`,
 which is the one thing the shared package cannot hold, being derived from `os.homedir()`. Everything
 else in it is a re-export, which is what puts the editor's output preview behind the same renderer
 rather than a second copy of it.
@@ -359,15 +392,15 @@ the renderers come from `@workspace/compile/config-types-source` and the disk ha
 `configuration/config-types-io.ts`. The **Declared in** column is what a rename or a deletion would
 move; the module column above it would not change.
 
-| Function                             | Declared in                              | What It Writes                                                             | Where                                   |
-| ------------------------------------ | ---------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------- |
-| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`             | Standalone union types narrowed to the config (global path only)           | `~/.claude-src/config-types.ts`         |
-| `regenerateConfigTypes()`            | `configuration/config-types-io.ts`       | Project config-types.ts; emits import-from-global when global exists       | `<project>/.claude-src/config-types.ts` |
-| `generateConfigTypesSource()`        | `@workspace/compile/config-types-source` | Standalone union source string                                             | Returns string                          |
-| `generateProjectConfigTypesSource()` | `@workspace/compile/config-types-source` | Project source extending global types via `import type`                    | Returns string                          |
-| `buildConfigTypesBackgroundData()`   | `configuration/config-types-io.ts`       | (reads the matrix and the CLI's own sub-agent roster)                      | Returns `ConfigTypesBackgroundData`     |
-| `getGlobalConfigTypesPath()`         | `configuration/config-types-io.ts`       | (reads, not writes)                                                        | `~/.claude-src/config-types.ts`         |
-| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                   | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`     |
+| Function                             | Declared in                              | What It Writes                                                             | Where                                       |
+| ------------------------------------ | ---------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------- |
+| `writeGlobalTypesHalf()`             | `config-gate/pair-writer.ts`             | Standalone union types narrowed to the config (global path only)           | `~/<source folder>/config-types.ts`         |
+| `regenerateConfigTypes()`            | `configuration/config-types-io.ts`       | Project config-types.ts; emits import-from-global when global exists       | `<project>/<source folder>/config-types.ts` |
+| `generateConfigTypesSource()`        | `@workspace/compile/config-types-source` | Standalone union source string                                             | Returns string                              |
+| `generateProjectConfigTypesSource()` | `@workspace/compile/config-types-source` | Project source extending global types via `import type`                    | Returns string                              |
+| `buildConfigTypesBackgroundData()`   | `configuration/config-types-io.ts`       | (reads the matrix and the CLI's own sub-agent roster)                      | Returns `ConfigTypesBackgroundData`         |
+| `getGlobalConfigTypesPath(provider)` | `configuration/config-types-io.ts`       | (reads, not writes)                                                        | `~/<source folder>/config-types.ts`         |
+| `reconcileTypesFromDisk()`           | `config-gate/index.ts`                   | Scope-dispatching entry — applies the writer-selection rule from one place | Whichever scope's `config-types.ts`         |
 
 **Writer Selection Rule:** Project path writes go through `regenerateConfigTypes()` — it detects an existing global install and emits `import type { SkillId as GlobalSkillId, ... } from "<relpath>/config-types"` instead of duplicating global unions. Global path writes go through `config-gate/pair-writer.ts`. The rule is enforced, not advised: `regenerateConfigTypes()` throws `GlobalPairWriteViolation` when handed the home directory, and the standalone renderer is private to `pair-writer.ts`.
 
@@ -375,9 +408,9 @@ move; the module column above it would not change.
 
 ### 3.3 Skill Copier
 
-| Function                       | File                     | What It Writes                                    | Where                        |
-| ------------------------------ | ------------------------ | ------------------------------------------------- | ---------------------------- |
-| `copySkillsToLocalFlattened()` | `skills/skill-copier.ts` | Skill directories (SKILL.md, metadata.yaml, etc.) | `.claude/skills/<skill-id>/` |
+| Function                       | File                     | What It Writes                                    | Where                                                                                                                                                                     |
+| ------------------------------ | ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `copySkillsToLocalFlattened()` | `skills/skill-copier.ts` | Skill directories (SKILL.md, metadata.yaml, etc.) | `<localSkillsDir>/<skill-id>/` — the scope's skills directory, which the caller passes (`.claude/skills/` on Claude, `.agents/skills/` or `$CODEX_HOME/skills/` on Codex) |
 
 Path traversal validation via `validateSkillPath()` in `skill-copier.ts` -- resolves paths and verifies they stay within the expected parent directory.
 
@@ -389,51 +422,78 @@ Function-level inventory and the copy layering (`copySkillTo`, `copySkill`, `cop
 
 ### 3.4a The config-gate — the only writer of the global pair
 
-**Privileged zone:** `src/cli/lib/config-gate/**`, plus `configuration/config-types-io.ts` (which the gate drives, through the `config-types-writer.ts` barrel) and `utils/fs.ts` (which holds the tripwire). Nothing else in `src/` may write `~/.claude-src/config.ts` or `~/.claude-src/config-types.ts`.
+**Privileged zone:** `src/cli/lib/config-gate/**`, plus `configuration/config-types-io.ts` (which the gate drives, through the `config-types-writer.ts` barrel) and `utils/fs.ts` (which holds the tripwire). Nothing else in `src/` may write `~/<source folder>/config.ts` or `~/<source folder>/config-types.ts`.
 
-| Function                                     | File                         | What It Writes                                                                                      | Where                                 |
-| -------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `writeGlobalPair()`                          | `config-gate/pair-writer.ts` | Both halves from one config, each skipped when its bytes are unchanged                              | `~/.claude-src/`                      |
-| `writeGlobalConfigHalf()`                    | `config-gate/pair-writer.ts` | The config half alone (scalar / registration mutations)                                             | `~/.claude-src/config.ts`             |
-| `ensureBlankPair()`                          | `config-gate/pair-writer.ts` | Blank `config.ts` + `config-types.ts` when none exists                                              | `~/.claude-src/`                      |
-| `writeScopedFromWizard()`                    | `config-gate/index.ts`       | Scoped config pairs (global + project), then propagates and recompiles                              | `.claude-src/` per scope              |
-| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config                        | `<project>/.claude-src/`              |
-| `propagateGlobalChangesToProjects()`         | `config-gate/propagate.ts`   | Re-writes the pair for every registered project                                                     | each tracked project's `.claude-src/` |
-| `pruneGlobalEntriesFromRegisteredProjects()` | `config-gate/propagate.ts`   | Same, with an EMPTIED global config so every inlined global row, tombstone and stack ref is dropped | each tracked project's `.claude-src/` |
-| `writeProjectPartial()`                      | `config-gate/index.ts`       | A PROJECT `config.ts` from a `Partial<ProjectConfig>`; throws at `$HOME`                            | `<project>/.claude-src/config.ts`     |
+| Function                                     | File                         | What It Writes                                                                                      | Where                                     |
+| -------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `writeGlobalPair()`                          | `config-gate/pair-writer.ts` | Both halves from one config, each skipped when its bytes are unchanged                              | `~/<source folder>/`                      |
+| `writeGlobalConfigHalf()`                    | `config-gate/pair-writer.ts` | The config half alone (scalar / registration mutations)                                             | `~/<source folder>/config.ts`             |
+| `ensureBlankPair()`                          | `config-gate/pair-writer.ts` | Blank `config.ts` + `config-types.ts` when none exists                                              | `~/<source folder>/`                      |
+| `writeScopedFromWizard()`                    | `config-gate/index.ts`       | Scoped config pairs (global + project), then propagates and recompiles                              | `<source folder>/` per scope              |
+| `writeProjectConfigPair()`                   | `config-gate/propagate.ts`   | ONE project's `config.ts` + `config-types.ts` from the same effective config                        | `<project>/<source folder>/`              |
+| `propagateGlobalChangesToProjects()`         | `config-gate/propagate.ts`   | Re-writes the pair for every registered project                                                     | each tracked project's `<source folder>/` |
+| `pruneGlobalEntriesFromRegisteredProjects()` | `config-gate/propagate.ts`   | Same, with an EMPTIED global config so every inlined global row, tombstone and stack ref is dropped | each tracked project's `<source folder>/` |
+| `writeProjectPartial()`                      | `config-gate/index.ts`       | A PROJECT `config.ts` from a `Partial<ProjectConfig>`; throws at `$HOME`                            | `<project>/<source folder>/config.ts`     |
 
 **Enforcement (four layers):** (1) neither `installation/index.ts` nor `configuration/index.ts` re-exports a pair writer, and `configuration/config-saver.ts` is deleted; (2) eslint bans importing `config-gate/*` other than `index*` (statically and via `ImportExpression`), bans importing any `writeFile`-family symbol from `fs`/`node:fs`/`fs/promises`/`node:fs/promises`/`fs-extra` outside `utils/fs.ts`, and restricts the pair renderers to `config-gate/**` + `configuration/**`; (3) `utils/fs.ts::writeFile` resolves its target and calls `assertGateToken` when it is either pair path, throwing `GlobalPairWriteViolation`; (4) `src/cli/lib/__tests__/config-gate-enforcement.test.ts` pins the barrel deletions by name, exercises the real `writeFile` inside and outside `withGateToken`, asserts the three `$HOME` refusals, proves the private `pair-writer` refuses a caller that reached it by dynamic import, and source-scans `src/**` for any file holding both a write primitive and a pair reference. **Its spec count is owned by [config/config-writer.md](config/config-writer.md#enforcement--four-layers) and deliberately not restated here.**
 
 **A clean lint run does not prove layer (2) still works.** A guard ESLint has quietly stopped understanding reports nothing, which looks exactly like a guard with nothing to report. Layers (1), (3) and (4) are all exercised by `config-gate-enforcement.test.ts`; layer (2) is **half** covered, and which half matters.
 
-| Rule family in layer (2)                                           | Automated proof                                                       |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `no-restricted-syntax` — the vacuous-comparison selectors          | `src/cli/lib/__tests__/spec-gates.test.ts`, per zone, both directions |
-| `no-restricted-imports` — private-module, raw-write, pair-renderer | **None.** Hand check on any ESLint major upgrade                      |
-| `no-restricted-syntax` — the `config-gate/*` dynamic-import ban    | **None.** Hand check on any ESLint major upgrade                      |
+| Rule family in layer (2)                                        | Automated proof                                                                |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `no-restricted-syntax` — the vacuous-comparison selectors       | `src/cli/lib/__tests__/spec-gates.test.ts`, per zone, both directions          |
+| `no-restricted-syntax` — the source-folder literal selectors    | `src/cli/lib/__tests__/source-folder-literals-are-funnelled.test.ts`, per zone |
+| `no-restricted-syntax` — the host-path literal selectors        | `src/cli/lib/__tests__/host-path-literals-are-funnelled.test.ts`, per zone     |
+| `no-restricted-imports` — the pair-renderer group               | `src/cli/lib/configuration/__tests__/config-writer-import-ban.test.ts`         |
+| `no-restricted-imports` — the source-folder symbol group        | `source-folder-literals-are-funnelled.test.ts`, its own `IMPORT_ZONES` roster  |
+| `no-restricted-imports` — the host-path symbol group            | `src/cli/lib/__tests__/host-path-symbols-are-funnelled.test.ts`, per zone      |
+| `no-restricted-imports` — private-module, raw-write             | **None.** Hand check on any ESLint major upgrade                               |
+| `no-restricted-syntax` — the `config-gate/*` dynamic-import ban | **None.** Hand check on any ESLint major upgrade                               |
 
-`spec-gates.test.ts` loads the real `eslint.config.js` — it does not restate the selectors — and lints one real file per zone that configures `no-restricted-syntax` separately: `e2e/assertions/four-surfaces.ts` (the spec zone, which declares the rule for the task-ID bans and so keeps the selectors only by restating them), `src/cli/lib/content-validator.ts` (an ordinary type-checked CLI source, the zone that also carries the config-gate import bans) and `src/cli/lib/config-gate/index.ts`. **The third is there because every block above it excludes the gate directory, so the gate inherits no `no-restricted-syntax` at all and its block restates the selectors from scratch.** Each shape is asserted in both directions: the zone must report against the verdict written in the vacuous form, and must stay silent on the same verdict written in a form the code can falsify — without the second half, a zone ESLint could not parse would read as passing.
+**The host-path selectors are the source-folder ban one layer out**, added 2026-09-21 for the Codex work's Step C1: `.claude`, `.codex` and `.agents/skills` written anywhere but `install-layout.ts`, plus `.toml` / `*.toml`, the extension `agentCodec` answers with. They reach the product zones only. The spec zone and every test fixture are exempt by design and the asymmetry with the source-folder ban is the reason — a host's directory name is fixed by the host, so a fixture spelling `.claude/agents` records what Claude Code does, while the source folder's name is changing under everyone. Two known holes, both deliberate and both rostered where a reader meets them: `.md` / `*.md` are left out while five product modules outside the layout module still name the extension themselves (the block's own comment carries the census grep), and the product files whose user-facing PROSE spells a host directory have a block of their own — a list that may only shrink, and one that was three files and is `init.tsx` alone as of 2026-09-22, for its oclif command DESCRIPTION, which oclif reads at module load with no installation in hand. `skillsPathPrefix` is the role each of those should call.
+
+**The selectors are half the ban, and the half that caught the leaks is the other one.** A path is COMPOSED as often as it is written: `path.join(root, CLAUDE_DIR)` spells nothing a regex over literals or template text can reach, and two of the four Claude leaks found by driving the Codex lane on 2026-09-22 were exactly that — `doctor`'s Skills Installed row joining `LOCAL_SKILLS_PATH`, and the permission notice joining `CLAUDE_DIR`. Both passed `npm run lint` on the day they were written. So `HOST_PATH_SYMBOL_IMPORTS` bans importing those two names outside the funnel, the re-export barrel and the write choke point — and beside it sits its own backlog block, longer than the literal one for the reason the ban exists: a composition hides, so those sites accumulated while the lint run stayed green over every one of them. Both rosters are held by `host-path-symbols-are-funnelled.test.ts`, whose exemption assertion fails on a backlog that GREW as well as on one that shrank. Re-derive either rather than reading a count here — the rule prints its own, with the block removed:
+
+```
+npx eslint src --ext .ts,.tsx | grep 'A host path is resolved, not composed'
+```
+
+**The ban catches the hosts' own STATE FILES as well as their directories, and `.claude.json` is the case that settled what that means (ruled 2026-09-21).** The trailing `[^\w-]` is satisfied by the `.`, so the selector reported `.claude.json` and `.claude.json.lock` from the day it landed — while every role its message named answered something else, leaving an author condemned with nowhere to go, and with no spelling in the spec pinning either half. It stays **banned**: `~/.claude.json` is Claude Code's own per-user state where Codex keeps its equivalent in `$CODEX_HOME/config.toml`, which is this ban's class exactly; no product file names it today (`grep -rn '\.claude\.json' src --include='*.ts' --include='*.tsx' | grep -v '\.test\.' | grep -v __tests__` is empty), so keeping it costs nothing; and carving it out needs a `/` after the name, which would license `.claude.<anything>` permanently. What the ruling added is the FUNNEL the message lacked — where no role answers the path, the role is added to `install-layout.ts` rather than composed at the call site — and no role was added on spec, because a role with no reader has no shape to get right. Both halves are pinned in `host-path-literals-are-funnelled.test.ts`: `.claude.json` joins `BANNED_SPELLINGS` in both node types, and "tells an author what to do when no role answers the path it condemned" holds the message's second sentence, which fails apart from the first.
+
+`spec-gates.test.ts` loads the real `eslint.config.js` — it does not restate the selectors — and lints one real file per zone that configures `no-restricted-syntax` separately. **`LINT_ZONES` is no longer a roster and there is no list of zones to keep in step with, here or in the spec.** `lintZonesIn` in `src/cli/lib/__tests__/helpers/lint-zones.ts` reads them off the config: every block declaring the rule is a zone, and its subject is a file that block matches which no LATER declaring block matches — a later block would own the rule's options for that file, so linting it would measure the wrong zone. A zone owning no file comes back with a `null` subject and fails a gate of its own rather than being skipped.
+
+Re-derive the zones rather than reading a number here:
+
+```
+grep -c 'no-restricted-syntax":' packages/cli/eslint.config.js
+```
+
+**It is derived because the hand-written version was the defect.** It held three zones when the timeout note below was measured, five after two were added by hand on 2026-09-20, and seven when it was derived later that day — `src/cli/lib/installation/install-layout.ts` and `e2e/pages/constants.ts` had never been measured by anything, and each of the three earlier numbers had read as complete. Proved by mutation on 2026-09-20: a scratch copy of the config carrying an eighth block that declares the rule and restates nothing left all five hand-rostered paths reporting `no-restricted-syntax`, and reddened `spec-gates.test.ts` on the new zone with no roster edited. `ESCAPE_SHAPE_TIMEOUT_MS` is derived from `LINT_ZONES.length`, so a zone the config gains carries its own headroom too.
+
+Each shape is asserted in both directions: the zone must report against the verdict written in the vacuous form, and must stay silent on the same verdict written in a form the code can falsify — without the second half, a zone ESLint could not parse would read as passing.
 
 For the two uncovered families the check is still by hand: write a throwaway file that violates every guard at once, lint it, confirm each one fires, delete the file. The guard most exposed to a parser change is the `no-restricted-syntax` selector catching dynamic imports of `config-gate/*`, whose regex contains a unicode escape. **Run this check on any ESLint major upgrade**; the guards enforce real invariants and their silence is not evidence.
 
 **`no-restricted-imports` and `no-restricted-syntax` both take options, and a rule's options are not merged across flat-config blocks — the last block naming it for a file owns all of them.** That is why each nested zone restates every restriction it still owes rather than inheriting it, and why a zone added below them inherits nothing by default. Read the zones off the config rather than counting them here — one of them was re-pointed from `config-types-writer.ts` to `config-types-io.ts` when the renderers moved into `@workspace/compile`:
 
-````
+```
 grep -n 'files:' packages/cli/eslint.config.js
-``` `packages/eslint-config/base.js`'s `no-self-compare` is the counter-example that makes the rule legible: it takes no options, so it merges, which is exactly why it could move to the shared base while these could not.
+```
+
+`packages/eslint-config/base.js`'s `no-self-compare` is the counter-example that makes the rule legible: it takes no options, so it merges, which is exactly why it could move to the shared base while these could not.
 
 **Return-channel contract:** every gate entry returns a `GateReport { globalWritten, changes, propagated: { updated, skipped }, recompile }`. It is a **record of completed work**, not a to-do list: a write that propagates has already recompiled the propagated projects' agents. `skipped` is surfaced to the user by `commands/uninstall.tsx` and `commands/compile.ts` via `registeredProjectUpdateSkipped()`; `init.tsx` and `edit.tsx` render only the recompile summary.
 
-**Ordering constraint:** `pruneGlobalEntriesFromRegisteredProjects()` must run **after** the global `.claude-src` manifest is deleted, so each project's regenerated `config-types.ts` falls back to the standalone form instead of importing from a now-missing global `config-types.ts`.
+**Ordering constraint:** `pruneGlobalEntriesFromRegisteredProjects()` must run **after** the global manifest is deleted, so each project's regenerated `config-types.ts` falls back to the standalone form instead of importing from a now-missing global `config-types.ts`.
 
 ### 3.5 Compiler Agent Output
 
-| Function                       | File                              | What It Writes                               | Where                                                                                                                          |
-| ------------------------------ | --------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `compileAgentForPlugin()`      | `compiler.ts`                     | Compiled agent markdown via Liquid templates | Returns string (caller writes)                                                                                                 |
-| `writeCompiledAgentsByScope()` | `agents/write-compiled-agents.ts` | The rendered agent markdown                  | `<name>.md` under the global or project agents dir, per `agentScopeMap`; skipped when the bytes already match (`holdsExactly`) |
+| Function                       | File                              | What It Writes                                                                       | Where                                                                                                                                                                                                |
+| ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compileAgentForHost()`        | `compiler.ts`                     | One sub-agent in the host's own format — Claude markdown, or a Codex agent role TOML | Returns string (caller writes)                                                                                                                                                                       |
+| `writeCompiledAgentsByScope()` | `agents/write-compiled-agents.ts` | The rendered agent, in the host's codec                                              | `<name>.md` (Claude) or `<name>.toml` (Codex) — the extension from `agentCodec` — under the global or project agents dir, per `agentScopeMap`; skipped when the bytes already match (`holdsExactly`) |
 
-Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks local `.claude-src/agents/_templates/`, legacy `.claude/templates/`, then CLI built-in `DIRS.templates`.
+Template root resolution in `createLiquidEngine()` in `compiler.ts`: checks the project's own `<source folder>/agents/_templates/`, resolved through `sourceFolderInUse`, then legacy `.claude/templates/`, then CLI built-in `DIRS.templates`.
 
 ### 3.6 Per-Skill Source Propagation
 
@@ -474,24 +534,25 @@ A **write-time invariant boundary**, distinct from the schema boundaries above: 
 - **Read the merged matrix, not `defaultCategories`** — `isExclusiveCategory()` honours a source repo's category overrides.
 - **A category the matrix does not carry is NOT exclusive.** The wizard's toggle handler defaults the same absent-category lookup the other way (`matrix.categories[categoryId]?.exclusive ?? true` in `components/hooks/use-build-step-props.ts`); a rule that masks _persisted_ entries deliberately does not. Both defaults turn on an absent **category**, never on an absent **field** — `CategoryDefinition.exclusive` is a non-optional `boolean` at every producer and at both parse boundaries, so there is no such thing as a category that carries no flag.
 - **Never throws on a custom skill.** `categoryOfSkill()` returns `undefined` for an id absent from the matrix or sitting in the `local` pseudo-category.
-- **Global config is read-only here.** Masks are applied to the project split only — a tombstone is never written into `~/.claude-src/config.ts`.
+- **Global config is read-only here.** Masks are applied to the project split only — a tombstone is never written into `~/<source folder>/config.ts`.
 - **Idempotent**, and self-healing: `dropOrphanedDerivedMasks()` / `dropOrphanedDerivedAgentMasks()` run BEFORE masking so a mask whose collision cleared is removed rather than re-derived.
 
 ### 3.9 Filesystem Delete Boundary (`uninstall`)
 
 `src/cli/commands/uninstall.tsx` removes CLI-managed content. Everything it deletes is enumerated up-front by `detectUninstallTarget(projectDir)` and rendered by the shared pure builder `buildRemovalPlan(target)`, which both the `--yes` plain-text plan (`printRemovalPlan`) and the Ink `UninstallConfirm` component consume, so the two renderings stay byte-identical.
 
-| Section header       | What is deleted                                                                                                                  | Matching rule                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `Plugins:`           | `<pluginsDir>/<pluginName>` + `claude plugin uninstall`                                                                          | `getCliInstalledPluginKeys(config)` — `id@source` and the `id@marketplace` variant |
-| `CLI-managed files:` | `<skillsDir>/<dir>` where `metadata.yaml` carries `forkedFrom`; `<agentsDir>/<name>.md` where the basename is in `config.agents` | `readForkedFromMetadata()`; `listAgentMdFiles()`                                   |
-| `Config:`            | `.claude-src/config.ts`, `.claude-src/config-types.ts`                                                                           | **Unconditional** — no flag gates it                                               |
+| Section header       | What is deleted                                                                                                                                                                                                                                                                           | Matching rule                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `Plugins:`           | `<pluginsDir>/<pluginName>` + the host's `uninstallPlugin` (`claude plugin uninstall`, or `codex plugin remove`)                                                                                                                                                                          | `getCliInstalledPluginKeys(config)` — `id@source` and the `id@marketplace` variant |
+| `CLI-managed files:` | `<skillsDir>/<dir>` where `metadata.yaml` carries `forkedFrom`; `<agentsDir>/<name>.md` where the name is in `config.agents`, or — with no config left — where the file carries the provenance marker (`.md` only on every host, so a Codex installation's `.toml` roles are not matched) | `readForkedFromMetadata()`; `listAgentMdFiles()`                                   |
+| `Config:`            | `<source folder>/config.ts`, `<source folder>/config-types.ts`                                                                                                                                                                                                                            | **Unconditional** — no flag gates it                                               |
 
 **Deletion contracts:**
 
-- `.claude-src/` itself is removed only once empty (`removeDirIfEmpty`); user-owned content there (e.g. ejected templates) keeps it alive. `.claude/` follows the same rule and reports "Kept `.claude/` (contains user content)" otherwise.
+- the source folder itself is removed only once empty (`removeDirIfEmpty`); user-owned content there (e.g. ejected templates) keeps it alive. `.claude/` follows the same rule and reports "Kept `.claude/` (contains user content)" otherwise.
+- **and its `.agents-inc/` parent after it**, through `cleanupSourceRoot`, attempted only when the provider folder itself went and only when the parent is likewise empty. A consuming repository keeps its own state under that parent — the benchmark's hand gate writes `baseline.json` and an `attempts/` directory there — so a parent that stays is SAID rather than left in silence, with the same "contains user content" wording. A scope still on the legacy name has no such parent: `sourceRootOf` answers `null` there, because `.claude-src/`'s parent is the scope root and removing THAT would take the user's project with it.
 - A skill directory without a `forkedFrom` marker is **skipped with a warning** — user-created content is never deleted.
-- Plugin uninstall derives its scope per skill (`toClaudePluginScope(skillConfig?.scope)`) and goes through `claudePluginUninstallBestEffort()`, which tries the fallback scope too.
+- Plugin uninstall derives its primary scope per skill from the config and sweeps every scope the host installs plugins at (`pluginScopesToSweep` in `commands/uninstall.tsx`, reading `PluginHost.offeredPlacements`), the config's own answer first, swallowing each attempt's error. A re-scoped plugin is filed under the scope it was INSTALLED at, which is why one scope is not enough.
 - **A project uninstall always deregisters** itself from the global `projects[]` registry (`mutateGlobal({ kind: "deregister-project" })`). A failure there — missing, project-less, or `ConfigLoadError`-corrupt global config — **warns and continues**; it may never fail the uninstall.
 - **A global uninstall** (`isHomeDirectory(projectDir)`) additionally prunes inlined global entries from every registered project. The data it needs (global config + matrix + agent defs) is captured by `prepareGlobalPropagation()` **before** any removal, because that data lives in the config being deleted. Unreachable projects are warned and skipped and can never abort the uninstall.
 
@@ -499,33 +560,50 @@ A **write-time invariant boundary**, distinct from the schema boundaries above: 
 
 ## 4. Shell Execution Boundaries
 
-All shell execution goes through `execCommand()` in `src/cli/utils/exec.ts`.
+Every host-CLI invocation goes through `src/cli/utils/exec.ts` — `execCommand()` (one argv, no shell). Every `claude` invocation below is made from `src/cli/lib/hosts/claude-host.ts`, and every `codex` one from `src/cli/lib/hosts/codex-host.ts`, behind the `PluginHost` seam.
 
 ### 4.1 Validation Functions
 
 | Function                      | File      | What It Validates                              | Patterns                                          |
 | ----------------------------- | --------- | ---------------------------------------------- | ------------------------------------------------- |
 | `validatePluginPath()`        | `exec.ts` | Plugin path (max 1024 chars, no control chars) | `SAFE_PLUGIN_PATH_PATTERN`: `[a-zA-Z0-9._@/:~-]+` |
-| `validateMarketplaceSource()` | `exec.ts` | Marketplace source (max 1024 chars)            | Same as `SAFE_PLUGIN_PATH_PATTERN`                |
+| `validateMarketplaceSource()` | `exec.ts` | Marketplace source (max 1024 chars)            | `SAFE_PLUGIN_PATH_PATTERN` for a REFERENCE only   |
 | `validatePluginName()`        | `exec.ts` | Plugin name (max 256 chars)                    | `SAFE_NAME_PATTERN`: `[a-zA-Z0-9._@/-]+`          |
+
+They stay in `exec.ts` rather than moving with the Claude host: a name, a path and a marketplace source are checked the same way whichever binary they are about, so every host imports them.
 
 All three validate: non-empty, length limit, no control characters (`[\x00-\x08\x0E-\x1F\x7F]`), allowlist character pattern.
 
+**`validateMarketplaceSource` applies the pattern to a REFERENCE and not to a directory**, since
+2026-09-23. A marketplace source is either a reference a user types (`owner/repo`,
+`github:org/repo`) or a directory on this machine, and holding the second to a pattern written for
+the first refused any directory whose name holds a space — `/Users/My Name/…` — although the host
+CLIs accept it. The source is passed to `spawn(command, args)` with no `shell`, so there is nothing
+to re-read it; the pattern stays on for every source that is not a path. Held by
+`src/cli/lib/hosts/__tests__/a-marketplace-directory-with-a-space-reaches-the-host.test.ts` (both
+halves).
+
 ### 4.2 Shell Commands Executed
 
-| Function                          | File      | Command                                          | Input Validation              |
-| --------------------------------- | --------- | ------------------------------------------------ | ----------------------------- |
-| `claudePluginInstall()`           | `exec.ts` | `claude plugin install <path> --scope <scope>`   | `validatePluginPath()`        |
-| `claudePluginUninstall()`         | `exec.ts` | `claude plugin uninstall <name> --scope <scope>` | `validatePluginName()`        |
-| `claudePluginMarketplaceAdd()`    | `exec.ts` | `claude plugin marketplace add <source>`         | `validateMarketplaceSource()` |
-| `claudePluginMarketplaceRemove()` | `exec.ts` | `claude plugin marketplace remove <name>`        | `validatePluginName()`        |
-| `claudePluginMarketplaceUpdate()` | `exec.ts` | `claude plugin marketplace update <name>`        | `validatePluginName()`        |
-| `claudePluginMarketplaceList()`   | `exec.ts` | `claude plugin marketplace list --json`          | (no user input in args)       |
-| `isClaudeCLIAvailable()`          | `exec.ts` | `claude --version`                               | (no user input in args)       |
+| Function                          | File             | Command                                          | Input Validation              |
+| --------------------------------- | ---------------- | ------------------------------------------------ | ----------------------------- |
+| `claudePluginInstall()`           | `claude-host.ts` | `claude plugin install <path> --scope <scope>`   | `validatePluginPath()`        |
+| `claudePluginUninstall()`         | `claude-host.ts` | `claude plugin uninstall <name> --scope <scope>` | `validatePluginName()`        |
+| `claudePluginMarketplaceAdd()`    | `claude-host.ts` | `claude plugin marketplace add <source>`         | `validateMarketplaceSource()` |
+| `claudePluginMarketplaceRemove()` | `claude-host.ts` | `claude plugin marketplace remove <name>`        | `validatePluginName()`        |
+| `claudePluginMarketplaceUpdate()` | `claude-host.ts` | `claude plugin marketplace update <name>`        | `validatePluginName()`        |
+| `claudePluginMarketplaceList()`   | `claude-host.ts` | `claude plugin marketplace list --json`          | (no user input in args)       |
+| `isClaudeCLIAvailable()`          | `claude-host.ts` | `claude --version`                               | (no user input in args)       |
+
+Each is a member of the host `claudeHost()` answers, under the seam's own name: `installPlugin`,
+`uninstallPlugin`, `addMarketplace`, `refreshMarketplace`, `marketplaceExists`, `isAvailable`.
+`claudePluginMarketplaceRemove()` is on no host interface — no command removes a marketplace, so
+the suite is its whole audience. The exact argv, cwd and `CLAUDE_CONFIG_DIR` of every one of them is
+recorded in `src/cli/lib/hosts/__tests__/the-claude-host-spawns-what-it-spawns-today.test.ts`.
 
 **Execution method:** `spawn()` with args array (not shell string interpolation). The `stdio` is `["ignore", "pipe", "pipe"]` -- stdin is ignored, stdout/stderr are captured.
 
-**Composite wrappers (no new shell string):** `claudePluginMarketplaceExists(name)` delegates to `claudePluginMarketplaceList()` and matches on `name` in JS (no user input in the executed args). `claudePluginUninstallBestEffort(pluginRef, primaryScope, projectDir)` calls `claudePluginUninstall()` (which runs `validatePluginName()`) for the primary scope then the fallback scope, swallowing each attempt's error. Both reuse the validated boundary functions above rather than executing their own commands.
+**Composite wrappers (no new shell string):** `claudePluginMarketplaceExists(name)` delegates to `claudePluginMarketplaceList()` and matches on `name` in JS (no user input in the executed args). The two-scope removal sweep is the CALLER's now, in `commands/uninstall.tsx` (section 3.5), and reaches the same validated boundary function once per scope.
 
 ---
 
@@ -613,11 +691,11 @@ Recursively checks that parsed JSON/YAML does not exceed max nesting depth. Prev
 
 ### 5.7 Terminal Control Characters in Foreign Text OUT
 
-| Property     | Value                                                                    |
-| ------------ | ------------------------------------------------------------------------ |
-| **Location** | `src/cli/utils/string.ts`                                                |
-| **Function** | `stripTerminalControls()`, and `truncateText()` which calls it first     |
-| **Applied to** | Any text this CLI did not author, on its way to a terminal             |
+| Property       | Value                                                                |
+| -------------- | -------------------------------------------------------------------- |
+| **Location**   | `src/cli/utils/string.ts`                                            |
+| **Function**   | `stripTerminalControls()`, and `truncateText()` which calls it first |
+| **Applied to** | Any text this CLI did not author, on its way to a terminal           |
 
 **5.1's `CONTROL_CHAR_PATTERN` is the other direction and does not cover this.** That one refuses a
 control character in a source string on its way INTO `spawn()`; this one strips control characters
@@ -627,11 +705,11 @@ honest multi-line zod refusal is worse than printing it inert.
 
 **Three chokepoints, and nothing renders foreign text past them:**
 
-| Chokepoint              | File                       | What it holds                                                            |
-| ----------------------- | -------------------------- | ------------------------------------------------------------------------ |
-| `truncateText`          | `utils/string.ts`          | Foreign text that also needs a bound — strips BEFORE it measures         |
-| `getErrorMessage`       | `utils/errors.ts`          | Every catch block, because a parser writes its input into what it throws |
-| `formatZodIssue`        | `lib/schema-validator.ts`  | Every Zod reporter — the path, the unrecognised keys, and the message    |
+| Chokepoint        | File                      | What it holds                                                            |
+| ----------------- | ------------------------- | ------------------------------------------------------------------------ |
+| `truncateText`    | `utils/string.ts`         | Foreign text that also needs a bound — strips BEFORE it measures         |
+| `getErrorMessage` | `utils/errors.ts`         | Every catch block, because a parser writes its input into what it throws |
+| `formatZodIssue`  | `lib/schema-validator.ts` | Every Zod reporter — the path, the unrecognised keys, and the message    |
 
 `formatZodIssue` earns its place because every part of the sentence it builds comes out of the
 REFUSED DOCUMENT rather than out of the schema: a path segment and an unrecognised key are keys the
@@ -665,12 +743,12 @@ through a React-escaped `<pre>`.
 
 ### 6.1 Plugin Discovery
 
-| Function                          | File                         | What It Reads                                              | Validation                                                                  |
-| --------------------------------- | ---------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `readPluginManifest()`            | `plugins/plugin-finder.ts`   | `plugin.json`                                              | `readFileSafe(MAX_PLUGIN_FILE_SIZE)` + `pluginManifestSchema.parse()`       |
-| `getEnabledPluginKeys()`          | `plugins/plugin-settings.ts` | `.claude/settings.json`                                    | `readFileSafe(MAX_CONFIG_FILE_SIZE)` + `pluginSettingsSchema.safeParse()`   |
-| `resolvePluginInstallPaths()`     | `plugins/plugin-settings.ts` | `~/.claude/plugins/installed_plugins.json`                 | `readFileSafe(MAX_CONFIG_FILE_SIZE)` + `installedPluginsSchema.safeParse()` |
-| `getVerifiedPluginInstallPaths()` | `plugins/plugin-settings.ts` | Combines settings + registry, verifies paths exist on disk | `fileExists()` check for each plugin manifest                               |
+| Function                          | File                          | What It Reads                                               | Validation                                                                  |
+| --------------------------------- | ----------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `readPluginManifest()`            | `plugins/plugin-finder.ts`    | `plugin.json`                                               | `readFileSafe(MAX_PLUGIN_FILE_SIZE)` + `pluginManifestSchema.parse()`       |
+| `getEnabledPluginKeys()`          | `plugins/plugin-settings.ts`  | `.claude/settings.json`                                     | `readFileSafe(MAX_CONFIG_FILE_SIZE)` + `pluginSettingsSchema.safeParse()`   |
+| `listPluginInstallsForProject()`  | `plugins/plugin-settings.ts`  | `<pluginsDir>/installed_plugins.json`                       | `readFileSafe(MAX_CONFIG_FILE_SIZE)` + `installedPluginsSchema.safeParse()` |
+| `getVerifiedPluginInstallPaths()` | `plugins/plugin-discovery.ts` | The host's own listing, then each plugin's manifest on disk | `fileExists()` check for each plugin manifest                               |
 
 ### 6.2 Plugin Validation
 
@@ -682,12 +760,12 @@ through a React-escaped `<pre>`.
 
 ### 6.3 Marketplace Registration (Shell Boundary)
 
-| Function                          | File      | Direction                     | Validation                    |
-| --------------------------------- | --------- | ----------------------------- | ----------------------------- |
-| `claudePluginMarketplaceAdd()`    | `exec.ts` | OUT (registers marketplace)   | `validateMarketplaceSource()` |
-| `claudePluginMarketplaceRemove()` | `exec.ts` | OUT (deregisters marketplace) | `validatePluginName()`        |
-| `claudePluginInstall()`           | `exec.ts` | OUT (installs plugin)         | `validatePluginPath()`        |
-| `claudePluginUninstall()`         | `exec.ts` | OUT (uninstalls plugin)       | `validatePluginName()`        |
+| Function                          | File             | Direction                     | Validation                    |
+| --------------------------------- | ---------------- | ----------------------------- | ----------------------------- |
+| `claudePluginMarketplaceAdd()`    | `claude-host.ts` | OUT (registers marketplace)   | `validateMarketplaceSource()` |
+| `claudePluginMarketplaceRemove()` | `claude-host.ts` | OUT (deregisters marketplace) | `validatePluginName()`        |
+| `claudePluginInstall()`           | `claude-host.ts` | OUT (installs plugin)         | `validatePluginPath()`        |
+| `claudePluginUninstall()`         | `claude-host.ts` | OUT (uninstalls plugin)       | `validatePluginName()`        |
 
 ### 6.4 Marketplace File Parsing
 
@@ -704,12 +782,12 @@ Fetch and cache mechanics behind this boundary (the local/remote fork, the cache
 
 ### 6.5 Shared Seed Config Fetch (`init --from`, `edit --from`)
 
-| Property       | Value                                                                                                                                                                 |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Location**   | `src/cli/lib/seed/fetch-seed.ts`                                                                                                                                      |
-| **Direction**  | IN, and OUT into the terminal on a refusal — see below                                                                                                                |
-| **Data**       | JSON seed payload from `AGENTS_INC_API_URL` (default `https://api.agentsinc.sh`); `fetchSeedConfig` is called from `commands/init.tsx` and `commands/edit.tsx`         |
-| **Validation** | `seedPayloadSchema.safeParse()` — version-pinned (`z.literal(SEED_VERSION)`), unknown keys stripped                                                                   |
+| Property       | Value                                                                                                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Location**   | `src/cli/lib/seed/fetch-seed.ts`                                                                                                                                                                        |
+| **Direction**  | IN, and OUT into the terminal on a refusal — see below                                                                                                                                                  |
+| **Data**       | JSON seed payload from `AGENTS_INC_API_URL` (default `https://api.agentsinc.sh`); `fetchSeedConfig` is called from `commands/init.tsx` and `commands/edit.tsx`                                          |
+| **Validation** | `seedPayloadSchema.safeParse()` — version-pinned (`z.literal(SEED_VERSION)`), unknown keys stripped                                                                                                     |
 | **Mechanism**  | The typed worker client `createApiClient` from `@workspace/api`, built once at module scope with `credentials: "omit"`; never throws — every failure is returned as a message (`FetchSeedResult` union) |
 
 **A refused read is quoted back into the terminal, which makes this an OUT boundary as well as an
@@ -762,23 +840,23 @@ count; the building blocks that compose into the schemas below — the hook reco
 
 Used at data entry points with `.passthrough()` for forward compatibility.
 
-| Schema                         | File                         | Used For                             |
-| ------------------------------ | ---------------------------- | ------------------------------------ |
-| `projectConfigLoaderSchema`    | `schemas.ts`                 | `.claude-src/config.ts` loading      |
-| `projectSourceConfigSchema`    | `schemas.ts`                 | `.claude-src/config.yaml` loading    |
-| `skillMetadataLoaderSchema`    | `schemas.ts`                 | `metadata.yaml` in skill compilation |
-| `localSkillMetadataSchema`     | `schemas.ts`                 | Local skill metadata (forkedFrom)    |
-| `localRawMetadataSchema`       | `schemas.ts`                 | Raw metadata in local skills         |
-| `skillFrontmatterLoaderSchema` | `schemas.ts`                 | SKILL.md frontmatter (lenient)       |
-| `pluginManifestSchema`         | `schemas.ts`                 | `plugin.json` loading                |
-| `marketplaceSchema`            | `schemas.ts`                 | `marketplace.json` loading           |
-| `pluginSettingsSchema`         | `plugins/plugin-settings.ts` | `.claude/settings.json`              |
-| `installedPluginsSchema`       | `plugins/plugin-settings.ts` | `installed_plugins.json`             |
-| `settingsFileSchema`           | `schemas.ts`                 | Settings YAML                        |
-| `stacksConfigSchema`           | `schemas.ts`                 | `config/stacks.ts`                   |
-| `skillCategoriesFileSchema`    | `schemas.ts`                 | `config/skill-categories.ts`         |
-| `skillRulesFileSchema`         | `schemas.ts`                 | `config/skill-rules.ts`              |
-| `agentYamlConfigSchema`        | `schemas.ts`                 | Agent YAML definition                |
+| Schema                         | File                         | Used For                                |
+| ------------------------------ | ---------------------------- | --------------------------------------- |
+| `projectConfigLoaderSchema`    | `schemas.ts`                 | An installation's `config.ts` loading   |
+| `projectSourceConfigSchema`    | `schemas.ts`                 | A source repo's own `config.ts` loading |
+| `skillMetadataLoaderSchema`    | `schemas.ts`                 | `metadata.yaml` in skill compilation    |
+| `localSkillMetadataSchema`     | `schemas.ts`                 | Local skill metadata (forkedFrom)       |
+| `localRawMetadataSchema`       | `schemas.ts`                 | Raw metadata in local skills            |
+| `skillFrontmatterLoaderSchema` | `schemas.ts`                 | SKILL.md frontmatter (lenient)          |
+| `pluginManifestSchema`         | `schemas.ts`                 | `plugin.json` loading                   |
+| `marketplaceSchema`            | `schemas.ts`                 | `marketplace.json` loading              |
+| `pluginSettingsSchema`         | `plugins/plugin-settings.ts` | `.claude/settings.json`                 |
+| `installedPluginsSchema`       | `plugins/plugin-settings.ts` | `installed_plugins.json`                |
+| `settingsFileSchema`           | `schemas.ts`                 | Settings YAML                           |
+| `stacksConfigSchema`           | `schemas.ts`                 | `config/stacks.ts`                      |
+| `skillCategoriesFileSchema`    | `schemas.ts`                 | `config/skill-categories.ts`            |
+| `skillRulesFileSchema`         | `schemas.ts`                 | `config/skill-rules.ts`                 |
+| `agentYamlConfigSchema`        | `schemas.ts`                 | Agent YAML definition                   |
 
 ### Strict Schemas (Validation Boundaries)
 
@@ -812,24 +890,22 @@ crosses this boundary as an inline `z.string() as z.ZodType<...>` cast inside th
 consumes it. Reasoning and the full inventory are in
 [types/zod-schemas.md](./types/zod-schemas.md), which owns the schema roster.
 
-````
-
+```
 grep -n 'as z.ZodType<\(SkillId\|Domain\|Category\|AgentName\)>' src/cli/lib/schemas.ts
-
 ```
 
 ### Helper Functions
 
-| Function                          | File                  | Purpose                                                                                                                           |
-| --------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `formatZodErrors()`               | `schema-validator.ts` | Format Zod issues to string array                                                                                                 |
+| Function                          | File                  | Purpose                                                                                                                                                               |
+| --------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `formatZodErrors()`               | `schema-validator.ts` | Format Zod issues to string array                                                                                                                                     |
 | `formatZodIssue()`                | `schema-validator.ts` | Render one Zod issue path-first, **with every part of the sentence through `stripTerminalControls`** — see [5.7](#57-terminal-control-characters-in-foreign-text-out) |
-| `formatZodIssues()`               | `schemas.ts`          | Join formatted issues into one `"; "`-separated string                                                                            |
-| `validateSkillMetadata()`         | `schemas.ts`          | Selects `customMetadataValidationSchema` vs `metadataValidationSchema` via `isCustomMetadata()` — the one place that policy lives |
-| `splitMetadataValidationIssues()` | `schemas.ts`          | Splits strict-metadata issues into hard `errors` and advisory `warnings`                                                          |
-| `isCustomMetadata()`              | `schemas.ts`          | True for custom (non-marketplace) skill metadata                                                                                  |
-| `validateNestingDepth()`          | `schemas.ts`          | Check JSON nesting depth                                                                                                          |
-| `warnUnknownFields()`             | `schemas.ts`          | Log warnings for unexpected fields                                                                                                |
+| `formatZodIssues()`               | `schemas.ts`          | Join formatted issues into one `"; "`-separated string                                                                                                                |
+| `validateSkillMetadata()`         | `schemas.ts`          | Selects `customMetadataValidationSchema` vs `metadataValidationSchema` via `isCustomMetadata()` — the one place that policy lives                                     |
+| `splitMetadataValidationIssues()` | `schemas.ts`          | Splits strict-metadata issues into hard `errors` and advisory `warnings`                                                                                              |
+| `isCustomMetadata()`              | `schemas.ts`          | True for custom (non-marketplace) skill metadata                                                                                                                      |
+| `validateNestingDepth()`          | `schemas.ts`          | Check JSON nesting depth                                                                                                                                              |
+| `warnUnknownFields()`             | `schemas.ts`          | Log warnings for unexpected fields                                                                                                                                    |
 
 **Advisory-vs-hard metadata split:** an over-length `cliDescription` is the **only** advisory violation. `skillMetadataBaseSchema` (shared by `metadataValidationSchema` and `customMetadataValidationSchema`) keeps `.min(1).max(CLI_DESCRIPTION_MAX_LENGTH)` — 60, module-private in `schemas.ts` — as the declared contract. But the runtime loader schemas accept any length and the value only feeds wizard description text, so `splitMetadataValidationIssues()` in `schemas.ts` — the splitter `doctor`'s skills content check and `validateSource()` both call — reports the `too_big` issue as a warning carrying the actual character count. `isOverLengthCliDescription()` matches on `code === "too_big"` at path `["cliDescription"]` exactly; an **empty** `cliDescription` trips `min(1)` and stays an error, as does every other issue. A skill is `valid` iff the hard-error list is empty.
 
@@ -861,8 +937,10 @@ JSON files --> readFileSafe(sizeLimit) --> JSON.parse() --> schema.safeParse() o
 TS configs --> fileExists() --> jiti.import() --> optional schema.safeParse()
 (project config: missing => null; present-but-broken => throw ConfigLoadError)
 Plugin registry --> readFileSafe(MAX_CONFIG_FILE_SIZE) --> JSON.parse() --> installedPluginsSchema.safeParse()
-(listRegisteredPluginInstalls THROWS on invalid; resolvePluginInstallPaths degrades to [])
-Shell output --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (Zod)
+(both registry readers THROW on invalid; getVerifiedPluginInstallPaths degrades to [])
+Shell output --> JSON.parse(stdout) --> marketplaceInfoListSchema.safeParse() (Claude; [] on failure)
+--> marketplaceRegistrySchema / pluginListingSchema .safeParse() (Codex; throws on failure)
+Codex config.toml --> readFile() --> line scan (no TOML parser)
 
 ```
 
@@ -885,11 +963,11 @@ Deletions --> detectUninstallTarget() --> buildRemovalPlan() --> confirm --> rem
 
 ```
 
-### Shell-Output Boundaries (Now Zod-Validated)
+### Shell-Output Boundaries (Zod-Validated)
 
-| Location                                     | Handling                                                                                                                                          |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claudePluginMarketplaceList()` in `exec.ts` | JSON.parse of Claude CLI stdout, then `marketplaceInfoListSchema.safeParse()` (`z.ZodType<MarketplaceInfo[]>`); returns `[]` and warns on failure |
+| Location                                            | Handling                                                                                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claudePluginMarketplaceList()` in `claude-host.ts` | JSON.parse of Claude CLI stdout, then `marketplaceInfoListSchema.safeParse()` (`z.ZodType<MarketplaceInfo[]>`); returns `[]` and warns on failure |
+| `readJsonFromCodex()` in `codex-host.ts`            | JSON.parse of Codex CLI stdout, then `marketplaceRegistrySchema` or `pluginListingSchema`; throws on failure, naming what was being read          |
 
-The prior gap (only `Array.isArray()`, no schema) is closed — the Claude CLI marketplace-list output is now validated per-element by a Zod array schema. This boundary is low-risk regardless since the data comes from the locally-installed Claude CLI binary (trusted source), not from user or network input.
-```
+These are low-risk regardless: the data comes from a locally-installed host binary, not from user or network input.

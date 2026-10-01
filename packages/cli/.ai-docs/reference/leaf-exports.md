@@ -374,15 +374,15 @@ configuration barrel (`lib/configuration/index.ts`) — unlike `generateConfigTy
 `regenerateConfigTypes`, which are deliberately withheld from it (see the barrel's own comment
 above that export block and config-writer.md's four-layer enforcement section).
 
-| Field                     | Required? | Purpose                                                                                               |
-| ------------------------- | --------- | ----------------------------------------------------------------------------------------------------- |
-| `globalTypesImportPath`   | yes       | Absolute path to the global `.claude-src`; `generateProjectConfigTypesSource` appends `/config-types` |
-| `projectSkillIds`         | yes       | Project-only skill ids                                                                                |
-| `projectAgentNames`       | yes       | Project-only agent names                                                                              |
-| `projectDomains`          | yes       | Project-only domains                                                                                  |
-| `projectCategories`       | **no**    | Project-only categories                                                                               |
-| `selectedAgentNames`      | no        | Narrows `SelectedAgentName`                                                                           |
-| `projectScopedAgentNames` | no        | Narrows `ProjectAgentName`                                                                            |
+| Field                     | Required? | Purpose                                                                                                                                                                                                                                                                             |
+| ------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `globalTypesImportPath`   | yes       | The global scope's source folder as seen from the project's — `computeGlobalTypesImportPath` in `configuration/config-types-io.ts` passes a POSIX `path.relative` result; `generateProjectConfigTypesSource` appends `/config-types`. The type's own docblock still says "absolute" |
+| `projectSkillIds`         | yes       | Project-only skill ids                                                                                                                                                                                                                                                              |
+| `projectAgentNames`       | yes       | Project-only agent names                                                                                                                                                                                                                                                            |
+| `projectDomains`          | yes       | Project-only domains                                                                                                                                                                                                                                                                |
+| `projectCategories`       | **no**    | Project-only categories                                                                                                                                                                                                                                                             |
+| `selectedAgentNames`      | no        | Narrows `SelectedAgentName`                                                                                                                                                                                                                                                         |
+| `projectScopedAgentNames` | no        | Narrows `ProjectAgentName`                                                                                                                                                                                                                                                          |
 
 **`projectCategories`' optionality is the only asymmetry, and it buys nothing.** All four
 `project*` unions go through `formatExtendedUnion`, `projectCategories` after a `?? []`, and that

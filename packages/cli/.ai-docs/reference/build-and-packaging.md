@@ -51,12 +51,12 @@ last_validated: 2026-08-30
 
 Four surfaces, four owners, and they do not overlap:
 
-| Surface                                        | Owned by                            | Consumed by                                                                 |
-| ---------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| What source becomes JavaScript, and where      | `tsup.config.ts`                    | Nothing else — `tsc` is only ever run with `--noEmit`                       |
-| What ends up in the published tarball          | `package.json` -> `files`           | `npm publish` / `npm pack`                                                  |
-| Which of those files oclif treats as a command | `package.json` -> `oclif`           | Every invocation, including unit tests and E2E                              |
-| The library import surface                     | `package.json` -> `exports./config` | Consumer `.claude-src/config.ts` files, and `config-loader.ts`'s jiti alias |
+| Surface                                        | Owned by                            | Consumed by                                                                |
+| ---------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------- |
+| What source becomes JavaScript, and where      | `tsup.config.ts`                    | Nothing else — `tsc` is only ever run with `--noEmit`                      |
+| What ends up in the published tarball          | `package.json` -> `files`           | `npm publish` / `npm pack`                                                 |
+| Which of those files oclif treats as a command | `package.json` -> `oclif`           | Every invocation, including unit tests and E2E                             |
+| The library import surface                     | `package.json` -> `exports./config` | A consumer installation's `config.ts`, and `config-loader.ts`'s jiti alias |
 
 **This doc owns the packaging counts** (entry globs, published-tarball figures). No other doc restates
 them; re-derive with the commands named in each section rather than quoting them from an index.
@@ -358,7 +358,7 @@ destination:
 
 | Source        | Destination        | Reason recorded in the config                                              | Status today     |
 | ------------- | ------------------ | -------------------------------------------------------------------------- | ---------------- |
-| `src/agents/` | `dist/src/agents/` | _"so eject command can find them regardless of how PROJECT_ROOT resolves"_ | Copies 115 files |
+| `src/agents/` | `dist/src/agents/` | _"so eject command can find them regardless of how PROJECT_ROOT resolves"_ | Copies 110 files |
 
 ### The `fs.remove` before the copy is load-bearing
 
@@ -399,7 +399,7 @@ root resolution order documented in [features/agent-system.md](./features/agent-
 to the `src/agents/` tree that `files` publishes. **The `dist/src/agents/` copy is therefore a hedge,
 not a requirement:** it is the fallback for the case where `CLI_ROOT` resolves to `<pkg>/dist`
 instead of `<pkg>`, which happens the moment `consts.ts` is inlined into a nested entry rather than
-split into a flat chunk. The hedge is cheap in code and costs 115 duplicated files and ~0.60 MB in
+split into a flat chunk. The hedge is cheap in code and costs 110 duplicated files and ~0.37 MB in
 every published tarball (§6). Delete it only alongside a check that the constant is still reached
 through a root-level chunk.
 
@@ -432,19 +432,20 @@ Verified with `npm pack --dry-run --ignore-scripts --json`.
 quoting them. The `--ignore-scripts` is load-bearing: `prepare` runs husky, which sets
 `core.hooksPath`.
 
-| Entry          | Files | Unpacked                                                          | Contents                                                                            |
-| -------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `dist/`        | 297   | 6.00 MB                                                           | 91 code files, 91 sourcemaps, plus the 115-file `dist/src/agents/` copy             |
-| `assets/`      | 3     | 2.48 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                 |
-| `src/agents/`  | 115   | 0.60 MB                                                           | Agent partials and `_templates/` Liquid sources                                     |
-| `src/schemas/` | 12    | 0.04 MB                                                           | Generated JSON Schemas                                                              |
-| root files     | 4     | 0.14 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it) |
-| **Total**      | 431   | 9,255,881 B (9.26 MB) unpacked / 3,840,868 B (3.84 MB) compressed |                                                                                     |
+| Entry          | Files | Unpacked                                                          | Contents                                                                                              |
+| -------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `dist/`        | 298   | 6.30 MB                                                           | 94 code files (1.86 MB), 94 sourcemaps (4.06 MB), plus the 110-file `dist/src/agents/` copy (0.37 MB) |
+| `assets/`      | 3     | 2.48 MB                                                           | `demo.gif`, `demo.tape`, `logo.svg`                                                                   |
+| `src/agents/`  | 110   | 0.37 MB                                                           | Agent partials and `_templates/` Liquid sources                                                       |
+| `src/schemas/` | 12    | 0.04 MB                                                           | Generated JSON Schemas                                                                                |
+| root files     | 4     | 0.16 MB                                                           | `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (npm always includes it)                   |
+| **Total**      | 427   | 9,356,911 B (9.36 MB) unpacked / 3,894,207 B (3.89 MB) compressed |                                                                                                       |
 
 Two things the tarball carries that nobody chose deliberately, and one that was fixed:
 
-- **Sourcemaps are the single largest code group** — 91 files, 3.63 MB unpacked, roughly twice the
-  1.77 MB of code they map. `sourcemap: true` is a debugging convenience with a publication cost.
+- **Sourcemaps are the single largest code group** — 94 files, 4.06 MB unpacked, more than twice
+  the 1.86 MB of code they map. `sourcemap: true` is a debugging convenience with a
+  publication cost.
 - **`src/agents/` is published twice** — once directly, once inside `dist/src/agents/` (§5).
 - **No compiled test file ships.** The entry negations in §2 keep sixteen of them out and
   `packaging.test.ts` pins their absence.
@@ -491,7 +492,7 @@ five types — and nothing else:
 | `CategoryMap`       | type  | `src/cli/types`                                   |
 | `SkillRulesConfig`  | type  | `src/cli/types`                                   |
 
-**This file is the ONLY supported import surface for a consumer `.claude-src/config.ts`.** It is a
+**This file is the ONLY supported import surface for a consumer installation's `config.ts`.** It is a
 boundary, not a convenience barrel: `exports` declares exactly two subpaths, so every other module
 under `dist/` is unreachable to a consumer by specifier. Widening the boundary means adding a line
 here — deliberately, and with the two gaps below in mind.
@@ -535,7 +536,7 @@ jiti does not fall back to normal resolution when an alias target is missing; pr
 this repo's jiti, an alias pointing at a non-existent file throws
 `Error: Cannot find module '<target>'`, which `loadConfig` rewraps as
 `Failed to load config from '<configPath>'`. So under the built CLI, any hand-written
-`.claude-src/config.ts` that imports `agents-inc/config` fails to load.
+`config.ts` that imports `agents-inc/config` fails to load.
 
 Nothing in the generated-config path is affected (see Gap 1), which is why this has stayed invisible.
 `src/cli/lib/__tests__/helpers/config-io.ts` carries the same alias with a `../../../` walk correct
