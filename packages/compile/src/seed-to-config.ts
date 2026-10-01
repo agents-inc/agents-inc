@@ -840,8 +840,8 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
  *
  * Declared here rather than beside the wizard component that produces it, because
  * `seedToWizardResult` below produces one too and this package cannot import a
- * React module. `components/wizard/wizard.tsx` re-exports this name, so every CLI
- * call site reads it where it always did.
+ * React module. The CLI's `components/wizard/wizard.tsx` declares its own twin, field
+ * for field, and every CLI call site imports that one.
  */
 export type WizardResultV2 = {
   skills: SkillConfig[]

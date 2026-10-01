@@ -61,7 +61,6 @@ npx agents-inc init
 | [Editing your config](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |
 | [Customizing subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/customizing-subagents.md)               | Eject and modify partials, templates, and skills                     |
 | [Writing custom skills and subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
-| [Importing third-party skills](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/importing-skills.md)             | Install skills from external repositories                            |
 | [Creating a marketplace](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/creating-a-marketplace.md)             | Build a personal or org-level marketplace with curated skills        |
 | [Documenting your codebase](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/documenting-your-codebase.md)       | Generate and maintain AI-focused reference documentation             |
 
@@ -73,13 +72,13 @@ Over 200 skills across 9 domains:
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Web     | React, Vue, Angular, Svelte, SolidJS, Next.js, Remix, Nuxt, SvelteKit, Astro, Qwik, Tailwind, SCSS Modules, Zustand, Redux, Pinia, Vitest, Playwright, Storybook, and more |
 | API     | Hono, Express, Fastify, NestJS, Elysia, Drizzle, Prisma, PostgreSQL, MongoDB, Redis, Stripe, and more                                                                      |
-| AI      | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, Pinecone, ChromaDB, and more                                                                              |
-| Mobile  | React Native, Expo                                                                                                                                                         |
-| Desktop | Tauri, Electron, Electron Forge, electron-updater                                                                                                                          |
+| AI      | Anthropic SDK, OpenAI SDK, Vercel AI SDK, LangChain, LlamaIndex, and more                                                                                                  |
+| Mobile  | React Native, Expo, and more                                                                                                                                               |
+| Desktop | Tauri, Electron, Electron Forge, electron-updater, and more                                                                                                                |
 | CLI     | oclif + Ink, Commander, Clack                                                                                                                                              |
-| Infra   | Docker, GitHub Actions, Cloudflare Workers                                                                                                                                 |
-| Shared  | Turborepo, ESLint + Prettier, Code Reviewing, Auth Security                                                                                                                |
-| Meta    | Research Methodology, CLI Reviewing                                                                                                                                        |
+| Infra   | Docker, GitHub Actions, Cloudflare Workers, and more                                                                                                                       |
+| Shared  | Turborepo, ESLint + Prettier, Auth Security, and more                                                                                                                      |
+| Meta    | Code Reviewing, CLI Reviewing, Research Methodology, and more                                                                                                              |
 
 Browse the full catalog on the [Plugin Marketplace](https://github.com/agents-inc/skills).
 
@@ -107,7 +106,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `edit`    | Modify skill selection via the interactive wizard                           |
 | `compile` | Recompile subagents after changes                                           |
 | `update`  | Refresh the marketplaces this installation uses (ejected skills are yours)  |
-| `search`  | Search skills across all sources                                            |
+| `search`  | Search this installation's marketplace and your local skills                |
 
 ### Customization
 
@@ -119,7 +118,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 
 | Command             | Description                                    |
 | ------------------- | ---------------------------------------------- |
-| `build marketplace` | Generate `marketplace.json` from source skills |
+| `build marketplace` | Generate `marketplace.json` from built plugins |
 | `build plugins`     | Build skill and agent plugins for distribution |
 
 ### Diagnostics

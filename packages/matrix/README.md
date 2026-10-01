@@ -4,25 +4,27 @@ The skill catalog — every skill, category, domain, stack and sub-agent the edi
 
 ## Where the data comes from
 
-Copied out of `packages/cli`, the CLI package next door in this repository. Nothing here is authored by hand.
+`src/vendor/` and `src/generated/` are written from `packages/cli`, the CLI package next door in
+this repository, by its `scripts/generate-matrix-package.ts` — their single writer. Nothing under
+either is authored by hand.
 
-| Path                     | What                                                                       |
-| ------------------------ | -------------------------------------------------------------------------- |
-| `src/vendor/`            | Verbatim copies of the CLI's `src/cli/types/`. **Never edit.**             |
-| `src/generated/`         | `AGENT_DEFINITIONS`, derived from the CLI's per-agent `metadata.yaml`      |
-| `src/built-in-matrix.ts` | Zod boundary for `BUILT_IN_MATRIX`, the vendored catalogue                 |
-| `src/built-in-agents.ts` | Zod boundary for `AGENT_DEFINITIONS`, the built-in sub-agent roster        |
-| `src/index.ts`           | The public API. `apps/editor` imports from here only, never from `vendor/` |
+| Path                     | What                                                                    |
+| ------------------------ | ----------------------------------------------------------------------- |
+| `src/vendor/`            | Verbatim copies of files in the CLI's `src/cli/types/`. **Never edit.** |
+| `src/generated/`         | `AGENT_DEFINITIONS`, derived from the CLI's per-agent `metadata.yaml`   |
+| `src/built-in-matrix.ts` | Zod boundary for `BUILT_IN_MATRIX`, the vendored catalogue              |
+| `src/built-in-agents.ts` | Zod boundary for `AGENT_DEFINITIONS`, the built-in sub-agent roster     |
 
-Regenerate after the CLI's catalog changes:
+Regenerate after the CLI's catalog changes — this runs `generate:matrix` in `packages/cli`, and
+`generate:matrix:check` there reports drift and writes nothing:
 
 ```sh
-bun run generate                                # reads ../cli, no setup
-AGENTS_INC_CLI=/path/to/cli bun run generate    # the exception: a checkout elsewhere
+bun run generate
 ```
 
-## Why it's a copy
+## Entry points
 
-The CLI plans to publish this as `@agents-inc/skills-matrix` (see its `todo/D-239`). Until it does, we
-vendor. Keeping `vendor/` byte-identical to the CLI makes that swap a delete plus a dependency bump.
-`src/generated/agents.ts` is the one thing the CLI does not yet generate — it is the gap D-239 names.
+The `exports` map in `package.json` is the list. Import through it, never from `vendor/` or
+`generated/`. Beside the catalogue's read models (`src/index.ts`), it carries the wire contracts more
+than one workspace reads, each authored here: `seed.ts` (a share id's payload), `matrix-schema.ts`
+(a marketplace's `catalog.json`) and `skill-index.ts` (the index the worker serves at `GET /skills`).

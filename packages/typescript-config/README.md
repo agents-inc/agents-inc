@@ -18,7 +18,7 @@ file is only the rule.
 does not.** Both halves are checked by `bun run deps:check`, which also asserts that a workspace
 bound to these configs declares `@workspace/typescript-config` as a dependency.
 
-The check accepts any route to a shared config, because the repository already uses three: a plain
+The check accepts any route to a shared config, because the repository already uses four: a plain
 `extends`, an `extends` **array** (`apps/www` puts Astro's preset on top of `base.json`), a
 **relative** base that itself extends one (`packages/cli/tsconfig.scripts.json`), and a
 **solution-style** config whose `references` point at the projects that really compile
