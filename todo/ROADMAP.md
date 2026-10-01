@@ -13,6 +13,38 @@ started. See the root `CLAUDE.md`.
 
 ---
 
+## Latest — 2026-10-01: the gate is reverted, Codex stays
+
+The owner ruled on 2026-10-01 that linting and type checking are asked for in the prompt, not enforced by
+hooks: _"any changes that were added now to handle stop hooks and lint gates should be removed."_ So the
+per-agent lint and check gate built 2026-09-19 to 2026-09-27 — per-agent lint hooks, the `check:` map,
+the Codex gate plugin and its hook trust, attempt budgets — is reverted out of the uncommitted tree, and
+CLI-715 is retired on the ruling rather than built. **What stays:** Codex as a second provider (below),
+the CLI-890 review clean-ups and doc sweeps, CLI-898, CLI-899, the `compile` fix for an installation with
+no skills, three fixes the gate work found, reshaped without it, and HEAD's typecheck completion gate as
+it was. The account is in [archive.md](./archive.md).
+
+**Waiting on the owner:** his Codex hand-check run-through (CLI-891), and doc round 3 of his full review,
+which he put on hold (CLI-890). **Next Codex fix:** CLI-901. The revert's hand-run found that a global Codex `uninstall`
+from HOME leaves the ejected skills in `$CODEX_HOME/skills`. The cause predates the revert, so it is documented
+and not patched. **The tree is uncommitted** — read `git status`, not this line.
+
+---
+
+## 2026-09-23: Codex landed
+
+Codex landed as a second provider: the provider is chosen per installation and the folder decides it
+(`.claude-src/` → `.agents-inc/<provider>/`). Full account, including the `migrate` command built and
+deleted rather than shipped, in [archive.md](./archive.md).
+
+_Corrected 2026-09-25: "`.claude-src/` became `.agents-inc/<provider>/`" overstates it. A NEW installation's source folder is `.agents-inc/<provider>/`; an EXISTING `.claude-src/` is still found and used (`sourceFolderInUse` takes the folder already on disk) and nothing in the CLI moves it — the `migrate` command that would have was deleted._
+
+Still open from that programme: the Codex hand-check page for the owner's own confirmation against a
+subscription (CLI-891). The hand-check page is written; what stays open is the owner's own run-through of
+it.
+
+---
+
 ## Where we are — 2026-08-20 (CLI e2e re-measured; CLI unit, tsc/eslint/prettier re-run 2026-08-20; the editor rows are the 2026-08-17 figures and have not been re-run since)
 
 **The Go-Live program is COMPLETE. All three legs are done and every gate is green.**

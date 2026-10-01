@@ -6639,3 +6639,83 @@ at 1364 was therefore below the floor and already scrolling sideways; re-run at 
   moves the page is a toggle a reader cannot turn off. `domain-tabs.spec.ts` carries it whole,
   including the landing window under the bar, which is measured against the bar's own box rather
   than a figure: the bar's height is the design's, in rem against a root set to 110%.
+- **2026-09-23 — Codex provider** (no tracker row; owner) — Codex landed as a second provider, and the
+  install method changed rather than the content: the provider is chosen per INSTALLATION and the
+  folder decides it, so `.claude-src/` became `.agents-inc/<provider>/` ("these folders should be
+  grouped and I could maintain other providers too in future"). A global can be one provider and a
+  project another; side by side in one scope is a future consideration. Sixteen of eighteen roles
+  compile to Codex — `skill-summoner` and `agent-summoner` are deliberately out for v1. Codex skills
+  are offered as plugin+global, eject+global and eject+project; plugin+project was refused by name.
+  The provider is picked in the web app only — the CLI just takes `init --from <id> --provider codex`,
+  the wizard gains nothing, and the share payload does not carry it.
+
+  _Corrected 2026-09-25: "`.claude-src/` became `.agents-inc/<provider>/`" overstates it. A NEW installation's source folder is `.agents-inc/<provider>/`; an EXISTING `.claude-src/` is still found and used (`sourceFolderInUse` takes the folder already on disk) and nothing in the CLI moves it — the `migrate` command that would have was deleted._
+
+  **Built and deleted rather than shipped, recorded here so it is not rebuilt:** a `migrate` command
+  (10 modules, 10 e2e specs, docs, a forwarding stub) was written off a plan's recommendation that the
+  owner had never asked for — _"We don't have a migrate command and I didn't tell you to make one"_ →
+  _"Delete all of it."_
+
+  Verified against real binaries, not fixtures: Codex `init --from <id> --provider codex` with all 16
+  role files registering, `doctor` rows for layout and placements, and byte-identical editor payloads
+  across providers. The real-Codex confirmation is the owner's, against a subscription, once
+  everything else is done.
+
+- **2026-09-27 — `compile` and an installation with no skills** (no tracker row; owner) — `compile`
+  refused an installation with sub-agents and no skills. The editor makes one ("no skills — base
+  agent") and `init --from` installs it, but `compile` printed `No skills found … skipping` and exited 1
+  having recompiled nothing, so a hand edit to its `config.ts` never reached the compiled sub-agents.
+  Cause: `runCompilePass` skipped a pass with zero skills and `runCompilePasses` refused when none
+  compiled — a refusal `init`'s `compileAgentsAllScopes` never had. Fixed by `declaresOnlyBaseAgents`
+  in `commands/compile.ts`: a pass that finds no skill compiles its agents when its config declares no
+  active skill and pins an agent on at that scope; a config that DECLARES skills none of which are on
+  disk is still refused, so compile never strips them. Tests first.
+- **2026-09-27 — CLI-899** (cli.md, new 2026-09-26) — the loading spinner's last frame surviving into the
+  wizard. Cause: Ink's 32 ms render throttle holds a frame that arrives inside the window; `clear()` erased
+  the last PAINTED frame and `unmount()` then flushed the held one after it, with nothing left to erase it —
+  only when an event-loop stall bunched two ticks. Fixed by `awaitUnderSpinner` in
+  `components/common/spinner.tsx`, now used by `init` and `edit`: freeze the spinner to a still line,
+  `waitUntilRenderFlush()`, `clear()`, `unmount()`. `spinner.test.ts` (three specs on `@xterm/headless`)
+  failed first with the same `⠹` glyph. The tolerance a session added that morning
+  (`toleratedAboveViewport`, `LEFTOVER_LOADING_SPINNER`) is removed; the spec is strict again. Partial Ink
+  `render` mocks in `edit.test.ts` and `init-edit-validation-parity.test.ts` moved to `stubInkInstance()`.
+- **2026-10-01 — CLI-715** (cli.md, was D-11, owner) — **retired on a ruling, not built.** The row asked
+  for configurable development hooks — `tsc --noEmit` after edits, warn or block. Owner: _"just tell
+  AI to do it and not to use hooks or anything like that. If a user wants type checking to be
+  performed, it is easier to just include this in a prompt."_ So the per-agent lint and check gate
+  built for it 2026-09-19 to 2026-09-27 — per-agent lint hooks, the `check:` map, the Codex
+  `agents-inc-gate` plugin and its hook trust, attempt budgets, CLI-892, CLI-897, CLI-900 and Q3 of
+  the check-map hand matrix — was reverted before any commit and shipped in no release. HEAD's
+  typecheck completion gate (`COMPLETION_GATE_COMMAND`, a `Stop` hook on writing Claude sub-agents)
+  stays as it was. Three fixes found on the way were kept without the gate: `edit --from` carries each
+  sub-agent's model and effort through and reports them; `validateMarketplaceSource` admits a local
+  marketplace directory the reference pattern refused, a path with a space, keeping its length and
+  control-character checks; and the folder-trust notice `compile` prints on Claude Code, now about that typecheck
+  `Stop` hook.
+- **2026-09-26 — CLI-893** (cli.md, new 2026-09-26) — a Codex project install writes its own trust line.
+  Codex reads a project's role files only when the GLOBAL `$CODEX_HOME/config.toml` holds
+  `[projects."<path>"] trust_level = "trusted"`, and every way that entry can be missing fails in silence. Owner:
+  _"it should be automated on install"_, which reversed the detect-and-print design. `trustCodexProject` in
+  `hosts/codex-project-trust.ts` appends the entry, prints the project, file and line, leaves an existing entry
+  (`"untrusted"` included) as the user set it and reports it. Held by
+  `hosts/__tests__/the-codex-host-writes-project-trust.test.ts` and, against the pinned binary,
+  `e2e/lifecycle/codex-agent-roles-are-read-by-codex.e2e.test.ts`, both red without the write.
+- **2026-09-26 — CLI-895** (cli.md, new 2026-09-26) — the local-skill mover is provider-aware. `deleteLocalSkill`
+  and `migrateLocalSkillScope` in `skills/local-skill-mover.ts` joined Claude's `.claude/skills` to the install
+  base, so on Codex an ejected skill switched to plugin, or deselected in `edit`, left its copy under
+  `$CODEX_HOME/skills` and Codex read the skill twice. Both now resolve `resolveInstallPaths(dir, scope).skillsDir`
+  and every caller passes the scope. The two `it.fails` cases in
+  `e2e/interactive/codex-edit-wizard-plugin-operations.e2e.test.ts` are unpinned and pass;
+  `skills/local-skill-mover-dir-cleanup.test.ts` holds the unit half.
+- **2026-09-27 — CLI-896** (cli.md, new 2026-09-26) — `uninstall` on Codex removes the role files it compiled, and
+  says so truthfully. `listAgentFilesOf` and `splitAgentsByProvenance` take an `AgentCodec`, and `uninstall`,
+  `doctor`'s orphan check and compile's stale-role prune pass `agentCodec(provider)`, so `.codex/agents/*.toml`
+  is found as `.claude/agents/*.md` always was. `removeCompiledAgents`, which only `edit` calls, stays `.md`-only
+  and is parked with Codex `edit` (CLI-894). Held by `agents/list-compiled-agents.test.ts` and a case in
+  `e2e/lifecycle/codex-uninstall-reports-what-it-observed.e2e.test.ts`, each red with Claude's codec.
+- **2026-09-27 — CLI-898** (cli.md, new 2026-09-26) — the editor's output preview lists each skill with the
+  description the install writes. Not drift, two fields: compile writes the SKILL.md frontmatter `description`,
+  while the preview drew the catalogue's short `cliDescription` label, on both hosts. `SkillCore.activationDescription`
+  now carries the SKILL.md description through the matrix loaders into `catalog.json`, and `resolveSkill` in
+  `apps/editor/.../output-preview.ts` prefers it, falling back to the label for an older catalogue. Owner action:
+  rebuild the public marketplace's `catalog.json` with this CLI before the live preview shows it.

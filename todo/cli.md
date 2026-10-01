@@ -124,14 +124,17 @@ and three unreferenced `agent-findings`.
 
 ## Tooling, gates & code generation
 
-| ID      | Task                                            | Status           | Type    | Complexity |
-| ------- | ----------------------------------------------- | ---------------- | ------- | ---------- |
-| CLI-715 | (was D-11) Development hooks for type checking. | Needs Assistance | feature | complex    |
+| ID      | Task                                                                                     | Status           | Type  | Complexity |
+| ------- | ---------------------------------------------------------------------------------------- | ---------------- | ----- | ---------- |
+| CLI-891 | Codex hand-check: owner confirms the Codex setup against a real subscription.            | Needs Assistance | chore | small      |
+| CLI-894 | Run the 44 Claude-binary-gated specs on Codex too; skip only when neither host is there. | Parked           | chore | complex    |
+| CLI-901 | Codex: a global `uninstall` from HOME leaves the ejected skills in `$CODEX_HOME/skills`. | To Do            | bug   | small      |
 
 ## Types & code quality
 
 | ID      | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status                  | Type     | Complexity |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | -------- | ---------- |
+| CLI-890 | Owner's full review of the uncommitted tree — written by generic agents, not the registered roles.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Needs Assistance        | refactor | complex    |
 | CLI-728 | (was D-153) Standardize operation result types — consistent list/single-action return patterns.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Deferred                | refactor | complex    |
 | CLI-322 | (was R-06) Slim down `ResolvedSkill` — separate resolved relationship data from skill identity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Deferred — low priority | refactor | complex    |
 | CLI-325 | (was expressive-ts decision 3) `readonly` on read-model types — `types/` has essentially none.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Investigate             | refactor | complex    |
@@ -518,33 +521,6 @@ be created. [Plan](./plans/CLI-717-template-error-messages.md)
 
 ---
 
-#### CLI-715 (was D-11): Development hooks for type checking
-
-Add configurable development hooks that can run commands like `tsc --noEmit` after file changes:
-
-1. **Opt-in / configurable** — users choose which commands run and can disable them.
-2. **Works in this repo by default** — the CLI repo itself ships with hooks pre-configured.
-3. **Multiple hook types** — post-edit (after file modifications), pre-commit, on-demand validation.
-
-Implementation ideas: use the existing Claude Code hooks system if available; add `.claude/hooks.yaml`
-or similar.
-
-```yaml
-hooks:
-  post_edit:
-    - command: "bun tsc --noEmit"
-      enabled: true
-      on_failure: warn # or "block"
-  pre_commit:
-    - command: "bun run format:check"
-      enabled: true
-```
-
-Acceptance: hooks configurable per project; this repo has the tsc hook enabled by default; failures can
-warn or block; easy to disable temporarily via env var or flag.
-
----
-
 #### CLI-318 (was #5): Agents command for skill assignment
 
 Implement an agents command that lets users assign specific skills to agents and configure whether those
@@ -877,7 +853,89 @@ reads through it.
 > inline suppressions remain and each is justified in place — do not remove them and do not add a fifth
 > without the same standard of justification. The items below are what is genuinely still missing.
 
+#### CLI-891: Codex hand-check against a real subscription
+
+Everything Codex was verified against a pinned `@openai/codex` binary, never a real account. The owner runs
+[`packages/cli/.ai-docs/reference/codex-hand-check.md`](../packages/cli/.ai-docs/reference/codex-hand-check.md)
+once he has a subscription; some of its checks can be done without one.
+
+**Run 2026-09-26 by Codex itself (codex-cli 0.157.1). Found a KNOWN BUG: every Codex role is written
+with the Claude alias `model = "opus"`, which Codex registers but refuses to spawn, so no agents-inc
+sub-agent runs on Codex.** Fixed the same day — a Codex role carries no `model` line — and Codex's re-run
+passed. Full results are in [`plans/CLI-codex-provider-progress.md`](./plans/CLI-codex-provider-progress.md)
+→ "KNOWN BUG".
+
+#### CLI-894: The specs that skip without a Claude binary test nothing on Codex
+
+Owner, 2026-09-26: _"it should be skipped when no claude and no codex is installed otherwise we dont test
+this at all for codex. actually there are many tests that are skipped when no claude is installed"_.
+
+**44 spec files** carry `describe.skipIf(!claudeAvailable)` (or `it.skipIf`): 39 e2e specs across `commands/`,
+`interactive/` and `lifecycle/`, plus 5 under `smoke/`. CI's runner has no `claude`
+(`ci.yml` says so beside the probes), so **on CI every one of them skips**, and none has a Codex leg. The
+e2e suite can always reach a Codex binary: `e2e/fixtures/codex-on-path.ts` runs the pinned `@openai/codex`
+package. So the Codex half could run everywhere, CI included.
+
+The shape, per spec: parameterise over the hosts whose binary is available (`claude` found, and the pinned
+Codex always), and skip only when neither is. Many are plugin-mode flows (install, migrate, uninstall a
+plugin), which Codex offers only as plugin + global. Each spec needs a decision: run on Codex as-is,
+adapt it to Codex's placements, or record why it is Claude-only. Start with `commands/plugin-uninstall-core`,
+the one the owner named, as the pattern. Re-derive the list with
+`grep -rln 'skipIf(!claudeAvailable)' packages/cli/e2e packages/cli/src`.
+
+**Progress 2026-09-26.** The deciding fact: `init` refuses `--provider` without `--from`, so the INIT WIZARD cannot
+install onto Codex at all — every init-wizard spec is Claude-only by construction, and its Codex behaviour is
+reached through `init --from` instead. The EDIT wizard does run over a Codex installation.
+
+- **Done:** `e2e/interactive/codex-edit-wizard-plugin-operations.e2e.test.ts` (never skips; drives the pinned
+  codex): remove and add a plugin skill through the wizard, each observed in Codex's own `plugin list`, with a
+  no-change control; both install-mode switches; ejected-skill removal. Two cases pinned `it.fails` — CLI-895.
+  `e2e/helpers/terminal-session.ts` now puts the pinned codex on the wizard's PATH, as `CLI.run` already did.
+- **Already covered on Codex by an existing spec (no new work):** plugin install (`smoke/plugin-install`,
+  `plugin-chain-poc` → `lifecycle/codex-offered-placements`); plugin uninstall (`commands/plugin-uninstall-core`
+  → `lifecycle/codex-uninstall-reports-what-it-observed`, which observes a REAL removal); host contract and home
+  isolation (`smoke/plugin-host-contract`, `home-isolation` → `smoke/codex-install-surfaces`, `codex-lane`, and
+  each Codex spec's `~/.codex moved` guard); `init --from` routing (`commands/init-from-scenarios-install` →
+  `codex-offered-placements`, `codex-install-narrates-its-own-host`); byte identity (`claude-install-byte-identity`
+  is Claude's own tree; its Codex counterpart is `codex-install-leaves-claude-untouched`).
+- **Claude-only by construction (init wizard):** `init-wizard-*` (6), `init-plugin-config-marketplace-source`,
+  `init-global-preselection-confirm`, `init-dashboard-edit-plugin-install`, `relationships`,
+  `smoke/pom-framework`, and the lifecycle specs whose subject is an init-wizard install
+  (`config-scope-integrity`, `cross-scope-lifecycle`, `preloaded-preservation`, `selected-agent-name-excluded`,
+  `scope-aware-local-copy`, `plugin-lifecycle`, `plugin-scope-lifecycle`, `project-init-global-config-marketplace`,
+  `project-tracking-propagation`, `mixed-mode-skill-ref-format`, `plugin-install-failure-hard-error`).
+- **PARKED by the owner, 2026-09-26:** _"disregard edit for Codex for now"_. Not ported — the dual-scope edit specs (`dual-scope-edit-*`,
+  `project-edit-*`, `edit-add-local-skills`, `edit-plugin-banner-parity`, `edit-unresolvable-entry-removal-reasons`,
+  `edit-plugin-hard-error`, `edit-migration-eject-to-plugin-no-marketplace`, `install-mode-per-skill`,
+  `install-mode-full-cycle`). Each needs a Codex install via `init --from`, and plugin legs are global-only there.
+
+#### CLI-901: Codex — a global `uninstall` from HOME leaves the ejected skills behind
+
+**Found 2026-10-01 by the hand-run of the gate revert. Not fixed, because the cause predates the revert.** A Codex
+global eject install (`init --from <id> --provider codex`, run from HOME) puts its ejected skill in
+`$CODEX_HOME/skills/<id>/`. `uninstall --yes` from HOME then removes the role files and `.agents-inc/codex/` but
+leaves that skill directory in place. The hand-run's
+`codex-global/home/.codex/skills/e2e-test-fixture-web-framework-react` check fails, while the Claude equivalent
+passes. Cause, read from code: `detectUninstallTarget` in `src/cli/commands/uninstall.tsx` calls
+`resolveInstallPaths(projectDir)`, which uses the default `project` scope. At HOME, Codex's project `skillsDir` is
+`~/.agents/skills`, not `$CODEX_HOME/skills`. Claude only works because both of its answers are `~/.claude/skills`.
+This is the same class as CLI-895. The gate revert did not touch that call; it is as the Codex work first wrote it
+(`grep -n 'resolveInstallPaths(projectDir' packages/cli/src/cli/commands/uninstall.tsx`). Next step: a failing e2e
+test (global eject Codex uninstall from HOME), then resolve the skills directory for the scope the installation at
+that root actually is.
+
 ### Types & code quality
+
+#### CLI-890: Owner's full review of the uncommitted tree
+
+Queued by the owner on 2026-09-25: _"Once everything is done, then I will have you go over the code that was
+written ... and review everything as none of it was written by the correct sub-agents. But tests pass, so it
+should be functional."_ **Triggered 2026-09-25. Status 2026-09-26: source and tests reviews DONE, every
+suite green; doc round 3 ON HOLD by the owner; cross-lane leftovers and owner questions listed under
+"Outstanding after CLI-890" in the progress file.** The review is for convention and quality drift that
+tests cannot see. The worklist found along the way is in
+[`plans/CLI-codex-provider-progress.md`](./plans/CLI-codex-provider-progress.md). Read `git status --short` for the size
+of the tree; it is not written here because it moves.
 
 #### CLI-325 (was expressive-ts decision 3): `readonly` on read-model types
 
