@@ -17,6 +17,7 @@ import {
   specsNamedBy,
   unlocatedSpecsIn,
 } from "./helpers/journey-page.js";
+import { type LintZone, flatConfigAt, lintZonesIn } from "./helpers/lint-zones.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const E2E_ROOT = path.join(CLI_ROOT, "e2e");
@@ -356,49 +357,69 @@ function escapeShapeFor(rule: string): EscapeShape {
 }
 
 /**
+ * The config both halves of the escape-shape gate read: the zone derivation below, and the ESLint
+ * run it feeds. Named once and handed to both rather than resolved twice — `new ESLint({ cwd })`
+ * finds this file by search, and a gate whose roster and whose linter could be reading different
+ * configs is the class of defect the derivation exists to end.
+ */
+const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
+
+/** The rule whose zones this gate measures. Its options are what do not merge across blocks. */
+const ZONED_RULE = "no-restricted-syntax";
+
+/**
  * One real file per zone `eslint.config.js` configures `no-restricted-syntax` separately in, and
  * the reason this gate lints more than one file. That rule's options are NOT merged across config
  * blocks — the last block naming it for a file owns all of them, which the config states for
  * `no-restricted-imports` and is equally true here. So a zone that declares the rule for its own
  * reason silently drops every selector it does not restate, and a zone no block declares it for
- * has none at all. Each path must EXIST and be linted by the real config: `lintText` needs a path
- * the TypeScript project service can resolve, and an unresolvable one fails as a parse error
- * rather than as a missing rule.
+ * has none at all.
+ *
+ * **DERIVED from the config, because the hand-written roster was the defect.** It stood at two
+ * zones, then three, then five, and each of those numbers was short of the config at the time — a
+ * roster extended by whoever remembers to extend it records the blocks somebody remembered. The
+ * two added on 2026-09-20 had been unmeasured for as long as they existed, one of them while the
+ * block's own closing comment said this roster read it. A row per zone cannot be left off now:
+ * every block declaring the rule becomes a zone here, and `lint-zones.ts` finds it a file it owns
+ * — one it matches that no LATER declaring block matches, since a later block would own the rule's
+ * options for that file and the lint would be measuring the wrong zone.
+ *
+ * Each subject must EXIST and be linted by the real config: `lintText` needs a path the TypeScript
+ * project service can resolve, and an unresolvable one fails as a parse error rather than as a
+ * missing rule. The derivation only ever answers with a file that is on disk, which is why it
+ * reads the tree rather than the patterns alone.
  */
-const LINT_ZONES = [
-  // The spec zone, which declares the rule for a reason of its own (task IDs) and so keeps its
-  // selectors only by restating them. `TEST_FILES` covers the WHOLE of `e2e/`, not just the
-  // `*.test.ts` in it, so this one path stands for every helper, page object and assertion module
-  // in the E2E tree — including `four-surfaces.ts`, where the exit-code verdict lived. The first
-  // mutation run of this gate is what established that: naming a spec and an e2e helper as two
-  // zones left the CLI's own sources unnamed, and every zone below was still green.
-  "e2e/assertions/four-surfaces.ts",
-  // An ordinary type-checked CLI source: the zone that also carries the config-gate import bans.
-  "src/cli/lib/content-validator.ts",
-  // The config gate, which every block above excludes — so it inherits nothing.
-  "src/cli/lib/config-gate/index.ts",
-];
+const LINT_ZONES = lintZonesIn(await flatConfigAt(ESLINT_CONFIG_PATH), ZONED_RULE, CLI_ROOT);
+
+/** A zone with a file to lint. One without is a config defect, reported by its own gate below. */
+function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
+  return zone.subject !== null;
+}
 
 /**
  * What one in-process ESLint pass over one fixture is allowed to take.
  *
- * Measured 2026-08-21 on an idle machine: the escape-shape gate's whole loop runs in ~2.7s across
- * `LINT_ZONES.length * ESCAPE_SHAPES.length * 2` passes, so ~110ms each — every one of them a
- * type-aware lint that resolves the fixture through the TypeScript project service. The budget is
- * ~20x that, and the headroom is the whole point: the gate passed in isolation and on a quiet
- * re-run while failing under a wave with six agents live, which reads to whoever meets it as a
- * regression the change caused rather than as a busy machine.
+ * Every pass is a type-aware lint that resolves the fixture through the TypeScript project
+ * service. Re-measured 2026-09-20, when the roster became a derivation: **3.28-3.37s across the
+ * 56 passes the seven zones the config declared that day needed, so ~59ms each** — and the
+ * budget is per PASS for exactly that reason: the count is read off the config and the timeout
+ * below multiplies by it. The figure here read
+ * "~2.7s, so ~110ms each" until then, which was honest when it was written and had not been
+ * re-taken since: 2.7s over 24 passes is the THREE-zone loop, and the roster had reached five.
+ * The budget is ~40x one pass, and the headroom is the whole point: the gate passed in isolation
+ * and on a quiet re-run while failing under a wave with six agents live, which reads to whoever
+ * meets it as a regression the change caused rather than as a busy machine.
  */
 const LINT_PASS_BUDGET_MS = 2_500;
 
 /**
  * The timeout that gate runs under, DERIVED from the work rather than stated beside it.
  *
- * A zone or a shape added to either array above is more lint passes, and a constant written as a
- * number would go on claiming to be sized for the old loop — the failure would land on whoever
- * added it, under a name that says nothing about them. Raising the suite default instead is the
- * other wrong answer: it would hand the same headroom to every unit test in the package, where a
- * ten-second unit test IS the bug.
+ * A shape added to the array above, or a zone added to `eslint.config.js`, is more lint passes,
+ * and a constant written as a number would go on claiming to be sized for the old loop — the
+ * failure would land on whoever added it, under a name that says nothing about them. Raising the
+ * suite default instead is the other wrong answer: it would hand the same headroom to every unit
+ * test in the package, where a ten-second unit test IS the bug.
  */
 const ESCAPE_SHAPE_TIMEOUT_MS = LINT_ZONES.length * ESCAPE_SHAPES.length * 2 * LINT_PASS_BUDGET_MS;
 
@@ -544,15 +565,15 @@ const INSTALLING_CALLS = [
 async function rulesReportedAgainst(
   eslint: ESLint,
   source: string,
-  zone: string,
+  subject: string,
 ): Promise<string[]> {
-  const [result] = await eslint.lintText(source, { filePath: path.join(CLI_ROOT, zone) });
-  if (result === undefined) throw new Error(`eslint returned no verdict at all for '${zone}'`);
+  const [result] = await eslint.lintText(source, { filePath: path.join(CLI_ROOT, subject) });
+  if (result === undefined) throw new Error(`eslint returned no verdict at all for '${subject}'`);
 
   const unparseable = result.messages.filter((message) => message.fatal);
   if (unparseable.length > 0) {
     const reasons = unparseable.map((message) => message.message).join("; ");
-    throw new Error(`the fixture did not parse as '${zone}', so it asked nothing: ${reasons}`);
+    throw new Error(`the fixture did not parse as '${subject}', so it asked nothing: ${reasons}`);
   }
 
   return result.messages
@@ -810,29 +831,42 @@ describe("every spec the e2e project collects belongs to a journey", () => {
  * silence.
  */
 describe("a verdict that cannot fail is refused before it is trusted", () => {
+  /**
+   * The precondition the loop below rests on, and the half a derivation can get wrong that a
+   * roster could not: a block declaring the rule for files that are not there, or for files a
+   * later block has already taken, leaves nothing to lint as that zone. Skipping it would restore
+   * exactly what the roster did — a zone nothing measures, reading like a zone that passed.
+   */
+  it("finds a file to lint in every zone the config declares the rule for", () => {
+    expect(
+      LINT_ZONES.filter((zone) => !isMeasurable(zone)).map((zone) => zone.patterns),
+      `eslint.config.js declares '${ZONED_RULE}' for a zone holding no file of its own, so nothing can be linted as it — narrow the block to files that exist, or delete it`,
+    ).toStrictEqual([]);
+  });
+
   it(
     "reports every escape shape, and no discriminating form, in each separately-ruled zone",
     async () => {
-      const eslint = new ESLint({ cwd: CLI_ROOT });
+      const eslint = new ESLint({ cwd: CLI_ROOT, overrideConfigFile: ESLINT_CONFIG_PATH });
 
-      for (const zone of LINT_ZONES) {
+      for (const { patterns, subject } of LINT_ZONES.filter(isMeasurable)) {
         for (const shape of ESCAPE_SHAPES) {
-          const againstVacuous = await rulesReportedAgainst(eslint, shape.vacuous, zone);
+          const againstVacuous = await rulesReportedAgainst(eslint, shape.vacuous, subject);
           const againstDiscriminating = await rulesReportedAgainst(
             eslint,
             shape.discriminating,
-            zone,
+            subject,
           );
 
           // The positive half is the subject guard for the negative one: without it, a zone eslint
           // declined to lint at all would satisfy the negative for free.
           expect(
             againstVacuous,
-            `'${zone}' accepts ${shape.name} — '${shape.rule}' does not reach this zone`,
+            `the zone eslint.config.js declares for '${patterns}' accepts ${shape.name} — '${shape.rule}' does not reach it, measured on '${subject}'`,
           ).toContain(shape.rule);
           expect(
             againstDiscriminating,
-            `'${zone}' reports '${shape.rule}' against ${shape.name} the code CAN falsify — the rule has outgrown the shape`,
+            `the zone eslint.config.js declares for '${patterns}' reports '${shape.rule}' against ${shape.name} the code CAN falsify — the rule has outgrown the shape, measured on '${subject}'`,
           ).not.toContain(shape.rule);
         }
       }
