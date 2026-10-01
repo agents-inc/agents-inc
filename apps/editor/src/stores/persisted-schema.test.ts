@@ -6,7 +6,15 @@ import {
 } from "@workspace/matrix"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import {
+  liveAssignment,
+  offAssignment,
+  persistedConfig,
+  skillEntry,
+} from "@/__tests__/factories/config-selection-factories"
 import { setReportingSink } from "@/lib/observability/report"
+
+import type { ReportingSink } from "@/lib/observability/report"
 
 import {
   AGENT_EFFORTS,
@@ -21,8 +29,6 @@ import {
   pruneUnknownIds,
   reachesAgent,
   restingAgentOptions,
-  type PersistedConfig,
-  type SkillEntry,
 } from "./persisted-schema"
 
 // localStorage is the one genuinely untrusted input the app has, and this
@@ -39,24 +45,6 @@ const KNOWN_AGENT = Object.keys(SUB_AGENTS_BY_ID)[0]!
 const KNOWN_STACK = STACKS[0]!.id
 const GONE_SKILL = "removed-in-a-later-release"
 const GONE_AGENT = "retired-agent"
-
-const LIVE = { load: "lazy", enabled: true } as const
-const PRE = { load: "preloaded", enabled: true } as const
-const OFF = { load: "preloaded", enabled: false } as const
-
-const entry = (over: Partial<SkillEntry> = {}): SkillEntry => ({
-  ...DEFAULT_SKILL_OPTIONS,
-  assignments: {},
-  ...over,
-})
-
-const config = (over: Partial<PersistedConfig> = {}): PersistedConfig => ({
-  stackId: null,
-  skills: {},
-  remembered: {},
-  agents: {},
-  ...over,
-})
 
 // v7 moved model and effort off the skill and onto the agent, and replaced the
 // boolean `pins` map with one record per agent. v8 gave that record a fourth
@@ -99,14 +87,14 @@ describe("AGENT_EFFORTS", () => {
 })
 
 describe("persistedConfigSchema", () => {
-  // Assembled raw rather than through `config()`: a v7 skill cannot be *typed*
+  // Assembled raw rather than through `persistedConfig()`: a v7 skill cannot be *typed*
   // with a model any more, and a stale blob out of localStorage is `unknown`
   // anyway — which is exactly the input the stripping has to survive.
   it("no longer keeps a model or an effort on a skill", () => {
     const parsed = persistedConfigSchema.parse({
-      ...config(),
+      ...persistedConfig(),
       skills: {
-        [KNOWN_SKILL]: { ...entry(), model: "opus", effort: "max" },
+        [KNOWN_SKILL]: { ...skillEntry(), model: "opus", effort: "max" },
       },
     })
 
@@ -128,7 +116,7 @@ describe("persistedConfigSchema", () => {
     ],
   ] as const)("accepts an agent carrying %s", (_label, agent) => {
     const parsed = persistedConfigSchema.safeParse(
-      config({ agents: { [KNOWN_AGENT]: agent } })
+      persistedConfig({ agents: { [KNOWN_AGENT]: agent } })
     )
 
     expect(parsed.success).toBe(true)
@@ -143,7 +131,7 @@ describe("persistedConfigSchema", () => {
     ["a scope that is nowhere the CLI writes", { scope: "user" }],
   ])("refuses %s", (_label, agent) => {
     const parsed = persistedConfigSchema.safeParse({
-      ...config(),
+      ...persistedConfig(),
       agents: { [KNOWN_AGENT]: agent },
     })
 
@@ -193,7 +181,7 @@ describe("fresh-pick defaults", () => {
 
 describe("isWorthRemembering", () => {
   it("drops an entry carrying no decisions", () => {
-    expect(isWorthRemembering(entry())).toBe(false)
+    expect(isWorthRemembering(skillEntry())).toBe(false)
   })
 
   // Model and effort were two of the four signals here and are gone: an entry
@@ -202,14 +190,16 @@ describe("isWorthRemembering", () => {
     ["a non-default install mode", { install: "eject" as const }],
     ["a non-default scope", { scope: "project" as const }],
   ])("keeps an entry with %s", (_label, over) => {
-    expect(isWorthRemembering(entry(over))).toBe(true)
+    expect(isWorthRemembering(skillEntry(over))).toBe(true)
   })
 
   // The case the guard exists for. A stack — or the auto-assignment rule —
   // hands a skill its assignments without the user clicking anything, and
   // losing those to a stray toggle is exactly as costly as hand-built ones.
   it("keeps a stack-provided entry whose only content is assignments", () => {
-    const stackProvided = entry({ assignments: { [KNOWN_AGENT]: PRE } })
+    const stackProvided = skillEntry({
+      assignments: { [KNOWN_AGENT]: liveAssignment("preloaded") },
+    })
 
     expect(stackProvided).toMatchObject(DEFAULT_SKILL_OPTIONS)
     expect(isWorthRemembering(stackProvided)).toBe(true)
@@ -219,7 +209,11 @@ describe("isWorthRemembering", () => {
   // whole point of keeping it, so it counts as content.
   it("keeps an entry whose only content is disabled rows", () => {
     expect(
-      isWorthRemembering(entry({ assignments: { [KNOWN_AGENT]: OFF } }))
+      isWorthRemembering(
+        skillEntry({
+          assignments: { [KNOWN_AGENT]: offAssignment("preloaded") },
+        })
+      )
     ).toBe(true)
   })
 })
@@ -279,13 +273,15 @@ describe("reachesAgent", () => {
 
 describe("isAgentOn", () => {
   it("is off with no skills and no pin", () => {
-    expect(isAgentOn(config(), KNOWN_AGENT)).toBe(false)
+    expect(isAgentOn(persistedConfig(), KNOWN_AGENT)).toBe(false)
   })
 
   it("derives on from holding an enabled skill", () => {
-    const holding = config({
+    const holding = persistedConfig({
       skills: {
-        [KNOWN_SKILL]: entry({ assignments: { [KNOWN_AGENT]: LIVE } }),
+        [KNOWN_SKILL]: skillEntry({
+          assignments: { [KNOWN_AGENT]: liveAssignment() },
+        }),
       },
     })
 
@@ -293,21 +289,27 @@ describe("isAgentOn", () => {
   })
 
   it("stays off when its only assignment is disabled", () => {
-    const disabled = config({
-      skills: { [KNOWN_SKILL]: entry({ assignments: { [KNOWN_AGENT]: OFF } }) },
+    const disabled = persistedConfig({
+      skills: {
+        [KNOWN_SKILL]: skillEntry({
+          assignments: { [KNOWN_AGENT]: offAssignment("preloaded") },
+        }),
+      },
     })
 
     expect(isAgentOn(disabled, KNOWN_AGENT)).toBe(false)
   })
 
   it("lets a pin override the derived state in both directions", () => {
-    const holding = config({
+    const holding = persistedConfig({
       skills: {
-        [KNOWN_SKILL]: entry({ assignments: { [KNOWN_AGENT]: LIVE } }),
+        [KNOWN_SKILL]: skillEntry({
+          assignments: { [KNOWN_AGENT]: liveAssignment() },
+        }),
       },
       agents: { [KNOWN_AGENT]: { on: false } },
     })
-    const bare = config({ agents: { [KNOWN_AGENT]: { on: true } } })
+    const bare = persistedConfig({ agents: { [KNOWN_AGENT]: { on: true } } })
 
     expect(isAgentOn(holding, KNOWN_AGENT)).toBe(false)
     expect(isAgentOn(bare, KNOWN_AGENT)).toBe(true)
@@ -320,13 +322,18 @@ describe("isAgentOn", () => {
     const chosen = { model: "haiku" as const, effort: "max" as const }
 
     expect(
-      isAgentOn(config({ agents: { [KNOWN_AGENT]: chosen } }), KNOWN_AGENT)
+      isAgentOn(
+        persistedConfig({ agents: { [KNOWN_AGENT]: chosen } }),
+        KNOWN_AGENT
+      )
     ).toBe(false)
     expect(
       isAgentOn(
-        config({
+        persistedConfig({
           skills: {
-            [KNOWN_SKILL]: entry({ assignments: { [KNOWN_AGENT]: LIVE } }),
+            [KNOWN_SKILL]: skillEntry({
+              assignments: { [KNOWN_AGENT]: liveAssignment() },
+            }),
           },
           agents: { [KNOWN_AGENT]: chosen },
         }),
@@ -343,11 +350,11 @@ describe("isAgentOn", () => {
   // the row is on screen and switched on. Reading it as off would hide the very
   // row the user has to click to resolve it.
   it("stays on for an assignment the two scopes rule out", () => {
-    const unresolved = config({
+    const unresolved = persistedConfig({
       skills: {
-        [KNOWN_SKILL]: entry({
+        [KNOWN_SKILL]: skillEntry({
           scope: "project",
-          assignments: { [KNOWN_AGENT]: LIVE },
+          assignments: { [KNOWN_AGENT]: liveAssignment() },
         }),
       },
     })
@@ -356,9 +363,11 @@ describe("isAgentOn", () => {
   })
 
   it("keeps a pinned-off agent off while it carries a model", () => {
-    const pinnedOff = config({
+    const pinnedOff = persistedConfig({
       skills: {
-        [KNOWN_SKILL]: entry({ assignments: { [KNOWN_AGENT]: LIVE } }),
+        [KNOWN_SKILL]: skillEntry({
+          assignments: { [KNOWN_AGENT]: liveAssignment() },
+        }),
       },
       agents: { [KNOWN_AGENT]: { on: false, model: "haiku" } },
     })
@@ -369,44 +378,51 @@ describe("isAgentOn", () => {
 
 describe("pruneUnknownIds", () => {
   it("keeps everything the catalog still knows", () => {
-    const kept = config({
+    const kept = persistedConfig({
       stackId: KNOWN_STACK,
       skills: {
-        [KNOWN_SKILL]: entry({ assignments: { [KNOWN_AGENT]: LIVE } }),
+        [KNOWN_SKILL]: skillEntry({
+          assignments: { [KNOWN_AGENT]: liveAssignment() },
+        }),
       },
       agents: { [KNOWN_AGENT]: { on: true, model: "haiku" } },
     })
 
-    expect(pruneUnknownIds(kept)).toEqual(kept)
+    expect(pruneUnknownIds(kept)).toStrictEqual(kept)
   })
 
   it("drops a skill the catalog no longer has", () => {
     const pruned = pruneUnknownIds(
-      config({ skills: { [KNOWN_SKILL]: entry(), [GONE_SKILL]: entry() } })
+      persistedConfig({
+        skills: { [KNOWN_SKILL]: skillEntry(), [GONE_SKILL]: skillEntry() },
+      })
     )
 
-    expect(Object.keys(pruned.skills)).toEqual([KNOWN_SKILL])
+    expect(Object.keys(pruned.skills)).toStrictEqual([KNOWN_SKILL])
   })
 
   it("drops a retired sub-agent from inside assignments", () => {
     const pruned = pruneUnknownIds(
-      config({
+      persistedConfig({
         skills: {
-          [KNOWN_SKILL]: entry({
-            assignments: { [KNOWN_AGENT]: LIVE, [GONE_AGENT]: PRE },
+          [KNOWN_SKILL]: skillEntry({
+            assignments: {
+              [KNOWN_AGENT]: liveAssignment(),
+              [GONE_AGENT]: liveAssignment("preloaded"),
+            },
           }),
         },
       })
     )
 
-    expect(pruned.skills[KNOWN_SKILL]!.assignments).toEqual({
-      [KNOWN_AGENT]: LIVE,
+    expect(pruned.skills[KNOWN_SKILL]!.assignments).toStrictEqual({
+      [KNOWN_AGENT]: liveAssignment(),
     })
   })
 
   it("drops a retired sub-agent's own record", () => {
     const pruned = pruneUnknownIds(
-      config({
+      persistedConfig({
         agents: {
           [KNOWN_AGENT]: { on: true },
           [GONE_AGENT]: { on: false, model: "haiku" },
@@ -414,31 +430,34 @@ describe("pruneUnknownIds", () => {
       })
     )
 
-    expect(pruned.agents).toEqual({ [KNOWN_AGENT]: { on: true } })
+    expect(pruned.agents).toStrictEqual({ [KNOWN_AGENT]: { on: true } })
   })
 
   it("falls back to no stack when the stack is gone", () => {
-    expect(pruneUnknownIds(config({ stackId: "deleted-stack" })).stackId).toBe(
-      null
-    )
+    expect(
+      pruneUnknownIds(persistedConfig({ stackId: "deleted-stack" })).stackId
+    ).toBe(null)
   })
 
   // The map added in v3 is just as exposed to catalogue drift as `skills`.
   it("prunes remembered entries by the same rules", () => {
     const pruned = pruneUnknownIds(
-      config({
+      persistedConfig({
         remembered: {
-          [GONE_SKILL]: entry(),
-          [KNOWN_SKILL]: entry({
-            assignments: { [KNOWN_AGENT]: LIVE, [GONE_AGENT]: LIVE },
+          [GONE_SKILL]: skillEntry(),
+          [KNOWN_SKILL]: skillEntry({
+            assignments: {
+              [KNOWN_AGENT]: liveAssignment(),
+              [GONE_AGENT]: liveAssignment(),
+            },
           }),
         },
       })
     )
 
-    expect(Object.keys(pruned.remembered)).toEqual([KNOWN_SKILL])
-    expect(pruned.remembered[KNOWN_SKILL]!.assignments).toEqual({
-      [KNOWN_AGENT]: LIVE,
+    expect(Object.keys(pruned.remembered)).toStrictEqual([KNOWN_SKILL])
+    expect(pruned.remembered[KNOWN_SKILL]!.assignments).toStrictEqual({
+      [KNOWN_AGENT]: liveAssignment(),
     })
   })
 })
@@ -447,16 +466,21 @@ describe("pruneUnknownIds", () => {
 describe("migrateConfig", () => {
   // The seam the discard is reported through. Recording it is what keeps the
   // suite quiet and what lets the deliberate silence — a blob already on the
-  // current version — be asserted rather than assumed.
-  const sink = { issue: vi.fn(), error: vi.fn() }
+  // current version — be asserted rather than assumed. Typed to the sink's own
+  // contract, so a reporting call whose shape changes is a compile error here
+  // rather than an expectation that quietly stops matching.
+  const sink = {
+    issue: vi.fn<ReportingSink["issue"]>(),
+    error: vi.fn<ReportingSink["error"]>(),
+  }
 
   beforeEach(() => {
     setReportingSink(sink)
   })
 
   it("passes the current version through unchanged", () => {
-    const current = config({ skills: { [KNOWN_SKILL]: entry() } })
-    expect(migrateConfig(current, PERSIST_VERSION)).toEqual(current)
+    const current = persistedConfig({ skills: { [KNOWN_SKILL]: skillEntry() } })
+    expect(migrateConfig(current, PERSIST_VERSION)).toStrictEqual(current)
     expect(sink.issue).not.toHaveBeenCalled()
   })
 

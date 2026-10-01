@@ -13,6 +13,7 @@ import {
   buildProjectConfig,
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
+import { sa, saUnflagged } from "../../__tests__/factories/skill-factories.js";
 import { expectAgentConfigs, expectSkillConfigs } from "../../__tests__/assertions/index.js";
 import { elementAt } from "../../__tests__/helpers/element-at.js";
 import type { ProjectConfig, SkillConfig, SkillId } from "../../../types";
@@ -120,10 +121,10 @@ describe("config round-trip", () => {
       skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [sa("web-framework-react", false)],
         },
         "api-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: false }],
+          "api-api": [sa("api-framework-hono", false)],
         },
       },
     });
@@ -146,7 +147,7 @@ describe("config round-trip", () => {
       skills: buildSkillConfigs(["web-framework-react"]),
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [sa("web-framework-react", false)],
         },
       },
     });
@@ -170,7 +171,7 @@ describe("config round-trip", () => {
       skills: buildSkillConfigs(["web-framework-react"]),
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react" }],
+          "web-framework": [saUnflagged("web-framework-react")],
         },
       },
     });
@@ -194,7 +195,7 @@ describe("config round-trip", () => {
       skills: buildSkillConfigs([...EXPECTED_SKILLS.API_DEFAULT]),
       stack: {
         "api-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: true }],
+          "api-api": [sa("api-framework-hono", true)],
         },
       },
     });
@@ -227,10 +228,7 @@ describe("config round-trip", () => {
       skills: buildSkillConfigs(["web-testing-vitest", "web-testing-playwright-e2e"]),
       stack: {
         "web-developer": {
-          "web-testing": [
-            { id: "web-testing-vitest", preloaded: false },
-            { id: "web-testing-playwright-e2e", preloaded: true },
-          ],
+          "web-testing": [sa("web-testing-vitest", false), sa("web-testing-playwright-e2e", true)],
         },
       },
     });
@@ -259,8 +257,8 @@ describe("config round-trip", () => {
       author: "@vince",
       stack: {
         "web-developer": {
-          "web-styling": [{ id: "web-styling-tailwind" }],
-          "web-framework": [{ id: "web-framework-react" }],
+          "web-styling": [saUnflagged("web-styling-tailwind")],
+          "web-framework": [saUnflagged("web-framework-react")],
         },
       },
     });

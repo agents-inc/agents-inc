@@ -1,16 +1,16 @@
 import path from "path";
-import { mkdir, realpath, writeFile } from "fs/promises";
+import { realpath } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { resolveEffectiveGlobalConfig } from "../propagate.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
-import { renderConfigTs } from "../../__tests__/content-generators.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../__tests__/factories/config-factories.js";
+import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { buildSkillConfig } from "../../__tests__/helpers/wizard-simulation.js";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts.js";
+import { CLAUDE_SRC_DIR } from "../../../consts.js";
 import type { ProjectConfig } from "../../../types/index.js";
 
 /**
@@ -32,8 +32,10 @@ import type { ProjectConfig } from "../../../types/index.js";
 
 const REACT = "web-framework-react";
 const VITEST = "web-testing-vitest";
+const HONO = "api-framework-hono";
 const WEB_DEV = "web-developer";
 const API_DEV = "api-developer";
+const CLI_DEV = "cli-developer";
 const GLOBAL_NAME = "global-install";
 const MARKETPLACE_REF = "github:acme/skills";
 
@@ -59,11 +61,7 @@ describe("resolveEffectiveGlobalConfig", () => {
    */
   async function makeRegisteredProject(name: string): Promise<string> {
     const dir = path.join(tempDir, name);
-    await mkdir(path.join(dir, CLAUDE_SRC_DIR), { recursive: true });
-    await writeFile(
-      path.join(dir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs(buildProjectConfig({ name })),
-    );
+    await writeTestTsConfig(dir, buildProjectConfig({ name }), CLAUDE_SRC_DIR);
     return realpath(dir);
   }
 
@@ -90,6 +88,11 @@ describe("resolveEffectiveGlobalConfig", () => {
     });
   }
 
+  /** A session that installs nothing at global scope — the `hasGlobalItems` shortcut's input. */
+  function emptyGlobalSplit(): ProjectConfig {
+    return buildProjectConfig({ name: GLOBAL_NAME, skills: [], agents: [] });
+  }
+
   describe("without a word from the session", () => {
     it("leaves a global entry the session omits in place", async () => {
       const { config } = await resolveEffectiveGlobalConfig(
@@ -100,6 +103,72 @@ describe("resolveEffectiveGlobalConfig", () => {
 
       // The standing rule, and the default for every caller but one: a project install adds
       // what it brought and removes nothing, because it never asked anybody about the machine.
+      expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual([REACT, VITEST].sort());
+      expect(config.agents.map((agent) => agent.name).sort()).toStrictEqual(
+        [WEB_DEV, API_DEV].sort(),
+      );
+    });
+
+    it("keeps the global installation's identity and its registration list", async () => {
+      const { config } = await resolveEffectiveGlobalConfig(
+        sessionGlobalSplit(),
+        installedGlobal(),
+        projectDir,
+      );
+
+      // The additive twin of the `"all"` spec below, and the half the roster assertion above
+      // cannot carry: a merge that took the SESSION as the side that wins produces the same two
+      // rosters — the sets are a union either way — while every scalar and every list the
+      // session is silent about comes from the session instead. `projects[]` is the one that
+      // costs something, because the fan-out walks it: `otherProjectDir` stops being visited and
+      // nothing anywhere says a project was deregistered.
+      expect(config.name).toBe(GLOBAL_NAME);
+      expect(config.marketplace).toBe(MARKETPLACE_REF);
+      expect(config.projects?.sort()).toStrictEqual([projectDir, otherProjectDir].sort());
+    });
+
+    it("reports the data change on a first write, so the fan-out is not skipped", async () => {
+      const { config, globalDataChanged } = await resolveEffectiveGlobalConfig(
+        sessionGlobalSplit(),
+        undefined,
+        projectDir,
+      );
+
+      // A machine with no global installation yet is the one case where every global row in the
+      // session is new, so a resolution reporting no data change here is reporting the opposite
+      // of what it did. `changed` cannot carry this: registering the project sets it either way.
+      expect(config.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
+      expect(globalDataChanged).toBe(true);
+    });
+
+    it("refuses an excluded row as a global install", async () => {
+      const splitCarryingTombstones = buildProjectConfig({
+        name: GLOBAL_NAME,
+        skills: [
+          buildSkillConfig(REACT, { scope: "global" }),
+          buildSkillConfig(HONO, { scope: "global", excluded: true }),
+        ],
+        agents: [
+          ...buildAgentConfigs([WEB_DEV], { scope: "global" }),
+          ...buildAgentConfigs([CLI_DEV], { scope: "global", excluded: true }),
+        ],
+      });
+
+      const { config } = await resolveEffectiveGlobalConfig(
+        splitCarryingTombstones,
+        installedGlobal(),
+        projectDir,
+      );
+
+      // An excluded row says this installation does not have that skill, so writing it upward
+      // installs on the whole machine the one thing the project asked to be without.
+      //
+      // Two layers hold this and only the inner one is pinned here. The outer is
+      // `splitConfigByScope`, whose global partition is `isActiveAt(entry, "global")` — so no
+      // split the product builds today carries a row like these, and
+      // `local-installer.test.ts` > "never writes a tombstone into the global config" is the
+      // pin at that reachable layer. This one states the contract of the boundary itself: an
+      // excluded row is not an install, whoever hands one in.
       expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual([REACT, VITEST].sort());
       expect(config.agents.map((agent) => agent.name).sort()).toStrictEqual(
         [WEB_DEV, API_DEV].sort(),
@@ -209,6 +278,60 @@ describe("resolveEffectiveGlobalConfig", () => {
       );
 
       expect(config.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
+      expect(changed).toBe(true);
+    });
+
+    it("reports the data change on a first authoritative write too", async () => {
+      const { globalDataChanged } = await resolveEffectiveGlobalConfig(
+        sessionGlobalSplit(),
+        undefined,
+        projectDir,
+        "all",
+      );
+
+      // The spec above reads `changed`, which registering the project sets on its own, so it
+      // holds for a resolution that reported the global rows as no news at all. The two
+      // resolutions answer this separately and each needs its own pin.
+      expect(globalDataChanged).toBe(true);
+    });
+  });
+
+  describe("the project registry this write carries", () => {
+    it("registers a newcomer without reporting a global data change", async () => {
+      const newcomerDir = await makeRegisteredProject("newcomer");
+
+      const { config, changed, globalDataChanged } = await resolveEffectiveGlobalConfig(
+        emptyGlobalSplit(),
+        installedGlobal(),
+        newcomerDir,
+      );
+
+      // Two flags, and the whole reason there are two. Registering a project must be WRITTEN —
+      // an unregistered project is one the fan-out never visits again — but it is not a change
+      // to what the global installation HOLDS, and reporting it as one recompiles every other
+      // project on the machine for a run that installed nothing.
+      expect(config.projects?.sort()).toStrictEqual(
+        [projectDir, otherProjectDir, newcomerDir].sort(),
+      );
+      expect(changed).toBe(true);
+      expect(globalDataChanged).toBe(false);
+    });
+
+    it("drops a registration whose project is gone", async () => {
+      const removedProjectDir = path.join(tempDir, "removed-project");
+      const installed = installedGlobal();
+
+      const { config, changed } = await resolveEffectiveGlobalConfig(
+        sessionGlobalSplit(),
+        { ...installed, projects: [...(installed.projects ?? []), removedProjectDir] },
+        projectDir,
+      );
+
+      // The sweep is the only thing that ever shortens this list on an install path, and the
+      // list is what the fan-out walks: every stale entry is a directory each later global
+      // write tries to reach, fails on, and reports as skipped. Nothing here is a global data
+      // change, so `changed` is the only flag that can carry the rewrite.
+      expect(config.projects?.sort()).toStrictEqual([projectDir, otherProjectDir].sort());
       expect(changed).toBe(true);
     });
   });

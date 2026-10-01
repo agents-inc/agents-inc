@@ -9,6 +9,7 @@ import {
   seedPayloadSchema,
   unwritableSeedAssignments,
 } from "./seed"
+import type { SeedLoadState, SeedScope } from "./seed"
 
 // The external half of the wire contract, which is the only part of the payload
 // that carries CONTENT rather than a reference. Everything else in the payload
@@ -304,10 +305,13 @@ describe("a sub-agent's optional fields", () => {
 
 const REACT = "web-framework-react"
 
-/** A project-scoped skill, assigned to whichever sub-agents the caller names. */
-const projectSkill = (assignments: Record<string, string>) => ({
+/** A skill installed at `scope`, assigned to whichever sub-agents the caller names. */
+const skillAt = (
+  scope: SeedScope,
+  assignments: Record<string, SeedLoadState>
+) => ({
   install: "plugin",
-  scope: "project",
+  scope,
   assignments,
 })
 
@@ -318,7 +322,7 @@ const projectSkill = (assignments: Record<string, string>) => ({
  */
 const restingPairPayload = () =>
   payload({
-    skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+    skills: { [REACT]: skillAt("project", { [AGENT_ID]: "preloaded" }) },
     agents: {},
   })
 
@@ -340,7 +344,7 @@ describe("a project skill's reach over a sub-agent", () => {
 
   it("accepts the same pair once the sub-agent is pinned to the project", () => {
     const pinned = payload({
-      skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+      skills: { [REACT]: skillAt("project", { [AGENT_ID]: "preloaded" }) },
       agents: { [AGENT_ID]: { scope: "project" } },
     })
 
@@ -349,13 +353,7 @@ describe("a project skill's reach over a sub-agent", () => {
 
   it("accepts a global skill on a sub-agent at its resting scope", () => {
     const global = payload({
-      skills: {
-        [REACT]: {
-          install: "plugin",
-          scope: "global",
-          assignments: { [AGENT_ID]: "preloaded" },
-        },
-      },
+      skills: { [REACT]: skillAt("global", { [AGENT_ID]: "preloaded" }) },
       agents: {},
     })
 
@@ -368,7 +366,7 @@ describe("a project skill's reach over a sub-agent", () => {
   // stricter than the consumer it exists to protect.
   it("ignores an assignment row naming a sub-agent pinned off", () => {
     const off = payload({
-      skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+      skills: { [REACT]: skillAt("project", { [AGENT_ID]: "preloaded" }) },
       agents: { [AGENT_ID]: { on: false } },
     })
 
@@ -378,7 +376,7 @@ describe("a project skill's reach over a sub-agent", () => {
   it("names both halves of every unwritable pair, not just the first", () => {
     const two = payload({
       skills: {
-        [REACT]: projectSkill({
+        [REACT]: skillAt("project", {
           [AGENT_ID]: "preloaded",
           "api-developer": "lazy",
         }),
@@ -396,7 +394,7 @@ describe("a project skill's reach over a sub-agent", () => {
 
   it("finds nothing to report in a payload the config model can write", () => {
     const pinned = payload({
-      skills: { [REACT]: projectSkill({ [AGENT_ID]: "preloaded" }) },
+      skills: { [REACT]: skillAt("project", { [AGENT_ID]: "preloaded" }) },
       agents: { [AGENT_ID]: { scope: "project" } },
     })
 
@@ -409,7 +407,7 @@ describe("a project skill's reach over a sub-agent", () => {
 // The control for the whole rule above, and the reason it is a SECOND schema
 // rather than a tightening of the first. A link already minted holding the pair
 // has to keep arriving: the editor opens one, marks the row and fixes it in a
-// click (EDITOR-08), and the worker re-validates on read, so a base schema that
+// click, and the worker re-validates on read, so a base schema that
 // refused would turn every such id into a 500 nobody can repair.
 describe("the read schema is deliberately lenient about the same pair", () => {
   it("accepts a payload the installable schema turns away", () => {

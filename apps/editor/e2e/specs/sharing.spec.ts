@@ -89,7 +89,7 @@ test.describe("sharing a configuration", () => {
 
     // Only the pin has anything to say: every agent the rule reached rests on
     // its catalogue model and medium effort, so they say nothing.
-    expect(body!.agents).toEqual({ "api-developer": { on: true } })
+    expect(body!.agents).toStrictEqual({ "api-developer": { on: true } })
   })
 
   // The stale tab, and the one ending that names an action. This bundle

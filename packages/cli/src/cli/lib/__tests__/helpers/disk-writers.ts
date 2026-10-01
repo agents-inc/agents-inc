@@ -7,6 +7,10 @@ import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
 import { typedEntries } from "../../../utils/typed-object";
 import { computeSkillFolderHash } from "../../versioning";
 import { renderSkillMd, renderAgentYaml } from "../content-generators";
+import {
+  buildUserPluginInstallation,
+  renderInstalledPluginsRegistry,
+} from "../factories/plugin-registry-factories";
 import type { SkillId } from "../../../types";
 import type { TestAgent, TestPluginManifest, TestSkill } from "../fixtures/create-test-source";
 
@@ -159,24 +163,16 @@ export async function writeTestInstalledPluginsRegistry(
   pluginsDir: string,
   installPathsByKey: Record<string, string[]>,
 ): Promise<string> {
-  const registry = {
-    version: 2,
-    plugins: Object.fromEntries(
-      typedEntries(installPathsByKey).map(([pluginKey, installPaths]) => [
-        pluginKey,
-        installPaths.map((installPath) => ({
-          scope: "user",
-          installPath,
-          version: "1.0.0",
-          installedAt: "2026-01-01T00:00:00.000Z",
-        })),
-      ]),
-    ),
-  };
+  const plugins = Object.fromEntries(
+    typedEntries(installPathsByKey).map(([pluginKey, installPaths]) => [
+      pluginKey,
+      installPaths.map((installPath) => buildUserPluginInstallation(installPath)),
+    ]),
+  );
 
   const registryPath = getInstalledPluginsRegistryPath(pluginsDir);
   await mkdir(pluginsDir, { recursive: true });
-  await writeFile(registryPath, JSON.stringify(registry, null, 2));
+  await writeFile(registryPath, renderInstalledPluginsRegistry(plugins));
   return registryPath;
 }
 

@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,12 +15,12 @@ import { useMockWorker } from "../helpers/mock-worker.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
-import { renderConfigTs } from "../content-generators";
 import { sa } from "../factories/skill-factories.js";
-import { CLAUDE_SRC_DIR, EDITOR_URL, EJECT_SOURCE, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, EDITOR_URL, EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import { STATUS_MESSAGES } from "../../../utils/messages";
 import type { ProjectConfig } from "../../../types";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 
 /**
  * `edit --ui` is the outbound half of the editor round trip: it mints an id for the
@@ -97,12 +97,7 @@ describe("edit --ui", () => {
 
   /** Writes the `config.ts` this command reads the installation out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs(buildProjectConfig(overrides)),
-    );
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
   }
 
   /** The one installed configuration these specs open, unless a spec varies it. */

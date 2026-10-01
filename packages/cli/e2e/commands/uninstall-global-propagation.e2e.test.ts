@@ -164,11 +164,12 @@ describe("global uninstall propagates to registered projects", () => {
     });
 
     // Raw text carries no global-scoped remnants at all — no removed skill id,
-    // no removed agent name, no `scope: "global"` rows.
+    // no removed agent name, no global-scoped rows. Matched in either quote style: the config is
+    // written with single quotes, so a search for `"global"` could never fail (corrected 2026-09-26).
     const rawConfig = await readTestFile(configTsPath(projectDir));
     expect(rawConfig).not.toContain(E2E_SKILL.react.id);
     expect(rawConfig).not.toContain(E2E_AGENT["web-developer"].name);
-    expect(rawConfig).not.toContain('"global"');
+    expect(rawConfig).not.toMatch(/scope:\s*['"]global['"]/);
 
     // config-types.ts was regenerated in standalone form: the seeded stub is
     // replaced, the project's own skill is in the union, and nothing imports

@@ -100,7 +100,7 @@ describe("toSeedPayload", () => {
     const payload = toSeedPayload(config())
 
     expect(payload.stackId).toBe(STACK)
-    expect(payload.skills[SKILL]).toEqual({
+    expect(payload.skills[SKILL]).toStrictEqual({
       ...DEFAULT_SKILL_OPTIONS,
       scope: "global",
       assignments: { [AGENT]: "preloaded" },
@@ -163,8 +163,10 @@ describe("toSeedPayload", () => {
   it("travels a pinned agent as on, bare or not", () => {
     const bare = { ...config(), skills: {} }
 
-    expect(toSeedPayload(bare).agents).toEqual({ [AGENT]: { on: true } })
-    expect(toSeedPayload(config()).agents).toEqual({ [AGENT]: { on: true } })
+    expect(toSeedPayload(bare).agents).toStrictEqual({ [AGENT]: { on: true } })
+    expect(toSeedPayload(config()).agents).toStrictEqual({
+      [AGENT]: { on: true },
+    })
   })
 
   // A pinned-off agent renders recessed and is excluded from every count, so
@@ -177,9 +179,11 @@ describe("toSeedPayload", () => {
 
     const payload = toSeedPayload(pinnedOff)
 
-    expect(payload.agents).toEqual({})
-    expect(payload.skills[SKILL]!.assignments).toEqual({})
-    expect(fromSeedPayload(payload).skills[SKILL]!.assignments).toEqual({})
+    expect(payload.agents).toStrictEqual({})
+    expect(payload.skills[SKILL]!.assignments).toStrictEqual({})
+    expect(fromSeedPayload(payload).skills[SKILL]!.assignments).toStrictEqual(
+      {}
+    )
   })
 
   // The payload is what is on screen, and nothing quietly less. A row the two
@@ -196,7 +200,9 @@ describe("toSeedPayload", () => {
       },
     }
 
-    expect(toSeedPayload(projectSkill).skills[SKILL]!.assignments).toEqual({
+    expect(
+      toSeedPayload(projectSkill).skills[SKILL]!.assignments
+    ).toStrictEqual({
       [AGENT]: "preloaded",
     })
   })
@@ -231,9 +237,11 @@ describe("toSeedPayload", () => {
       agents: { [AGENT]: { on: true, scope: "project" as const } },
     }
 
-    expect(toSeedPayload(bothProject).skills[SKILL]!.assignments).toEqual({
-      [AGENT]: "preloaded",
-    })
+    expect(toSeedPayload(bothProject).skills[SKILL]!.assignments).toStrictEqual(
+      {
+        [AGENT]: "preloaded",
+      }
+    )
   })
 
   // An agent switched on by its assignments is already implied by them, so
@@ -246,7 +254,7 @@ describe("toSeedPayload", () => {
 
     const agent = toSeedPayload(chosen).agents[AGENT]!
 
-    expect(agent).toEqual({ model: "haiku", effort: "max" })
+    expect(agent).toStrictEqual({ model: "haiku", effort: "max" })
     expect(agent).not.toHaveProperty("on")
   })
 
@@ -261,7 +269,7 @@ describe("toSeedPayload", () => {
 
     const payload = toSeedPayload(pinned)
 
-    expect(payload.agents[AGENT]).toEqual({ scope: "project" })
+    expect(payload.agents[AGENT]).toStrictEqual({ scope: "project" })
     expect(payload.skills[SKILL]!.scope).toBe("global")
   })
 
@@ -282,15 +290,15 @@ describe("toSeedPayload", () => {
   it("gives an agent with nothing to say no entry at all", () => {
     const quiet = { ...config(), agents: {} }
 
-    expect(toSeedPayload(quiet).agents).toEqual({})
+    expect(toSeedPayload(quiet).agents).toStrictEqual({})
     // OTHER_AGENT holds only a switched-off row, so it is silent either way.
-    expect(Object.keys(toSeedPayload(config()).agents)).toEqual([AGENT])
+    expect(Object.keys(toSeedPayload(config()).agents)).toStrictEqual([AGENT])
   })
 
   it("does not mutate the store state it reads", () => {
     const before = config()
     toSeedPayload(before)
-    expect(before).toEqual(config())
+    expect(before).toStrictEqual(config())
   })
 })
 
@@ -299,7 +307,7 @@ describe("fromSeedPayload", () => {
     const restored = fromSeedPayload(toSeedPayload(config()))
 
     expect(restored.stackId).toBe(STACK)
-    expect(restored.skills[SKILL]).toEqual({
+    expect(restored.skills[SKILL]).toStrictEqual({
       ...DEFAULT_SKILL_OPTIONS,
       scope: "global",
       assignments: { [AGENT]: { load: "preloaded", enabled: true } },
@@ -319,7 +327,7 @@ describe("fromSeedPayload", () => {
       },
     }
 
-    expect(fromSeedPayload(toSeedPayload(chosen)).agents).toEqual({
+    expect(fromSeedPayload(toSeedPayload(chosen)).agents).toStrictEqual({
       [AGENT]: { on: true, model: "haiku", scope: "global" },
       [OTHER_AGENT]: { effort: "low" },
     })
@@ -336,7 +344,9 @@ describe("fromSeedPayload", () => {
   })
 
   it("starts remembered empty", () => {
-    expect(fromSeedPayload(toSeedPayload(config())).remembered).toEqual({})
+    expect(fromSeedPayload(toSeedPayload(config())).remembered).toStrictEqual(
+      {}
+    )
   })
 
   // A payload can be minted against a matrix this catalog has moved past, so
@@ -358,7 +368,7 @@ describe("fromSeedPayload", () => {
     const restored = fromSeedPayload(drifted)
 
     expect(restored.stackId).toBe(null)
-    expect(Object.keys(restored.skills)).toEqual([SKILL])
+    expect(Object.keys(restored.skills)).toStrictEqual([SKILL])
   })
 
   // The second of the two doors a configuration holding the bad pair arrives
@@ -381,7 +391,7 @@ describe("fromSeedPayload", () => {
       agents: {},
     }
 
-    expect(fromSeedPayload(shared).skills[SKILL]!.assignments).toEqual({
+    expect(fromSeedPayload(shared).skills[SKILL]!.assignments).toStrictEqual({
       [AGENT]: { load: "preloaded", enabled: true },
     })
   })
@@ -395,7 +405,7 @@ describe("fromSeedPayload", () => {
       agents: { ...payload.agents, [GONE_AGENT]: { model: "haiku" as const } },
     }
 
-    expect(Object.keys(fromSeedPayload(drifted).agents)).toEqual([AGENT])
+    expect(Object.keys(fromSeedPayload(drifted).agents)).toStrictEqual([AGENT])
   })
 })
 
@@ -408,7 +418,9 @@ describe("unknownPayloadIds", () => {
   it("names nothing when the catalogue placed every id", () => {
     const payload = toSeedPayload(config())
 
-    expect(unknownPayloadIds(payload, fromSeedPayload(payload))).toEqual([])
+    expect(unknownPayloadIds(payload, fromSeedPayload(payload))).toStrictEqual(
+      []
+    )
   })
 
   it("names a skill this catalogue does not carry", () => {
@@ -421,7 +433,7 @@ describe("unknownPayloadIds", () => {
       },
     }
 
-    expect(unknownPayloadIds(drifted, fromSeedPayload(drifted))).toEqual([
+    expect(unknownPayloadIds(drifted, fromSeedPayload(drifted))).toStrictEqual([
       "skill-from-the-future",
     ])
   })
@@ -433,7 +445,7 @@ describe("unknownPayloadIds", () => {
       agents: { ...payload.agents, [GONE_AGENT]: { model: "haiku" as const } },
     }
 
-    expect(unknownPayloadIds(drifted, fromSeedPayload(drifted))).toEqual([
+    expect(unknownPayloadIds(drifted, fromSeedPayload(drifted))).toStrictEqual([
       GONE_AGENT,
     ])
   })
@@ -443,7 +455,7 @@ describe("unknownPayloadIds", () => {
   it("names the stack when it did not survive", () => {
     const payload = { ...toSeedPayload(config()), stackId: "retired-stack" }
 
-    expect(unknownPayloadIds(payload, fromSeedPayload(payload))).toEqual([
+    expect(unknownPayloadIds(payload, fromSeedPayload(payload))).toStrictEqual([
       "retired-stack",
     ])
   })
@@ -462,7 +474,9 @@ describe("unknownPayloadIds", () => {
     })
     useCatalogStore.getState().reset()
 
-    expect(unknownPayloadIds(payload, adoptSeedPayload(payload))).toEqual([])
+    expect(unknownPayloadIds(payload, adoptSeedPayload(payload))).toStrictEqual(
+      []
+    )
   })
 })
 

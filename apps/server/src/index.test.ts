@@ -28,10 +28,28 @@ const BASE = "https://api.test"
 // with `seedPayloadSchema`, so drift fails at import rather than as a 400 in
 // whichever assertion happens to provoke one.
 //
-// `stackId` is the one field this suite overrides, and it is why the builder
-// takes overrides at all: the default is `null`, and a round trip reading back
-// `null` cannot tell a value that survived from one that was never sent.
-const payload = () => seedPayload({ stackId: "next" })
+// `stackId` is the one field every spec here overrides: the default is `null`,
+// and a round trip reading back `null` cannot tell a value that survived from
+// one that was never sent. The specs about the store's scope rule override
+// `skills` and `agents` as well, because those two fields ARE that rule's
+// subject — see `PROJECT_SKILL_ON_WEB_DEVELOPER`.
+const payload = (overrides: Partial<SeedPayload> = {}) =>
+  seedPayload({ stackId: "next", ...overrides })
+
+const WEB_DEVELOPER = "web-developer"
+
+// The pair the store's scope rule is about: a project-scoped skill assigned to
+// `web-developer`. Stated here rather than inherited from the shared fixture,
+// which happens to hold the same pair today — a refusal whose cause sits in
+// another package's defaults goes on passing, or starts failing, for a reason
+// nobody reading the spec can see.
+const PROJECT_SKILL_ON_WEB_DEVELOPER: SeedPayload["skills"] = {
+  "web-framework-react": {
+    install: "plugin",
+    scope: "project",
+    assignments: { [WEB_DEVELOPER]: "preloaded" },
+  },
+}
 
 const post = (body: unknown) =>
   SELF.fetch(`${BASE}/configs`, {
@@ -115,19 +133,27 @@ describe("POST /configs", () => {
   // installs it, so minting an id for one produces a link that fails at the
   // recipient — worse than no link at all.
   it("refuses a project skill assigned to a sub-agent resting at global", async () => {
-    const response = await post({
-      ...payload(),
-      agents: { "web-developer": { model: "haiku", effort: "max" } },
-    })
+    const response = await post(
+      payload({
+        skills: PROJECT_SKILL_ON_WEB_DEVELOPER,
+        agents: { [WEB_DEVELOPER]: {} },
+      })
+    )
 
     expect(response.status).toBe(400)
   })
 
-  // The control for the refusal above. Both outcomes leave KV untouched from
-  // outside, so a refusal pinned on its own cannot tell a rule that fires on
-  // the pair from one that has swallowed every payload.
+  // The control for the refusal above, differing from it in the sub-agent's
+  // scope and nothing else. Both outcomes leave KV untouched from outside, so a
+  // refusal pinned on its own cannot tell a rule that fires on the pair from
+  // one that has swallowed every payload.
   it("stores the same configuration once the sub-agent is pinned", async () => {
-    const response = await post(payload())
+    const response = await post(
+      payload({
+        skills: PROJECT_SKILL_ON_WEB_DEVELOPER,
+        agents: { [WEB_DEVELOPER]: { scope: "project" } },
+      })
+    )
 
     expect(response.status).toBe(201)
   })
@@ -295,10 +321,10 @@ describe("CORS", () => {
   const REFUSED_BODIES = {
     "malformed at the current version": { v: SEED_VERSION, skills: "no" },
     "minted by another build": { ...payload(), v: SEED_VERSION - 1 },
-    "a project skill on a globally-scoped sub-agent": {
-      ...payload(),
-      agents: { "web-developer": { model: "haiku", effort: "max" } },
-    },
+    "a project skill on a globally-scoped sub-agent": payload({
+      skills: PROJECT_SKILL_ON_WEB_DEVELOPER,
+      agents: { [WEB_DEVELOPER]: {} },
+    }),
   }
 
   it.each(Object.entries(REFUSED_BODIES))(

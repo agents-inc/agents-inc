@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { STORED_ID, storeRefusedHandler } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import { MATRIX_VERSION } from "@workspace/matrix";
@@ -12,11 +12,11 @@ import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
-import { renderConfigTs } from "../content-generators";
 import { sa } from "../factories/skill-factories.js";
-import { CLAUDE_SRC_DIR, EDITOR_URL, EJECT_SOURCE, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, EDITOR_URL, EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import type { ProjectConfig } from "../../../types";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 
 /**
  * `share` mints an id for the installation in this directory, so the CLI can create shared
@@ -81,12 +81,7 @@ describe("share command", () => {
 
   /** Writes the `config.ts` this command reads the installation out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs(buildProjectConfig(overrides)),
-    );
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
   }
 
   /** The one installed configuration these specs share, unless a spec varies it. */

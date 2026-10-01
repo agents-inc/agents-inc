@@ -77,10 +77,10 @@ describe("defaultAssignmentsFor", () => {
   it("assigns a web skill to every web agent plus the role agents, all enabled", () => {
     const assignments = defaultAssignmentsFor(CLIENT_STATE_SKILL)
 
-    expect(Object.keys(assignments).sort()).toEqual(
+    expect(Object.keys(assignments).sort()).toStrictEqual(
       [...agentIdsInDomain("web"), REVIEWER, PM].sort()
     )
-    expect(Object.keys(assignments).sort()).toEqual([
+    expect(Object.keys(assignments).sort()).toStrictEqual([
       "pm",
       "reviewer",
       "web-developer",
@@ -93,19 +93,22 @@ describe("defaultAssignmentsFor", () => {
   // The domainless pair serves every domain, so a domain the roster fields no
   // implementation agents for still reaches them — and only them.
   it("assigns an infra skill to the role agents alone", () => {
-    expect(reachOf(INFRA_SKILL)).toEqual([PM, REVIEWER])
+    expect(reachOf(INFRA_SKILL)).toStrictEqual([PM, REVIEWER])
   })
 
   it("assigns a skill from an agent-less domain to the role agents alone", () => {
-    expect(reachOf("mobile-framework-react-native")).toEqual([PM, REVIEWER])
-    expect(reachOf("desktop-framework-tauri")).toEqual([PM, REVIEWER])
+    expect(reachOf("mobile-framework-react-native")).toStrictEqual([
+      PM,
+      REVIEWER,
+    ])
+    expect(reachOf("desktop-framework-tauri")).toStrictEqual([PM, REVIEWER])
   })
 
   // Cross-domain use is a shared skill's nature, and since CLI-846 that reaches
   // the meta-flavor agents too: what a repository is built with is what the
   // convention-keeper and the codex-keeper are asked about.
   it("assigns a shared skill to every agent", () => {
-    expect(reachOf(SHARED_SKILL)).toEqual(ALL_AGENT_IDS)
+    expect(reachOf(SHARED_SKILL)).toStrictEqual(ALL_AGENT_IDS)
   })
 
   // A meta skill reaches exactly the flavors its authored mapping row names,
@@ -113,7 +116,7 @@ describe("defaultAssignmentsFor", () => {
   // reviewer, which the design craft reaches with no row at all. Off the row
   // is off the roster for a meta skill, the two crafts aside.
   it("assigns a design-craft meta skill to its row's developers, the reviewer and the meta agents", () => {
-    expect(reachOf(META_SKILL)).toEqual([
+    expect(reachOf(META_SKILL)).toStrictEqual([
       "agent-summoner",
       "ai-developer",
       "api-developer",
@@ -130,8 +133,8 @@ describe("defaultAssignmentsFor", () => {
   // checklists by the craft rule — lazy by absence, listed in the reviewer's
   // activation protocol rather than resident in its prompt.
   it("assigns the reviewing craft to the reviewer alone", () => {
-    expect(reachOf(REVIEW_PROCESS_SKILL)).toEqual([REVIEWER])
-    expect(reachOf(WEB_REVIEWING_SKILL)).toEqual([REVIEWER])
+    expect(reachOf(REVIEW_PROCESS_SKILL)).toStrictEqual([REVIEWER])
+    expect(reachOf(WEB_REVIEWING_SKILL)).toStrictEqual([REVIEWER])
 
     expect(defaultAssignmentsFor(REVIEW_PROCESS_SKILL)[REVIEWER]?.load).toBe(
       "preloaded"
@@ -145,8 +148,8 @@ describe("defaultAssignmentsFor", () => {
   // PM, lazily and with no mapping row behind it — the reviewing checklists'
   // shape, now that the planner is domainless too.
   it("assigns the planning craft to the PM alone", () => {
-    expect(reachOf(WEB_PLANNING_SKILL)).toEqual([PM])
-    expect(reachOf(CLI_PLANNING_SKILL)).toEqual([PM])
+    expect(reachOf(WEB_PLANNING_SKILL)).toStrictEqual([PM])
+    expect(reachOf(CLI_PLANNING_SKILL)).toStrictEqual([PM])
 
     expect(defaultAssignmentsFor(WEB_PLANNING_SKILL)[PM]?.load).toBe("lazy")
     expect(defaultAssignmentsFor(CLI_PLANNING_SKILL)[PM]?.load).toBe("lazy")
@@ -158,7 +161,7 @@ describe("defaultAssignmentsFor", () => {
   it("assigns the methodology craft to every researcher, the PM and the meta agents", () => {
     const assignments = defaultAssignmentsFor(METHODOLOGY_CRAFT_SKILL)
 
-    expect(Object.keys(assignments).sort()).toEqual([
+    expect(Object.keys(assignments).sort()).toStrictEqual([
       "agent-summoner",
       "ai-researcher",
       "api-researcher",
@@ -177,14 +180,14 @@ describe("defaultAssignmentsFor", () => {
   // The owner's ruling on added skills: relevance unknown means assigned
   // nowhere — the ••• panel handles manual assignment, and it is id-agnostic.
   it("assigns an added skill to nobody", () => {
-    expect(defaultAssignmentsFor(ADDED_SKILL)).toEqual({})
+    expect(defaultAssignmentsFor(ADDED_SKILL)).toStrictEqual({})
   })
 
   // A stale id from a previous release is indistinguishable from an added one
   // here — neither reaches the catalog — and gets the same answer rather than a
   // second rule that would need a second data source to tell them apart.
   it("treats an id the catalog never had like an added one", () => {
-    expect(defaultAssignmentsFor("no-such-skill")).toEqual({})
+    expect(defaultAssignmentsFor("no-such-skill")).toStrictEqual({})
   })
 
   it("loads a skill the mapping does not name lazily everywhere it reaches", () => {
@@ -208,7 +211,7 @@ describe("defaultAssignmentsFor", () => {
   it("preloads a testing skill on its own domain's tester alone", () => {
     const assignments = defaultAssignmentsFor(TESTING_SKILL)
 
-    expect(Object.keys(assignments).sort()).toEqual(
+    expect(Object.keys(assignments).sort()).toStrictEqual(
       [...agentIdsInDomain("web"), REVIEWER, PM].sort()
     )
 
@@ -216,7 +219,7 @@ describe("defaultAssignmentsFor", () => {
       .filter(([, a]) => a.load === "preloaded")
       .map(([agentId]) => agentId)
 
-    expect(preloaded).toEqual(["web-tester"])
+    expect(preloaded).toStrictEqual(["web-tester"])
   })
 
   // A shared skill's row is ungated — the flavors it names preload in every

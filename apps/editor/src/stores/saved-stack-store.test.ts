@@ -31,7 +31,7 @@ const slot = (saved: unknown) => ({ saved })
 
 describe("readSavedStack", () => {
   it("returns a payload the contract still recognises", () => {
-    expect(readSavedStack(slot(payload()))).toEqual(payload())
+    expect(readSavedStack(slot(payload()))).toStrictEqual(payload())
   })
 
   // Ids are the CLI's slugs and are never checked here: pruning what this
@@ -47,7 +47,7 @@ describe("readSavedStack", () => {
       },
     })
 
-    expect(readSavedStack(slot(drifted))).toEqual(drifted)
+    expect(readSavedStack(slot(drifted))).toStrictEqual(drifted)
   })
 
   // The version seam. A payload minted under an older contract is discarded

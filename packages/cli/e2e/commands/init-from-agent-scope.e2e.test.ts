@@ -16,9 +16,14 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { PINNED_WIRE_VERSION } from "../fixtures/seed-wire-contract.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
@@ -32,29 +37,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-si
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
-
-/**
- * A payload as the web app builds it.
- *
- * The version is a literal rather than the vendored `SEED_VERSION`, exactly as in the sibling
- * `--from` specs: this spec pins the wire contract, so it has to fail while the CLI is still on
- * the old one instead of following it.
- */
-function seedPayload(skills: Record<string, unknown>, agents: Record<string, unknown> = {}) {
-  return { v: 5, matrixVersion: "1.0.0", stackId: null, skills, agents };
-}
-
-/** One skill row, at its own (project) scope — the sub-agent's scope is the subject here. */
-function skillEntry(overrides: Record<string, unknown> = {}) {
-  return {
-    // Eject, because the E2E source is local and has no marketplace — plugin mode legitimately
-    // refuses that, which is its own (correct) error rather than anything this path controls.
-    install: "eject",
-    scope: "project",
-    assignments: { [WEB_DEV]: "lazy" },
-    ...overrides,
-  };
-}
 
 describe("init --from <id>: sub-agent scope", () => {
   let sourceDir: string;
@@ -82,16 +64,27 @@ describe("init --from <id>: sub-agent scope", () => {
     env = await createTestEnvironment({ permissions: false });
     store.publish(
       "Scoped01",
-      seedPayload(
-        { [E2E_SKILL.react.id]: skillEntry() },
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        // The skill row sits at its own (project) scope — the sub-agent's scope is the subject
+        // here. Eject, because the E2E source is local and has no marketplace — plugin mode
+        // legitimately refuses that, which is its own (correct) error rather than anything this
+        // path controls.
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
         // web-developer arrives through its assignment and is PINNED into the project — the only
         // way a sub-agent stays there. api-developer names no scope at all and travels with no
         // skills of its own, so it takes the shared selection default and lands in the user's own
         // ~/.claude. The `agents` map is the only place a configuration can say either thing, and
         // the two entries are what make "explicit" and "defaulted" separable here: with the
         // default itself global, an unpinned agent could not tell the two apart.
-        { [WEB_DEV]: { scope: "project" }, [API_DEV]: { on: true } },
-      ),
+        agents: { [WEB_DEV]: { scope: "project" }, [API_DEV]: { on: true } },
+      }),
     );
 
     const { exitCode } = await runInitFrom(
@@ -118,7 +111,9 @@ describe("init --from <id>: sub-agent scope", () => {
     expect(globalConfig.skills).toStrictEqual([]);
 
     const projectConfig = await loadConfigOrFail(env.projectDir);
-    expect(projectConfig.skills).toStrictEqual(buildSkillConfigs([E2E_SKILL.react.id]));
+    expect(projectConfig.skills).toStrictEqual(
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
+    );
 
     // Exhaustive directory listings, not "contains": a sub-agent compiled into BOTH scopes would
     // satisfy a subset check at either one.

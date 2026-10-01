@@ -1,13 +1,13 @@
 import os from "os";
 import path from "path";
-import { mkdir, realpath, writeFile } from "fs/promises";
+import { mkdir, realpath } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mutateGlobal } from "../index.js";
 import { consequenceTier } from "../classify.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
-import { renderConfigTs } from "../../__tests__/content-generators.js";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts.js";
+import { CLAUDE_SRC_DIR } from "../../../consts.js";
 import type { GateDeps } from "../index.js";
+import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 
 /**
  * The two ways `mutateGlobal` decides it has nothing to do — no global config to
@@ -55,11 +55,7 @@ describe("mutateGlobal — a mutation that moves nothing", () => {
   }
 
   async function writeGlobalConfig(config: Record<string, unknown>): Promise<void> {
-    await mkdir(path.join(tempHome, CLAUDE_SRC_DIR), { recursive: true });
-    await writeFile(
-      path.join(tempHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs(config),
-    );
+    await writeTestTsConfig(tempHome, config, CLAUDE_SRC_DIR);
   }
 
   it("reports T4 and no write when there is no global config to mutate", async () => {

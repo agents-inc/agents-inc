@@ -111,7 +111,7 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await page.reload()
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
-    expect(await configure.savedMarketplaceRefs()).toEqual(
+    expect(await configure.savedMarketplaceRefs()).toStrictEqual(
       expect.arrayContaining([PRIVATE_MARKETPLACE_CANONICAL_REF, BIGCO.stored])
     )
     expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
@@ -132,7 +132,7 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await loadMarketplace(configure, ACME.stored)
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
-    expect(await configure.savedMarketplaceRefs()).toEqual([ACME.stored])
+    expect(await configure.savedMarketplaceRefs()).toStrictEqual([ACME.stored])
     // Where you already are is not somewhere to switch to, and with one saved
     // marketplace there is nowhere else at all.
     await expect(configure.marketplaceSwitcher).toBeHidden()
@@ -429,7 +429,7 @@ test.describe("a payload minted after a catalogue change", () => {
     const body = posted.at(-1)
     expect(body).toBeDefined()
     expect(body!.marketplace).toBe(BIGCO.stored)
-    expect(Object.keys(body!.skills as object)).toEqual([BIGCO_SKILL_ID])
+    expect(Object.keys(body!.skills as object)).toStrictEqual([BIGCO_SKILL_ID])
   })
 
   // The same payload's other half. `useInstallCommand` memoises the serialised
@@ -486,7 +486,7 @@ test.describe("a shared address", () => {
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
     await expect(configure.marketplaceButton).toContainText(ACME.ref)
-    expect(await configure.savedMarketplaceRefs()).toEqual(
+    expect(await configure.savedMarketplaceRefs()).toStrictEqual(
       expect.arrayContaining([PRIVATE_MARKETPLACE_CANONICAL_REF, BIGCO.stored])
     )
     expect(await configure.savedToken(ACME.stored)).toBeNull()
@@ -529,7 +529,7 @@ test.describe("a shared address", () => {
     await page.goto(`/?fromId=${MARKETPLACE_IMPORT_ID}`)
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
-    expect(authorizations).toEqual([null])
+    expect(authorizations).toStrictEqual([null])
   })
 })
 
@@ -576,7 +576,7 @@ test.describe("a browser upgrading from the single slot", () => {
 
     // Loaded, which the private marketplace only answers to the PAT for.
     await expect(configure.skill(ACME.skill).root).toBeVisible()
-    expect(await configure.savedMarketplaceRefs()).toEqual([
+    expect(await configure.savedMarketplaceRefs()).toStrictEqual([
       PRIVATE_MARKETPLACE_CANONICAL_REF,
     ])
     expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(

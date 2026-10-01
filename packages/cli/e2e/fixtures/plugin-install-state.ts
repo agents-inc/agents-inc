@@ -8,6 +8,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { DIRS, FILES } from "../pages/constants.js";
+import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import type { AgentName, Domain } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
@@ -118,10 +119,7 @@ export async function createPluginInstalledProject(
 
   await writeAgentStubs(projectDir, options.agents);
 
-  await writeJson(settingsPath(projectDir), {
-    permissions: { allow: ["Read(*)"] },
-    enabledPlugins: Object.fromEntries(pluginKeys.map((key) => [key, true])),
-  });
+  await writeJson(settingsPath(projectDir), buildClaudeSettings(pluginKeys));
 
   await writeJson(registryPath(home), {
     version: REGISTRY_VERSION,

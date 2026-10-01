@@ -19,7 +19,12 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { PINNED_WIRE_VERSION } from "../fixtures/seed-wire-contract.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
@@ -52,29 +57,23 @@ import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 const SABOTAGED_AGENT = E2E_AGENT["web-developer"].name;
 const SURVIVING_AGENT = E2E_AGENT["api-developer"].name;
 
-/**
- * A payload as the web app builds it. The version is a literal rather than the vendored
- * `SEED_VERSION`, exactly as in the sibling `--from` specs: this spec drives the wire contract,
- * so it has to fail while the CLI is still on the old one instead of following it.
- */
+/** A payload as the web app builds it. */
 function seedPayload() {
-  return {
-    v: 5,
-    matrixVersion: "1.0.0",
-    stackId: null,
+  return buildSeedPayload({
+    v: PINNED_WIRE_VERSION,
     skills: {
       // Eject, because the E2E source is local and has no marketplace — plugin mode legitimately
       // refuses that, which is its own (correct) error rather than anything this path controls.
-      [E2E_SKILL.react.id]: {
+      [E2E_SKILL.react.id]: buildSeedSkill({
         install: "eject",
         scope: "project",
         assignments: { [SABOTAGED_AGENT]: "lazy" },
-      },
-      [E2E_SKILL.hono.id]: {
+      }),
+      [E2E_SKILL.hono.id]: buildSeedSkill({
         install: "eject",
         scope: "project",
         assignments: { [SURVIVING_AGENT]: "lazy" },
-      },
+      }),
     },
     // Both pinned to the project, which is the only scope this fixture can sabotage: a sub-agent
     // taking the shared default compiles into the user's own ~/.claude instead.
@@ -82,7 +81,7 @@ function seedPayload() {
       [SABOTAGED_AGENT]: { scope: "project" },
       [SURVIVING_AGENT]: { scope: "project" },
     },
-  };
+  });
 }
 
 describe("init completes its install and exits non-zero when a sub-agent would not compile", () => {
@@ -116,7 +115,10 @@ describe("init completes its install and exits non-zero when a sub-agent would n
   async function expectTheInstallLanded(projectDir: string): Promise<void> {
     const config = await loadConfigOrFail(projectDir);
     expect(config.skills, "surface 3 — the install wrote its own roster").toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.hono.id]),
+      buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.hono.id], {
+        scope: "project",
+        origin: "eject",
+      }),
     );
 
     // Surface 4, and the half that makes the remedy real: `writeProjectConfig` emits the pair

@@ -7,9 +7,11 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
  * `init --from <id>` revalidates the configuration it decoded against THIS catalog rather than
@@ -24,10 +26,6 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * own (exclusive) category would make the consistent payload carry two picks there, so the control
  * below would be silent about requirements while a category warning printed in its place — and a
  * control that passes for the wrong reason proves nothing.
- *
- * Every payload ejects at global scope, matching the rest of the `--from` specs: the E2E source is
- * local and has no marketplace, so plugin mode legitimately refuses it, and a project-scoped skill
- * assigned to a sub-agent resting at the shared default is a pair the decode refuses outright.
  */
 
 /** One unmet requirement in any selection carrying React alone: this catalog binds it to Zustand. */
@@ -46,14 +44,6 @@ const EXPECTED_VALIDATION_WARNING = `${E2E_SKILL.react.display} ${STEP_TEXT.VALI
 
 /** An id this catalog does not know, so the decode skips it and says so by name. */
 const UNKNOWN_SKILL_ID = "web-framework-does-not-exist";
-
-function seedPayload(skills: Record<string, unknown>) {
-  return { v: 5, matrixVersion: "1.0.0", stackId: null, skills, agents: {} };
-}
-
-function skillEntry() {
-  return { install: "eject", scope: "global", assignments: { "web-developer": "lazy" } };
-}
 
 describe("init --from revalidates the decoded selection", () => {
   let tempDir: string;
@@ -90,9 +80,12 @@ describe("init --from revalidates the decoded selection", () => {
       tempDir = await createTempDir();
       store.publish(
         "Unmet001",
-        seedPayload({
-          [E2E_SKILL.react.id]: skillEntry(),
-          [UNKNOWN_SKILL_ID]: skillEntry(),
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+            [UNKNOWN_SKILL_ID]: ejectedGlobalSkill(),
+          },
         }),
       );
 
@@ -116,9 +109,12 @@ describe("init --from revalidates the decoded selection", () => {
       tempDir = await createTempDir();
       store.publish(
         "Consist1",
-        seedPayload({
-          [E2E_SKILL.react.id]: skillEntry(),
-          [E2E_SKILL.zustand.id]: skillEntry(),
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+            [E2E_SKILL.zustand.id]: ejectedGlobalSkill(),
+          },
         }),
       );
 

@@ -21,11 +21,16 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, FILES } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
-import { UPSTREAM_SKILL_NAME } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import {
+  UPSTREAM_SKILL_NAME,
+  buildSeedExternalSkill,
+  buildSeedPayload,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
 
 /**
@@ -37,40 +42,6 @@ import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js
  * directory and compare the two installations. A spec that only inspected the posted body would
  * pass on a payload the decoder cannot read.
  */
-
-/**
- * A payload as the web app builds it, pinned to the wire version rather than the constant.
- *
- * `external` is omitted entirely when a spec names none, because absent is what the ordinary
- * payload — one built from the catalogue alone — carries.
- */
-function seedPayload(
-  skills: Record<string, unknown>,
-  agents: Record<string, unknown> = {},
-  external?: Record<string, unknown>,
-) {
-  return {
-    v: 5,
-    matrixVersion: "1.0.0",
-    stackId: null,
-    skills,
-    agents,
-    ...(external && { external }),
-  };
-}
-
-/**
- * One skill row. Eject and global for the same reasons the `init --from` specs give: the E2E
- * source is local and has no marketplace, and no payload here pins its sub-agent.
- */
-function skillEntry(overrides: Record<string, unknown> = {}) {
-  return {
-    install: "eject",
-    scope: "global",
-    assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
-    ...overrides,
-  };
-}
 
 /**
  * A skill added from outside the catalogue, as it reaches the receiver: minted id, the category
@@ -89,14 +60,12 @@ const EXTERNAL_FILES = {
 };
 
 function externalEntry() {
-  return {
-    displayName: "Brainstorming",
-    description: "Structured brainstorming for hard problems",
+  return buildSeedExternalSkill({
     categoryId: "web-tooling",
     repo: EXTERNAL_REPO,
     path: EXTERNAL_PATH,
     files: EXTERNAL_FILES,
-  };
+  });
 }
 
 describe("share", () => {
@@ -131,11 +100,14 @@ describe("share", () => {
     const origin = await takeTempDir();
     store.publish(
       "Origin01",
-      seedPayload({
-        [E2E_SKILL.react.id]: skillEntry(),
-        [E2E_SKILL.vitest.id]: skillEntry({
-          assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
-        }),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: {
+          [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+          [E2E_SKILL.vitest.id]: ejectedGlobalSkill({
+            assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
+          }),
+        },
       }),
     );
     const installed = await runInitFrom(store, "Origin01", { dir: origin }, sourceDir);
@@ -182,7 +154,11 @@ describe("share", () => {
     const origin = await takeTempDir();
     store.publish(
       "Origin03",
-      seedPayload({ [EXTERNAL_ID]: skillEntry() }, {}, { [EXTERNAL_ID]: externalEntry() }),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [EXTERNAL_ID]: ejectedGlobalSkill() },
+        external: { [EXTERNAL_ID]: externalEntry() },
+      }),
     );
     const installed = await runInitFrom(store, "Origin03", { dir: origin }, sourceDir);
     expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
@@ -233,7 +209,13 @@ describe("share", () => {
 
   it("identifies itself as the CLI, and posts to the collection rather than to an id", async () => {
     const origin = await takeTempDir();
-    store.publish("Origin02", seedPayload({ [E2E_SKILL.react.id]: skillEntry() }));
+    store.publish(
+      "Origin02",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+      }),
+    );
     await runInitFrom(store, "Origin02", { dir: origin }, sourceDir);
     store.reset();
 

@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import {
+  liveAssignment,
+  persistedConfig,
+  savedConfigBlob,
+  skillEntry,
+} from "@/__tests__/factories/config-selection-factories"
 import { summarize } from "@/features/configure/lib/derive"
 
 import { unknownSavedIds, useConfigStore, withoutWrites } from "./config-store"
 
+import type { ReportingSink } from "@/lib/observability/report"
 import type { PersistStorage, StorageValue } from "zustand/middleware"
 
-import {
-  isAgentOn,
-  type PersistedConfig,
-  type SkillEntry,
-} from "./persisted-schema"
+import { PERSIST_VERSION, isAgentOn } from "./persisted-schema"
 
 // The slot a shared configuration runs on.
 //
@@ -28,8 +31,20 @@ type Held = { stackId: string | null }
 
 const SLOT = "agents-inc:config:v1"
 
-const HELD: StorageValue<Held> = { state: { stackId: "nextjs" }, version: 8 }
-const OTHER: StorageValue<Held> = { state: { stackId: "remix" }, version: 8 }
+// The version every blob in this file is stamped with, bound rather than
+// written out. A blob at any other version is DISCARDED by `migrateConfig`
+// before `merge` sees it, so a literal here does not age into a wrong number —
+// it ages into four specs that pass while reading an empty store, which is the
+// worse of the two failures. The number itself lives in exactly one place, and
+// `persisted-schema.test.ts` is where it is pinned.
+const HELD: StorageValue<Held> = {
+  state: { stackId: "nextjs" },
+  version: PERSIST_VERSION,
+}
+const OTHER: StorageValue<Held> = {
+  state: { stackId: "remix" },
+  version: PERSIST_VERSION,
+}
 
 // A slot that records what it was asked to do, so "the write never happened" is
 // observable rather than inferred from what a later read came back with.
@@ -310,10 +325,7 @@ describe("the scope rule in the store", () => {
 
     useConfigStore.getState().cycleAssignment(KNOWN_SKILL, unassigned)
 
-    expect(assignments()[unassigned]).toStrictEqual({
-      load: "lazy",
-      enabled: true,
-    })
+    expect(assignments()[unassigned]).toStrictEqual(liveAssignment("lazy"))
   })
 
   it("cycles an erroring row like any other", () => {
@@ -331,10 +343,7 @@ describe("the scope rule in the store", () => {
 
     useConfigStore.getState().cycleAssignment(KNOWN_SKILL, "api-tester")
 
-    expect(assignments()["api-tester"]).toStrictEqual({
-      load: "lazy",
-      enabled: true,
-    })
+    expect(assignments()["api-tester"]).toStrictEqual(liveAssignment("lazy"))
   })
 })
 
@@ -377,47 +386,43 @@ describe("pruneToCatalog", () => {
 // them in the words the shared-link door already uses for a payload's. The same
 // three places `unknownPayloadIds` names — the skills asked for, the agents
 // asked for, and the stack — which is what keeps the two doors saying one thing.
+//
+// `unknownSavedIds` reads the KEYS of both maps and the stack, never an entry's
+// contents — so every skill below is the factory's resting one, and the ids
+// are the whole of what each spec states.
 describe("unknownSavedIds", () => {
-  const entry = (): SkillEntry => ({
-    install: "plugin",
-    scope: "project",
-    assignments: {},
-  })
-
-  const config = (over: Partial<PersistedConfig> = {}): PersistedConfig => ({
-    stackId: null,
-    skills: {},
-    remembered: {},
-    agents: {},
-    ...over,
-  })
-
   it("names the skill the catalogue could not place", () => {
-    const before = config({
-      skills: { "acme-web-widgets": entry(), react: entry() },
+    const before = persistedConfig({
+      skills: { "acme-web-widgets": skillEntry(), react: skillEntry() },
     })
 
     expect(
-      unknownSavedIds(before, config({ skills: { react: entry() } }))
+      unknownSavedIds(
+        before,
+        persistedConfig({ skills: { react: skillEntry() } })
+      )
     ).toStrictEqual(["acme-web-widgets"])
   })
 
   // One id like any other, both of them: an agent that no longer exists and a
   // stack that no longer exists are lost work exactly as a skill is.
   it("names a dropped agent and a dropped stack too", () => {
-    const before = config({
+    const before = persistedConfig({
       stackId: "acme-house-stack",
       agents: { "acme-runner": {} },
     })
 
-    expect(unknownSavedIds(before, config())).toStrictEqual([
+    expect(unknownSavedIds(before, persistedConfig())).toStrictEqual([
       "acme-runner",
       "acme-house-stack",
     ])
   })
 
   it("answers with nothing when the prune dropped nothing", () => {
-    const kept = config({ stackId: "nextjs", skills: { react: entry() } })
+    const kept = persistedConfig({
+      stackId: "nextjs",
+      skills: { react: skillEntry() },
+    })
 
     expect(unknownSavedIds(kept, kept)).toStrictEqual([])
   })
@@ -426,9 +431,11 @@ describe("unknownSavedIds", () => {
   // naming it under "not applied" would describe a loss nothing on screen can
   // show — and would name an id the visitor has no way to connect to anything.
   it("leaves a dropped remembered setup unnamed", () => {
-    const before = config({ remembered: { "acme-web-widgets": entry() } })
+    const before = persistedConfig({
+      remembered: { "acme-web-widgets": skillEntry() },
+    })
 
-    expect(unknownSavedIds(before, config())).toStrictEqual([])
+    expect(unknownSavedIds(before, persistedConfig())).toStrictEqual([])
   })
 })
 
@@ -438,10 +445,16 @@ describe("unknownSavedIds", () => {
 // `localStorage` holding a blob, then `readSavedConfig()` — because what is
 // under test is the reported payload and nothing pure produces one.
 
-const sink = { issue: vi.fn(), error: vi.fn() }
+// Typed to the sink's own contract rather than left as bare `vi.fn()`, so a
+// reporting call whose shape changes is a compile error in the expectations
+// below rather than a matcher that quietly stops matching.
+const sink = {
+  issue: vi.fn<ReportingSink["issue"]>(),
+  error: vi.fn<ReportingSink["error"]>(),
+}
 
 const readingASlotHolding = async (blob: string) => {
-  const held = new Map([["agents-inc:config:v1", blob]])
+  const held = new Map([[SLOT, blob]])
 
   vi.stubGlobal("window", {
     localStorage: {
@@ -488,20 +501,19 @@ describe("the unreadable-configuration door", () => {
   // A blob at the CURRENT version, which is the case `migrateConfig` never
   // sees: persist calls `migrate` only on a mismatch and hands everything else
   // straight to `merge`.
-  const UNREADABLE_AT_THIS_VERSION = JSON.stringify({
-    state: {
-      stackId: null,
-      skills: {
-        [PRIVATE_CATALOG_SKILL]: {
-          install: 7,
-          scope: "project",
-          assignments: {},
-        },
+  //
+  // Raw at the one field that is wrong, the shape `persisted-schema.test.ts`
+  // gives a blob the parser has to refuse: an install mode of `7` is not a
+  // sayable `SkillEntry`, so the factories' values are spread and that one
+  // field is written over them.
+  const UNREADABLE_AT_THIS_VERSION = savedConfigBlob({
+    ...persistedConfig(),
+    skills: {
+      [PRIVATE_CATALOG_SKILL]: {
+        ...skillEntry({ scope: "project" }),
+        install: 7,
       },
-      remembered: {},
-      agents: {},
     },
-    version: 8,
   })
 
   // Asserted over the whole call log rather than over `issues`, because a check
@@ -538,15 +550,9 @@ describe("the unreadable-configuration door", () => {
 // configuration saved on a marketplace and reopened with the vendored catalogue
 // seated, which is what a visitor switching back does.
 describe("the pruned-ids door", () => {
-  const SAVED_ON_A_MARKETPLACE = JSON.stringify({
-    state: {
-      stackId: PRIVATE_CATALOG_STACK,
-      skills: {},
-      remembered: {},
-      agents: {},
-    },
-    version: 8,
-  })
+  const SAVED_ON_A_MARKETPLACE = savedConfigBlob(
+    persistedConfig({ stackId: PRIVATE_CATALOG_STACK })
+  )
 
   it("names no stack of the marketplace's own in what it reports", async () => {
     await readingASlotHolding(SAVED_ON_A_MARKETPLACE)
@@ -577,21 +583,16 @@ describe("the pruned-ids door", () => {
 // instead. `pruneUnknownIds` is untouched: it drops ids nothing can place, and
 // both halves of this pair are ids the catalogue knows perfectly well.
 describe("a saved configuration holding the bad pair", () => {
-  const HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT = JSON.stringify({
-    state: {
-      stackId: null,
+  const HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT = savedConfigBlob(
+    persistedConfig({
       skills: {
-        [KNOWN_SKILL]: {
-          install: "plugin",
+        [KNOWN_SKILL]: skillEntry({
           scope: "project",
-          assignments: { [KNOWN_AGENT]: { load: "preloaded", enabled: true } },
-        },
+          assignments: { [KNOWN_AGENT]: liveAssignment("preloaded") },
+        }),
       },
-      remembered: {},
-      agents: {},
-    },
-    version: 8,
-  })
+    })
+  )
 
   it("keeps the assignment rather than dropping it on the way in", async () => {
     const store = await readingASlotHolding(
@@ -599,7 +600,7 @@ describe("a saved configuration holding the bad pair", () => {
     )
 
     expect(store.getState().skills[KNOWN_SKILL]?.assignments).toStrictEqual({
-      [KNOWN_AGENT]: { load: "preloaded", enabled: true },
+      [KNOWN_AGENT]: liveAssignment("preloaded"),
     })
   })
 

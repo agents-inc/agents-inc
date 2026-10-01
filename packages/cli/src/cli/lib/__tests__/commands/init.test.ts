@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
@@ -14,11 +14,10 @@ import {
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
   STANDARD_DIRS,
-  STANDARD_FILES,
 } from "../../../consts";
-import { renderConfigTs } from "../content-generators";
 import { EXPECTED_SKILLS } from "../expected-values";
 import type { BrandingConfig, SkillConfig, SkillId } from "../../../types";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 
 /**
  * A `branding.name` a project config supplies, sharing no substring with
@@ -59,12 +58,7 @@ async function writeInstallation(
   skills: SkillConfig[],
   onDisk: readonly string[],
 ): Promise<void> {
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(configDir, { recursive: true });
-  await writeFile(
-    path.join(configDir, STANDARD_FILES.CONFIG_TS),
-    renderConfigTs({ name: "test-project", skills }),
-  );
+  await writeTestTsConfig(projectDir, { name: "test-project", skills }, CLAUDE_SRC_DIR);
   for (const skillId of onDisk) {
     await mkdir(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId), {
       recursive: true,
@@ -77,15 +71,14 @@ async function writeInstallation(
  * a `branding` block only when one is named — the two states the title line is asserted over.
  */
 async function writeDashboardConfig(projectDir: string, branding?: BrandingConfig): Promise<void> {
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(configDir, { recursive: true });
-  await writeFile(
-    path.join(configDir, STANDARD_FILES.CONFIG_TS),
-    renderConfigTs({
+  await writeTestTsConfig(
+    projectDir,
+    {
       name: "test-project",
       skills: [],
       ...(branding !== undefined && { branding }),
-    }),
+    },
+    CLAUDE_SRC_DIR,
   );
 }
 
@@ -103,17 +96,13 @@ describe("init command", () => {
 
   describe("already initialized — dashboard", () => {
     it("should show dashboard when project is already initialized", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
       // A real installation: the config declares skills so it is detected as
       // installed. A config declaring neither skills nor agents is content-less
       // and routes to the setup wizard, not the dashboard.
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
-        }),
+      await writeTestTsConfig(
+        projectDir,
+        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
+        CLAUDE_SRC_DIR,
       );
 
       const { stdout, stderr, error } = await runCliCommand(["init"]);
@@ -132,14 +121,10 @@ describe("init command", () => {
     });
 
     it("should show skill and agent counts in dashboard", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
-        }),
+      await writeTestTsConfig(
+        projectDir,
+        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
+        CLAUDE_SRC_DIR,
       );
 
       // Install the declared skills — the dashboard reports what is on disk
@@ -166,15 +151,10 @@ describe("init command", () => {
     });
 
     it("should show source when configured", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          skills: [],
-          marketplace: TEST_SOURCE_URL,
-        }),
+      await writeTestTsConfig(
+        projectDir,
+        { name: "test-project", skills: [], marketplace: TEST_SOURCE_URL },
+        CLAUDE_SRC_DIR,
       );
 
       const data = await getDashboardData(projectDir);
@@ -214,35 +194,28 @@ describe("init command", () => {
     });
 
     it("should not modify existing config when already initialized", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
       // A real installation (declares skills) so init shows the dashboard and
       // leaves the config untouched, rather than routing to the setup wizard.
-      const originalContent = renderConfigTs({
-        name: "test-project",
-        skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
-      });
-      await writeFile(configPath, originalContent);
+      const configPath = await writeTestTsConfig(
+        projectDir,
+        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
+        CLAUDE_SRC_DIR,
+      );
+      const originalContent = await readFile(configPath, "utf-8");
 
       await runCliCommand(["init"]);
 
-      const { readFile } = await import("fs/promises");
       const content = await readFile(configPath, "utf-8");
       expect(content).toBe(originalContent);
     });
 
     it("should exit with SUCCESS when already initialized", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
       // A real installation (declares skills) so init shows the dashboard, which
       // exits cleanly, rather than routing to the setup wizard.
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          name: "test-project",
-          skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
-        }),
+      await writeTestTsConfig(
+        projectDir,
+        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
+        CLAUDE_SRC_DIR,
       );
 
       const { error } = await runCliCommand(["init"]);
@@ -252,12 +225,7 @@ describe("init command", () => {
     });
 
     it("should show 0 counts when skills and agents are empty", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({ name: "test-project", skills: [] }),
-      );
+      await writeTestTsConfig(projectDir, { name: "test-project", skills: [] }, CLAUDE_SRC_DIR);
 
       const data = await getDashboardData(projectDir);
       expect(data.skillCount).toBe(0);

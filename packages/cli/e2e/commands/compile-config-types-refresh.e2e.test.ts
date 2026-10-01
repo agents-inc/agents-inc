@@ -238,7 +238,12 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     const projectTypes = await readTestFile(configTypesTsPath(projectDir));
     expect(projectTypes).toContain("SkillId as GlobalSkillId");
     expect(projectTypes).toContain("export type SkillId = GlobalSkillId | 'web-mocks-msw'");
-    expect(projectTypes).not.toContain('"web-testing-cypress-e2e"');
+    // Single-quoted, as the file writes a skill id: the double-quoted form it searched for until
+    // 2026-09-26 could never appear, so the assertion could never fail.
+    expect(
+      projectTypes,
+      "the project restates a global skill instead of importing it",
+    ).not.toContain("'web-testing-cypress-e2e'");
     expect(projectTypes, "stale stub must be replaced").not.toContain(
       "export type SkillId = string;",
     );

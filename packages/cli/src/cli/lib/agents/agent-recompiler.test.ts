@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { fileURLToPath } from "url";
+import { copyFile, mkdir, writeFile, readFile } from "fs/promises";
 import { recompileAgents } from "./agent-recompiler";
 import { CLI_ROOT } from "../__tests__/helpers/cli-runner";
 import {
@@ -11,26 +12,30 @@ import {
 import { writeTestSkill } from "../__tests__/helpers/disk-writers";
 import { fileExists } from "../__tests__/test-fs-utils";
 import { initializeMatrix } from "../matrix/matrix-provider";
-import type { AgentName, SkillId } from "../../types";
+import type { AgentName, SkillDefinitionMap } from "../../types";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io";
-import { buildAgentConfigs } from "../__tests__/factories/config-factories";
+import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories";
+import { createMockSkillDefinition, sa } from "../__tests__/factories/skill-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { renderAgentMd } from "../__tests__/content-generators";
 import { CLAUDE_DIR } from "../../consts";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { VITEST_REACT_HONO_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { expectValidAgentMarkdown } from "../__tests__/assertions/agent-assertions";
 
-const REACT_AND_VITEST_SKILLS: Record<string, { id: string; description: string; path: string }> = {
-  [SKILLS.react.id]: {
-    id: SKILLS.react.id,
-    description: "React framework skill",
-    path: `${SKILLS.react.id}/`,
-  },
-  [SKILLS.vitest.id]: {
-    id: SKILLS.vitest.id,
-    description: "Vitest testing skill",
-    path: `${SKILLS.vitest.id}/`,
-  },
+/** The shared stand-in for a project's own `agent.liquid`, which `compiler.test.ts` copies too. */
+const FIXTURE_AGENT_TEMPLATE = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../__tests__/fixtures/agents/_templates/agent.liquid",
+);
+
+/** The line only the fixture template emits, and therefore the one that says which rendered. */
+const PROJECT_TEMPLATE_MARKER = "Rendered by the project's own agent template.";
+
+/** The skill definitions a caller hands the pass, in place of discovering them. */
+const REACT_AND_VITEST_SKILLS: SkillDefinitionMap = {
+  [SKILLS.react.id]: createMockSkillDefinition(SKILLS.react.id),
+  [SKILLS.vitest.id]: createMockSkillDefinition(SKILLS.vitest.id),
 };
 
 describe("agent-recompiler", () => {
@@ -95,6 +100,8 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
+        // Boundary cast: the CLI's own source defines every `AgentName`, so the name no
+        // definition answers — one a hand-edited config.ts carries — lies outside the union.
         agents: ["non-existent-agent-xyz" as AgentName],
       });
 
@@ -105,11 +112,10 @@ describe("agent-recompiler", () => {
     });
 
     it("uses config.ts agent list when present", async () => {
-      await writeTestTsConfig(testDirs.projectDir, {
-        name: "test-plugin",
-        description: "Test plugin",
-        agents: buildAgentConfigs(["pm"]),
-      });
+      await writeTestTsConfig(
+        testDirs.projectDir,
+        buildProjectConfig({ agents: buildAgentConfigs(["pm"]), skills: [] }),
+      );
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -121,7 +127,7 @@ describe("agent-recompiler", () => {
     });
 
     it("uses existing compiled agents when no config exists", async () => {
-      await writeFile(path.join(testDirs.agentsDir, "pm.md"), "# Existing PM Agent\n");
+      await writeFile(path.join(testDirs.agentsDir, "pm.md"), renderAgentMd("pm"));
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -154,24 +160,39 @@ describe("agent-recompiler", () => {
       }
     });
 
+    /**
+     * The map handed in is where the pass reads a skill's definition from, and this case now
+     * shows it. It used to hand a skill to `pm`, a sub-agent with no stack, and assert only that
+     * `pm` compiled — which it does whatever happens to the map, so a pass that ignored the
+     * option stayed green.
+     *
+     * Discovery reads the plugins Claude's registry names, and this tree registers none, so the
+     * map is the only place the React definition exists: a compiled `web-developer` naming it
+     * can only have read it from there.
+     */
     it("uses provided skills instead of loading from plugin", async () => {
-      const skillId = "web-custom-skill" as SkillId;
-      const providedSkills = {
-        [skillId]: {
-          id: skillId,
-          description: "Custom skill",
-          path: "custom-skill/",
-        },
-      };
+      await writeTestTsConfig(
+        testDirs.projectDir,
+        buildProjectConfig({
+          agents: buildAgentConfigs(["web-developer"]),
+          skills: buildSkillConfigs([SKILLS.react.id]),
+          stack: { "web-developer": { "web-framework": [sa(SKILLS.react.id)] } },
+        }),
+      );
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        agents: ["pm"],
-        skills: providedSkills,
+        agents: ["pm", "web-developer"],
+        projectDir: testDirs.projectDir,
+        skills: { [SKILLS.react.id]: createMockSkillDefinition(SKILLS.react.id) },
       });
 
       expect(result.compiled).toContain("pm");
+      expect(
+        await readFile(path.join(testDirs.agentsDir, "web-developer.md"), "utf-8"),
+        "the only definition of this skill is the one handed in, so a pass that ignored the map compiles the sub-agent without it",
+      ).toContain(SKILLS.react.id);
     });
 
     it("generates valid agent markdown with frontmatter", async () => {
@@ -189,9 +210,16 @@ describe("agent-recompiler", () => {
       expectValidAgentMarkdown(content, "web-developer");
     });
 
+    /**
+     * The project's own `agent.liquid` is what renders, which is the whole of what "respects
+     * projectDir" can mean here. This case used to create the templates directory EMPTY and
+     * assert only that `pm` compiled — an engine that never looked in the project compiles it
+     * identically from the CLI's own template, so nothing here could go red.
+     */
     it("respects projectDir for local template resolution", async () => {
       const localTemplatesDir = path.join(testDirs.projectDir, CLAUDE_DIR, "templates");
       await mkdir(localTemplatesDir, { recursive: true });
+      await copyFile(FIXTURE_AGENT_TEMPLATE, path.join(localTemplatesDir, "agent.liquid"));
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -201,24 +229,29 @@ describe("agent-recompiler", () => {
       });
 
       expect(result.compiled).toContain("pm");
+      expect(
+        await readFile(path.join(testDirs.agentsDir, "pm.md"), "utf-8"),
+        "the compiled sub-agent came from the CLI's template, so the project's own was never read",
+      ).toContain(PROJECT_TEMPLATE_MARKER);
     });
 
     it("should filter excluded skills from compiled agent output", async () => {
-      await writeTestTsConfig(testDirs.projectDir, {
-        name: "test-plugin",
-        description: "Test plugin",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: [
-          ...buildSkillConfigs([SKILLS.react.id]),
-          ...buildSkillConfigs([SKILLS.vitest.id], { excluded: true }),
-        ],
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: SKILLS.react.id, preloaded: false }],
-            "web-testing": [{ id: SKILLS.vitest.id, preloaded: false }],
+      await writeTestTsConfig(
+        testDirs.projectDir,
+        buildProjectConfig({
+          agents: buildAgentConfigs(["web-developer"]),
+          skills: [
+            ...buildSkillConfigs([SKILLS.react.id]),
+            ...buildSkillConfigs([SKILLS.vitest.id], { excluded: true }),
+          ],
+          stack: {
+            "web-developer": {
+              "web-framework": [sa(SKILLS.react.id)],
+              "web-testing": [sa(SKILLS.vitest.id)],
+            },
           },
-        },
-      });
+        }),
+      );
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -239,21 +272,22 @@ describe("agent-recompiler", () => {
     });
 
     it("should filter project-scoped skills from global-scoped agents (D7 cross-scope safety)", async () => {
-      await writeTestTsConfig(testDirs.projectDir, {
-        name: "test-plugin",
-        description: "Test plugin",
-        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-        skills: [
-          ...buildSkillConfigs([SKILLS.react.id]),
-          ...buildSkillConfigs([SKILLS.vitest.id], { scope: "global" }),
-        ],
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: SKILLS.react.id, preloaded: false }],
-            "web-testing": [{ id: SKILLS.vitest.id, preloaded: false }],
+      await writeTestTsConfig(
+        testDirs.projectDir,
+        buildProjectConfig({
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          skills: [
+            ...buildSkillConfigs([SKILLS.react.id], { scope: "project" }),
+            ...buildSkillConfigs([SKILLS.vitest.id], { scope: "global" }),
+          ],
+          stack: {
+            "web-developer": {
+              "web-framework": [sa(SKILLS.react.id)],
+              "web-testing": [sa(SKILLS.vitest.id)],
+            },
           },
-        },
-      });
+        }),
+      );
 
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,

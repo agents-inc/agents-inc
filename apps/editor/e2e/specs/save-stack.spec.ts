@@ -193,6 +193,6 @@ test.describe("the saved stack in the grid", () => {
     await configure.stackSwitchDialog.confirm()
 
     expect(saved).toBeDefined()
-    expect(await mint()).toEqual(saved)
+    expect(await mint()).toStrictEqual(saved)
   })
 })

@@ -114,7 +114,7 @@ test.describe("persistence", () => {
     await page.reload()
     await configure.stacks.waitFor()
 
-    expect(issues).toEqual([])
+    expect(issues).toStrictEqual([])
   })
 
   // The pre-release policy is no migrations: a version bump discards every

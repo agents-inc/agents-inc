@@ -135,7 +135,7 @@ describe("createSharedConfig", () => {
   // suite is a status the worker chose; this one has to happen before the
   // request leaves, or it is only a nicer word for the same wasted write.
   it("refuses it without spending a write", async () => {
-    const reachedTheWorker = vi.fn()
+    const reachedTheWorker = vi.fn<Parameters<typeof witnessedMint>[0]>()
     configMockServer.use(witnessedMint(reachedTheWorker))
 
     await createSharedConfig(OUT_OF_SCOPE_PAYLOAD)
@@ -168,7 +168,7 @@ describe("createSharedConfig", () => {
   // that would catch a gate written too tightly — the failure mode that turns a
   // fix for an unshareable configuration into an unshareable app.
   it("lets a payload the write contract accepts through to the worker", async () => {
-    const reachedTheWorker = vi.fn()
+    const reachedTheWorker = vi.fn<Parameters<typeof witnessedMint>[0]>()
     configMockServer.use(witnessedMint(reachedTheWorker))
 
     const result = await createSharedConfig(STORED_PAYLOAD)

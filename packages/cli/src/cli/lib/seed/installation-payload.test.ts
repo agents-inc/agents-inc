@@ -24,11 +24,7 @@ import {
   buildSeedSkill,
 } from "../__tests__/factories/seed-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
-import {
-  renderConfigTs,
-  renderMetadataYaml,
-  renderSkillMd,
-} from "../__tests__/content-generators.js";
+import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators.js";
 import { buildSkillConfig } from "../__tests__/helpers/wizard-simulation.js";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
@@ -37,6 +33,7 @@ import { ERROR_MESSAGES } from "../../utils/messages.js";
 import type { SkillId } from "../../types/index.js";
 import type { FixtureProjectConfig } from "../__tests__/helpers/wizard-simulation.js";
 import type { SeedExternalSkill } from "@workspace/matrix/seed";
+import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 
 /**
  * The half `share` and `edit --ui` have in common: the installation this directory records,
@@ -71,12 +68,7 @@ describe("seedPayloadForInstallation", () => {
   });
 
   async function installConfig(overrides: Partial<FixtureProjectConfig>): Promise<void> {
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs(buildProjectConfig(overrides)),
-    );
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
   }
 
   /**

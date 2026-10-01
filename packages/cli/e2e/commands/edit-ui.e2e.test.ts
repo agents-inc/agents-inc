@@ -9,9 +9,11 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
@@ -23,24 +25,6 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * spec that only checked the posted body would pass on a run that also opened the wizard, or
  * on one that rewrote the config on its way out.
  */
-
-/** A payload as the web app builds it, pinned to the wire version rather than the constant. */
-function seedPayload(skills: Record<string, unknown>, agents: Record<string, unknown> = {}) {
-  return { v: 5, matrixVersion: "1.0.0", stackId: null, skills, agents };
-}
-
-/**
- * One skill row. Eject and global for the same reasons the `init --from` specs give: the E2E
- * source is local and has no marketplace, and no payload here pins its sub-agent.
- */
-function skillEntry(overrides: Record<string, unknown> = {}) {
-  return {
-    install: "eject",
-    scope: "global",
-    assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
-    ...overrides,
-  };
-}
 
 describe("edit --ui", () => {
   let sourceDir: string;
@@ -74,11 +58,14 @@ describe("edit --ui", () => {
     const project = await takeTempDir();
     store.publish(
       "UiOrigin1",
-      seedPayload({
-        [E2E_SKILL.react.id]: skillEntry(),
-        [E2E_SKILL.vitest.id]: skillEntry({
-          assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
-        }),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: {
+          [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+          [E2E_SKILL.vitest.id]: ejectedGlobalSkill({
+            assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
+          }),
+        },
       }),
     );
     const installed = await runInitFrom(store, "UiOrigin1", { dir: project }, sourceDir);
