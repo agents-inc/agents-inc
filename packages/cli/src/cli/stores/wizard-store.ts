@@ -475,21 +475,53 @@ function survivesRosterRebuild(
 }
 
 /**
+ * The choices a user made about one sub-agent, as opposed to the identity and placement the
+ * roster decides: the model it runs on and how hard it thinks. Everything here survives a rebuild
+ * that re-derives the entry around it.
+ *
+ * Spread from an entry rather than picked field by field at each site, because every site that
+ * picked them by hand has at some point picked a stale subset — which is invisible, since the
+ * result is a valid entry either way and the only symptom is a setting quietly reverting.
+ */
+function tuningOf(agentConfig: AgentScopeConfig | undefined): Partial<AgentScopeConfig> {
+  return {
+    ...(agentConfig?.model !== undefined && { model: agentConfig.model }),
+    ...(agentConfig?.effort !== undefined && { effort: agentConfig.effort }),
+  };
+}
+
+/** The entry a rebuild reads a sub-agent's tuning off: its active row, else whatever it has. */
+function tunedEntryFor(
+  agentConfigs: AgentScopeConfig[] | undefined,
+  agent: AgentName,
+): AgentScopeConfig | undefined {
+  return (
+    agentConfigs?.find((ac) => ac.name === agent && !ac.excluded && ac.scope === "project") ??
+    agentConfigs?.find((ac) => ac.name === agent && !ac.excluded)
+  );
+}
+
+/**
  * Restores the `[P][G]` pair when re-selecting an inherited-global agent row whose
  * global install is recorded as a tombstone in the project snapshot — mirrors
  * reconcileSkillConfigs' restore branch.
+ *
+ * The pair is minted from scratch, so the row's tuning has to be carried onto it deliberately:
+ * without that, turning an agent back on is the one keypress that silently reverts its model and
+ * effort, at the moment the user is least expecting anything else to change.
  */
 function restoreDualScopeAgent(
   selectedAgents: AgentName[],
   agentConfigs: AgentScopeConfig[],
   agent: AgentName,
 ) {
+  const tuning = tuningOf(tunedEntryFor(agentConfigs, agent));
   return {
     selectedAgents: [...selectedAgents, agent],
     agentConfigs: [
       ...agentConfigs.filter((ac) => ac.name !== agent),
-      { name: agent, scope: "project" as const },
-      { name: agent, scope: "global" as const, excluded: true },
+      { name: agent, scope: "project" as const, ...tuning },
+      { name: agent, scope: "global" as const, ...tuning, excluded: true },
     ],
   };
 }
@@ -531,16 +563,13 @@ function buildAgentConfigForName(
   savedConfigs?: AgentScopeConfig[],
 ): AgentScopeConfig {
   // Prefer project-scoped active entry over global when duplicates exist.
-  const saved =
-    savedConfigs?.find((ac) => ac.name === name && !ac.excluded && ac.scope === "project") ??
-    savedConfigs?.find((ac) => ac.name === name && !ac.excluded);
+  const saved = tunedEntryFor(savedConfigs, name);
   return {
     name,
     scope: saved?.scope ?? "global",
-    // Model and effort are the user's deliberate choice, not something the roster re-derives —
-    // they survive the rebuild on the same terms as scope.
-    ...(saved?.model !== undefined && { model: saved.model }),
-    ...(saved?.effort !== undefined && { effort: saved.effort }),
+    // The tuning is the user's deliberate choice, not something the roster re-derives — it
+    // survives the rebuild on the same terms as scope.
+    ...tuningOf(saved),
   };
 }
 
